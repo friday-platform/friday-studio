@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { expect, it } from "vitest";
 import { type GenerateSessionTitleInput, generateSessionTitle } from "../session-title.ts";
 
 function makeInput(overrides: Partial<GenerateSessionTitleInput> = {}): GenerateSessionTitleInput {
@@ -14,52 +14,52 @@ function mockLLM(response: string | Error) {
   return () => (response instanceof Error ? Promise.reject(response) : Promise.resolve(response));
 }
 
-Deno.test("generateSessionTitle - returns LLM-generated title on success", async () => {
+it("generateSessionTitle - returns LLM-generated title on success", async () => {
   const result = await generateSessionTitle(makeInput({ _llm: mockLLM("Processed user request") }));
-  assertEquals(result, "Processed user request");
+  expect(result).toEqual("Processed user request");
 });
 
-Deno.test("generateSessionTitle - truncates titles longer than 60 characters", async () => {
+it("generateSessionTitle - truncates titles longer than 60 characters", async () => {
   const longTitle =
     "This is a very long title that exceeds the maximum allowed length of sixty characters";
   const result = await generateSessionTitle(makeInput({ _llm: mockLLM(longTitle) }));
 
-  assertEquals(result.length, 60);
-  assertEquals(result.endsWith("..."), true);
+  expect(result.length).toEqual(60);
+  expect(result.endsWith("...")).toEqual(true);
 });
 
-Deno.test("generateSessionTitle - falls back on LLM error", async () => {
+it("generateSessionTitle - falls back on LLM error", async () => {
   const result = await generateSessionTitle(
     makeInput({
       signal: { type: "daily-report", id: "job-123" },
       _llm: mockLLM(new Error("API error")),
     }),
   );
-  assertEquals(result, "Daily report");
+  expect(result).toEqual("Daily report");
 });
 
-Deno.test("generateSessionTitle - uses fallback when LLM returns less than 3 characters", async () => {
+it("generateSessionTitle - uses fallback when LLM returns less than 3 characters", async () => {
   const result = await generateSessionTitle(
     makeInput({ signal: { type: "user_sync", id: "sync-1" }, _llm: mockLLM("OK") }),
   );
-  assertEquals(result, "User sync");
+  expect(result).toEqual("User sync");
 });
 
-Deno.test("generateSessionTitle - no prefix for failed sessions (status shown via UI badge)", async () => {
+it("generateSessionTitle - no prefix for failed sessions (status shown via UI badge)", async () => {
   const result = await generateSessionTitle(
     makeInput({ status: "failed", _llm: mockLLM("Database migration") }),
   );
-  assertEquals(result, "Database migration");
+  expect(result).toEqual("Database migration");
 });
 
-Deno.test("generateSessionTitle - no prefix for skipped sessions (status shown via UI badge)", async () => {
+it("generateSessionTitle - no prefix for skipped sessions (status shown via UI badge)", async () => {
   const result = await generateSessionTitle(
     makeInput({ status: "skipped", _llm: mockLLM("Calendar sync") }),
   );
-  assertEquals(result, "Calendar sync");
+  expect(result).toEqual("Calendar sync");
 });
 
-Deno.test("generateSessionTitle - fallback prefers jobName over signal.type", async () => {
+it("generateSessionTitle - fallback prefers jobName over signal.type", async () => {
   const result = await generateSessionTitle(
     makeInput({
       signal: { type: "http", id: "req-123" },
@@ -67,10 +67,10 @@ Deno.test("generateSessionTitle - fallback prefers jobName over signal.type", as
       _llm: mockLLM(new Error("API error")),
     }),
   );
-  assertEquals(result, "Weekly cleanup");
+  expect(result).toEqual("Weekly cleanup");
 });
 
-Deno.test("generateSessionTitle - fallback prefers intent from signal.data over jobName", async () => {
+it("generateSessionTitle - fallback prefers intent from signal.data over jobName", async () => {
   const result = await generateSessionTitle(
     makeInput({
       signal: { type: "http", id: "req-123", data: { intent: "Summarize meeting notes" } },
@@ -78,15 +78,15 @@ Deno.test("generateSessionTitle - fallback prefers intent from signal.data over 
       _llm: mockLLM(new Error("API error")),
     }),
   );
-  assertEquals(result, "Summarize meeting notes");
+  expect(result).toEqual("Summarize meeting notes");
 });
 
-Deno.test("generateSessionTitle - fallback uses task from signal.data", async () => {
+it("generateSessionTitle - fallback uses task from signal.data", async () => {
   const result = await generateSessionTitle(
     makeInput({
       signal: { type: "do-task", id: "task-456", data: { task: "Generate quarterly report" } },
       _llm: mockLLM(new Error("API error")),
     }),
   );
-  assertEquals(result, "Generate quarterly report");
+  expect(result).toEqual("Generate quarterly report");
 });

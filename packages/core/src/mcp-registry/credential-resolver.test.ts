@@ -1,7 +1,6 @@
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
-import { assertEquals, assertRejects } from "@std/assert";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CredentialNotFoundError,
   resolveCredentialsByProvider,
@@ -124,19 +123,17 @@ describe("resolveCredentialsByProvider", () => {
     ]);
 
     const credentials = await resolveCredentialsByProvider("slack");
-    assertEquals(credentials.length, 1);
+    expect(credentials.length).toEqual(1);
     // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-    assertEquals(credentials[0]!.id, "cred_abc");
+    expect(credentials[0]!.id).toEqual("cred_abc");
   });
 
   it("throws CredentialNotFoundError when none exist", async () => {
     globalThis.fetch = mockSummaryFetch("slack", []);
 
-    await assertRejects(
-      () => resolveCredentialsByProvider("slack"),
-      CredentialNotFoundError,
-      "No credentials found for provider 'slack'",
-    );
+    const error = await resolveCredentialsByProvider("slack").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CredentialNotFoundError);
+    expect((error as Error).message).toContain("No credentials found for provider 'slack'");
   });
 
   it("returns all credentials when multiple exist", async () => {
@@ -146,20 +143,20 @@ describe("resolveCredentialsByProvider", () => {
     ]);
 
     const credentials = await resolveCredentialsByProvider("slack");
-    assertEquals(credentials.length, 2);
+    expect(credentials.length).toEqual(2);
     // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees indices exist
-    assertEquals(credentials[0]!.id, "cred_abc");
+    expect(credentials[0]!.id).toEqual("cred_abc");
     // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees indices exist
-    assertEquals(credentials[1]!.id, "cred_xyz");
+    expect(credentials[1]!.id).toEqual("cred_xyz");
   });
 });
 
 describe("CredentialNotFoundError", () => {
   it("includes provider in message and exposes property", () => {
     const error = new CredentialNotFoundError("github");
-    assertEquals(error.message, "No credentials found for provider 'github'");
-    assertEquals(error.name, "CredentialNotFoundError");
-    assertEquals(error.provider, "github");
+    expect(error.message).toEqual("No credentials found for provider 'github'");
+    expect(error.name).toEqual("CredentialNotFoundError");
+    expect(error.provider).toEqual("github");
   });
 });
 
@@ -185,11 +182,11 @@ describe("Google credential resolution", () => {
       ]);
 
       const credentials = await resolveCredentialsByProvider(provider);
-      assertEquals(credentials.length, 1);
+      expect(credentials.length).toEqual(1);
       // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-      assertEquals(credentials[0]!.provider, provider);
+      expect(credentials[0]!.provider).toEqual(provider);
       // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-      assertEquals(credentials[0]!.type, "oauth");
+      expect(credentials[0]!.type).toEqual("oauth");
     });
   }
 
@@ -226,8 +223,8 @@ describe("Google credential resolution", () => {
     const resolved = await resolveEnvValues(env, logger);
 
     const token = resolved.GOOGLE_CALENDAR_ACCESS_TOKEN;
-    assertEquals(token, fakeAccessToken);
-    assertEquals(token?.startsWith("ya29."), true);
+    expect(token).toEqual(fakeAccessToken);
+    expect(token?.startsWith("ya29.")).toEqual(true);
   });
 
   it("resolves google-gmail access_token via resolveEnvValues", async () => {
@@ -252,7 +249,7 @@ describe("Google credential resolution", () => {
     };
 
     const resolved = await resolveEnvValues(env, logger);
-    assertEquals(resolved.GMAIL_TOKEN, fakeAccessToken);
+    expect(resolved.GMAIL_TOKEN).toEqual(fakeAccessToken);
   });
 
   it("throws when Google credential has no access_token key", async () => {
@@ -275,9 +272,7 @@ describe("Google credential resolution", () => {
       DRIVE_TOKEN: { from: "link" as const, provider: "google-drive", key: "access_token" },
     };
 
-    await assertRejects(
-      () => resolveEnvValues(env, logger),
-      Error,
+    await expect(() => resolveEnvValues(env, logger)).rejects.toThrow(
       "Key 'access_token' not found in credential",
     );
   });

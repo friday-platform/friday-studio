@@ -94,3 +94,6 @@ gateway
 # cypheradmin binary
 apps/cypher/cypheradmin/cypheradmin
 atlas-otel-collector
+
+# Ralph coverage progress
+test-coverage-progress.txt

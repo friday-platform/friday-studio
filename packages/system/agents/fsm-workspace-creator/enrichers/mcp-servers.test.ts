@@ -1,9 +1,9 @@
 import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { generateMCPServers } from "./mcp-servers.ts";
 
-Deno.test("generateMCPServers credential bindings", async (t) => {
-  await t.step("applies credential bindings by serverId", () => {
+describe("generateMCPServers credential bindings", () => {
+  it("applies credential bindings by serverId", () => {
     // Use "github" - matches MCP server domain but NOT bundled agent capability
     const agents: WorkspacePlan["agents"] = [
       {
@@ -28,14 +28,14 @@ Deno.test("generateMCPServers credential bindings", async (t) => {
     const servers = generateMCPServers(agents, credentials);
 
     const githubServer = servers.find((s) => s.id === "github");
-    assertEquals(githubServer?.config.env?.GH_CLASSIC_PAT, {
+    expect(githubServer?.config.env?.GH_CLASSIC_PAT).toEqual({
       from: "link",
       id: "cred_github123",
       key: "access_token",
     });
   });
 
-  await t.step("ignores bindings for servers not in result", () => {
+  it("ignores bindings for servers not in result", () => {
     // Agent needs "linear" which maps to linear MCP server
     const agents: WorkspacePlan["agents"] = [
       { id: "linear-agent", name: "Linear Agent", description: "Tracks issues", needs: ["linear"] },
@@ -57,10 +57,10 @@ Deno.test("generateMCPServers credential bindings", async (t) => {
 
     // No github server in result, binding not applied
     const githubServer = servers.find((s) => s.id === "github");
-    assertEquals(githubServer, undefined);
+    expect(githubServer).toBeUndefined();
 
     // Linear server should exist (but no binding for it)
     const linearServer = servers.find((s) => s.id === "linear");
-    assertEquals(linearServer !== undefined, true);
+    expect(linearServer).toBeDefined();
   });
 });

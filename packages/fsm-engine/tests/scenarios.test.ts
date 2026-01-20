@@ -1,5 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { createTestEngine } from "./lib/test-utils.ts";
 import { orderProcessingFSM } from "./scenarios/order-processing.ts";
 import { simpleCounterFSM } from "./scenarios/simple-counter.ts";
@@ -18,14 +17,10 @@ describe("FSM Engine - Scenarios", () => {
 
       await engine.signal({ type: "APPROVE" });
 
-      assertEquals(engine.state, "approved");
-      const order = engine.getDocument("order");
-      assert(order);
-      assertEquals(order.data.status, "approved");
-
-      const events = engine.emittedEvents;
-      assertEquals(events.length, 1);
-      assertEquals(events[0]?.event, "order.approved");
+      expect(engine.state).toBe("approved");
+      expect(engine.getDocument("order")).toMatchObject({ data: { status: "approved" } });
+      expect(engine.emittedEvents).toHaveLength(1);
+      expect(engine.emittedEvents[0]).toMatchObject({ event: "order.approved" });
     });
 
     it("should not approve order when inventory is insufficient", async () => {
@@ -44,11 +39,9 @@ describe("FSM Engine - Scenarios", () => {
       await engine.signal({ type: "APPROVE" });
 
       // Should stay in pending because guard failed
-      assertEquals(engine.state, "pending");
-      const order = engine.getDocument("order");
-      assert(order);
-      assertEquals(order.data.status, "pending");
-      assertEquals(engine.emittedEvents.length, 0);
+      expect(engine.state).toBe("pending");
+      expect(engine.getDocument("order")).toMatchObject({ data: { status: "pending" } });
+      expect(engine.emittedEvents).toHaveLength(0);
     });
 
     it("should reject order explicitly", async () => {
@@ -61,10 +54,8 @@ describe("FSM Engine - Scenarios", () => {
 
       await engine.signal({ type: "REJECT" });
 
-      assertEquals(engine.state, "rejected");
-      const order = engine.getDocument("order");
-      assert(order);
-      assertEquals(order.data.status, "rejected");
+      expect(engine.state).toBe("rejected");
+      expect(engine.getDocument("order")).toMatchObject({ data: { status: "rejected" } });
     });
   });
 
@@ -74,14 +65,10 @@ describe("FSM Engine - Scenarios", () => {
 
       await engine.signal({ type: "COMPLETE_PROFILE", data: { userId: "user-123" } });
 
-      assertEquals(engine.state, "active");
-      const profile = engine.getDocument("profile");
-      assert(profile);
-      assertEquals(profile.data.userId, "user-123");
-
-      const events = engine.emittedEvents;
-      assertEquals(events.length, 1);
-      assertEquals(events[0]?.event, "user.onboarded");
+      expect(engine.state).toBe("active");
+      expect(engine.getDocument("profile")).toMatchObject({ data: { userId: "user-123" } });
+      expect(engine.emittedEvents).toHaveLength(1);
+      expect(engine.emittedEvents[0]).toMatchObject({ event: "user.onboarded" });
     });
   });
 
@@ -94,10 +81,8 @@ describe("FSM Engine - Scenarios", () => {
 
       await engine.signal({ type: "INCREMENT" });
 
-      assertEquals(engine.state, "counting");
-      const counter = engine.getDocument("counter");
-      assert(counter);
-      assertEquals(counter.data.value, 1);
+      expect(engine.state).toBe("counting");
+      expect(engine.getDocument("counter")).toMatchObject({ data: { value: 1 } });
     });
   });
 });

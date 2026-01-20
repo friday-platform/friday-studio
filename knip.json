@@ -53,7 +53,7 @@
     "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/utils": { "entry": ["src/temp.server.ts!"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
@@ -105,7 +105,7 @@
     "**/$lib/build-info"
   ],
   "ignoreDependencies": ["@std/tar"],
-  "ignoreBinaries": [],
+  "ignoreBinaries": ["svelte-kit"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",

@@ -1,5 +1,5 @@
 import { APICallError } from "@ai-sdk/provider";
-import { assertEquals, assertThrows } from "@std/assert";
+import { expect, it } from "vitest";
 import {
   createErrorCause,
   getErrorDisplayMessage,
@@ -7,7 +7,7 @@ import {
   throwWithCause,
 } from "./error-helpers.ts";
 
-Deno.test("createErrorCause - handles APICallError with status code", () => {
+it("createErrorCause - handles APICallError with status code", () => {
   const error = new APICallError({
     message: "Rate limit exceeded",
     url: "https://api.example.com/v1/chat",
@@ -19,17 +19,17 @@ Deno.test("createErrorCause - handles APICallError with status code", () => {
 
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "RATE_LIMIT_ERROR");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("RATE_LIMIT_ERROR");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 429);
-    assertEquals(cause.url, "https://api.example.com/v1/chat");
-    assertEquals(cause.isRetryable, true);
-    assertEquals(cause.retryAfter, 60);
+    expect(cause.statusCode).toEqual(429);
+    expect(cause.url).toEqual("https://api.example.com/v1/chat");
+    expect(cause.isRetryable).toEqual(true);
+    expect(cause.retryAfter).toEqual(60);
   }
 });
 
-Deno.test("createErrorCause - captures provider message from payload", () => {
+it("createErrorCause - captures provider message from payload", () => {
   const error = new APICallError({
     message: "Authentication error",
     url: "https://api.example.com/v1/chat",
@@ -41,14 +41,14 @@ Deno.test("createErrorCause - captures provider message from payload", () => {
 
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "AUTHENTICATION_ERROR");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("AUTHENTICATION_ERROR");
   if (cause.type === "api") {
-    assertEquals(cause.providerMessage, "invalid x-api-key");
+    expect(cause.providerMessage).toEqual("invalid x-api-key");
   }
 });
 
-Deno.test("createErrorCause - handles 529 overload error", () => {
+it("createErrorCause - handles 529 overload error", () => {
   const error = new APICallError({
     message: "API overloaded",
     url: "https://api.example.com/v1/chat",
@@ -59,15 +59,15 @@ Deno.test("createErrorCause - handles 529 overload error", () => {
 
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "OVERLOADED_ERROR");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("OVERLOADED_ERROR");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 529);
-    assertEquals(cause.isRetryable, true);
+    expect(cause.statusCode).toEqual(529);
+    expect(cause.isRetryable).toEqual(true);
   }
 });
 
-Deno.test("createErrorCause - handles 503 service unavailable error", () => {
+it("createErrorCause - handles 503 service unavailable error", () => {
   const error = new APICallError({
     message: "Service unavailable",
     url: "https://api.openai.com/v1/chat/completions",
@@ -78,15 +78,15 @@ Deno.test("createErrorCause - handles 503 service unavailable error", () => {
 
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "SERVICE_UNAVAILABLE");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("SERVICE_UNAVAILABLE");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 503);
-    assertEquals(cause.isRetryable, true);
+    expect(cause.statusCode).toEqual(503);
+    expect(cause.isRetryable).toEqual(true);
   }
 });
 
-Deno.test("createErrorCause - handles 504 deadline exceeded error", () => {
+it("createErrorCause - handles 504 deadline exceeded error", () => {
   const error = new APICallError({
     message: "Deadline exceeded",
     url: "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent",
@@ -97,67 +97,59 @@ Deno.test("createErrorCause - handles 504 deadline exceeded error", () => {
 
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "DEADLINE_EXCEEDED");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("DEADLINE_EXCEEDED");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 504);
-    assertEquals(cause.isRetryable, false);
+    expect(cause.statusCode).toEqual(504);
+    expect(cause.isRetryable).toEqual(false);
   }
 });
 
-Deno.test("createErrorCause - handles unknown errors", () => {
+it("createErrorCause - handles unknown errors", () => {
   const error = new Error("Something went wrong");
   const cause = createErrorCause(error);
 
-  assertEquals(cause.type, "unknown");
-  assertEquals(cause.code, "UNKNOWN_ERROR");
+  expect(cause.type).toEqual("unknown");
+  expect(cause.code).toEqual("UNKNOWN_ERROR");
   if (cause.type === "unknown") {
-    assertEquals(cause.originalError, "Something went wrong");
+    expect(cause.originalError).toEqual("Something went wrong");
   }
 });
 
-Deno.test("parseErrorCause - parses valid error cause", () => {
+it("parseErrorCause - parses valid error cause", () => {
   const error = new Error("Test error", {
     cause: { type: "api", code: "RATE_LIMIT_ERROR", statusCode: 429 },
   });
 
   const cause = parseErrorCause(error);
 
-  assertEquals(cause?.type, "api");
-  assertEquals(cause?.code, "RATE_LIMIT_ERROR");
+  expect(cause?.type).toEqual("api");
+  expect(cause?.code).toEqual("RATE_LIMIT_ERROR");
 });
 
-Deno.test("parseErrorCause - returns undefined for invalid cause", () => {
+it("parseErrorCause - returns undefined for invalid cause", () => {
   const error = new Error("Test error", { cause: "invalid cause" });
 
   const cause = parseErrorCause(error);
 
-  assertEquals(cause, undefined);
+  expect(cause).toBeUndefined();
 });
 
-Deno.test("throwWithCause - throws error with validated cause", () => {
-  assertThrows(
-    () => {
-      throwWithCause("Test error", { type: "api", code: "TEST_ERROR", statusCode: 500 });
-    },
-    Error,
-    "Test error",
-  );
+it("throwWithCause - throws error with validated cause", () => {
+  expect(() => {
+    throwWithCause("Test error", { type: "api", code: "TEST_ERROR", statusCode: 500 });
+  }).toThrow("Test error");
 });
 
-Deno.test("throwWithCause - wraps Error as cause", () => {
+it("throwWithCause - wraps Error as cause", () => {
   const originalError = new Error("Original error");
 
-  assertThrows(
-    () => {
-      throwWithCause("Wrapped error", originalError);
-    },
-    Error,
-    "Wrapped error",
-  );
+  expect(() => {
+    throwWithCause("Wrapped error", originalError);
+  }).toThrow("Wrapped error");
 });
 
-Deno.test("getErrorDisplayMessage - handles rate limit errors", () => {
+it("getErrorDisplayMessage - handles rate limit errors", () => {
   const errorCause = {
     type: "api" as const,
     code: "RATE_LIMIT_ERROR",
@@ -166,10 +158,10 @@ Deno.test("getErrorDisplayMessage - handles rate limit errors", () => {
   };
 
   const message = getErrorDisplayMessage(errorCause);
-  assertEquals(message, "Rate limit exceeded. Please wait 60 seconds before retrying.");
+  expect(message).toEqual("Rate limit exceeded. Please wait 60 seconds before retrying.");
 });
 
-Deno.test("getErrorDisplayMessage - includes provider message for auth errors", () => {
+it("getErrorDisplayMessage - includes provider message for auth errors", () => {
   const errorCause = {
     type: "api" as const,
     code: "AUTHENTICATION_ERROR",
@@ -178,27 +170,26 @@ Deno.test("getErrorDisplayMessage - includes provider message for auth errors", 
   };
 
   const message = getErrorDisplayMessage(errorCause);
-  assertEquals(message, "Authentication failed: invalid x-api-key");
+  expect(message).toEqual("Authentication failed: invalid x-api-key");
 });
 
-Deno.test("getErrorDisplayMessage - handles network errors", () => {
+it("getErrorDisplayMessage - handles network errors", () => {
   const errorCause = { type: "network" as const, code: "NETWORK_ERROR" };
 
   const message = getErrorDisplayMessage(errorCause);
-  assertEquals(
-    message,
+  expect(message).toEqual(
     "Network connection failed. Please check your internet connection and try again.",
   );
 });
 
-Deno.test("getErrorDisplayMessage - handles unknown errors", () => {
+it("getErrorDisplayMessage - handles unknown errors", () => {
   const errorCause = { type: "unknown" as const, code: "UNKNOWN_ERROR" };
 
   const message = getErrorDisplayMessage(errorCause);
-  assertEquals(message, "An unexpected error occurred. Please try again.");
+  expect(message).toEqual("An unexpected error occurred. Please try again.");
 });
 
-Deno.test("createErrorCause - unwraps APICallError from .errors array (AI SDK RetryError)", () => {
+it("createErrorCause - unwraps APICallError from .errors array (AI SDK RetryError)", () => {
   // Simulate AI SDK's RetryError structure
   const retryError = {
     name: "RetryError",
@@ -216,15 +207,15 @@ Deno.test("createErrorCause - unwraps APICallError from .errors array (AI SDK Re
 
   const cause = createErrorCause(retryError);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "OVERLOADED_ERROR");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("OVERLOADED_ERROR");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 529);
-    assertEquals(cause.isRetryable, true);
+    expect(cause.statusCode).toEqual(529);
+    expect(cause.isRetryable).toEqual(true);
   }
 });
 
-Deno.test("createErrorCause - unwraps APICallError from .cause (Deno std/async retry)", () => {
+it("createErrorCause - unwraps APICallError from .cause (Deno std/async retry)", () => {
   // Simulate @std/async RetryError structure
   const apiCallError = new APICallError({
     message: "Authentication failed",
@@ -239,10 +230,10 @@ Deno.test("createErrorCause - unwraps APICallError from .cause (Deno std/async r
 
   const cause = createErrorCause(retryError);
 
-  assertEquals(cause.type, "api");
-  assertEquals(cause.code, "AUTHENTICATION_ERROR");
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("AUTHENTICATION_ERROR");
   if (cause.type === "api") {
-    assertEquals(cause.statusCode, 401);
-    assertEquals(cause.providerMessage, "invalid api key");
+    expect(cause.statusCode).toEqual(401);
+    expect(cause.providerMessage).toEqual("invalid api key");
   }
 });

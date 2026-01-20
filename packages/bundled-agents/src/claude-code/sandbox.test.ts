@@ -1,34 +1,45 @@
-import { assertEquals, assertExists } from "@std/assert";
-import { exists } from "@std/fs";
+import * as fs from "node:fs/promises";
+import { describe, expect, it } from "vitest";
 import { createSandbox, sandboxOptions } from "./sandbox.ts";
 
-Deno.test("createSandbox creates unique temp dir", async () => {
-  const sandbox = await createSandbox("test-session-1");
+async function exists(path: string): Promise<boolean> {
   try {
-    assertExists(sandbox.workDir);
-    assertEquals(await exists(sandbox.workDir), true);
-    assertEquals(sandbox.workDir.includes("atlas-claude-test-session-1"), true);
-  } finally {
-    await sandbox.cleanup();
+    await fs.access(path);
+    return true;
+  } catch {
+    return false;
   }
-});
+}
 
-Deno.test("cleanup removes directory", async () => {
-  const sandbox = await createSandbox("test-session-2");
-  const dir = sandbox.workDir;
-  assertEquals(await exists(dir), true);
-  await sandbox.cleanup();
-  assertEquals(await exists(dir), false);
-});
+describe("sandbox", () => {
+  it("createSandbox creates unique temp dir", async () => {
+    const sandbox = await createSandbox("test-session-1");
+    try {
+      expect(sandbox.workDir).toBeDefined();
+      expect(await exists(sandbox.workDir)).toBe(true);
+      expect(sandbox.workDir.includes("atlas-claude-test-session-1")).toBe(true);
+    } finally {
+      await sandbox.cleanup();
+    }
+  });
 
-Deno.test("cleanup handles already-deleted dir gracefully", async () => {
-  const sandbox = await createSandbox("test-session-3");
-  await Deno.remove(sandbox.workDir, { recursive: true });
-  // Should not throw
-  await sandbox.cleanup();
-});
+  it("cleanup removes directory", async () => {
+    const sandbox = await createSandbox("test-session-2");
+    const dir = sandbox.workDir;
+    expect(await exists(dir)).toBe(true);
+    await sandbox.cleanup();
+    expect(await exists(dir)).toBe(false);
+  });
 
-Deno.test("sandboxOptions has expected shape", () => {
-  assertEquals(sandboxOptions.enabled, true);
-  assertEquals(sandboxOptions.autoAllowBashIfSandboxed, true);
+  it("cleanup handles already-deleted dir gracefully", async () => {
+    const sandbox = await createSandbox("test-session-3");
+    await fs.rm(sandbox.workDir, { recursive: true });
+    // Should not throw
+    await sandbox.cleanup();
+  });
+
+  it("sandboxOptions has expected shape", () => {
+    expect(sandboxOptions.enabled).toBe(true);
+    expect(sandboxOptions.autoAllowBashIfSandboxed).toBe(true);
+  });
 });

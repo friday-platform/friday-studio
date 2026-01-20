@@ -1,10 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
 import { basename, extname, join } from "@std/path";
+import { openKv } from "../kv.ts";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 import type { ArtifactStorageAdapter } from "./types.ts";
 
@@ -65,7 +66,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
   /** Create artifact with initial revision 1 */
   async create(input: CreateArtifactInput): Promise<Result<Artifact, string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     // Transform input to output by enriching file artifacts
     let artifactData: ArtifactData;
@@ -74,7 +75,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       const fileInput = input.data.data;
 
       try {
-        await Deno.stat(fileInput.path);
+        await stat(fileInput.path);
       } catch (error) {
         return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
       }
@@ -145,7 +146,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     summary: string;
     revisionMessage?: string;
   }): Promise<Result<Artifact, string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const latestRevisionResult = await db.get<number>(keys.latest(input.id));
     if (!latestRevisionResult.value) {
@@ -173,7 +174,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       const fileInput = input.data.data;
 
       try {
-        await Deno.stat(fileInput.path);
+        await stat(fileInput.path);
       } catch (error) {
         return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
       }
@@ -236,7 +237,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
   /** Get artifact by ID (defaults to latest revision) */
   async get(input: { id: string; revision?: number }): Promise<Result<Artifact | null, string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const deletedResult = await db.get<Date>(keys.deleted(input.id));
     if (deletedResult.value) {
@@ -261,7 +262,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     workspaceId: string;
     limit?: number;
   }): Promise<Result<Artifact[], string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
     const limit = input.limit ?? 100;
@@ -287,7 +288,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
   /** List chat artifacts (latest revisions only) */
   async listByChat(input: { chatId: string; limit?: number }): Promise<Result<Artifact[], string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
     const limit = input.limit ?? 100;
@@ -313,7 +314,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
   /** List all artifacts (latest revisions only) */
   async listAll(input: { limit?: number }): Promise<Result<Artifact[], string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
     const limit = input.limit ?? 100;
@@ -344,7 +345,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
   /** Soft delete (data preserved) */
   async deleteArtifact(input: { id: string }): Promise<Result<void, string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
 
     const latestRevisionResult = await db.get<number>(keys.latest(input.id));
     if (!latestRevisionResult.value) {
@@ -386,7 +387,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
    * Separated to allow clean timeout handling at the function level.
    */
   private async doGetManyLatest(input: { ids: string[] }): Promise<Result<Artifact[], string>> {
-    using db = await Deno.openKv(this.kvPath);
+    using db = await openKv(this.kvPath);
     const artifacts: Artifact[] = [];
 
     for (const id of input.ids) {

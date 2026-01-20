@@ -1,5 +1,5 @@
-import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import type { Sql } from "postgres";
+import { describe, expect, it } from "vitest";
 import type { CypherClient } from "../cypher-client.ts";
 import type { CredentialInput } from "../types.ts";
 import { CypherStorageAdapter } from "./cypher-storage-adapter.ts";
@@ -41,15 +41,14 @@ function createMockSql(options?: {
 
   // Add begin method for transaction support (used by withUserContext)
   // @ts-expect-error - Mock doesn't need to match full postgres.js begin signature
-  // deno-lint-ignore require-await
-  mockSql.begin = async <T>(callback: (tx: Sql) => Promise<T>): Promise<T> => {
+  mockSql.begin = <T>(callback: (tx: Sql) => Promise<T>): Promise<T> => {
     return callback(handler as Sql);
   };
 
   return mockSql;
 }
 
-Deno.test("CypherStorageAdapter", async (t) => {
+describe("CypherStorageAdapter", () => {
   const testCredentialInput: CredentialInput = {
     type: "apikey",
     provider: "openai",
@@ -65,7 +64,7 @@ Deno.test("CypherStorageAdapter", async (t) => {
     secret: { access_token: "ya29.test", refresh_token: "1//test" },
   };
 
-  await t.step("save: encrypts secret before storing and returns ID", async () => {
+  it("save: encrypts secret before storing and returns ID", async () => {
     const encryptCalls: string[][] = [];
     const mockCypher = createMockCypher({
       encrypt: (plaintext) => {
@@ -90,27 +89,27 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const result = await adapter.save(testCredentialInput, "user-123");
 
     // Verify returned SaveResult
-    assertEquals(result.id, "pg-generated-id");
-    assertEquals(result.metadata.createdAt, "2024-01-01T00:00:00.000Z");
-    assertEquals(result.metadata.updatedAt, "2024-01-01T00:00:00.000Z");
+    expect(result.id).toEqual("pg-generated-id");
+    expect(result.metadata.createdAt).toEqual("2024-01-01T00:00:00.000Z");
+    expect(result.metadata.updatedAt).toEqual("2024-01-01T00:00:00.000Z");
 
     // Verify encrypt was called with JSON-serialized secret
-    assertEquals(encryptCalls.length, 1);
-    assertEquals(encryptCalls[0], ['{"key":"sk-test-key"}']);
+    expect(encryptCalls.length).toEqual(1);
+    expect(encryptCalls[0]).toEqual(['{"key":"sk-test-key"}']);
 
     // Verify SQL was called with encrypted secret (no id passed - Postgres generates it)
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the INSERT
-    assertEquals(sqlCalls.length, 3);
+    expect(sqlCalls.length).toEqual(3);
     const values = sqlCalls[2]?.values ?? []; // Get values from the INSERT query (third call)
-    assertEquals(values[0], "user-123"); // user_id
-    assertEquals(values[1], "apikey"); // type
-    assertEquals(values[2], "openai"); // provider
-    assertEquals(values[3], "My API Key"); // label
-    assertEquals(values[4], null); // user_identifier (null for apikey)
-    assertEquals(values[5], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
+    expect(values[0]).toEqual("user-123"); // user_id
+    expect(values[1]).toEqual("apikey"); // type
+    expect(values[2]).toEqual("openai"); // provider
+    expect(values[3]).toEqual("My API Key"); // label
+    expect(values[4]).toEqual(null); // user_identifier (null for apikey)
+    expect(values[5]).toEqual('enc:{"key":"sk-test-key"}'); // encrypted_secret
   });
 
-  await t.step("save: persists userIdentifier for OAuth credentials", async () => {
+  it("save: persists userIdentifier for OAuth credentials", async () => {
     const sqlCalls: { query: string; values: unknown[] }[] = [];
     const mockSql = createMockSql({
       queryResult: [
@@ -126,56 +125,48 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
     const result = await adapter.save(testOAuthCredentialInput, "user-123");
 
-    assertEquals(result.id, "oauth-cred-id");
+    expect(result.id).toEqual("oauth-cred-id");
 
     // Verify user_identifier is included in INSERT
     const values = sqlCalls[2]?.values ?? [];
-    assertEquals(values[0], "user-123"); // user_id
-    assertEquals(values[1], "oauth"); // type
-    assertEquals(values[2], "google"); // provider
-    assertEquals(values[3], "test@example.com"); // label
-    assertEquals(values[4], "test@example.com"); // user_identifier
+    expect(values[0]).toEqual("user-123"); // user_id
+    expect(values[1]).toEqual("oauth"); // type
+    expect(values[2]).toEqual("google"); // provider
+    expect(values[3]).toEqual("test@example.com"); // label
+    expect(values[4]).toEqual("test@example.com"); // user_identifier
   });
 
-  await t.step("save: throws on encryption error", async () => {
+  it("save: throws on encryption error", async () => {
     const mockCypher = createMockCypher({
       encrypt: () => Promise.resolve([]), // Returns empty array
     });
     const mockSql = createMockSql();
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.save(testCredentialInput, "user-123"),
-      Error,
+    await expect(adapter.save(testCredentialInput, "user-123")).rejects.toThrow(
       "Failed to encrypt credential: empty response",
     );
   });
 
-  await t.step("save: throws on database error", async () => {
+  it("save: throws on database error", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ throwError: new Error("Database error") });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.save(testCredentialInput, "user-123"),
-      Error,
-      "Database error",
-    );
+    await expect(adapter.save(testCredentialInput, "user-123")).rejects.toThrow("Database error");
   });
 
-  await t.step("save: throws when no row returned", async () => {
+  it("save: throws when no row returned", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ queryResult: [] }); // No rows returned
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.save(testCredentialInput, "user-123"),
-      Error,
+    await expect(adapter.save(testCredentialInput, "user-123")).rejects.toThrow(
       "Failed to create credential: no row returned",
     );
   });
 
-  await t.step("get: decrypts secret on retrieval", async () => {
+  it("get: decrypts secret on retrieval", async () => {
     const decryptCalls: string[][] = [];
     const mockCypher = createMockCypher({
       decrypt: (ciphertext) => {
@@ -204,17 +195,17 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const result = await adapter.get("cred-123", "user-123");
 
     // Verify decrypt was called
-    assertEquals(decryptCalls.length, 1);
-    assertEquals(decryptCalls[0], ['enc:{"key":"sk-test-key"}']);
+    expect(decryptCalls.length).toEqual(1);
+    expect(decryptCalls[0]).toEqual(['enc:{"key":"sk-test-key"}']);
 
     // Verify decrypted result
-    assertExists(result);
-    assertEquals(result.id, "cred-123");
-    assertEquals(result.secret, { key: "sk-test-key" });
-    assertEquals(result.userIdentifier, undefined); // null in DB becomes undefined
+    expect(result).toBeDefined();
+    expect(result!.id).toEqual("cred-123");
+    expect(result!.secret).toEqual({ key: "sk-test-key" });
+    expect(result!.userIdentifier).toEqual(undefined); // null in DB becomes undefined
   });
 
-  await t.step("get: returns userIdentifier for OAuth credentials", async () => {
+  it("get: returns userIdentifier for OAuth credentials", async () => {
     const mockCypher = createMockCypher({
       decrypt: (ciphertext) => Promise.resolve(ciphertext.map((c) => c.replace("enc:", ""))),
     });
@@ -238,30 +229,30 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.get("oauth-cred-123", "user-123");
 
-    assertExists(result);
-    assertEquals(result.id, "oauth-cred-123");
-    assertEquals(result.userIdentifier, "test@example.com");
-    assertEquals(result.type, "oauth");
+    expect(result).toBeDefined();
+    expect(result!.id).toEqual("oauth-cred-123");
+    expect(result!.userIdentifier).toEqual("test@example.com");
+    expect(result!.type).toEqual("oauth");
   });
 
-  await t.step("get: returns null for not found", async () => {
+  it("get: returns null for not found", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ queryResult: [] });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.get("nonexistent", "user-123");
-    assertEquals(result, null);
+    expect(result).toEqual(null);
   });
 
-  await t.step("get: throws on database error", async () => {
+  it("get: throws on database error", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ throwError: new Error("Connection failed") });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(() => adapter.get("cred-123", "user-123"), Error, "Connection failed");
+    await expect(adapter.get("cred-123", "user-123")).rejects.toThrow("Connection failed");
   });
 
-  await t.step("list: does not call decrypt", async () => {
+  it("list: does not call decrypt", async () => {
     let decryptCalled = false;
     const mockCypher = createMockCypher({
       decrypt: () => {
@@ -287,14 +278,14 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.list("apikey", "user-123");
 
-    assertEquals(decryptCalled, false);
-    assertEquals(result.length, 1);
-    assertEquals(result[0]?.id, "cred-1");
+    expect(decryptCalled).toEqual(false);
+    expect(result.length).toEqual(1);
+    expect(result[0]?.id).toEqual("cred-1");
     // Summaries should not have secret field
-    assertEquals("secret" in (result[0] ?? {}), false);
+    expect("secret" in (result[0] ?? {})).toEqual(false);
   });
 
-  await t.step("list: returns userIdentifier in summaries", async () => {
+  it("list: returns userIdentifier in summaries", async () => {
     const mockSql = createMockSql({
       queryResult: [
         {
@@ -312,12 +303,12 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
     const result = await adapter.list("oauth", "user-123");
 
-    assertEquals(result.length, 1);
-    assertEquals(result[0]?.id, "oauth-cred-1");
-    assertEquals(result[0]?.userIdentifier, "test@example.com");
+    expect(result.length).toEqual(1);
+    expect(result[0]?.id).toEqual("oauth-cred-1");
+    expect(result[0]?.userIdentifier).toEqual("test@example.com");
   });
 
-  await t.step("update: encrypts secret and returns metadata", async () => {
+  it("update: encrypts secret and returns metadata", async () => {
     const encryptCalls: string[][] = [];
     const mockCypher = createMockCypher({
       encrypt: (plaintext) => {
@@ -336,65 +327,59 @@ Deno.test("CypherStorageAdapter", async (t) => {
     const metadata = await adapter.update("cred-123", testCredentialInput, "user-123");
 
     // Verify metadata returned
-    assertEquals(metadata.createdAt, "2024-01-01T00:00:00.000Z");
-    assertEquals(metadata.updatedAt, "2024-01-02T00:00:00.000Z");
+    expect(metadata.createdAt).toEqual("2024-01-01T00:00:00.000Z");
+    expect(metadata.updatedAt).toEqual("2024-01-02T00:00:00.000Z");
 
     // Verify encrypt was called
-    assertEquals(encryptCalls.length, 1);
-    assertEquals(encryptCalls[0], ['{"key":"sk-test-key"}']);
+    expect(encryptCalls.length).toEqual(1);
+    expect(encryptCalls[0]).toEqual(['{"key":"sk-test-key"}']);
 
     // Verify SQL UPDATE was called
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
-    assertEquals(sqlCalls.length, 3);
-    assertEquals(sqlCalls[2]?.query.includes("UPDATE"), true);
-    assertEquals(sqlCalls[2]?.query.includes("deleted_at IS NULL"), true);
+    expect(sqlCalls.length).toEqual(3);
+    expect(sqlCalls[2]?.query.includes("UPDATE")).toEqual(true);
+    expect(sqlCalls[2]?.query.includes("deleted_at IS NULL")).toEqual(true);
     const values = sqlCalls[2]?.values ?? [];
-    assertEquals(values[0], "apikey"); // type
-    assertEquals(values[1], "openai"); // provider
-    assertEquals(values[2], "My API Key"); // label
-    assertEquals(values[3], null); // user_identifier (null for apikey)
-    assertEquals(values[4], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
-    assertEquals(values[5], "cred-123"); // id
-    assertEquals(values[6], "user-123"); // user_id
+    expect(values[0]).toEqual("apikey"); // type
+    expect(values[1]).toEqual("openai"); // provider
+    expect(values[2]).toEqual("My API Key"); // label
+    expect(values[3]).toEqual(null); // user_identifier (null for apikey)
+    expect(values[4]).toEqual('enc:{"key":"sk-test-key"}'); // encrypted_secret
+    expect(values[5]).toEqual("cred-123"); // id
+    expect(values[6]).toEqual("user-123"); // user_id
   });
 
-  await t.step("update: throws on encryption error", async () => {
+  it("update: throws on encryption error", async () => {
     const mockCypher = createMockCypher({ encrypt: () => Promise.resolve([]) });
     const mockSql = createMockSql();
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.update("cred-123", testCredentialInput, "user-123"),
-      Error,
+    await expect(adapter.update("cred-123", testCredentialInput, "user-123")).rejects.toThrow(
       "Failed to encrypt credential: empty response",
     );
   });
 
-  await t.step("update: throws on database error", async () => {
+  it("update: throws on database error", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ throwError: new Error("Update failed") });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.update("cred-123", testCredentialInput, "user-123"),
-      Error,
+    await expect(adapter.update("cred-123", testCredentialInput, "user-123")).rejects.toThrow(
       "Update failed",
     );
   });
 
-  await t.step("update: throws when credential not found", async () => {
+  it("update: throws when credential not found", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ queryResult: [] }); // No rows returned
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(
-      () => adapter.update("nonexistent", testCredentialInput, "user-123"),
-      Error,
+    await expect(adapter.update("nonexistent", testCredentialInput, "user-123")).rejects.toThrow(
       "Credential not found",
     );
   });
 
-  await t.step("delete: soft deletes by setting deleted_at", async () => {
+  it("delete: soft deletes by setting deleted_at", async () => {
     const sqlCalls: { query: string; values: unknown[] }[] = [];
     const mockSql = createMockSql({ trackCalls: sqlCalls });
 
@@ -402,20 +387,20 @@ Deno.test("CypherStorageAdapter", async (t) => {
     await adapter.delete("cred-123", "user-456");
 
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
-    assertEquals(sqlCalls.length, 3);
+    expect(sqlCalls.length).toEqual(3);
     // Verify it's an UPDATE (soft delete), not DELETE
-    assertEquals(sqlCalls[2]?.query.includes("UPDATE"), true);
-    assertEquals(sqlCalls[2]?.query.includes("deleted_at"), true);
+    expect(sqlCalls[2]?.query.includes("UPDATE")).toEqual(true);
+    expect(sqlCalls[2]?.query.includes("deleted_at")).toEqual(true);
     const values = sqlCalls[2]?.values ?? [];
-    assertEquals(values[0], "cred-123"); // id
-    assertEquals(values[1], "user-456"); // user_id
+    expect(values[0]).toEqual("cred-123"); // id
+    expect(values[1]).toEqual("user-456"); // user_id
   });
 
-  await t.step("delete: throws on database error", async () => {
+  it("delete: throws on database error", async () => {
     const mockCypher = createMockCypher();
     const mockSql = createMockSql({ throwError: new Error("Delete failed") });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
-    await assertRejects(() => adapter.delete("cred-123", "user-123"), Error, "Delete failed");
+    await expect(adapter.delete("cred-123", "user-123")).rejects.toThrow("Delete failed");
   });
 });

@@ -1,4 +1,7 @@
-import { assertEquals } from "@std/assert";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { describe, expect, it } from "vitest";
 import { LocalStorageAdapter } from "./local-adapter.ts";
 import { assertArtifactEqual, assertResultFail, assertResultOk } from "./test-utils/assertions.ts";
 import {
@@ -18,737 +21,753 @@ import {
 
 // Helper to create a unique temp KV database for each test
 async function createTestAdapter(): Promise<LocalStorageAdapter> {
-  const tempPath = await Deno.makeTempFile({ suffix: ".db" });
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-adapter-test-"));
+  const tempPath = path.join(tempDir, "test.db");
   return new LocalStorageAdapter(tempPath);
 }
 
 //
 // 1. CRUD Operations
 //
+describe("LocalAdapter: CRUD", () => {
+  it("create summary artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
 
-Deno.test("LocalAdapter: CRUD - create summary artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
+    const result = await adapter.create(input);
 
-  const result = await adapter.create(input);
-
-  assertResultOk(result);
-  assertArtifactEqual(result.data, {
-    type: "summary",
-    revision: 1,
-    title: input.title,
-    summary: input.summary,
-  });
-  assertEquals(result.data.id.length, 36); // UUID
-});
-
-Deno.test("LocalAdapter: CRUD - create file artifact with MIME type detection", async () => {
-  const adapter = await createTestAdapter();
-  const tempFile = await createTempJsonFile({ test: "data" });
-
-  const input = createFileArtifactInput(tempFile);
-  const result = await adapter.create(input);
-
-  assertResultOk(result);
-  assertEquals(result.data.type, "file");
-  assertEquals(result.data.revision, 1);
-
-  if (result.data.data.type === "file") {
-    assertEquals(result.data.data.data.mimeType, "application/json");
-    assertEquals(result.data.data.data.path, tempFile);
-  }
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: CRUD - create file artifact fails when file doesn't exist", async () => {
-  const adapter = await createTestAdapter();
-  const input = createFileArtifactInput("/nonexistent/file.json");
-
-  const result = await adapter.create(input);
-
-  assertResultFail(result);
-  assertEquals(result.error.includes("not found"), true);
-});
-
-Deno.test("LocalAdapter: CRUD - get artifact by ID (latest revision)", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  const getResult = await adapter.get({ id: artifactId });
-
-  assertResultOk(getResult);
-  assertEquals(getResult.data?.id, artifactId);
-  assertEquals(getResult.data?.revision, 1);
-});
-
-Deno.test("LocalAdapter: CRUD - get artifact by specific revision", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  // Update to create revision 2
-  await adapter.update({ id: artifactId, data: input.data, summary: "Updated summary" });
-
-  // Get revision 1 specifically
-  const getResult = await adapter.get({ id: artifactId, revision: 1 });
-
-  assertResultOk(getResult);
-  assertEquals(getResult.data?.revision, 1);
-  assertEquals(getResult.data?.summary, input.summary);
-});
-
-Deno.test("LocalAdapter: CRUD - get deleted artifact returns null", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.deleteArtifact({ id: artifactId });
-
-  const getResult = await adapter.get({ id: artifactId });
-
-  assertResultOk(getResult);
-  assertEquals(getResult.data, null);
-});
-
-Deno.test("LocalAdapter: CRUD - get non-existent artifact returns null", async () => {
-  const adapter = await createTestAdapter();
-
-  const result = await adapter.get({ id: "non-existent-id" });
-
-  assertResultOk(result);
-  assertEquals(result.data, null);
-});
-
-Deno.test("LocalAdapter: CRUD - update creates new revision", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  const updateResult = await adapter.update({
-    id: artifactId,
-    data: input.data,
-    summary: "Updated summary",
-    revisionMessage: "Test update",
+    assertResultOk(result);
+    assertArtifactEqual(result.data, {
+      type: "summary",
+      revision: 1,
+      title: input.title,
+      summary: input.summary,
+    });
+    expect(result.data.id.length).toEqual(36); // UUID
   });
 
-  assertResultOk(updateResult);
-  assertEquals(updateResult.data.revision, 2);
-  assertEquals(updateResult.data.summary, "Updated summary");
-  assertEquals(updateResult.data.revisionMessage, "Test update");
+  it("create file artifact with MIME type detection", async () => {
+    const adapter = await createTestAdapter();
+    const tempFile = await createTempJsonFile({ test: "data" });
+
+    const input = createFileArtifactInput(tempFile);
+    const result = await adapter.create(input);
+
+    assertResultOk(result);
+    expect(result.data.type).toEqual("file");
+    expect(result.data.revision).toEqual(1);
+
+    if (result.data.data.type === "file") {
+      expect(result.data.data.data.mimeType).toEqual("application/json");
+      expect(result.data.data.data.path).toEqual(tempFile);
+    }
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("create file artifact fails when file doesn't exist", async () => {
+    const adapter = await createTestAdapter();
+    const input = createFileArtifactInput("/nonexistent/file.json");
+
+    const result = await adapter.create(input);
+
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
+  });
+
+  it("get artifact by ID (latest revision)", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    const getResult = await adapter.get({ id: artifactId });
+
+    assertResultOk(getResult);
+    expect(getResult.data?.id).toEqual(artifactId);
+    expect(getResult.data?.revision).toEqual(1);
+  });
+
+  it("get artifact by specific revision", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    // Update to create revision 2
+    await adapter.update({ id: artifactId, data: input.data, summary: "Updated summary" });
+
+    // Get revision 1 specifically
+    const getResult = await adapter.get({ id: artifactId, revision: 1 });
+
+    assertResultOk(getResult);
+    expect(getResult.data?.revision).toEqual(1);
+    expect(getResult.data?.summary).toEqual(input.summary);
+  });
+
+  it("get deleted artifact returns null", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.deleteArtifact({ id: artifactId });
+
+    const getResult = await adapter.get({ id: artifactId });
+
+    assertResultOk(getResult);
+    expect(getResult.data).toEqual(null);
+  });
+
+  it("get non-existent artifact returns null", async () => {
+    const adapter = await createTestAdapter();
+
+    const result = await adapter.get({ id: "non-existent-id" });
+
+    assertResultOk(result);
+    expect(result.data).toEqual(null);
+  });
+
+  it("update creates new revision", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    const updateResult = await adapter.update({
+      id: artifactId,
+      data: input.data,
+      summary: "Updated summary",
+      revisionMessage: "Test update",
+    });
+
+    assertResultOk(updateResult);
+    expect(updateResult.data.revision).toEqual(2);
+    expect(updateResult.data.summary).toEqual("Updated summary");
+    expect(updateResult.data.revisionMessage).toEqual("Test update");
+  });
 });
 
 //
 // 2. Revision Management
 //
 
-Deno.test("LocalAdapter: Revisions - create starts at revision 1", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
+describe("LocalAdapter: Revisions", () => {
+  it("create starts at revision 1", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.revision, 1);
-});
-
-Deno.test("LocalAdapter: Revisions - update increments revision sequentially", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  const update1 = await adapter.update({ id: artifactId, data: input.data, summary: "Update 1" });
-  assertResultOk(update1);
-  assertEquals(update1.data.revision, 2);
-
-  const update2 = await adapter.update({ id: artifactId, data: input.data, summary: "Update 2" });
-  assertResultOk(update2);
-  assertEquals(update2.data.revision, 3);
-});
-
-Deno.test("LocalAdapter: Revisions - multiple updates create distinct revisions", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
-  await adapter.update({ id: artifactId, data: input.data, summary: "v3" });
-
-  const rev1 = await adapter.get({ id: artifactId, revision: 1 });
-  const rev2 = await adapter.get({ id: artifactId, revision: 2 });
-  const rev3 = await adapter.get({ id: artifactId, revision: 3 });
-
-  assertResultOk(rev1);
-  assertResultOk(rev2);
-  assertResultOk(rev3);
-
-  assertEquals(rev1.data?.summary, input.summary);
-  assertEquals(rev2.data?.summary, "v2");
-  assertEquals(rev3.data?.summary, "v3");
-});
-
-Deno.test("LocalAdapter: Revisions - can retrieve any historical revision", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
-  await adapter.update({ id: artifactId, data: input.data, summary: "v3" });
-
-  // Get each revision
-  for (let rev = 1; rev <= 3; rev++) {
-    const result = await adapter.get({ id: artifactId, revision: rev });
     assertResultOk(result);
-    assertEquals(result.data?.revision, rev);
-  }
-});
-
-Deno.test("LocalAdapter: Revisions - latest revision pointer updates correctly", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  // Get latest (should be rev 1)
-  const latest1 = await adapter.get({ id: artifactId });
-  assertResultOk(latest1);
-  assertEquals(latest1.data?.revision, 1);
-
-  // Update
-  await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
-
-  // Get latest (should be rev 2)
-  const latest2 = await adapter.get({ id: artifactId });
-  assertResultOk(latest2);
-  assertEquals(latest2.data?.revision, 2);
-});
-
-Deno.test("LocalAdapter: Revisions - revision message is stored and retrievable", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  const updateResult = await adapter.update({
-    id: artifactId,
-    data: input.data,
-    summary: "Updated",
-    revisionMessage: "Fixed bug #123",
+    expect(result.data.revision).toEqual(1);
   });
 
-  assertResultOk(updateResult);
-  assertEquals(updateResult.data.revisionMessage, "Fixed bug #123");
+  it("update increments revision sequentially", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    const update1 = await adapter.update({ id: artifactId, data: input.data, summary: "Update 1" });
+    assertResultOk(update1);
+    expect(update1.data.revision).toEqual(2);
+
+    const update2 = await adapter.update({ id: artifactId, data: input.data, summary: "Update 2" });
+    assertResultOk(update2);
+    expect(update2.data.revision).toEqual(3);
+  });
+
+  it("multiple updates create distinct revisions", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
+    await adapter.update({ id: artifactId, data: input.data, summary: "v3" });
+
+    const rev1 = await adapter.get({ id: artifactId, revision: 1 });
+    const rev2 = await adapter.get({ id: artifactId, revision: 2 });
+    const rev3 = await adapter.get({ id: artifactId, revision: 3 });
+
+    assertResultOk(rev1);
+    assertResultOk(rev2);
+    assertResultOk(rev3);
+
+    expect(rev1.data?.summary).toEqual(input.summary);
+    expect(rev2.data?.summary).toEqual("v2");
+    expect(rev3.data?.summary).toEqual("v3");
+  });
+
+  it("can retrieve any historical revision", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
+    await adapter.update({ id: artifactId, data: input.data, summary: "v3" });
+
+    // Get each revision
+    for (let rev = 1; rev <= 3; rev++) {
+      const result = await adapter.get({ id: artifactId, revision: rev });
+      assertResultOk(result);
+      expect(result.data?.revision).toEqual(rev);
+    }
+  });
+
+  it("latest revision pointer updates correctly", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    // Get latest (should be rev 1)
+    const latest1 = await adapter.get({ id: artifactId });
+    assertResultOk(latest1);
+    expect(latest1.data?.revision).toEqual(1);
+
+    // Update
+    await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
+
+    // Get latest (should be rev 2)
+    const latest2 = await adapter.get({ id: artifactId });
+    assertResultOk(latest2);
+    expect(latest2.data?.revision).toEqual(2);
+  });
+
+  it("revision message is stored and retrievable", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    const updateResult = await adapter.update({
+      id: artifactId,
+      data: input.data,
+      summary: "Updated",
+      revisionMessage: "Fixed bug #123",
+    });
+
+    assertResultOk(updateResult);
+    expect(updateResult.data.revisionMessage).toEqual("Fixed bug #123");
+  });
 });
 
 //
 // 3. Soft Delete
 //
 
-Deno.test("LocalAdapter: Delete - marks artifact as deleted", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
+describe("LocalAdapter: Delete", () => {
+  it("marks artifact as deleted", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
 
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
 
-  const deleteResult = await adapter.deleteArtifact({ id: artifactId });
+    const deleteResult = await adapter.deleteArtifact({ id: artifactId });
 
-  assertResultOk(deleteResult);
-});
-
-Deno.test("LocalAdapter: Delete - preserves all revision data", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
-  await adapter.deleteArtifact({ id: artifactId });
-
-  // Data still exists in KV, just marked as deleted
-  // (We can't directly test this without accessing internal KV, so we verify
-  // that the delete operation succeeds and get returns null)
-  const getResult = await adapter.get({ id: artifactId });
-  assertResultOk(getResult);
-  assertEquals(getResult.data, null);
-});
-
-Deno.test("LocalAdapter: Delete - get after delete returns null", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.deleteArtifact({ id: artifactId });
-
-  const getResult = await adapter.get({ id: artifactId });
-  assertResultOk(getResult);
-  assertEquals(getResult.data, null);
-});
-
-Deno.test("LocalAdapter: Delete - update deleted artifact fails", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
-
-  const createResult = await adapter.create(input);
-  assertResultOk(createResult);
-  const artifactId = createResult.data.id;
-
-  await adapter.deleteArtifact({ id: artifactId });
-
-  const updateResult = await adapter.update({
-    id: artifactId,
-    data: input.data,
-    summary: "Should fail",
+    assertResultOk(deleteResult);
   });
 
-  assertResultFail(updateResult);
-  assertEquals(updateResult.error.includes("deleted"), true);
+  it("preserves all revision data", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.update({ id: artifactId, data: input.data, summary: "v2" });
+    await adapter.deleteArtifact({ id: artifactId });
+
+    // Data still exists in KV, just marked as deleted
+    // (We can't directly test this without accessing internal KV, so we verify
+    // that the delete operation succeeds and get returns null)
+    const getResult = await adapter.get({ id: artifactId });
+    assertResultOk(getResult);
+    expect(getResult.data).toEqual(null);
+  });
+
+  it("get after delete returns null", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.deleteArtifact({ id: artifactId });
+
+    const getResult = await adapter.get({ id: artifactId });
+    assertResultOk(getResult);
+    expect(getResult.data).toEqual(null);
+  });
+
+  it("update deleted artifact fails", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
+
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    const artifactId = createResult.data.id;
+
+    await adapter.deleteArtifact({ id: artifactId });
+
+    const updateResult = await adapter.update({
+      id: artifactId,
+      data: input.data,
+      summary: "Should fail",
+    });
+
+    assertResultFail(updateResult);
+    expect(updateResult.error.includes("deleted")).toEqual(true);
+  });
 });
 
 //
 // 4. List Operations
 //
 
-Deno.test("LocalAdapter: List - listAll returns latest revisions only", async () => {
-  const adapter = await createTestAdapter();
+describe("LocalAdapter: List", () => {
+  it("listAll returns latest revisions only", async () => {
+    const adapter = await createTestAdapter();
 
-  const artifact1 = await adapter.create(createSummaryArtifactInput({ title: "A1" }));
-  assertResultOk(artifact1);
-  const id1 = artifact1.data.id;
+    const artifact1 = await adapter.create(createSummaryArtifactInput({ title: "A1" }));
+    assertResultOk(artifact1);
+    const id1 = artifact1.data.id;
 
-  const artifact2 = await adapter.create(createSummaryArtifactInput({ title: "A2" }));
-  assertResultOk(artifact2);
+    const artifact2 = await adapter.create(createSummaryArtifactInput({ title: "A2" }));
+    assertResultOk(artifact2);
 
-  // Update artifact1 to create revision 2
-  await adapter.update({ id: id1, data: artifact1.data.data, summary: "Updated" });
+    // Update artifact1 to create revision 2
+    await adapter.update({ id: id1, data: artifact1.data.data, summary: "Updated" });
 
-  const listResult = await adapter.listAll({});
-  assertResultOk(listResult);
+    const listResult = await adapter.listAll({});
+    assertResultOk(listResult);
 
-  assertEquals(listResult.data.length, 2);
+    expect(listResult.data.length).toEqual(2);
 
-  // Find artifact1 in list and verify it's revision 2
-  const a1 = listResult.data.find((a) => a.id === id1);
-  assertEquals(a1?.revision, 2);
-});
+    // Find artifact1 in list and verify it's revision 2
+    const a1 = listResult.data.find((a) => a.id === id1);
+    expect(a1?.revision).toEqual(2);
+  });
 
-Deno.test("LocalAdapter: List - listByWorkspace filters correctly", async () => {
-  const adapter = await createTestAdapter();
+  it("listByWorkspace filters correctly", async () => {
+    const adapter = await createTestAdapter();
 
-  await adapter.create(createSummaryArtifactInput({ workspaceId: "ws-1", title: "WS1 Artifact" }));
-  await adapter.create(createSummaryArtifactInput({ workspaceId: "ws-2", title: "WS2 Artifact" }));
-  await adapter.create(
-    createSummaryArtifactInput({ workspaceId: "ws-1", title: "WS1 Artifact 2" }),
-  );
+    await adapter.create(
+      createSummaryArtifactInput({ workspaceId: "ws-1", title: "WS1 Artifact" }),
+    );
+    await adapter.create(
+      createSummaryArtifactInput({ workspaceId: "ws-2", title: "WS2 Artifact" }),
+    );
+    await adapter.create(
+      createSummaryArtifactInput({ workspaceId: "ws-1", title: "WS1 Artifact 2" }),
+    );
 
-  const result = await adapter.listByWorkspace({ workspaceId: "ws-1" });
+    const result = await adapter.listByWorkspace({ workspaceId: "ws-1" });
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 2);
-  assertEquals(
-    result.data.every((a) => a.workspaceId === "ws-1"),
-    true,
-  );
-});
+    assertResultOk(result);
+    expect(result.data.length).toEqual(2);
+    expect(result.data.every((a) => a.workspaceId === "ws-1")).toEqual(true);
+  });
 
-Deno.test("LocalAdapter: List - listByChat filters correctly", async () => {
-  const adapter = await createTestAdapter();
+  it("listByChat filters correctly", async () => {
+    const adapter = await createTestAdapter();
 
-  await adapter.create(createSummaryArtifactInput({ chatId: "chat-1" }));
-  await adapter.create(createSummaryArtifactInput({ chatId: "chat-2" }));
-  await adapter.create(createSummaryArtifactInput({ chatId: "chat-1" }));
+    await adapter.create(createSummaryArtifactInput({ chatId: "chat-1" }));
+    await adapter.create(createSummaryArtifactInput({ chatId: "chat-2" }));
+    await adapter.create(createSummaryArtifactInput({ chatId: "chat-1" }));
 
-  const result = await adapter.listByChat({ chatId: "chat-1" });
+    const result = await adapter.listByChat({ chatId: "chat-1" });
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 2);
-  assertEquals(
-    result.data.every((a) => a.chatId === "chat-1"),
-    true,
-  );
-});
+    assertResultOk(result);
+    expect(result.data.length).toEqual(2);
+    expect(result.data.every((a) => a.chatId === "chat-1")).toEqual(true);
+  });
 
-Deno.test("LocalAdapter: List - respects limit parameter", async () => {
-  const adapter = await createTestAdapter();
+  it("respects limit parameter", async () => {
+    const adapter = await createTestAdapter();
 
-  for (let i = 0; i < 10; i++) {
-    await adapter.create(createSummaryArtifactInput({ title: `Artifact ${i}` }));
-  }
+    for (let i = 0; i < 10; i++) {
+      await adapter.create(createSummaryArtifactInput({ title: `Artifact ${i}` }));
+    }
 
-  const result = await adapter.listAll({ limit: 5 });
+    const result = await adapter.listAll({ limit: 5 });
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 5);
-});
+    assertResultOk(result);
+    expect(result.data.length).toEqual(5);
+  });
 
-Deno.test("LocalAdapter: List - excludes deleted artifacts", async () => {
-  const adapter = await createTestAdapter();
+  it("excludes deleted artifacts", async () => {
+    const adapter = await createTestAdapter();
 
-  const artifact1 = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(artifact1);
+    const artifact1 = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(artifact1);
 
-  const artifact2 = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(artifact2);
+    const artifact2 = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(artifact2);
 
-  await adapter.deleteArtifact({ id: artifact1.data.id });
+    await adapter.deleteArtifact({ id: artifact1.data.id });
 
-  const result = await adapter.listAll({});
+    const result = await adapter.listAll({});
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 1);
-  assertEquals(result.data[0]?.id, artifact2.data.id);
-});
+    assertResultOk(result);
+    expect(result.data.length).toEqual(1);
+    expect(result.data[0]?.id).toEqual(artifact2.data.id);
+  });
 
-Deno.test("LocalAdapter: List - handles empty results", async () => {
-  const adapter = await createTestAdapter();
+  it("handles empty results", async () => {
+    const adapter = await createTestAdapter();
 
-  const result = await adapter.listAll({});
+    const result = await adapter.listAll({});
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 0);
+    assertResultOk(result);
+    expect(result.data.length).toEqual(0);
+  });
 });
 
 //
 // 5. Batch Operations
 //
 
-Deno.test("LocalAdapter: Batch - getManyLatest with empty array returns empty", async () => {
-  const adapter = await createTestAdapter();
+describe("LocalAdapter: Batch", () => {
+  it("getManyLatest with empty array returns empty", async () => {
+    const adapter = await createTestAdapter();
 
-  const result = await adapter.getManyLatest({ ids: [] });
+    const result = await adapter.getManyLatest({ ids: [] });
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 0);
-});
-
-Deno.test("LocalAdapter: Batch - getManyLatest with valid IDs", async () => {
-  const adapter = await createTestAdapter();
-
-  const ids = [];
-  for (let i = 0; i < 3; i++) {
-    const result = await adapter.create(createSummaryArtifactInput({ title: `A${i}` }));
     assertResultOk(result);
-    ids.push(result.data.id);
-  }
-
-  const batchResult = await adapter.getManyLatest({ ids });
-
-  assertResultOk(batchResult);
-  assertEquals(batchResult.data.length, 3);
-});
-
-Deno.test("LocalAdapter: Batch - getManyLatest skips deleted artifacts", async () => {
-  const adapter = await createTestAdapter();
-
-  const a1 = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(a1);
-  const a2 = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(a2);
-
-  await adapter.deleteArtifact({ id: a1.data.id });
-
-  const result = await adapter.getManyLatest({ ids: [a1.data.id, a2.data.id] });
-
-  assertResultOk(result);
-  assertEquals(result.data.length, 1);
-  assertEquals(result.data[0]?.id, a2.data.id);
-});
-
-Deno.test("LocalAdapter: Batch - getManyLatest skips missing artifacts", async () => {
-  const adapter = await createTestAdapter();
-
-  const a1 = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(a1);
-
-  const result = await adapter.getManyLatest({
-    ids: [a1.data.id, "non-existent-1", "non-existent-2"],
+    expect(result.data.length).toEqual(0);
   });
 
-  assertResultOk(result);
-  assertEquals(result.data.length, 1);
-  assertEquals(result.data[0]?.id, a1.data.id);
+  it("getManyLatest with valid IDs", async () => {
+    const adapter = await createTestAdapter();
+
+    const ids = [];
+    for (let i = 0; i < 3; i++) {
+      const result = await adapter.create(createSummaryArtifactInput({ title: `A${i}` }));
+      assertResultOk(result);
+      ids.push(result.data.id);
+    }
+
+    const batchResult = await adapter.getManyLatest({ ids });
+
+    assertResultOk(batchResult);
+    expect(batchResult.data.length).toEqual(3);
+  });
+
+  it("getManyLatest skips deleted artifacts", async () => {
+    const adapter = await createTestAdapter();
+
+    const a1 = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(a1);
+    const a2 = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(a2);
+
+    await adapter.deleteArtifact({ id: a1.data.id });
+
+    const result = await adapter.getManyLatest({ ids: [a1.data.id, a2.data.id] });
+
+    assertResultOk(result);
+    expect(result.data.length).toEqual(1);
+    expect(result.data[0]?.id).toEqual(a2.data.id);
+  });
+
+  it("getManyLatest skips missing artifacts", async () => {
+    const adapter = await createTestAdapter();
+
+    const a1 = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(a1);
+
+    const result = await adapter.getManyLatest({
+      ids: [a1.data.id, "non-existent-1", "non-existent-2"],
+    });
+
+    assertResultOk(result);
+    expect(result.data.length).toEqual(1);
+    expect(result.data[0]?.id).toEqual(a1.data.id);
+  });
 });
 
 //
 // 6. File Handling
 //
 
-Deno.test("LocalAdapter: Files - readFileContents for JSON file", async () => {
-  const adapter = await createTestAdapter();
-  const testData = { message: "hello world", number: 42 };
-  const tempFile = await createTempJsonFile(testData);
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultOk(readResult);
-  assertEquals(JSON.parse(readResult.data), testData);
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents for CSV file", async () => {
-  const adapter = await createTestAdapter();
-  const tempFile = await createTempCsvFile([
-    ["name", "age"],
-    ["Alice", "30"],
-    ["Bob", "25"],
-  ]);
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultOk(readResult);
-  assertEquals(readResult.data.includes("Alice"), true);
-  assertEquals(readResult.data.includes("Bob"), true);
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents for plain text file", async () => {
-  const adapter = await createTestAdapter();
-  const testContent = "Hello, world!\nThis is a test file.";
-  const tempFile = await createTempTextFile(testContent);
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultOk(readResult);
-  assertEquals(readResult.data, testContent);
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents for markdown file", async () => {
-  const adapter = await createTestAdapter();
-  const testContent = "# Heading\n\n- Item 1\n- Item 2\n\n**Bold text**";
-  const tempFile = await createTempMarkdownFile(testContent);
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultOk(readResult);
-  assertEquals(readResult.data, testContent);
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents fails for unsupported MIME types", async () => {
-  const adapter = await createTestAdapter();
-  const tempFile = await Deno.makeTempFile({ suffix: ".bin" });
-  await Deno.writeFile(tempFile, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultFail(readResult);
-  assertEquals(readResult.error.includes("Unsupported mime type"), true);
-
-  await cleanupTempFile(tempFile);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents fails for non-file artifacts", async () => {
-  const adapter = await createTestAdapter();
-
-  const createResult = await adapter.create(createSummaryArtifactInput());
-  assertResultOk(createResult);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultFail(readResult);
-  assertEquals(readResult.error.includes("not a file artifact"), true);
-});
-
-Deno.test("LocalAdapter: Files - readFileContents fails for missing file", async () => {
-  const adapter = await createTestAdapter();
-  const tempFile = await createTempJsonFile({ test: "data" });
-
-  const createResult = await adapter.create(createFileArtifactInput(tempFile));
-  assertResultOk(createResult);
-
-  // Delete the file
-  await Deno.remove(tempFile);
-
-  const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-  assertResultFail(readResult);
-  assertEquals(readResult.error.includes("Failed to read file"), true);
-});
-
-Deno.test("LocalAdapter: Files - MIME type detection for various extensions", async () => {
-  const adapter = await createTestAdapter();
-
-  const testCases = [
-    { ext: ".json", expected: "application/json" },
-    { ext: ".csv", expected: "text/csv" },
-    { ext: ".txt", expected: "text/plain" },
-  ];
-
-  for (const testCase of testCases) {
-    const tempFile = await Deno.makeTempFile({ suffix: testCase.ext });
-    await Deno.writeTextFile(tempFile, "test content");
+describe("LocalAdapter: Files", () => {
+  it("readFileContents for JSON file", async () => {
+    const adapter = await createTestAdapter();
+    const testData = { message: "hello world", number: 42 };
+    const tempFile = await createTempJsonFile(testData);
 
     const createResult = await adapter.create(createFileArtifactInput(tempFile));
     assertResultOk(createResult);
 
-    if (createResult.data.data.type === "file") {
-      assertEquals(createResult.data.data.data.mimeType, testCase.expected);
-    }
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultOk(readResult);
+    expect(JSON.parse(readResult.data)).toEqual(testData);
 
     await cleanupTempFile(tempFile);
-  }
+  });
+
+  it("readFileContents for CSV file", async () => {
+    const adapter = await createTestAdapter();
+    const tempFile = await createTempCsvFile([
+      ["name", "age"],
+      ["Alice", "30"],
+      ["Bob", "25"],
+    ]);
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultOk(readResult);
+    expect(readResult.data.includes("Alice")).toEqual(true);
+    expect(readResult.data.includes("Bob")).toEqual(true);
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("readFileContents for plain text file", async () => {
+    const adapter = await createTestAdapter();
+    const testContent = "Hello, world!\nThis is a test file.";
+    const tempFile = await createTempTextFile(testContent);
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultOk(readResult);
+    expect(readResult.data).toEqual(testContent);
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("readFileContents for markdown file", async () => {
+    const adapter = await createTestAdapter();
+    const testContent = "# Heading\n\n- Item 1\n- Item 2\n\n**Bold text**";
+    const tempFile = await createTempMarkdownFile(testContent);
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultOk(readResult);
+    expect(readResult.data).toEqual(testContent);
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("readFileContents fails for unsupported MIME types", async () => {
+    const adapter = await createTestAdapter();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "test-bin-"));
+    const tempFile = path.join(tempDir, "test.bin");
+    await fs.writeFile(tempFile, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultFail(readResult);
+    expect(readResult.error.includes("Unsupported mime type")).toEqual(true);
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("readFileContents fails for non-file artifacts", async () => {
+    const adapter = await createTestAdapter();
+
+    const createResult = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultFail(readResult);
+    expect(readResult.error.includes("not a file artifact")).toEqual(true);
+  });
+
+  it("readFileContents fails for missing file", async () => {
+    const adapter = await createTestAdapter();
+    const tempFile = await createTempJsonFile({ test: "data" });
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    // Delete the file
+    await fs.unlink(tempFile);
+
+    const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+    assertResultFail(readResult);
+    expect(readResult.error.includes("Failed to read file")).toEqual(true);
+  });
+
+  it("MIME type detection for various extensions", async () => {
+    const adapter = await createTestAdapter();
+
+    const testCases = [
+      { ext: ".json", expected: "application/json" },
+      { ext: ".csv", expected: "text/csv" },
+      { ext: ".txt", expected: "text/plain" },
+    ];
+
+    for (const testCase of testCases) {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "test-mime-"));
+      const tempFile = path.join(tempDir, `test${testCase.ext}`);
+      await fs.writeFile(tempFile, "test content");
+
+      const createResult = await adapter.create(createFileArtifactInput(tempFile));
+      assertResultOk(createResult);
+
+      if (createResult.data.data.type === "file") {
+        expect(createResult.data.data.data.mimeType).toEqual(testCase.expected);
+      }
+
+      await cleanupTempFile(tempFile);
+    }
+  });
 });
 
 //
 // 7. Artifact Type Coverage
 //
 
-Deno.test("LocalAdapter: Types - create workspace-plan artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createWorkspacePlanInput();
+describe("LocalAdapter: Types", () => {
+  it("create workspace-plan artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createWorkspacePlanInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "workspace-plan");
-});
+    assertResultOk(result);
+    expect(result.data.type).toEqual("workspace-plan");
+  });
 
-Deno.test("LocalAdapter: Types - create calendar-schedule artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createCalendarScheduleInput();
+  it("create calendar-schedule artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createCalendarScheduleInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "calendar-schedule");
-});
+    assertResultOk(result);
+    expect(result.data.type).toEqual("calendar-schedule");
+  });
 
-Deno.test("LocalAdapter: Types - create summary artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSummaryArtifactInput();
+  it("create summary artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSummaryArtifactInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "summary");
-});
+    assertResultOk(result);
+    expect(result.data.type).toEqual("summary");
+  });
 
-Deno.test("LocalAdapter: Types - create slack-summary artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createSlackSummaryInput();
+  it("create slack-summary artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createSlackSummaryInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "slack-summary");
-});
+    assertResultOk(result);
+    expect(result.data.type).toEqual("slack-summary");
+  });
 
-Deno.test("LocalAdapter: Types - create file artifact", async () => {
-  const adapter = await createTestAdapter();
-  const tempFile = await createTempJsonFile({ test: "data" });
-  const input = createFileArtifactInput(tempFile);
+  it("create file artifact", async () => {
+    const adapter = await createTestAdapter();
+    const tempFile = await createTempJsonFile({ test: "data" });
+    const input = createFileArtifactInput(tempFile);
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "file");
+    assertResultOk(result);
+    expect(result.data.type).toEqual("file");
 
-  await cleanupTempFile(tempFile);
-});
+    await cleanupTempFile(tempFile);
+  });
 
-Deno.test("LocalAdapter: Types - create table artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createTableArtifactInput();
+  it("create table artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createTableArtifactInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "table");
-});
+    assertResultOk(result);
+    expect(result.data.type).toEqual("table");
+  });
 
-Deno.test("LocalAdapter: Types - create web-search artifact", async () => {
-  const adapter = await createTestAdapter();
-  const input = createWebSearchInput();
+  it("create web-search artifact", async () => {
+    const adapter = await createTestAdapter();
+    const input = createWebSearchInput();
 
-  const result = await adapter.create(input);
+    const result = await adapter.create(input);
 
-  assertResultOk(result);
-  assertEquals(result.data.type, "web-search");
+    assertResultOk(result);
+    expect(result.data.type).toEqual("web-search");
+  });
 });
 
 //
 // 8. Error Handling
 //
 
-Deno.test("LocalAdapter: Errors - update non-existent artifact fails", async () => {
-  const adapter = await createTestAdapter();
+describe("LocalAdapter: Errors", () => {
+  it("update non-existent artifact fails", async () => {
+    const adapter = await createTestAdapter();
 
-  const result = await adapter.update({
-    id: "non-existent-id",
-    data: createSummaryArtifactInput().data,
-    summary: "Should fail",
+    const result = await adapter.update({
+      id: "non-existent-id",
+      data: createSummaryArtifactInput().data,
+      summary: "Should fail",
+    });
+
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
   });
 
-  assertResultFail(result);
-  assertEquals(result.error.includes("not found"), true);
-});
+  it("delete non-existent artifact fails", async () => {
+    const adapter = await createTestAdapter();
 
-Deno.test("LocalAdapter: Errors - delete non-existent artifact fails", async () => {
-  const adapter = await createTestAdapter();
+    const result = await adapter.deleteArtifact({ id: "non-existent-id" });
 
-  const result = await adapter.deleteArtifact({ id: "non-existent-id" });
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
+  });
 
-  assertResultFail(result);
-  assertEquals(result.error.includes("not found"), true);
-});
+  it("invalid file path handling", async () => {
+    const adapter = await createTestAdapter();
 
-Deno.test("LocalAdapter: Errors - invalid file path handling", async () => {
-  const adapter = await createTestAdapter();
+    const result = await adapter.create(createFileArtifactInput("/invalid/path/file.json"));
 
-  const result = await adapter.create(createFileArtifactInput("/invalid/path/file.json"));
-
-  assertResultFail(result);
-  assertEquals(result.error.includes("not found"), true);
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
+  });
 });

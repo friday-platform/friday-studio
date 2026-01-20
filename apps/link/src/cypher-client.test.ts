@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CypherAuthError,
   CypherDecryptError,
@@ -7,10 +7,10 @@ import {
   CypherTimeoutError,
 } from "./cypher-client.ts";
 
-Deno.test("CypherHttpClient", async (t) => {
+describe("CypherHttpClient", () => {
   const mockGetToken = () => Promise.resolve("test-token");
 
-  await t.step("constructor validates baseUrl", () => {
+  it("constructor validates baseUrl", () => {
     // Valid URLs
     new CypherHttpClient("https://cypher.test", mockGetToken);
     new CypherHttpClient("http://localhost:8085", mockGetToken);
@@ -20,18 +20,18 @@ Deno.test("CypherHttpClient", async (t) => {
       new CypherHttpClient("", mockGetToken);
       throw new Error("Should have thrown");
     } catch (e) {
-      assertEquals((e as Error).message, "Invalid baseUrl: must be a valid HTTP(S) URL");
+      expect((e as Error).message).toEqual("Invalid baseUrl: must be a valid HTTP(S) URL");
     }
 
     try {
       new CypherHttpClient("not-a-url", mockGetToken);
       throw new Error("Should have thrown");
     } catch (e) {
-      assertEquals((e as Error).message, "Invalid baseUrl: must be a valid HTTP(S) URL");
+      expect((e as Error).message).toEqual("Invalid baseUrl: must be a valid HTTP(S) URL");
     }
   });
 
-  await t.step("encrypt: success", async () => {
+  it("encrypt: success", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () =>
       Promise.resolve(
@@ -44,13 +44,13 @@ Deno.test("CypherHttpClient", async (t) => {
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
       const result = await client.encrypt(["secret1", "secret2"]);
-      assertEquals(result, ["encrypted1", "encrypted2"]);
+      expect(result).toEqual(["encrypted1", "encrypted2"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("encrypt: sends correct request", async () => {
+  it("encrypt: sends correct request", async () => {
     const originalFetch = globalThis.fetch;
     const captured: { url: string; method: string; headers: Headers; body: string }[] = [];
 
@@ -69,53 +69,56 @@ Deno.test("CypherHttpClient", async (t) => {
       await client.encrypt(["plaintext"]);
 
       const req = captured[0];
-      assertEquals(req?.url, "https://cypher.test/encrypt");
-      assertEquals(req?.method, "POST");
-      assertEquals(req?.headers.get("Authorization"), "Bearer test-token");
-      assertEquals(req?.headers.get("Content-Type"), "application/json");
-      assertEquals(req?.body, '{"plaintext":["plaintext"]}');
+      expect(req?.url).toEqual("https://cypher.test/encrypt");
+      expect(req?.method).toEqual("POST");
+      expect(req?.headers.get("Authorization")).toEqual("Bearer test-token");
+      expect(req?.headers.get("Content-Type")).toEqual("application/json");
+      expect(req?.body).toEqual('{"plaintext":["plaintext"]}');
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("encrypt: empty array throws", async () => {
+  it("encrypt: empty array throws", async () => {
     const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-    const error = await assertRejects(() => client.encrypt([]), CypherError);
-    assertEquals(error.message, "plaintext array cannot be empty");
-    assertEquals(error.statusCode, 400);
-    assertEquals(error.operation, "encrypt");
+    const error = await client.encrypt([]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CypherError);
+    expect((error as CypherError).message).toEqual("plaintext array cannot be empty");
+    expect((error as CypherError).statusCode).toEqual(400);
+    expect((error as CypherError).operation).toEqual("encrypt");
   });
 
-  await t.step("encrypt: 401 throws CypherAuthError", async () => {
+  it("encrypt: 401 throws CypherAuthError", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => Promise.resolve(new Response(null, { status: 401 }));
 
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.encrypt(["secret"]), CypherAuthError);
-      assertEquals(error.statusCode, 401);
-      assertEquals(error.operation, "encrypt");
+      const error = await client.encrypt(["secret"]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CypherAuthError);
+      expect((error as CypherAuthError).statusCode).toEqual(401);
+      expect((error as CypherAuthError).operation).toEqual("encrypt");
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("encrypt: 500 throws CypherError", async () => {
+  it("encrypt: 500 throws CypherError", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => Promise.resolve(new Response(null, { status: 500 }));
 
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.encrypt(["secret"]), CypherError);
-      assertEquals(error.statusCode, 500);
-      assertEquals(error.operation, "encrypt");
+      const error = await client.encrypt(["secret"]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CypherError);
+      expect((error as CypherError).statusCode).toEqual(500);
+      expect((error as CypherError).operation).toEqual("encrypt");
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("decrypt: success", async () => {
+  it("decrypt: success", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () =>
       Promise.resolve(
@@ -128,110 +131,142 @@ Deno.test("CypherHttpClient", async (t) => {
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
       const result = await client.decrypt(["ct1", "ct2"]);
-      assertEquals(result, ["decrypted1", "decrypted2"]);
+      expect(result).toEqual(["decrypted1", "decrypted2"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("decrypt: empty array throws", async () => {
+  it("decrypt: empty array throws", async () => {
     const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-    const error = await assertRejects(() => client.decrypt([]), CypherError);
-    assertEquals(error.message, "ciphertext array cannot be empty");
-    assertEquals(error.statusCode, 400);
-    assertEquals(error.operation, "decrypt");
+    const error = await client.decrypt([]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CypherError);
+    expect((error as CypherError).message).toEqual("ciphertext array cannot be empty");
+    expect((error as CypherError).statusCode).toEqual(400);
+    expect((error as CypherError).operation).toEqual("decrypt");
   });
 
-  await t.step("decrypt: 401 throws CypherAuthError", async () => {
+  it("decrypt: 401 throws CypherAuthError", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => Promise.resolve(new Response(null, { status: 401 }));
 
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.decrypt(["ct"]), CypherAuthError);
-      assertEquals(error.statusCode, 401);
-      assertEquals(error.operation, "decrypt");
+      const error = await client.decrypt(["ct"]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CypherAuthError);
+      expect((error as CypherAuthError).statusCode).toEqual(401);
+      expect((error as CypherAuthError).operation).toEqual("decrypt");
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("decrypt: 400 throws CypherDecryptError", async () => {
+  it("decrypt: 400 throws CypherDecryptError", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => Promise.resolve(new Response(null, { status: 400 }));
 
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.decrypt(["invalid"]), CypherDecryptError);
-      assertEquals(error.statusCode, 400);
-      assertEquals(error.operation, "decrypt");
+      const error = await client.decrypt(["invalid"]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CypherDecryptError);
+      expect((error as CypherDecryptError).statusCode).toEqual(400);
+      expect((error as CypherDecryptError).operation).toEqual("decrypt");
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("decrypt: 500 throws CypherError", async () => {
+  it("decrypt: 500 throws CypherError", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => Promise.resolve(new Response(null, { status: 500 }));
 
     try {
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.decrypt(["ct"]), CypherError);
-      assertEquals(error.statusCode, 500);
-      assertEquals(error.operation, "decrypt");
+      const error = await client.decrypt(["ct"]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CypherError);
+      expect((error as CypherError).statusCode).toEqual(500);
+      expect((error as CypherError).operation).toEqual("decrypt");
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.step("encrypt: timeout throws CypherTimeoutError", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
-      // Simulate abort by returning a promise that rejects when signal is aborted
-      return new Promise((_resolve, reject) => {
-        const signal = init?.signal;
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            const error = new Error("The operation was aborted");
-            error.name = "AbortError";
-            reject(error);
-          });
-        }
-      });
-    };
+  describe("timeout tests", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
 
-    try {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("encrypt: timeout throws CypherTimeoutError", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
+        // Simulate abort by returning a promise that rejects when signal is aborted
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              const error = new Error("The operation was aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          }
+        });
+      };
+
       const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.encrypt(["secret"]), CypherTimeoutError);
-      assertEquals(error.statusCode, 408);
-      assertEquals(error.operation, "encrypt");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
 
-  await t.step("decrypt: timeout throws CypherTimeoutError", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
-      return new Promise((_resolve, reject) => {
-        const signal = init?.signal;
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            const error = new Error("The operation was aborted");
-            error.name = "AbortError";
-            reject(error);
-          });
-        }
+      // Create the promise and catch rejection immediately to track it
+      let caughtError: unknown;
+      const encryptPromise = client.encrypt(["secret"]).catch((e) => {
+        caughtError = e;
       });
-    };
 
-    try {
-      const client = new CypherHttpClient("https://cypher.test", mockGetToken);
-      const error = await assertRejects(() => client.decrypt(["ct"]), CypherTimeoutError);
-      assertEquals(error.statusCode, 408);
-      assertEquals(error.operation, "decrypt");
-    } finally {
+      // Advance time past the timeout and run all pending timers/microtasks
+      await vi.runAllTimersAsync();
+      await encryptPromise;
+
+      expect(caughtError).toBeInstanceOf(CypherTimeoutError);
+      expect((caughtError as CypherTimeoutError).statusCode).toEqual(408);
+      expect((caughtError as CypherTimeoutError).operation).toEqual("encrypt");
+
       globalThis.fetch = originalFetch;
-    }
+    });
+
+    it("decrypt: timeout throws CypherTimeoutError", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              const error = new Error("The operation was aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          }
+        });
+      };
+
+      const client = new CypherHttpClient("https://cypher.test", mockGetToken);
+
+      // Create the promise and catch rejection immediately to track it
+      let caughtError: unknown;
+      const decryptPromise = client.decrypt(["ct"]).catch((e) => {
+        caughtError = e;
+      });
+
+      // Advance time past the timeout and run all pending timers/microtasks
+      await vi.runAllTimersAsync();
+      await decryptPromise;
+
+      expect(caughtError).toBeInstanceOf(CypherTimeoutError);
+      expect((caughtError as CypherTimeoutError).statusCode).toEqual(408);
+      expect((caughtError as CypherTimeoutError).operation).toEqual("decrypt");
+
+      globalThis.fetch = originalFetch;
+    });
   });
 });

@@ -1,10 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
-import { assertEquals, assertExists } from "@std/assert";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { DenoKVStorageAdapter } from "./deno-kv-adapter.ts";
 
-Deno.test("DenoKVStorageAdapter tenant isolation", async (t) => {
-  const tempFile = await Deno.makeTempFile();
+describe("DenoKVStorageAdapter tenant isolation", () => {
+  const tempFile = join(tmpdir(), `deno-kv-test-${randomUUID()}.db`);
   const adapter = new DenoKVStorageAdapter(tempFile);
+
+  afterAll(async () => {
+    await rm(tempFile, { force: true });
+  });
 
   const credInput = {
     type: "oauth" as const,
@@ -15,30 +22,28 @@ Deno.test("DenoKVStorageAdapter tenant isolation", async (t) => {
 
   let credIdA: string;
 
-  await t.step("user A save returns SaveResult, user A get = found", async () => {
+  it("user A save returns SaveResult, user A get = found", async () => {
     const result = await adapter.save(credInput, "user-a");
-    assertExists(result.id);
-    assertExists(result.metadata.createdAt);
-    assertExists(result.metadata.updatedAt);
+    expect(result.id).toBeDefined();
+    expect(result.metadata.createdAt).toBeDefined();
+    expect(result.metadata.updatedAt).toBeDefined();
     credIdA = result.id;
     const retrieved = await adapter.get(credIdA, "user-a");
-    assertExists(retrieved);
-    assertEquals(retrieved.type, credInput.type);
-    assertEquals(retrieved.provider, credInput.provider);
-    assertEquals(retrieved.label, credInput.label);
-    assertEquals(retrieved.secret, credInput.secret);
+    expect(retrieved).toBeDefined();
+    expect(retrieved!.type).toEqual(credInput.type);
+    expect(retrieved!.provider).toEqual(credInput.provider);
+    expect(retrieved!.label).toEqual(credInput.label);
+    expect(retrieved!.secret).toEqual(credInput.secret);
   });
 
-  await t.step("user A save, user B get = not found", async () => {
-    assertEquals(await adapter.get(credIdA, "user-b"), null);
+  it("user A save, user B get = not found", async () => {
+    expect(await adapter.get(credIdA, "user-b")).toBeNull();
   });
 
-  await t.step("list only returns current user credentials", async () => {
+  it("list only returns current user credentials", async () => {
     await adapter.save(credInput, "user-b");
     const list = await adapter.list("oauth", "user-a");
-    assertEquals(list.length, 1);
-    assertEquals(list[0]?.id, credIdA);
+    expect(list.length).toEqual(1);
+    expect(list[0]?.id).toEqual(credIdA);
   });
-
-  await rm(tempFile);
 });

@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import process from "node:process";
+import { describe, expect, it } from "vitest";
 
 // Import all provider factories from consolidated module
 import {
@@ -18,23 +19,25 @@ const PROVIDERS = [
   { factory: createGoogleSheetsProvider, id: "google-sheets", scope: "spreadsheets" },
 ] as const;
 
-Deno.test("Google providers return undefined when env not configured", () => {
-  // Save and clear env vars
-  const original = {
-    id: Deno.env.get("GOOGLE_CLIENT_ID_FILE"),
-    secret: Deno.env.get("GOOGLE_CLIENT_SECRET_FILE"),
-  };
-  Deno.env.delete("GOOGLE_CLIENT_ID_FILE");
-  Deno.env.delete("GOOGLE_CLIENT_SECRET_FILE");
+describe("Google providers", () => {
+  it("return undefined when env not configured", () => {
+    // Save and clear env vars
+    const original = {
+      id: process.env.GOOGLE_CLIENT_ID_FILE,
+      secret: process.env.GOOGLE_CLIENT_SECRET_FILE,
+    };
+    delete process.env.GOOGLE_CLIENT_ID_FILE;
+    delete process.env.GOOGLE_CLIENT_SECRET_FILE;
 
-  try {
-    for (const { factory, id } of PROVIDERS) {
-      const provider = factory();
-      assertEquals(provider, undefined, `${id} should return undefined without env`);
+    try {
+      for (const { factory, id } of PROVIDERS) {
+        const provider = factory();
+        expect(provider, `${id} should return undefined without env`).toBeUndefined();
+      }
+    } finally {
+      // Restore env vars
+      if (original.id) process.env.GOOGLE_CLIENT_ID_FILE = original.id;
+      if (original.secret) process.env.GOOGLE_CLIENT_SECRET_FILE = original.secret;
     }
-  } finally {
-    // Restore env vars
-    if (original.id) Deno.env.set("GOOGLE_CLIENT_ID_FILE", original.id);
-    if (original.secret) Deno.env.set("GOOGLE_CLIENT_SECRET_FILE", original.secret);
-  }
+  });
 });

@@ -1,5 +1,5 @@
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { extractArtifactIds } from "./artifacts.ts";
 
 /**
@@ -48,97 +48,99 @@ function createTextPart(text: string): AtlasUIMessagePart {
   return { type: "text", text } as AtlasUIMessagePart;
 }
 
-Deno.test("extractArtifactIds - extracts artifact IDs from display_artifact parts", () => {
-  const messages = [
-    createMessage([
-      createTextPart("Here's the artifact:"),
-      createDisplayArtifactPart("artifact-123"),
-    ]),
-  ];
+describe("extractArtifactIds", () => {
+  it("extracts artifact IDs from display_artifact parts", () => {
+    const messages = [
+      createMessage([
+        createTextPart("Here's the artifact:"),
+        createDisplayArtifactPart("artifact-123"),
+      ]),
+    ];
 
-  const ids = extractArtifactIds(messages);
+    const ids = extractArtifactIds(messages);
 
-  assertEquals(ids, ["artifact-123"]);
-});
+    expect(ids).toEqual(["artifact-123"]);
+  });
 
-Deno.test("extractArtifactIds - deduplicates artifact IDs across messages", () => {
-  const messages = [
-    createMessage([createDisplayArtifactPart("artifact-aaa")]),
-    createMessage([
-      createDisplayArtifactPart("artifact-bbb"),
-      createDisplayArtifactPart("artifact-aaa"), // duplicate
-    ]),
-    createMessage([createDisplayArtifactPart("artifact-ccc")]),
-  ];
+  it("deduplicates artifact IDs across messages", () => {
+    const messages = [
+      createMessage([createDisplayArtifactPart("artifact-aaa")]),
+      createMessage([
+        createDisplayArtifactPart("artifact-bbb"),
+        createDisplayArtifactPart("artifact-aaa"), // duplicate
+      ]),
+      createMessage([createDisplayArtifactPart("artifact-ccc")]),
+    ];
 
-  const ids = extractArtifactIds(messages);
+    const ids = extractArtifactIds(messages);
 
-  assertEquals(ids.length, 3);
-  assertEquals(ids.includes("artifact-aaa"), true);
-  assertEquals(ids.includes("artifact-bbb"), true);
-  assertEquals(ids.includes("artifact-ccc"), true);
-});
+    expect(ids.length).toEqual(3);
+    expect(ids.includes("artifact-aaa")).toEqual(true);
+    expect(ids.includes("artifact-bbb")).toEqual(true);
+    expect(ids.includes("artifact-ccc")).toEqual(true);
+  });
 
-Deno.test("extractArtifactIds - ignores other tool call types", () => {
-  const messages = [
-    createMessage([
-      createOtherToolPart("take_note"),
-      createDisplayArtifactPart("artifact-xyz"),
-      createOtherToolPart("workspace_summary"),
-      createTextPart("Some text"),
-    ]),
-  ];
+  it("ignores other tool call types", () => {
+    const messages = [
+      createMessage([
+        createOtherToolPart("take_note"),
+        createDisplayArtifactPart("artifact-xyz"),
+        createOtherToolPart("workspace_summary"),
+        createTextPart("Some text"),
+      ]),
+    ];
 
-  const ids = extractArtifactIds(messages);
+    const ids = extractArtifactIds(messages);
 
-  assertEquals(ids, ["artifact-xyz"]);
-});
+    expect(ids).toEqual(["artifact-xyz"]);
+  });
 
-Deno.test("extractArtifactIds - handles malformed/missing output gracefully", () => {
-  const messages = [
-    createMessage([
-      // Missing output entirely
-      {
-        type: "tool-display_artifact",
-        toolCallId: crypto.randomUUID(),
-      } as unknown as AtlasUIMessagePart,
-      // Output is null
-      {
-        type: "tool-display_artifact",
-        toolCallId: crypto.randomUUID(),
-        output: null,
-      } as unknown as AtlasUIMessagePart,
-      // Output missing artifactId
-      {
-        type: "tool-display_artifact",
-        toolCallId: crypto.randomUUID(),
-        output: { success: false, error: "not found" },
-      } as unknown as AtlasUIMessagePart,
-      // artifactId is not a string
-      {
-        type: "tool-display_artifact",
-        toolCallId: crypto.randomUUID(),
-        output: { artifactId: 12345 },
-      } as unknown as AtlasUIMessagePart,
-      // Valid one should still be extracted
-      createDisplayArtifactPart("artifact-valid"),
-    ]),
-  ];
+  it("handles malformed/missing output gracefully", () => {
+    const messages = [
+      createMessage([
+        // Missing output entirely
+        {
+          type: "tool-display_artifact",
+          toolCallId: crypto.randomUUID(),
+        } as unknown as AtlasUIMessagePart,
+        // Output is null
+        {
+          type: "tool-display_artifact",
+          toolCallId: crypto.randomUUID(),
+          output: null,
+        } as unknown as AtlasUIMessagePart,
+        // Output missing artifactId
+        {
+          type: "tool-display_artifact",
+          toolCallId: crypto.randomUUID(),
+          output: { success: false, error: "not found" },
+        } as unknown as AtlasUIMessagePart,
+        // artifactId is not a string
+        {
+          type: "tool-display_artifact",
+          toolCallId: crypto.randomUUID(),
+          output: { artifactId: 12345 },
+        } as unknown as AtlasUIMessagePart,
+        // Valid one should still be extracted
+        createDisplayArtifactPart("artifact-valid"),
+      ]),
+    ];
 
-  const ids = extractArtifactIds(messages);
+    const ids = extractArtifactIds(messages);
 
-  assertEquals(ids, ["artifact-valid"]);
-});
+    expect(ids).toEqual(["artifact-valid"]);
+  });
 
-Deno.test("extractArtifactIds - returns empty array for no messages", () => {
-  const ids = extractArtifactIds([]);
-  assertEquals(ids, []);
-});
+  it("returns empty array for no messages", () => {
+    const ids = extractArtifactIds([]);
+    expect(ids).toEqual([]);
+  });
 
-Deno.test("extractArtifactIds - returns empty array when no display_artifact parts", () => {
-  const messages = [createMessage([createTextPart("Hello"), createOtherToolPart("take_note")])];
+  it("returns empty array when no display_artifact parts", () => {
+    const messages = [createMessage([createTextPart("Hello"), createOtherToolPart("take_note")])];
 
-  const ids = extractArtifactIds(messages);
+    const ids = extractArtifactIds(messages);
 
-  assertEquals(ids, []);
+    expect(ids).toEqual([]);
+  });
 });

@@ -1,6 +1,5 @@
 import type { WorkspacePlan } from "@atlas/core/artifacts";
-import { assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { classifyAgents } from "./agent-classifier.ts";
 
 describe("classifyAgents", () => {
@@ -16,10 +15,10 @@ describe("classifyAgents", () => {
 
     const classified = classifyAgents(plan);
 
-    assertEquals(classified.length, 1);
-    assertEquals(classified[0]?.type.kind, "bundled");
+    expect(classified.length).toEqual(1);
+    expect(classified[0]?.type.kind).toEqual("bundled");
     if (classified[0]?.type.kind === "bundled") {
-      assertEquals(classified[0]?.type.bundledId, "email");
+      expect(classified[0]?.type.bundledId).toEqual("email");
     }
   });
 
@@ -41,10 +40,10 @@ describe("classifyAgents", () => {
 
     const classified = classifyAgents(plan);
 
-    assertEquals(classified.length, 1);
-    assertEquals(classified[0]?.type.kind, "bundled", "html-email should match email agent");
+    expect(classified.length).toEqual(1);
+    expect(classified[0]?.type.kind, "html-email should match email agent").toEqual("bundled");
     if (classified[0]?.type.kind === "bundled") {
-      assertEquals(classified[0]?.type.bundledId, "email");
+      expect(classified[0]?.type.bundledId).toEqual("email");
     }
   });
 
@@ -65,8 +64,10 @@ describe("classifyAgents", () => {
 
     const classified = classifyAgents(plan);
 
-    assertEquals(classified.length, 1);
-    assertEquals(classified[0]?.type.kind, "bundled", "email-formatting should match email agent");
+    expect(classified.length).toEqual(1);
+    expect(classified[0]?.type.kind, "email-formatting should match email agent").toEqual(
+      "bundled",
+    );
   });
 
   it("classifies agent with no matching capability as llm", () => {
@@ -86,7 +87,7 @@ describe("classifyAgents", () => {
 
     const classified = classifyAgents(plan);
 
-    assertEquals(classified.length, 1);
-    assertEquals(classified[0]?.type.kind, "llm");
+    expect(classified.length).toEqual(1);
+    expect(classified[0]?.type.kind).toEqual("llm");
   });
 });

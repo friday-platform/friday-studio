@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./mod.ts",
+    "./kv": "./src/kv.ts",
     "./credentials": "./src/credential-fetcher.ts",
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/file-upload": "./src/artifacts/file-upload.ts",
@@ -23,6 +24,7 @@
   },
   "main": "./mod.ts",
   "dependencies": {
+    "@deno/kv": "^0.13.0",
     "@ai-sdk/provider": "^2.0.1",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
@@ -34,15 +36,14 @@
     "@atlas/schemas": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
-    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "@std/testing": "npm:@jsr/std__testing@^1.0.16",
-    "hono": "^4.11.3",
     "ai": "^5.0.121",
     "jose": "^6.1.3",
     "papaparse": "^5.5.3",
+    "proper-lockfile": "^4.1.2",
+    "vitest": "^4.0.17",
     "xstate": "^5.25.1",
     "zod": "^4.3.5"
   }

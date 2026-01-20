@@ -1,6 +1,6 @@
 import process from "node:process";
 import { InMemoryStorageAdapter } from "@atlas/storage";
-import { expect } from "@std/expect";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AtlasScope } from "../../../src/core/scope.ts";
 import { CoALAMemoryManager, type IMemoryScope } from "../src/coala-memory.ts";
 import {
@@ -10,9 +10,6 @@ import {
 
 // Set testing environment to prevent logger file operations
 process.env.DENO_TESTING = "true";
-
-// Initialize global embedding provider before tests to avoid message port leak detection
-await embeddingProviderGetInstance();
 
 // Helper to create memory manager with immediate commits for tests
 function createTestMemoryManager(
@@ -28,284 +25,291 @@ function createTestMemoryManager(
   );
 }
 
-Deno.test("CoALAMemoryManager - basic memory operations", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Test storing and retrieving memory
-  memory.rememberWithMetadata("test-key", "test-value", {
-    memoryType: "working",
-    tags: ["test", "working"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.1,
-  });
-  const retrieved = memory.recall("test-key");
-
-  expect(retrieved).toBe("test-value");
-
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
-
-Deno.test("CoALAMemoryManager - memory with metadata", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Test storing memory with metadata
-  memory.rememberWithMetadata("test-key", "test-value", {
-    memoryType: "semantic",
-    tags: ["test", "semantic"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.05,
+describe("CoALAMemoryManager", () => {
+  // Initialize global embedding provider before tests to avoid message port leak detection
+  beforeAll(async () => {
+    await embeddingProviderGetInstance();
   });
 
-  const retrieved = memory.recall("test-key");
-  expect(retrieved).toBe("test-value");
-
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
-
-Deno.test("CoALAMemoryManager - memory queries", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Store multiple memories
-  memory.rememberWithMetadata("key1", "value1", {
-    memoryType: "episodic",
-    tags: ["test", "episodic"],
-    relevanceScore: 0.7,
-    confidence: 0.8,
-    decayRate: 0.1,
+  // Cleanup global resources after all tests
+  afterAll(async () => {
+    await embeddingProviderForceDispose();
   });
 
-  memory.rememberWithMetadata("key2", "value2", {
-    memoryType: "semantic",
-    tags: ["test", "semantic"],
-    relevanceScore: 0.9,
-    confidence: 0.95,
-    decayRate: 0.05,
+  it("basic memory operations", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+
+    // Test storing and retrieving memory
+    memory.rememberWithMetadata("test-key", "test-value", {
+      memoryType: "working",
+      tags: ["test", "working"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.1,
+    });
+    const retrieved = memory.recall("test-key");
+
+    expect(retrieved).toBe("test-value");
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  // Query memories
-  const memories = memory.queryMemories({ tags: ["test"], minRelevance: 0.5, limit: 10 });
+  it("memory with metadata", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-  expect(memories).toHaveLength(2);
+    // Test storing memory with metadata
+    memory.rememberWithMetadata("test-key", "test-value", {
+      memoryType: "semantic",
+      tags: ["test", "semantic"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.05,
+    });
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
+    const retrieved = memory.recall("test-key");
+    expect(retrieved).toBe("test-value");
 
-Deno.test("CoALAMemoryManager - memory by type", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Store memories of different types
-  memory.rememberWithMetadata("episodic1", "episodic value", {
-    memoryType: "episodic",
-    tags: ["episodic"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.1,
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  memory.rememberWithMetadata("semantic1", "semantic value", {
-    memoryType: "semantic",
-    tags: ["semantic"],
-    relevanceScore: 0.9,
-    confidence: 0.95,
-    decayRate: 0.05,
-  });
+  it("memory queries", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-  // Get memories by type
-  const episodicMemories = memory.getMemoriesByType("episodic");
-  const semanticMemories = memory.getMemoriesByType("semantic");
-
-  expect(episodicMemories).toHaveLength(1);
-  expect(semanticMemories).toHaveLength(1);
-  expect(episodicMemories[0]?.content).toBe("episodic value");
-  expect(semanticMemories[0]?.content).toBe("semantic value");
-
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
-
-Deno.test("CoALAMemoryManager - forgetting memories", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Store a memory
-  memory.rememberWithMetadata("forget-me", "temporary value", {
-    memoryType: "working",
-    tags: ["forget-me"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.1,
-  });
-
-  // Verify it exists
-  let retrieved = memory.recall("forget-me");
-  expect(retrieved).toBe("temporary value");
-
-  // Forget it
-  memory.forget("forget-me");
-
-  // Verify it's gone
-  retrieved = memory.recall("forget-me");
-  expect(retrieved).toBeUndefined();
-
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
-
-Deno.test("CoALAMemoryManager - memory consolidation", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
-
-  // Store similar memories
-  for (let i = 0; i < 5; i++) {
-    memory.rememberWithMetadata(`similar-${i}`, `similar content ${i}`, {
+    // Store multiple memories
+    memory.rememberWithMetadata("key1", "value1", {
       memoryType: "episodic",
-      tags: ["similar", "consolidate"],
+      tags: ["test", "episodic"],
       relevanceScore: 0.7,
       confidence: 0.8,
       decayRate: 0.1,
     });
-  }
 
-  // Consolidate should not throw
-  expect(() => memory.consolidate()).not.toThrow();
+    memory.rememberWithMetadata("key2", "value2", {
+      memoryType: "semantic",
+      tags: ["test", "semantic"],
+      relevanceScore: 0.9,
+      confidence: 0.95,
+      decayRate: 0.05,
+    });
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
+    // Query memories
+    const memories = memory.queryMemories({ tags: ["test"], minRelevance: 0.5, limit: 10 });
 
-Deno.test("CoALAMemoryManager - memory pruning", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+    expect(memories).toHaveLength(2);
 
-  // Store memories with different decay rates
-  memory.rememberWithMetadata("fast-decay", "fast decaying memory", {
-    memoryType: "working",
-    tags: ["fast"],
-    relevanceScore: 0.5,
-    confidence: 0.6,
-    decayRate: 0.9, // High decay rate
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  memory.rememberWithMetadata("slow-decay", "slow decaying memory", {
-    memoryType: "semantic",
-    tags: ["slow"],
-    relevanceScore: 0.9,
-    confidence: 0.95,
-    decayRate: 0.01, // Low decay rate
+  it("memory by type", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+
+    // Store memories of different types
+    memory.rememberWithMetadata("episodic1", "episodic value", {
+      memoryType: "episodic",
+      tags: ["episodic"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.1,
+    });
+
+    memory.rememberWithMetadata("semantic1", "semantic value", {
+      memoryType: "semantic",
+      tags: ["semantic"],
+      relevanceScore: 0.9,
+      confidence: 0.95,
+      decayRate: 0.05,
+    });
+
+    // Get memories by type
+    const episodicMemories = memory.getMemoriesByType("episodic");
+    const semanticMemories = memory.getMemoriesByType("semantic");
+
+    expect(episodicMemories).toHaveLength(1);
+    expect(semanticMemories).toHaveLength(1);
+    expect(episodicMemories[0]?.content).toBe("episodic value");
+    expect(semanticMemories[0]?.content).toBe("semantic value");
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  // Prune should not throw
-  expect(() => memory.prune()).not.toThrow();
+  it("forgetting memories", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
+    // Store a memory
+    memory.rememberWithMetadata("forget-me", "temporary value", {
+      memoryType: "working",
+      tags: ["forget-me"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.1,
+    });
 
-Deno.test("CoALAMemoryManager - memory adaptation", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+    // Verify it exists
+    let retrieved = memory.recall("forget-me");
+    expect(retrieved).toBe("temporary value");
 
-  // Store a memory
-  memory.rememberWithMetadata("adapt-me", "adaptable memory", {
-    memoryType: "procedural",
-    tags: ["adaptable"],
-    relevanceScore: 0.7,
-    confidence: 0.8,
-    decayRate: 0.1,
+    // Forget it
+    memory.forget("forget-me");
+
+    // Verify it's gone
+    retrieved = memory.recall("forget-me");
+    expect(retrieved).toBeUndefined();
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  // Adapt with feedback
-  const feedback = { memoryId: "adapt-me", relevanceAdjustment: 0.9 };
-  expect(() => memory.adapt(feedback)).not.toThrow();
+  it("memory consolidation", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
+    // Store similar memories
+    for (let i = 0; i < 5; i++) {
+      memory.rememberWithMetadata(`similar-${i}`, `similar content ${i}`, {
+        memoryType: "episodic",
+        tags: ["similar", "consolidate"],
+        relevanceScore: 0.7,
+        confidence: 0.8,
+        decayRate: 0.1,
+      });
+    }
 
-Deno.test("CoALAMemoryManager - memory disposal", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+    // Consolidate should not throw
+    expect(() => memory.consolidate()).not.toThrow();
 
-  // Store a memory
-  memory.rememberWithMetadata("dispose-test", "test value", {
-    memoryType: "working",
-    tags: ["dispose-test"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.1,
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  // Dispose should not throw
-  await expect(memory.dispose()).resolves.not.toThrow();
-  await scope.memory.dispose();
-});
+  it("memory pruning", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-Deno.test("CoALAMemoryManager - memory serialization", async () => {
-  const scope = new AtlasScope();
-  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+    // Store memories with different decay rates
+    memory.rememberWithMetadata("fast-decay", "fast decaying memory", {
+      memoryType: "working",
+      tags: ["fast"],
+      relevanceScore: 0.5,
+      confidence: 0.6,
+      decayRate: 0.9, // High decay rate
+    });
 
-  // Store complex data
-  const complexData = {
-    text: "complex memory",
-    numbers: JSON.stringify([1, 2, 3]),
-    nested: JSON.stringify({ key: "value" }),
-  };
+    memory.rememberWithMetadata("slow-decay", "slow decaying memory", {
+      memoryType: "semantic",
+      tags: ["slow"],
+      relevanceScore: 0.9,
+      confidence: 0.95,
+      decayRate: 0.01, // Low decay rate
+    });
 
-  memory.rememberWithMetadata("complex-data", complexData, {
-    memoryType: "working",
-    tags: ["complex-data"],
-    relevanceScore: 0.8,
-    confidence: 0.9,
-    decayRate: 0.1,
+    // Prune should not throw
+    expect(() => memory.prune()).not.toThrow();
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
   });
-  const retrieved = memory.recall("complex-data");
 
-  expect(retrieved).toEqual(complexData);
+  it("memory adaptation", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
-  // Cleanup - wait for any pending operations
-  await memory.ensureLoaded();
-  await scope.memory.ensureLoaded();
-  await memory.dispose();
-  await scope.memory.dispose();
-});
+    // Store a memory
+    memory.rememberWithMetadata("adapt-me", "adaptable memory", {
+      memoryType: "procedural",
+      tags: ["adaptable"],
+      relevanceScore: 0.7,
+      confidence: 0.8,
+      decayRate: 0.1,
+    });
 
-// Cleanup global resources after all tests
-Deno.test("Cleanup - dispose global embedding provider", async () => {
-  await embeddingProviderForceDispose();
+    // Adapt with feedback
+    const feedback = { memoryId: "adapt-me", relevanceAdjustment: 0.9 };
+    expect(() => memory.adapt(feedback)).not.toThrow();
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
+  });
+
+  it("memory disposal", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+
+    // Store a memory
+    memory.rememberWithMetadata("dispose-test", "test value", {
+      memoryType: "working",
+      tags: ["dispose-test"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.1,
+    });
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    // Dispose should not throw
+    await expect(memory.dispose()).resolves.not.toThrow();
+    await scope.memory.dispose();
+  });
+
+  it("memory serialization", async () => {
+    const scope = new AtlasScope();
+    const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
+
+    // Store complex data
+    const complexData = {
+      text: "complex memory",
+      numbers: JSON.stringify([1, 2, 3]),
+      nested: JSON.stringify({ key: "value" }),
+    };
+
+    memory.rememberWithMetadata("complex-data", complexData, {
+      memoryType: "working",
+      tags: ["complex-data"],
+      relevanceScore: 0.8,
+      confidence: 0.9,
+      decayRate: 0.1,
+    });
+    const retrieved = memory.recall("complex-data");
+
+    expect(retrieved).toEqual(complexData);
+
+    // Cleanup - wait for any pending operations
+    await memory.ensureLoaded();
+    await scope.memory.ensureLoaded();
+    await memory.dispose();
+    await scope.memory.dispose();
+  });
 });

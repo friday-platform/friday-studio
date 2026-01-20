@@ -3,8 +3,7 @@
  */
 
 import type { MergedConfig } from "@atlas/config";
-import { assertThrows } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { validateMCPEnvironmentForWorkspace } from "./manager.ts";
 
 describe("validateMCPEnvironmentForWorkspace", () => {
@@ -59,9 +58,7 @@ describe("validateMCPEnvironmentForWorkspace", () => {
     });
 
     // Should throw - no env entry and not in system env
-    assertThrows(
-      () => validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent"),
-      Error,
+    expect(() => validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent")).toThrow(
       "MISSING_TOKEN",
     );
   });
@@ -70,9 +67,7 @@ describe("validateMCPEnvironmentForWorkspace", () => {
     const config = createConfig({ "test-server": { env: { AUTO_VAR: "auto" } } });
 
     // Should throw - "auto" requires system env
-    assertThrows(
-      () => validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent"),
-      Error,
+    expect(() => validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent")).toThrow(
       "AUTO_VAR",
     );
   });

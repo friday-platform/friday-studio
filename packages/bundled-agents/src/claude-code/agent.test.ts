@@ -1,6 +1,6 @@
 import type { AgentContext } from "@atlas/agent-sdk";
 import type { LogContext, Logger } from "@atlas/logger";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { expect, it } from "vitest";
 import { claudeCodeAgent } from "./agent.ts";
 
 /**
@@ -36,12 +36,12 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
   };
 }
 
-Deno.test("fails fast without ANTHROPIC_API_KEY", async () => {
+it("fails fast without ANTHROPIC_API_KEY", async () => {
   // Pass empty env via context - agent should fail because ANTHROPIC_API_KEY is missing
   const result = await claudeCodeAgent.execute("test prompt", createMockContext({ env: {} }));
 
-  assertEquals(result.ok, false);
+  expect(result.ok).toEqual(false);
   if (!result.ok) {
-    assertStringIncludes(result.error.reason, "ANTHROPIC_API_KEY");
+    expect(result.error.reason).toContain("ANTHROPIC_API_KEY");
   }
 });

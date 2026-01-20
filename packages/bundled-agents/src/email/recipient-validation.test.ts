@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { extractDomain, isPublicEmailDomain } from "./public-domains.ts";
 import { validateRecipient } from "./recipient-validation.ts";
 
@@ -6,122 +6,132 @@ import { validateRecipient } from "./recipient-validation.ts";
 // extractDomain tests
 // =============================================================================
 
-Deno.test("extractDomain - extracts domain from valid email", () => {
-  assertEquals(extractDomain("user@gmail.com"), "gmail.com");
-  assertEquals(extractDomain("user@GMAIL.COM"), "gmail.com");
-  assertEquals(extractDomain("user@tempest.team"), "tempest.team");
-});
+describe("extractDomain", () => {
+  it("extracts domain from valid email", () => {
+    expect(extractDomain("user@gmail.com")).toEqual("gmail.com");
+    expect(extractDomain("user@GMAIL.COM")).toEqual("gmail.com");
+    expect(extractDomain("user@tempest.team")).toEqual("tempest.team");
+  });
 
-Deno.test("extractDomain - handles email with multiple @ symbols", () => {
-  // Uses lastIndexOf, so this should work
-  assertEquals(extractDomain("user@weird@gmail.com"), "gmail.com");
-});
+  it("handles email with multiple @ symbols", () => {
+    // Uses lastIndexOf, so this should work
+    expect(extractDomain("user@weird@gmail.com")).toEqual("gmail.com");
+  });
 
-Deno.test("extractDomain - throws on invalid email without @", () => {
-  assertThrows(() => extractDomain("invalid-email"), Error, "Invalid email address");
+  it("throws on invalid email without @", () => {
+    expect(() => extractDomain("invalid-email")).toThrow("Invalid email address");
+  });
 });
 
 // =============================================================================
 // isPublicEmailDomain tests
 // =============================================================================
 
-Deno.test("isPublicEmailDomain - identifies major providers", () => {
-  // Note: isPublicEmailDomain expects lowercase input (use extractDomain to normalize)
-  assertEquals(isPublicEmailDomain("gmail.com"), true);
-  assertEquals(isPublicEmailDomain("yahoo.com"), true);
-  assertEquals(isPublicEmailDomain("hotmail.com"), true);
-  assertEquals(isPublicEmailDomain("outlook.com"), true);
-  assertEquals(isPublicEmailDomain("icloud.com"), true);
-  assertEquals(isPublicEmailDomain("protonmail.com"), true);
-});
+describe("isPublicEmailDomain", () => {
+  it("identifies major providers", () => {
+    // Note: isPublicEmailDomain expects lowercase input (use extractDomain to normalize)
+    expect(isPublicEmailDomain("gmail.com")).toEqual(true);
+    expect(isPublicEmailDomain("yahoo.com")).toEqual(true);
+    expect(isPublicEmailDomain("hotmail.com")).toEqual(true);
+    expect(isPublicEmailDomain("outlook.com")).toEqual(true);
+    expect(isPublicEmailDomain("icloud.com")).toEqual(true);
+    expect(isPublicEmailDomain("protonmail.com")).toEqual(true);
+  });
 
-Deno.test("isPublicEmailDomain - identifies disposable email providers", () => {
-  assertEquals(isPublicEmailDomain("mailinator.com"), true);
-  assertEquals(isPublicEmailDomain("guerrillamail.com"), true);
-  assertEquals(isPublicEmailDomain("10minutemail.com"), true);
-  assertEquals(isPublicEmailDomain("temp-mail.org"), true);
-});
+  it("identifies disposable email providers", () => {
+    expect(isPublicEmailDomain("mailinator.com")).toEqual(true);
+    expect(isPublicEmailDomain("guerrillamail.com")).toEqual(true);
+    expect(isPublicEmailDomain("10minutemail.com")).toEqual(true);
+    expect(isPublicEmailDomain("temp-mail.org")).toEqual(true);
+  });
 
-Deno.test("isPublicEmailDomain - rejects company domains", () => {
-  assertEquals(isPublicEmailDomain("tempest.team"), false);
-  assertEquals(isPublicEmailDomain("acme.com"), false);
-  assertEquals(isPublicEmailDomain("company.io"), false);
-  assertEquals(isPublicEmailDomain("startup.co"), false);
+  it("rejects company domains", () => {
+    expect(isPublicEmailDomain("tempest.team")).toEqual(false);
+    expect(isPublicEmailDomain("acme.com")).toEqual(false);
+    expect(isPublicEmailDomain("company.io")).toEqual(false);
+    expect(isPublicEmailDomain("startup.co")).toEqual(false);
+  });
 });
 
 // =============================================================================
 // validateRecipient tests - Public domain users
 // =============================================================================
 
-Deno.test("validateRecipient - public domain user sends to self (allowed)", () => {
-  const result = validateRecipient("user@gmail.com", "user@gmail.com");
-  assertEquals(result.to, "user@gmail.com");
-  assertEquals(result.overridden, false);
-});
+describe("validateRecipient - Public domain users", () => {
+  it("public domain user sends to self (allowed)", () => {
+    const result = validateRecipient("user@gmail.com", "user@gmail.com");
+    expect(result.to).toEqual("user@gmail.com");
+    expect(result.overridden).toEqual(false);
+  });
 
-Deno.test("validateRecipient - public domain user sends to self with different case (allowed)", () => {
-  const result = validateRecipient("User@Gmail.COM", "user@gmail.com");
-  assertEquals(result.to, "user@gmail.com");
-  assertEquals(result.overridden, false);
-});
+  it("public domain user sends to self with different case (allowed)", () => {
+    const result = validateRecipient("User@Gmail.COM", "user@gmail.com");
+    expect(result.to).toEqual("user@gmail.com");
+    expect(result.overridden).toEqual(false);
+  });
 
-Deno.test("validateRecipient - public domain user sends to external (overridden)", () => {
-  const result = validateRecipient("user@gmail.com", "other@company.com");
-  assertEquals(result.to, "user@gmail.com");
-  assertEquals(result.overridden, true);
-});
+  it("public domain user sends to external (overridden)", () => {
+    const result = validateRecipient("user@gmail.com", "other@company.com");
+    expect(result.to).toEqual("user@gmail.com");
+    expect(result.overridden).toEqual(true);
+  });
 
-Deno.test("validateRecipient - public domain user sends to different public domain (overridden)", () => {
-  const result = validateRecipient("user@gmail.com", "other@yahoo.com");
-  assertEquals(result.to, "user@gmail.com");
-  assertEquals(result.overridden, true);
+  it("public domain user sends to different public domain (overridden)", () => {
+    const result = validateRecipient("user@gmail.com", "other@yahoo.com");
+    expect(result.to).toEqual("user@gmail.com");
+    expect(result.overridden).toEqual(true);
+  });
 });
 
 // =============================================================================
 // validateRecipient tests - Company domain users
 // =============================================================================
 
-Deno.test("validateRecipient - company domain user sends to self (allowed)", () => {
-  const result = validateRecipient("luke@tempest.team", "luke@tempest.team");
-  assertEquals(result.to, "luke@tempest.team");
-  assertEquals(result.overridden, false);
-});
+describe("validateRecipient - Company domain users", () => {
+  it("company domain user sends to self (allowed)", () => {
+    const result = validateRecipient("luke@tempest.team", "luke@tempest.team");
+    expect(result.to).toEqual("luke@tempest.team");
+    expect(result.overridden).toEqual(false);
+  });
 
-Deno.test("validateRecipient - company domain user sends to same domain colleague (allowed)", () => {
-  const result = validateRecipient("luke@tempest.team", "colleague@tempest.team");
-  assertEquals(result.to, "colleague@tempest.team");
-  assertEquals(result.overridden, false);
-});
+  it("company domain user sends to same domain colleague (allowed)", () => {
+    const result = validateRecipient("luke@tempest.team", "colleague@tempest.team");
+    expect(result.to).toEqual("colleague@tempest.team");
+    expect(result.overridden).toEqual(false);
+  });
 
-Deno.test("validateRecipient - company domain user sends to same domain with different case (allowed)", () => {
-  const result = validateRecipient("Luke@Tempest.Team", "Colleague@TEMPEST.TEAM");
-  assertEquals(result.to, "colleague@tempest.team");
-  assertEquals(result.overridden, false);
-});
+  it("company domain user sends to same domain with different case (allowed)", () => {
+    const result = validateRecipient("Luke@Tempest.Team", "Colleague@TEMPEST.TEAM");
+    expect(result.to).toEqual("colleague@tempest.team");
+    expect(result.overridden).toEqual(false);
+  });
 
-Deno.test("validateRecipient - company domain user sends to external company (overridden)", () => {
-  const result = validateRecipient("luke@tempest.team", "someone@other-company.com");
-  assertEquals(result.to, "luke@tempest.team");
-  assertEquals(result.overridden, true);
-});
+  it("company domain user sends to external company (overridden)", () => {
+    const result = validateRecipient("luke@tempest.team", "someone@other-company.com");
+    expect(result.to).toEqual("luke@tempest.team");
+    expect(result.overridden).toEqual(true);
+  });
 
-Deno.test("validateRecipient - company domain user sends to public domain (overridden)", () => {
-  const result = validateRecipient("luke@tempest.team", "personal@gmail.com");
-  assertEquals(result.to, "luke@tempest.team");
-  assertEquals(result.overridden, true);
+  it("company domain user sends to public domain (overridden)", () => {
+    const result = validateRecipient("luke@tempest.team", "personal@gmail.com");
+    expect(result.to).toEqual("luke@tempest.team");
+    expect(result.overridden).toEqual(true);
+  });
 });
 
 // =============================================================================
 // validateRecipient tests - Edge cases
 // =============================================================================
 
-Deno.test("validateRecipient - normalizes output to lowercase", () => {
-  const result = validateRecipient("USER@TEMPEST.TEAM", "COLLEAGUE@TEMPEST.TEAM");
-  assertEquals(result.to, "colleague@tempest.team");
-});
+describe("validateRecipient - Edge cases", () => {
+  it("normalizes output to lowercase", () => {
+    const result = validateRecipient("USER@TEMPEST.TEAM", "COLLEAGUE@TEMPEST.TEAM");
+    expect(result.to).toEqual("colleague@tempest.team");
+  });
 
-Deno.test("validateRecipient - handles subdomains as different domains", () => {
-  const result = validateRecipient("user@mail.company.com", "other@company.com");
-  assertEquals(result.to, "user@mail.company.com");
-  assertEquals(result.overridden, true);
+  it("handles subdomains as different domains", () => {
+    const result = validateRecipient("user@mail.company.com", "other@company.com");
+    expect(result.to).toEqual("user@mail.company.com");
+    expect(result.overridden).toEqual(true);
+  });
 });

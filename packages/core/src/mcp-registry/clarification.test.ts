@@ -1,5 +1,4 @@
-import { assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import {
   createAmbiguousBundledClarification,
   createAmbiguousMCPClarification,
@@ -26,10 +25,10 @@ describe("formatClarificationReport", () => {
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes("Slack Notifier"), true);
-    assertEquals(formatted.includes("Slack Agent"), true);
-    assertEquals(formatted.includes("channel"), true);
-    assertEquals(formatted.includes("No channel specified"), true);
+    expect(formatted.includes("Slack Notifier")).toBe(true);
+    expect(formatted.includes("Slack Agent")).toBe(true);
+    expect(formatted.includes("channel")).toBe(true);
+    expect(formatted.includes("No channel specified")).toBe(true);
   });
 
   it("formats MCP missing fields clarification", () => {
@@ -42,8 +41,8 @@ describe("formatClarificationReport", () => {
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes("GitHub"), true);
-    assertEquals(formatted.includes("GITHUB_TOKEN"), true);
+    expect(formatted.includes("GitHub")).toBe(true);
+    expect(formatted.includes("GITHUB_TOKEN")).toBe(true);
   });
 
   it("formats ambiguous bundled clarification", () => {
@@ -70,9 +69,9 @@ describe("formatClarificationReport", () => {
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes("Multiple bundled agents match"), true);
-    assertEquals(formatted.includes("Slack"), true);
-    assertEquals(formatted.includes("Email"), true);
+    expect(formatted.includes("Multiple bundled agents match")).toBe(true);
+    expect(formatted.includes("Slack")).toBe(true);
+    expect(formatted.includes("Email")).toBe(true);
   });
 
   it("formats ambiguous MCP clarification", () => {
@@ -88,9 +87,9 @@ describe("formatClarificationReport", () => {
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes('Multiple MCP servers match "monitoring"'), true);
-    assertEquals(formatted.includes("Prometheus"), true);
-    assertEquals(formatted.includes("Datadog"), true);
+    expect(formatted.includes('Multiple MCP servers match "monitoring"')).toBe(true);
+    expect(formatted.includes("Prometheus")).toBe(true);
+    expect(formatted.includes("Datadog")).toBe(true);
   });
 
   it("formats no-match clarification", () => {
@@ -98,9 +97,9 @@ describe("formatClarificationReport", () => {
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes("No integration found"), true);
-    assertEquals(formatted.includes("fake-service"), true);
-    assertEquals(formatted.includes("Be more specific"), true);
+    expect(formatted.includes("No integration found")).toBe(true);
+    expect(formatted.includes("fake-service")).toBe(true);
+    expect(formatted.includes("Be more specific")).toBe(true);
   });
 
   it("groups multiple clarifications by agent", () => {
@@ -113,32 +112,32 @@ describe("formatClarificationReport", () => {
     const formatted = formatClarificationReport(clarifications);
 
     // Should have two agent sections
-    assertEquals(formatted.includes("**Agent A**"), true);
-    assertEquals(formatted.includes("**Agent B**"), true);
+    expect(formatted.includes("**Agent A**")).toBe(true);
+    expect(formatted.includes("**Agent B**")).toBe(true);
 
     // Should have summary
-    assertEquals(formatted.includes("3 issues"), true);
-    assertEquals(formatted.includes("2 agents"), true);
+    expect(formatted.includes("3 issues")).toBe(true);
+    expect(formatted.includes("2 agents")).toBe(true);
   });
 
   it("returns empty string for empty clarifications", () => {
     const formatted = formatClarificationReport([]);
 
-    assertEquals(formatted, "");
+    expect(formatted).toEqual("");
   });
 
   it("handles singular vs plural in summary", () => {
     const single = formatClarificationReport([createNoMatchClarification("Agent", "service")]);
 
-    assertEquals(single.includes("1 issue"), true);
-    assertEquals(single.includes("1 agent"), true);
+    expect(single.includes("1 issue")).toBe(true);
+    expect(single.includes("1 agent")).toBe(true);
 
     const multiple = formatClarificationReport([
       createNoMatchClarification("Agent A", "service1"),
       createNoMatchClarification("Agent B", "service2"),
     ]);
 
-    assertEquals(multiple.includes("2 issues"), true);
-    assertEquals(multiple.includes("2 agents"), true);
+    expect(multiple.includes("2 issues")).toBe(true);
+    expect(multiple.includes("2 agents")).toBe(true);
   });
 });

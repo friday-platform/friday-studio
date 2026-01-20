@@ -1,31 +1,30 @@
-import { assertEquals, assertExists } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
 
 describe("mcpServersRegistry", () => {
   it("has valid structure for all servers", () => {
     for (const [id, server] of Object.entries(mcpServersRegistry.servers)) {
       // Identity
-      assertExists(server.id, `Server ${id} missing id`);
-      assertEquals(server.id, id, `Server ${id} has mismatched id`);
-      assertExists(server.name, `Server ${id} missing name`);
+      expect(server.id).toBeDefined();
+      expect(server.id).toEqual(id);
+      expect(server.name).toBeDefined();
 
       // Classification
-      assertExists(server.domains, `Server ${id} missing domains`);
-      assertEquals(server.domains.length > 0, true, `Server ${id} has empty domains array`);
+      expect(server.domains).toBeDefined();
+      expect(server.domains.length > 0).toBe(true);
 
       // Config
-      assertExists(server.configTemplate, `Server ${id} missing configTemplate`);
-      assertExists(server.configTemplate.transport, `Server ${id} missing transport config`);
+      expect(server.configTemplate).toBeDefined();
+      expect(server.configTemplate.transport).toBeDefined();
 
       // Security
-      assertExists(server.securityRating, `Server ${id} missing securityRating`);
-      assertEquals(server.source, "static", `Server ${id} has invalid source`);
+      expect(server.securityRating).toBeDefined();
+      expect(server.source).toEqual("static");
     }
   });
 
   it("configTemplate uses placeholder format for credentials", () => {
-    for (const [id, server] of Object.entries(mcpServersRegistry.servers)) {
+    for (const [_id, server] of Object.entries(mcpServersRegistry.servers)) {
       if (server.configTemplate.env) {
         for (const [key, value] of Object.entries(server.configTemplate.env)) {
           // Only check values that look like they should be credentials
@@ -48,11 +47,7 @@ describe("mcpServersRegistry", () => {
                 value.includes("${") ||
                 value.includes("xxxx") ||
                 value === "auto";
-              assertEquals(
-                isPlaceholder,
-                true,
-                `Server ${id} has hardcoded credential ${key}: ${value}`,
-              );
+              expect(isPlaceholder).toBe(true);
             }
           }
         }
@@ -61,13 +56,13 @@ describe("mcpServersRegistry", () => {
   });
 
   it("has correct metadata", () => {
-    assertExists(mcpServersRegistry.metadata);
-    assertExists(mcpServersRegistry.metadata.version);
-    assertExists(mcpServersRegistry.metadata.lastUpdated);
+    expect(mcpServersRegistry.metadata).toBeDefined();
+    expect(mcpServersRegistry.metadata.version).toBeDefined();
+    expect(mcpServersRegistry.metadata.lastUpdated).toBeDefined();
   });
 
   it("has requiredConfig for servers with env variables", () => {
-    for (const [id, server] of Object.entries(mcpServersRegistry.servers)) {
+    for (const [_id, server] of Object.entries(mcpServersRegistry.servers)) {
       const hasEnvVars =
         server.configTemplate.env && Object.keys(server.configTemplate.env).length > 0;
 
@@ -82,12 +77,8 @@ describe("mcpServersRegistry", () => {
         );
 
         if (hasCredentials) {
-          assertExists(server.requiredConfig, `Server ${id} has env vars but no requiredConfig`);
-          assertEquals(
-            server.requiredConfig?.length > 0,
-            true,
-            `Server ${id} has empty requiredConfig despite env vars`,
-          );
+          expect(server.requiredConfig).toBeDefined();
+          expect(server.requiredConfig && server.requiredConfig.length > 0).toBe(true);
         }
       }
     }
@@ -95,8 +86,8 @@ describe("mcpServersRegistry", () => {
 
   it("has Record structure for O(1) lookup", () => {
     // Test that we can directly access servers by ID
-    assertEquals(mcpServersRegistry.servers.github?.id, "github");
-    assertEquals(mcpServersRegistry.servers.stripe?.id, "stripe");
-    assertEquals(mcpServersRegistry.servers.azure?.id, "azure");
+    expect(mcpServersRegistry.servers.github?.id).toEqual("github");
+    expect(mcpServersRegistry.servers.stripe?.id).toEqual("stripe");
+    expect(mcpServersRegistry.servers.azure?.id).toEqual("azure");
   });
 });

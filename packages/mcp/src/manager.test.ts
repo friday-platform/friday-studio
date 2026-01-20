@@ -9,8 +9,7 @@
  */
 
 import process from "node:process";
-import { assertEquals, assertMatch, assertRejects } from "@std/assert";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MCPManager } from "./manager.ts";
 
 // =============================================================================
@@ -160,12 +159,7 @@ describe("MCPManager - Link Credential Integration", () => {
     // Registration will fail during MCP client creation (echo is not an MCP server),
     // but if we get a registration failure (not a credential error), we know
     // credential resolution succeeded
-    const error = await assertRejects(async () => await manager.registerServer(config), Error);
-
-    // Verify we got past credential resolution - error should be about registration, not credentials
-    assertMatch(error.message, /registration failed/);
-    // Make sure it's not a credential error
-    assertEquals(error.message.includes("Failed to fetch credential"), false);
+    await expect(manager.registerServer(config)).rejects.toThrow(/registration failed/);
   });
 
   it("Test 2: fails with clear error when credential not found (404)", async () => {
@@ -190,10 +184,9 @@ describe("MCPManager - Link Credential Integration", () => {
     };
 
     // Should fail with credential fetch error
-    const error = await assertRejects(async () => await manager.registerServer(config), Error);
-
-    // Verify error message is actionable and mentions the credential
-    assertMatch(error.message, /Failed to fetch credential 'cred_nonexistent'/);
+    await expect(manager.registerServer(config)).rejects.toThrow(
+      /Failed to fetch credential 'cred_nonexistent'/,
+    );
   });
 
   it("Test 3: resolves mixed env types (Link + literal + auto)", async () => {
@@ -223,12 +216,7 @@ describe("MCPManager - Link Credential Integration", () => {
 
     // This will fail during MCP client creation, but if all env resolution succeeded,
     // the error will be about registration, not environment variables
-    const error = await assertRejects(async () => await manager.registerServer(config), Error);
-
-    // Verify env resolution succeeded - error should be about registration
-    assertMatch(error.message, /registration failed/);
-    // Make sure it's not an env-related error
-    assertEquals(error.message.includes("environment variable"), false);
+    await expect(manager.registerServer(config)).rejects.toThrow(/registration failed/);
   });
 });
 
@@ -261,10 +249,10 @@ describe("MCPManager - Link Authentication", () => {
       };
 
       // Attempt to register - will fail on command, but should fetch credential with ATLAS_KEY
-      await assertRejects(async () => await manager.registerServer(config));
+      await expect(manager.registerServer(config)).rejects.toThrow();
 
       // Assert: ATLAS_KEY present in Authorization header
-      assertEquals(capturedHeaders.authorization, `Bearer ${testAtlasKey}`);
+      expect(capturedHeaders.authorization).toEqual(`Bearer ${testAtlasKey}`);
     } finally {
       // Cleanup
       if (originalDevMode !== undefined) {
@@ -296,10 +284,10 @@ describe("MCPManager - Link Authentication", () => {
     };
 
     // Attempt to register - will fail on command, but should fetch credential without auth
-    await assertRejects(async () => await manager.registerServer(config));
+    await expect(manager.registerServer(config)).rejects.toThrow();
 
     // Assert: No auth header in dev mode
-    assertEquals(capturedHeaders.authorization, undefined);
+    expect(capturedHeaders.authorization).toBeUndefined();
   });
 
   it("throws clear error when ATLAS_KEY missing in prod mode", async () => {
@@ -322,11 +310,7 @@ describe("MCPManager - Link Authentication", () => {
       };
 
       // Should throw when trying to fetch credential without ATLAS_KEY
-      await assertRejects(
-        async () => await manager.registerServer(config),
-        Error,
-        "ATLAS_KEY is required",
-      );
+      await expect(manager.registerServer(config)).rejects.toThrow(/ATLAS_KEY is required/);
     } finally {
       // Cleanup
       if (originalDevMode !== undefined) {

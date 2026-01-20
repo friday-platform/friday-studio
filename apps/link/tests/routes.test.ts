@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
@@ -117,20 +117,30 @@ const testProviders = {
   },
 } as const;
 
-Deno.test("Link HTTP routes", async (t) => {
-  const tempDir = makeTempDir();
-  const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
-  const oauthService = new OAuthService(registry, storage);
-  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+describe("Link HTTP routes", () => {
+  let tempDir: string;
+  let storage: DenoKVStorageAdapter;
+  let app: Awaited<ReturnType<typeof createApp>>;
 
-  // Register all test providers once at setup
-  Object.values(testProviders).forEach((provider) => {
-    if (!registry.has(provider.id)) {
-      registry.register(provider);
-    }
+  beforeAll(async () => {
+    tempDir = makeTempDir();
+    storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+    const oauthService = new OAuthService(registry, storage);
+    app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+
+    // Register all test providers once at setup
+    Object.values(testProviders).forEach((provider) => {
+      if (!registry.has(provider.id)) {
+        registry.register(provider);
+      }
+    });
   });
 
-  await t.step("PUT /v1/credentials/:type creates credential", async () => {
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true });
+  });
+
+  it("PUT /v1/credentials/:type creates credential", async () => {
     const res = await app.request("/v1/credentials/apikey", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -141,16 +151,16 @@ Deno.test("Link HTTP routes", async (t) => {
       }),
     });
 
-    assertEquals(res.status, 201);
+    expect(res.status).toBe(201);
     const json = CredentialSummarySchema.parse(await res.json());
-    assertObjectMatch(json, {
+    expect(json).toMatchObject({
       type: "apikey",
       provider: testProviders.basic.id,
       label: "Test Key",
     });
   });
 
-  await t.step("PUT /v1/credentials/:type rejects unknown provider", async () => {
+  it("PUT /v1/credentials/:type rejects unknown provider", async () => {
     const res = await app.request("/v1/credentials/apikey", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -161,14 +171,14 @@ Deno.test("Link HTTP routes", async (t) => {
       }),
     });
 
-    assertEquals(res.status, 400);
+    expect(res.status).toBe(400);
     const json = ErrorResponse.parse(await res.json());
-    assertObjectMatch(json, { error: "unknown_provider" });
-    assertExists(json.message);
-    assertMatch(json.message, /nonexistent-provider/);
+    expect(json).toMatchObject({ error: "unknown_provider" });
+    expect.assert(json.message !== undefined, "message should be defined");
+    expect(json.message).toMatch(/nonexistent-provider/);
   });
 
-  await t.step("PUT /v1/credentials/:type rejects invalid secret schema", async () => {
+  it("PUT /v1/credentials/:type rejects invalid secret schema", async () => {
     const res = await app.request("/v1/credentials/apikey", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -179,14 +189,17 @@ Deno.test("Link HTTP routes", async (t) => {
       }),
     });
 
-    assertEquals(res.status, 400);
+    expect(res.status).toBe(400);
     const json = ErrorResponse.parse(await res.json());
-    assertObjectMatch(json, { error: "validation_failed", provider: testProviders.validation.id });
-    assertExists(json.issues);
-    assert(json.issues.length > 0);
+    expect(json).toMatchObject({
+      error: "validation_failed",
+      provider: testProviders.validation.id,
+    });
+    expect.assert(json.issues !== undefined, "issues should be defined");
+    expect(json.issues.length).toBeGreaterThan(0);
   });
 
-  await t.step("PUT /v1/credentials/:type accepts valid secret matching schema", async () => {
+  it("PUT /v1/credentials/:type accepts valid secret matching schema", async () => {
     const res = await app.request("/v1/credentials/apikey", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -197,24 +210,24 @@ Deno.test("Link HTTP routes", async (t) => {
       }),
     });
 
-    assertEquals(res.status, 201);
+    expect(res.status).toBe(201);
     const json = CredentialSummarySchema.parse(await res.json());
-    assertObjectMatch(json, {
+    expect(json).toMatchObject({
       type: "apikey",
       provider: testProviders.validSchema.id,
       label: "Valid Secret",
     });
   });
 
-  await t.step("GET /v1/credentials/type/:type lists credentials", async () => {
+  it("GET /v1/credentials/type/:type lists credentials", async () => {
     const res = await app.request("/v1/credentials/type/apikey");
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const json = z.array(CredentialSummarySchema).parse(await res.json());
-    assert(json.length > 0);
+    expect(json.length).toBeGreaterThan(0);
   });
 
-  await t.step("GET /v1/credentials/:id returns metadata without secret", async () => {
+  it("GET /v1/credentials/:id returns metadata without secret", async () => {
     // Create
     const createRes = await app.request("/v1/credentials/apikey", {
       method: "PUT",
@@ -230,20 +243,20 @@ Deno.test("Link HTTP routes", async (t) => {
     // Fetch
     const res = await app.request(`/v1/credentials/${created.id}`);
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const json = CredentialSummarySchema.parse(await res.json());
-    assertEquals(json.id, created.id);
+    expect(json.id).toBe(created.id);
   });
 
-  await t.step("GET /v1/credentials/:id returns 404 for missing", async () => {
+  it("GET /v1/credentials/:id returns 404 for missing", async () => {
     const res = await app.request("/v1/credentials/nonexistent-id");
 
-    assertEquals(res.status, 404);
+    expect(res.status).toBe(404);
     const json = ErrorResponse.parse(await res.json());
-    assertMatch(json.error, /not found/i);
+    expect(json.error).toMatch(/not found/i);
   });
 
-  await t.step("DELETE /v1/credentials/:id removes credential", async () => {
+  it("DELETE /v1/credentials/:id removes credential", async () => {
     // Create
     const createRes = await app.request("/v1/credentials/apikey", {
       method: "PUT",
@@ -258,14 +271,14 @@ Deno.test("Link HTTP routes", async (t) => {
 
     // Delete
     const deleteRes = await app.request(`/v1/credentials/${created.id}`, { method: "DELETE" });
-    assertEquals(deleteRes.status, 204);
+    expect(deleteRes.status).toBe(204);
 
     // Verify gone
     const getRes = await app.request(`/v1/credentials/${created.id}`);
-    assertEquals(getRes.status, 404);
+    expect(getRes.status).toBe(404);
   });
 
-  await t.step("GET /internal/v1/credentials/:id returns full credential with secret", async () => {
+  it("GET /internal/v1/credentials/:id returns full credential with secret", async () => {
     const secretData = { apiKey: "sk-secret-value" };
     const createRes = await app.request("/v1/credentials/apikey", {
       method: "PUT",
@@ -280,7 +293,7 @@ Deno.test("Link HTTP routes", async (t) => {
 
     const res = await app.request(`/internal/v1/credentials/${created.id}`);
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const json = z
       .object({
         credential: CredentialSchema,
@@ -288,39 +301,36 @@ Deno.test("Link HTTP routes", async (t) => {
         error: z.string().optional(),
       })
       .parse(await res.json());
-    assertEquals(json.status, "ready");
-    assertEquals(json.credential.secret.apiKey, secretData.apiKey);
+    expect(json.status).toBe("ready");
+    expect(json.credential.secret.apiKey).toBe(secretData.apiKey);
   });
 
-  await t.step(
-    "PUT /v1/credentials/:type rejects credential with failed health check",
-    async () => {
-      // Attempt to create credential with unhealthy provider
-      const createRes = await app.request("/v1/credentials/apikey", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: testProviders.unhealthy.id,
-          label: "Unhealthy Test Cred",
-          secret: { token: "xoxb-test-token" },
-        }),
-      });
-
-      // Should be rejected with health_check_failed
-      assertEquals(createRes.status, 400);
-      const body = ErrorResponse.parse(await createRes.json());
-      assertObjectMatch(body, {
-        error: "health_check_failed",
-        message: "token_revoked",
+  it("PUT /v1/credentials/:type rejects credential with failed health check", async () => {
+    // Attempt to create credential with unhealthy provider
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         provider: testProviders.unhealthy.id,
-      });
-    },
-  );
+        label: "Unhealthy Test Cred",
+        secret: { token: "xoxb-test-token" },
+      }),
+    });
 
-  await t.step("GET /v1/providers returns list of registered providers", async () => {
+    // Should be rejected with health_check_failed
+    expect(createRes.status).toBe(400);
+    const body = ErrorResponse.parse(await createRes.json());
+    expect(body).toMatchObject({
+      error: "health_check_failed",
+      message: "token_revoked",
+      provider: testProviders.unhealthy.id,
+    });
+  });
+
+  it("GET /v1/providers returns list of registered providers", async () => {
     const res = await app.request("/v1/providers");
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const json = z
       .object({
         providers: z.array(
@@ -336,12 +346,12 @@ Deno.test("Link HTTP routes", async (t) => {
       .parse(await res.json());
 
     // Should have at least our test provider
-    assert(json.providers.length > 0);
+    expect(json.providers.length).toBeGreaterThan(0);
 
     // Find our test provider
     const testProvider = json.providers.find((p) => p.id === testProviders.listProvider.id);
-    assertExists(testProvider);
-    assertObjectMatch(testProvider, {
+    expect.assert(testProvider !== undefined, "test provider should be found");
+    expect(testProvider).toMatchObject({
       displayName: "Test Provider",
       description: "A test provider for listing",
       iconUrl: "https://example.com/icon.png",
@@ -349,22 +359,22 @@ Deno.test("Link HTTP routes", async (t) => {
     });
   });
 
-  await t.step("GET /v1/providers does not leak setupInstructions or secretSchema", async () => {
+  it("GET /v1/providers does not leak setupInstructions or secretSchema", async () => {
     const res = await app.request("/v1/providers");
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const rawJson = await res.json();
 
     // Check that the raw JSON doesn't contain setup instructions or schema
     const jsonString = JSON.stringify(rawJson);
-    assert(!jsonString.includes("setupInstructions"));
-    assert(!jsonString.includes("secretSchema"));
+    expect(jsonString).not.toContain("setupInstructions");
+    expect(jsonString).not.toContain("secretSchema");
   });
 
-  await t.step("GET /v1/providers/:id returns full provider details", async () => {
+  it("GET /v1/providers/:id returns full provider details", async () => {
     const res = await app.request(`/v1/providers/${testProviders.fullDetails.id}`);
 
-    assertEquals(res.status, 200);
+    expect(res.status).toBe(200);
     const json = z
       .object({
         id: z.string(),
@@ -378,48 +388,41 @@ Deno.test("Link HTTP routes", async (t) => {
       })
       .parse(await res.json());
 
-    assertEquals(json.id, testProviders.fullDetails.id);
-    assertEquals(json.displayName, "Test Provider Detail");
-    assertEquals(json.description, "A test provider for detail view");
-    assertEquals(json.iconUrl, "https://example.com/icon.png");
-    assertEquals(json.docsUrl, "https://example.com/docs");
-    assertEquals(
-      json.setupInstructions,
+    expect(json.id).toBe(testProviders.fullDetails.id);
+    expect(json.displayName).toBe("Test Provider Detail");
+    expect(json.description).toBe("A test provider for detail view");
+    expect(json.iconUrl).toBe("https://example.com/icon.png");
+    expect(json.docsUrl).toBe("https://example.com/docs");
+    expect(json.setupInstructions).toBe(
       "# Setup Instructions\n\n1. Go to provider\n2. Create API key",
     );
-    assertEquals(json.supportsHealth, true);
+    expect(json.supportsHealth).toBe(true);
 
-    // Verify secretSchema is valid JSON Schema - just check structure manually
-    assert(typeof json.secretSchema === "object" && json.secretSchema !== null);
-    const schema = json.secretSchema as Record<string, unknown>;
-    assertEquals(schema.type, "object");
-    assert(typeof schema.properties === "object" && schema.properties !== null);
+    // Verify secretSchema is valid JSON Schema
+    expect.assert(
+      typeof json.secretSchema === "object" && json.secretSchema !== null,
+      "secretSchema should be an object",
+    );
+    expect(json.secretSchema).toHaveProperty("type", "object");
+    expect(json.secretSchema).toHaveProperty("properties");
   });
 
-  await t.step("GET /v1/providers/:id returns 404 for unknown provider", async () => {
+  it("GET /v1/providers/:id returns 404 for unknown provider", async () => {
     const res = await app.request("/v1/providers/nonexistent-provider");
 
-    assertEquals(res.status, 404);
+    expect(res.status).toBe(404);
     const json = ErrorResponse.parse(await res.json());
-    assertObjectMatch(json, { error: "provider_not_found" });
-    assertExists(json.message);
-    assertMatch(json.message, /nonexistent-provider/);
+    expect(json).toMatchObject({ error: "provider_not_found" });
+    expect.assert(json.message !== undefined, "message should be defined");
+    expect(json.message).toMatch(/nonexistent-provider/);
   });
 
-  await t.step(
-    "GET /v1/providers/:id supportsHealth is false when no health function",
-    async () => {
-      const res = await app.request(`/v1/providers/${testProviders.fullDetailsNoHealth.id}`);
+  it("GET /v1/providers/:id supportsHealth is false when no health function", async () => {
+    const res = await app.request(`/v1/providers/${testProviders.fullDetailsNoHealth.id}`);
 
-      assertEquals(res.status, 200);
-      const json = z
-        .object({ id: z.string(), supportsHealth: z.boolean() })
-        .parse(await res.json());
-      assertEquals(json.id, testProviders.fullDetailsNoHealth.id);
-      assertEquals(json.supportsHealth, false);
-    },
-  );
-
-  // Cleanup
-  await rm(tempDir, { recursive: true });
+    expect(res.status).toBe(200);
+    const json = z.object({ id: z.string(), supportsHealth: z.boolean() }).parse(await res.json());
+    expect(json.id).toBe(testProviders.fullDetailsNoHealth.id);
+    expect(json.supportsHealth).toBe(false);
+  });
 });

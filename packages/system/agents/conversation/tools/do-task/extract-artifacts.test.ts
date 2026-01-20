@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
 
 const fixtures = {
@@ -28,78 +28,78 @@ const fixtures = {
   emailAgent: { response: "Email sent", message_id: "msg-123" },
 };
 
-Deno.test("extractArtifactsFromOutput", async (t) => {
-  await t.step("returns [] for null/undefined/non-object", () => {
-    assertEquals(extractArtifactsFromOutput(null), []);
-    assertEquals(extractArtifactsFromOutput(undefined), []);
-    assertEquals(extractArtifactsFromOutput("string"), []);
+describe("extractArtifactsFromOutput", () => {
+  it("returns [] for null/undefined/non-object", () => {
+    expect(extractArtifactsFromOutput(null)).toEqual([]);
+    expect(extractArtifactsFromOutput(undefined)).toEqual([]);
+    expect(extractArtifactsFromOutput("string")).toEqual([]);
   });
 
-  await t.step("extracts artifactRef from Result wrapper", () => {
+  it("extracts artifactRef from Result wrapper", () => {
     const result = extractArtifactsFromOutput(fixtures.claudeCode);
-    assertEquals(result.length, 1);
-    assertEquals(result[0]?.id, "abc-123");
+    expect(result.length).toEqual(1);
+    expect(result[0]?.id).toEqual("abc-123");
   });
 
-  await t.step("extracts artifactRefs from direct object", () => {
+  it("extracts artifactRefs from direct object", () => {
     const result = extractArtifactsFromOutput(fixtures.googleCalendar);
-    assertEquals(result.length, 2);
-    assertEquals(result[0]?.id, "evt-1");
+    expect(result.length).toEqual(2);
+    expect(result[0]?.id).toEqual("evt-1");
   });
 
-  await t.step("returns [] when no artifacts", () => {
-    assertEquals(extractArtifactsFromOutput(fixtures.llmAction), []);
-    assertEquals(extractArtifactsFromOutput(fixtures.emailAgent), []);
+  it("returns [] when no artifacts", () => {
+    expect(extractArtifactsFromOutput(fixtures.llmAction)).toEqual([]);
+    expect(extractArtifactsFromOutput(fixtures.emailAgent)).toEqual([]);
   });
 
-  await t.step("deduplicates by id", () => {
+  it("deduplicates by id", () => {
     const input = {
       artifactRef: { id: "dup", type: "code", summary: "a" },
       artifactRefs: [{ id: "dup", type: "code", summary: "b" }],
     };
-    assertEquals(extractArtifactsFromOutput(input).length, 1);
+    expect(extractArtifactsFromOutput(input).length).toEqual(1);
   });
 });
 
-Deno.test("sanitizeAgentOutput", async (t) => {
-  await t.step("returns undefined for null/non-object", () => {
-    assertEquals(sanitizeAgentOutput(null), undefined);
-    assertEquals(sanitizeAgentOutput("string"), undefined);
+describe("sanitizeAgentOutput", () => {
+  it("returns undefined for null/non-object", () => {
+    expect(sanitizeAgentOutput(null)).toEqual(undefined);
+    expect(sanitizeAgentOutput("string")).toEqual(undefined);
   });
 
-  await t.step("extracts response, strips artifactRef (Result wrapper)", () => {
+  it("extracts response, strips artifactRef (Result wrapper)", () => {
     const result = sanitizeAgentOutput(fixtures.claudeCode);
-    assertEquals(result?.ok, true);
-    assertEquals(result?.data?.response, "Created divide.ts");
-    assertEquals("artifactRef" in (result?.data ?? {}), false);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data?.response).toEqual("Created divide.ts");
+    expect("artifactRef" in (result?.data ?? {})).toEqual(false);
   });
 
-  await t.step("extracts summary as response (Result wrapper)", () => {
+  it("extracts summary as response (Result wrapper)", () => {
     const result = sanitizeAgentOutput(fixtures.webSearch);
-    assertEquals(result?.data?.response, "Found 5 articles");
+    expect(result?.data?.response).toEqual("Found 5 articles");
   });
 
-  await t.step("extracts response, strips artifactRefs (direct object)", () => {
+  it("extracts response, strips artifactRefs (direct object)", () => {
     const result = sanitizeAgentOutput(fixtures.googleCalendar);
-    assertEquals(result?.data?.response, "Created 3 events");
-    assertEquals("artifactRefs" in (result ?? {}), false);
+    expect(result?.data?.response).toEqual("Created 3 events");
+    expect("artifactRefs" in (result ?? {})).toEqual(false);
   });
 
-  await t.step("extracts content as response (LLM output)", () => {
+  it("extracts content as response (LLM output)", () => {
     const result = sanitizeAgentOutput(fixtures.llmAction);
-    assertEquals(result?.data?.response, "Here is the analysis...");
+    expect(result?.data?.response).toEqual("Here is the analysis...");
   });
 
-  await t.step("preserves error from failed Result", () => {
+  it("preserves error from failed Result", () => {
     const input = { ok: false, error: { reason: "limit" } };
     const result = sanitizeAgentOutput(input);
-    assertEquals(result?.ok, false);
-    assertEquals(result?.error, { reason: "limit" });
+    expect(result?.ok).toEqual(false);
+    expect(result?.error).toEqual({ reason: "limit" });
   });
 
-  await t.step("returns undefined data when no text fields", () => {
+  it("returns undefined data when no text fields", () => {
     const result = sanitizeAgentOutput(fixtures.summaryAgent);
-    assertEquals(result?.ok, true);
-    assertEquals(result?.data, undefined);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data).toEqual(undefined);
   });
 });

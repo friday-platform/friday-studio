@@ -1,70 +1,72 @@
 import type { SharedV2ProviderOptions } from "@ai-sdk/provider";
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { getDefaultProviderOpts } from "../../mod.ts";
 
-Deno.test("getDefaultProviderOpts - returns anthropic defaults with no overrides", () => {
-  const result = getDefaultProviderOpts("anthropic");
+describe("getDefaultProviderOpts", () => {
+  it("returns anthropic defaults with no overrides", () => {
+    const result = getDefaultProviderOpts("anthropic");
 
-  assertEquals(result, { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } });
-});
-
-Deno.test("getDefaultProviderOpts - deep merges anthropic provider options", () => {
-  const overrides: SharedV2ProviderOptions = {
-    anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } },
-  };
-
-  const result = getDefaultProviderOpts("anthropic", overrides);
-
-  assertEquals(result, {
-    anthropic: {
-      cacheControl: { type: "ephemeral", ttl: "1h" },
-      thinking: { type: "enabled", budgetTokens: 12000 },
-    },
+    expect(result).toEqual({ anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } });
   });
-});
 
-Deno.test("getDefaultProviderOpts - deep merges nested anthropic properties", () => {
-  const overrides: SharedV2ProviderOptions = { anthropic: { cacheControl: { type: "none" } } };
+  it("deep merges anthropic provider options", () => {
+    const overrides: SharedV2ProviderOptions = {
+      anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } },
+    };
 
-  const result = getDefaultProviderOpts("anthropic", overrides);
+    const result = getDefaultProviderOpts("anthropic", overrides);
 
-  // Deep merge preserves existing properties and overrides specified ones
-  assertEquals(result, { anthropic: { cacheControl: { type: "none", ttl: "1h" } } });
-});
-
-Deno.test("getDefaultProviderOpts - preserves other provider options in overrides", () => {
-  const overrides: SharedV2ProviderOptions = {
-    anthropic: { thinking: { type: "enabled", budgetTokens: 5000 } },
-    openai: { structuredOutputs: true },
-  };
-
-  const result = getDefaultProviderOpts("anthropic", overrides);
-
-  assertEquals(result, {
-    anthropic: {
-      cacheControl: { type: "ephemeral", ttl: "1h" },
-      thinking: { type: "enabled", budgetTokens: 5000 },
-    },
-    openai: { structuredOutputs: true },
+    expect(result).toEqual({
+      anthropic: {
+        cacheControl: { type: "ephemeral", ttl: "1h" },
+        thinking: { type: "enabled", budgetTokens: 12000 },
+      },
+    });
   });
-});
 
-Deno.test("getDefaultProviderOpts - returns empty object for openai with no defaults", () => {
-  const result = getDefaultProviderOpts("openai");
+  it("deep merges nested anthropic properties", () => {
+    const overrides: SharedV2ProviderOptions = { anthropic: { cacheControl: { type: "none" } } };
 
-  assertEquals(result, {});
-});
+    const result = getDefaultProviderOpts("anthropic", overrides);
 
-Deno.test("getDefaultProviderOpts - returns overrides only for openai", () => {
-  const overrides: SharedV2ProviderOptions = { openai: { structuredOutputs: true } };
+    // Deep merge preserves existing properties and overrides specified ones
+    expect(result).toEqual({ anthropic: { cacheControl: { type: "none", ttl: "1h" } } });
+  });
 
-  const result = getDefaultProviderOpts("openai", overrides);
+  it("preserves other provider options in overrides", () => {
+    const overrides: SharedV2ProviderOptions = {
+      anthropic: { thinking: { type: "enabled", budgetTokens: 5000 } },
+      openai: { structuredOutputs: true },
+    };
 
-  assertEquals(result, { openai: { structuredOutputs: true } });
-});
+    const result = getDefaultProviderOpts("anthropic", overrides);
 
-Deno.test("getDefaultProviderOpts - returns empty object for google with no defaults", () => {
-  const result = getDefaultProviderOpts("google");
+    expect(result).toEqual({
+      anthropic: {
+        cacheControl: { type: "ephemeral", ttl: "1h" },
+        thinking: { type: "enabled", budgetTokens: 5000 },
+      },
+      openai: { structuredOutputs: true },
+    });
+  });
 
-  assertEquals(result, {});
+  it("returns empty object for openai with no defaults", () => {
+    const result = getDefaultProviderOpts("openai");
+
+    expect(result).toEqual({});
+  });
+
+  it("returns overrides only for openai", () => {
+    const overrides: SharedV2ProviderOptions = { openai: { structuredOutputs: true } };
+
+    const result = getDefaultProviderOpts("openai", overrides);
+
+    expect(result).toEqual({ openai: { structuredOutputs: true } });
+  });
+
+  it("returns empty object for google with no defaults", () => {
+    const result = getDefaultProviderOpts("google");
+
+    expect(result).toEqual({});
+  });
 });

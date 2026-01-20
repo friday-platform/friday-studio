@@ -10,6 +10,7 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "ai": "^5.0.121",
+    "vitest": "^4.0.17",
     "zod": "^4.3.5"
   }
 }

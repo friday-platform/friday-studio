@@ -1,3 +1,4 @@
+import { openKv } from "@atlas/core/kv";
 import { nanoid } from "nanoid";
 import type {
   Credential,
@@ -20,13 +21,13 @@ export class DenoKVStorageAdapter implements StorageAdapter {
     const now = new Date().toISOString();
     const metadata: Metadata = { createdAt: now, updatedAt: now };
     const credential: Credential = { ...input, id, metadata };
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     await kv.set(["credentials", userId, id], credential);
     return { id, metadata };
   }
 
   async upsert(input: CredentialInput, userId: string): Promise<SaveResult> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
 
     // Find existing credential with same provider+label
     let existingId: string | null = null;
@@ -59,7 +60,7 @@ export class DenoKVStorageAdapter implements StorageAdapter {
   }
 
   async update(id: string, input: CredentialInput, userId: string): Promise<Metadata> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     const existing = await kv.get<Credential>(["credentials", userId, id]);
     if (!existing.value) {
       throw new Error("Credential not found");
@@ -72,13 +73,13 @@ export class DenoKVStorageAdapter implements StorageAdapter {
   }
 
   async get(id: string, userId: string): Promise<Credential | null> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     const entry = await kv.get<Credential>(["credentials", userId, id]);
     return entry.value;
   }
 
   async list(type: string, userId: string): Promise<CredentialSummary[]> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     const summaries: CredentialSummary[] = [];
     for await (const entry of kv.list<Credential>({ prefix: ["credentials", userId] })) {
       if (entry.value.type === type) {
@@ -90,7 +91,7 @@ export class DenoKVStorageAdapter implements StorageAdapter {
   }
 
   async delete(id: string, userId: string): Promise<void> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     await kv.delete(["credentials", userId, id]);
   }
 
@@ -99,7 +100,7 @@ export class DenoKVStorageAdapter implements StorageAdapter {
     externalId: string,
     userId: string,
   ): Promise<Credential | null> {
-    using kv = await Deno.openKv(this.kvPath);
+    using kv = await openKv(this.kvPath);
     // List all credentials for user, filter by provider + externalId
     for await (const entry of kv.list<Credential>({ prefix: ["credentials", userId] })) {
       const cred = entry.value;

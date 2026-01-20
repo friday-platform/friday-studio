@@ -11,8 +11,6 @@
  * - In-memory storage for testing
  */
 
-export const DOCUMENT_STORE_VERSION = "1.0.0";
-
 export { DocumentStore } from "./src/document-store.ts";
 // Backward compatibility alias
 export type { FileSystemDocumentStoreOptions as DocumentStoreOptions } from "./src/file-system-document-store.ts";

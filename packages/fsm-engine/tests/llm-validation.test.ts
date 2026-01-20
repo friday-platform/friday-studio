@@ -1,5 +1,4 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine } from "../fsm-engine.ts";
@@ -16,9 +15,9 @@ describe("buildLLMActionTrace", () => {
     const response: LLMResponse = { content: "Hello world" };
     const trace = buildLLMActionTrace(response, "gpt-4", "What is 2+2?");
 
-    assertEquals(trace.content, "Hello world");
-    assertEquals(trace.model, "gpt-4");
-    assertEquals(trace.prompt, "What is 2+2?");
+    expect(trace.content).toEqual("Hello world");
+    expect(trace.model).toEqual("gpt-4");
+    expect(trace.prompt).toEqual("What is 2+2?");
   });
 
   it("passes through toolCalls and toolResults arrays from data (AI SDK format)", () => {
@@ -55,28 +54,28 @@ describe("buildLLMActionTrace", () => {
 
     const trace = buildLLMActionTrace(response, "claude-3", "Do research");
 
-    assertEquals(trace.toolCalls?.length, 2);
-    assertEquals(trace.toolCalls?.[0]?.toolCallId, "tc1");
-    assertEquals(trace.toolCalls?.[0]?.toolName, "search");
-    assertEquals(trace.toolCalls?.[0]?.input, { query: "test" });
-    assertEquals(trace.toolCalls?.[1]?.toolCallId, "tc2");
-    assertEquals(trace.toolCalls?.[1]?.toolName, "fetch");
+    expect(trace.toolCalls?.length).toEqual(2);
+    expect(trace.toolCalls?.[0]?.toolCallId).toEqual("tc1");
+    expect(trace.toolCalls?.[0]?.toolName).toEqual("search");
+    expect(trace.toolCalls?.[0]?.input).toEqual({ query: "test" });
+    expect(trace.toolCalls?.[1]?.toolCallId).toEqual("tc2");
+    expect(trace.toolCalls?.[1]?.toolName).toEqual("fetch");
 
-    assertEquals(trace.toolResults?.length, 2);
-    assertEquals(trace.toolResults?.[0]?.toolCallId, "tc1");
-    assertEquals(trace.toolResults?.[0]?.toolName, "search");
-    assertEquals(trace.toolResults?.[0]?.output, { results: ["a", "b"] });
-    assertEquals(trace.toolResults?.[1]?.toolCallId, "tc2");
-    assertEquals(trace.toolResults?.[1]?.toolName, "fetch");
-    assertEquals(trace.toolResults?.[1]?.output, { body: "<html>" });
+    expect(trace.toolResults?.length).toEqual(2);
+    expect(trace.toolResults?.[0]?.toolCallId).toEqual("tc1");
+    expect(trace.toolResults?.[0]?.toolName).toEqual("search");
+    expect(trace.toolResults?.[0]?.output).toEqual({ results: ["a", "b"] });
+    expect(trace.toolResults?.[1]?.toolCallId).toEqual("tc2");
+    expect(trace.toolResults?.[1]?.toolName).toEqual("fetch");
+    expect(trace.toolResults?.[1]?.output).toEqual({ body: "<html>" });
   });
 
   it("returns undefined toolCalls/toolResults for empty data object", () => {
     const response: LLMResponse = { content: "No tools", data: {} };
     const trace = buildLLMActionTrace(response, "gpt-4", "Simple question");
 
-    assertEquals(trace.toolCalls, undefined);
-    assertEquals(trace.toolResults, undefined);
+    expect(trace.toolCalls).toEqual(undefined);
+    expect(trace.toolResults).toEqual(undefined);
   });
 
   it("returns empty arrays when data has empty arrays (not undefined)", () => {
@@ -86,8 +85,8 @@ describe("buildLLMActionTrace", () => {
     };
     const trace = buildLLMActionTrace(response, "gpt-4", "No tools needed");
 
-    assertEquals(trace.toolCalls, []);
-    assertEquals(trace.toolResults, []);
+    expect(trace.toolCalls).toEqual([]);
+    expect(trace.toolResults).toEqual([]);
   });
 
   it("passes through toolResults with AI SDK format", () => {
@@ -107,9 +106,9 @@ describe("buildLLMActionTrace", () => {
     };
     const trace = buildLLMActionTrace(response, "claude-3", "Calculate");
 
-    assertEquals(trace.toolResults?.[0]?.toolCallId, "call-xyz-123");
-    assertEquals(trace.toolResults?.[0]?.toolName, "calculator");
-    assertEquals(trace.toolResults?.[0]?.output, 42);
+    expect(trace.toolResults?.[0]?.toolCallId).toEqual("call-xyz-123");
+    expect(trace.toolResults?.[0]?.toolName).toEqual("calculator");
+    expect(trace.toolResults?.[0]?.output).toEqual(42);
   });
 });
 
@@ -185,12 +184,12 @@ describe("LLM Action Validation Hook", () => {
     await engine.signal({ type: "RUN_LLM" });
 
     // Observable outcome: state transitioned
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     // Observable outcome: document persisted with LLM content
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "validated response");
-    assertEquals(doc?.data.data.extra, "info");
+    expect(doc?.data.data.content).toEqual("validated response");
+    expect(doc?.data.data.extra).toEqual("info");
   });
 
   it("retry success → final output persisted with retry content", async () => {
@@ -211,12 +210,12 @@ describe("LLM Action Validation Hook", () => {
     await engine.signal({ type: "RUN_LLM" });
 
     // Observable outcome: state transitioned after retry
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     // Observable outcome: document has retry content (not original bad content)
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "good retry response");
-    assertEquals(doc?.data.data.retried, true);
+    expect(doc?.data.data.content).toEqual("good retry response");
+    expect(doc?.data.data.retried).toEqual(true);
   });
 
   it("double failure → throws, state unchanged at pending", async () => {
@@ -225,13 +224,19 @@ describe("LLM Action Validation Hook", () => {
       llmResponses: [{ content: "first bad" }, { content: "second bad" }],
     });
 
-    // Observable outcome: throws error
-    const error = await assertRejects(async () => await engine.signal({ type: "RUN_LLM" }));
-    assertStringIncludes(String(error), "failed validation after retry");
-    assertStringIncludes(String(error), "Still wrong");
+    // Observable outcome: throws error with validation feedback
+    let error: Error | undefined;
+    try {
+      await engine.signal({ type: "RUN_LLM" });
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.message).toContain("failed validation after retry");
+    expect(error!.message).toContain("Still wrong");
 
     // Observable outcome: state unchanged (transaction rolled back)
-    assertEquals(engine.state, "pending");
+    expect(engine.state).toEqual("pending");
   });
 
   it("no validator → document persisted without retry", async () => {
@@ -243,14 +248,14 @@ describe("LLM Action Validation Hook", () => {
     await engine.signal({ type: "RUN_LLM" });
 
     // Observable outcome: state transitioned
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     // Observable outcome: document persisted
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "direct response");
+    expect(doc?.data.data.content).toEqual("direct response");
 
     // LLM called exactly once (no retry without validator)
-    assertEquals(getLLMCallCount(), 1);
+    expect(getLLMCallCount()).toEqual(1);
   });
 
   it("validator throws → error propagates (fail-closed behavior)", async () => {
@@ -260,11 +265,12 @@ describe("LLM Action Validation Hook", () => {
     });
 
     // Observable outcome: validator error propagates
-    const error = await assertRejects(async () => await engine.signal({ type: "RUN_LLM" }));
-    assertStringIncludes(String(error), "Validator crashed");
+    await expect(async () => await engine.signal({ type: "RUN_LLM" })).rejects.toThrow(
+      /Validator crashed/,
+    );
 
     // Observable outcome: state unchanged (fail-closed)
-    assertEquals(engine.state, "pending");
+    expect(engine.state).toEqual("pending");
   });
 
   it("empty content string → document persisted with empty string", async () => {
@@ -276,12 +282,12 @@ describe("LLM Action Validation Hook", () => {
     await engine.signal({ type: "RUN_LLM" });
 
     // Observable outcome: state transitioned
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     // Observable outcome: empty string persisted (not undefined/null)
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "");
-    assertEquals(doc?.data.data.hasTools, false);
+    expect(doc?.data.data.content).toEqual("");
+    expect(doc?.data.data.hasTools).toEqual(false);
   });
 
   it("failStep on retry → throws error, state unchanged", async () => {
@@ -304,11 +310,17 @@ describe("LLM Action Validation Hook", () => {
     });
 
     // Observable outcome: throws error containing failStep info
-    const error = await assertRejects(async () => await engine.signal({ type: "RUN_LLM" }));
-    assertStringIncludes(String(error), "LLM step failed on retry");
-    assertStringIncludes(String(error), "Cannot comply with validation");
+    let error: Error | undefined;
+    try {
+      await engine.signal({ type: "RUN_LLM" });
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.message).toContain("LLM step failed on retry");
+    expect(error!.message).toContain("Cannot comply with validation");
 
     // Observable outcome: state unchanged (transaction rolled back)
-    assertEquals(engine.state, "pending");
+    expect(engine.state).toEqual("pending");
   });
 });

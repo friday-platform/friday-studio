@@ -1,0 +1,8 @@
+{
+  "name": "@atlas/workspace-builder",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": { "@atlas/utils": "workspace:*", "zod": "^4.3.5" }
+}

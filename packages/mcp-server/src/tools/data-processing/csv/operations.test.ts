@@ -2,8 +2,8 @@
  * Tests for CSV operations
  */
 
-import { expect } from "@std/expect";
 import Papa from "papaparse";
+import { expect, it } from "vitest";
 import type { ParsedCsvFilesMap } from "./operations.ts";
 import { aggregateCsv, filterCsv, getRowsCsv, joinCsv, limitCsv, sortCsv } from "./operations.ts";
 import type { ParsedCsvFile } from "./schemas.ts";
@@ -51,7 +51,7 @@ const testFile2: ParsedCsvFile = fromCsv(productsCsv, "products.csv");
 const testFileWithNulls: ParsedCsvFile = fromCsv(nullsCsv, "nulls.csv");
 const largeFile: ParsedCsvFile = fromCsv(largeCsv, "large.csv");
 
-Deno.test("filterCsv - eq operator", () => {
+it("filterCsv - eq operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -67,7 +67,7 @@ Deno.test("filterCsv - eq operator", () => {
   expect(r1.product).toBe("Apple");
 });
 
-Deno.test("filterCsv - gt operator", () => {
+it("filterCsv - gt operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -83,7 +83,7 @@ Deno.test("filterCsv - gt operator", () => {
   expect(gt1.amount).toBe(150);
 });
 
-Deno.test("filterCsv - contains operator", () => {
+it("filterCsv - contains operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -99,7 +99,7 @@ Deno.test("filterCsv - contains operator", () => {
   expect(c1.product).toBe("Orange");
 });
 
-Deno.test("filterCsv - ne operator", () => {
+it("filterCsv - ne operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -114,7 +114,7 @@ Deno.test("filterCsv - ne operator", () => {
   expect(products).toContain("Orange");
 });
 
-Deno.test("filterCsv - lt operator", () => {
+it("filterCsv - lt operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -128,7 +128,7 @@ Deno.test("filterCsv - lt operator", () => {
   expect(lt0.amount).toBe(50);
 });
 
-Deno.test("filterCsv - gte operator", () => {
+it("filterCsv - gte operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -143,7 +143,7 @@ Deno.test("filterCsv - gte operator", () => {
   expect(amounts).toContain(200);
 });
 
-Deno.test("filterCsv - lte operator", () => {
+it("filterCsv - lte operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -158,7 +158,7 @@ Deno.test("filterCsv - lte operator", () => {
   expect(amounts).toContain(100);
 });
 
-Deno.test("filterCsv - startsWith operator", () => {
+it("filterCsv - startsWith operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -174,7 +174,7 @@ Deno.test("filterCsv - startsWith operator", () => {
   expect(sw1.product).toBe("Apple");
 });
 
-Deno.test("filterCsv - endsWith operator", () => {
+it("filterCsv - endsWith operator", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -189,14 +189,14 @@ Deno.test("filterCsv - endsWith operator", () => {
   expect(products).toContain("Orange");
 });
 
-Deno.test("filterCsv - invalid file name", () => {
+it("filterCsv - invalid file name", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     filterCsv(map, { fileName: "missing.csv", column: "product", operator: "eq", value: "Apple" });
   }).toThrow("Invalid file name");
 });
 
-Deno.test("filterCsv - invalid column", () => {
+it("filterCsv - invalid column", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     filterCsv(map, {
@@ -208,7 +208,7 @@ Deno.test("filterCsv - invalid column", () => {
   }).toThrow("does not exist");
 });
 
-Deno.test("sortCsv - ascending numeric", () => {
+it("sortCsv - ascending numeric", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = sortCsv(map, { fileName: testFile1.fileName, column: "amount", direction: "asc" });
 
@@ -223,7 +223,7 @@ Deno.test("sortCsv - ascending numeric", () => {
   expect(s3.amount).toBe(200);
 });
 
-Deno.test("sortCsv - descending string", () => {
+it("sortCsv - descending string", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = sortCsv(map, {
     fileName: testFile1.fileName,
@@ -238,7 +238,7 @@ Deno.test("sortCsv - descending string", () => {
   expect(ds3.product).toBe("Apple");
 });
 
-Deno.test("sortCsv - handles null/undefined ascending", () => {
+it("sortCsv - handles null/undefined ascending", () => {
   const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
   const result = sortCsv(map, {
     fileName: testFileWithNulls.fileName,
@@ -252,7 +252,7 @@ Deno.test("sortCsv - handles null/undefined ascending", () => {
   expect(na0.amount).toBeUndefined();
 });
 
-Deno.test("sortCsv - handles null/undefined descending", () => {
+it("sortCsv - handles null/undefined descending", () => {
   const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
   const result = sortCsv(map, {
     fileName: testFileWithNulls.fileName,
@@ -266,14 +266,14 @@ Deno.test("sortCsv - handles null/undefined descending", () => {
   expect(nd4.amount).toBeUndefined();
 });
 
-Deno.test("sortCsv - invalid column", () => {
+it("sortCsv - invalid column", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     sortCsv(map, { fileName: testFile1.fileName, column: "invalid", direction: "asc" });
   }).toThrow("does not exist");
 });
 
-Deno.test("joinCsv - inner join", () => {
+it("joinCsv - inner join", () => {
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
     [testFile2.fileName]: testFile2,
@@ -294,7 +294,7 @@ Deno.test("joinCsv - inner join", () => {
   expect(j2.product).toBe("Apple");
 });
 
-Deno.test("joinCsv - prefixes colliding columns from second file", () => {
+it("joinCsv - prefixes colliding columns from second file", () => {
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
     [testFile2.fileName]: testFile2,
@@ -312,7 +312,7 @@ Deno.test("joinCsv - prefixes colliding columns from second file", () => {
   expect(row["products.csv_product"]).toBe("Apple");
 });
 
-Deno.test("joinCsv - guarantees unique column names with multiple collisions", () => {
+it("joinCsv - guarantees unique column names with multiple collisions", () => {
   // Create a file that already has a prefixed column name that would collide
   const file1Csv = `id,product,products.csv_product\n1,Apple,OldValue1\n2,Banana,OldValue2`;
   const file1 = fromCsv(file1Csv, "sales.csv");
@@ -347,7 +347,7 @@ Deno.test("joinCsv - guarantees unique column names with multiple collisions", (
   expect(bananaRow.category).toBe("Fruit");
 });
 
-Deno.test("joinCsv - invalid join columns throw", () => {
+it("joinCsv - invalid join columns throw", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = {
       [testFile1.fileName]: testFile1,
@@ -363,7 +363,7 @@ Deno.test("joinCsv - invalid join columns throw", () => {
   }).toThrow("does not exist");
 });
 
-Deno.test("joinCsv - left join", () => {
+it("joinCsv - left join", () => {
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
     [testFile2.fileName]: testFile2,
@@ -382,7 +382,7 @@ Deno.test("joinCsv - left join", () => {
   expect(orangeRow?.category).toBeUndefined();
 });
 
-Deno.test("joinCsv - right join", () => {
+it("joinCsv - right join", () => {
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
     [testFile2.fileName]: testFile2,
@@ -400,7 +400,7 @@ Deno.test("joinCsv - right join", () => {
   expect(carrotRow).toBeDefined();
 });
 
-Deno.test("joinCsv - outer join", () => {
+it("joinCsv - outer join", () => {
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
     [testFile2.fileName]: testFile2,
@@ -421,7 +421,7 @@ Deno.test("joinCsv - outer join", () => {
   expect(carrotRow).toBeDefined();
 });
 
-Deno.test("aggregateCsv - sum without grouping", () => {
+it("aggregateCsv - sum without grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -434,7 +434,7 @@ Deno.test("aggregateCsv - sum without grouping", () => {
   expect(aSum.sum).toBe(500);
 });
 
-Deno.test("aggregateCsv - avg without grouping", () => {
+it("aggregateCsv - avg without grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -447,7 +447,7 @@ Deno.test("aggregateCsv - avg without grouping", () => {
   expect(aAvg.avg).toBe(125);
 });
 
-Deno.test("aggregateCsv - count without grouping", () => {
+it("aggregateCsv - count without grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -460,7 +460,7 @@ Deno.test("aggregateCsv - count without grouping", () => {
   expect(aCount.count).toBe(4);
 });
 
-Deno.test("aggregateCsv - min without grouping", () => {
+it("aggregateCsv - min without grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -473,7 +473,7 @@ Deno.test("aggregateCsv - min without grouping", () => {
   expect(aMin.min).toBe(50);
 });
 
-Deno.test("aggregateCsv - max without grouping", () => {
+it("aggregateCsv - max without grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -486,7 +486,7 @@ Deno.test("aggregateCsv - max without grouping", () => {
   expect(aMax.max).toBe(200);
 });
 
-Deno.test("aggregateCsv - sum with grouping", () => {
+it("aggregateCsv - sum with grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -504,7 +504,7 @@ Deno.test("aggregateCsv - sum with grouping", () => {
   expect(bananaGroup?.sum).toBe(50);
 });
 
-Deno.test("aggregateCsv - count with grouping", () => {
+it("aggregateCsv - count with grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -519,7 +519,7 @@ Deno.test("aggregateCsv - count with grouping", () => {
   expect(appleGroup?.count).toBe(2);
 });
 
-Deno.test("aggregateCsv - avg with grouping", () => {
+it("aggregateCsv - avg with grouping", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = aggregateCsv(map, {
     fileName: testFile1.fileName,
@@ -537,14 +537,14 @@ Deno.test("aggregateCsv - avg with grouping", () => {
   expect(orange?.avg).toBe(150);
 });
 
-Deno.test("aggregateCsv - invalid aggregate column throws", () => {
+it("aggregateCsv - invalid aggregate column throws", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     aggregateCsv(map, { fileName: testFile1.fileName, aggregateColumn: "nope", operation: "sum" });
   }).toThrow("does not exist");
 });
 
-Deno.test("getRowsCsv - basic slice", () => {
+it("getRowsCsv - basic slice", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = getRowsCsv(map, { fileName: testFile1.fileName, startRow: 1, endRow: 3 });
 
@@ -555,7 +555,7 @@ Deno.test("getRowsCsv - basic slice", () => {
   expect(gr1.id).toBe(3);
 });
 
-Deno.test("getRowsCsv - default endRow", () => {
+it("getRowsCsv - default endRow", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = getRowsCsv(map, { fileName: testFile1.fileName, startRow: 0 });
 
@@ -563,7 +563,7 @@ Deno.test("getRowsCsv - default endRow", () => {
   expect(result).toHaveLength(4);
 });
 
-Deno.test("getRowsCsv - default endRow returns only 10 rows on large file", () => {
+it("getRowsCsv - default endRow returns only 10 rows on large file", () => {
   const map: ParsedCsvFilesMap = { [largeFile.fileName]: largeFile };
   const result = getRowsCsv(map, { fileName: largeFile.fileName, startRow: 0 });
 
@@ -574,14 +574,14 @@ Deno.test("getRowsCsv - default endRow returns only 10 rows on large file", () =
   expect(lr9.idx).toBe(9);
 });
 
-Deno.test("getRowsCsv - invalid startRow", () => {
+it("getRowsCsv - invalid startRow", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     getRowsCsv(map, { fileName: testFile1.fileName, startRow: -1 });
   }).toThrow("must be >= 0");
 });
 
-Deno.test("getRowsCsv - invalid endRow", () => {
+it("getRowsCsv - invalid endRow", () => {
   expect(() => {
     const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
     getRowsCsv(map, { fileName: testFile1.fileName, startRow: 5, endRow: 2 });
@@ -589,7 +589,7 @@ Deno.test("getRowsCsv - invalid endRow", () => {
 });
 
 // Edge case tests for null value handling
-Deno.test("filterCsv - null values with eq operator", () => {
+it("filterCsv - null values with eq operator", () => {
   const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
   const result = filterCsv(map, {
     fileName: testFileWithNulls.fileName,
@@ -603,7 +603,7 @@ Deno.test("filterCsv - null values with eq operator", () => {
   expect(r0.amount).toBe(100);
 });
 
-Deno.test("filterCsv - null values with ne operator", () => {
+it("filterCsv - null values with ne operator", () => {
   const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
   const result = filterCsv(map, {
     fileName: testFileWithNulls.fileName,
@@ -616,7 +616,7 @@ Deno.test("filterCsv - null values with ne operator", () => {
   expect(result).toHaveLength(4);
 });
 
-Deno.test("filterCsv - null values with gt operator", () => {
+it("filterCsv - null values with gt operator", () => {
   const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
   const result = filterCsv(map, {
     fileName: testFileWithNulls.fileName,
@@ -632,7 +632,7 @@ Deno.test("filterCsv - null values with gt operator", () => {
   expect(amounts).toContain(150);
 });
 
-Deno.test("filterCsv - null values with contains operator", () => {
+it("filterCsv - null values with contains operator", () => {
   const nullStringsCsv = `name,value\nAlice,100\n,200\nBob,300`;
   const nullStrings = fromCsv(nullStringsCsv, "nullstrings.csv");
   const map: ParsedCsvFilesMap = { [nullStrings.fileName]: nullStrings };
@@ -651,7 +651,7 @@ Deno.test("filterCsv - null values with contains operator", () => {
 });
 
 // Edge case tests for empty result sets
-Deno.test("filterCsv - filter resulting in 0 rows", () => {
+it("filterCsv - filter resulting in 0 rows", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = filterCsv(map, {
     fileName: testFile1.fileName,
@@ -663,7 +663,7 @@ Deno.test("filterCsv - filter resulting in 0 rows", () => {
   expect(result).toHaveLength(0);
 });
 
-Deno.test("aggregateCsv - aggregate on empty result", () => {
+it("aggregateCsv - aggregate on empty result", () => {
   const emptyFile = fromCsv(`id,amount\n`, "empty.csv");
   const map: ParsedCsvFilesMap = { [emptyFile.fileName]: emptyFile };
 
@@ -678,7 +678,7 @@ Deno.test("aggregateCsv - aggregate on empty result", () => {
   expect(r0.sum).toBe(0);
 });
 
-Deno.test("aggregateCsv - count on empty result", () => {
+it("aggregateCsv - count on empty result", () => {
   const emptyFile = fromCsv(`id,amount\n`, "empty.csv");
   const map: ParsedCsvFilesMap = { [emptyFile.fileName]: emptyFile };
 
@@ -694,7 +694,7 @@ Deno.test("aggregateCsv - count on empty result", () => {
 });
 
 // Edge case tests for join with duplicate keys
-Deno.test("joinCsv - handles duplicate keys in both files (cartesian product)", () => {
+it("joinCsv - handles duplicate keys in both files (cartesian product)", () => {
   const file1Csv = `id,product,amount\n1,Apple,100\n2,Apple,200`;
   const file2Csv = `product,category\nApple,Fruit\nApple,Dessert`;
 
@@ -724,7 +724,7 @@ Deno.test("joinCsv - handles duplicate keys in both files (cartesian product)", 
   expect(row4).toBeDefined();
 });
 
-Deno.test("joinCsv - join with empty file", () => {
+it("joinCsv - join with empty file", () => {
   const emptyFile = fromCsv(`product,category\n`, "empty.csv");
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
@@ -743,7 +743,7 @@ Deno.test("joinCsv - join with empty file", () => {
   expect(result).toHaveLength(0);
 });
 
-Deno.test("joinCsv - left join with empty file", () => {
+it("joinCsv - left join with empty file", () => {
   const emptyFile = fromCsv(`product,category\n`, "empty.csv");
   const map: ParsedCsvFilesMap = {
     [testFile1.fileName]: testFile1,
@@ -762,7 +762,7 @@ Deno.test("joinCsv - left join with empty file", () => {
   expect(result).toHaveLength(4);
 });
 
-Deno.test("joinCsv - handles null join keys", () => {
+it("joinCsv - handles null join keys", () => {
   const file1Csv = `id,category\n1,A\n2,`;
   const file2Csv = `category,desc\nA,Alpha\n,Unknown`;
 
@@ -785,7 +785,7 @@ Deno.test("joinCsv - handles null join keys", () => {
 });
 
 // Edge case tests for sortCsv with mixed types
-Deno.test("sortCsv - handles mixed string/numeric values", () => {
+it("sortCsv - handles mixed string/numeric values", () => {
   const mixedCsv = `id,value\n1,100\n2,abc\n3,50\n4,xyz`;
   const mixedFile = fromCsv(mixedCsv, "mixed.csv");
   const map: ParsedCsvFilesMap = { [mixedFile.fileName]: mixedFile };
@@ -798,7 +798,7 @@ Deno.test("sortCsv - handles mixed string/numeric values", () => {
 });
 
 // Edge case tests for chained operations
-Deno.test("filterCsv - can chain with baseRows parameter", () => {
+it("filterCsv - can chain with baseRows parameter", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
 
   // First filter
@@ -822,14 +822,14 @@ Deno.test("filterCsv - can chain with baseRows parameter", () => {
 });
 
 // Tests for limitCsv
-Deno.test("limitCsv - returns all rows when maxRows >= total", () => {
+it("limitCsv - returns all rows when maxRows >= total", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 10, random: false });
 
   expect(result).toHaveLength(4);
 });
 
-Deno.test("limitCsv - limits to first N rows when random=false", () => {
+it("limitCsv - limits to first N rows when random=false", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 2, random: false });
 
@@ -840,7 +840,7 @@ Deno.test("limitCsv - limits to first N rows when random=false", () => {
   expect(r1.id).toBe(2);
 });
 
-Deno.test("limitCsv - randomly samples N rows when random=true", () => {
+it("limitCsv - randomly samples N rows when random=true", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
   const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 2, random: true });
 
@@ -852,7 +852,7 @@ Deno.test("limitCsv - randomly samples N rows when random=true", () => {
   }
 });
 
-Deno.test("limitCsv - works with baseRows (chained)", () => {
+it("limitCsv - works with baseRows (chained)", () => {
   const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
 
   // First filter to get rows with amount > 50

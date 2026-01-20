@@ -3,8 +3,7 @@
  * Tests service logic with mocked dependencies
  */
 
-import { assertEquals, assertExists, assertRejects } from "@std/assert";
-import { beforeEach, describe, it } from "@std/testing/bdd";
+import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { defineAppInstallProvider, type ProviderDefinition } from "../providers/types.ts";
@@ -186,26 +185,22 @@ describe("AppInstallService", () => {
         "https://app.example.com/settings",
       );
 
-      assertEquals(
-        result.authorizationUrl.startsWith("https://slack.com/oauth/v2/authorize"),
+      expect(result.authorizationUrl.startsWith("https://slack.com/oauth/v2/authorize")).toEqual(
         true,
       );
-      assertEquals(result.authorizationUrl.includes("state="), true);
+      expect(result.authorizationUrl.includes("state=")).toEqual(true);
       // Callback URL should include provider name for readability (e.g., /v1/callback/test-slack)
-      assertEquals(
+      expect(
         result.authorizationUrl.includes(
           "redirect_uri=https%3A%2F%2Flink.example.com%2Fv1%2Fcallback%2Ftest-slack",
         ),
-        true,
-      );
+      ).toEqual(true);
     });
 
     it("throws PROVIDER_NOT_FOUND for unknown provider", async () => {
-      const error = await assertRejects(
-        () => service.initiateInstall("unknown-provider"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "PROVIDER_NOT_FOUND");
+      const error = await service.initiateInstall("unknown-provider").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("PROVIDER_NOT_FOUND");
     });
 
     it("throws INVALID_PROVIDER_TYPE for non-app_install provider", async () => {
@@ -219,11 +214,9 @@ describe("AppInstallService", () => {
         identify: () => Promise.resolve("user-123"),
       } as never);
 
-      const error = await assertRejects(
-        () => service.initiateInstall("oauth-provider"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "INVALID_PROVIDER_TYPE");
+      const error = await service.initiateInstall("oauth-provider").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("INVALID_PROVIDER_TYPE");
     });
 
     it("includes userId in state when provided", async () => {
@@ -235,7 +228,7 @@ describe("AppInstallService", () => {
 
       // State is JWT, so we can't inspect it directly without decoding
       // But we can verify URL is built correctly
-      assertEquals(result.authorizationUrl.includes("state="), true);
+      expect(result.authorizationUrl.includes("state=")).toEqual(true);
     });
   });
 
@@ -244,46 +237,46 @@ describe("AppInstallService", () => {
       // First initiate to get valid state
       const { authorizationUrl } = await service.initiateInstall("test-slack");
       const state = new URL(authorizationUrl).searchParams.get("state");
-      assertExists(state);
+      expect(state).toBeDefined();
 
       // Complete install
-      const result = await service.completeInstall(state, "test-code-123");
+      const result = await service.completeInstall(state!, "test-code-123");
 
-      assertEquals(result.credential.provider, "test-slack");
-      assertEquals(result.credential.label, "Test Workspace");
-      assertEquals(result.updated, false);
-      assertEquals(result.redirectUri, undefined);
+      expect(result.credential.provider).toEqual("test-slack");
+      expect(result.credential.label).toEqual("Test Workspace");
+      expect(result.updated).toEqual(false);
+      expect(result.redirectUri).toEqual(undefined);
 
       // Verify credential stored
       const stored = await storage.get(result.credential.id, "dev");
-      assertEquals(stored?.provider, "test-slack");
+      expect(stored?.provider).toEqual("test-slack");
 
       // Verify route created
-      assertEquals(routeStorage.getRoute("team-test-code-123"), "dev");
+      expect(routeStorage.getRoute("team-test-code-123")).toEqual("dev");
     });
 
     it("updates existing credential on re-install", async () => {
       // First install
       const { authorizationUrl: url1 } = await service.initiateInstall("test-slack");
       const state1 = new URL(url1).searchParams.get("state");
-      assertExists(state1);
-      const result1 = await service.completeInstall(state1, "same-team");
+      expect(state1).toBeDefined();
+      const result1 = await service.completeInstall(state1!, "same-team");
 
       const firstId = result1.credential.id;
 
       // Second install with same team ID
       const { authorizationUrl: url2 } = await service.initiateInstall("test-slack");
       const state2 = new URL(url2).searchParams.get("state");
-      assertExists(state2);
-      const result2 = await service.completeInstall(state2, "same-team");
+      expect(state2).toBeDefined();
+      const result2 = await service.completeInstall(state2!, "same-team");
 
       // Should reuse same credential ID
-      assertEquals(result2.credential.id, firstId);
-      assertEquals(result2.updated, true);
+      expect(result2.credential.id).toEqual(firstId);
+      expect(result2.updated).toEqual(true);
 
       // Should only have one credential
       const allCreds = await storage.list("oauth", "dev");
-      assertEquals(allCreds.length, 1);
+      expect(allCreds.length).toEqual(1);
     });
 
     it("includes redirectUri from state when provided", async () => {
@@ -292,28 +285,28 @@ describe("AppInstallService", () => {
         "https://app.example.com/settings",
       );
       const state = new URL(authorizationUrl).searchParams.get("state");
-      assertExists(state);
+      expect(state).toBeDefined();
 
-      const result = await service.completeInstall(state, "test-code");
+      const result = await service.completeInstall(state!, "test-code");
 
-      assertEquals(result.redirectUri, "https://app.example.com/settings");
+      expect(result.redirectUri).toEqual("https://app.example.com/settings");
     });
 
     it("throws STATE_INVALID for invalid JWT", async () => {
-      const error = await assertRejects(
-        () => service.completeInstall("invalid-jwt-token", "code"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "STATE_INVALID");
+      const error = await service
+        .completeInstall("invalid-jwt-token", "code")
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("STATE_INVALID");
     });
 
     it("throws STATE_INVALID for expired JWT", async () => {
       // This is hard to test without time manipulation, but we can test malformed JWT
-      const error = await assertRejects(
-        () => service.completeInstall("expired.jwt.token", "code"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "STATE_INVALID");
+      const error = await service
+        .completeInstall("expired.jwt.token", "code")
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("STATE_INVALID");
     });
   });
 
@@ -338,15 +331,15 @@ describe("AppInstallService", () => {
       await service.reconcileRoute("test-slack", id, "user-123");
 
       // Verify route created
-      assertEquals(routeStorage.getRoute("team-reconcile-123"), "user-123");
+      expect(routeStorage.getRoute("team-reconcile-123")).toEqual("user-123");
     });
 
     it("throws CREDENTIAL_NOT_FOUND for missing credential", async () => {
-      const error = await assertRejects(
-        () => service.reconcileRoute("test-slack", "nonexistent-id", "user-123"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "CREDENTIAL_NOT_FOUND");
+      const error = await service
+        .reconcileRoute("test-slack", "nonexistent-id", "user-123")
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("CREDENTIAL_NOT_FOUND");
     });
 
     it("throws CREDENTIAL_NOT_FOUND for mismatched provider", async () => {
@@ -360,11 +353,11 @@ describe("AppInstallService", () => {
         "user-123",
       );
 
-      const error = await assertRejects(
-        () => service.reconcileRoute("test-slack", id, "user-123"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "CREDENTIAL_NOT_FOUND");
+      const error = await service
+        .reconcileRoute("test-slack", id, "user-123")
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("CREDENTIAL_NOT_FOUND");
     });
 
     it("throws INVALID_CREDENTIAL for credential missing externalId", async () => {
@@ -378,11 +371,11 @@ describe("AppInstallService", () => {
         "user-123",
       );
 
-      const error = await assertRejects(
-        () => service.reconcileRoute("test-slack", id, "user-123"),
-        AppInstallError,
-      );
-      assertEquals(error.code, "INVALID_CREDENTIAL");
+      const error = await service
+        .reconcileRoute("test-slack", id, "user-123")
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("INVALID_CREDENTIAL");
     });
   });
 });

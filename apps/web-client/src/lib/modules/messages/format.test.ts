@@ -6,7 +6,7 @@
  */
 
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { formatMessage } from "./format.ts";
 
 // Helper to create a minimal mock message
@@ -21,33 +21,33 @@ function mockPart(partial: Record<string, unknown>): AtlasUIMessagePart {
   return partial as unknown as AtlasUIMessagePart;
 }
 
-Deno.test("formatMessage - connect_service tool", async (t) => {
-  await t.step("returns empty provider when output is undefined (streaming race)", () => {
+describe("formatMessage - connect_service tool", () => {
+  it("returns empty provider when output is undefined (streaming race)", () => {
     const message = mockMessage("assistant");
     // Simulates streaming state where output hasn't been populated yet
     const part = mockPart({ type: "tool-connect_service", output: undefined });
 
     const result = formatMessage(message, part);
 
-    assertEquals(result?.type, "tool_call");
-    assertEquals(result?.metadata?.toolName, "connect_service");
+    expect(result?.type).toEqual("tool_call");
+    expect(result?.metadata?.toolName).toEqual("connect_service");
     // Documents current behavior: provider defaults to empty string
     // The template guard `&& message.metadata?.provider` prevents rendering
-    assertEquals(result?.metadata?.provider, "");
+    expect(result?.metadata?.provider).toEqual("");
   });
 
-  await t.step("returns provider when output is populated", () => {
+  it("returns provider when output is populated", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-connect_service", output: { provider: "linear" } });
 
     const result = formatMessage(message, part);
 
-    assertEquals(result?.type, "tool_call");
-    assertEquals(result?.metadata?.toolName, "connect_service");
-    assertEquals(result?.metadata?.provider, "linear");
+    expect(result?.type).toEqual("tool_call");
+    expect(result?.metadata?.toolName).toEqual("connect_service");
+    expect(result?.metadata?.provider).toEqual("linear");
   });
 
-  await t.step("returns empty provider when output.provider is missing", () => {
+  it("returns empty provider when output.provider is missing", () => {
     const message = mockMessage("assistant");
     const part = mockPart({
       type: "tool-connect_service",
@@ -56,27 +56,27 @@ Deno.test("formatMessage - connect_service tool", async (t) => {
 
     const result = formatMessage(message, part);
 
-    assertEquals(result?.metadata?.provider, "");
+    expect(result?.metadata?.provider).toEqual("");
   });
 });
 
-Deno.test("formatMessage - display_artifact tool", async (t) => {
-  await t.step("returns empty artifactId when output is undefined", () => {
+describe("formatMessage - display_artifact tool", () => {
+  it("returns empty artifactId when output is undefined", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-display_artifact", output: undefined });
 
     const result = formatMessage(message, part);
 
-    assertEquals(result?.metadata?.toolName, "display_artifact");
-    assertEquals(result?.metadata?.artifactId, "");
+    expect(result?.metadata?.toolName).toEqual("display_artifact");
+    expect(result?.metadata?.artifactId).toEqual("");
   });
 
-  await t.step("returns artifactId when output is populated", () => {
+  it("returns artifactId when output is populated", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-display_artifact", output: { artifactId: "art-123" } });
 
     const result = formatMessage(message, part);
 
-    assertEquals(result?.metadata?.artifactId, "art-123");
+    expect(result?.metadata?.artifactId).toEqual("art-123");
   });
 });

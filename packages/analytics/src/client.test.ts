@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from "@std/assert";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import process from "node:process";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAnalyticsClient } from "./client.ts";
 import { EventNames } from "./types.ts";
 
@@ -7,14 +7,16 @@ describe("createAnalyticsClient", () => {
   let originalEnv: string | undefined;
 
   beforeEach(() => {
-    originalEnv = Deno.env.get("ANALYTICS_OTEL_ENDPOINT");
+    originalEnv = process.env.ANALYTICS_OTEL_ENDPOINT;
     // Clear environment to ensure analytics is disabled for most tests
-    Deno.env.delete("ANALYTICS_OTEL_ENDPOINT");
+    delete process.env.ANALYTICS_OTEL_ENDPOINT;
   });
 
   afterEach(() => {
     if (originalEnv) {
-      Deno.env.set("ANALYTICS_OTEL_ENDPOINT", originalEnv);
+      process.env.ANALYTICS_OTEL_ENDPOINT = originalEnv;
+    } else {
+      delete process.env.ANALYTICS_OTEL_ENDPOINT;
     }
   });
 
@@ -31,46 +33,34 @@ describe("createAnalyticsClient", () => {
 
     it("throws when userId is missing", () => {
       // Set endpoint to enable validation
-      Deno.env.set("ANALYTICS_OTEL_ENDPOINT", "http://localhost:4318/v1/logs");
+      process.env.ANALYTICS_OTEL_ENDPOINT = "http://localhost:4318/v1/logs";
       const client = createAnalyticsClient();
 
-      assertThrows(
-        () => {
-          client.emit({
-            eventName: EventNames.CONVERSATION_STARTED,
-            // @ts-expect-error - testing missing userId
-            userId: undefined,
-          });
-        },
-        Error,
-        "missing userId",
-      );
+      expect(() => {
+        client.emit({
+          eventName: EventNames.CONVERSATION_STARTED,
+          // @ts-expect-error - testing missing userId
+          userId: undefined,
+        });
+      }).toThrow("missing userId");
     });
 
     it("throws when userId is empty string", () => {
-      Deno.env.set("ANALYTICS_OTEL_ENDPOINT", "http://localhost:4318/v1/logs");
+      process.env.ANALYTICS_OTEL_ENDPOINT = "http://localhost:4318/v1/logs";
       const client = createAnalyticsClient();
 
-      assertThrows(
-        () => {
-          client.emit({ eventName: EventNames.WORKSPACE_CREATED, userId: "" });
-        },
-        Error,
-        "missing userId",
-      );
+      expect(() => {
+        client.emit({ eventName: EventNames.WORKSPACE_CREATED, userId: "" });
+      }).toThrow("missing userId");
     });
 
     it("throws when userId is whitespace only", () => {
-      Deno.env.set("ANALYTICS_OTEL_ENDPOINT", "http://localhost:4318/v1/logs");
+      process.env.ANALYTICS_OTEL_ENDPOINT = "http://localhost:4318/v1/logs";
       const client = createAnalyticsClient();
 
-      assertThrows(
-        () => {
-          client.emit({ eventName: EventNames.JOB_DEFINED, userId: "   " });
-        },
-        Error,
-        "missing userId",
-      );
+      expect(() => {
+        client.emit({ eventName: EventNames.JOB_DEFINED, userId: "   " });
+      }).toThrow("missing userId");
     });
   });
 
@@ -85,14 +75,14 @@ describe("createAnalyticsClient", () => {
 
 describe("EventNames", () => {
   it("has expected event names", () => {
-    assertEquals(EventNames.USER_SIGNED_UP, "user.signed_up");
-    assertEquals(EventNames.USER_PROFILE_COMPLETED, "user.profile_completed");
-    assertEquals(EventNames.USER_LOGGED_IN, "user.logged_in");
-    assertEquals(EventNames.CONVERSATION_STARTED, "conversation.started");
-    assertEquals(EventNames.WORKSPACE_CREATED, "workspace.created");
-    assertEquals(EventNames.JOB_DEFINED, "job.defined");
-    assertEquals(EventNames.SESSION_STARTED, "session.started");
-    assertEquals(EventNames.SESSION_COMPLETED, "session.completed");
-    assertEquals(EventNames.SESSION_FAILED, "session.failed");
+    expect(EventNames.USER_SIGNED_UP).toEqual("user.signed_up");
+    expect(EventNames.USER_PROFILE_COMPLETED).toEqual("user.profile_completed");
+    expect(EventNames.USER_LOGGED_IN).toEqual("user.logged_in");
+    expect(EventNames.CONVERSATION_STARTED).toEqual("conversation.started");
+    expect(EventNames.WORKSPACE_CREATED).toEqual("workspace.created");
+    expect(EventNames.JOB_DEFINED).toEqual("job.defined");
+    expect(EventNames.SESSION_STARTED).toEqual("session.started");
+    expect(EventNames.SESSION_COMPLETED).toEqual("session.completed");
+    expect(EventNames.SESSION_FAILED).toEqual("session.failed");
   });
 });

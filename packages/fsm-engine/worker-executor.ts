@@ -123,11 +123,14 @@ export class WorkerExecutor {
         }
 
         // Apply mutations to real context
-        if (response.mutations) {
-          this.applyMutations(response.mutations, context);
+        try {
+          if (response.mutations) {
+            this.applyMutations(response.mutations, context);
+          }
+          resolve(response.result);
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
-
-        resolve(response.result);
       };
 
       const handleError = (error: Error | ErrorEvent) => {

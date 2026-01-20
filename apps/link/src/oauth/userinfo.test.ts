@@ -2,11 +2,11 @@
  * Unit tests for OIDC UserInfo schema and helpers
  */
 
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { extractIdentifier, OidcUserInfoSchema } from "./userinfo.ts";
 
-Deno.test("OidcUserInfoSchema", async (t) => {
-  await t.step("parses valid response with email", () => {
+describe("OidcUserInfoSchema", () => {
+  it("parses valid response with email", () => {
     const input = {
       sub: "user-123",
       email: "user@example.com",
@@ -16,38 +16,38 @@ Deno.test("OidcUserInfoSchema", async (t) => {
 
     const result = OidcUserInfoSchema.parse(input);
 
-    assertEquals(result.sub, "user-123");
-    assertEquals(result.email, "user@example.com");
-    assertEquals(result.email_verified, true);
-    assertEquals(result.name, "Test User");
+    expect(result.sub).toEqual("user-123");
+    expect(result.email).toEqual("user@example.com");
+    expect(result.email_verified).toEqual(true);
+    expect(result.name).toEqual("Test User");
   });
 
-  await t.step("parses valid response with only sub", () => {
+  it("parses valid response with only sub", () => {
     const input = { sub: "user-456" };
 
     const result = OidcUserInfoSchema.parse(input);
 
-    assertEquals(result.sub, "user-456");
-    assertEquals(result.email, undefined);
+    expect(result.sub).toEqual("user-456");
+    expect(result.email).toEqual(undefined);
   });
 
-  await t.step("fails when sub is missing", () => {
+  it("fails when sub is missing", () => {
     const input = { email: "user@example.com" };
 
     const result = OidcUserInfoSchema.safeParse(input);
 
-    assertEquals(result.success, false);
+    expect(result.success).toEqual(false);
   });
 
-  await t.step("fails when email is invalid", () => {
+  it("fails when email is invalid", () => {
     const input = { sub: "user-123", email: "not-an-email" };
 
     const result = OidcUserInfoSchema.safeParse(input);
 
-    assertEquals(result.success, false);
+    expect(result.success).toEqual(false);
   });
 
-  await t.step("passthrough preserves extra claims", () => {
+  it("passthrough preserves extra claims", () => {
     const input = {
       sub: "user-123",
       email: "user@example.com",
@@ -57,13 +57,13 @@ Deno.test("OidcUserInfoSchema", async (t) => {
 
     const result = OidcUserInfoSchema.parse(input);
 
-    assertEquals(result.sub, "user-123");
-    assertEquals(result.email, "user@example.com");
-    assertEquals(result.custom_claim, "custom_value");
-    assertEquals(result.another_field, 42);
+    expect(result.sub).toEqual("user-123");
+    expect(result.email).toEqual("user@example.com");
+    expect(result.custom_claim).toEqual("custom_value");
+    expect(result.another_field).toEqual(42);
   });
 
-  await t.step("parses optional fields", () => {
+  it("parses optional fields", () => {
     const input = {
       sub: "user-123",
       given_name: "John",
@@ -74,43 +74,43 @@ Deno.test("OidcUserInfoSchema", async (t) => {
 
     const result = OidcUserInfoSchema.parse(input);
 
-    assertEquals(result.given_name, "John");
-    assertEquals(result.family_name, "Doe");
-    assertEquals(result.picture, "https://example.com/avatar.jpg");
-    assertEquals(result.locale, "en-US");
+    expect(result.given_name).toEqual("John");
+    expect(result.family_name).toEqual("Doe");
+    expect(result.picture).toEqual("https://example.com/avatar.jpg");
+    expect(result.locale).toEqual("en-US");
   });
 
-  await t.step("fails when picture is not a valid URL", () => {
+  it("fails when picture is not a valid URL", () => {
     const input = { sub: "user-123", picture: "not-a-url" };
 
     const result = OidcUserInfoSchema.safeParse(input);
 
-    assertEquals(result.success, false);
+    expect(result.success).toEqual(false);
   });
 });
 
-Deno.test("extractIdentifier", async (t) => {
-  await t.step("returns email when available", () => {
+describe("extractIdentifier", () => {
+  it("returns email when available", () => {
     const userinfo = { sub: "user-123", email: "user@example.com" };
 
     const identifier = extractIdentifier(userinfo);
 
-    assertEquals(identifier, "user@example.com");
+    expect(identifier).toEqual("user@example.com");
   });
 
-  await t.step("falls back to sub when email is not present", () => {
+  it("falls back to sub when email is not present", () => {
     const userinfo = { sub: "user-456" };
 
     const identifier = extractIdentifier(userinfo);
 
-    assertEquals(identifier, "user-456");
+    expect(identifier).toEqual("user-456");
   });
 
-  await t.step("prefers email over sub when both are present", () => {
+  it("prefers email over sub when both are present", () => {
     const userinfo = { sub: "user-123", email: "user@example.com" };
 
     const identifier = extractIdentifier(userinfo);
 
-    assertEquals(identifier, "user@example.com");
+    expect(identifier).toEqual("user@example.com");
   });
 });

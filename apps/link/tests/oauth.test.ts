@@ -6,14 +6,7 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import {
-  assert,
-  assertEquals,
-  assertExists,
-  assertMatch,
-  assertNotEquals,
-  assertObjectMatch,
-} from "@std/assert";
+import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
@@ -67,527 +60,7 @@ function registerTestOAuthProvider(
   }
 }
 
-Deno.test(
-  {
-    name: "OAuth Integration",
-    // Disable resource sanitizer - 302 redirects from Hono app.request() create response bodies
-    // that don't need to be consumed (redirects are handled by headers, not body).
-    sanitizeResources: false,
-  },
-  async (t) => {
-    const tempDir = makeTempDir();
-    const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
-    const oauthService = new OAuthService(registry, storage);
-    const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
-
-    let mockServer: MockOAuthServer | undefined;
-
-    await t.step("Happy Path - Full OAuth flow", async () => {
-      // Start mock OAuth server
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      // Register test provider
-      registerTestOAuthProvider("test-happy-path", mockServer.issuer);
-
-      // Complete OAuth flow
-      const { credentialId, callbackResponse } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-happy-path",
-        {
-          accessToken: "access_token_with_email",
-          redirectUri: "https://myapp.example.com/settings",
-        },
-      );
-
-      // Verify callback redirected to the right place
-      assertEquals(callbackResponse.status, 302);
-      const redirectLocation = callbackResponse.headers.get("Location");
-      assertExists(redirectLocation);
-      assertMatch(redirectLocation, /myapp\.example\.com/);
-      const redirectUrl = new URL(redirectLocation);
-      assertEquals(redirectUrl.searchParams.get("provider"), "test-happy-path");
-
-      // Verify credential was created
-      const credRes = await app.request(`/v1/credentials/${credentialId}`);
-      assertEquals(credRes.status, 200);
-      const credSummary = CredentialSummarySchema.parse(await credRes.json());
-      assertObjectMatch(credSummary, { type: "oauth", provider: "test-happy-path" });
-
-      // Verify internal API returns full credential
-      const internalRes = await app.request(`/internal/v1/credentials/${credentialId}`);
-      assertEquals(internalRes.status, 200);
-      const internalJson = z
-        .object({
-          credential: CredentialSchema,
-          status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
-        })
-        .parse(await internalRes.json());
-      assertEquals(internalJson.status, "ready");
-    });
-
-    // Note: oauth4webapi's discoveryRequest with algorithm: "oauth2" tries OAuth AS metadata first,
-    // and falls back to OIDC discovery on 404. However, this behavior is internal to oauth4webapi
-    // and not easily testable without mocking at the HTTP level. The discovery implementation
-    // works correctly in production - this test is removed to avoid flakiness.
-
-    await t.step(
-      "Discovery - Issuer mismatch redirects to actual issuer (Atlassian-like)",
-      async () => {
-        if (mockServer) mockServer.controller.abort();
-
-        // Start the ACTUAL issuer server (like cf.mcp.atlassian.com)
-        const actualIssuerServer = await startMockOAuthServer({
-          includeProtectedResource: false,
-          includeOAuthMetadata: true,
-          includeUserinfo: true,
-        });
-
-        // Start a DISCOVERY PROXY server (like mcp.atlassian.com) that reports the actual issuer
-        // in its metadata - simulates Atlassian's behavior
-        mockServer = await startMockOAuthServer({
-          includeProtectedResource: false, // 404 on protected resource (triggers RFC 8414 fallback)
-          includeOAuthMetadata: true,
-          includeUserinfo: true,
-          metadataIssuer: actualIssuerServer.issuer, // Report the actual issuer server
-        });
-
-        // Register provider pointing to the DISCOVERY PROXY (like mcp.atlassian.com)
-        registerTestOAuthProvider("test-issuer-mismatch", mockServer.issuer);
-
-        // Complete OAuth flow - should follow the issuer redirect
-        const { credentialId, callbackResponse } = await completeOAuthFlow(
-          app,
-          actualIssuerServer, // Use actual issuer server for token exchange
-          "test-issuer-mismatch",
-          { accessToken: "issuer_mismatch_token" },
-        );
-
-        // Verify callback succeeded
-        assertEquals(callbackResponse.status, 200);
-
-        // Verify credential was created
-        const credRes = await app.request(`/v1/credentials/${credentialId}`);
-        assertEquals(credRes.status, 200);
-        const credSummary = CredentialSummarySchema.parse(await credRes.json());
-        assertObjectMatch(credSummary, { type: "oauth", provider: "test-issuer-mismatch" });
-
-        // Cleanup the actual issuer server
-        actualIssuerServer.controller.abort();
-      },
-    );
-
-    await t.step("Discovery - Protected Resource missing returns 502", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: false, // 404 on protected resource
-        includeOAuthMetadata: false, // 404 on OAuth metadata
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-no-discovery", mockServer.issuer);
-
-      const initiateRes = await app.request(`/v1/oauth/authorize/test-no-discovery`);
-
-      assertEquals(initiateRes.status, 502);
-      const json = ErrorResponse.parse(await initiateRes.json());
-      assertObjectMatch(json, { error: "oauth_initiation_failed" });
-    });
-
-    await t.step("Flow State - Unknown/invalid state returns error", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-expired-flow", mockServer.issuer);
-
-      // Initiate flow
-      const initiateRes = await app.request(`/v1/oauth/authorize/test-expired-flow`);
-      const authUrl = initiateRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
-
-      // Use a fake state that was never created (simulates expired or tampered state)
-      const fakeState = "expired-or-invalid-state";
-      const code = crypto.randomUUID();
-
-      const callbackRes = await app.request(
-        `/v1/callback/test-unknown-state?code=${code}&state=${fakeState}`,
-      );
-
-      assertEquals(callbackRes.status, 400);
-      const json = ErrorResponse.parse(await callbackRes.json());
-      assertObjectMatch(json, { error: "invalid_state" });
-    });
-
-    await t.step("Flow State - Invalid state returns 400", async () => {
-      const callbackRes = await app.request(
-        `/v1/callback/any-provider?code=somecode&state=invalid-state`,
-      );
-
-      assertEquals(callbackRes.status, 400);
-      const json = ErrorResponse.parse(await callbackRes.json());
-      assertObjectMatch(json, { error: "invalid_state" });
-    });
-
-    await t.step("Flow State - Reused state returns error", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-reuse-state", mockServer.issuer);
-
-      // Initiate flow
-      const initiateRes = await app.request(`/v1/oauth/authorize/test-reuse-state`);
-      const authUrl = initiateRes.headers.get("Location");
-      assertExists(authUrl);
-      const authUrlObj = new URL(authUrl);
-      const state = authUrlObj.searchParams.get("state");
-      assertExists(state);
-
-      const code = crypto.randomUUID();
-      const access_token = "reuse_test_token";
-      const redirect_uri = authUrlObj.searchParams.get("redirect_uri");
-      assertExists(redirect_uri);
-      mockServer.authCodes.set(state, { code, redirect_uri, access_token });
-
-      // First callback - should succeed
-      const firstCallback = await app.request(
-        `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
-      );
-      assertEquals(firstCallback.status, 200);
-
-      // Second callback with same state - should fail (state consumed)
-      const secondCallback = await app.request(
-        `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
-      );
-      assertEquals(secondCallback.status, 400);
-    });
-
-    await t.step(
-      "Token Operations - POST /refresh with valid refresh_token updates tokens",
-      async () => {
-        if (mockServer) mockServer.controller.abort();
-
-        mockServer = await startMockOAuthServer({
-          includeProtectedResource: true,
-          includeOAuthMetadata: true,
-          includeUserinfo: true,
-        });
-
-        registerTestOAuthProvider("test-refresh-success", mockServer.issuer);
-
-        // Complete flow to get credential with refresh token
-        const { credentialId } = await completeOAuthFlow(app, mockServer, "test-refresh-success", {
-          accessToken: "refresh_test_access",
-        });
-
-        // Now refresh the credential
-        const refreshRes = await app.request(`/v1/oauth/credentials/${credentialId}/refresh`, {
-          method: "POST",
-        });
-
-        assertEquals(refreshRes.status, 200);
-        const refreshJson = z
-          .object({ refreshed: z.boolean(), expiresAt: z.string() })
-          .parse(await refreshRes.json());
-        assertEquals(refreshJson.refreshed, true);
-      },
-    );
-
-    await t.step("Token Operations - POST /refresh without refresh_token returns 400", async () => {
-      // Create a credential manually without refresh_token
-      const credInput = {
-        type: "oauth" as const,
-        provider: "test-refresh-success", // reuse registered provider
-        label: "No Refresh Token",
-        secret: {
-          access_token: "some_token",
-          token_type: "Bearer",
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
-        },
-      };
-
-      // Save and get the generated ID
-      const { id: credId } = await storage.save(credInput, "dev");
-
-      const refreshRes = await app.request(`/v1/oauth/credentials/${credId}/refresh`, {
-        method: "POST",
-      });
-
-      assertEquals(refreshRes.status, 400);
-      const json = ErrorResponse.parse(await refreshRes.json());
-      assertObjectMatch(json, { error: "no_refresh_token" });
-    });
-
-    await t.step(
-      "Token Operations - GET /internal/credentials/:id with expiring token triggers proactive refresh",
-      async () => {
-        if (mockServer) mockServer.controller.abort();
-
-        mockServer = await startMockOAuthServer({
-          includeProtectedResource: true,
-          includeOAuthMetadata: true,
-          includeUserinfo: true,
-        });
-
-        registerTestOAuthProvider("test-proactive-refresh", mockServer.issuer);
-
-        // Complete flow to get credential
-        const { credentialId } = await completeOAuthFlow(
-          app,
-          mockServer,
-          "test-proactive-refresh",
-          { accessToken: "proactive_test_access" },
-        );
-
-        // Manually update credential to have near-expiring token
-        const cred = await storage.get(credentialId, "dev");
-        assertExists(cred);
-        const expiringCredInput = {
-          type: cred.type,
-          provider: cred.provider,
-          userIdentifier: cred.userIdentifier,
-          label: cred.label,
-          secret: {
-            ...cred.secret,
-            expires_at: Math.floor(Date.now() / 1000) + 60, // Expires in 1 minute (< 5 min buffer)
-          },
-        };
-        await storage.update(credentialId, expiringCredInput, "dev");
-
-        // Internal API should trigger proactive refresh
-        const internalRes = await app.request(`/internal/v1/credentials/${credentialId}`);
-        assertEquals(internalRes.status, 200);
-        const internalJson = z
-          .object({
-            credential: CredentialSchema,
-            status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
-          })
-          .parse(await internalRes.json());
-        assertEquals(internalJson.status, "refreshed");
-      },
-    );
-
-    await t.step("Same OAuth identity updates existing credential (upsert)", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-upsert", mockServer.issuer);
-
-      // First flow - creates credential
-      const { credentialId: firstCredId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-upsert",
-        { accessToken: "first_flow_access" },
-      );
-
-      // Second flow - same provider, same userIdentifier (derived from access_token hash)
-      // Should UPDATE same credential, not create duplicate
-      const { credentialId: secondCredId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-upsert",
-        { accessToken: "first_flow_access" }, // SAME token = same userIdentifier
-      );
-
-      // SAME ID = credential was updated, not duplicated
-      assertEquals(firstCredId, secondCredId);
-
-      // Verify credential still exists and is valid
-      const cred = await storage.get(firstCredId, "dev");
-      assertExists(cred);
-    });
-
-    await t.step("Different userIdentifier creates new credential", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-upsert-different", mockServer.issuer);
-
-      // First user
-      const { credentialId: firstCredId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-upsert-different",
-        { accessToken: "different_user_1_with_email" },
-      );
-
-      // Second user (different token = different userIdentifier)
-      const { credentialId: secondCredId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-upsert-different",
-        { accessToken: "different_user_2_no_email" },
-      );
-
-      // Should be different IDs
-      assert(firstCredId !== secondCredId);
-
-      // Both should exist
-      const cred1 = await storage.get(firstCredId, "dev");
-      const cred2 = await storage.get(secondCredId, "dev");
-      assertExists(cred1);
-      assertExists(cred2);
-    });
-
-    await t.step("OAuth flow after delete creates new credential", async () => {
-      if (mockServer) mockServer.controller.abort();
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-      registerTestOAuthProvider("test-delete-then-create", mockServer.issuer);
-
-      // First flow
-      const { credentialId: firstId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-delete-then-create",
-        { accessToken: "delete_test_token" },
-      );
-
-      // Delete the credential
-      await storage.delete(firstId, "dev");
-
-      // Second flow - same identity, but original was deleted
-      const { credentialId: secondId } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-delete-then-create",
-        { accessToken: "delete_test_token" }, // Same token = same identity
-      );
-
-      // DIFFERENT ID = new credential created (deleted one ignored)
-      assertNotEquals(firstId, secondId);
-    });
-
-    // Identity resolution via identify hook
-    await t.step("Identity Resolution - identify hook overrides userinfo", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      let capturedTokens: unknown;
-      const identifyFn = (tokens: OAuthTokens) => {
-        capturedTokens = tokens;
-        return Promise.resolve("hook-wins");
-      };
-
-      registerTestOAuthProvider("test-identify-hook", mockServer.issuer, undefined, identifyFn);
-
-      const { credentialId } = await completeOAuthFlow(app, mockServer, "test-identify-hook", {
-        accessToken: "precedence_with_email",
-      });
-
-      // Verify hook received correct tokens
-      assertExists(capturedTokens);
-      z.object({
-        access_token: z.string(),
-        refresh_token: z.string().optional(),
-        token_type: z.string(),
-        expires_at: z.number().optional(),
-      }).parse(capturedTokens);
-
-      // Verify hook result used - check the credential label (which is set to userIdentifier)
-      const cred = await storage.get(credentialId, "dev");
-      assertExists(cred);
-      assertEquals(cred.label, "hook-wins");
-    });
-
-    // NOTE: Health check endpoint for credentials not yet implemented
-    // Test removed - was testing non-existent POST /v1/credentials/:id/health endpoint
-
-    await t.step("Error Handling - Provider error in callback returns error", async () => {
-      if (mockServer) mockServer.controller.abort();
-
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: true,
-        includeOAuthMetadata: true,
-        includeUserinfo: true,
-      });
-
-      registerTestOAuthProvider("test-provider-error", mockServer.issuer);
-
-      // Initiate flow
-      const initiateRes = await app.request(
-        `/v1/oauth/authorize/test-provider-error?redirect_uri=https://app.example.com/settings`,
-      );
-      const authUrl = initiateRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
-
-      // Simulate provider returning error
-      const callbackRes = await app.request(
-        `/v1/callback/test-provider-error?state=${state}&error=access_denied&error_description=User%20denied%20access`,
-      );
-
-      assertEquals(callbackRes.status, 302);
-      const redirectLocation = callbackRes.headers.get("Location");
-      assertExists(redirectLocation);
-      const redirectUrl = new URL(redirectLocation);
-      assertEquals(redirectUrl.searchParams.get("error"), "access_denied");
-      assertEquals(redirectUrl.searchParams.get("error_description"), "User denied access");
-    });
-
-    await t.step("Error Handling - Non-OAuth provider returns 400", async () => {
-      // Register non-OAuth provider
-      if (!registry.has("test-apikey-not-oauth")) {
-        registry.register({
-          id: "test-apikey-not-oauth",
-          type: "apikey",
-          displayName: "API Key Provider",
-          description: "Not OAuth",
-          setupInstructions: "# Test",
-          secretSchema: z.object({ key: z.string() }),
-        });
-      }
-
-      const initiateRes = await app.request(`/v1/oauth/authorize/test-apikey-not-oauth`);
-
-      assertEquals(initiateRes.status, 400);
-      const json = ErrorResponse.parse(await initiateRes.json());
-      assertObjectMatch(json, { error: "provider_not_oauth" });
-    });
-
-    // Cleanup
-    if (mockServer) mockServer.controller.abort();
-    await rm(tempDir, { recursive: true });
-  },
-);
-
-Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async (t) => {
+describe("OAuth Integration", async () => {
   const tempDir = makeTempDir();
   const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
   const oauthService = new OAuthService(registry, storage);
@@ -595,58 +68,551 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
 
   let mockServer: MockOAuthServer | undefined;
 
-  await t.step(
-    "initiateFlow - builds correct auth URL with static endpoints, skips discovery",
-    async () => {
-      // Start mock server
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: false, // Should not be called for static providers
-        includeOAuthMetadata: false, // Should not be called for static providers
-        includeUserinfo: true,
+  it("Happy Path - Full OAuth flow", async () => {
+    // Start mock OAuth server
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    // Register test provider
+    registerTestOAuthProvider("test-happy-path", mockServer.issuer);
+
+    // Complete OAuth flow
+    const { credentialId, callbackResponse } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-happy-path",
+      { accessToken: "access_token_with_email", redirectUri: "https://myapp.example.com/settings" },
+    );
+
+    // Verify callback redirected to the right place
+    expect(callbackResponse.status).toEqual(302);
+    const redirectLocation = callbackResponse.headers.get("Location");
+    expect(redirectLocation).toBeDefined();
+    expect(redirectLocation).toMatch(/myapp\.example\.com/);
+    const redirectUrl = new URL(redirectLocation!);
+    expect(redirectUrl.searchParams.get("provider")).toEqual("test-happy-path");
+
+    // Verify credential was created
+    const credRes = await app.request(`/v1/credentials/${credentialId}`);
+    expect(credRes.status).toEqual(200);
+    const credSummary = CredentialSummarySchema.parse(await credRes.json());
+    expect(credSummary).toMatchObject({ type: "oauth", provider: "test-happy-path" });
+
+    // Verify internal API returns full credential
+    const internalRes = await app.request(`/internal/v1/credentials/${credentialId}`);
+    expect(internalRes.status).toEqual(200);
+    const internalJson = z
+      .object({
+        credential: CredentialSchema,
+        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+      })
+      .parse(await internalRes.json());
+    expect(internalJson.status).toEqual("ready");
+  });
+
+  // Note: oauth4webapi's discoveryRequest with algorithm: "oauth2" tries OAuth AS metadata first,
+  // and falls back to OIDC discovery on 404. However, this behavior is internal to oauth4webapi
+  // and not easily testable without mocking at the HTTP level. The discovery implementation
+  // works correctly in production - this test is removed to avoid flakiness.
+
+  it("Discovery - Issuer mismatch redirects to actual issuer (Atlassian-like)", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    // Start the ACTUAL issuer server (like cf.mcp.atlassian.com)
+    const actualIssuerServer = await startMockOAuthServer({
+      includeProtectedResource: false,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    // Start a DISCOVERY PROXY server (like mcp.atlassian.com) that reports the actual issuer
+    // in its metadata - simulates Atlassian's behavior
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: false, // 404 on protected resource (triggers RFC 8414 fallback)
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+      metadataIssuer: actualIssuerServer.issuer, // Report the actual issuer server
+    });
+
+    // Register provider pointing to the DISCOVERY PROXY (like mcp.atlassian.com)
+    registerTestOAuthProvider("test-issuer-mismatch", mockServer.issuer);
+
+    // Complete OAuth flow - should follow the issuer redirect
+    const { credentialId, callbackResponse } = await completeOAuthFlow(
+      app,
+      actualIssuerServer, // Use actual issuer server for token exchange
+      "test-issuer-mismatch",
+      { accessToken: "issuer_mismatch_token" },
+    );
+
+    // Verify callback succeeded
+    expect(callbackResponse.status).toEqual(200);
+
+    // Verify credential was created
+    const credRes = await app.request(`/v1/credentials/${credentialId}`);
+    expect(credRes.status).toEqual(200);
+    const credSummary = CredentialSummarySchema.parse(await credRes.json());
+    expect(credSummary).toMatchObject({ type: "oauth", provider: "test-issuer-mismatch" });
+
+    // Cleanup the actual issuer server
+    actualIssuerServer.controller.abort();
+  });
+
+  it("Discovery - Protected Resource missing returns 502", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: false, // 404 on protected resource
+      includeOAuthMetadata: false, // 404 on OAuth metadata
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-no-discovery", mockServer.issuer);
+
+    const initiateRes = await app.request(`/v1/oauth/authorize/test-no-discovery`);
+
+    expect(initiateRes.status).toEqual(502);
+    const json = ErrorResponse.parse(await initiateRes.json());
+    expect(json).toMatchObject({ error: "oauth_initiation_failed" });
+  });
+
+  it("Flow State - Unknown/invalid state returns error", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-expired-flow", mockServer.issuer);
+
+    // Initiate flow
+    const initiateRes = await app.request(`/v1/oauth/authorize/test-expired-flow`);
+    const authUrl = initiateRes.headers.get("Location");
+    expect(authUrl).toBeDefined();
+    const state = new URL(authUrl!).searchParams.get("state");
+    expect(state).toBeDefined();
+
+    // Use a fake state that was never created (simulates expired or tampered state)
+    const fakeState = "expired-or-invalid-state";
+    const code = crypto.randomUUID();
+
+    const callbackRes = await app.request(
+      `/v1/callback/test-unknown-state?code=${code}&state=${fakeState}`,
+    );
+
+    expect(callbackRes.status).toEqual(400);
+    const json = ErrorResponse.parse(await callbackRes.json());
+    expect(json).toMatchObject({ error: "invalid_state" });
+  });
+
+  it("Flow State - Invalid state returns 400", async () => {
+    const callbackRes = await app.request(
+      `/v1/callback/any-provider?code=somecode&state=invalid-state`,
+    );
+
+    expect(callbackRes.status).toEqual(400);
+    const json = ErrorResponse.parse(await callbackRes.json());
+    expect(json).toMatchObject({ error: "invalid_state" });
+  });
+
+  it("Flow State - Reused state returns error", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-reuse-state", mockServer.issuer);
+
+    // Initiate flow
+    const initiateRes = await app.request(`/v1/oauth/authorize/test-reuse-state`);
+    const authUrl = initiateRes.headers.get("Location");
+    expect(authUrl).toBeDefined();
+    const authUrlObj = new URL(authUrl!);
+    const state = authUrlObj.searchParams.get("state");
+    expect(state).toBeDefined();
+
+    const code = crypto.randomUUID();
+    const access_token = "reuse_test_token";
+    const redirect_uri = authUrlObj.searchParams.get("redirect_uri");
+    expect(redirect_uri).toBeDefined();
+    mockServer.authCodes.set(state!, { code, redirect_uri: redirect_uri!, access_token });
+
+    // First callback - should succeed
+    const firstCallback = await app.request(
+      `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
+    );
+    expect(firstCallback.status).toEqual(200);
+
+    // Second callback with same state - should fail (state consumed)
+    const secondCallback = await app.request(
+      `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
+    );
+    expect(secondCallback.status).toEqual(400);
+  });
+
+  it("Token Operations - POST /refresh with valid refresh_token updates tokens", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-refresh-success", mockServer.issuer);
+
+    // Complete flow to get credential with refresh token
+    const { credentialId } = await completeOAuthFlow(app, mockServer, "test-refresh-success", {
+      accessToken: "refresh_test_access",
+    });
+
+    // Now refresh the credential
+    const refreshRes = await app.request(`/v1/oauth/credentials/${credentialId}/refresh`, {
+      method: "POST",
+    });
+
+    expect(refreshRes.status).toEqual(200);
+    const refreshJson = z
+      .object({ refreshed: z.boolean(), expiresAt: z.string() })
+      .parse(await refreshRes.json());
+    expect(refreshJson.refreshed).toEqual(true);
+  });
+
+  it("Token Operations - POST /refresh without refresh_token returns 400", async () => {
+    // Create a credential manually without refresh_token
+    const credInput = {
+      type: "oauth" as const,
+      provider: "test-refresh-success", // reuse registered provider
+      label: "No Refresh Token",
+      secret: {
+        access_token: "some_token",
+        token_type: "Bearer",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      },
+    };
+
+    // Save and get the generated ID
+    const { id: credId } = await storage.save(credInput, "dev");
+
+    const refreshRes = await app.request(`/v1/oauth/credentials/${credId}/refresh`, {
+      method: "POST",
+    });
+
+    expect(refreshRes.status).toEqual(400);
+    const json = ErrorResponse.parse(await refreshRes.json());
+    expect(json).toMatchObject({ error: "no_refresh_token" });
+  });
+
+  it("Token Operations - GET /internal/credentials/:id with expiring token triggers proactive refresh", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-proactive-refresh", mockServer.issuer);
+
+    // Complete flow to get credential
+    const { credentialId } = await completeOAuthFlow(app, mockServer, "test-proactive-refresh", {
+      accessToken: "proactive_test_access",
+    });
+
+    // Manually update credential to have near-expiring token
+    const cred = await storage.get(credentialId, "dev");
+    expect(cred).toBeDefined();
+    const expiringCredInput = {
+      type: cred!.type,
+      provider: cred!.provider,
+      userIdentifier: cred!.userIdentifier,
+      label: cred!.label,
+      secret: {
+        ...cred!.secret,
+        expires_at: Math.floor(Date.now() / 1000) + 60, // Expires in 1 minute (< 5 min buffer)
+      },
+    };
+    await storage.update(credentialId, expiringCredInput, "dev");
+
+    // Internal API should trigger proactive refresh
+    const internalRes = await app.request(`/internal/v1/credentials/${credentialId}`);
+    expect(internalRes.status).toEqual(200);
+    const internalJson = z
+      .object({
+        credential: CredentialSchema,
+        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+      })
+      .parse(await internalRes.json());
+    expect(internalJson.status).toEqual("refreshed");
+  });
+
+  it("Same OAuth identity updates existing credential (upsert)", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-upsert", mockServer.issuer);
+
+    // First flow - creates credential
+    const { credentialId: firstCredId } = await completeOAuthFlow(app, mockServer, "test-upsert", {
+      accessToken: "first_flow_access",
+    });
+
+    // Second flow - same provider, same userIdentifier (derived from access_token hash)
+    // Should UPDATE same credential, not create duplicate
+    const { credentialId: secondCredId } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-upsert",
+      { accessToken: "first_flow_access" }, // SAME token = same userIdentifier
+    );
+
+    // SAME ID = credential was updated, not duplicated
+    expect(firstCredId).toEqual(secondCredId);
+
+    // Verify credential still exists and is valid
+    const cred = await storage.get(firstCredId, "dev");
+    expect(cred).toBeDefined();
+  });
+
+  it("Different userIdentifier creates new credential", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-upsert-different", mockServer.issuer);
+
+    // First user
+    const { credentialId: firstCredId } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-upsert-different",
+      { accessToken: "different_user_1_with_email" },
+    );
+
+    // Second user (different token = different userIdentifier)
+    const { credentialId: secondCredId } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-upsert-different",
+      { accessToken: "different_user_2_no_email" },
+    );
+
+    // Should be different IDs
+    expect(firstCredId).not.toEqual(secondCredId);
+
+    // Both should exist
+    const cred1 = await storage.get(firstCredId, "dev");
+    const cred2 = await storage.get(secondCredId, "dev");
+    expect(cred1).toBeDefined();
+    expect(cred2).toBeDefined();
+  });
+
+  it("OAuth flow after delete creates new credential", async () => {
+    if (mockServer) mockServer.controller.abort();
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+    registerTestOAuthProvider("test-delete-then-create", mockServer.issuer);
+
+    // First flow
+    const { credentialId: firstId } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-delete-then-create",
+      { accessToken: "delete_test_token" },
+    );
+
+    // Delete the credential
+    await storage.delete(firstId, "dev");
+
+    // Second flow - same identity, but original was deleted
+    const { credentialId: secondId } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-delete-then-create",
+      { accessToken: "delete_test_token" }, // Same token = same identity
+    );
+
+    // DIFFERENT ID = new credential created (deleted one ignored)
+    expect(firstId).not.toEqual(secondId);
+  });
+
+  // Identity resolution via identify hook
+  it("Identity Resolution - identify hook overrides userinfo", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    let capturedTokens: unknown;
+    const identifyFn = (tokens: OAuthTokens) => {
+      capturedTokens = tokens;
+      return Promise.resolve("hook-wins");
+    };
+
+    registerTestOAuthProvider("test-identify-hook", mockServer.issuer, undefined, identifyFn);
+
+    const { credentialId } = await completeOAuthFlow(app, mockServer, "test-identify-hook", {
+      accessToken: "precedence_with_email",
+    });
+
+    // Verify hook received correct tokens
+    expect(capturedTokens).toBeDefined();
+    z.object({
+      access_token: z.string(),
+      refresh_token: z.string().optional(),
+      token_type: z.string(),
+      expires_at: z.number().optional(),
+    }).parse(capturedTokens);
+
+    // Verify hook result used - check the credential label (which is set to userIdentifier)
+    const cred = await storage.get(credentialId, "dev");
+    expect(cred).toBeDefined();
+    expect(cred!.label).toEqual("hook-wins");
+  });
+
+  // NOTE: Health check endpoint for credentials not yet implemented
+  // Test removed - was testing non-existent POST /v1/credentials/:id/health endpoint
+
+  it("Error Handling - Provider error in callback returns error", async () => {
+    if (mockServer) mockServer.controller.abort();
+
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: true,
+      includeOAuthMetadata: true,
+      includeUserinfo: true,
+    });
+
+    registerTestOAuthProvider("test-provider-error", mockServer.issuer);
+
+    // Initiate flow
+    const initiateRes = await app.request(
+      `/v1/oauth/authorize/test-provider-error?redirect_uri=https://app.example.com/settings`,
+    );
+    const authUrl = initiateRes.headers.get("Location");
+    expect(authUrl).toBeDefined();
+    const state = new URL(authUrl!).searchParams.get("state");
+    expect(state).toBeDefined();
+
+    // Simulate provider returning error
+    const callbackRes = await app.request(
+      `/v1/callback/test-provider-error?state=${state}&error=access_denied&error_description=User%20denied%20access`,
+    );
+
+    expect(callbackRes.status).toEqual(302);
+    const redirectLocation = callbackRes.headers.get("Location");
+    expect(redirectLocation).toBeDefined();
+    const redirectUrl = new URL(redirectLocation!);
+    expect(redirectUrl.searchParams.get("error")).toEqual("access_denied");
+    expect(redirectUrl.searchParams.get("error_description")).toEqual("User denied access");
+  });
+
+  it("Error Handling - Non-OAuth provider returns 400", async () => {
+    // Register non-OAuth provider
+    if (!registry.has("test-apikey-not-oauth")) {
+      registry.register({
+        id: "test-apikey-not-oauth",
+        type: "apikey",
+        displayName: "API Key Provider",
+        description: "Not OAuth",
+        setupInstructions: "# Test",
+        secretSchema: z.object({ key: z.string() }),
       });
+    }
 
-      // Register static provider
-      const testStaticProvider = defineOAuthProvider({
-        id: "test-static-initiate",
-        displayName: "Test Static",
-        description: "Test static OAuth provider",
-        oauthConfig: {
-          mode: "static",
-          authorizationEndpoint: `${mockServer.issuer}/authorize`,
-          tokenEndpoint: `${mockServer.issuer}/token`,
-          userinfoEndpoint: `${mockServer.issuer}/userinfo`,
-          clientId: "test-client-id",
-          clientSecret: "test-client-secret",
-          clientAuthMethod: "client_secret_post",
-          scopes: ["openid", "email"],
-        },
-        identify: mockIdentify,
-      });
-      registry.register(testStaticProvider);
+    const initiateRes = await app.request(`/v1/oauth/authorize/test-apikey-not-oauth`);
 
-      // Initiate flow
-      const initiateRes = await app.request(`/v1/oauth/authorize/test-static-initiate`);
+    expect(initiateRes.status).toEqual(400);
+    const json = ErrorResponse.parse(await initiateRes.json());
+    expect(json).toMatchObject({ error: "provider_not_oauth" });
+  });
 
-      assertEquals(initiateRes.status, 302);
-      const authUrl = initiateRes.headers.get("Location");
-      assertExists(authUrl);
+  // Cleanup
+  afterAll(async () => {
+    if (mockServer) mockServer.controller.abort();
+    await rm(tempDir, { recursive: true });
+  });
+});
 
-      // Verify URL components
-      const authUrlObj = new URL(authUrl);
-      assertEquals(authUrlObj.origin + authUrlObj.pathname, `${mockServer.issuer}/authorize`);
-      assertEquals(authUrlObj.searchParams.get("client_id"), "test-client-id");
-      assertEquals(authUrlObj.searchParams.get("response_type"), "code");
-      assertExists(authUrlObj.searchParams.get("state"));
-      assertExists(authUrlObj.searchParams.get("code_challenge"));
-      assertEquals(authUrlObj.searchParams.get("code_challenge_method"), "S256");
+describe("Static OAuth Integration", async () => {
+  const tempDir = makeTempDir();
+  const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+  const oauthService = new OAuthService(registry, storage);
+  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
-      // Verify discovery was NOT called
-      assertEquals(mockServer.discoveryCallCount, 0);
-      assertEquals(mockServer.registrationCallCount, 0);
-    },
-  );
+  let mockServer: MockOAuthServer | undefined;
 
-  await t.step("initiateFlow - includes extraAuthParams in auth URL", async () => {
+  it("initiateFlow - builds correct auth URL with static endpoints, skips discovery", async () => {
+    // Start mock server
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: false, // Should not be called for static providers
+      includeOAuthMetadata: false, // Should not be called for static providers
+      includeUserinfo: true,
+    });
+
+    // Register static provider
+    const testStaticProvider = defineOAuthProvider({
+      id: "test-static-initiate",
+      displayName: "Test Static",
+      description: "Test static OAuth provider",
+      oauthConfig: {
+        mode: "static",
+        authorizationEndpoint: `${mockServer.issuer}/authorize`,
+        tokenEndpoint: `${mockServer.issuer}/token`,
+        userinfoEndpoint: `${mockServer.issuer}/userinfo`,
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        clientAuthMethod: "client_secret_post",
+        scopes: ["openid", "email"],
+      },
+      identify: mockIdentify,
+    });
+    registry.register(testStaticProvider);
+
+    // Initiate flow
+    const initiateRes = await app.request(`/v1/oauth/authorize/test-static-initiate`);
+
+    expect(initiateRes.status).toEqual(302);
+    const authUrl = initiateRes.headers.get("Location");
+    expect(authUrl).toBeDefined();
+
+    // Verify URL components
+    const authUrlObj = new URL(authUrl!);
+    expect(authUrlObj.origin + authUrlObj.pathname).toEqual(`${mockServer.issuer}/authorize`);
+    expect(authUrlObj.searchParams.get("client_id")).toEqual("test-client-id");
+    expect(authUrlObj.searchParams.get("response_type")).toEqual("code");
+    expect(authUrlObj.searchParams.get("state")).toBeDefined();
+    expect(authUrlObj.searchParams.get("code_challenge")).toBeDefined();
+    expect(authUrlObj.searchParams.get("code_challenge_method")).toEqual("S256");
+
+    // Verify discovery was NOT called
+    expect(mockServer.discoveryCallCount).toEqual(0);
+    expect(mockServer.registrationCallCount).toEqual(0);
+  });
+
+  it("initiateFlow - includes extraAuthParams in auth URL", async () => {
     if (mockServer) mockServer.controller.abort();
 
     mockServer = await startMockOAuthServer({
@@ -673,16 +639,16 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
     registry.register(testStaticProvider);
 
     const initiateRes = await app.request(`/v1/oauth/authorize/test-static-extra-params`);
-    assertEquals(initiateRes.status, 302);
+    expect(initiateRes.status).toEqual(302);
     const authUrl = initiateRes.headers.get("Location");
-    assertExists(authUrl);
+    expect(authUrl).toBeDefined();
 
-    const authUrlObj = new URL(authUrl);
-    assertEquals(authUrlObj.searchParams.get("access_type"), "offline");
-    assertEquals(authUrlObj.searchParams.get("prompt"), "consent");
+    const authUrlObj = new URL(authUrl!);
+    expect(authUrlObj.searchParams.get("access_type")).toEqual("offline");
+    expect(authUrlObj.searchParams.get("prompt")).toEqual("consent");
   });
 
-  await t.step("initiateFlow - includes scopes from provider config", async () => {
+  it("initiateFlow - includes scopes from provider config", async () => {
     if (mockServer) mockServer.controller.abort();
 
     mockServer = await startMockOAuthServer({
@@ -709,15 +675,15 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
     registry.register(testStaticProvider);
 
     const initiateRes = await app.request(`/v1/oauth/authorize/test-static-scopes`);
-    assertEquals(initiateRes.status, 302);
+    expect(initiateRes.status).toEqual(302);
     const authUrl = initiateRes.headers.get("Location");
-    assertExists(authUrl);
+    expect(authUrl).toBeDefined();
 
-    const authUrlObj = new URL(authUrl);
-    assertEquals(authUrlObj.searchParams.get("scope"), "openid email profile");
+    const authUrlObj = new URL(authUrl!);
+    expect(authUrlObj.searchParams.get("scope")).toEqual("openid email profile");
   });
 
-  await t.step("completeFlow - exchanges code with client auth (mock token endpoint)", async () => {
+  it("completeFlow - exchanges code with client auth (mock token endpoint)", async () => {
     if (mockServer) mockServer.controller.abort();
 
     mockServer = await startMockOAuthServer({
@@ -752,63 +718,60 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
       { accessToken: "static_access_token_with_email" },
     );
 
-    assertEquals(callbackResponse.status, 200);
+    expect(callbackResponse.status).toEqual(200);
     const callbackJson = z
       .object({ status: z.string(), credential_id: z.string() })
       .parse(await callbackResponse.json());
-    assertEquals(callbackJson.status, "success");
+    expect(callbackJson.status).toEqual("success");
 
     // Verify credential was created
     const credRes = await app.request(`/v1/credentials/${credentialId}`);
-    assertEquals(credRes.status, 200);
+    expect(credRes.status).toEqual(200);
     const credSummary = CredentialSummarySchema.parse(await credRes.json());
-    assertObjectMatch(credSummary, { type: "oauth", provider: "test-static-complete" });
+    expect(credSummary).toMatchObject({ type: "oauth", provider: "test-static-complete" });
   });
 
-  await t.step(
-    "completeFlow - uses client_secret_basic when clientAuthMethod is client_secret_basic",
-    async () => {
-      if (mockServer) mockServer.controller.abort();
+  it("completeFlow - uses client_secret_basic when clientAuthMethod is client_secret_basic", async () => {
+    if (mockServer) mockServer.controller.abort();
 
-      mockServer = await startMockOAuthServer({
-        includeProtectedResource: false,
-        includeOAuthMetadata: false,
-        includeUserinfo: true,
-      });
+    mockServer = await startMockOAuthServer({
+      includeProtectedResource: false,
+      includeOAuthMetadata: false,
+      includeUserinfo: true,
+    });
 
-      const testStaticProvider = defineOAuthProvider({
-        id: "test-static-basic-auth",
-        displayName: "Test Static Basic Auth",
-        description: "Test static OAuth with basic auth",
-        oauthConfig: {
-          mode: "static",
-          authorizationEndpoint: `${mockServer.issuer}/authorize`,
-          tokenEndpoint: `${mockServer.issuer}/token`,
-          userinfoEndpoint: `${mockServer.issuer}/userinfo`,
-          clientId: "test-client-id",
-          clientSecret: "test-client-secret",
-          clientAuthMethod: "client_secret_basic",
-          scopes: ["openid", "email"],
-        },
-        identify: mockIdentify,
-      });
-      registry.register(testStaticProvider);
+    const testStaticProvider = defineOAuthProvider({
+      id: "test-static-basic-auth",
+      displayName: "Test Static Basic Auth",
+      description: "Test static OAuth with basic auth",
+      oauthConfig: {
+        mode: "static",
+        authorizationEndpoint: `${mockServer.issuer}/authorize`,
+        tokenEndpoint: `${mockServer.issuer}/token`,
+        userinfoEndpoint: `${mockServer.issuer}/userinfo`,
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        clientAuthMethod: "client_secret_basic",
+        scopes: ["openid", "email"],
+      },
+      identify: mockIdentify,
+    });
+    registry.register(testStaticProvider);
 
-      // Complete flow
-      const { callbackResponse } = await completeOAuthFlow(
-        app,
-        mockServer,
-        "test-static-basic-auth",
-        { accessToken: "basic_auth_token_with_email" },
-      );
+    // Complete flow
+    const { callbackResponse } = await completeOAuthFlow(
+      app,
+      mockServer,
+      "test-static-basic-auth",
+      { accessToken: "basic_auth_token_with_email" },
+    );
 
-      assertEquals(callbackResponse.status, 200);
-      // If we got here, client auth worked (mock server doesn't validate auth method)
-      z.object({ credential_id: z.string() }).parse(await callbackResponse.json());
-    },
-  );
+    expect(callbackResponse.status).toEqual(200);
+    // If we got here, client auth worked (mock server doesn't validate auth method)
+    z.object({ credential_id: z.string() }).parse(await callbackResponse.json());
+  });
 
-  await t.step("refreshCredential - uses static config without cache lookup", async () => {
+  it("refreshCredential - uses static config without cache lookup", async () => {
     if (mockServer) mockServer.controller.abort();
 
     mockServer = await startMockOAuthServer({
@@ -845,14 +808,16 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
       method: "POST",
     });
 
-    assertEquals(refreshRes.status, 200);
+    expect(refreshRes.status).toEqual(200);
     const refreshJson = z
       .object({ refreshed: z.boolean(), expiresAt: z.string() })
       .parse(await refreshRes.json());
-    assertEquals(refreshJson.refreshed, true);
+    expect(refreshJson.refreshed).toEqual(true);
   });
 
   // Cleanup
-  if (mockServer) mockServer.controller.abort();
-  await rm(tempDir, { recursive: true });
+  afterAll(async () => {
+    if (mockServer) mockServer.controller.abort();
+    await rm(tempDir, { recursive: true });
+  });
 });

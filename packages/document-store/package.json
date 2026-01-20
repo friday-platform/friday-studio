@@ -1,0 +1,8 @@
+{
+  "name": "@atlas/document-store",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": { "zod": "^4.3.5" }
+}

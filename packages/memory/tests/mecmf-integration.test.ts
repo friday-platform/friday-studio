@@ -5,161 +5,151 @@
  * This test focuses on core functionality without requiring external dependencies.
  */
 
-import { assertEquals, assertExists, assertGreater } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { createConversationContext, MECMFConstants, MemoryUtils } from "../src/mecmf.ts";
 import { createMemoryClassifier } from "../src/memory-classifier.ts";
 import { createTokenBudgetManager } from "../src/token-budget-manager.ts";
 
-Deno.test("MECMF Memory Classification", () => {
-  const classifier = createMemoryClassifier();
-  const context = createConversationContext("session-1", "workspace-1", {
-    currentTask: "testing memory classification",
+describe("MECMF Integration", () => {
+  it("MECMF Memory Classification", () => {
+    const classifier = createMemoryClassifier();
+    const context = createConversationContext("session-1", "workspace-1", {
+      currentTask: "testing memory classification",
+    });
+
+    // Test working memory classification
+    const workingContent = "The current session is analyzing memory patterns right now";
+    const workingType = classifier.classifyContent(workingContent, context);
+    expect(workingType).toEqual("working");
+
+    // Test procedural memory classification
+    const proceduralContent =
+      "First, you should configure the system. Then, run the setup command. Finally, verify the installation.";
+    const proceduralType = classifier.classifyContent(proceduralContent, context);
+    expect(proceduralType).toEqual("procedural");
+
+    // Test semantic memory classification
+    const semanticContent =
+      "TypeScript is a strongly typed programming language that builds on JavaScript";
+    const semanticType = classifier.classifyContent(semanticContent, context);
+    expect(semanticType).toEqual("semantic");
+
+    // Test episodic memory classification
+    const episodicContent =
+      "Yesterday we tried to deploy the application but encountered an error. We learned that the database connection was misconfigured.";
+    const episodicType = classifier.classifyContent(episodicContent, context);
+    expect(episodicType).toEqual("episodic");
   });
 
-  // Test working memory classification
-  const workingContent = "The current session is analyzing memory patterns right now";
-  const workingType = classifier.classifyContent(workingContent, context);
-  assertEquals(workingType, "working");
+  it("MECMF Token Budget Management", () => {
+    const budgetManager = createTokenBudgetManager();
 
-  // Test procedural memory classification
-  const proceduralContent =
-    "First, you should configure the system. Then, run the setup command. Finally, verify the installation.";
-  const proceduralType = classifier.classifyContent(proceduralContent, context);
-  assertEquals(proceduralType, "procedural");
+    // Test token calculation
+    const availableTokens = budgetManager.calculateAvailableTokens(8000, 1000);
+    expect(availableTokens).toEqual(7000);
 
-  // Test semantic memory classification
-  const semanticContent =
-    "TypeScript is a strongly typed programming language that builds on JavaScript";
-  const semanticType = classifier.classifyContent(semanticContent, context);
-  assertEquals(semanticType, "semantic");
+    // Test token allocation
+    const allocation = budgetManager.allocateTokensByType(4000);
+    expect(allocation.working_memory).toEqual(1600); // 40%
+    expect(allocation.procedural_memory).toEqual(1000); // 25%
+    expect(allocation.semantic_memory).toEqual(1000); // 25%
+    expect(allocation.episodic_memory).toEqual(400); // 10%
 
-  // Test episodic memory classification
-  const episodicContent =
-    "Yesterday we tried to deploy the application but encountered an error. We learned that the database connection was misconfigured.";
-  const episodicType = classifier.classifyContent(episodicContent, context);
-  assertEquals(episodicType, "episodic");
-
-  console.log("✓ Memory classification tests passed");
-});
-
-Deno.test("MECMF Token Budget Management", () => {
-  const budgetManager = createTokenBudgetManager();
-
-  // Test token calculation
-  const availableTokens = budgetManager.calculateAvailableTokens(8000, 1000);
-  assertEquals(availableTokens, 7000);
-
-  // Test token allocation
-  const allocation = budgetManager.allocateTokensByType(4000);
-  assertEquals(allocation.working_memory, 1600); // 40%
-  assertEquals(allocation.procedural_memory, 1000); // 25%
-  assertEquals(allocation.semantic_memory, 1000); // 25%
-  assertEquals(allocation.episodic_memory, 400); // 10%
-
-  // Test token estimation
-  const testText = "This is a test sentence for token estimation purposes.";
-  const estimatedTokens = budgetManager.estimateTokens(testText);
-  assertGreater(estimatedTokens, 0);
-
-  console.log("✓ Token budget management tests passed");
-});
-
-Deno.test("MECMF Memory Utils", () => {
-  // Test memory type detection utilities
-  const workingText = "The current status is active and we're processing right now";
-  assertEquals(MemoryUtils.isWorkingMemoryContent(workingText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(workingText), "working");
-
-  const proceduralText =
-    "How to setup the system: First, install dependencies. Then, configure settings. Finally, start the service.";
-  assertEquals(MemoryUtils.isProceduralContent(proceduralText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(proceduralText), "procedural");
-
-  const semanticText =
-    "JavaScript is a dynamic programming language. It represents a flexible approach to web development.";
-  assertEquals(MemoryUtils.isSemanticContent(semanticText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(semanticText), "semantic");
-
-  const episodicText =
-    "Last week we experienced a major outage when the database crashed unexpectedly.";
-  assertEquals(MemoryUtils.isEpisodicContent(episodicText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(episodicText), "episodic");
-
-  // Test key term extraction
-  const complexText =
-    "The artificial intelligence system processes natural language using machine learning algorithms";
-  const keyTerms = MemoryUtils.extractKeyTerms(complexText, 3);
-  assertEquals(keyTerms.length, 3);
-  // Key terms should include important words, not stop words
-  assertEquals(keyTerms.includes("the"), false);
-  assertEquals(keyTerms.includes("and"), false);
-
-  console.log("✓ Memory utilities tests passed");
-});
-
-Deno.test("MECMF Constants and Configuration", () => {
-  // Test that constants are properly defined
-  assertExists(MECMFConstants.PERFORMANCE_TARGETS);
-  assertExists(MECMFConstants.DEFAULT_TOKEN_ALLOCATION);
-  assertExists(MECMFConstants.RESOURCE_THRESHOLDS);
-  assertExists(MECMFConstants.VECTOR_SEARCH);
-
-  // Verify performance targets make sense
-  assertEquals(MECMFConstants.PERFORMANCE_TARGETS.MEMORY_RETRIEVAL_LATENCY, 100);
-  assertEquals(MECMFConstants.PERFORMANCE_TARGETS.EMBEDDING_GENERATION_TIME, 30);
-
-  // Verify token allocations sum to 1.0
-  const allocations = MECMFConstants.DEFAULT_TOKEN_ALLOCATION;
-  const total =
-    allocations.WORKING_MEMORY +
-    allocations.PROCEDURAL_MEMORY +
-    allocations.SEMANTIC_MEMORY +
-    allocations.EPISODIC_MEMORY;
-  assertEquals(total, 1.0);
-
-  // Verify vector search configuration
-  assertEquals(MECMFConstants.VECTOR_SEARCH.VECTOR_DIMENSION, 384);
-  assertEquals(MECMFConstants.VECTOR_SEARCH.MAX_SEQUENCE_LENGTH, 512);
-
-  console.log("✓ Constants and configuration tests passed");
-});
-
-Deno.test("MECMF Conversation Context Creation", () => {
-  const context = createConversationContext("session-123", "workspace-456", {
-    currentTask: "testing context creation",
-    recentMessages: ["Hello", "How are you?", "I'm working on a project"],
-    activeAgents: ["agent-1", "agent-2"],
+    // Test token estimation
+    const testText = "This is a test sentence for token estimation purposes.";
+    const estimatedTokens = budgetManager.estimateTokens(testText);
+    expect(estimatedTokens).toBeGreaterThan(0);
   });
 
-  assertEquals(context.sessionId, "session-123");
-  assertEquals(context.workspaceId, "workspace-456");
-  assertEquals(context.currentTask, "testing context creation");
-  assertEquals(context.recentMessages?.length, 3);
-  assertEquals(context.activeAgents?.length, 2);
+  it("MECMF Memory Utils", () => {
+    // Test memory type detection utilities
+    const workingText = "The current status is active and we're processing right now";
+    expect(MemoryUtils.isWorkingMemoryContent(workingText)).toBe(true);
+    expect(MemoryUtils.suggestMemoryType(workingText)).toEqual("working");
 
-  console.log("✓ Conversation context creation tests passed");
-});
+    const proceduralText =
+      "How to setup the system: First, install dependencies. Then, configure settings. Finally, start the service.";
+    expect(MemoryUtils.isProceduralContent(proceduralText)).toBe(true);
+    expect(MemoryUtils.suggestMemoryType(proceduralText)).toEqual("procedural");
 
-// Note: Full MECMF setup test is skipped as it requires actual embedding model initialization
-// which would be slow and require network access. In production, this would be tested separately.
+    const semanticText =
+      "JavaScript is a dynamic programming language. It represents a flexible approach to web development.";
+    expect(MemoryUtils.isSemanticContent(semanticText)).toBe(true);
+    expect(MemoryUtils.suggestMemoryType(semanticText)).toEqual("semantic");
 
-Deno.test("MECMF Memory Manager Interface", () => {
-  // Test that we can create the interface without full initialization
-  const classifier = createMemoryClassifier();
-  const budgetManager = createTokenBudgetManager();
+    const episodicText =
+      "Last week we experienced a major outage when the database crashed unexpectedly.";
+    expect(MemoryUtils.isEpisodicContent(episodicText)).toBe(true);
+    expect(MemoryUtils.suggestMemoryType(episodicText)).toEqual("episodic");
 
-  // Verify the main components can be instantiated
-  assertExists(classifier);
-  assertExists(budgetManager);
+    // Test key term extraction
+    const complexText =
+      "The artificial intelligence system processes natural language using machine learning algorithms";
+    const keyTerms = MemoryUtils.extractKeyTerms(complexText, 3);
+    expect(keyTerms.length).toEqual(3);
+    // Key terms should include important words, not stop words
+    expect(keyTerms.includes("the")).toBe(false);
+    expect(keyTerms.includes("and")).toBe(false);
+  });
 
-  // Test some basic functionality
-  const testContent = "This is test content for memory management";
-  const tokens = budgetManager.estimateTokens(testContent);
-  assertGreater(tokens, 0);
+  it("MECMF Constants and Configuration", () => {
+    // Test that constants are properly defined
+    expect(MECMFConstants.PERFORMANCE_TARGETS).toBeDefined();
+    expect(MECMFConstants.DEFAULT_TOKEN_ALLOCATION).toBeDefined();
+    expect(MECMFConstants.RESOURCE_THRESHOLDS).toBeDefined();
+    expect(MECMFConstants.VECTOR_SEARCH).toBeDefined();
 
-  const context = createConversationContext("test", "test");
-  const memoryType = classifier.classifyContent(testContent, context);
-  assertExists(memoryType);
+    // Verify performance targets make sense
+    expect(MECMFConstants.PERFORMANCE_TARGETS.MEMORY_RETRIEVAL_LATENCY).toEqual(100);
+    expect(MECMFConstants.PERFORMANCE_TARGETS.EMBEDDING_GENERATION_TIME).toEqual(30);
 
-  console.log("✓ Memory manager interface tests passed");
+    // Verify token allocations sum to 1.0
+    const allocations = MECMFConstants.DEFAULT_TOKEN_ALLOCATION;
+    const total =
+      allocations.WORKING_MEMORY +
+      allocations.PROCEDURAL_MEMORY +
+      allocations.SEMANTIC_MEMORY +
+      allocations.EPISODIC_MEMORY;
+    expect(total).toEqual(1.0);
+
+    // Verify vector search configuration
+    expect(MECMFConstants.VECTOR_SEARCH.VECTOR_DIMENSION).toEqual(384);
+    expect(MECMFConstants.VECTOR_SEARCH.MAX_SEQUENCE_LENGTH).toEqual(512);
+  });
+
+  it("MECMF Conversation Context Creation", () => {
+    const context = createConversationContext("session-123", "workspace-456", {
+      currentTask: "testing context creation",
+      recentMessages: ["Hello", "How are you?", "I'm working on a project"],
+      activeAgents: ["agent-1", "agent-2"],
+    });
+
+    expect(context.sessionId).toEqual("session-123");
+    expect(context.workspaceId).toEqual("workspace-456");
+    expect(context.currentTask).toEqual("testing context creation");
+    expect(context.recentMessages?.length).toEqual(3);
+    expect(context.activeAgents?.length).toEqual(2);
+  });
+
+  // Note: Full MECMF setup test is skipped as it requires actual embedding model initialization
+  // which would be slow and require network access. In production, this would be tested separately.
+
+  it("MECMF Memory Manager Interface", () => {
+    // Test that we can create the interface without full initialization
+    const classifier = createMemoryClassifier();
+    const budgetManager = createTokenBudgetManager();
+
+    // Verify the main components can be instantiated
+    expect(classifier).toBeDefined();
+    expect(budgetManager).toBeDefined();
+
+    // Test some basic functionality
+    const testContent = "This is test content for memory management";
+    const tokens = budgetManager.estimateTokens(testContent);
+    expect(tokens).toBeGreaterThan(0);
+
+    const context = createConversationContext("test", "test");
+    const memoryType = classifier.classifyContent(testContent, context);
+    expect(memoryType).toBeDefined();
+  });
 });

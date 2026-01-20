@@ -28,33 +28,33 @@ justification explaining why. This forces clarity about what "working" means.
 
 ```typescript
 import { slackCommunicatorAgent } from "@atlas/bundled-agents";
-import { assert } from "@std/assert";
+import { describe, it, expect } from "vitest";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 
-Deno.test("Agent: Specific behavior", async (t) => {
-  // Load real API credentials
-  await loadCredentials();
+describe("Agent: Specific behavior", () => {
+  it("should produce expected output", async () => {
+    // Load real API credentials
+    await loadCredentials();
 
-  // Create minimal context
-  const adapter = new AgentContextAdapter();
-  const context = adapter.createContext();
+    // Create minimal context
+    const adapter = new AgentContextAdapter();
+    const context = adapter.createContext();
 
-  // Execute agent with real input
-  const result = await agent.execute("user prompt", context);
+    // Execute agent with real input
+    const result = await agent.execute("user prompt", context);
 
-  // Direct assertions on output
-  const pass = await t.step("", () => {
-    assert(result.someField > 0, "Should produce results");
-    assert(result.content.includes("expected"), "Should contain key info");
-  });
+    // Direct assertions on output
+    expect(result.someField).toBeGreaterThan(0);
+    expect(result.content).toContain("expected");
 
-  // Save output for analysis
-  await saveSnapshot({
-    testPath: new URL(import.meta.url),
-    data: result,
-    pass,
+    // Save output for analysis
+    await saveSnapshot({
+      testPath: new URL(import.meta.url),
+      data: result,
+      pass: true,
+    });
   });
 });
 ```

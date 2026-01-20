@@ -1,25 +1,33 @@
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 
-Deno.test("workspace file name extraction", () => {
-  const filePath = "/Users/test/.atlas/workspaces/my-workspace/workspace.yml";
-  const fileName = filePath.split("/").pop() || "";
-  assertEquals(fileName, "workspace.yml");
+describe("workspace file name extraction", () => {
+  it("extracts filename from path", () => {
+    const filePath = "/Users/test/.atlas/workspaces/my-workspace/workspace.yml";
+    const fileName = filePath.split("/").pop() || "";
+    expect(fileName).toEqual("workspace.yml");
+  });
 });
 
-Deno.test("workspace path extraction from workspace.yml", () => {
-  const filePath = "/Users/test/.atlas/workspaces/my-workspace/workspace.yml";
-  const wsPath = filePath.substring(0, filePath.lastIndexOf("/"));
-  assertEquals(wsPath, "/Users/test/.atlas/workspaces/my-workspace");
+describe("workspace path extraction from workspace.yml", () => {
+  it("extracts directory path", () => {
+    const filePath = "/Users/test/.atlas/workspaces/my-workspace/workspace.yml";
+    const wsPath = filePath.substring(0, filePath.lastIndexOf("/"));
+    expect(wsPath).toEqual("/Users/test/.atlas/workspaces/my-workspace");
+  });
 });
 
-Deno.test("non-workspace.yml file detection", () => {
-  const filePath = "/some/path/random-file.txt";
-  const fileName = filePath.split("/").pop() || "";
-  assertEquals(fileName === "workspace.yml", false);
+describe("non-workspace.yml file detection", () => {
+  it("detects non-workspace files", () => {
+    const filePath = "/some/path/random-file.txt";
+    const fileName = filePath.split("/").pop() || "";
+    expect(fileName === "workspace.yml").toEqual(false);
+  });
 });
 
-Deno.test("eph_workspace.yml file detection", () => {
-  const filePath = "/some/path/eph_workspace.yml";
-  const fileName = filePath.split("/").pop() || "";
-  assertEquals(fileName === "workspace.yml", false);
+describe("eph_workspace.yml file detection", () => {
+  it("detects ephemeral workspace files as non-standard", () => {
+    const filePath = "/some/path/eph_workspace.yml";
+    const fileName = filePath.split("/").pop() || "";
+    expect(fileName === "workspace.yml").toEqual(false);
+  });
 });

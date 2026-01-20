@@ -1,8 +1,8 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { ProviderRegistry } from "./registry.ts";
 
-Deno.test("ProviderRegistry", async (t) => {
+describe("ProviderRegistry", () => {
   const mockProvider = {
     id: "test",
     type: "apikey" as const,
@@ -12,13 +12,13 @@ Deno.test("ProviderRegistry", async (t) => {
     secretSchema: z.object({ key: z.string() }),
   };
 
-  await t.step("register() throws on duplicate ID", () => {
+  it("register() throws on duplicate ID", () => {
     const registry = new ProviderRegistry();
     registry.register(mockProvider);
-    assertThrows(() => registry.register(mockProvider), Error, "already registered");
+    expect(() => registry.register(mockProvider)).toThrow("already registered");
   });
 
-  await t.step("register() accepts oauth provider with oauthConfig", () => {
+  it("register() accepts oauth provider with oauthConfig", () => {
     const registry = new ProviderRegistry();
     const oauthProvider = {
       id: "oauth-test",
@@ -34,11 +34,11 @@ Deno.test("ProviderRegistry", async (t) => {
       identify: () => Promise.resolve("test-user-id"),
     };
     registry.register(oauthProvider);
-    assert(registry.has("oauth-test"));
-    assertEquals(registry.get("oauth-test"), oauthProvider);
+    expect(registry.has("oauth-test")).toBe(true);
+    expect(registry.get("oauth-test")).toEqual(oauthProvider);
   });
 
-  await t.step("discriminates between apikey and oauth providers", () => {
+  it("discriminates between apikey and oauth providers", () => {
     const registry = new ProviderRegistry();
     const apikeyProvider = {
       id: "apikey-test",
@@ -64,17 +64,17 @@ Deno.test("ProviderRegistry", async (t) => {
     const apikey = registry.get("apikey-test");
     const oauth = registry.get("oauth-test");
 
-    assert(apikey);
-    assert(oauth);
-    assertEquals(apikey.type, "apikey");
-    assertEquals(oauth.type, "oauth");
+    expect(apikey).toBeDefined();
+    expect(oauth).toBeDefined();
+    expect(apikey!.type).toEqual("apikey");
+    expect(oauth!.type).toEqual("oauth");
 
     // TypeScript narrowing allows type-safe access
-    if (apikey.type === "apikey") {
-      assert(apikey.secretSchema);
+    if (apikey!.type === "apikey") {
+      expect(apikey!.secretSchema).toBeDefined();
     }
-    if (oauth.type === "oauth") {
-      assert(oauth.oauthConfig);
+    if (oauth!.type === "oauth") {
+      expect(oauth!.oauthConfig).toBeDefined();
     }
   });
 });

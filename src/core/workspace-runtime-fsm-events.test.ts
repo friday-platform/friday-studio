@@ -9,7 +9,7 @@ import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { assert } from "@std/assert";
+import { expect, it } from "vitest";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 
 function createTestConfig(): MergedConfig {
@@ -46,7 +46,7 @@ function createTestConfig(): MergedConfig {
   };
 }
 
-Deno.test("WorkspaceRuntime emits FSM transition and action events via chunk callback", async () => {
+it("WorkspaceRuntime emits FSM transition and action events via chunk callback", async () => {
   const testDir = makeTempDir({ prefix: "atlas_fsm_events_test_" });
   const originalAtlasHome = process.env.ATLAS_HOME;
   process.env.ATLAS_HOME = testDir;
@@ -79,52 +79,46 @@ Deno.test("WorkspaceRuntime emits FSM transition and action events via chunk cal
       (e): e is Extract<AtlasUIMessageChunk, { type: "data-fsm-state-transition" }> =>
         e.type === "data-fsm-state-transition",
     );
-    assert(transitionEvents.length === 2, `Expected 2 transitions, got ${transitionEvents.length}`);
+    expect(transitionEvents).toHaveLength(2);
 
     // First transition: idle -> processing (triggered by test-signal)
-    const firstTransition = transitionEvents[0];
-    assert(firstTransition, "First transition event should exist");
-    assert(firstTransition.data.fromState === "idle", "First transition should be from idle");
-    assert(
-      firstTransition.data.toState === "processing",
-      "First transition should be to processing",
-    );
-    assert(firstTransition.data.jobName === "test-fsm", "Transition should have FSM id as jobName");
-    assert(
-      firstTransition.data.triggeringSignal === "test-signal",
-      "Should capture triggering signal",
-    );
+    expect(transitionEvents[0]).toMatchObject({
+      data: {
+        fromState: "idle",
+        toState: "processing",
+        jobName: "test-fsm",
+        triggeringSignal: "test-signal",
+      },
+    });
 
     // Second transition: processing -> complete (triggered by DONE emit)
-    const secondTransition = transitionEvents[1];
-    assert(secondTransition, "Second transition event should exist");
-    assert(
-      secondTransition.data.fromState === "processing",
-      "Second transition should be from processing",
-    );
-    assert(secondTransition.data.toState === "complete", "Second transition should be to complete");
+    expect(transitionEvents[1]).toMatchObject({
+      data: { fromState: "processing", toState: "complete" },
+    });
 
     // Verify action events: emit action in processing state
     const actionEvents = collectedFsmChunks.filter(
       (e): e is Extract<AtlasUIMessageChunk, { type: "data-fsm-action-execution" }> =>
         e.type === "data-fsm-action-execution",
     );
-    assert(
-      actionEvents.length >= 2,
-      `Expected at least 2 action events (start+complete), got ${actionEvents.length}`,
-    );
+    expect(actionEvents.length).toBeGreaterThanOrEqual(2);
 
-    // Find the emit action events
-    const emitStarted = actionEvents.find(
-      (e) => e.data.actionType === "emit" && e.data.status === "started",
+    // Verify emit action started and completed events exist with correct data
+    expect(actionEvents).toContainEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actionType: "emit",
+          status: "started",
+          state: "processing",
+          jobName: "test-fsm",
+        }),
+      }),
     );
-    const emitCompleted = actionEvents.find(
-      (e) => e.data.actionType === "emit" && e.data.status === "completed",
+    expect(actionEvents).toContainEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({ actionType: "emit", status: "completed" }),
+      }),
     );
-    assert(emitStarted, "Should have emit action started event");
-    assert(emitCompleted, "Should have emit action completed event");
-    assert(emitStarted.data.state === "processing", "Emit action should be in processing state");
-    assert(emitStarted.data.jobName === "test-fsm", "Action should have FSM id as jobName");
 
     await runtime.shutdown();
   } finally {

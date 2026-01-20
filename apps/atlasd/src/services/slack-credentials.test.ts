@@ -1,6 +1,5 @@
 import process from "node:process";
-import { assertEquals, assertRejects } from "@std/assert";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getSlackTokenByTeamId } from "./slack-credentials.ts";
 
 // =============================================================================
@@ -134,7 +133,7 @@ describe("getSlackTokenByTeamId", () => {
 
     try {
       const token = await getSlackTokenByTeamId("T12345");
-      assertEquals(token, accessToken);
+      expect(token).toEqual(accessToken);
     } finally {
       mock.restore();
     }
@@ -146,7 +145,7 @@ describe("getSlackTokenByTeamId", () => {
 
     try {
       const token = await getSlackTokenByTeamId("T12345");
-      assertEquals(token, null);
+      expect(token).toBeNull();
     } finally {
       mock.restore();
     }
@@ -179,7 +178,7 @@ describe("getSlackTokenByTeamId", () => {
 
     try {
       const token = await getSlackTokenByTeamId("T1");
-      assertEquals(token, firstToken);
+      expect(token).toEqual(firstToken);
     } finally {
       mock.restore();
     }
@@ -189,11 +188,7 @@ describe("getSlackTokenByTeamId", () => {
     const mock = mockLinkFetch({ summaryError: { status: 500, error: "Internal server error" } });
 
     try {
-      await assertRejects(
-        () => getSlackTokenByTeamId("T12345"),
-        Error,
-        "Failed to fetch credentials",
-      );
+      await expect(getSlackTokenByTeamId("T12345")).rejects.toThrow("Failed to fetch credentials");
     } finally {
       mock.restore();
     }
@@ -206,11 +201,7 @@ describe("getSlackTokenByTeamId", () => {
     });
 
     try {
-      await assertRejects(
-        () => getSlackTokenByTeamId("T12345"),
-        Error,
-        "Failed to fetch credential",
-      );
+      await expect(getSlackTokenByTeamId("T12345")).rejects.toThrow("Failed to fetch credential");
     } finally {
       mock.restore();
     }

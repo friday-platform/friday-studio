@@ -1,5 +1,4 @@
-import { assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { ReasoningResultStatus } from "../constants/supervisor-status.ts";
 import {
   buildSessionDigest,
@@ -155,10 +154,10 @@ describe("buildSessionDigest", () => {
 
     const digest = buildSessionDigest(timeline);
 
-    assertEquals(digest.id, "session-123");
-    assertEquals(digest.status, ReasoningResultStatus.COMPLETED);
-    assertEquals(digest.type, "task");
-    assertEquals(digest.durationMs, 5000);
+    expect(digest.id).toEqual("session-123");
+    expect(digest.status).toEqual(ReasoningResultStatus.COMPLETED);
+    expect(digest.type).toEqual("task");
+    expect(digest.durationMs).toEqual(5000);
   });
 
   it("extracts input with fallback chain: intent -> body.task -> summary", () => {
@@ -170,21 +169,21 @@ describe("buildSessionDigest", () => {
       }),
       events: [],
     };
-    assertEquals(buildSessionDigest(withIntent).input.task, "Research AI");
+    expect(buildSessionDigest(withIntent).input.task).toEqual("Research AI");
 
     // body.task fallback
     const withBodyTask: SessionHistoryTimeline = {
       metadata: createBaseMetadata({ signalPayload: { body: { task: "Process doc" } } }),
       events: [],
     };
-    assertEquals(buildSessionDigest(withBodyTask).input.task, "Process doc");
+    expect(buildSessionDigest(withBodyTask).input.task).toEqual("Process doc");
 
     // summary fallback
     const withSummary: SessionHistoryTimeline = {
       metadata: createBaseMetadata({ summary: "Summary fallback", signalPayload: {} }),
       events: [],
     };
-    assertEquals(buildSessionDigest(withSummary).input.task, "Summary fallback");
+    expect(buildSessionDigest(withSummary).input.task).toEqual("Summary fallback");
   });
 
   it("extracts output from session-finish event or metadata fallback", () => {
@@ -195,14 +194,14 @@ describe("buildSessionDigest", () => {
       metadata: createBaseMetadata(),
       events: [createSessionFinish({ output })],
     };
-    assertEquals(buildSessionDigest(withEvent).output, output);
+    expect(buildSessionDigest(withEvent).output).toEqual(output);
 
     // Fallback to metadata
     const withMetadata: SessionHistoryTimeline = {
       metadata: createBaseMetadata({ output: { fallback: true } }),
       events: [],
     };
-    assertEquals(buildSessionDigest(withMetadata).output, { fallback: true });
+    expect(buildSessionDigest(withMetadata).output).toEqual({ fallback: true });
   });
 
   it("builds steps from fsm-action events with correct ordering", () => {
@@ -226,13 +225,13 @@ describe("buildSessionDigest", () => {
     const digest = buildSessionDigest(timeline);
 
     // Only step_* states, ordered by step number
-    assertEquals(digest.steps.length, 2);
-    assertEquals(digest.steps[0]?.step, 1);
-    assertEquals(digest.steps[0]?.agent, "researcher");
-    assertEquals(digest.steps[0]?.task, "Research AI");
-    assertEquals(digest.steps[0]?.durationMs, 5000);
-    assertEquals(digest.steps[1]?.step, 2);
-    assertEquals(digest.steps[1]?.agent, "formatter");
+    expect(digest.steps.length).toEqual(2);
+    expect(digest.steps[0]?.step).toEqual(1);
+    expect(digest.steps[0]?.agent).toEqual("researcher");
+    expect(digest.steps[0]?.task).toEqual("Research AI");
+    expect(digest.steps[0]?.durationMs).toEqual(5000);
+    expect(digest.steps[1]?.step).toEqual(2);
+    expect(digest.steps[1]?.agent).toEqual("formatter");
   });
 
   it("tracks step status: completed, failed, in-progress", () => {
@@ -256,10 +255,10 @@ describe("buildSessionDigest", () => {
 
     const digest = buildSessionDigest(timeline);
 
-    assertEquals(digest.steps[0]?.status, "completed");
-    assertEquals(digest.steps[1]?.status, "failed");
-    assertEquals(digest.steps[1]?.error, "Connection timeout");
-    assertEquals(digest.steps[2]?.status, "in-progress");
+    expect(digest.steps[0]?.status).toEqual("completed");
+    expect(digest.steps[1]?.status).toEqual("failed");
+    expect(digest.steps[1]?.error).toEqual("Connection timeout");
+    expect(digest.steps[2]?.status).toEqual("in-progress");
   });
 
   it("pairs tool calls with results by executionId and toolCallId", () => {
@@ -282,16 +281,16 @@ describe("buildSessionDigest", () => {
     const digest = buildSessionDigest(timeline);
     const toolCalls = digest.steps[0]?.toolCalls;
 
-    assertEquals(toolCalls?.length, 3);
-    assertEquals(toolCalls?.[0]?.toolCallId, "tc-1");
-    assertEquals(toolCalls?.[0]?.tool, "web_search");
-    assertEquals(toolCalls?.[0]?.result, "Found 12 results...");
-    assertEquals(toolCalls?.[1]?.toolCallId, "tc-2");
-    assertEquals(toolCalls?.[1]?.tool, "read_url");
-    assertEquals(toolCalls?.[1]?.result, "Page content");
-    assertEquals(toolCalls?.[2]?.toolCallId, "tc-3");
-    assertEquals(toolCalls?.[2]?.tool, "pending_tool");
-    assertEquals(toolCalls?.[2]?.result, undefined); // Pending
+    expect(toolCalls?.length).toEqual(3);
+    expect(toolCalls?.[0]?.toolCallId).toEqual("tc-1");
+    expect(toolCalls?.[0]?.tool).toEqual("web_search");
+    expect(toolCalls?.[0]?.result).toEqual("Found 12 results...");
+    expect(toolCalls?.[1]?.toolCallId).toEqual("tc-2");
+    expect(toolCalls?.[1]?.tool).toEqual("read_url");
+    expect(toolCalls?.[1]?.result).toEqual("Page content");
+    expect(toolCalls?.[2]?.toolCallId).toEqual("tc-3");
+    expect(toolCalls?.[2]?.tool).toEqual("pending_tool");
+    expect(toolCalls?.[2]?.result).toEqual(undefined); // Pending
   });
 
   it("collects errors from failed steps and session-level failures", () => {
@@ -313,11 +312,11 @@ describe("buildSessionDigest", () => {
 
     const digest = buildSessionDigest(timeline);
 
-    assertEquals(digest.errors.length, 2);
-    assertEquals(digest.errors[0]?.step, 1); // Step-level error
-    assertEquals(digest.errors[0]?.error, "API rate limit exceeded");
-    assertEquals(digest.errors[1]?.step, 0); // Session-level error
-    assertEquals(digest.errors[1]?.error, "Max retries exceeded");
+    expect(digest.errors.length).toEqual(2);
+    expect(digest.errors[0]?.step).toEqual(1); // Step-level error
+    expect(digest.errors[0]?.error).toEqual("API rate limit exceeded");
+    expect(digest.errors[1]?.step).toEqual(0); // Session-level error
+    expect(digest.errors[1]?.error).toEqual("Max retries exceeded");
   });
 
   it("builds complete digest from realistic multi-step session", () => {
@@ -370,25 +369,25 @@ describe("buildSessionDigest", () => {
     const digest = buildSessionDigest(timeline);
 
     // Core structure
-    assertEquals(digest.id, "session-123");
-    assertEquals(digest.type, "task");
-    assertEquals(digest.durationMs, 17720);
-    assertEquals(digest.input.task, "Research AI startups and format as digest");
+    expect(digest.id).toEqual("session-123");
+    expect(digest.type).toEqual("task");
+    expect(digest.durationMs).toEqual(17720);
+    expect(digest.input.task).toEqual("Research AI startups and format as digest");
 
     // Steps with tool calls
-    assertEquals(digest.steps.length, 2);
-    assertEquals(digest.steps[0]?.agent, "researcher");
-    assertEquals(digest.steps[0]?.status, "completed");
-    assertEquals(digest.steps[0]?.toolCalls?.[0]?.tool, "web_search");
-    assertEquals(digest.steps[1]?.agent, "formatter");
-    assertEquals(digest.steps[1]?.status, "failed");
-    assertEquals(digest.steps[1]?.toolCalls?.[0]?.result, undefined); // No result before failure
+    expect(digest.steps.length).toEqual(2);
+    expect(digest.steps[0]?.agent).toEqual("researcher");
+    expect(digest.steps[0]?.status).toEqual("completed");
+    expect(digest.steps[0]?.toolCalls?.[0]?.tool).toEqual("web_search");
+    expect(digest.steps[1]?.agent).toEqual("formatter");
+    expect(digest.steps[1]?.status).toEqual("failed");
+    expect(digest.steps[1]?.toolCalls?.[0]?.result).toEqual(undefined); // No result before failure
 
     // Errors collected
-    assertEquals(digest.errors.length, 2);
+    expect(digest.errors.length).toEqual(2);
 
     // Output preserved
-    assertEquals((digest.output as Record<string, unknown>).results, [
+    expect((digest.output as Record<string, unknown>).results).toEqual([
       { step: 0, agent: "researcher", success: true },
       { step: 1, agent: "formatter", success: false },
     ]);
@@ -401,14 +400,14 @@ describe("buildSessionDigest", () => {
 
 describe("extractOutputContent", () => {
   it("returns undefined for non-array output", () => {
-    assertEquals(extractOutputContent(null), undefined);
-    assertEquals(extractOutputContent(undefined), undefined);
-    assertEquals(extractOutputContent("string"), undefined);
-    assertEquals(extractOutputContent({ key: "value" }), undefined);
+    expect(extractOutputContent(null)).toEqual(undefined);
+    expect(extractOutputContent(undefined)).toEqual(undefined);
+    expect(extractOutputContent("string")).toEqual(undefined);
+    expect(extractOutputContent({ key: "value" })).toEqual(undefined);
   });
 
   it("returns undefined for empty array", () => {
-    assertEquals(extractOutputContent([]), undefined);
+    expect(extractOutputContent([])).toEqual(undefined);
   });
 
   it("extracts content from last step's output", () => {
@@ -416,7 +415,7 @@ describe("extractOutputContent", () => {
       { output: { content: "First step response" } },
       { output: { content: "Final response from LLM" } },
     ];
-    assertEquals(extractOutputContent(output), "Final response from LLM");
+    expect(extractOutputContent(output)).toEqual("Final response from LLM");
   });
 
   it("returns undefined when last step has no content", () => {
@@ -424,15 +423,15 @@ describe("extractOutputContent", () => {
       { output: { content: "Has content" } },
       { output: { toolResults: [] } }, // No content field
     ];
-    assertEquals(extractOutputContent(output), undefined);
+    expect(extractOutputContent(output)).toEqual(undefined);
   });
 });
 
 describe("extractArtifacts", () => {
   it("returns empty array for non-array output", () => {
-    assertEquals(extractArtifacts(null), []);
-    assertEquals(extractArtifacts(undefined), []);
-    assertEquals(extractArtifacts("string"), []);
+    expect(extractArtifacts(null)).toEqual([]);
+    expect(extractArtifacts(undefined)).toEqual([]);
+    expect(extractArtifacts("string")).toEqual([]);
   });
 
   it("extracts artifacts from artifacts_create tool results", () => {
@@ -455,7 +454,7 @@ describe("extractArtifacts", () => {
         },
       },
     ];
-    assertEquals(extractArtifacts(output), [{ id: "art-1", title: "Report", type: "document" }]);
+    expect(extractArtifacts(output)).toEqual([{ id: "art-1", title: "Report", type: "document" }]);
   });
 
   it("extracts multiple artifacts across steps", () => {
@@ -485,7 +484,7 @@ describe("extractArtifacts", () => {
         },
       },
     ];
-    assertEquals(extractArtifacts(output), [
+    expect(extractArtifacts(output)).toEqual([
       { id: "art-1", title: "Doc 1", type: undefined },
       { id: "art-2", title: "Doc 2", type: undefined },
     ]);
@@ -505,18 +504,18 @@ describe("extractArtifacts", () => {
         },
       },
     ];
-    assertEquals(extractArtifacts(output), []);
+    expect(extractArtifacts(output)).toEqual([]);
   });
 });
 
 describe("extractPrimaryError", () => {
   it("returns undefined for non-failed status", () => {
-    assertEquals(extractPrimaryError([{ step: 1, error: "Error" }], "completed"), undefined);
-    assertEquals(extractPrimaryError([{ step: 1, error: "Error" }], "partial"), undefined);
+    expect(extractPrimaryError([{ step: 1, error: "Error" }], "completed")).toEqual(undefined);
+    expect(extractPrimaryError([{ step: 1, error: "Error" }], "partial")).toEqual(undefined);
   });
 
   it("returns undefined for empty errors array", () => {
-    assertEquals(extractPrimaryError([], "failed"), undefined);
+    expect(extractPrimaryError([], "failed")).toEqual(undefined);
   });
 
   it("prefers step-level error over session-level error", () => {
@@ -524,11 +523,11 @@ describe("extractPrimaryError", () => {
       { step: 0, error: "Session failed" },
       { step: 1, error: "Step 1 timeout" },
     ];
-    assertEquals(extractPrimaryError(errors, "failed"), "Step 1 timeout");
+    expect(extractPrimaryError(errors, "failed")).toEqual("Step 1 timeout");
   });
 
   it("falls back to session-level error when no step errors", () => {
     const errors = [{ step: 0, error: "Max retries exceeded" }];
-    assertEquals(extractPrimaryError(errors, "failed"), "Max retries exceeded");
+    expect(extractPrimaryError(errors, "failed")).toEqual("Max retries exceeded");
   });
 });

@@ -1,5 +1,4 @@
-import { assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import type { FSMDefinition } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
 
@@ -49,19 +48,16 @@ describe("FSM Engine - Document Lifecycle", () => {
       const { engine } = await createTestEngine(fsm);
 
       // Initially two documents exist (created by idle entry action)
-      assertEquals(engine.documents.length, 2);
-      assertEquals(engine.documents.find((d) => d.id === "doc1")?.id, "doc1");
+      expect(engine.documents.length).toEqual(2);
+      expect(engine.documents.find((d) => d.id === "doc1")?.id).toEqual("doc1");
 
       // Delete doc1 (transition to active state)
       await engine.signal({ type: "DELETE" });
 
       // Only doc2 should remain
-      assertEquals(engine.documents.length, 1);
-      assertEquals(
-        engine.documents.find((d) => d.id === "doc1"),
-        undefined,
-      );
-      assertEquals(engine.documents.find((d) => d.id === "doc2")?.id, "doc2");
+      expect(engine.documents.length).toEqual(1);
+      expect(engine.documents.find((d) => d.id === "doc1")).toBeUndefined();
+      expect(engine.documents.find((d) => d.id === "doc2")?.id).toEqual("doc2");
     });
 
     it("should be idempotent - deleting non-existent document is no-op", async () => {
@@ -96,8 +92,8 @@ describe("FSM Engine - Document Lifecycle", () => {
 
       // Should not throw, just be a no-op
       await engine.signal({ type: "DELETE" });
-      assertEquals(engine.state, "active");
-      assertEquals(engine.documents.length, 0);
+      expect(engine.state).toEqual("active");
+      expect(engine.documents.length).toEqual(0);
     });
   });
 
@@ -171,24 +167,24 @@ describe("FSM Engine - Document Lifecycle", () => {
 
       // Run 1 - START signal: idle -> step_0
       await engine.signal({ type: "START" });
-      assertEquals(engine.state, "step_0");
-      assertEquals(engine.documents.length, 2); // temp-result, counter
+      expect(engine.state).toEqual("step_0");
+      expect(engine.documents.length).toEqual(2); // temp-result, counter
       const counter1 = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counter1?.data.count, 1);
+      expect(counter1?.data.count).toEqual(1);
 
       // Complete run 1 - DONE signal: step_0 -> idle (cleanup runs)
       await engine.signal({ type: "DONE" });
-      assertEquals(engine.state, "idle");
-      assertEquals(engine.documents.length, 1); // Only counter remains
+      expect(engine.state).toEqual("idle");
+      expect(engine.documents.length).toEqual(1); // Only counter remains
       const counterAfterCleanup = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counterAfterCleanup?.data.count, 1); // Counter preserved
+      expect(counterAfterCleanup?.data.count).toEqual(1); // Counter preserved
 
       // Run 2 - START signal: idle -> step_0
       await engine.signal({ type: "START" });
-      assertEquals(engine.state, "step_0");
-      assertEquals(engine.documents.length, 2); // temp-result (new), counter
+      expect(engine.state).toEqual("step_0");
+      expect(engine.documents.length).toEqual(2); // temp-result (new), counter
       const counter2 = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counter2?.data.count, 2); // Counter incremented!
+      expect(counter2?.data.count).toEqual(2); // Counter incremented!
     });
   });
 
@@ -249,17 +245,17 @@ describe("FSM Engine - Document Lifecycle", () => {
       // Run 1
       await engine.signal({ type: "START" });
       const counter1 = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counter1?.data.count, 1);
+      expect(counter1?.data.count).toEqual(1);
 
       // Run 2
       await engine.signal({ type: "START" });
       const counter2 = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counter2?.data.count, 2);
+      expect(counter2?.data.count).toEqual(2);
 
       // Run 3
       await engine.signal({ type: "START" });
       const counter3 = engine.documents.find((d) => d.id === "counter");
-      assertEquals(counter3?.data.count, 3);
+      expect(counter3?.data.count).toEqual(3);
     });
   });
 
@@ -321,16 +317,16 @@ describe("FSM Engine - Document Lifecycle", () => {
 
       // Create some documents
       await engine.signal({ type: "START" });
-      assertEquals(engine.documents.length, 2);
+      expect(engine.documents.length).toEqual(2);
 
       // Reset should run idle entry actions (cleanup)
       await engine.reset();
 
       // Should have cleanup_complete event and no documents
       const cleanupEvent = engine.emittedEvents.find((e) => e.event === "cleanup_complete");
-      assertEquals(cleanupEvent?.event, "cleanup_complete");
-      assertEquals(engine.documents.length, 0);
-      assertEquals(engine.state, "idle");
+      expect(cleanupEvent?.event).toEqual("cleanup_complete");
+      expect(engine.documents.length).toEqual(0);
+      expect(engine.state).toEqual("idle");
     });
 
     it("should allow documents to be cleaned and recreated between runs", async () => {
@@ -391,20 +387,20 @@ describe("FSM Engine - Document Lifecycle", () => {
 
       // Run 1 - transition to step_0, create docs, stay there
       await engine.signal({ type: "START" });
-      assertEquals(engine.state, "step_0");
+      expect(engine.state).toEqual("step_0");
       const doc1 = engine.documents.find((d) => d.id === "fresh-doc");
-      assertEquals(doc1?.data.run, 1);
+      expect(doc1?.data.run).toEqual(1);
 
       // Return to idle (will delete all docs)
       await engine.signal({ type: "DONE" });
-      assertEquals(engine.state, "idle");
-      assertEquals(engine.documents.length, 0); // All docs deleted
+      expect(engine.state).toEqual("idle");
+      expect(engine.documents.length).toEqual(0); // All docs deleted
 
       // Run 2 - should create fresh documents again
       await engine.signal({ type: "START" });
-      assertEquals(engine.state, "step_0");
+      expect(engine.state).toEqual("step_0");
       const doc2 = engine.documents.find((d) => d.id === "fresh-doc");
-      assertEquals(doc2?.data.run, 1); // New document, fresh counter
+      expect(doc2?.data.run).toEqual(1); // New document, fresh counter
     });
   });
 });

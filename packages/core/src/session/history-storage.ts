@@ -11,6 +11,7 @@ import {
   ReasoningResultStatus,
   type ReasoningResultStatusType,
 } from "../constants/supervisor-status.ts";
+import { withExclusiveLock } from "../utils/file-lock.ts";
 
 const logger = createLogger({ component: "session-history-storage" });
 
@@ -292,33 +293,6 @@ async function readAndValidateSession(filePath: string): Promise<StoredSession> 
   return { ...parsedSession, events };
 }
 
-/**
- * Reads session data through an already-opened and locked file handle.
- * This ensures the read happens within the lock's protection.
- */
-async function readSessionFromHandle(file: Deno.FsFile): Promise<StoredSession> {
-  const fileStat = await file.stat();
-  const buf = new Uint8Array(fileStat.size);
-  await file.seek(0, Deno.SeekMode.Start);
-  await file.read(buf);
-  const content = new TextDecoder().decode(buf);
-  const json = JSON.parse(content);
-  const parsedSession = StoredSessionSchema.parse(json);
-  const events = parsedSession.events.map((e) => SessionHistoryEventSchema.parse(e));
-  return { ...parsedSession, events };
-}
-
-/**
- * Writes session data through an already-opened and locked file handle.
- * Truncates and rewrites the entire file.
- */
-async function writeSessionToHandle(file: Deno.FsFile, session: StoredSession): Promise<void> {
-  const encoded = new TextEncoder().encode(JSON.stringify(session, null, 2));
-  await file.truncate(0);
-  await file.seek(0, Deno.SeekMode.Start);
-  await file.write(encoded);
-}
-
 // ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
@@ -405,11 +379,6 @@ export async function appendSessionEvent(
     await ensureSessionDir();
     const sessionFile = getSessionFile(input.sessionId);
 
-    using file = await Deno.open(sessionFile, { read: true, write: true });
-    await file.lock(true);
-
-    const session = await readSessionFromHandle(file);
-
     const timestamp = input.emittedAt || new Date().toISOString();
     const eventId = crypto.randomUUID();
     const event: SessionHistoryEvent = SessionHistoryEventSchema.parse({
@@ -420,10 +389,12 @@ export async function appendSessionEvent(
       emittedBy: input.emittedBy,
     });
 
-    session.events.push(event);
-    session.updatedAt = timestamp;
-
-    await writeSessionToHandle(file, session);
+    await withExclusiveLock(sessionFile, async () => {
+      const session = await readAndValidateSession(sessionFile);
+      session.events.push(event);
+      session.updatedAt = timestamp;
+      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+    });
 
     return success(event);
   } catch (error) {
@@ -447,21 +418,22 @@ export async function markSessionComplete(
     await ensureSessionDir();
     const sessionFile = getSessionFile(sessionId);
 
-    using file = await Deno.open(sessionFile, { read: true, write: true });
-    await file.lock(true);
+    const metadata = await withExclusiveLock(sessionFile, async () => {
+      const session = await readAndValidateSession(sessionFile);
 
-    const session = await readSessionFromHandle(file);
+      session.status = status;
+      session.updatedAt = finishedAt;
+      if (details?.durationMs !== undefined) session.durationMs = details.durationMs;
+      if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
+      if (details?.summary !== undefined) session.summary = details.summary;
+      if (details?.output !== undefined) session.output = details.output;
 
-    session.status = status;
-    session.updatedAt = finishedAt;
-    if (details?.durationMs !== undefined) session.durationMs = details.durationMs;
-    if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
-    if (details?.summary !== undefined) session.summary = details.summary;
-    if (details?.output !== undefined) session.output = details.output;
+      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
 
-    await writeSessionToHandle(file, session);
+      const { events: _, ...meta } = session;
+      return meta;
+    });
 
-    const { events: _, ...metadata } = session;
     return success(metadata);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -486,17 +458,18 @@ export async function updateSessionTitle(
     await ensureSessionDir();
     const sessionFile = getSessionFile(sessionId);
 
-    using file = await Deno.open(sessionFile, { read: true, write: true });
-    await file.lock(true);
+    const metadata = await withExclusiveLock(sessionFile, async () => {
+      const session = await readAndValidateSession(sessionFile);
 
-    const session = await readSessionFromHandle(file);
+      session.title = title;
+      // Note: Not modifying updatedAt - title is cosmetic metadata, not content change
 
-    session.title = title;
-    // Note: Not modifying updatedAt - title is cosmetic metadata, not content change
+      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
 
-    await writeSessionToHandle(file, session);
+      const { events: _, ...meta } = session;
+      return meta;
+    });
 
-    const { events: _, ...metadata } = session;
     return success(metadata);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {

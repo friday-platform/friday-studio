@@ -11,8 +11,5 @@
     "onnxruntime-web": "1.23.2",
     "zod": "^4.3.5"
   },
-  "devDependencies": {
-    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "@std/expect": "npm:@jsr/std__expect@^1.0.17"
-  }
+  "devDependencies": { "vitest": "^4.0.17" }
 }

@@ -7,10 +7,12 @@
  * Run: deno task test packages/fsm-engine/tests/security-isolation-demo.test.ts
  */
 
-import { assertRejects } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import type { Context } from "../types.ts";
 import { WorkerExecutor } from "../worker-executor.ts";
+
+// These tests require Deno's Worker API with permissions sandbox
+const isDenoRuntime = typeof (globalThis as Record<string, unknown>).Deno !== "undefined";
 
 const executor = new WorkerExecutor({ timeout: 5000, functionType: "action" });
 const ctx: Context = { documents: [], state: "test" };
@@ -23,7 +25,7 @@ const sig = { type: "TEST" };
  * WITHOUT ISOLATION: Malicious code could read Atlas config, workspace files,
  * credentials, SSH keys, or any file the process has access to.
  */
-describe("Filesystem Attacks - ALL BLOCKED", () => {
+describe.skipIf(!isDenoRuntime)("Filesystem Attacks - ALL BLOCKED", () => {
   it("cannot read Atlas workspace config", async () => {
     // Attack: Read workspace.yml to discover agent configurations, MCP servers
     const code = `
@@ -32,7 +34,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         return config; // Exfiltrate config
       }
     `;
-    await assertRejects(() => executor.execute(code, "readWorkspaceConfig", ctx, sig), Error);
+    await expect(executor.execute(code, "readWorkspaceConfig", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read .env files with secrets", async () => {
@@ -43,7 +45,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         return env; // API keys, database passwords
       }
     `;
-    await assertRejects(() => executor.execute(code, "readEnv", ctx, sig), Error);
+    await expect(executor.execute(code, "readEnv", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read SSH keys", async () => {
@@ -54,7 +56,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         return key;
       }
     `;
-    await assertRejects(() => executor.execute(code, "readSSH", ctx, sig), Error);
+    await expect(executor.execute(code, "readSSH", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot traverse directories to find secrets", async () => {
@@ -68,7 +70,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         return entries;
       }
     `;
-    await assertRejects(() => executor.execute(code, "traverseDir", ctx, sig), Error);
+    await expect(executor.execute(code, "traverseDir", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot write malicious files", async () => {
@@ -79,7 +81,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         await Deno.chmod('./backdoor.sh', 0o755);
       }
     `;
-    await assertRejects(() => executor.execute(code, "writeBackdoor", ctx, sig), Error);
+    await expect(executor.execute(code, "writeBackdoor", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read Atlas internal state files", async () => {
@@ -91,7 +93,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
         return new TextDecoder().decode(data);
       }
     `;
-    await assertRejects(() => executor.execute(code, "readAtlasKV", ctx, sig), Error);
+    await expect(executor.execute(code, "readAtlasKV", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -102,7 +104,7 @@ describe("Filesystem Attacks - ALL BLOCKED", () => {
  * WITHOUT ISOLATION: User code could read API keys, database credentials,
  * cloud provider tokens stored in environment variables.
  */
-describe("Environment Variable Attacks - ALL BLOCKED", () => {
+describe.skipIf(!isDenoRuntime)("Environment Variable Attacks - ALL BLOCKED", () => {
   it("cannot read ANTHROPIC_API_KEY", async () => {
     // Attack: Steal LLM provider API key
     const code = `
@@ -110,7 +112,7 @@ describe("Environment Variable Attacks - ALL BLOCKED", () => {
         return Deno.env.get('ANTHROPIC_API_KEY');
       }
     `;
-    await assertRejects(() => executor.execute(code, "readApiKey", ctx, sig), Error);
+    await expect(executor.execute(code, "readApiKey", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read DATABASE_URL", async () => {
@@ -120,7 +122,7 @@ describe("Environment Variable Attacks - ALL BLOCKED", () => {
         return Deno.env.get('DATABASE_URL');
       }
     `;
-    await assertRejects(() => executor.execute(code, "readDbUrl", ctx, sig), Error);
+    await expect(executor.execute(code, "readDbUrl", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot enumerate all environment variables", async () => {
@@ -130,7 +132,7 @@ describe("Environment Variable Attacks - ALL BLOCKED", () => {
         return JSON.stringify(Object.fromEntries(Deno.env.toObject()));
       }
     `;
-    await assertRejects(() => executor.execute(code, "dumpEnv", ctx, sig), Error);
+    await expect(executor.execute(code, "dumpEnv", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read AWS/GCP credentials from env", async () => {
@@ -144,7 +146,7 @@ describe("Environment Variable Attacks - ALL BLOCKED", () => {
         };
       }
     `;
-    await assertRejects(() => executor.execute(code, "readCloudCreds", ctx, sig), Error);
+    await expect(executor.execute(code, "readCloudCreds", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -155,7 +157,7 @@ describe("Environment Variable Attacks - ALL BLOCKED", () => {
  * WITHOUT ISOLATION: Malicious code could send stolen data to attacker servers,
  * connect to command-and-control infrastructure, or make requests to internal services.
  */
-describe("Network Attacks - ALL BLOCKED", () => {
+describe.skipIf(!isDenoRuntime)("Network Attacks - ALL BLOCKED", () => {
   it("cannot exfiltrate data via HTTP", async () => {
     // Attack: Send stolen secrets to attacker server
     const code = `
@@ -167,7 +169,7 @@ describe("Network Attacks - ALL BLOCKED", () => {
         });
       }
     `;
-    await assertRejects(() => executor.execute(code, "exfiltrate", ctx, sig), Error);
+    await expect(executor.execute(code, "exfiltrate", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot access internal Atlas API", async () => {
@@ -178,7 +180,7 @@ describe("Network Attacks - ALL BLOCKED", () => {
         return res.json();
       }
     `;
-    await assertRejects(() => executor.execute(code, "internalApi", ctx, sig), Error);
+    await expect(executor.execute(code, "internalApi", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot connect to command-and-control server", async () => {
@@ -194,7 +196,7 @@ describe("Network Attacks - ALL BLOCKED", () => {
         });
       }
     `;
-    await assertRejects(() => executor.execute(code, "c2connect", ctx, sig), Error);
+    await expect(executor.execute(code, "c2connect", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot scan internal network", async () => {
@@ -206,7 +208,7 @@ describe("Network Attacks - ALL BLOCKED", () => {
         return res.status;
       }
     `;
-    await assertRejects(() => executor.execute(code, "portScan", ctx, sig), Error);
+    await expect(executor.execute(code, "portScan", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -217,7 +219,7 @@ describe("Network Attacks - ALL BLOCKED", () => {
  * WITHOUT ISOLATION: Malicious code could spawn arbitrary processes,
  * install malware, or take over the host system.
  */
-describe("Process Execution Attacks - ALL BLOCKED", () => {
+describe.skipIf(!isDenoRuntime)("Process Execution Attacks - ALL BLOCKED", () => {
   it("cannot execute shell commands", async () => {
     // Attack: Run arbitrary shell commands
     const code = `
@@ -228,7 +230,7 @@ describe("Process Execution Attacks - ALL BLOCKED", () => {
         await cmd.output();
       }
     `;
-    await assertRejects(() => executor.execute(code, "shellExec", ctx, sig), Error);
+    await expect(executor.execute(code, "shellExec", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot spawn reverse shell", async () => {
@@ -241,7 +243,7 @@ describe("Process Execution Attacks - ALL BLOCKED", () => {
         await cmd.output();
       }
     `;
-    await assertRejects(() => executor.execute(code, "reverseShell", ctx, sig), Error);
+    await expect(executor.execute(code, "reverseShell", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot kill other processes", async () => {
@@ -251,7 +253,7 @@ describe("Process Execution Attacks - ALL BLOCKED", () => {
         Deno.kill(1, 'SIGKILL'); // Kill init
       }
     `;
-    await assertRejects(() => executor.execute(code, "killProcess", ctx, sig), Error);
+    await expect(executor.execute(code, "killProcess", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot read /proc to inspect other processes", async () => {
@@ -262,7 +264,7 @@ describe("Process Execution Attacks - ALL BLOCKED", () => {
         return cmdline;
       }
     `;
-    await assertRejects(() => executor.execute(code, "procRead", ctx, sig), Error);
+    await expect(executor.execute(code, "procRead", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -273,7 +275,7 @@ describe("Process Execution Attacks - ALL BLOCKED", () => {
  * WITHOUT ISOLATION: Malicious code could import modules from attacker-controlled
  * URLs, enabling supply chain attacks and dynamic payload delivery.
  */
-describe("Dynamic Import Attacks - ALL BLOCKED", () => {
+describe.skipIf(!isDenoRuntime)("Dynamic Import Attacks - ALL BLOCKED", () => {
   it("cannot import malicious modules from URL", async () => {
     // Attack: Load and execute remote malicious code
     const code = `
@@ -282,7 +284,7 @@ describe("Dynamic Import Attacks - ALL BLOCKED", () => {
         return malware.pwn();
       }
     `;
-    await assertRejects(() => executor.execute(code, "importRemote", ctx, sig), Error);
+    await expect(executor.execute(code, "importRemote", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot import from npm with malicious packages", async () => {
@@ -293,7 +295,7 @@ describe("Dynamic Import Attacks - ALL BLOCKED", () => {
         return pkg.default();
       }
     `;
-    await assertRejects(() => executor.execute(code, "importNpm", ctx, sig), Error);
+    await expect(executor.execute(code, "importNpm", ctx, sig)).rejects.toThrow();
   });
 
   it("cannot dynamically load local filesystem modules", async () => {
@@ -304,7 +306,7 @@ describe("Dynamic Import Attacks - ALL BLOCKED", () => {
         return logger;
       }
     `;
-    await assertRejects(() => executor.execute(code, "importLocal", ctx, sig), Error);
+    await expect(executor.execute(code, "importLocal", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -314,7 +316,7 @@ describe("Dynamic Import Attacks - ALL BLOCKED", () => {
  * ============================================================================
  * The worker timeout handles infinite loops, but let's verify other vectors.
  */
-describe("Resource Exhaustion - Handled by Timeout + Isolation", () => {
+describe.skipIf(!isDenoRuntime)("Resource Exhaustion - Handled by Timeout + Isolation", () => {
   it("infinite loop is terminated by timeout", async () => {
     const shortTimeoutExecutor = new WorkerExecutor({ timeout: 100, functionType: "action" });
     const code = `
@@ -322,9 +324,7 @@ describe("Resource Exhaustion - Handled by Timeout + Isolation", () => {
         while (true) {} // CPU exhaustion
       }
     `;
-    await assertRejects(
-      () => shortTimeoutExecutor.execute(code, "infiniteLoop", ctx, sig),
-      Error,
+    await expect(shortTimeoutExecutor.execute(code, "infiniteLoop", ctx, sig)).rejects.toThrow(
       "timed out",
     );
   });
@@ -341,7 +341,7 @@ describe("Resource Exhaustion - Handled by Timeout + Isolation", () => {
         }
       }
     `;
-    await assertRejects(() => shortTimeoutExecutor.execute(code, "memoryExhaust", ctx, sig), Error);
+    await expect(shortTimeoutExecutor.execute(code, "memoryExhaust", ctx, sig)).rejects.toThrow();
   });
 });
 
@@ -351,7 +351,7 @@ describe("Resource Exhaustion - Handled by Timeout + Isolation", () => {
  * ============================================================================
  * Verify that isolation doesn't break legitimate use cases.
  */
-describe("Legitimate Operations - All Allowed", () => {
+describe.skipIf(!isDenoRuntime)("Legitimate Operations - All Allowed", () => {
   it("can use pure JavaScript", async () => {
     const code = `
       export default () => {
@@ -360,7 +360,7 @@ describe("Legitimate Operations - All Allowed", () => {
       }
     `;
     const result = await executor.execute(code, "pureJS", ctx, sig);
-    if (result !== 12) throw new Error(`Expected 12, got ${result}`);
+    expect(result).toBe(12);
   });
 
   it("can read provided context.documents", async () => {
@@ -372,7 +372,7 @@ describe("Legitimate Operations - All Allowed", () => {
       export default (ctx) => ctx.documents[0].data.value
     `;
     const result = await executor.execute(code, "readContext", ctxWithDocs, sig);
-    if (result !== 42) throw new Error(`Expected 42, got ${result}`);
+    expect(result).toBe(42);
   });
 
   it("can read provided event/signal data", async () => {
@@ -381,7 +381,7 @@ describe("Legitimate Operations - All Allowed", () => {
     `;
     const sigWithData = { type: "TEST", data: { message: "hello" } };
     const result = await executor.execute(code, "readEvent", ctx, sigWithData);
-    if (result !== "hello") throw new Error(`Expected "hello", got ${result}`);
+    expect(result).toBe("hello");
   });
 
   it("can use async/await with Promise.resolve", async () => {
@@ -393,7 +393,7 @@ describe("Legitimate Operations - All Allowed", () => {
       }
     `;
     const result = await executor.execute(code, "asyncAwait", ctx, sig);
-    if (result !== 30) throw new Error(`Expected 30, got ${result}`);
+    expect(result).toBe(30);
   });
 
   it("can mutate context via provided methods", async () => {
@@ -409,7 +409,7 @@ describe("Legitimate Operations - All Allowed", () => {
       }
     `;
     await executor.execute(code, "mutate", ctxWithMethods, sig);
-    if (mutations.length !== 1) throw new Error(`Expected 1 mutation, got ${mutations.length}`);
+    expect(mutations).toHaveLength(1);
   });
 
   it("can use JSON operations", async () => {
@@ -422,7 +422,7 @@ describe("Legitimate Operations - All Allowed", () => {
       }
     `;
     const result = await executor.execute(code, "json", ctx, sig);
-    if (result !== 3) throw new Error(`Expected 3, got ${result}`);
+    expect(result).toBe(3);
   });
 
   it("can use Math functions", async () => {
@@ -430,7 +430,7 @@ describe("Legitimate Operations - All Allowed", () => {
       export default () => Math.max(1, 5, 3) + Math.floor(3.7)
     `;
     const result = await executor.execute(code, "math", ctx, sig);
-    if (result !== 8) throw new Error(`Expected 8, got ${result}`);
+    expect(result).toBe(8);
   });
 
   it("can use Array/Object methods", async () => {
@@ -450,8 +450,8 @@ describe("Legitimate Operations - All Allowed", () => {
       keys: string[];
       spread: number[];
     };
-    if (result.filtered.length !== 2) throw new Error(`Expected 2 filtered items`);
-    if (result.keys[0] !== "x") throw new Error(`Expected key 'x'`);
-    if (result.spread.length !== 4) throw new Error(`Expected 4 spread items`);
+    expect(result.filtered).toHaveLength(2);
+    expect(result.keys[0]).toBe("x");
+    expect(result.spread).toHaveLength(4);
   });
 });

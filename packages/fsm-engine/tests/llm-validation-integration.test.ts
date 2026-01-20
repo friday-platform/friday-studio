@@ -12,8 +12,7 @@
 
 import process from "node:process";
 import { createFSMOutputValidator } from "@atlas/hallucination";
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
@@ -89,40 +88,46 @@ async function createIntegrationEngine(opts: { llmResponses: LLMResponse[] }) {
   return { engine, store, scope, fsm, getLLMCallCount: () => callCount };
 }
 
-describe("LLM Validation Integration (Real Haiku)", { ignore: !CAN_RUN_INTEGRATION }, () => {
-  it("detects fabrication when LLM claims data with no tool calls", async () => {
-    // Mock LLM fabricates specific data without any tool access
-    const { engine, store, scope, fsm } = await createIntegrationEngine({
-      llmResponses: [
-        {
-          content: "According to the database, there are 1,247 active users and revenue is $2.3M.",
-          data: {
-            // Empty tool data - no tools were called
-            toolCalls: [],
-            toolResults: [],
+describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)", () => {
+  it(
+    "detects fabrication when LLM claims data with no tool calls",
+    { timeout: 15_000 },
+    async () => {
+      // Mock LLM fabricates specific data without any tool access
+      const { engine, store, scope, fsm } = await createIntegrationEngine({
+        llmResponses: [
+          {
+            content:
+              "According to the database, there are 1,247 active users and revenue is $2.3M.",
+            data: {
+              // Empty tool data - no tools were called
+              toolCalls: [],
+              toolResults: [],
+            },
           },
-        },
-        // Retry response - still fabricating
-        {
-          content: "Based on my analysis, the system shows 892 pending orders worth $156,000.",
-          data: { toolCalls: [], toolResults: [] },
-        },
-      ],
-    });
+          // Retry response - still fabricating
+          {
+            content: "Based on my analysis, the system shows 892 pending orders worth $156,000.",
+            data: { toolCalls: [], toolResults: [] },
+          },
+        ],
+      });
 
-    // Should throw because both attempts fabricate data
-    const error = await assertRejects(async () => await engine.signal({ type: "RUN_LLM" }));
-    assertStringIncludes(String(error), "failed validation after retry");
+      // Should throw because both attempts fabricate data
+      await expect(async () => await engine.signal({ type: "RUN_LLM" })).rejects.toThrow(
+        /failed validation after retry/,
+      );
 
-    // State should NOT transition (transaction rolled back)
-    assertEquals(engine.state, "pending");
+      // State should NOT transition (transaction rolled back)
+      expect(engine.state).toEqual("pending");
 
-    // No document should be persisted
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc, null);
-  });
+      // No document should be persisted
+      const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+      expect(doc).toEqual(null);
+    },
+  );
 
-  it("passes legitimate output with tool-sourced data", async () => {
+  it("passes legitimate output with tool-sourced data", { timeout: 15_000 }, async () => {
     // Mock LLM returns data that matches tool results (AI SDK format)
     const { engine, store, scope, fsm } = await createIntegrationEngine({
       llmResponses: [
@@ -163,65 +168,68 @@ describe("LLM Validation Integration (Real Haiku)", { ignore: !CAN_RUN_INTEGRATI
     await engine.signal({ type: "RUN_LLM" });
 
     // State should transition
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     // Document should be persisted with content
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(
-      doc?.data.data.content,
+    expect(doc?.data.data.content).toEqual(
       "Found 42 users in the system. The primary contact is Alice Smith at TechCorp.",
     );
   });
 
-  it("recovers on retry when first attempt fabricates but retry is legitimate", async () => {
-    const { engine, store, scope, fsm, getLLMCallCount } = await createIntegrationEngine({
-      llmResponses: [
-        // First attempt: fabricates data (no tool results)
-        {
-          content: "According to internal metrics, there are 5,000 daily active users.",
-          data: { toolCalls: [], toolResults: [] },
-        },
-        // Retry: legitimate response with tool-sourced data (AI SDK format)
-        {
-          content: "The query returned 127 records from the database.",
-          data: {
-            toolCalls: [
-              {
-                type: "tool-call",
-                toolCallId: "tc1",
-                toolName: "queryDatabase",
-                input: { table: "records" },
-              },
-            ],
-            toolResults: [
-              {
-                type: "tool-result",
-                toolCallId: "tc1",
-                toolName: "queryDatabase",
-                input: { table: "records" },
-                output: { rowCount: 127 },
-              },
-            ],
+  it(
+    "recovers on retry when first attempt fabricates but retry is legitimate",
+    { timeout: 15_000 },
+    async () => {
+      const { engine, store, scope, fsm, getLLMCallCount } = await createIntegrationEngine({
+        llmResponses: [
+          // First attempt: fabricates data (no tool results)
+          {
+            content: "According to internal metrics, there are 5,000 daily active users.",
+            data: { toolCalls: [], toolResults: [] },
           },
-        },
-      ],
-    });
+          // Retry: legitimate response with tool-sourced data (AI SDK format)
+          {
+            content: "The query returned 127 records from the database.",
+            data: {
+              toolCalls: [
+                {
+                  type: "tool-call",
+                  toolCallId: "tc1",
+                  toolName: "queryDatabase",
+                  input: { table: "records" },
+                },
+              ],
+              toolResults: [
+                {
+                  type: "tool-result",
+                  toolCallId: "tc1",
+                  toolName: "queryDatabase",
+                  input: { table: "records" },
+                  output: { rowCount: 127 },
+                },
+              ],
+            },
+          },
+        ],
+      });
 
-    // Should succeed on retry
-    await engine.signal({ type: "RUN_LLM" });
+      // Should succeed on retry
+      await engine.signal({ type: "RUN_LLM" });
 
-    // Should have called LLM twice (initial + retry)
-    assertEquals(getLLMCallCount(), 2);
+      // Should have called LLM twice (initial + retry)
+      expect(getLLMCallCount()).toEqual(2);
 
-    // State should transition
-    assertEquals(engine.state, "done");
+      // State should transition
+      expect(engine.state).toEqual("done");
 
-    // Document should have retry content, not fabricated content
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "The query returned 127 records from the database.");
-  });
+      // Document should have retry content, not fabricated content
+      const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+      expect(doc?.data.data.content).toEqual("The query returned 127 records from the database.");
+    },
+  );
 
-  it("allows empty output with empty tool results", async () => {
+  it("allows empty output with empty tool results", { timeout: 15_000 }, async () => {
     // Edge case: LLM says "no results" when tools return empty (AI SDK format)
     const { engine, store, scope, fsm } = await createIntegrationEngine({
       llmResponses: [
@@ -253,10 +261,10 @@ describe("LLM Validation Integration (Real Haiku)", { ignore: !CAN_RUN_INTEGRATI
     // Should pass - "no results" is consistent with empty tool results
     await engine.signal({ type: "RUN_LLM" });
 
-    assertEquals(engine.state, "done");
+    expect(engine.state).toEqual("done");
 
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    assertEquals(doc?.data.data.content, "No matching records were found in the search.");
+    expect(doc?.data.data.content).toEqual("No matching records were found in the search.");
   });
 });
 

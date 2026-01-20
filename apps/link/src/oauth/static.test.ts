@@ -2,12 +2,12 @@
  * Unit tests for static OAuth helper functions
  */
 
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import type { OAuthConfig } from "../providers/types.ts";
 import { buildStaticAuthServer } from "./static.ts";
 
-Deno.test("buildStaticAuthServer", async (t) => {
-  await t.step("builds AuthorizationServer from config", () => {
+describe("buildStaticAuthServer", () => {
+  it("builds AuthorizationServer from config", () => {
     const config: Extract<OAuthConfig, { mode: "static" }> = {
       mode: "static",
       authorizationEndpoint: "https://auth.example.com/oauth/authorize",
@@ -21,13 +21,13 @@ Deno.test("buildStaticAuthServer", async (t) => {
 
     const authServer = buildStaticAuthServer(config);
 
-    assertEquals(authServer.issuer, "https://auth.example.com");
-    assertEquals(authServer.authorization_endpoint, "https://auth.example.com/oauth/authorize");
-    assertEquals(authServer.token_endpoint, "https://auth.example.com/oauth/token");
-    assertEquals(authServer.userinfo_endpoint, "https://auth.example.com/oauth/userinfo");
+    expect(authServer.issuer).toEqual("https://auth.example.com");
+    expect(authServer.authorization_endpoint).toEqual("https://auth.example.com/oauth/authorize");
+    expect(authServer.token_endpoint).toEqual("https://auth.example.com/oauth/token");
+    expect(authServer.userinfo_endpoint).toEqual("https://auth.example.com/oauth/userinfo");
   });
 
-  await t.step("sets issuer from authorizationEndpoint origin", () => {
+  it("sets issuer from authorizationEndpoint origin", () => {
     const config: Extract<OAuthConfig, { mode: "static" }> = {
       mode: "static",
       authorizationEndpoint: "https://auth.example.com/v2/authorize",
@@ -39,10 +39,10 @@ Deno.test("buildStaticAuthServer", async (t) => {
 
     const authServer = buildStaticAuthServer(config);
 
-    assertEquals(authServer.issuer, "https://auth.example.com");
+    expect(authServer.issuer).toEqual("https://auth.example.com");
   });
 
-  await t.step("handles undefined userinfoEndpoint", () => {
+  it("handles undefined userinfoEndpoint", () => {
     const config: Extract<OAuthConfig, { mode: "static" }> = {
       mode: "static",
       authorizationEndpoint: "https://auth.example.com/authorize",
@@ -54,6 +54,6 @@ Deno.test("buildStaticAuthServer", async (t) => {
 
     const authServer = buildStaticAuthServer(config);
 
-    assertEquals(authServer.userinfo_endpoint, undefined);
+    expect(authServer.userinfo_endpoint).toEqual(undefined);
   });
 });

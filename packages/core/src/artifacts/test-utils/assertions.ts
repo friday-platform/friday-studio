@@ -1,5 +1,5 @@
 import type { Result } from "@atlas/utils";
-import { assertEquals, assertExists } from "@std/assert";
+import { expect } from "vitest";
 import type { Artifact } from "../model.ts";
 
 /**
@@ -29,33 +29,31 @@ export function assertResultFail<T>(
  */
 export function assertArtifactEqual(actual: Artifact, expected: Partial<Artifact>): void {
   if (expected.id !== undefined) {
-    assertEquals(actual.id, expected.id, "artifact.id mismatch");
+    expect(actual.id, "artifact.id mismatch").toBe(expected.id);
   }
   if (expected.type !== undefined) {
-    assertEquals(actual.type, expected.type, "artifact.type mismatch");
+    expect(actual.type, "artifact.type mismatch").toBe(expected.type);
   }
   if (expected.revision !== undefined) {
-    assertEquals(actual.revision, expected.revision, "artifact.revision mismatch");
+    expect(actual.revision, "artifact.revision mismatch").toBe(expected.revision);
   }
   if (expected.title !== undefined) {
-    assertEquals(actual.title, expected.title, "artifact.title mismatch");
+    expect(actual.title, "artifact.title mismatch").toBe(expected.title);
   }
   if (expected.summary !== undefined) {
-    assertEquals(actual.summary, expected.summary, "artifact.summary mismatch");
+    expect(actual.summary, "artifact.summary mismatch").toBe(expected.summary);
   }
   if (expected.workspaceId !== undefined) {
-    assertEquals(actual.workspaceId, expected.workspaceId, "artifact.workspaceId mismatch");
+    expect(actual.workspaceId, "artifact.workspaceId mismatch").toBe(expected.workspaceId);
   }
   if (expected.chatId !== undefined) {
-    assertEquals(actual.chatId, expected.chatId, "artifact.chatId mismatch");
+    expect(actual.chatId, "artifact.chatId mismatch").toBe(expected.chatId);
   }
   if (expected.revisionMessage !== undefined) {
-    assertEquals(
-      actual.revisionMessage,
+    expect(actual.revisionMessage, "artifact.revisionMessage mismatch").toBe(
       expected.revisionMessage,
-      "artifact.revisionMessage mismatch",
     );
   }
   // createdAt should always exist
-  assertExists(actual.createdAt, "artifact.createdAt should exist");
+  expect(actual.createdAt, "artifact.createdAt should exist").toBeDefined();
 }

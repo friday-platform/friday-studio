@@ -5,7 +5,7 @@
  * is only extracted from trusted sources (user input).
  */
 
-import { assertEquals } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import { MemorySource } from "../src/mecmf-interfaces.ts";
 import { DEFAULT_PII_CONFIG, PIISafeMemoryClassifier } from "../src/pii-safe-classifier.ts";
 
@@ -28,173 +28,178 @@ const TEST_CONTENT = {
   mixed: "The API endpoint https://api.example.com returns JSON data. User ID: uuid-12345",
 };
 
-Deno.test("PII Safe Classifier - Constructor and Configuration", () => {
-  const classifier = new PIISafeMemoryClassifier();
-  const stats = classifier.getSourceStatistics();
+describe("PII Safe Classifier", () => {
+  it("Constructor and Configuration", () => {
+    const classifier = new PIISafeMemoryClassifier();
+    const stats = classifier.getSourceStatistics();
 
-  assertEquals(stats.piiTypesRestricted, DEFAULT_PII_CONFIG.restrictedPIITypes);
-  assertEquals(stats.trustedSources, DEFAULT_PII_CONFIG.trustedSources);
-  assertEquals(stats.extractionSettings.emails, true);
-  assertEquals(stats.extractionSettings.phones, true);
-  assertEquals(stats.extractionSettings.names, true);
-});
-
-Deno.test("PII Safe Classifier - Custom Configuration", () => {
-  const classifier = new PIISafeMemoryClassifier({
-    extractEmails: false,
-    trustedSources: [MemorySource.USER_INPUT, MemorySource.AGENT_OUTPUT],
-    minPIIConfidence: 0.9,
+    expect(stats.piiTypesRestricted).toEqual(DEFAULT_PII_CONFIG.restrictedPIITypes);
+    expect(stats.trustedSources).toEqual(DEFAULT_PII_CONFIG.trustedSources);
+    expect(stats.extractionSettings.emails).toEqual(true);
+    expect(stats.extractionSettings.phones).toEqual(true);
+    expect(stats.extractionSettings.names).toEqual(true);
   });
 
-  const stats = classifier.getSourceStatistics();
+  it("Custom Configuration", () => {
+    const classifier = new PIISafeMemoryClassifier({
+      extractEmails: false,
+      trustedSources: [MemorySource.USER_INPUT, MemorySource.AGENT_OUTPUT],
+      minPIIConfidence: 0.9,
+    });
 
-  assertEquals(stats.extractionSettings.emails, false);
-  assertEquals(stats.trustedSources.length, 2);
-  assertEquals(stats.minConfidenceThreshold, 0.9);
-});
+    const stats = classifier.getSourceStatistics();
 
-Deno.test("PII Safe Classifier - User Input PII Extraction", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  // User input should extract PII
-  const entities = classifier.extractKeyEntities(TEST_CONTENT.userWithPII, MemorySource.USER_INPUT);
-
-  const emails = entities.filter((e) => e.type === "email");
-  const phones = entities.filter((e) => e.type === "phone");
-
-  assertEquals(emails.length, 1);
-  assertEquals(emails[0]?.name, "john.doe@company.com");
-  assertEquals(phones.length, 1);
-  assertEquals(phones[0]?.name, "+1-555-0123");
-});
-
-Deno.test("PII Safe Classifier - Agent Output PII Filtering", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  // Agent output should filter PII
-  const entities = classifier.extractKeyEntities(
-    TEST_CONTENT.agentWithPII,
-    MemorySource.AGENT_OUTPUT,
-  );
-
-  const emails = entities.filter((e) => e.type === "email");
-  const phones = entities.filter((e) => e.type === "phone");
-
-  // PII should be filtered out
-  assertEquals(emails.length, 0);
-  assertEquals(phones.length, 0);
-});
-
-Deno.test("PII Safe Classifier - Tool Output PII Filtering", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  // Tool output should filter PII
-  const entities = classifier.extractKeyEntities(
-    TEST_CONTENT.toolWithPII,
-    MemorySource.TOOL_OUTPUT,
-  );
-
-  const emails = entities.filter((e) => e.type === "email");
-  const phones = entities.filter((e) => e.type === "phone");
-  const names = entities.filter((e) => e.type === "name");
-
-  // All PII should be filtered out
-  assertEquals(emails.length, 0);
-  assertEquals(phones.length, 0);
-  assertEquals(names.length, 0);
-});
-
-Deno.test("PII Safe Classifier - Confidence Threshold Filtering", () => {
-  const classifier = new PIISafeMemoryClassifier({
-    minPIIConfidence: 0.95, // Very high threshold
+    expect(stats.extractionSettings.emails).toEqual(false);
+    expect(stats.trustedSources.length).toEqual(2);
+    expect(stats.minConfidenceThreshold).toEqual(0.9);
   });
 
-  // Even with user input, low-confidence PII should be filtered
-  const entities = classifier.extractKeyEntities(
-    "Maybe contact info: test@test", // Low confidence email
-    MemorySource.USER_INPUT,
-  );
+  it("User Input PII Extraction", () => {
+    const classifier = new PIISafeMemoryClassifier();
 
-  // Should filter low-confidence PII even from trusted sources
-  const lowConfidenceEmails = entities.filter((e) => e.type === "email" && e.confidence < 0.95);
-  assertEquals(lowConfidenceEmails.length, 0);
-});
+    // User input should extract PII
+    const entities = classifier.extractKeyEntities(
+      TEST_CONTENT.userWithPII,
+      MemorySource.USER_INPUT,
+    );
 
-Deno.test("PII Safe Classifier - Trusted Source Management", () => {
-  const classifier = new PIISafeMemoryClassifier();
+    const emails = entities.filter((e) => e.type === "email");
+    const phones = entities.filter((e) => e.type === "phone");
 
-  // Initially only USER_INPUT is trusted
-  assertEquals(classifier.isTrustedSource(MemorySource.USER_INPUT), true);
-  assertEquals(classifier.isTrustedSource(MemorySource.AGENT_OUTPUT), false);
+    expect(emails.length).toEqual(1);
+    expect(emails[0]?.name).toEqual("john.doe@company.com");
+    expect(phones.length).toEqual(1);
+    expect(phones[0]?.name).toEqual("+1-555-0123");
+  });
 
-  // Add AGENT_OUTPUT as trusted
-  classifier.addTrustedSource(MemorySource.AGENT_OUTPUT);
-  assertEquals(classifier.isTrustedSource(MemorySource.AGENT_OUTPUT), true);
+  it("Agent Output PII Filtering", () => {
+    const classifier = new PIISafeMemoryClassifier();
 
-  // Remove USER_INPUT as trusted
-  classifier.removeTrustedSource(MemorySource.USER_INPUT);
-  assertEquals(classifier.isTrustedSource(MemorySource.USER_INPUT), false);
-});
+    // Agent output should filter PII
+    const entities = classifier.extractKeyEntities(
+      TEST_CONTENT.agentWithPII,
+      MemorySource.AGENT_OUTPUT,
+    );
 
-Deno.test("PII Safe Classifier - Configuration Updates", () => {
-  const classifier = new PIISafeMemoryClassifier();
+    const emails = entities.filter((e) => e.type === "email");
+    const phones = entities.filter((e) => e.type === "phone");
 
-  // Initially emails are enabled
-  let entities = classifier.extractKeyEntities(
-    "Contact: test@example.com",
-    MemorySource.USER_INPUT,
-  );
-  let emails = entities.filter((e) => e.type === "email");
-  assertEquals(emails.length, 1);
+    // PII should be filtered out
+    expect(emails.length).toEqual(0);
+    expect(phones.length).toEqual(0);
+  });
 
-  // Disable email extraction
-  classifier.updatePIIConfig({ extractEmails: false });
+  it("Tool Output PII Filtering", () => {
+    const classifier = new PIISafeMemoryClassifier();
 
-  entities = classifier.extractKeyEntities("Contact: test@example.com", MemorySource.USER_INPUT);
-  emails = entities.filter((e) => e.type === "email");
-  assertEquals(emails.length, 0);
-});
+    // Tool output should filter PII
+    const entities = classifier.extractKeyEntities(
+      TEST_CONTENT.toolWithPII,
+      MemorySource.TOOL_OUTPUT,
+    );
 
-Deno.test("PII Safe Classifier - Source Metadata Preservation", () => {
-  const classifier = new PIISafeMemoryClassifier();
+    const emails = entities.filter((e) => e.type === "email");
+    const phones = entities.filter((e) => e.type === "phone");
+    const names = entities.filter((e) => e.type === "name");
 
-  const sourceMetadata = {
-    agentId: "test-agent",
-    sessionId: "test-session",
-    workspaceId: "test-workspace",
-  };
+    // All PII should be filtered out
+    expect(emails.length).toEqual(0);
+    expect(phones.length).toEqual(0);
+    expect(names.length).toEqual(0);
+  });
 
-  const entitiesWithSource = classifier.extractEntitiesWithSource(
-    TEST_CONTENT.nonPII,
-    MemorySource.AGENT_OUTPUT,
-    sourceMetadata,
-  );
+  it("Confidence Threshold Filtering", () => {
+    const classifier = new PIISafeMemoryClassifier({
+      minPIIConfidence: 0.95, // Very high threshold
+    });
 
-  // Verify source information is preserved
-  for (const entity of entitiesWithSource) {
-    assertEquals(entity.source, MemorySource.AGENT_OUTPUT);
-    assertEquals(entity.sourceMetadata, sourceMetadata);
-  }
-});
+    // Even with user input, low-confidence PII should be filtered
+    const entities = classifier.extractKeyEntities(
+      "Maybe contact info: test@test", // Low confidence email
+      MemorySource.USER_INPUT,
+    );
 
-Deno.test("PII Safe Classifier - Edge Cases", () => {
-  const classifier = new PIISafeMemoryClassifier();
+    // Should filter low-confidence PII even from trusted sources
+    const lowConfidenceEmails = entities.filter((e) => e.type === "email" && e.confidence < 0.95);
+    expect(lowConfidenceEmails.length).toEqual(0);
+  });
 
-  // Empty content
-  let entities = classifier.extractKeyEntities("", MemorySource.USER_INPUT);
-  assertEquals(entities.length, 0);
+  it("Trusted Source Management", () => {
+    const classifier = new PIISafeMemoryClassifier();
 
-  // Very long content
-  const longContent = "test@example.com ".repeat(1000);
-  entities = classifier.extractKeyEntities(longContent, MemorySource.USER_INPUT);
-  // Should handle long content gracefully
-  assertEquals(entities.filter((e) => e.type === "email").length > 0, true);
+    // Initially only USER_INPUT is trusted
+    expect(classifier.isTrustedSource(MemorySource.USER_INPUT)).toEqual(true);
+    expect(classifier.isTrustedSource(MemorySource.AGENT_OUTPUT)).toEqual(false);
 
-  // Special characters and unicode
-  entities = classifier.extractKeyEntities(
-    "联系方式：test@example.com 📧",
-    MemorySource.USER_INPUT,
-  );
-  const emails = entities.filter((e) => e.type === "email");
-  assertEquals(emails.length, 1);
+    // Add AGENT_OUTPUT as trusted
+    classifier.addTrustedSource(MemorySource.AGENT_OUTPUT);
+    expect(classifier.isTrustedSource(MemorySource.AGENT_OUTPUT)).toEqual(true);
+
+    // Remove USER_INPUT as trusted
+    classifier.removeTrustedSource(MemorySource.USER_INPUT);
+    expect(classifier.isTrustedSource(MemorySource.USER_INPUT)).toEqual(false);
+  });
+
+  it("Configuration Updates", () => {
+    const classifier = new PIISafeMemoryClassifier();
+
+    // Initially emails are enabled
+    let entities = classifier.extractKeyEntities(
+      "Contact: test@example.com",
+      MemorySource.USER_INPUT,
+    );
+    let emails = entities.filter((e) => e.type === "email");
+    expect(emails.length).toEqual(1);
+
+    // Disable email extraction
+    classifier.updatePIIConfig({ extractEmails: false });
+
+    entities = classifier.extractKeyEntities("Contact: test@example.com", MemorySource.USER_INPUT);
+    emails = entities.filter((e) => e.type === "email");
+    expect(emails.length).toEqual(0);
+  });
+
+  it("Source Metadata Preservation", () => {
+    const classifier = new PIISafeMemoryClassifier();
+
+    const sourceMetadata = {
+      agentId: "test-agent",
+      sessionId: "test-session",
+      workspaceId: "test-workspace",
+    };
+
+    const entitiesWithSource = classifier.extractEntitiesWithSource(
+      TEST_CONTENT.nonPII,
+      MemorySource.AGENT_OUTPUT,
+      sourceMetadata,
+    );
+
+    // Verify source information is preserved
+    for (const entity of entitiesWithSource) {
+      expect(entity.source).toEqual(MemorySource.AGENT_OUTPUT);
+      expect(entity.sourceMetadata).toEqual(sourceMetadata);
+    }
+  });
+
+  it("Edge Cases", () => {
+    const classifier = new PIISafeMemoryClassifier();
+
+    // Empty content
+    let entities = classifier.extractKeyEntities("", MemorySource.USER_INPUT);
+    expect(entities.length).toEqual(0);
+
+    // Very long content
+    const longContent = "test@example.com ".repeat(1000);
+    entities = classifier.extractKeyEntities(longContent, MemorySource.USER_INPUT);
+    // Should handle long content gracefully
+    expect(entities.filter((e) => e.type === "email").length > 0).toEqual(true);
+
+    // Special characters and unicode
+    entities = classifier.extractKeyEntities(
+      "联系方式：test@example.com 📧",
+      MemorySource.USER_INPUT,
+    );
+    const emails = entities.filter((e) => e.type === "email");
+    expect(emails.length).toEqual(1);
+  });
 });

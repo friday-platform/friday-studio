@@ -3,11 +3,10 @@
  * Tests security properties: signature verification, expiration, malformed input
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
-import { FakeTime } from "@std/testing/time";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeState, encodeState, type StatePayload } from "./jwt-state.ts";
 
-Deno.test("jwt-state", async (t) => {
+describe("jwt-state", () => {
   const payload: Omit<StatePayload, "exp"> = {
     v: "code-verifier-12345",
     p: "test-provider",
@@ -15,51 +14,60 @@ Deno.test("jwt-state", async (t) => {
     r: "https://app.example.com/settings",
   };
 
-  await t.step("roundtrip: encode → decode preserves payload", async () => {
+  it("roundtrip: encode → decode preserves payload", async () => {
     const state = await encodeState(payload);
     const decoded = await decodeState(state);
-    assertEquals(decoded.v, payload.v);
-    assertEquals(decoded.p, payload.p);
-    assertEquals(decoded.c, payload.c);
-    assertEquals(decoded.r, payload.r);
+    expect(decoded.v).toEqual(payload.v);
+    expect(decoded.p).toEqual(payload.p);
+    expect(decoded.c).toEqual(payload.c);
+    expect(decoded.r).toEqual(payload.r);
   });
 
-  await t.step("tampered signature → throws", async () => {
+  it("tampered signature → throws", async () => {
     const state = await encodeState(payload);
     const tampered = `${state.slice(0, -10)}xxxxxxxxxx`;
-    const error = await assertRejects(() => decodeState(tampered), Error);
-    assertEquals(
-      /signature|invalid|verification/i.test(error.message),
-      true,
-      `Expected error message to match signature/invalid/verification, got: ${error.message}`,
-    );
+    await expect(decodeState(tampered)).rejects.toThrow(/signature|invalid|verification/i);
   });
 
-  await t.step("malformed JWT → throws", async () => {
-    await assertRejects(() => decodeState("not.a.jwt"));
-    await assertRejects(() => decodeState(""));
-    await assertRejects(() => decodeState("only.two.parts"));
+  it("malformed JWT → throws", async () => {
+    await expect(decodeState("not.a.jwt")).rejects.toThrow();
+    await expect(decodeState("")).rejects.toThrow();
+    await expect(decodeState("only.two.parts")).rejects.toThrow();
   });
 
-  await t.step("expired state → throws", async () => {
-    using time = new FakeTime();
+  describe("with fake timers", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
 
-    // Create state at time=0
-    const state = await encodeState(payload);
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    // Fast-forward 11 minutes (past 10min expiration)
-    time.tick(11 * 60 * 1000);
+    it("expired state → throws", async () => {
+      // Create state at time=0
+      const state = await encodeState(payload);
 
-    // Verification should fail due to expiration
-    const error = await assertRejects(() => decodeState(state), Error);
-    assertEquals(
-      /exp|expired/i.test(error.message),
-      true,
-      `Expected error message to match exp/expired, got: ${error.message}`,
-    );
+      // Fast-forward 11 minutes (past 10min expiration)
+      vi.advanceTimersByTime(11 * 60 * 1000);
+
+      // Verification should fail due to expiration
+      await expect(decodeState(state)).rejects.toThrow(/exp|expired/i);
+    });
+
+    it("state valid before expiration", async () => {
+      const state = await encodeState(payload);
+
+      // Fast-forward 5 minutes (within 10min expiration)
+      vi.advanceTimersByTime(5 * 60 * 1000);
+
+      // Should still be valid
+      const decoded = await decodeState(state);
+      expect(decoded.v).toEqual(payload.v);
+    });
   });
 
-  await t.step("encodes optional fields", async () => {
+  it("encodes optional fields", async () => {
     const payloadWithOptionals: Omit<StatePayload, "exp"> = {
       ...payload,
       u: "user-123",
@@ -69,20 +77,7 @@ Deno.test("jwt-state", async (t) => {
     const state = await encodeState(payloadWithOptionals);
     const decoded = await decodeState(state);
 
-    assertEquals(decoded.u, "user-123");
-    assertEquals(decoded.i, "client-abc");
-  });
-
-  await t.step("state valid before expiration", async () => {
-    using time = new FakeTime();
-
-    const state = await encodeState(payload);
-
-    // Fast-forward 5 minutes (within 10min expiration)
-    time.tick(5 * 60 * 1000);
-
-    // Should still be valid
-    const decoded = await decodeState(state);
-    assertEquals(decoded.v, payload.v);
+    expect(decoded.u).toEqual("user-123");
+    expect(decoded.i).toEqual("client-abc");
   });
 });

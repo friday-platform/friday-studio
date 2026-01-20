@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
+import { describe, expect, it } from "vitest";
 import {
   buildFSMGenerationPrompt,
   enrichAgentsWithPipelineContext,
@@ -6,8 +6,8 @@ import {
 } from "./agent-helpers.ts";
 import type { ClassifiedAgent, Job, Signal, SimplifiedAgent } from "./types.ts";
 
-Deno.test("buildFSMGenerationPrompt", async (t) => {
-  await t.step("includes trigger signal description (user intent) in the prompt", () => {
+describe("buildFSMGenerationPrompt", () => {
+  it("includes trigger signal description (user intent) in the prompt", () => {
     const job: Job = {
       id: "test-job",
       name: "Weather Email Job",
@@ -48,17 +48,17 @@ Deno.test("buildFSMGenerationPrompt", async (t) => {
     const prompt = buildFSMGenerationPrompt(job, agents, triggerSignal);
 
     // The fix: prompt should include User Intent with the description
-    assertStringIncludes(prompt, "User Intent:");
-    assertStringIncludes(prompt, triggerSignal.description);
-    assertStringIncludes(prompt, "sunny with 72°F high");
-    assertStringIncludes(prompt, "user@example.com");
+    expect(prompt).toContain("User Intent:");
+    expect(prompt).toContain(triggerSignal.description);
+    expect(prompt).toContain("sunny with 72°F high");
+    expect(prompt).toContain("user@example.com");
 
     // Should also include the critical instruction about extracting actual data
-    assertStringIncludes(prompt, "CRITICAL");
-    assertStringIncludes(prompt, "extract and use the ACTUAL data");
+    expect(prompt).toContain("CRITICAL");
+    expect(prompt).toContain("extract and use the ACTUAL data");
   });
 
-  await t.step("includes signal ID in the prompt", () => {
+  it("includes signal ID in the prompt", () => {
     const job: Job = {
       id: "test-job",
       name: "Test Job",
@@ -75,11 +75,11 @@ Deno.test("buildFSMGenerationPrompt", async (t) => {
 
     const prompt = buildFSMGenerationPrompt(job, [], triggerSignal);
 
-    assertStringIncludes(prompt, "Trigger Signal: my-trigger-signal");
-    assertStringIncludes(prompt, "User Intent: Test description");
+    expect(prompt).toContain("Trigger Signal: my-trigger-signal");
+    expect(prompt).toContain("User Intent: Test description");
   });
 
-  await t.step("includes note about agent.description containing downstream requirements", () => {
+  it("includes note about agent.description containing downstream requirements", () => {
     const job: Job = {
       id: "email-triage",
       name: "Email Triage Job",
@@ -100,13 +100,13 @@ Deno.test("buildFSMGenerationPrompt", async (t) => {
     const prompt = buildFSMGenerationPrompt(job, [], triggerSignal);
 
     // Should note that agent.description already contains downstream requirements
-    assertStringIncludes(prompt, "agent.description");
-    assertStringIncludes(prompt, "downstream");
+    expect(prompt).toContain("agent.description");
+    expect(prompt).toContain("downstream");
   });
 });
 
-Deno.test("enrichAgentsWithPipelineContext", async (t) => {
-  await t.step("adds downstream context to first agent (TEM-3625 fix)", async () => {
+describe("enrichAgentsWithPipelineContext", () => {
+  it("adds downstream context to first agent (TEM-3625 fix)", async () => {
     // This test verifies the fix for Ken's email triage bug where
     // step 0 fetched emails with format="metadata" instead of format="full"
     // because it didn't know step 1 needed full content to extract TODOs.
@@ -139,18 +139,17 @@ Deno.test("enrichAgentsWithPipelineContext", async (t) => {
 
     // First agent should have downstream data requirements (LLM-inferred)
     const gmailAgent = enriched.find((a) => a.id === "gmail-priority-monitor")!;
-    assertStringIncludes(gmailAgent.description, "DOWNSTREAM DATA REQUIREMENTS");
+    expect(gmailAgent.description).toContain("DOWNSTREAM DATA REQUIREMENTS");
     // The LLM should infer something about needing email content for TODO extraction
 
     // Last agent should NOT have downstream context (no downstream steps)
     const todoAgent = enriched.find((a) => a.id === "todo-extractor")!;
-    assertEquals(
-      todoAgent.description,
+    expect(todoAgent.description).toEqual(
       "Analyze email content to identify and extract work-related action items",
     );
   });
 
-  await t.step("preserves agent properties while enriching description", async () => {
+  it("preserves agent properties while enriching description", async () => {
     const agents: SimplifiedAgent[] = [
       {
         id: "agent-1",
@@ -169,17 +168,16 @@ Deno.test("enrichAgentsWithPipelineContext", async (t) => {
 
     const enriched = await enrichAgentsWithPipelineContext(agents, jobSteps);
 
-    // All properties should be preserved
-    const first = enriched[0];
-    assertExists(first);
-    assertEquals(first.id, "agent-1");
-    assertEquals(first.name, "Agent One");
-    assertEquals(first.config, { key: "value" });
-    assertEquals(first.executionType, "llm");
-    assertEquals(first.mcpTools, ["tool1", "tool2"]);
+    expect(enriched[0]).toMatchObject({
+      id: "agent-1",
+      name: "Agent One",
+      config: { key: "value" },
+      executionType: "llm",
+      mcpTools: ["tool1", "tool2"],
+    });
   });
 
-  await t.step("handles agent not in job steps gracefully", async () => {
+  it("handles agent not in job steps gracefully", async () => {
     const agents: SimplifiedAgent[] = [
       {
         id: "unrelated-agent",
@@ -196,14 +194,12 @@ Deno.test("enrichAgentsWithPipelineContext", async (t) => {
     const enriched = await enrichAgentsWithPipelineContext(agents, jobSteps);
 
     // Agent should be returned unchanged
-    const first = enriched[0];
-    assertExists(first);
-    assertEquals(first.description, "Not in this job");
+    expect(enriched[0]).toMatchObject({ id: "unrelated-agent", description: "Not in this job" });
   });
 });
 
-Deno.test("flattenAgent", async (t) => {
-  await t.step("flattens bundled agent correctly", () => {
+describe("flattenAgent", () => {
+  it("flattens bundled agent correctly", () => {
     const classified: ClassifiedAgent = {
       id: "test-agent",
       name: "Test Agent",
@@ -212,16 +208,16 @@ Deno.test("flattenAgent", async (t) => {
       type: { kind: "bundled", bundledId: "actual-bundled-id", name: "Actual Bundled" },
     };
 
-    const simplified = flattenAgent(classified);
-
-    assertEquals(simplified.id, "test-agent");
-    assertEquals(simplified.name, "Test Agent");
-    assertEquals(simplified.executionType, "bundled");
-    assertEquals(simplified.bundledAgentId, "actual-bundled-id");
-    assertEquals(simplified.mcpTools, undefined);
+    expect(flattenAgent(classified)).toMatchObject({
+      id: "test-agent",
+      name: "Test Agent",
+      executionType: "bundled",
+      bundledAgentId: "actual-bundled-id",
+    });
+    expect(flattenAgent(classified).mcpTools).toBeUndefined();
   });
 
-  await t.step("flattens LLM agent correctly", () => {
+  it("flattens LLM agent correctly", () => {
     const classified: ClassifiedAgent = {
       id: "llm-agent",
       name: "LLM Agent",
@@ -230,10 +226,10 @@ Deno.test("flattenAgent", async (t) => {
       type: { kind: "llm", mcpTools: ["tool1", "tool2"] },
     };
 
-    const simplified = flattenAgent(classified);
-
-    assertEquals(simplified.executionType, "llm");
-    assertEquals(simplified.bundledAgentId, undefined);
-    assertEquals(simplified.mcpTools, ["tool1", "tool2"]);
+    expect(flattenAgent(classified)).toMatchObject({
+      executionType: "llm",
+      mcpTools: ["tool1", "tool2"],
+    });
+    expect(flattenAgent(classified).bundledAgentId).toBeUndefined();
   });
 });

@@ -1,5 +1,4 @@
-import { assertRejects, assertStringIncludes } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
+import { describe, expect, it } from "vitest";
 import type { FSMDefinition } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
 
@@ -29,9 +28,8 @@ describe("FSM Engine - Validation", () => {
 
     const { engine } = await createTestEngine(fsm);
 
-    const error = await assertRejects(async () => await engine.signal({ type: "UPDATE" }));
-
-    assertStringIncludes(String(error), 'Document "doc1" of type "test-doc" failed validation');
-    assertStringIncludes(String(error), "expected number, received string");
+    await expect(async () => await engine.signal({ type: "UPDATE" })).rejects.toThrowError(
+      /Document "doc1" of type "test-doc" failed validation.*expected number, received string/s,
+    );
   });
 });

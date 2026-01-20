@@ -3,8 +3,7 @@
  * Tests HTTP endpoints with real routes and mocked services
  */
 
-import { assertEquals, assertExists, assertMatch } from "@std/assert";
-import { beforeEach, describe, it } from "@std/testing/bdd";
+import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { AppInstallService } from "../app-install/service.ts";
@@ -206,12 +205,12 @@ describe("App Install Routes", () => {
     it("redirects to authorization URL", async () => {
       const res = await app.request("/v1/app-install/test-slack/authorize");
 
-      assertEquals(res.status, 302);
+      expect(res.status).toEqual(302);
       const location = res.headers.get("Location");
-      assertExists(location);
-      assertMatch(location, /^https:\/\/slack\.com\/oauth\/v2\/authorize/);
-      assertMatch(location, /state=[^&]+/);
-      assertMatch(location, /redirect_uri=/);
+      expect(location).toBeDefined();
+      expect(location).toMatch(/^https:\/\/slack\.com\/oauth\/v2\/authorize/);
+      expect(location).toMatch(/state=[^&]+/);
+      expect(location).toMatch(/redirect_uri=/);
     });
 
     it("includes redirect_uri in state when provided", async () => {
@@ -220,25 +219,25 @@ describe("App Install Routes", () => {
         `/v1/app-install/test-slack/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`,
       );
 
-      assertEquals(res.status, 302);
+      expect(res.status).toEqual(302);
       const location = res.headers.get("Location");
-      assertExists(location);
+      expect(location).toBeDefined();
     });
 
     it("returns 400 for invalid redirect_uri", async () => {
       const res = await app.request("/v1/app-install/test-slack/authorize?redirect_uri=not-a-url");
 
-      assertEquals(res.status, 400);
+      expect(res.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "invalid_redirect_uri");
+      expect(json.error).toEqual("invalid_redirect_uri");
     });
 
     it("returns 404 for unknown provider", async () => {
       const res = await app.request("/v1/app-install/unknown-provider/authorize");
 
-      assertEquals(res.status, 404);
+      expect(res.status).toEqual(404);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "PROVIDER_NOT_FOUND");
+      expect(json.error).toEqual("PROVIDER_NOT_FOUND");
     });
 
     it("returns 400 for non-app_install provider", async () => {
@@ -254,9 +253,9 @@ describe("App Install Routes", () => {
 
       const res = await app.request("/v1/app-install/oauth-provider/authorize");
 
-      assertEquals(res.status, 400);
+      expect(res.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "INVALID_PROVIDER_TYPE");
+      expect(json.error).toEqual("INVALID_PROVIDER_TYPE");
     });
   });
 
@@ -267,41 +266,41 @@ describe("App Install Routes", () => {
         "/v1/app-install/test-slack/authorize?redirect_uri=https://myapp.example.com/settings",
       );
       const authUrl = startRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
+      expect(authUrl).toBeDefined();
+      const state = new URL(authUrl!).searchParams.get("state");
+      expect(state).toBeDefined();
 
       // Complete callback via unified route
       const callbackRes = await app.request(
         `/v1/callback/test-slack?state=${state}&code=test-code-123`,
       );
 
-      assertEquals(callbackRes.status, 302);
+      expect(callbackRes.status).toEqual(302);
       const location = callbackRes.headers.get("Location");
-      assertExists(location);
-      assertMatch(location, /^https:\/\/myapp\.example\.com\/settings/);
-      const redirectUrl = new URL(location);
-      assertExists(redirectUrl.searchParams.get("credential_id"));
-      assertEquals(redirectUrl.searchParams.get("provider"), "test-slack");
+      expect(location).toBeDefined();
+      expect(location).toMatch(/^https:\/\/myapp\.example\.com\/settings/);
+      const redirectUrl = new URL(location!);
+      expect(redirectUrl.searchParams.get("credential_id")).toBeDefined();
+      expect(redirectUrl.searchParams.get("provider")).toEqual("test-slack");
     });
 
     it("renders success page when no redirect_uri", async () => {
       // Start without redirect_uri
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
+      expect(authUrl).toBeDefined();
+      const state = new URL(authUrl!).searchParams.get("state");
+      expect(state).toBeDefined();
 
       // Complete callback via unified route
       const callbackRes = await app.request(
         `/v1/callback/test-slack?state=${state}&code=test-code-123`,
       );
 
-      assertEquals(callbackRes.status, 200);
+      expect(callbackRes.status).toEqual(200);
       const json = SuccessResponseSchema.parse(await callbackRes.json());
-      assertEquals(json.status, "success");
-      assertEquals(json.provider, "test-slack");
+      expect(json.status).toEqual("success");
+      expect(json.provider).toEqual("test-slack");
     });
 
     it("handles OAuth denial with error param and redirects", async () => {
@@ -310,9 +309,9 @@ describe("App Install Routes", () => {
         "/v1/app-install/test-slack/authorize?redirect_uri=https://myapp.example.com/settings",
       );
       const authUrl = startRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
+      expect(authUrl).toBeDefined();
+      const state = new URL(authUrl!).searchParams.get("state");
+      expect(state).toBeDefined();
 
       // User denied access - unified callback redirects with error
       const callbackRes = await app.request(
@@ -320,12 +319,12 @@ describe("App Install Routes", () => {
       );
 
       // Unified callback redirects to redirect_uri with error params
-      assertEquals(callbackRes.status, 302);
+      expect(callbackRes.status).toEqual(302);
       const location = callbackRes.headers.get("Location");
-      assertExists(location);
-      const redirectUrl = new URL(location);
-      assertEquals(redirectUrl.searchParams.get("error"), "access_denied");
-      assertEquals(redirectUrl.searchParams.get("error_description"), "User denied access");
+      expect(location).toBeDefined();
+      const redirectUrl = new URL(location!);
+      expect(redirectUrl.searchParams.get("error")).toEqual("access_denied");
+      expect(redirectUrl.searchParams.get("error_description")).toEqual("User denied access");
     });
 
     it("returns 400 for invalid state JWT", async () => {
@@ -333,73 +332,73 @@ describe("App Install Routes", () => {
         "/v1/callback/test-slack?state=invalid-jwt-token&code=test-code",
       );
 
-      assertEquals(res.status, 400);
+      expect(res.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "invalid_state");
+      expect(json.error).toEqual("invalid_state");
     });
 
     it("returns 400 when code is missing and no error", async () => {
       // Start flow
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
+      expect(authUrl).toBeDefined();
+      const state = new URL(authUrl!).searchParams.get("state");
+      expect(state).toBeDefined();
 
       // Callback without code or error
       const callbackRes = await app.request(`/v1/callback/test-slack?state=${state}`);
 
-      assertEquals(callbackRes.status, 400);
+      expect(callbackRes.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await callbackRes.json());
-      assertEquals(json.error, "missing_code");
+      expect(json.error).toEqual("missing_code");
     });
 
     it("returns 400 for provider mismatch between URL and state", async () => {
       // Start flow for test-slack
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      assertExists(authUrl);
-      const state = new URL(authUrl).searchParams.get("state");
-      assertExists(state);
+      expect(authUrl).toBeDefined();
+      const state = new URL(authUrl!).searchParams.get("state");
+      expect(state).toBeDefined();
 
       // Callback with wrong provider in URL
       const callbackRes = await app.request(
         `/v1/callback/wrong-provider?state=${state}&code=test-code`,
       );
 
-      assertEquals(callbackRes.status, 400);
+      expect(callbackRes.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await callbackRes.json());
-      assertEquals(json.error, "provider_mismatch");
+      expect(json.error).toEqual("provider_mismatch");
     });
 
     it("re-install updates existing credential", async () => {
       // First install
       const start1 = await app.request("/v1/app-install/test-slack/authorize");
       const location1 = start1.headers.get("Location");
-      assertExists(location1);
-      const state1 = new URL(location1).searchParams.get("state");
-      assertExists(state1);
+      expect(location1).toBeDefined();
+      const state1 = new URL(location1!).searchParams.get("state");
+      expect(state1).toBeDefined();
       const callback1 = await app.request(`/v1/callback/test-slack?state=${state1}&code=same-team`);
-      assertEquals(callback1.status, 200);
+      expect(callback1.status).toEqual(200);
       const result1 = SuccessResponseSchema.parse(await callback1.json());
       const credId1 = result1.credential_id;
 
       // Second install with same team
       const start2 = await app.request("/v1/app-install/test-slack/authorize");
       const location2 = start2.headers.get("Location");
-      assertExists(location2);
-      const state2 = new URL(location2).searchParams.get("state");
-      assertExists(state2);
+      expect(location2).toBeDefined();
+      const state2 = new URL(location2!).searchParams.get("state");
+      expect(state2).toBeDefined();
       const callback2 = await app.request(`/v1/callback/test-slack?state=${state2}&code=same-team`);
-      assertEquals(callback2.status, 200);
+      expect(callback2.status).toEqual(200);
       const result2 = SuccessResponseSchema.parse(await callback2.json());
 
       // Should reuse same credential ID
-      assertEquals(result2.credential_id, credId1);
+      expect(result2.credential_id).toEqual(credId1);
 
       // Should only have one credential
       const allCreds = await storage.list("oauth", "test-user");
-      assertEquals(allCreds.length, 1);
+      expect(allCreds.length).toEqual(1);
     });
   });
 
@@ -408,9 +407,9 @@ describe("App Install Routes", () => {
       // First create a credential via install flow
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const location = startRes.headers.get("Location");
-      assertExists(location);
-      const state = new URL(location).searchParams.get("state");
-      assertExists(state);
+      expect(location).toBeDefined();
+      const state = new URL(location!).searchParams.get("state");
+      expect(state).toBeDefined();
       const callback = await app.request(`/v1/callback/test-slack?state=${state}&code=team-123`);
       const { credential_id } = SuccessResponseSchema.parse(await callback.json());
 
@@ -421,9 +420,9 @@ describe("App Install Routes", () => {
         body: JSON.stringify({ credential_id }),
       });
 
-      assertEquals(res.status, 200);
+      expect(res.status).toEqual(200);
       const json = z.object({ status: z.string(), message: z.string() }).parse(await res.json());
-      assertEquals(json.status, "ok");
+      expect(json.status).toEqual("ok");
     });
 
     it("returns 404 for unknown provider", async () => {
@@ -433,9 +432,9 @@ describe("App Install Routes", () => {
         body: JSON.stringify({ credential_id: "cred-1" }),
       });
 
-      assertEquals(res.status, 404);
+      expect(res.status).toEqual(404);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "PROVIDER_NOT_FOUND");
+      expect(json.error).toEqual("PROVIDER_NOT_FOUND");
     });
 
     it("returns 500 for non-existent credential", async () => {
@@ -445,9 +444,9 @@ describe("App Install Routes", () => {
         body: JSON.stringify({ credential_id: "non-existent" }),
       });
 
-      assertEquals(res.status, 500);
+      expect(res.status).toEqual(500);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "CREDENTIAL_NOT_FOUND");
+      expect(json.error).toEqual("CREDENTIAL_NOT_FOUND");
     });
 
     it("returns 400 for missing body fields", async () => {
@@ -457,9 +456,9 @@ describe("App Install Routes", () => {
         body: JSON.stringify({}),
       });
 
-      assertEquals(res.status, 400);
+      expect(res.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "invalid_body");
+      expect(json.error).toEqual("invalid_body");
     });
   });
 });

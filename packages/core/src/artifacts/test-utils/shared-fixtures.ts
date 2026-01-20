@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CreateArtifactInput } from "../model.ts";
 
 /**
@@ -172,8 +176,9 @@ export function createFileArtifactInput(
  * Caller is responsible for cleanup.
  */
 export async function createTempJsonFile(data: unknown): Promise<string> {
-  const tempFile = await Deno.makeTempFile({ suffix: ".json" });
-  await Deno.writeTextFile(tempFile, JSON.stringify(data, null, 2));
+  const tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
+  const tempFile = join(tempDir, `${randomUUID()}.json`);
+  await writeFile(tempFile, JSON.stringify(data, null, 2), "utf-8");
   return tempFile;
 }
 
@@ -182,9 +187,10 @@ export async function createTempJsonFile(data: unknown): Promise<string> {
  * Caller is responsible for cleanup.
  */
 export async function createTempCsvFile(rows: string[][]): Promise<string> {
-  const tempFile = await Deno.makeTempFile({ suffix: ".csv" });
+  const tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
+  const tempFile = join(tempDir, `${randomUUID()}.csv`);
   const csvContent = rows.map((row) => row.join(",")).join("\n");
-  await Deno.writeTextFile(tempFile, csvContent);
+  await writeFile(tempFile, csvContent, "utf-8");
   return tempFile;
 }
 
@@ -193,8 +199,9 @@ export async function createTempCsvFile(rows: string[][]): Promise<string> {
  * Caller is responsible for cleanup.
  */
 export async function createTempTextFile(content: string): Promise<string> {
-  const tempFile = await Deno.makeTempFile({ suffix: ".txt" });
-  await Deno.writeTextFile(tempFile, content);
+  const tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
+  const tempFile = join(tempDir, `${randomUUID()}.txt`);
+  await writeFile(tempFile, content, "utf-8");
   return tempFile;
 }
 
@@ -203,8 +210,9 @@ export async function createTempTextFile(content: string): Promise<string> {
  * Caller is responsible for cleanup.
  */
 export async function createTempMarkdownFile(content: string): Promise<string> {
-  const tempFile = await Deno.makeTempFile({ suffix: ".md" });
-  await Deno.writeTextFile(tempFile, content);
+  const tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
+  const tempFile = join(tempDir, `${randomUUID()}.md`);
+  await writeFile(tempFile, content, "utf-8");
   return tempFile;
 }
 
@@ -213,7 +221,7 @@ export async function createTempMarkdownFile(content: string): Promise<string> {
  */
 export async function cleanupTempFile(path: string): Promise<void> {
   try {
-    await Deno.remove(path);
+    await rm(path, { recursive: true, force: true });
   } catch {
     // Ignore errors if file doesn't exist
   }

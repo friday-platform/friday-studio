@@ -1,11 +1,10 @@
 import { rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { assert, assertEquals, assertExists } from "@std/assert";
-import { join } from "@std/path";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ChatStorage } from "./storage.ts";
 
 let originalAtlasHome: string | undefined;
@@ -49,12 +48,12 @@ describe("ChatStorage", () => {
     it("creates and retrieves chat", async () => {
       const chatId = crypto.randomUUID();
       const result = await createTestChat(chatId);
-      assert(result.ok);
+      expect.assert(result.ok);
 
       const getResult = await ChatStorage.getChat(chatId);
-      assert(getResult.ok);
-      assertEquals(getResult.data?.userId, "test-user");
-      assertEquals(getResult.data?.workspaceId, "test-ws");
+      expect.assert(getResult.ok && getResult.data);
+      expect(getResult.data.userId).toEqual("test-user");
+      expect(getResult.data.workspaceId).toEqual("test-ws");
     });
 
     it("appends and retrieves messages", async () => {
@@ -63,18 +62,18 @@ describe("ChatStorage", () => {
 
       const message = createMessage("Hello");
       const appendResult = await ChatStorage.appendMessage(chatId, message);
-      assert(appendResult.ok);
+      expect.assert(appendResult.ok);
 
       const chatResult = await ChatStorage.getChat(chatId);
-      assert(chatResult.ok);
-      assertEquals(chatResult.data?.messages.length, 1);
-      assertEquals(chatResult.data?.messages[0]?.id, message.id);
+      expect.assert(chatResult.ok && chatResult.data);
+      expect(chatResult.data.messages.length).toEqual(1);
+      expect(chatResult.data.messages[0]?.id).toEqual(message.id);
     });
 
     it("returns null for non-existent chat", async () => {
       const result = await ChatStorage.getChat(crypto.randomUUID());
-      assert(result.ok);
-      assertEquals(result.data, null);
+      expect.assert(result.ok);
+      expect(result.data).toBeNull();
     });
 
     it("returns empty array for chat with no messages", async () => {
@@ -82,8 +81,8 @@ describe("ChatStorage", () => {
       await createTestChat(chatId);
 
       const result = await ChatStorage.getChat(chatId);
-      assert(result.ok);
-      assertEquals(result.data?.messages.length, 0);
+      expect.assert(result.ok && result.data);
+      expect(result.data.messages.length).toEqual(0);
     });
 
     it("isolates messages between different chats", async () => {
@@ -100,11 +99,11 @@ describe("ChatStorage", () => {
       const chat1 = await ChatStorage.getChat(chatId1);
       const chat2 = await ChatStorage.getChat(chatId2);
 
-      assert(chat1.ok && chat2.ok);
-      assertEquals(chat1.data?.messages.length, 1);
-      assertEquals(chat2.data?.messages.length, 1);
-      assertEquals(chat1.data?.messages[0]?.id, msg1.id);
-      assertEquals(chat2.data?.messages[0]?.id, msg2.id);
+      expect.assert(chat1.ok && chat1.data && chat2.ok && chat2.data);
+      expect(chat1.data.messages.length).toEqual(1);
+      expect(chat2.data.messages.length).toEqual(1);
+      expect(chat1.data.messages[0]?.id).toEqual(msg1.id);
+      expect(chat2.data.messages[0]?.id).toEqual(msg2.id);
     });
 
     it("sets and retrieves system prompt context", async () => {
@@ -119,12 +118,12 @@ describe("ChatStorage", () => {
       };
 
       const setResult = await ChatStorage.setSystemPromptContext(chatId, context);
-      assert(setResult.ok, "setSystemPromptContext should succeed");
+      expect.assert(setResult.ok);
 
       const getResult = await ChatStorage.getChat(chatId);
-      assert(getResult.ok && getResult.data);
-      assertExists(getResult.data.systemPromptContext);
-      assertEquals(getResult.data.systemPromptContext.systemMessages, context.systemMessages);
+      expect.assert(getResult.ok && getResult.data);
+      expect(getResult.data.systemPromptContext).toBeDefined();
+      expect(getResult.data.systemPromptContext?.systemMessages).toEqual(context.systemMessages);
     });
 
     it("setSystemPromptContext is idempotent", async () => {
@@ -138,8 +137,8 @@ describe("ChatStorage", () => {
       await ChatStorage.setSystemPromptContext(chatId, second);
 
       const result = await ChatStorage.getChat(chatId);
-      assert(result.ok && result.data);
-      assertEquals(result.data.systemPromptContext?.systemMessages, ["First prompt"]);
+      expect.assert(result.ok && result.data);
+      expect(result.data.systemPromptContext?.systemMessages).toEqual(["First prompt"]);
     });
   });
 
@@ -158,11 +157,11 @@ describe("ChatStorage", () => {
       }
 
       const result = await ChatStorage.getChat(chatId);
-      assert(result.ok);
-      assertEquals(result.data?.messages.length, 3);
-      assertEquals(result.data?.messages[0]?.id, ids[0]);
-      assertEquals(result.data?.messages[1]?.id, ids[1]);
-      assertEquals(result.data?.messages[2]?.id, ids[2]);
+      expect.assert(result.ok && result.data);
+      expect(result.data.messages.length).toEqual(3);
+      expect(result.data.messages[0]?.id).toEqual(ids[0]);
+      expect(result.data.messages[1]?.id).toEqual(ids[1]);
+      expect(result.data.messages[2]?.id).toEqual(ids[2]);
     });
 
     it("stores all messages without limit", async () => {
@@ -181,11 +180,11 @@ describe("ChatStorage", () => {
       }
 
       const result = await ChatStorage.getChat(chatId);
-      assert(result.ok);
-      assertEquals(result.data?.messages.length, 5);
+      expect.assert(result.ok && result.data);
+      expect(result.data.messages.length).toEqual(5);
       // All messages stored in order
       for (let i = 0; i < 5; i++) {
-        assertEquals(result.data?.messages[i]?.id, ids[i]);
+        expect(result.data.messages[i]?.id).toEqual(ids[i]);
       }
     });
   });
@@ -202,24 +201,21 @@ describe("ChatStorage", () => {
       if (!message) throw new Error("Message validation failed");
 
       const storeResult = await ChatStorage.appendMessage(chatId, message);
-      assert(storeResult.ok, "Should store 500KB message");
+      expect.assert(storeResult.ok);
 
       const retrieveResult = await ChatStorage.getChat(chatId);
-      assert(
-        retrieveResult.ok,
-        `Failed to retrieve: ${retrieveResult.ok ? "" : retrieveResult.error}`,
-      );
-      assertEquals(retrieveResult.data?.messages.length, 1);
+      expect.assert(retrieveResult.ok && retrieveResult.data);
+      expect(retrieveResult.data.messages.length).toEqual(1);
 
-      const retrieved = retrieveResult.data?.messages[0];
-      assertExists(retrieved);
-      assertEquals(retrieved.id, message.id);
-      assertEquals(retrieved.parts.length, 1);
+      const retrieved = retrieveResult.data.messages[0];
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toEqual(message.id);
+      expect(retrieved?.parts.length).toEqual(1);
 
-      const textPart = retrieved.parts[0];
-      assert(textPart && textPart.type === "text");
-      if ("text" in textPart) {
-        assertEquals(textPart.text, largeText, "Large text should be preserved");
+      const textPart = retrieved?.parts[0];
+      expect(textPart && textPart.type === "text").toBe(true);
+      if (textPart && "text" in textPart) {
+        expect(textPart.text).toEqual(largeText);
       }
     });
   });
@@ -245,33 +241,31 @@ describe("ChatStorage", () => {
 
       const results = await Promise.all(promises);
       for (const result of results) {
-        assert(result.ok, "All concurrent appends should succeed");
+        expect.assert(result.ok);
       }
 
       const chatResult = await ChatStorage.getChat(chatId);
-      assert(chatResult.ok);
-      assert(chatResult.data);
-      assertEquals(chatResult.data.messages.length, 10, "File locking should prevent data loss");
+      expect.assert(chatResult.ok && chatResult.data);
+      expect(chatResult.data.messages.length).toEqual(10);
 
       const retrievedIds = new Set(chatResult.data.messages.map((m) => m.id));
       for (const id of ids) {
-        assert(retrievedIds.has(id), `All messages should be present`);
+        expect(retrievedIds.has(id)).toBe(true);
       }
     });
   });
 
   describe("Validation", () => {
-    const testValidation = async (description: string, corruptData: object) => {
+    const testValidation = async (_description: string, corruptData: object) => {
       const chatId = crypto.randomUUID();
       await createTestChat(chatId);
       await corruptChatFile(chatId, corruptData);
 
       const result = await ChatStorage.getChat(chatId);
-      assert(!result.ok, description);
-      assert(
-        result.error.includes("Invalid chat data format"),
-        `Should mention validation: ${result.error}`,
-      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("Invalid chat data format");
+      }
     };
 
     it("rejects completely corrupted data", async () => {
@@ -334,28 +328,24 @@ describe("ChatStorage", () => {
     it("createChat is idempotent - returns existing chat without overwriting", async () => {
       const chatId = crypto.randomUUID();
       const result1 = await createTestChat(chatId);
-      assert(result1.ok);
+      expect.assert(result1.ok);
 
       const message = createMessage("Important message");
       const appendResult = await ChatStorage.appendMessage(chatId, message);
-      assert(appendResult.ok);
+      expect.assert(appendResult.ok);
 
       const titleResult = await ChatStorage.updateChatTitle(chatId, "Important Chat");
-      assert(titleResult.ok);
+      expect.assert(titleResult.ok);
 
       const result2 = await createTestChat(chatId);
-      assert(result2.ok, "Second createChat should succeed");
+      expect.assert(result2.ok);
 
       const finalChat = await ChatStorage.getChat(chatId);
-      assert(finalChat.ok);
-      assertEquals(finalChat.data?.messages.length, 1, "Message should be preserved");
-      assertEquals(finalChat.data?.messages[0]?.id, message.id, "Message ID should match");
-      assertEquals(finalChat.data?.title, "Important Chat", "Title should be preserved");
-      assertEquals(
-        finalChat.data?.createdAt,
-        result1.data.createdAt,
-        "Created timestamp should not change",
-      );
+      expect.assert(finalChat.ok && finalChat.data);
+      expect(finalChat.data.messages.length).toEqual(1);
+      expect(finalChat.data.messages[0]?.id).toEqual(message.id);
+      expect(finalChat.data.title).toEqual("Important Chat");
+      expect(finalChat.data.createdAt).toEqual(result1.data.createdAt);
     });
 
     it("preserves messages across multiple createChat calls", async () => {
@@ -371,10 +361,10 @@ describe("ChatStorage", () => {
       await createTestChat(chatId);
 
       const chat = await ChatStorage.getChat(chatId);
-      assert(chat.ok);
-      assertEquals(chat.data?.messages.length, 2, "Both messages should exist");
-      assertEquals(chat.data?.messages[0]?.id, msg1.id, "First message preserved");
-      assertEquals(chat.data?.messages[1]?.id, msg2.id, "Second message preserved");
+      expect.assert(chat.ok && chat.data);
+      expect(chat.data.messages.length).toEqual(2);
+      expect(chat.data.messages[0]?.id).toEqual(msg1.id);
+      expect(chat.data.messages[1]?.id).toEqual(msg2.id);
     });
 
     it("maintains chat continuity in conversation flow", async () => {
@@ -396,7 +386,7 @@ describe("ChatStorage", () => {
 
       // 3. Reconnect (bug trigger: createChat called again)
       const reconnectResult = await createTestChat(chatId);
-      assert(reconnectResult.ok, "Reconnection should succeed");
+      expect.assert(reconnectResult.ok);
 
       // 4. Continue conversation
       const userMsg2 = createMessage("What is my secret number again?");
@@ -404,12 +394,12 @@ describe("ChatStorage", () => {
 
       // 5. Verify full history preserved
       const finalChat = await ChatStorage.getChat(chatId);
-      assert(finalChat.ok);
-      assertEquals(finalChat.data?.messages.length, 3, "All 3 messages should exist");
-      const hasSecretNumber = finalChat.data?.messages.some((msg) =>
+      expect.assert(finalChat.ok && finalChat.data);
+      expect(finalChat.data.messages.length).toEqual(3);
+      const hasSecretNumber = finalChat.data.messages.some((msg) =>
         msg.parts?.some((part) => part.type === "text" && part.text?.includes("4123")),
       );
-      assert(hasSecretNumber, "Historical context preserved");
+      expect(hasSecretNumber).toBe(true);
     });
 
     it("handles rapid successive createChat calls", async () => {
@@ -420,17 +410,17 @@ describe("ChatStorage", () => {
       const results = await Promise.all(promises);
 
       for (const result of results) {
-        assert(result.ok, "All createChat calls should succeed");
+        expect.assert(result.ok);
       }
 
       const message = createMessage("Test message");
       await ChatStorage.appendMessage(chatId, message);
 
       const chat = await ChatStorage.getChat(chatId);
-      assert(chat.ok);
-      assertEquals(chat.data?.messages.length, 1, "Should have exactly one message");
-      assertEquals(chat.data?.userId, "test-user", "User ID should be consistent");
-      assertEquals(chat.data?.workspaceId, "test-ws", "Workspace ID should be consistent");
+      expect.assert(chat.ok && chat.data);
+      expect(chat.data.messages.length).toEqual(1);
+      expect(chat.data.userId).toEqual("test-user");
+      expect(chat.data.workspaceId).toEqual("test-ws");
     });
   });
 
@@ -451,9 +441,9 @@ describe("ChatStorage", () => {
       await ChatStorage.appendMessage(chat1, createMessage("Update"));
 
       const result = await ChatStorage.listChats({ limit: 5 });
-      assert(result.ok);
-      assertEquals(result.data.chats.length, 3);
-      assertEquals(result.data.chats[0]?.id, chat1, "Most recently updated should be first");
+      expect.assert(result.ok);
+      expect(result.data.chats.length).toEqual(3);
+      expect(result.data.chats[0]?.id).toEqual(chat1);
     });
 
     it("only reads top N files by mtime", async () => {
@@ -463,8 +453,8 @@ describe("ChatStorage", () => {
       }
 
       const result = await ChatStorage.listChats({ limit: 3 });
-      assert(result.ok);
-      assertEquals(result.data.chats.length, 3, "Should return exactly 3 of 10 chats");
+      expect.assert(result.ok);
+      expect(result.data.chats.length).toEqual(3);
     });
   });
 });

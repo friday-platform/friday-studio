@@ -9,8 +9,7 @@
 
 import { client, parseResult } from "@atlas/client/v2";
 import type { ArtifactDataInput } from "@atlas/core/artifacts";
-import { assertEquals, assertExists, assertRejects } from "@std/assert";
-import { afterAll, describe, it } from "@std/testing/bdd";
+import { afterAll, describe, expect, it } from "vitest";
 import { expandArtifactRefsInDocuments } from "../artifact-expansion.ts";
 import type { Document } from "../types.ts";
 
@@ -76,9 +75,10 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert
-      assertEquals(expanded.length, 1);
-      assertExists(expanded[0]?.data?.artifactContent, "artifactContent should be defined");
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(expanded).toHaveLength(1);
+      const content = expanded[0]?.data?.artifactContent;
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifactId]).toEqual(artifactData);
     });
 
     it("expands artifactRefs array with multiple artifacts", async () => {
@@ -115,11 +115,11 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert
-      assertEquals(expanded.length, 1);
+      expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
-      assertExists(content, "artifactContent should be defined");
-      assertEquals(content?.[artifact1Id], artifact1Data);
-      assertEquals(content?.[artifact2Id], artifact2Data);
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifact1Id]).toEqual(artifact1Data);
+      expect(content[artifact2Id]).toEqual(artifact2Data);
     });
 
     it("handles documents with both artifactRef and artifactRefs", async () => {
@@ -152,11 +152,11 @@ describe("expandArtifactRefsInDocuments", () => {
 
       // Assert
       const content = expanded[0]?.data?.artifactContent;
-      assertExists(content);
-      assertEquals(Object.keys(content).length, 3);
-      assertEquals(content?.[singleId], singleData);
-      assertEquals(content?.[arrayId1], arrayData1);
-      assertEquals(content?.[arrayId2], arrayData2);
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(Object.keys(content)).toHaveLength(3);
+      expect(content[singleId]).toEqual(singleData);
+      expect(content[arrayId1]).toEqual(arrayData1);
+      expect(content[arrayId2]).toEqual(arrayData2);
     });
 
     it("expands artifactRef wrapped in Result pattern { ok: true, data: { artifactRef } }", async () => {
@@ -188,9 +188,10 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: artifactContent should be added with the fetched content
-      assertEquals(expanded.length, 1);
-      assertExists(expanded[0]?.data?.artifactContent, "artifactContent should be defined");
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(expanded).toHaveLength(1);
+      const content = expanded[0]?.data?.artifactContent;
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifactId]).toEqual(artifactData);
     });
 
     it("expands artifactRefs array wrapped in Result pattern", async () => {
@@ -229,10 +230,11 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert
-      assertEquals(expanded.length, 1);
-      assertExists(expanded[0]?.data?.artifactContent);
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifact1Id], artifact1Data);
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifact2Id], artifact2Data);
+      expect(expanded).toHaveLength(1);
+      const content = expanded[0]?.data?.artifactContent;
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifact1Id]).toEqual(artifact1Data);
+      expect(content[artifact2Id]).toEqual(artifact2Data);
     });
 
     it("deduplicates when multiple documents reference the same artifact", async () => {
@@ -263,9 +265,9 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: both docs should have the content, fetched only once
-      assertEquals(expanded.length, 2);
-      assertEquals(expanded[0]?.data?.artifactContent?.[sharedId], sharedData);
-      assertEquals(expanded[1]?.data?.artifactContent?.[sharedId], sharedData);
+      expect(expanded).toHaveLength(2);
+      expect(expanded[0]?.data?.artifactContent?.[sharedId]).toEqual(sharedData);
+      expect(expanded[1]?.data?.artifactContent?.[sharedId]).toEqual(sharedData);
     });
   });
 
@@ -280,15 +282,15 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: documents unchanged, no artifactContent added
-      assertEquals(expanded.length, 2);
-      assertEquals(expanded[0]?.data?.artifactContent, undefined);
-      assertEquals(expanded[1]?.data?.artifactContent, undefined);
-      assertEquals(expanded[0]?.data?.summary, "No refs here");
+      expect(expanded).toHaveLength(2);
+      expect(expanded[0]?.data?.artifactContent).toBeUndefined();
+      expect(expanded[1]?.data?.artifactContent).toBeUndefined();
+      expect(expanded[0]?.data?.summary).toBe("No refs here");
     });
 
     it("returns empty array for empty input", async () => {
       const expanded = await expandArtifactRefsInDocuments([]);
-      assertEquals(expanded, []);
+      expect(expanded).toHaveLength(0);
     });
 
     it("handles mixed documents - only adds artifactContent to ref docs", async () => {
@@ -313,11 +315,12 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert
-      assertEquals(expanded.length, 3);
-      assertEquals(expanded[0]?.data?.artifactContent, undefined); // no-ref
-      assertExists(expanded[1]?.data?.artifactContent); // has-ref
-      assertEquals(expanded[1]?.data?.artifactContent?.[artifactId], artifactData);
-      assertEquals(expanded[2]?.data?.artifactContent, undefined); // also-no-ref
+      expect(expanded).toHaveLength(3);
+      expect(expanded[0]?.data?.artifactContent).toBeUndefined(); // no-ref
+      const content = expanded[1]?.data?.artifactContent;
+      expect.assert(content !== undefined, "has-ref doc should have artifactContent");
+      expect(content[artifactId]).toEqual(artifactData);
+      expect(expanded[2]?.data?.artifactContent).toBeUndefined(); // also-no-ref
     });
 
     it("handles nonexistent artifact ID gracefully (missing from content)", async () => {
@@ -339,12 +342,12 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: document returned, but artifactContent either missing or empty for that ID
-      assertEquals(expanded.length, 1);
+      expect(expanded).toHaveLength(1);
       // The function should gracefully handle missing artifacts
       // Either no artifactContent, or artifactContent without the missing ID
       const content = expanded[0]?.data?.artifactContent;
       if (content) {
-        assertEquals(content[fakeId], undefined);
+        expect(content[fakeId]).toBeUndefined();
       }
     });
   });
@@ -374,11 +377,11 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: should have content for real artifact, missing for fake
-      assertEquals(expanded.length, 1);
+      expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
-      assertExists(content, "artifactContent should exist for partial success");
-      assertEquals(content?.[realId], realData);
-      assertEquals(content?.[fakeId], undefined);
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[realId]).toEqual(realData);
+      expect(content[fakeId]).toBeUndefined();
     });
 
     it("throws on abort signal instead of silent data loss", async () => {
@@ -402,9 +405,7 @@ describe("expandArtifactRefsInDocuments", () => {
       controller.abort();
 
       // Act & Assert: should throw instead of silently returning unchanged documents
-      await assertRejects(
-        () => expandArtifactRefsInDocuments(docs, controller.signal),
-        Error,
+      await expect(expandArtifactRefsInDocuments(docs, controller.signal)).rejects.toThrow(
         "Artifact expansion failed",
       );
     });
@@ -439,13 +440,13 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: returns same documents, no fetch occurred
-      assertEquals(expanded.length, 2);
-      assertEquals(expanded[0]?.data?.artifactContent?.["art-123"], {
+      expect(expanded).toHaveLength(2);
+      expect(expanded[0]?.data?.artifactContent?.["art-123"]).toEqual({
         type: "summary",
         version: 1,
         data: "Pre-fetched",
       });
-      assertEquals(expanded[1]?.data?.artifactContent?.["art-456"], {
+      expect(expanded[1]?.data?.artifactContent?.["art-456"]).toEqual({
         type: "summary",
         version: 1,
         data: "Also pre-fetched",
@@ -476,16 +477,17 @@ describe("expandArtifactRefsInDocuments", () => {
       const firstExpansion = await expandArtifactRefsInDocuments(docs);
 
       // Assert first expansion worked
-      assertEquals(firstExpansion.length, 1);
-      assertExists(firstExpansion[0]?.data?.artifactContent);
-      assertEquals(firstExpansion[0]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(firstExpansion).toHaveLength(1);
+      const content = firstExpansion[0]?.data?.artifactContent;
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifactId]).toEqual(artifactData);
 
       // Act: expand again - should be a no-op (early exit)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
 
       // Assert: identical result, early exit path taken
-      assertEquals(secondExpansion.length, 1);
-      assertEquals(secondExpansion[0]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(secondExpansion).toHaveLength(1);
+      expect(secondExpansion[0]?.data?.artifactContent?.[artifactId]).toEqual(artifactData);
     });
 
     it("re-expands when some documents lack artifactContent (mixed state)", async () => {
@@ -522,11 +524,12 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: both docs now have content
-      assertEquals(expanded.length, 2);
+      expect(expanded).toHaveLength(2);
       // Doc 1: should have new content (re-fetched, but old-art doesn't exist so may be empty)
       // Doc 2: should have the new artifact content
-      assertExists(expanded[1]?.data?.artifactContent);
-      assertEquals(expanded[1]?.data?.artifactContent?.[artifactId], artifactData);
+      const content = expanded[1]?.data?.artifactContent;
+      expect.assert(content !== undefined, "doc-2 artifactContent should be defined");
+      expect(content[artifactId]).toEqual(artifactData);
     });
 
     it("handles mixed docs where some have no artifact refs (regression: every() bug)", async () => {
@@ -562,18 +565,19 @@ describe("expandArtifactRefsInDocuments", () => {
       const firstExpansion = await expandArtifactRefsInDocuments(docs);
 
       // Assert: doc with ref got expanded, doc without ref unchanged
-      assertEquals(firstExpansion.length, 2);
-      assertEquals(firstExpansion[0]?.data?.artifactContent, undefined); // No refs = no artifactContent
-      assertExists(firstExpansion[1]?.data?.artifactContent);
-      assertEquals(firstExpansion[1]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(firstExpansion).toHaveLength(2);
+      expect(firstExpansion[0]?.data?.artifactContent).toBeUndefined(); // No refs = no artifactContent
+      const content = firstExpansion[1]?.data?.artifactContent;
+      expect.assert(content !== undefined, "doc-with-ref should have artifactContent");
+      expect(content[artifactId]).toEqual(artifactData);
 
       // Act: second expansion should early-exit (all referenced IDs already have content)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
 
       // Assert: identical result
-      assertEquals(secondExpansion.length, 2);
-      assertEquals(secondExpansion[0]?.data?.artifactContent, undefined);
-      assertEquals(secondExpansion[1]?.data?.artifactContent?.[artifactId], artifactData);
+      expect(secondExpansion).toHaveLength(2);
+      expect(secondExpansion[0]?.data?.artifactContent).toBeUndefined();
+      expect(secondExpansion[1]?.data?.artifactContent?.[artifactId]).toEqual(artifactData);
     });
 
     it("only fetches missing IDs on re-expansion (preserves existing content)", async () => {
@@ -612,10 +616,11 @@ describe("expandArtifactRefsInDocuments", () => {
       const expanded = await expandArtifactRefsInDocuments(docs);
 
       // Assert: both artifacts now in content, original preserved
-      assertEquals(expanded.length, 1);
-      assertExists(expanded[0]?.data?.artifactContent);
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifact1Id], artifact1Data);
-      assertEquals(expanded[0]?.data?.artifactContent?.[artifact2Id], artifact2Data);
+      expect(expanded).toHaveLength(1);
+      const content = expanded[0]?.data?.artifactContent;
+      expect.assert(content !== undefined, "artifactContent should be defined");
+      expect(content[artifact1Id]).toEqual(artifact1Data);
+      expect(content[artifact2Id]).toEqual(artifact2Data);
     });
   });
 });

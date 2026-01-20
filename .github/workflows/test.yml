@@ -26,8 +26,39 @@ jobs:
       - name: Install dependencies
         run: deno install --frozen
 
-      - name: Run unit tests
-        run: deno task test:unit
+      - name: Generate SvelteKit types
+        run: cd apps/web-client && npx svelte-kit sync
+
+      - name: Start daemon for integration tests
+        run: |
+          # Start daemon in background
+          deno task start daemon start --port 8080 &
+          DAEMON_PID=$!
+          echo "DAEMON_PID=$DAEMON_PID" >> "$GITHUB_ENV"
+
+          # Wait for daemon to be ready (max 30 seconds)
+          echo "Waiting for daemon to be ready..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+              echo "Daemon is ready!"
+              curl -s http://127.0.0.1:8080/health | jq .
+              exit 0
+            fi
+            echo "Attempt $i/30 - daemon not ready yet..."
+            sleep 1
+          done
+          echo "Daemon failed to start"
+          exit 1
+
+      - name: Run tests
+        run: deno task test
+
+      - name: Stop daemon
+        if: always()
+        run: |
+          if [ -n "$DAEMON_PID" ]; then
+            kill "$DAEMON_PID" 2>/dev/null || true
+          fi
 
       - name: Upload test results
         if: failure()
