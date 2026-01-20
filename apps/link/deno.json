@@ -12,6 +12,7 @@
     "@atlas/utils": "../../packages/utils/mod.ts",
     "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",
     "@atlas/sentry": "../../packages/sentry/mod.ts",
+    "@deno/kv": "npm:@deno/kv@^0.13.0",
     "@std/async": "jsr:@std/async@^1.0.15",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
     "zod": "npm:zod@^4.2.1",

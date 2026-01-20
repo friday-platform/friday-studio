@@ -5593,6 +5593,7 @@
         "dependencies": [
           "jsr:@std/async@^1.0.15",
           "jsr:@std/dotenv@~0.225.5",
+          "npm:@deno/kv@0.13",
           "npm:@hono/zod-validator@~0.7.5",
           "npm:@opentelemetry/api@^1.9.0",
           "npm:@sentry/deno@^10.30.0",
