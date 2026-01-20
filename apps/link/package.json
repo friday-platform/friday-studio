@@ -9,7 +9,6 @@
     "dev": "LINK_DEV_MODE=true deno run --env-file --watch --allow-all src/index.ts"
   },
   "dependencies": {
-    "@atlas/core": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
