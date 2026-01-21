@@ -45,6 +45,9 @@ updates:
       atlas-workspace:
         patterns:
           - "@atlas/*"
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
     # Block major version upgrades for AI SDK - requires coordinated migration
     # See: https://ai-sdk.dev/docs/migration-guides/migration-guide-6-0
     ignore:
