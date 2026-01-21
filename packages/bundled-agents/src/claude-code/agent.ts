@@ -63,12 +63,24 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
   id: "claude-code",
   displayName: "Claude Code",
   version: "1.0.0",
-  description: "Execute coding tasks using Claude API with sandboxed filesystem access",
+  description:
+    "Execute coding tasks, analyze codebases, debug issues, and identify root causes using Claude API with sandboxed filesystem access",
   expertise: {
-    domains: ["code-generation", "file-operations", "development"],
+    domains: [
+      "code-generation",
+      "coding",
+      "file-operations",
+      "development",
+      "programming",
+      "code-analysis",
+      "debugging",
+      "root-cause-analysis",
+    ],
     examples: [
       "Write a TypeScript function to parse JSON",
       "Read and analyze the package.json file",
+      "Analyze stack traces and identify root causes",
+      "Debug this error in the codebase",
     ],
   },
   environment: {

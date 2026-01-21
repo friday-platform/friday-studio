@@ -111,6 +111,13 @@ Examples:
 The \`needs\` array lists external integrations (e.g., calendar, email, discord, sheets).
 Use keywords from the available integrations list. Include ALL services the agent uses.
 
+**IMPORTANT - Distinguish these capabilities:**
+- "research" = web search for external information (news, company info, market data)
+- "code-analysis" or "coding" = analyzing code repositories, debugging, finding root causes in codebases
+
+Use "code-analysis" or "coding" when the task involves reading/analyzing source code, stack traces, or identifying bugs.
+Use "research" only when searching the web for information external to the codebase.
+
 ### Agent configuration
 
 The configuration field for an agent captures ONLY user-specific values:
@@ -271,7 +278,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                 needs: z
                   .array(z.string())
                   .describe(
-                    "What this agent needs beyond built-in capabilities (webfetch, artifacts). Use [] if built-in capabilities are enough. File ops, bash, and csv require explicit MCP config. List service integrations (e.g., slack, github, email) or specialized capabilities (e.g., coding, image-generation) when needed.",
+                    "What this agent needs beyond built-in capabilities (webfetch, artifacts). Use [] if built-in capabilities are enough. File ops, bash, and csv require explicit MCP config. List service integrations (e.g., slack, github, email) or specialized capabilities. IMPORTANT: Use 'code-analysis' or 'coding' for analyzing code/debugging/root-cause analysis. Use 'research' ONLY for web search of external information.",
                   ),
                 configuration: z
                   .record(z.string(), z.unknown())

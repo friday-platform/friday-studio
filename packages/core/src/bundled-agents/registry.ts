@@ -231,12 +231,24 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     id: "claude-code",
     name: "Claude Code",
     version: "1.0.0",
-    description: "Execute coding tasks using Claude API with sandboxed filesystem access",
-    capabilities: ["code-generation", "coding", "file-operations", "development", "programming"],
+    description:
+      "Execute coding tasks, analyze codebases, debug issues, and identify root causes using Claude API with sandboxed filesystem access",
+    capabilities: [
+      "code-generation",
+      "coding",
+      "file-operations",
+      "development",
+      "programming",
+      "code-analysis",
+      "debugging",
+      "root-cause-analysis",
+    ],
     examples: [
       "Write a TypeScript function to parse JSON",
       "Read and analyze the package.json file",
       "Generate a React component",
+      "Analyze stack traces and identify root causes",
+      "Debug this error in the codebase",
     ],
     requiredConfig: [
       {
