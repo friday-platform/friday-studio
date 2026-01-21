@@ -10,46 +10,20 @@ import { createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { type WorkspacePlan, WorkspacePlanSchema } from "@atlas/core/artifacts";
 import { type ValidatedFSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
-import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { fail, stringifyError, success } from "@atlas/utils";
 import { executeCodegen } from "@atlas/workspace-builder";
 import { toKebabCase } from "@std/text";
 import { stringify as stringifyYaml } from "@std/yaml";
 import { z } from "zod";
+import type { FSMCreatorResult } from "../../agent-types/mod.ts";
 import { classifyAgents } from "./agent-classifier.ts";
 import { enrichAgentsWithPipelineContext, flattenAgent } from "./agent-helpers.ts";
 import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
 import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 import { enrichSignal } from "./enrichers/signals.ts";
 import { generateFSMCode, type PreviousAttempt } from "./fsm-generation-core.ts";
-import {
-  formatMissingCredentialsError,
-  type MissingCredential,
-  validateCredentials,
-} from "./preflight-validator.ts";
+import { formatMissingCredentialsError, validateCredentials } from "./preflight-validator.ts";
 import { buildWorkspaceConfig } from "./workspace-config-builder.ts";
-
-// Re-export for consumers who need the type
-export type { MissingCredential } from "./preflight-validator.ts";
-
-type FSMCreatorResult = Result<
-  {
-    workspaceId: string;
-    workspaceName: string;
-    workspaceUrl: string;
-    jobCount: number;
-    metadata: {
-      generatedCode: Record<string, string>; // jobId -> generated TypeScript code
-      codegenAttempts: Record<string, number>; // jobId -> number of attempts
-    };
-  },
-  {
-    reason: string;
-    /** Structured credential info for LLM to call connect_service */
-    missingCredentials?: MissingCredential[];
-    /** Suggested recovery action for the LLM */
-    suggestedAction?: "connect_service";
-  }
->;
 
 const FSMCreatorInputSchema = z.object({
   artifactId: z.string().describe("WorkspacePlan artifact ID"),
@@ -381,6 +355,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       return success({
         workspaceId: registrationResponse.data.id,
         workspaceName: plan.workspace.name,
+        workspaceDescription: plan.workspace.purpose,
         workspaceUrl: `/spaces/${registrationResponse.data.id}`,
         jobCount: plan.jobs.length,
         metadata: { generatedCode: generatedCodeMap, codegenAttempts: codegenAttemptsMap },

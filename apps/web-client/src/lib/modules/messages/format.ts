@@ -65,6 +65,13 @@ export function formatMessage(
         // @TODO: fix
         metadata: { toolName: "connect_service", provider: part?.output?.provider ?? "" },
       };
+    } else if (part.type === "tool-fsm-workspace-creator") {
+      return {
+        id: crypto.randomUUID(),
+        type: "tool_call",
+        timestamp: new Date().toISOString(),
+        metadata: { toolName: "fsm-workspace-creator", output: part.output },
+      };
     } else if (part.type === "tool-display_artifact") {
       return {
         id: crypto.randomUUID(),

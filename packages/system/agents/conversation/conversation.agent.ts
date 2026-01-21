@@ -36,6 +36,7 @@ import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { wrapToolsWithSessionContext } from "./session-context.ts";
 import { formatSkillsSection } from "./skills/index.ts";
+import { workspaceCreationComplete } from "./stop-conditions.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { loadSkillTool } from "./tools/load-skill.ts";
@@ -679,7 +680,14 @@ export const conversationAgent = createAgent({
               ],
               tools: allTools,
               toolChoice: "auto",
-              stopWhen: [stepCountIs(40), hasToolCall("connect_service")],
+              stopWhen: [
+                stepCountIs(40),
+                hasToolCall("connect_service"),
+                // @ts-expect-error StopCondition<AtlasTools> is contravariant - allTools has specific keys
+                // but AtlasTools is Record<string, AtlasTool>. Using StopCondition<any> like AI SDK's
+                // hasToolCall would fix this, but we'd lose the (minimal) type safety on step.toolResults.
+                workspaceCreationComplete(),
+              ],
               maxOutputTokens: 20000,
               experimental_transform: smoothStream({ chunking: "word" }),
               maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)

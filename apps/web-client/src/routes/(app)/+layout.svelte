@@ -1,12 +1,13 @@
 <script lang="ts">
+  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { browser } from "$app/environment";
   import { getAppContext } from "$lib/app-context.svelte";
   import AppContainer from "$lib/components/app/container.svelte";
   import AppSidebar from "$lib/components/app/sidebar.svelte";
   import KeyboardListener from "$lib/components/keyboard-listener.svelte";
   import NotificationPortal from "$lib/components/notification/portal.svelte";
   import { setClientContext } from "$lib/modules/client/context.svelte";
-  import { setSpacesContext } from "$lib/modules/spaces/context.svelte";
   import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
   import { onDestroy, onMount } from "svelte";
 
@@ -14,17 +15,14 @@
 
   const appCtx = getAppContext();
 
-  const spacesCtx = setSpacesContext();
   const ctx = setClientContext();
 
   let unlisten: (() => void) | undefined;
 
+  const queryClient = new QueryClient({ defaultOptions: { queries: { enabled: browser } } });
+
   onMount(async () => {
     appCtx.user = data.user;
-
-    // Load spaces
-    spacesCtx.fetchWorkspaces();
-
     // Start health checks immediately
     ctx.checkHealth();
 
@@ -67,34 +65,38 @@
   <div class="titlebar" data-tauri-drag-region></div>
 {/if}
 
-<div role="region">
-  <AppContainer>
-    <AppSidebar />
+<QueryClientProvider client={queryClient}>
+  <div role="region">
+    <AppContainer>
+      <AppSidebar />
 
-    <main>
-      <div class="app-content">
-        {#if ctx.daemonStatus === "error"}
-          <div class="daemon-error">
-            <p>
-              The connection to Friday was lost
-              {#if ctx.reconnectCountdown > 0}
-                <span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
-              {:else if ctx.reconnectCountdown === 0}
-                <span class="reconnect-countdown">(reconnecting...)</span>
-              {/if}
-            </p>
-            <button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
-          </div>
-        {/if}
-        {@render children?.()}
-      </div>
-    </main>
-  </AppContainer>
-</div>
+      <main>
+        <div class="app-content">
+          {#if ctx.daemonStatus === "error"}
+            <div class="daemon-error">
+              <p>
+                The connection to Friday was lost
+                {#if ctx.reconnectCountdown > 0}
+                  <span class="reconnect-countdown">
+                    (reconnecting in {ctx.reconnectCountdown}s)
+                  </span>
+                {:else if ctx.reconnectCountdown === 0}
+                  <span class="reconnect-countdown">(reconnecting...)</span>
+                {/if}
+              </p>
+              <button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
+            </div>
+          {/if}
+          {@render children?.()}
+        </div>
+      </main>
+    </AppContainer>
+  </div>
 
-<NotificationPortal />
-<KeyboardListener />
-<WorkspaceDropHandler />
+  <NotificationPortal />
+  <KeyboardListener />
+  <WorkspaceDropHandler />
+</QueryClientProvider>
 
 <style>
   main {

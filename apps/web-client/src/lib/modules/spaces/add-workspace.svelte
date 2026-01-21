@@ -1,16 +1,16 @@
 <script lang="ts">
   import type { WorkspaceConfig } from "@atlas/config";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Dialog } from "$lib/components/dialog";
   import { Icons } from "$lib/components/icons";
   import type { Snippet } from "svelte";
-  import { getSpacesContext } from "./context.svelte";
   import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
 
   let { triggerContents }: { triggerContents: Snippet } = $props();
 
+  let queryClient = useQueryClient();
   const appCtx = getAppContext();
-  const spacesCtx = getSpacesContext();
 
   let workspaceConfig = $state<WorkspaceConfig | null>(null);
   let fileInput: HTMLInputElement;
@@ -109,7 +109,8 @@
 
               try {
                 await addWorkspace(workspaceConfig, {
-                  refreshWorkspaces: () => spacesCtx.fetchWorkspaces(),
+                  refreshWorkspaces: () =>
+                    queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
                   getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id),
                 });
 

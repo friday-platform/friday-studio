@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
@@ -8,7 +9,6 @@
   import { Icons } from "$lib/components/icons";
   import { toast } from "$lib/components/notification/notification.svelte";
   import { SegmentedControl } from "$lib/components/segmented-control";
-  import { getSpacesContext } from "$lib/modules/spaces/context.svelte";
   import { getActivePage } from "$lib/utils/active-page.svelte";
   import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
@@ -20,8 +20,9 @@
 
   let { workspace }: { workspace: Workspace } = $props();
 
+  let queryClient = useQueryClient();
+
   const appCtx = getAppContext();
-  const spacesCtx = getSpacesContext();
 
   async function handleExportWorkspace() {
     if (!workspace) return;
@@ -83,7 +84,7 @@
       }
 
       // Trigger workspace list refresh
-      spacesCtx.fetchWorkspaces();
+      queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
 
       // Redirect to main page
       await goto(appCtx.routes.main);

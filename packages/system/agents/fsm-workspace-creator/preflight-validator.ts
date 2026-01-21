@@ -5,18 +5,8 @@
 
 import type { CredentialBinding } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import type { MissingCredential } from "../../agent-types/mod.ts";
 import type { MCPServerResult } from "./enrichers/mcp-servers.ts";
-
-/**
- * Structured credential info for error recovery.
- * Enables LLM to pattern-match and call connect_service with the correct provider.
- */
-export interface MissingCredential {
-  /** Link provider ID for connect_service (e.g., "google-calendar", "github") */
-  provider: string;
-  /** Human-readable service name (e.g., "Google Calendar", "GitHub") */
-  service: string;
-}
 
 /**
  * Pre-flight validation result

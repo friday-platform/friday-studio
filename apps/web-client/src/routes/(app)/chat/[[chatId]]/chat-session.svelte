@@ -31,6 +31,7 @@
   import { circOut } from "svelte/easing";
   import { SvelteMap } from "svelte/reactivity";
   import { slide } from "svelte/transition";
+  import WorkspaceCreated from "$lib/modules/messages/workspace-created.svelte";
 
   /**
    * ChatSession component - handles a single chat instance.
@@ -318,6 +319,8 @@
                       <DisplayArtifact artifactId={message.metadata.artifactId as string} />
                     {:else if message.type === "tool_call" && message.metadata?.toolName === "connect_service" && message.metadata?.provider}
                       <ConnectService provider={message.metadata.provider as string} {chat} />
+                    {:else if message.type === "tool_call" && message.metadata?.toolName === "fsm-workspace-creator" && message.metadata?.output && !message.metadata.output.result.isError}
+                      <WorkspaceCreated output={message.metadata.output} />
                     {:else if message.type === "credential_linked"}
                       <CredentialLinked {message} />
                     {:else if message.type === "intent"}

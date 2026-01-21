@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { getAppContext } from "$lib/app-context.svelte";
   import { getChatContext } from "$lib/chat-context.svelte";
@@ -8,7 +9,7 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
-  import { getSpacesContext } from "$lib/modules/spaces/context.svelte";
+  import { listSpaces } from "$lib/queries/spaces";
   import { getActivePage } from "$lib/utils/active-page.svelte";
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
@@ -16,7 +17,8 @@
 
   const ctx = getAppContext();
   const chatContext = getChatContext();
-  const spacesCtx = getSpacesContext();
+
+  const query = createQuery(() => ({ queryKey: ["spaces"], queryFn: () => listSpaces() }));
 
   const currentChatId = $derived(page.params.chatId);
 </script>
@@ -100,19 +102,23 @@
       </AddWorkspaceDialog>
     </span>
 
-    <ul class="section-list">
-      {#each spacesCtx.workspaces as space (space.id)}
-        <li>
-          <a
-            href={ctx.routes.spaces.item(space.id)}
-            class="sidebar-item"
-            class:active={getActivePage([`spaces/${space.id}`, `spaces/${space.id}/sessions`])}
-          >
-            <span class="text">{space.name}</span>
-          </a>
-        </li>
-      {/each}
-    </ul>
+    <div>
+      {#if query.isSuccess}
+        <ul class="section-list">
+          {#each query.data as space (space.id)}
+            <li>
+              <a
+                href={ctx.routes.spaces.item(space.id)}
+                class="sidebar-item"
+                class:active={getActivePage([`spaces/${space.id}`, `spaces/${space.id}/sessions`])}
+              >
+                <span class="text">{space.name}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
 
     <span class="section-header">
       Recent Chats

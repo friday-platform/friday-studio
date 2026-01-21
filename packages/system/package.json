@@ -5,6 +5,7 @@
   "exports": {
     "./workspaces": "./workspaces/mod.ts",
     "./agents": "./agents/mod.ts",
+    "./agent-types": "./agent-types/mod.ts",
     "./agents/conversation/tools": "./agents/conversation/tools/mod.ts"
   },
   "dependencies": {
