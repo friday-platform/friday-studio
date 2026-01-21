@@ -13,6 +13,11 @@ All security headers are deployed via Cloudflare Transform Rules.
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()` |
+| `Permissions-Policy-Report-Only` | `camera=();report-to=default, microphone=();report-to=default, geolocation=();report-to=default, payment=();report-to=default, usb=();report-to=default` |
+| `Cross-Origin-Embedder-Policy-Report-Only` | `require-corp; report-to="default"` |
+| `Cross-Origin-Opener-Policy-Report-Only` | `same-origin; report-to="default"` |
+| `Report-To` | `{"group":"default","max_age":10886400,"endpoints":[{"url":"https://dm35suqd.uriports.com/reports"}],"include_subdomains":true}` |
+| `NEL` | `{"report_to":"default","max_age":2592000,"include_subdomains":true,"failure_fraction":1.0}` |
 | `Reporting-Endpoints` | `default="https://dm35suqd.uriports.com/reports"` |
 | `Content-Security-Policy` | See below |
 
@@ -51,6 +56,13 @@ worker-src 'none';
 | Bing | Clarity sync | c.bing.com |
 | Google Fonts | Typography | fonts.gstatic.com, fonts.googleapis.com |
 
-### CSP violation reporting
+## Reporting
 
-Violations are reported to [URIports](https://uriports.com) at `https://dm35suqd.uriports.com/reports/report`.
+All security violations and network errors are reported to [URIports](https://uriports.com):
+
+| Report Type | Endpoint |
+|-------------|----------|
+| CSP violations | `https://dm35suqd.uriports.com/reports/report` |
+| Network errors (NEL) | `https://dm35suqd.uriports.com/reports` |
+| Permissions Policy | `https://dm35suqd.uriports.com/reports` |
+| COEP/COOP violations | `https://dm35suqd.uriports.com/reports` |
