@@ -1,5 +1,21 @@
 # Marketing website
 
+## Security Headers
+
+All security headers are deployed via Cloudflare Transform Rules.
+
+**Rule location:** [Cloudflare Dashboard > hellofriday.ai > Rules > Transform Rules](https://dash.cloudflare.com/b0d95e349d41c781b1dd063f9cb220d3/hellofriday.ai/rules/transform-rules/modify-response-header)
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()` |
+| `Reporting-Endpoints` | `default="https://dm35suqd.uriports.com/reports"` |
+| `Content-Security-Policy` | See below |
+
 ## Content Security Policy (CSP)
 
 ### CSP header
@@ -34,18 +50,6 @@ worker-src 'none';
 | Cloudflare | Web analytics | static.cloudflareinsights.com |
 | Bing | Clarity sync | c.bing.com |
 | Google Fonts | Typography | fonts.gstatic.com, fonts.googleapis.com |
-
-### Deployment
-
-CSP is deployed via Cloudflare Transform Rules (HTTP Response Header Modification).
-
-**Rule location:** [Cloudflare Dashboard > hellofriday.ai > Rules > Transform Rules](https://dash.cloudflare.com/b0d95e349d41c781b1dd063f9cb220d3/hellofriday.ai/rules/transform-rules/modify-response-header)
-
-**Rule ID:** `2f4ca43e8a824504bc9f8921678831fd`
-
-To update the CSP:
-1. Edit the rule in Cloudflare Dashboard, or
-2. Use the Cloudflare API to update the ruleset
 
 ### CSP violation reporting
 
