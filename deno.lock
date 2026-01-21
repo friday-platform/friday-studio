@@ -67,7 +67,7 @@
     "npm:@lezer/common@^1.5.0": "1.5.0",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.47.1__acorn@8.15.0",
-    "npm:@modelcontextprotocol/sdk@^1.25.2": "1.25.2_zod@4.3.5_hono@4.11.4_ajv@8.17.1_express@5.2.1",
+    "npm:@modelcontextprotocol/sdk@^1.25.3": "1.25.3_zod@4.3.5_hono@4.11.4_ajv@8.17.1_express@5.2.1",
     "npm:@opentelemetry/api-logs@0.210": "0.210.0",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@opentelemetry/exporter-logs-otlp-http@0.210": "0.210.0_@opentelemetry+api@1.9.0",
@@ -1224,8 +1224,8 @@
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
-    "@modelcontextprotocol/sdk@1.25.2_zod@4.3.5_hono@4.11.4_ajv@8.17.1_express@5.2.1": {
-      "integrity": "sha512-LZFeo4F9M5qOhC/Uc1aQSrBHxMrvxett+9KLHt7OhcExtoiRN9DKgbZffMP/nxjutWDQpfMDfP3nkHI4X9ijww==",
+    "@modelcontextprotocol/sdk@1.25.3_zod@4.3.5_hono@4.11.4_ajv@8.17.1_express@5.2.1": {
+      "integrity": "sha512-vsAMBMERybvYgKbg/l4L1rhS7VXV1c0CtyJg72vwxONVX0l4ZfKVAnZEWTQixJGTzKnELjQ59e4NbdFDALRiAQ==",
       "dependencies": [
         "@hono/node-server",
         "ajv@8.17.1",
@@ -5907,7 +5907,7 @@
           "dependencies": [
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@modelcontextprotocol/sdk@^1.25.2",
+            "npm:@modelcontextprotocol/sdk@^1.25.3",
             "npm:ai@^5.0.121",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.17",
