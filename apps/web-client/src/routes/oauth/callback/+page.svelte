@@ -34,28 +34,29 @@
       return;
     }
 
-    // Check if we have an opener window
-    if (!window.opener) {
-      // Popup was opened directly or opener closed - show success message
-      status = "no-opener";
-      return;
+    const callbackData = { type: "oauth-callback" as const, credentialId, provider };
+
+    // Try postMessage first if opener exists
+    if (window.opener) {
+      try {
+        window.opener.postMessage(callbackData, window.location.origin);
+        status = "success";
+        setTimeout(() => window.close(), 100);
+        return;
+      } catch {
+        // Fall through to localStorage fallback
+      }
     }
 
-    // Post message to opener
+    // Fallback: use localStorage for cross-origin popup scenarios
+    // (opener can be null after navigating through external OAuth providers)
     try {
-      window.opener.postMessage(
-        { type: "oauth-callback", credentialId, provider },
-        window.location.origin,
-      );
+      localStorage.setItem("oauth-callback", JSON.stringify(callbackData));
       status = "success";
-
-      // Close the popup after a brief delay to ensure message is sent
-      setTimeout(() => {
-        window.close();
-      }, 100);
+      setTimeout(() => window.close(), 100);
     } catch {
-      status = "error";
-      errorMessage = "Failed to communicate with the parent window";
+      // localStorage blocked - show manual close message
+      status = "no-opener";
     }
   });
 </script>

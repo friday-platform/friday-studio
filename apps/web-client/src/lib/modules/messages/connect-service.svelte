@@ -78,10 +78,47 @@
       return;
     }
 
-    // Clean up listener after successful callback
+    completeOAuthFlow();
+  }
+
+  /**
+   * Handle localStorage fallback for cross-origin popup scenarios.
+   * When popup navigates through external OAuth providers, window.opener can be null.
+   */
+  function handleStorageEvent(event: StorageEvent) {
+    if (event.key !== "oauth-callback" || !event.newValue) {
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(event.newValue);
+    } catch {
+      return;
+    }
+
+    const result = OAuthCallbackMessageSchema.safeParse(parsed);
+    if (!result.success) {
+      return;
+    }
+
+    // Only handle messages for our provider
+    if (result.data.provider !== provider) {
+      return;
+    }
+
+    // Clean up localStorage
+    localStorage.removeItem("oauth-callback");
+
+    completeOAuthFlow();
+  }
+
+  /**
+   * Complete the OAuth flow - send credential linked message to chat.
+   */
+  function completeOAuthFlow() {
     removeMessageListener();
 
-    // Send data part to continue the chat
     if (providerDetails) {
       chat.sendMessage({
         parts: [
@@ -100,22 +137,23 @@
   let messageListenerActive = false;
 
   /**
-   * Add message listener if not already active.
-   * Returns cleanup function.
+   * Add message and storage listeners if not already active.
    */
   function addMessageListener() {
     if (messageListenerActive) return;
     messageListenerActive = true;
     window.addEventListener("message", handleOAuthMessage);
+    window.addEventListener("storage", handleStorageEvent);
   }
 
   /**
-   * Remove message listener and reset tracking state.
+   * Remove message and storage listeners and reset tracking state.
    */
   function removeMessageListener() {
     if (!messageListenerActive) return;
     messageListenerActive = false;
     window.removeEventListener("message", handleOAuthMessage);
+    window.removeEventListener("storage", handleStorageEvent);
   }
 
   // Cleanup message listener on component destroy
