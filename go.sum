@@ -448,8 +448,8 @@ github.com/onsi/ginkgo/v2 v2.27.2 h1:LzwLj0b89qtIy6SSASkzlNvX6WktqurSHwkk2ipF/Ns
 github.com/onsi/ginkgo/v2 v2.27.2/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zwn/ykDRo=
 github.com/onsi/gomega v1.38.2 h1:eZCjf2xjZAqe+LeWvKb5weQ+NcPwX84kqJ0cZNxok2A=
 github.com/onsi/gomega v1.38.2/go.mod h1:W2MJcYxRGV63b418Ai34Ud0hEdTVXq9NW9+Sx6uXf3k=
-github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.143.0 h1:hEOedRpaAUDjfVY5/Hp8fg/2orkpzPsfc2O/hJSIapw=
-github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.143.0/go.mod h1:P4GoQtpnS0nI1HRW8Tf5DvK38s6GLki7/obmSBusHg8=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.144.0 h1:+KQiubXjYta9Q/Vw5s6k046mjD2v/QsTObUALlIddus=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.144.0/go.mod h1:cTcpaUfji6HQhYCBofCr5A83p4qYIoN+EEotoeeeQqQ=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.143.0 h1:N3euVaLm455NE4AGIEHHkD1JGwPmWzxhO8eBQRyKJvk=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.143.0/go.mod h1:DT+XFWTH1unSTDrcShZBo5dTN8J8CtG6m7qkkxYqTa4=
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.143.0 h1:kJJ9x/iW3gPmxo6ZjwUXHrDs7h8OtD/jNs6oQfj4JoA=

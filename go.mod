@@ -20,7 +20,7 @@ require (
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/joho/godotenv v1.5.1
 	github.com/k3a/html2text v1.3.0
-	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.143.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.144.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.143.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.143.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor v0.143.0
