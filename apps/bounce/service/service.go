@@ -19,7 +19,6 @@ import (
 	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"
 	"github.com/tempestteam/atlas/pkg/x/middleware/pgxdb"
-	"github.com/tempestteam/atlas/pkg/x/middleware/secure"
 	"golang.org/x/oauth2/google"
 )
 
@@ -74,9 +73,6 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(middleware.RealIP)
 	r.Use(httplog.RequestLogger(s.Logger, []string{"/healthz"}))
 	r.Use(middleware.Heartbeat("/healthz"))
-	r.Use(secure.NoSniff)
-	r.Use(secure.PermissionsPolicy)
-	r.Use(secure.CrossOriginPolicies)
 
 	// Parse the RSA keys
 	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(s.cfg.JWTPrivateKey))

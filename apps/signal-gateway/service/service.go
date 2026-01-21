@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tempestteam/atlas/apps/signal-gateway/repo"
 	"github.com/tempestteam/atlas/pkg/server"
-	"github.com/tempestteam/atlas/pkg/x/middleware/secure"
 )
 
 // service represents the Signal Gateway service.
@@ -106,9 +105,6 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	// Global middleware
 	r.Use(middleware.RealIP)
 	r.Use(httplog.RequestLogger(s.logger, []string{"/healthz", "/livez"}))
-	r.Use(secure.NoSniff)
-	r.Use(secure.PermissionsPolicy)
-	r.Use(secure.CrossOriginPolicies)
 
 	// Health endpoints
 	r.Get("/livez", handleLiveness)

@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httplog/v2"
 	"github.com/tempestteam/atlas/pkg/server"
-	"github.com/tempestteam/atlas/pkg/x/middleware/secure"
 )
 
 type Service struct {
@@ -57,9 +56,6 @@ func (s *Service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(StorageClientCtxMiddleware(s.storage))
 	r.Use(ShareBaseURLCtxMiddleware(s.cfg.ShareBaseURL))
 	r.Use(cors.Handler(corsOptions))
-	r.Use(secure.NoSniff)
-	r.Use(secure.PermissionsPolicy)
-	r.Use(secure.CrossOriginPolicies)
 
 	r.Route("/space", func(r chi.Router) {
 		r.With(LimitRequestBody(s.cfg.MaxUploadSize)).Post("/", uploadHandler)
