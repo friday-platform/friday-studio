@@ -118,6 +118,54 @@ gcloud alpha monitoring policies create \
 | User Atlas Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
 | High Memory Usage | Warning | >80% limit for 5min | Slack |
 | High CPU Usage | Warning | >80% limit for 10min | Slack |
+| LLM Budget Warning | Warning | $50-$100 remaining | Slack |
+| LLM Budget Critical | Critical | <$50 remaining | PagerDuty + Slack |
+
+### LLM Budget Alerts
+
+Budget alerts use `litellm_remaining_api_key_budget_metric` (a gauge that syncs from DB) instead of
+`litellm_spend_metric_total` (a counter that resets on pod restart).
+
+**Why remaining budget instead of spend counter?**
+- The spend counter resets when LiteLLM pods restart
+- User could accumulate spend over time but Prometheus only sees spend since last restart
+- Remaining budget gauge reflects actual DB state, persists across restarts
+
+**Query pattern:**
+```promql
+min by (api_key_alias) (litellm_remaining_api_key_budget_metric < +Inf) < 50
+```
+- `< +Inf` filters out workspaces without budget limits (infinite remaining)
+- `min by` takes minimum across pods (each pod reports independently)
+- `api_key_alias` format is `atlas-<workspace_id>` (e.g., `atlas-d401m99q1relnrg`)
+
+**When you receive an alert:**
+
+1. **Check actual spend in LiteLLM database:**
+   ```bash
+   psql "postgresql://postgres:$(gcloud secrets versions access latest --secret=litellm-config --project=tempest-production | grep database_url | cut -d: -f3 | cut -d@ -f1)@db.azaiddurrgijgnavxpdi.supabase.co:5432/litellm" \
+     -c "SELECT key_alias, spend, max_budget FROM \"LiteLLM_VerificationToken\" WHERE key_alias = 'atlas-<workspace_id>';"
+   ```
+
+2. **To increase budget** (use LiteLLM API to update both DB and cache):
+   ```bash
+   # Get the key token
+   TOKEN=$(psql "..." -t -c "SELECT token FROM \"LiteLLM_VerificationToken\" WHERE key_alias = 'atlas-<workspace_id>';")
+
+   # Update via API
+   kubectl port-forward svc/litellm-proxy 4000:4000 -n atlas-operator &
+   curl -X POST "http://localhost:4000/key/update" \
+     -H "Authorization: Bearer $(gcloud secrets versions access latest --secret=litellm-master-key --project=tempest-production)" \
+     -H "Content-Type: application/json" \
+     -d "{\"key\": \"$TOKEN\", \"max_budget\": 300}"
+   ```
+
+3. **If you updated DB directly** (not recommended), restart LiteLLM to sync:
+   ```bash
+   kubectl rollout restart deployment/litellm-proxy -n atlas-operator
+   ```
+
+**Note:** The metric only updates when the workspace makes LLM requests. After increasing budget, the alert will auto-close once the user makes a request and Prometheus scrapes the new value.
 
 ### Alert Auto-Close Policy
 
@@ -145,4 +193,10 @@ projects/tempest-production/notificationChannels/3729882950865339162
 
 # PagerDuty (tempest-production)
 projects/tempest-production/notificationChannels/16532143224266859840
+
+# LLM Budget Alerts Slack
+projects/tempest-production/notificationChannels/5987427949135056090
+
+# LLM Budget Alerts PagerDuty
+projects/tempest-production/notificationChannels/12225858896805377076
 ```

@@ -89,4 +89,8 @@ export {
   type OutlineRefsResult,
   OutlineRefsResultSchema,
 } from "./src/types/outline-ref.ts";
-export { createErrorCause, throwWithCause } from "./src/utils/error-helpers.ts";
+export {
+  createErrorCause,
+  isAPIErrorCause,
+  throwWithCause,
+} from "./src/utils/error-helpers.ts";

@@ -237,3 +237,68 @@ it("createErrorCause - unwraps APICallError from .cause (Deno std/async retry)",
     expect(cause.providerMessage).toEqual("invalid api key");
   }
 });
+
+it("createErrorCause - handles LiteLLM budget exceeded error", () => {
+  // LiteLLM returns 400 Bad Request with budget_exceeded type in response body
+  const error = new APICallError({
+    message: "Bad Request",
+    url: "http://litellm-proxy.atlas-operator.svc.cluster.local:4000/v1/messages",
+    requestBodyValues: { model: "claude-sonnet-4-5", messages: [] },
+    statusCode: 400,
+    isRetryable: false,
+    responseBody: JSON.stringify({
+      error: {
+        message: "Budget has been exceeded! Current cost: 200.09933819999978, Max budget: 200.0",
+        type: "budget_exceeded",
+        param: null,
+        code: "400",
+      },
+    }),
+  });
+
+  const cause = createErrorCause(error);
+
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("BUDGET_EXCEEDED");
+  if (cause.type === "api") {
+    expect(cause.statusCode).toEqual(400);
+    expect(cause.isRetryable).toEqual(false);
+    // Provider message should be extracted from the response body
+    expect(cause.providerMessage).toEqual(
+      "Budget has been exceeded! Current cost: 200.09933819999978, Max budget: 200.0",
+    );
+  }
+});
+
+it("createErrorCause - regular 400 error is not misclassified as budget exceeded", () => {
+  // A regular 400 error should remain INVALID_REQUEST
+  const error = new APICallError({
+    message: "Bad Request",
+    url: "https://api.example.com/v1/messages",
+    requestBodyValues: { model: "test" },
+    statusCode: 400,
+    isRetryable: false,
+    responseBody: JSON.stringify({
+      error: { message: "Invalid parameter: model", type: "invalid_request_error" },
+    }),
+  });
+
+  const cause = createErrorCause(error);
+
+  expect(cause.type).toEqual("api");
+  expect(cause.code).toEqual("INVALID_REQUEST");
+});
+
+it("getErrorDisplayMessage - handles budget exceeded error", () => {
+  const errorCause = {
+    type: "api" as const,
+    code: "BUDGET_EXCEEDED",
+    statusCode: 400,
+    isRetryable: false,
+  };
+
+  const message = getErrorDisplayMessage(errorCause);
+  expect(message).toEqual(
+    "Your spending limit has been reached. Please contact support to increase your budget.",
+  );
+});

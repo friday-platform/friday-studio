@@ -1,0 +1,35 @@
+displayName: "LLM Budget Warning ($50-$100 remaining)"
+combiner: OR
+conditions:
+- displayName: "LLM remaining budget $50-$100"
+  conditionPrometheusQueryLanguage:
+    # Use remaining budget gauge metric (persists across pod restarts, syncs from DB)
+    # Filter out +Inf values and take minimum across pods for each api_key_alias
+    # Does NOT fire if critical threshold (<$50) is already reached
+    query: >-
+      min by (api_key_alias) (
+        litellm_remaining_api_key_budget_metric < +Inf
+      ) < 100
+      and
+      min by (api_key_alias) (
+        litellm_remaining_api_key_budget_metric < +Inf
+      ) >= 50
+    duration: 300s
+    evaluationInterval: 60s
+alertStrategy:
+  autoClose: 604800s
+  notificationPrompts:
+  - OPENED
+severity: WARNING
+documentation:
+  content: |-
+    LLM Budget Warning
+
+    API Key: ${metric.labels.api_key_alias}
+
+    Less than $100 remaining. No immediate action required.
+  mimeType: text/markdown
+notificationChannels:
+- projects/tempest-production/notificationChannels/5987427949135056090
+userLabels:
+  severity: warning

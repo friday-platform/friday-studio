@@ -53,6 +53,11 @@ const ResponseBodyErrorSchema = z.object({ error: z.object({ message: z.string()
 // Pattern 4: JSON responseBody with message
 const ResponseBodyMessageSchema = z.object({ message: z.string().min(1) });
 
+// Pattern 5: LiteLLM budget exceeded error
+const BudgetExceededErrorSchema = z.object({
+  error: z.object({ type: z.literal("budget_exceeded"), message: z.string() }),
+});
+
 /**
  * Throw an error with a structured, validated cause
  */
@@ -281,6 +286,8 @@ export function getErrorDisplayMessage(errorCause: ErrorCause): string {
           : "Service is currently overloaded.";
       case "DEADLINE_EXCEEDED":
         return "Request took too long to complete. Try simplifying your request.";
+      case "BUDGET_EXCEEDED":
+        return "Your spending limit has been reached. Please contact support to increase your budget.";
       default:
         return apiCause.providerMessage
           ? `API error (${apiCause.statusCode}): ${apiCause.providerMessage}`
@@ -312,6 +319,27 @@ export function getErrorDisplayMessage(errorCause: ErrorCause): string {
 }
 
 /**
+ * Check if an APICallError is a LiteLLM budget exceeded error.
+ * LiteLLM returns 400 Bad Request with {"error":{"type":"budget_exceeded",...}} in the body.
+ */
+function isBudgetExceededError(error: APICallError): boolean {
+  if (error.statusCode !== 400) return false;
+
+  // Check responseBody for LiteLLM budget_exceeded error type
+  if (typeof error.responseBody === "string" && error.responseBody.length > 0) {
+    try {
+      const parsed = JSON.parse(error.responseBody);
+      const result = BudgetExceededErrorSchema.safeParse(parsed);
+      return result.success;
+    } catch {
+      // Ignore JSON parse errors
+    }
+  }
+
+  return false;
+}
+
+/**
  * Create API error cause from APICallError
  * Extracts all available concrete data from the error
  */
@@ -339,6 +367,10 @@ function createAPIErrorCause(error: APICallError): APIErrorCause {
   // Covers Anthropic, OpenAI, and Google Gemini error patterns
   switch (statusCode) {
     case 400:
+      // Check for LiteLLM budget exceeded error (expected when workspace hits spending limit)
+      if (isBudgetExceededError(error)) {
+        return { ...baseApiCause, code: "BUDGET_EXCEEDED" };
+      }
       return { ...baseApiCause, code: "INVALID_REQUEST" };
     case 401:
       return { ...baseApiCause, code: "AUTHENTICATION_ERROR" };

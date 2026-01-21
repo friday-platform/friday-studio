@@ -6,6 +6,7 @@
  */
 
 import { type FailInput, FailInputSchema } from "@atlas/agent-sdk";
+import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
@@ -456,7 +457,18 @@ export class FSMEngine {
         });
       }
     } catch (error) {
-      logger.error(`FSM error in state ${this._currentState}, signal ${sig.type}`, { error });
+      // Classify the error to determine severity
+      const errorCause = createErrorCause(error);
+
+      // Budget exceeded is expected when workspace hits spending limit - don't spam Sentry
+      if (isAPIErrorCause(errorCause) && errorCause.code === "BUDGET_EXCEEDED") {
+        logger.warn(
+          `FSM error in state ${this._currentState}, signal ${sig.type}: budget exceeded`,
+          { error, errorCode: errorCause.code, statusCode: errorCause.statusCode },
+        );
+      } else {
+        logger.error(`FSM error in state ${this._currentState}, signal ${sig.type}`, { error });
+      }
       throw error;
     }
   }
