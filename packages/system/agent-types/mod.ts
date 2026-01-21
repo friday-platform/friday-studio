@@ -21,7 +21,7 @@ export const MissingCredentialSchema = z.object({
 export const FSMCreatorSuccessDataSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string(),
-  workspaceDescription: z.string(),
+  workspaceDescription: z.string().optional(),
   workspaceUrl: z.string(),
   jobCount: z.number(),
   metadata: z.object({
