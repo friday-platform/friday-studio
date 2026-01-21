@@ -21,7 +21,6 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
-  createIdGenerator,
   createUIMessageStream,
   hasToolCall,
   jsonSchema,
@@ -789,7 +788,6 @@ export const conversationAgent = createAgent({
           writer.merge(
             result.toUIMessageStream({
               originalMessages: messages,
-              generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
               messageMetadata: (metadata) => {
                 // Set startTimestamp once on first chunk, then preserve it
                 if (!startTimestamp) {
