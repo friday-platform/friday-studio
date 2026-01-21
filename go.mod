@@ -24,7 +24,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.144.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.144.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor v0.143.0
-	github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor v0.143.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor v0.144.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor v0.143.0
 	github.com/phuslu/lru v1.0.18
 	github.com/prometheus/client_golang v1.23.2
@@ -271,10 +271,10 @@ require (
 	go.opentelemetry.io/collector/pdata/xpdata v0.144.0 // indirect
 	go.opentelemetry.io/collector/pipeline v1.50.0 // indirect
 	go.opentelemetry.io/collector/pipeline/xpipeline v0.144.0 // indirect
-	go.opentelemetry.io/collector/processor/processorhelper v0.143.0 // indirect
-	go.opentelemetry.io/collector/processor/processorhelper/xprocessorhelper v0.143.0 // indirect
-	go.opentelemetry.io/collector/processor/processortest v0.143.0 // indirect
-	go.opentelemetry.io/collector/processor/xprocessor v0.143.0 // indirect
+	go.opentelemetry.io/collector/processor/processorhelper v0.144.0 // indirect
+	go.opentelemetry.io/collector/processor/processorhelper/xprocessorhelper v0.144.0 // indirect
+	go.opentelemetry.io/collector/processor/processortest v0.144.0 // indirect
+	go.opentelemetry.io/collector/processor/xprocessor v0.144.0 // indirect
 	go.opentelemetry.io/collector/receiver/receiverhelper v0.144.0 // indirect
 	go.opentelemetry.io/collector/receiver/receivertest v0.144.0 // indirect
 	go.opentelemetry.io/collector/receiver/xreceiver v0.144.0 // indirect
