@@ -35,6 +35,67 @@ import { WorkerExecutor } from "./worker-executor.ts";
 const FSMStateSchema = z.object({ state: z.string() });
 
 /**
+ * Transform code for Function constructor (same as function-executor.worker.ts).
+ */
+function transformForExecution(code: string): string {
+  const trimmed = code.trim();
+  if (trimmed.startsWith("export default")) {
+    return trimmed.replace("export default", "const __fn__ =");
+  }
+  return `const __fn__ = ${trimmed}`;
+}
+
+/**
+ * Try to parse code, returning the error if it fails.
+ */
+function tryParse(code: string): SyntaxError | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function(
+      "context",
+      "event",
+      `${transformForExecution(code)}; return __fn__(context, event);`,
+    );
+    return null;
+  } catch (error) {
+    return error instanceof SyntaxError ? error : null;
+  }
+}
+
+/**
+ * Attempt to fix apostrophes in single-quoted strings.
+ * Example: 'team's calendar' → "team's calendar"
+ */
+function attemptStringQuoteFix(code: string): string | null {
+  // Pattern: 'word's thing' or 'couldn't work' - apostrophe between letters
+  const pattern = /'([^'\\]*[a-zA-Z])'([a-zA-Z][^']*)'/g;
+  const fixed = code.replace(pattern, '"$1\'$2"');
+  return fixed !== code ? fixed : null;
+}
+
+/**
+ * Validate and potentially fix function code syntax at compile time.
+ * Attempts auto-fix for common LLM mistakes before failing.
+ */
+function validateAndFixFunctionSyntax(code: string, functionName: string): string {
+  // Try original code
+  const error = tryParse(code);
+  if (!error) return code;
+
+  // Try auto-fix
+  const fixedCode = attemptStringQuoteFix(code);
+  if (fixedCode && !tryParse(fixedCode)) {
+    logger.info(`Auto-fixed string escaping in function "${functionName}"`);
+    return fixedCode;
+  }
+
+  // Neither worked
+  throw new Error(
+    `Syntax error in function "${functionName}": ${error.message}\n\nFunction code:\n${code}`,
+  );
+}
+
+/**
  * Build LLMActionTrace from an LLM response for hallucination detection.
  * Passes through AI SDK tool types directly without transformation.
  */
@@ -176,10 +237,13 @@ export class FSMEngine {
     if (this.definition.functions) {
       for (const [name, func] of Object.entries(this.definition.functions)) {
         try {
+          // Validate syntax and auto-fix common LLM escaping issues
+          const validatedCode = validateAndFixFunctionSyntax(func.code, name);
+
           if (func.type === "guard") {
-            this._guardFunctions.set(name, func.code);
+            this._guardFunctions.set(name, validatedCode);
           } else {
-            this._actionFunctions.set(name, func.code);
+            this._actionFunctions.set(name, validatedCode);
           }
 
           logger.debug(`Compiled ${func.type} function: ${name}`);

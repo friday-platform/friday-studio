@@ -238,6 +238,56 @@ describe("FSM Engine - Core Mechanics", () => {
         'Action function "missingAction" not found',
       );
     });
+
+    it("should auto-fix apostrophes in single-quoted strings (ATLAS-125)", async () => {
+      // This is the exact error pattern that caused ATLAS-125:
+      // AI-generated code with apostrophe in single-quoted string like 'couldn't'
+      const fsm: FSMDefinition = {
+        id: "auto-fix-apostrophe",
+        initial: "start",
+        states: {
+          start: {
+            on: { NEXT: { target: "end", actions: [{ type: "code", function: "fixableAction" }] } },
+          },
+          end: { type: "final" },
+        },
+        functions: {
+          fixableAction: {
+            type: "action",
+            // This would normally fail: apostrophe breaks the single-quoted string
+            // But auto-fix converts 'couldn't' to "couldn't"
+            code: "export default function fixableAction(context, event) { const x = 'couldn't proceed'; }",
+          },
+        },
+      };
+
+      // Should succeed - auto-fix repairs the apostrophe issue
+      const { engine } = await createTestEngine(fsm, { initialState: "start" });
+      expect(engine.state).toEqual("start");
+    });
+
+    it("should catch unfixable syntax errors at compile time", async () => {
+      const fsm: FSMDefinition = {
+        id: "syntax-error",
+        initial: "start",
+        states: {
+          start: {
+            on: { NEXT: { target: "end", actions: [{ type: "code", function: "badSyntax" }] } },
+          },
+          end: { type: "final" },
+        },
+        functions: {
+          badSyntax: {
+            type: "action",
+            // Truly broken syntax that can't be auto-fixed
+            code: "export default function badSyntax(context, event) { const x = ; }",
+          },
+        },
+      };
+
+      // Should fail during initialization (compile time)
+      await expect(createTestEngine(fsm)).rejects.toThrow(/Syntax error in function "badSyntax"/);
+    });
   });
 
   describe("Event Streaming", () => {
