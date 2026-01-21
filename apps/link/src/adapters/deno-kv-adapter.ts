@@ -113,4 +113,28 @@ export class DenoKVStorageAdapter implements StorageAdapter {
     }
     return null;
   }
+
+  async updateMetadata(
+    id: string,
+    metadata: { displayName?: string },
+    userId: string,
+  ): Promise<Metadata> {
+    using kv = await Deno.openKv(this.kvPath);
+    const existing = await kv.get<Credential>(["credentials", userId, id]);
+    if (!existing.value) {
+      throw new Error("Credential not found");
+    }
+    const now = new Date().toISOString();
+    const updatedMetadata: Metadata = {
+      createdAt: existing.value.metadata.createdAt,
+      updatedAt: now,
+    };
+    const credential: Credential = {
+      ...existing.value,
+      displayName: metadata.displayName,
+      metadata: updatedMetadata,
+    };
+    await kv.set(["credentials", userId, id], credential);
+    return updatedMetadata;
+  }
 }

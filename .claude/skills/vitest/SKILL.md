@@ -222,6 +222,100 @@ expect(mockFn).toHaveBeenCalledWith({ status: 'pending' }); // Fails
 
 ---
 
+## Expressive Matchers
+
+Prefer semantic matchers over generic `toEqual()`. Better error messages, clearer
+intent.
+
+### Primitives
+
+```typescript
+// ❌ Generic
+expect(result).toEqual(null);
+expect(result).toEqual(undefined);
+expect(isValid).toEqual(true);
+
+// ✅ Semantic
+expect(result).toBeNull();
+expect(result).toBeUndefined();
+expect(isValid).toBe(true);
+```
+
+### Arrays
+
+```typescript
+// ❌ Generic
+expect(items.length).toEqual(3);
+expect(items.length).toEqual(0);
+expect(items.length > 0).toEqual(true);
+
+// ✅ Semantic
+expect(items).toHaveLength(3);
+expect(items).toHaveLength(0);
+expect(items.length).toBeGreaterThan(0);
+
+// Array containment
+expect(users).toContainEqual({ id: 1, name: 'Alice' }); // deep equality
+expect(tags).toContain('important');                    // reference/primitive
+```
+
+### Objects
+
+```typescript
+// ❌ Multiple assertions for one object
+expect(user.id).toEqual('123');
+expect(user.name).toEqual('Alice');
+expect(user.role).toEqual('admin');
+
+// ✅ Single partial match
+expect(user).toMatchObject({
+  id: '123',
+  name: 'Alice',
+  role: 'admin',
+});
+
+// Property checks
+expect(response).toHaveProperty('data');
+expect(response).toHaveProperty('data.users[0].name', 'Alice');
+expect(summary).not.toHaveProperty('secret');
+```
+
+### Strings
+
+```typescript
+// ❌ Generic
+expect(query.includes('SELECT')).toEqual(true);
+expect(query.includes('DROP')).toEqual(false);
+
+// ✅ Semantic
+expect(query).toContain('SELECT');
+expect(query).not.toContain('DROP');
+
+// Patterns
+expect(email).toMatch(/^[^@]+@[^@]+$/);
+```
+
+### Combining for readability
+
+```typescript
+// ❌ Scattered assertions
+expect(result).toBeDefined();
+expect(result!.items.length).toEqual(2);
+expect(result!.items[0]?.id).toEqual('item-1');
+expect(result!.items[0]?.status).toEqual('active');
+
+// ✅ Structured assertion
+expect(result).toMatchObject({
+  items: [
+    { id: 'item-1', status: 'active' },
+    expect.objectContaining({ id: 'item-2' }),
+  ],
+});
+expect(result!.items).toHaveLength(2);
+```
+
+---
+
 ## Async Patterns
 
 ### Awaiting matchers

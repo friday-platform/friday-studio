@@ -64,9 +64,9 @@ draw_box_line() {
 draw_box_line_dim() {
     local text="$1"
     local text_len=${#text}
-    local padding=$((WIDTH - text_len - 1))
+    local padding=$((WIDTH - text_len - 2))
     [[ $padding -lt 0 ]] && padding=0
-    echo -e "${AMBER}│${RESET} ${AMBER_DIM}${text}${RESET}$(printf '%*s' $padding '')${AMBER}│${RESET}"
+    echo -e "${AMBER}│${RESET}  ${AMBER_DIM}${text}${RESET}$(printf '%*s' $padding '')${AMBER}│${RESET}"
 }
 
 draw_empty_line() {
@@ -85,7 +85,7 @@ draw_progress_bar() {
     local current=$1
     local total=$2
     local label="$3"
-    local bar_width=50
+    local bar_width=$((WIDTH - 2))
 
     if [[ $total -eq 0 ]]; then
         return
@@ -96,15 +96,16 @@ draw_progress_bar() {
     local percent=$((current * 100 / total))
 
     local bar=""
-    for ((i=0; i<filled; i++)); do bar+="█"; done
-    for ((i=0; i<empty; i++)); do bar+="░"; done
+    local j
+    for ((j=0; j<filled; j++)); do bar+="="; done
+    for ((j=0; j<empty; j++)); do bar+="-"; done
 
     local stats="${current} / ${total} tasks"
     local line="${label}$(printf '%*s' $((20 - ${#label})) '')${stats}"
     local line_len=${#line}
 
-    echo -e "${AMBER}│${RESET}  ${AMBER_BRIGHT}${label}${RESET}$(printf '%*s' $((18 - ${#label})) '')${AMBER_DIM}${stats}${RESET}$(printf '%*s' $((WIDTH - 20 - ${#stats} - 2)) '')${AMBER}│${RESET}"
-    echo -e "${AMBER}│${RESET}  ${AMBER_BRIGHT}${bar}${RESET}$(printf '%*s' $((WIDTH - bar_width - 4)) '')${AMBER}│${RESET}"
+    echo -e "${AMBER}│${RESET}  ${AMBER_BRIGHT}${label}${RESET}$(printf '%*s' $((18 - ${#label})) '')${AMBER_DIM}${stats}${RESET}$(printf '%*s' $((WIDTH - 20 - ${#stats})) '')${AMBER}│${RESET}"
+    echo -e "${AMBER}│${RESET}  ${AMBER_BRIGHT}${bar}${RESET}${AMBER}│${RESET}"
 }
 
 draw_kv() {
@@ -121,7 +122,9 @@ draw_kv() {
 # ─────────────────────────────────────────────────────────────────────────────────
 get_incomplete_count() {
     if [[ -f "$PRD_FILE" ]]; then
-        grep -c '"passes": false' "$PRD_FILE" 2>/dev/null || echo "0"
+        local count
+        count=$(grep -c '"passes": false' "$PRD_FILE" 2>/dev/null) || count=0
+        echo "$count"
     else
         echo "0"
     fi
@@ -129,7 +132,9 @@ get_incomplete_count() {
 
 get_complete_count() {
     if [[ -f "$PRD_FILE" ]]; then
-        grep -c '"passes": true' "$PRD_FILE" 2>/dev/null || echo "0"
+        local count
+        count=$(grep -c '"passes": true' "$PRD_FILE" 2>/dev/null) || count=0
+        echo "$count"
     else
         echo "0"
     fi
@@ -253,6 +258,8 @@ else
 │  RALPH LOOP - Autonomous PRD Execution                                      │
 ╰─────────────────────────────────────────────────────────────────────────────╯
 
+⚠️  CRITICAL: COMPLETE EXACTLY ONE TASK, THEN STOP. NOT TWO. NOT THREE. ONE.
+
 TASK SELECTION:
   1. Read PRD.json - find tasks where passes: false
   2. Choose the task YOU judge most important based on:
@@ -288,8 +295,10 @@ COMPLETION:
 
      ---
 
+  5. STOP. You are done. Do not start another task.
+
 RULES:
-  • ONLY WORK ON ONE TASK PER ITERATION
+  • ONE TASK ONLY. After committing, you are DONE. Do not continue to another task.
   • Run feedback loops (deno check, deno lint, tests) before committing
   • Do NOT commit if any verification fails - fix first
   • If all tasks pass AND scope.successCriteria verified:
@@ -347,7 +356,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
     echo ""
 
     # Run Claude
-    result=$(claude --permission-mode acceptEdits -p "$RALPH_PROMPT" 2>&1) || true
+    result=$(claude --dangerously-skip-permissions --model opus -p "$RALPH_PROMPT" 2>&1) || true
 
     echo "$result"
 

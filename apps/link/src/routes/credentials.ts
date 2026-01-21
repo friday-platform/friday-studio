@@ -155,6 +155,46 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
         }
       })
       /**
+       * PATCH /:id
+       * Update credential metadata (displayName)
+       */
+      .patch(
+        "/:id",
+        zValidator("param", z.object({ id: z.string() })),
+        zValidator(
+          "json",
+          z.object({
+            displayName: z
+              .string()
+              .transform((s) => s.trim())
+              .pipe(
+                z
+                  .string()
+                  .min(1, "Display name cannot be empty")
+                  .max(100, "Display name must be 100 characters or less"),
+              ),
+          }),
+        ),
+        async (c) => {
+          const userId = c.get("userId");
+          const { id } = c.req.valid("param");
+          const { displayName } = c.req.valid("json");
+
+          try {
+            const metadata = await storage.updateMetadata(id, { displayName }, userId);
+            const credential = (await storage.get(id, userId))!;
+            const { secret: _, ...summary } = credential;
+            return c.json({ ...summary, metadata });
+          } catch (error) {
+            if (error instanceof Error && error.message === "Credential not found") {
+              return c.json({ error: "Credential not found" }, 404);
+            }
+            logger.error("Failed to update credential", { error });
+            return c.json({ error: "Failed to update credential" }, 500);
+          }
+        },
+      )
+      /**
        * DELETE /:id
        * Delete credential with optional OAuth token revocation
        */

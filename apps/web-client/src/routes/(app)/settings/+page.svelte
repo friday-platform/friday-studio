@@ -21,12 +21,16 @@
   import ProviderDetails from "./(components)/provider-details-column.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
   import RemoveCredential from "./(components)/remove-credential-column.svelte";
+  import RenameCredentialModal from "./(components)/rename-credential-modal.svelte";
   import ValueInputCell from "./(components)/value-input-cell.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
   const credentials = $derived(data.credentials);
   const providers = $derived(data.providers);
+
+  // Credentials row type
+  type CredentialRow = PageData["credentials"][number];
 
   // Lookup provider displayName by ID
   function getProviderName(providerId: string): string {
@@ -65,8 +69,6 @@
   let commitHash = BUILD_INFO?.commitHash || "unknown";
 
   // Credentials table
-  type CredentialRow = PageData["credentials"][number];
-
   const columnHelper = createColumnHelper<CredentialRow>();
 
   const credentialsTable = createTable({
@@ -89,8 +91,20 @@
           renderComponent(ProviderDetails, {
             name: getProviderName(info.row.original.provider),
             label: info.row.original.label,
+            displayName: info.row.original.displayName,
             date: info.row.original.createdAt,
           }),
+      }),
+
+      columnHelper.display({
+        id: "edit",
+        header: "",
+        cell: (info) =>
+          renderComponent(RenameCredentialModal, {
+            credentialId: info.row.original.id,
+            currentName: info.row.original.displayName ?? info.row.original.label,
+          }),
+        meta: { shrink: true },
       }),
 
       columnHelper.display({

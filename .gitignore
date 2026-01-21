@@ -97,3 +97,5 @@ atlas-otel-collector
 
 # Ralph coverage progress
 test-coverage-progress.txt
+scripts/ralph/progress.txt
+scripts/ralph/PRD.json

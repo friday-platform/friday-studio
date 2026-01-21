@@ -17,10 +17,10 @@ interface PRD {
 
 ```typescript
 interface Meta {
-  id: string;        // "prd-2026-01-21-rate-limiting"
-  title: string;     // Human readable title
+  id: string; // "prd-2026-01-21-rate-limiting"
+  title: string; // Human readable title
   designDoc: string; // Path to source design document
-  created: string;   // ISO 8601 timestamp
+  created: string; // ISO 8601 timestamp
 }
 ```
 
@@ -28,18 +28,20 @@ interface Meta {
 
 ```typescript
 interface Scope {
-  goal: string;              // One sentence goal
+  goal: string; // One sentence goal
   successCriteria: string[]; // All must be true for PRD complete
-  outOfScope: string[];      // Explicitly excluded items
+  outOfScope: string[]; // Explicitly excluded items
 }
 ```
 
 **successCriteria examples:**
+
 - "Requests beyond limit return 429"
 - "All tests pass"
 - "Endpoint responds in <100ms"
 
 **outOfScope examples:**
+
 - "Rate limiting other endpoints"
 - "Admin override capability"
 - "Redis-backed distributed limiting"
@@ -48,14 +50,14 @@ interface Scope {
 
 ```typescript
 interface Task {
-  id: string;                    // "task-1", "task-2", etc.
-  description: string;           // What to implement
-  anchor: string;                // Starting file path
+  id: string; // "task-1", "task-2", etc.
+  description: string; // What to implement
+  anchor: string; // Starting file path
   tier: "backend" | "api" | "frontend";
-  tdd?: TDD;                     // Optional, omit if TDD doesn't fit
-  verification: string[];        // Commands that must pass
-  acceptanceCriteria: string[];  // Human-readable done criteria
-  passes: boolean;               // Agent sets true when complete
+  tdd?: TDD; // Optional, omit if TDD doesn't fit
+  verification: string[]; // Commands that must pass
+  acceptanceCriteria: string[]; // Human-readable done criteria
+  passes: boolean; // Agent sets true when complete
 }
 ```
 
@@ -63,22 +65,25 @@ interface Task {
 
 ```typescript
 interface TDD {
-  red: string;       // Specific failing test to write
-  green: string;     // Minimal implementation to pass
+  red: string; // Specific failing test to write
+  green: string; // Minimal implementation to pass
   refactor?: string; // Optional cleanup step
 }
 ```
 
 **red phase requirements:**
+
 - Must be specific enough to write without exploration
 - Include assertion details: "asserting X returns Y when given Z"
 - Reference test file location if not obvious
 
 **green phase requirements:**
+
 - Describe minimal implementation approach
 - Don't over-specify - agent figures out details
 
 **refactor phase:**
+
 - Optional
 - Only include if specific cleanup is warranted
 
@@ -112,7 +117,7 @@ interface TDD {
   "deno check",
   "deno lint",
   "deno task test apps/web-client/src/path/to/file.test.ts",
-  "agent-browser navigate http://localhost:5173/route",
+  "agent-browser navigate http://localhost:1420/route",
   "agent-browser snapshot"
 ]
 ```
@@ -212,11 +217,11 @@ Tuning: Agent initially tried per-route middleware registration. All Hono middle
 
 ### progress.txt Fields
 
-| Field | When to include |
-|-------|-----------------|
-| Commit | Always - SHA + conventional message |
-| Decision | When a non-obvious choice was made |
-| Blocker | When something unexpected blocked progress |
-| Tuning | When agent behavior should be refined for future iterations |
+| Field    | When to include                                             |
+| -------- | ----------------------------------------------------------- |
+| Commit   | Always - SHA + conventional message                         |
+| Decision | When a non-obvious choice was made                          |
+| Blocker  | When something unexpected blocked progress                  |
+| Tuning   | When agent behavior should be refined for future iterations |
 
 Keep entries terse. Sacrifice grammar for concision.

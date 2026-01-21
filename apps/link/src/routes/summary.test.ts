@@ -40,7 +40,6 @@ const testProviders = {
 
 /**
  * Response schema for /v1/summary endpoint.
- * Note: credentials array has a simplified shape without metadata.
  */
 const SummaryResponseSchema = z.object({
   providers: z.array(
@@ -52,6 +51,10 @@ const SummaryResponseSchema = z.object({
       type: z.enum(["apikey", "oauth"]),
       provider: z.string(),
       label: z.string(),
+      displayName: z.string().nullable(),
+      userIdentifier: z.string().nullable(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
     }),
   ),
 });
@@ -152,13 +155,13 @@ describe("GET /v1/summary endpoint", () => {
 
     // Verify no secrets in raw JSON response
     const jsonString = JSON.stringify(rawJson);
-    expect(jsonString.includes("very-secret-token-12345")).toEqual(false);
-    expect(jsonString.includes("sk-test-123")).toEqual(false);
+    expect(jsonString).not.toContain("very-secret-token-12345");
+    expect(jsonString).not.toContain("sk-test-123");
 
     // Verify credentials array doesn't have 'secret' field
     const json = SummaryResponseSchema.parse(rawJson);
     json.credentials.forEach((cred) => {
-      expect("secret" in cred).toEqual(false);
+      expect(cred).not.toHaveProperty("secret");
     });
   });
 
@@ -178,10 +181,10 @@ describe("GET /v1/summary endpoint", () => {
     const json = SummaryResponseSchema.parse(await res.json());
 
     // Should still have providers (from registry)
-    expect(json.providers.length > 0).toEqual(true);
+    expect(json.providers.length).toBeGreaterThan(0);
 
     // But no credentials
-    expect(json.credentials.length).toEqual(0);
+    expect(json.credentials).toHaveLength(0);
 
     await rm(emptyTempDir, { recursive: true });
   });
@@ -216,9 +219,7 @@ describe("GET /v1/summary endpoint", () => {
     const allRes = await app.request("/v1/summary");
     expect(allRes.status).toEqual(200);
     const allJson = SummaryResponseSchema.parse(await allRes.json());
-    expect(allJson.credentials.filter((c) => [cred1.id, cred2.id].includes(c.id)).length).toEqual(
-      2,
-    );
+    expect(allJson.credentials.filter((c) => [cred1.id, cred2.id].includes(c.id))).toHaveLength(2);
 
     // Fetch summary filtered by provider 1
     const filtered1Res = await app.request(`/v1/summary?provider=${testProviders.apikey1.id}`);
@@ -229,9 +230,8 @@ describe("GET /v1/summary endpoint", () => {
     const filtered1Creds = filtered1Json.credentials.filter((c) =>
       [cred1.id, cred2.id].includes(c.id),
     );
-    expect(filtered1Creds.length).toEqual(1);
-    expect(filtered1Creds[0]?.id).toEqual(cred1.id);
-    expect(filtered1Creds[0]?.provider).toEqual(testProviders.apikey1.id);
+    expect(filtered1Creds).toHaveLength(1);
+    expect(filtered1Creds[0]).toMatchObject({ id: cred1.id, provider: testProviders.apikey1.id });
 
     // Fetch summary filtered by provider 2
     const filtered2Res = await app.request(`/v1/summary?provider=${testProviders.apikey2.id}`);
@@ -242,9 +242,8 @@ describe("GET /v1/summary endpoint", () => {
     const filtered2Creds = filtered2Json.credentials.filter((c) =>
       [cred1.id, cred2.id].includes(c.id),
     );
-    expect(filtered2Creds.length).toEqual(1);
-    expect(filtered2Creds[0]?.id).toEqual(cred2.id);
-    expect(filtered2Creds[0]?.provider).toEqual(testProviders.apikey2.id);
+    expect(filtered2Creds).toHaveLength(1);
+    expect(filtered2Creds[0]).toMatchObject({ id: cred2.id, provider: testProviders.apikey2.id });
   });
 
   it("returns empty array for unknown provider (not 404)", async () => {
@@ -253,9 +252,47 @@ describe("GET /v1/summary endpoint", () => {
     const json = SummaryResponseSchema.parse(await res.json());
 
     // Should return empty credentials array, not 404
-    expect(json.credentials.length).toEqual(0);
+    expect(json.credentials).toHaveLength(0);
 
     // Providers array should still include all registered providers
-    expect(json.providers.length > 0).toEqual(true);
+    expect(json.providers.length).toBeGreaterThan(0);
+  });
+
+  it("credentials include displayName, userIdentifier, and updatedAt fields", async () => {
+    // Create credential
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.apikey1.id,
+        label: "Fields Test",
+        secret: { apiKey: "sk-fields-test" },
+      }),
+    });
+    expect(createRes.status).toEqual(201);
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    // Update displayName
+    const patchRes = await app.request(`/v1/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "My Custom Name" }),
+    });
+    expect(patchRes.status).toEqual(200);
+
+    // Fetch summary
+    const res = await app.request("/v1/summary");
+    expect(res.status).toEqual(200);
+    const json = SummaryResponseSchema.parse(await res.json());
+
+    // Find our credential
+    const cred = json.credentials.find((c) => c.id === created.id);
+    expect(cred).toBeDefined();
+    expect(cred).toMatchObject({
+      displayName: "My Custom Name",
+      userIdentifier: null, // apikey doesn't have userIdentifier
+    });
+    expect(cred!.createdAt).toBeDefined();
+    expect(cred!.updatedAt).toBeDefined();
   });
 });

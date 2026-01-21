@@ -6,4 +6,4 @@
   let { onclick }: Props = $props();
 </script>
 
-<Button size="small" {onclick}>Remove</Button>
+<Button size="small" {onclick}>Delete</Button>

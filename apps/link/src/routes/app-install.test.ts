@@ -11,7 +11,13 @@ import { factory } from "../factory.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { ProviderRegistry } from "../providers/registry.ts";
 import { defineAppInstallProvider, type ProviderDefinition } from "../providers/types.ts";
-import type { Credential, CredentialInput, SaveResult, StorageAdapter } from "../types.ts";
+import type {
+  Credential,
+  CredentialInput,
+  Metadata,
+  SaveResult,
+  StorageAdapter,
+} from "../types.ts";
 import { createAppInstallRoutes } from "./app-install.ts";
 import { createCallbackRoutes } from "./callback.ts";
 
@@ -127,6 +133,22 @@ class MockStorageAdapter implements StorageAdapter {
       }
     }
     return Promise.resolve(null);
+  }
+
+  updateMetadata(
+    id: string,
+    metadata: { displayName?: string },
+    _userId: string,
+  ): Promise<Metadata> {
+    const existing = this.credentials.get(id);
+    if (!existing) return Promise.reject(new Error("Credential not found"));
+    const updated: Credential = {
+      ...existing,
+      displayName: metadata.displayName ?? existing.displayName,
+      metadata: { ...existing.metadata, updatedAt: new Date().toISOString() },
+    };
+    this.credentials.set(id, updated);
+    return Promise.resolve(updated.metadata);
   }
 }
 

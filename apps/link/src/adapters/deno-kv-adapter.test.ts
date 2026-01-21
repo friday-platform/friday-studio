@@ -21,6 +21,7 @@ describe("DenoKVStorageAdapter tenant isolation", () => {
   };
 
   let credIdA: string;
+  let metadataA: { createdAt: string; updatedAt: string };
 
   it("user A save returns SaveResult, user A get = found", async () => {
     const result = await adapter.save(credInput, "user-a");
@@ -28,6 +29,7 @@ describe("DenoKVStorageAdapter tenant isolation", () => {
     expect(result.metadata.createdAt).toBeDefined();
     expect(result.metadata.updatedAt).toBeDefined();
     credIdA = result.id;
+    metadataA = result.metadata;
     const retrieved = await adapter.get(credIdA, "user-a");
     expect(retrieved).toBeDefined();
     expect(retrieved!.type).toEqual(credInput.type);
@@ -45,5 +47,31 @@ describe("DenoKVStorageAdapter tenant isolation", () => {
     const list = await adapter.list("oauth", "user-a");
     expect(list.length).toEqual(1);
     expect(list[0]?.id).toEqual(credIdA);
+  });
+
+  it("updateMetadata updates displayName and returns updated metadata", async () => {
+    const result = await adapter.updateMetadata(
+      credIdA,
+      { displayName: "My Custom Name" },
+      "user-a",
+    );
+    expect(result.createdAt).toEqual(metadataA.createdAt);
+    expect(result.updatedAt).not.toEqual(metadataA.updatedAt);
+
+    const retrieved = await adapter.get(credIdA, "user-a");
+    expect(retrieved!.displayName).toEqual("My Custom Name");
+    expect(retrieved!.secret).toEqual(credInput.secret); // secret unchanged
+  });
+
+  it("updateMetadata throws for non-existent credential", async () => {
+    await expect(
+      adapter.updateMetadata("nonexistent", { displayName: "Test" }, "user-a"),
+    ).rejects.toThrow("Credential not found");
+  });
+
+  it("updateMetadata throws for wrong user", async () => {
+    await expect(
+      adapter.updateMetadata(credIdA, { displayName: "Test" }, "user-b"),
+    ).rejects.toThrow("Credential not found");
   });
 });

@@ -27,6 +27,7 @@ export const CredentialSchema = z.object({
   provider: z.string(), // "openai", "github", etc.
   userIdentifier: z.string().optional(), // OAuth: email, sub, or account ID
   label: z.string(), // user-friendly name
+  displayName: z.string().optional(), // user-customizable display name
   secret: z.record(z.string(), z.unknown()),
   metadata: MetadataSchema,
 });
@@ -42,6 +43,7 @@ export const OAuthCredentialSchema = z.object({
   provider: z.string(),
   userIdentifier: z.string(), // email, sub, or account ID
   label: z.string(),
+  displayName: z.string().optional(), // user-customizable display name
   secret: OAuthCredentialSecretSchema,
   metadata: MetadataSchema,
 });
@@ -84,6 +86,11 @@ export interface StorageAdapter {
     externalId: string,
     userId: string,
   ): Promise<Credential | null>;
+  /**
+   * Update credential metadata without touching the encrypted secret.
+   * Used for rename operations.
+   */
+  updateMetadata(id: string, metadata: { displayName?: string }, userId: string): Promise<Metadata>;
 }
 
 /**

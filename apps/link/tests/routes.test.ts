@@ -425,4 +425,87 @@ describe("Link HTTP routes", () => {
     expect(json.id).toBe(testProviders.fullDetailsNoHealth.id);
     expect(json.supportsHealth).toBe(false);
   });
+
+  it("PATCH /v1/credentials/:id updates displayName", async () => {
+    // Create credential
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicGet.id,
+        label: "PatchTest",
+        secret: { key: "value" },
+      }),
+    });
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    // Patch displayName
+    const patchRes = await app.request(`/v1/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "My Custom Name" }),
+    });
+
+    expect(patchRes.status).toBe(200);
+    const patched = CredentialSummarySchema.parse(await patchRes.json());
+    expect(patched.id).toBe(created.id);
+    expect(patched.displayName).toBe("My Custom Name");
+
+    // Verify persisted via GET
+    const getRes = await app.request(`/v1/credentials/${created.id}`);
+    const fetched = CredentialSummarySchema.parse(await getRes.json());
+    expect(fetched.displayName).toBe("My Custom Name");
+  });
+
+  it("PATCH /v1/credentials/:id validates displayName (1-100 chars, trimmed)", async () => {
+    // Create credential
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicGet.id,
+        label: "ValidationTest",
+        secret: { key: "value" },
+      }),
+    });
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    // Empty string after trim should fail
+    const emptyRes = await app.request(`/v1/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "   " }),
+    });
+    expect(emptyRes.status).toBe(400);
+
+    // Too long (>100 chars) should fail
+    const longRes = await app.request(`/v1/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "a".repeat(101) }),
+    });
+    expect(longRes.status).toBe(400);
+
+    // Valid name with whitespace should be trimmed
+    const validRes = await app.request(`/v1/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "  Trimmed Name  " }),
+    });
+    expect(validRes.status).toBe(200);
+    const patched = CredentialSummarySchema.parse(await validRes.json());
+    expect(patched.displayName).toBe("Trimmed Name");
+  });
+
+  it("PATCH /v1/credentials/:id returns 404 for non-existent credential", async () => {
+    const res = await app.request("/v1/credentials/nonexistent-id", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "Test" }),
+    });
+
+    expect(res.status).toBe(404);
+    const json = ErrorResponse.parse(await res.json());
+    expect(json.error).toMatch(/not found/i);
+  });
 });

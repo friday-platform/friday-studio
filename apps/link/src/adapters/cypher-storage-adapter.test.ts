@@ -89,23 +89,24 @@ describe("CypherStorageAdapter", () => {
     const result = await adapter.save(testCredentialInput, "user-123");
 
     // Verify returned SaveResult
-    expect(result.id).toEqual("pg-generated-id");
-    expect(result.metadata.createdAt).toEqual("2024-01-01T00:00:00.000Z");
-    expect(result.metadata.updatedAt).toEqual("2024-01-01T00:00:00.000Z");
+    expect(result).toMatchObject({
+      id: "pg-generated-id",
+      metadata: { createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" },
+    });
 
     // Verify encrypt was called with JSON-serialized secret
-    expect(encryptCalls.length).toEqual(1);
+    expect(encryptCalls).toHaveLength(1);
     expect(encryptCalls[0]).toEqual(['{"key":"sk-test-key"}']);
 
     // Verify SQL was called with encrypted secret (no id passed - Postgres generates it)
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the INSERT
-    expect(sqlCalls.length).toEqual(3);
+    expect(sqlCalls).toHaveLength(3);
     const values = sqlCalls[2]?.values ?? []; // Get values from the INSERT query (third call)
     expect(values[0]).toEqual("user-123"); // user_id
     expect(values[1]).toEqual("apikey"); // type
     expect(values[2]).toEqual("openai"); // provider
     expect(values[3]).toEqual("My API Key"); // label
-    expect(values[4]).toEqual(null); // user_identifier (null for apikey)
+    expect(values[4]).toBeNull(); // user_identifier (null for apikey)
     expect(values[5]).toEqual('enc:{"key":"sk-test-key"}'); // encrypted_secret
   });
 
@@ -184,6 +185,7 @@ describe("CypherStorageAdapter", () => {
           provider: "openai",
           label: "My API Key",
           user_identifier: null,
+          display_name: null,
           encrypted_secret: 'enc:{"key":"sk-test-key"}',
           created_at: new Date("2024-01-01T00:00:00Z"),
           updated_at: new Date("2024-01-01T00:00:00Z"),
@@ -195,14 +197,42 @@ describe("CypherStorageAdapter", () => {
     const result = await adapter.get("cred-123", "user-123");
 
     // Verify decrypt was called
-    expect(decryptCalls.length).toEqual(1);
+    expect(decryptCalls).toHaveLength(1);
     expect(decryptCalls[0]).toEqual(['enc:{"key":"sk-test-key"}']);
 
     // Verify decrypted result
+    expect(result).toMatchObject({ id: "cred-123", secret: { key: "sk-test-key" } });
+    expect(result!.userIdentifier).toBeUndefined(); // null in DB becomes undefined
+    expect(result!.displayName).toBeUndefined(); // null in DB becomes undefined
+  });
+
+  it("get: returns displayName when set", async () => {
+    const mockCypher = createMockCypher({
+      decrypt: (ciphertext) => Promise.resolve(ciphertext.map((c) => c.replace("enc:", ""))),
+    });
+
+    const mockSql = createMockSql({
+      queryResult: [
+        {
+          id: "cred-with-display-name",
+          user_id: "user-123",
+          type: "apikey",
+          provider: "openai",
+          label: "My API Key",
+          user_identifier: null,
+          display_name: "Custom Name",
+          encrypted_secret: 'enc:{"key":"sk-test-key"}',
+          created_at: new Date("2024-01-01T00:00:00Z"),
+          updated_at: new Date("2024-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const adapter = new CypherStorageAdapter(mockCypher, mockSql);
+    const result = await adapter.get("cred-with-display-name", "user-123");
+
     expect(result).toBeDefined();
-    expect(result!.id).toEqual("cred-123");
-    expect(result!.secret).toEqual({ key: "sk-test-key" });
-    expect(result!.userIdentifier).toEqual(undefined); // null in DB becomes undefined
+    expect(result!.displayName).toEqual("Custom Name");
   });
 
   it("get: returns userIdentifier for OAuth credentials", async () => {
@@ -219,6 +249,7 @@ describe("CypherStorageAdapter", () => {
           provider: "google",
           label: "test@example.com",
           user_identifier: "test@example.com",
+          display_name: null,
           encrypted_secret: 'enc:{"access_token":"ya29.test"}',
           created_at: new Date("2024-01-01T00:00:00Z"),
           updated_at: new Date("2024-01-01T00:00:00Z"),
@@ -229,10 +260,11 @@ describe("CypherStorageAdapter", () => {
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.get("oauth-cred-123", "user-123");
 
-    expect(result).toBeDefined();
-    expect(result!.id).toEqual("oauth-cred-123");
-    expect(result!.userIdentifier).toEqual("test@example.com");
-    expect(result!.type).toEqual("oauth");
+    expect(result).toMatchObject({
+      id: "oauth-cred-123",
+      userIdentifier: "test@example.com",
+      type: "oauth",
+    });
   });
 
   it("get: returns null for not found", async () => {
@@ -241,7 +273,7 @@ describe("CypherStorageAdapter", () => {
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.get("nonexistent", "user-123");
-    expect(result).toEqual(null);
+    expect(result).toBeNull();
   });
 
   it("get: throws on database error", async () => {
@@ -269,6 +301,7 @@ describe("CypherStorageAdapter", () => {
           provider: "openai",
           label: "Key 1",
           user_identifier: null,
+          display_name: null,
           created_at: new Date("2024-01-01"),
           updated_at: new Date("2024-01-01"),
         },
@@ -278,11 +311,11 @@ describe("CypherStorageAdapter", () => {
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.list("apikey", "user-123");
 
-    expect(decryptCalled).toEqual(false);
-    expect(result.length).toEqual(1);
-    expect(result[0]?.id).toEqual("cred-1");
-    // Summaries should not have secret field
-    expect("secret" in (result[0] ?? {})).toEqual(false);
+    expect(decryptCalled).toBe(false);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "cred-1" });
+    expect(result[0]).not.toHaveProperty("secret");
+    expect(result[0]?.displayName).toBeUndefined();
   });
 
   it("list: returns userIdentifier in summaries", async () => {
@@ -294,6 +327,7 @@ describe("CypherStorageAdapter", () => {
           provider: "google",
           label: "test@example.com",
           user_identifier: "test@example.com",
+          display_name: null,
           created_at: new Date("2024-01-01"),
           updated_at: new Date("2024-01-01"),
         },
@@ -303,9 +337,31 @@ describe("CypherStorageAdapter", () => {
     const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
     const result = await adapter.list("oauth", "user-123");
 
-    expect(result.length).toEqual(1);
-    expect(result[0]?.id).toEqual("oauth-cred-1");
-    expect(result[0]?.userIdentifier).toEqual("test@example.com");
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "oauth-cred-1", userIdentifier: "test@example.com" });
+  });
+
+  it("list: returns displayName when set", async () => {
+    const mockSql = createMockSql({
+      queryResult: [
+        {
+          id: "cred-with-name",
+          type: "apikey",
+          provider: "openai",
+          label: "My API Key",
+          user_identifier: null,
+          display_name: "Production Key",
+          created_at: new Date("2024-01-01"),
+          updated_at: new Date("2024-01-01"),
+        },
+      ],
+    });
+
+    const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
+    const result = await adapter.list("apikey", "user-123");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ displayName: "Production Key" });
   });
 
   it("update: encrypts secret and returns metadata", async () => {
@@ -327,23 +383,25 @@ describe("CypherStorageAdapter", () => {
     const metadata = await adapter.update("cred-123", testCredentialInput, "user-123");
 
     // Verify metadata returned
-    expect(metadata.createdAt).toEqual("2024-01-01T00:00:00.000Z");
-    expect(metadata.updatedAt).toEqual("2024-01-02T00:00:00.000Z");
+    expect(metadata).toMatchObject({
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    });
 
     // Verify encrypt was called
-    expect(encryptCalls.length).toEqual(1);
+    expect(encryptCalls).toHaveLength(1);
     expect(encryptCalls[0]).toEqual(['{"key":"sk-test-key"}']);
 
     // Verify SQL UPDATE was called
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
-    expect(sqlCalls.length).toEqual(3);
-    expect(sqlCalls[2]?.query.includes("UPDATE")).toEqual(true);
-    expect(sqlCalls[2]?.query.includes("deleted_at IS NULL")).toEqual(true);
+    expect(sqlCalls).toHaveLength(3);
+    expect(sqlCalls[2]?.query).toContain("UPDATE");
+    expect(sqlCalls[2]?.query).toContain("deleted_at IS NULL");
     const values = sqlCalls[2]?.values ?? [];
     expect(values[0]).toEqual("apikey"); // type
     expect(values[1]).toEqual("openai"); // provider
     expect(values[2]).toEqual("My API Key"); // label
-    expect(values[3]).toEqual(null); // user_identifier (null for apikey)
+    expect(values[3]).toBeNull(); // user_identifier (null for apikey)
     expect(values[4]).toEqual('enc:{"key":"sk-test-key"}'); // encrypted_secret
     expect(values[5]).toEqual("cred-123"); // id
     expect(values[6]).toEqual("user-123"); // user_id
@@ -387,10 +445,10 @@ describe("CypherStorageAdapter", () => {
     await adapter.delete("cred-123", "user-456");
 
     // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
-    expect(sqlCalls.length).toEqual(3);
+    expect(sqlCalls).toHaveLength(3);
     // Verify it's an UPDATE (soft delete), not DELETE
-    expect(sqlCalls[2]?.query.includes("UPDATE")).toEqual(true);
-    expect(sqlCalls[2]?.query.includes("deleted_at")).toEqual(true);
+    expect(sqlCalls[2]?.query).toContain("UPDATE");
+    expect(sqlCalls[2]?.query).toContain("deleted_at");
     const values = sqlCalls[2]?.values ?? [];
     expect(values[0]).toEqual("cred-123"); // id
     expect(values[1]).toEqual("user-456"); // user_id
@@ -402,5 +460,63 @@ describe("CypherStorageAdapter", () => {
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     await expect(adapter.delete("cred-123", "user-123")).rejects.toThrow("Delete failed");
+  });
+
+  it("updateMetadata: updates display_name column without touching encrypted_secret", async () => {
+    const sqlCalls: { query: string; values: unknown[] }[] = [];
+    const mockSql = createMockSql({
+      queryResult: [{ created_at: new Date("2024-01-01"), updated_at: new Date("2024-01-03") }],
+      trackCalls: sqlCalls,
+    });
+
+    // Cypher should NOT be called for metadata-only updates
+    let cypherCalled = false;
+    const mockCypher = createMockCypher({
+      encrypt: () => {
+        cypherCalled = true;
+        return Promise.resolve([]);
+      },
+      decrypt: () => {
+        cypherCalled = true;
+        return Promise.resolve([]);
+      },
+    });
+
+    const adapter = new CypherStorageAdapter(mockCypher, mockSql);
+    const metadata = await adapter.updateMetadata(
+      "cred-123",
+      { displayName: "My Custom Name" },
+      "user-123",
+    );
+
+    // Verify metadata returned
+    expect(metadata).toMatchObject({
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-03T00:00:00.000Z",
+    });
+
+    // Verify NO encrypt/decrypt calls (critical: no touching secrets)
+    expect(cypherCalled).toBe(false);
+
+    // Verify SQL UPDATE was called with display_name only
+    expect(sqlCalls).toHaveLength(3); // SET LOCAL ROLE, SET_CONFIG, UPDATE
+    const updateQuery = sqlCalls[2]?.query ?? "";
+    expect(updateQuery).toContain("UPDATE");
+    expect(updateQuery).toContain("display_name");
+    expect(updateQuery).not.toContain("encrypted_secret");
+
+    const values = sqlCalls[2]?.values ?? [];
+    expect(values[0]).toEqual("My Custom Name"); // display_name
+    expect(values[1]).toEqual("cred-123"); // id
+    expect(values[2]).toEqual("user-123"); // user_id
+  });
+
+  it("updateMetadata: throws when credential not found", async () => {
+    const mockSql = createMockSql({ queryResult: [] }); // No rows returned
+
+    const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
+    await expect(
+      adapter.updateMetadata("nonexistent", { displayName: "Test" }, "user-123"),
+    ).rejects.toThrow("Credential not found");
   });
 });

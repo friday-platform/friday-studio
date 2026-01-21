@@ -25,6 +25,7 @@ interface CredentialRow {
   provider: string;
   label: string;
   user_identifier: string | null;
+  display_name: string | null;
   encrypted_secret: string;
   created_at: Date;
   updated_at: Date;
@@ -153,7 +154,7 @@ export class CypherStorageAdapter implements StorageAdapter {
   async get(id: string, userId: string): Promise<Credential | null> {
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<CredentialRow[]>`
-        SELECT id, user_id, type, provider, label, user_identifier, encrypted_secret, created_at, updated_at
+        SELECT id, user_id, type, provider, label, user_identifier, display_name, encrypted_secret, created_at, updated_at
         FROM public.credential
         WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL
       `;
@@ -185,6 +186,7 @@ export class CypherStorageAdapter implements StorageAdapter {
         provider: row.provider,
         label: row.label,
         userIdentifier: row.user_identifier ?? undefined,
+        displayName: row.display_name ?? undefined,
         secret,
         metadata: {
           createdAt: row.created_at.toISOString(),
@@ -197,7 +199,7 @@ export class CypherStorageAdapter implements StorageAdapter {
   async list(type: string, userId: string): Promise<CredentialSummary[]> {
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<CredentialRow[]>`
-        SELECT id, type, provider, label, user_identifier, created_at, updated_at
+        SELECT id, type, provider, label, user_identifier, display_name, created_at, updated_at
         FROM public.credential
         WHERE user_id = ${userId} AND type = ${type} AND deleted_at IS NULL
       `;
@@ -209,6 +211,7 @@ export class CypherStorageAdapter implements StorageAdapter {
         provider: row.provider,
         label: row.label,
         userIdentifier: row.user_identifier ?? undefined,
+        displayName: row.display_name ?? undefined,
         metadata: {
           createdAt: row.created_at.toISOString(),
           updatedAt: row.updated_at.toISOString(),
@@ -227,6 +230,28 @@ export class CypherStorageAdapter implements StorageAdapter {
     });
   }
 
+  async updateMetadata(
+    id: string,
+    metadata: { displayName?: string },
+    userId: string,
+  ): Promise<Metadata> {
+    return await withUserContext(this.sql, userId, async (tx) => {
+      const rows = await tx<{ created_at: Date; updated_at: Date }[]>`
+        UPDATE public.credential
+        SET display_name = ${metadata.displayName ?? null}
+        WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL
+        RETURNING created_at, updated_at
+      `;
+
+      const row = rows[0];
+      if (!row) {
+        throw new Error("Credential not found");
+      }
+
+      return { createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() };
+    });
+  }
+
   async findByProviderAndExternalId(
     provider: string,
     externalId: string,
@@ -235,7 +260,7 @@ export class CypherStorageAdapter implements StorageAdapter {
     return await withUserContext(this.sql, userId, async (tx) => {
       // Get all credentials for this user + provider
       const rows = await tx<CredentialRow[]>`
-        SELECT id, user_id, type, provider, label, user_identifier, encrypted_secret, created_at, updated_at
+        SELECT id, user_id, type, provider, label, user_identifier, display_name, encrypted_secret, created_at, updated_at
         FROM public.credential
         WHERE user_id = ${userId} AND provider = ${provider} AND deleted_at IS NULL
       `;
@@ -261,6 +286,7 @@ export class CypherStorageAdapter implements StorageAdapter {
             provider: row.provider,
             label: row.label,
             userIdentifier: row.user_identifier ?? undefined,
+            displayName: row.display_name ?? undefined,
             secret,
             metadata: {
               createdAt: row.created_at.toISOString(),
