@@ -41,7 +41,7 @@ require (
 	go.opentelemetry.io/collector/config/configtls v1.49.0
 	go.opentelemetry.io/collector/confmap v1.50.0
 	go.opentelemetry.io/collector/confmap/provider/envprovider v1.49.0
-	go.opentelemetry.io/collector/confmap/provider/fileprovider v1.49.0
+	go.opentelemetry.io/collector/confmap/provider/fileprovider v1.50.0
 	go.opentelemetry.io/collector/exporter v1.49.0
 	go.opentelemetry.io/collector/exporter/debugexporter v0.143.0
 	go.opentelemetry.io/collector/exporter/exporterhelper v0.143.0
