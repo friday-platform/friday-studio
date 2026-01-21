@@ -5,18 +5,14 @@ import { z } from "zod";
 import { defineOAuthProvider } from "./types.ts";
 
 /**
- * Schema for Notion's notion-get-self MCP tool response.
+ * Schema for Notion's notion-get-users MCP tool response (with user_id: "self").
  * @see https://developers.notion.com/docs/mcp-supported-tools
  */
-const NotionSelfResponseSchema = z.object({
-  id: z.string(),
-  bot: z.object({
-    owner: z
-      .object({
-        user: z.object({ id: z.string(), person: z.object({ email: z.string() }).optional() }),
-      })
-      .optional(),
-  }),
+const NotionUsersResponseSchema = z.object({
+  results: z.array(
+    z.object({ type: z.string(), id: z.string(), name: z.string().optional(), email: z.string() }),
+  ),
+  has_more: z.boolean(),
 });
 
 /** Schema for MCP tool result content */
@@ -52,17 +48,23 @@ export const notionProvider = defineOAuthProvider({
   identify: async (tokens) => {
     const mcpClient = await createMcpClient(tokens.access_token);
     try {
-      const result = await mcpClient.callTool({ name: "notion-get-self", arguments: {} });
+      const result = await mcpClient.callTool({
+        name: "notion-get-users",
+        arguments: { user_id: "self" },
+      });
       const content = ToolResultContentSchema.parse(result.content);
       const textContent = content.find((c) => c.type === "text");
       if (!textContent?.text) {
-        throw new Error("notion-get-self returned no text content");
+        throw new Error("notion-get-users returned no text content");
       }
 
-      const user = NotionSelfResponseSchema.parse(JSON.parse(textContent.text));
+      const response = NotionUsersResponseSchema.parse(JSON.parse(textContent.text));
+      const user = response.results[0];
+      if (!user) {
+        throw new Error("notion-get-users returned empty results");
+      }
 
-      // Return email if available, otherwise owner user id, otherwise bot id
-      return user.bot.owner?.user.person?.email ?? user.bot.owner?.user.id ?? user.id;
+      return user.email;
     } finally {
       await mcpClient.close();
     }

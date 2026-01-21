@@ -5,6 +5,7 @@
  * @module oauth/service
  */
 
+import { logger } from "@atlas/logger";
 import type { ProviderRegistry } from "../providers/registry.ts";
 import type { OAuthProvider } from "../providers/types.ts";
 import type { ClientRegistration, OAuthCredential, StorageAdapter } from "../types.ts";
@@ -292,12 +293,13 @@ export class OAuthService {
 
   /**
    * Resolve user identity from tokens using provider's identify method.
+   * Falls back to token prefix if identification fails to avoid blocking auth.
    *
    * @param tokens - Token exchange result
    * @param _authServer - Authorization server metadata (unused)
    * @param provider - OAuth provider
    * @param _clientId - OAuth client ID (unused)
-   * @returns User identifier from provider.identify()
+   * @returns User identifier from provider.identify(), or fallback on failure
    */
   private async resolveUserIdentity(
     tokens: TokenExchangeResult,
@@ -305,12 +307,19 @@ export class OAuthService {
     provider: OAuthProvider,
     _clientId: string,
   ): Promise<string> {
-    return await provider.identify({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      token_type: "Bearer",
-      expires_at: tokens.expires_at,
-    });
+    try {
+      return await provider.identify({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_type: "Bearer",
+        expires_at: tokens.expires_at,
+      });
+    } catch (error) {
+      // Fallback: use token prefix to avoid blocking auth entirely
+      // MCP tools can change without warning (see: Notion notion-get-self deprecation)
+      logger.error("oauth_identify_fallback", { provider: provider.id, error });
+      return `${provider.id}:${tokens.access_token.slice(0, 8)}...`;
+    }
   }
 
   /**

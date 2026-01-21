@@ -56,7 +56,7 @@ export const linearProvider = defineOAuthProvider({
         throw new Error("get_user returned no text content");
       }
       const user = LinearUserResponseSchema.parse(JSON.parse(textContent.text));
-      return user.id;
+      return user.email ?? user.id;
     } finally {
       await mcpClient.close();
     }
