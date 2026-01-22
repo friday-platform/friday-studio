@@ -33,7 +33,7 @@ jobs:
             -f apps/atlas-auth-ui/Dockerfile \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:latest" \
-            apps/atlas-auth-ui
+            .
           echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - id: auth

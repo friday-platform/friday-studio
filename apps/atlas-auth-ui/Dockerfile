@@ -4,13 +4,16 @@ FROM denoland/deno:alpine-2.6.5 AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package.json ./
+COPY apps/atlas-auth-ui/package.json apps/atlas-auth-ui/deno.json ./
 
 # Install dependencies
 RUN deno install
 
+# Copy workspace dependency directly into node_modules
+COPY packages/ga4/ ./node_modules/@atlas/ga4/
+
 # Copy source files
-COPY . .
+COPY apps/atlas-auth-ui/ ./
 
 # Build the SvelteKit app
 RUN deno task build
@@ -20,8 +23,8 @@ FROM denoland/deno:alpine-2.6.5
 
 WORKDIR /app
 
-# Copy package.json and install dependencies
-COPY package.json ./
+# Copy app package files and install production dependencies
+COPY apps/atlas-auth-ui/package.json apps/atlas-auth-ui/deno.json ./
 RUN deno install
 
 # Copy built app from builder
