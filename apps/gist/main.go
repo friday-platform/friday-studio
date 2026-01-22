@@ -11,6 +11,7 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/apps/gist/service"
+	"github.com/tempestteam/atlas/pkg/analytics"
 	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"
@@ -60,6 +61,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize analytics with client TLS config
+	if clientTLS, err := cfg.TLSConfig.ClientTLSConfig(); err != nil {
+		svc.Logger.Error("Failed to get client TLS config for analytics", "error", err)
+	} else {
+		analytics.Init(clientTLS)
+	}
+
 	// Start metrics server (shares TLS config with main server)
 	metricsServer := metrics.StartServer(cfg.MetricsPort, cfg.TLSConfig)
 	svc.Logger.Info("Started metrics server", "port", cfg.MetricsPort)
@@ -94,6 +102,11 @@ func main() {
 
 		if err := metrics.Shutdown(shutdownCtx, metricsServer); err != nil {
 			svc.Logger.Error("Error shutting down metrics server", "error", err)
+		}
+
+		// Flush analytics events before shutdown
+		if err := analytics.Shutdown(shutdownCtx); err != nil {
+			svc.Logger.Error("Error shutting down analytics", "error", err)
 		}
 
 		if err := svc.Close(); err != nil {
