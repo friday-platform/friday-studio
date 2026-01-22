@@ -14,7 +14,7 @@ Sentry.init({
 // Analytics - only load in production builds
 if (!__DEV_MODE__) {
   // Google Analytics
-  const GA_MEASUREMENT_ID = "G-GEJY2HP1CT";
+  const GA_MEASUREMENT_ID = "G-NLLF9SE37C";
   const gaScript = document.createElement("script");
   gaScript.async = true;
   gaScript.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
