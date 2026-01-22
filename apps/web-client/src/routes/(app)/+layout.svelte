@@ -23,6 +23,12 @@
 
   onMount(async () => {
     appCtx.user = data.user;
+
+    // Set GA4 user_id for cross-platform analytics (joins with friday_analytics)
+    if (data.user?.id && !__DEV_MODE__ && window.gtag) {
+      window.gtag("set", { user_id: data.user.id });
+    }
+
     // Start health checks immediately
     ctx.checkHealth();
 
