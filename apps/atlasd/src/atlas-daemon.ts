@@ -139,12 +139,18 @@ export class AtlasDaemon {
   #port: number | undefined;
 
   constructor(options: AtlasDaemonOptions = {}) {
+    // Read CORS origins from environment or options
+    // Environment variable takes precedence for production deployments
+    const envCorsOrigins = env.CORS_ALLOWED_ORIGINS?.split(",").map((s) => s.trim());
+    const corsOrigins = envCorsOrigins ?? options.cors;
+
     this.options = {
       maxConcurrentWorkspaces: 10,
       idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
       sseHeartbeatIntervalMs: 30 * 1000, // 30 seconds
       sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
+      cors: corsOrigins, // Override with resolved CORS origins
     };
     const context = {
       runtimes: this.runtimes,
@@ -162,7 +168,9 @@ export class AtlasDaemon {
         return this.daemon.streamRegistry;
       },
     };
-    this.app = createApp(context);
+    // Only pass env var origins to global CORS (production)
+    // Local dev uses "*" for global routes, but MCP endpoints still use this.options.cors
+    this.app = createApp(context, { corsOrigins: envCorsOrigins });
     this.setupRoutes();
     this.setupSignalHandlers();
   }
@@ -601,7 +609,7 @@ export class AtlasDaemon {
     this.app.all(
       "/mcp",
       cors({
-        origin: this.options.cors || "*",
+        origin: this.options.cors ?? "*",
         credentials: true,
         exposeHeaders: ["Mcp-Session-Id"],
         allowHeaders: ["Content-Type", "Mcp-Session-Id"],
@@ -674,7 +682,7 @@ export class AtlasDaemon {
     this.app.all(
       "/agents",
       cors({
-        origin: this.options.cors || "*",
+        origin: this.options.cors ?? "*",
         credentials: true,
         exposeHeaders: ["Mcp-Session-Id"],
         allowHeaders: ["Content-Type", "Mcp-Session-Id"],

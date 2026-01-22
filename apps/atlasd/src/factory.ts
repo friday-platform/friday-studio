@@ -40,6 +40,10 @@ export interface AppContext {
   streamRegistry: StreamRegistry;
 }
 
+export interface CreateAppOptions {
+  corsOrigins?: string | string[];
+}
+
 // Define variables available in context
 export type AppVariables = { Variables: { app: AppContext } };
 
@@ -47,7 +51,7 @@ export type AppVariables = { Variables: { app: AppContext } };
 export const daemonFactory = createFactory<AppVariables>();
 
 // Helper to create a Hono app with context
-export const createApp = (context: AppContext) => {
+export const createApp = (context: AppContext, options: CreateAppOptions = {}) => {
   const app = daemonFactory.createApp();
 
   // Set app context as a variable available to all routes
@@ -56,7 +60,8 @@ export const createApp = (context: AppContext) => {
     await next();
   });
 
-  app.use("*", cors({ origin: "*", exposeHeaders: ["X-Turn-Started-At"] }));
+  // Configure CORS - Hono natively handles string, string[], or "*"
+  app.use("*", cors({ origin: options.corsOrigins ?? "*", exposeHeaders: ["X-Turn-Started-At"] }));
 
   return app;
 };
