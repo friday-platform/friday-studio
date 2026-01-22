@@ -57,6 +57,8 @@ func (s *Service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(ShareBaseURLCtxMiddleware(s.cfg.ShareBaseURL))
 	r.Use(cors.Handler(corsOptions))
 
+	r.Get("/favicon.ico", faviconHandler)
+
 	r.Route("/space", func(r chi.Router) {
 		r.With(LimitRequestBody(s.cfg.MaxUploadSize)).Post("/", uploadHandler)
 		r.Get("/{id}", serveHandler)

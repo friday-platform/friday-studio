@@ -128,6 +128,7 @@ async function generateChatHTML(messages: AtlasUIMessage[], title?: string): Pro
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${displayTitle}</title>
+  <link rel="icon" type="image/png" href="https://auth.hellofriday.ai/favicon.png">
   <style>
 ${getEmbeddedStyles()}
   </style>
