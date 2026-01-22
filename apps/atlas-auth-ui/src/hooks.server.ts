@@ -16,15 +16,14 @@ const securityHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
 
   // Content-Security-Policy for auth pages
-  // Stricter than web-client since auth UI doesn't need analytics
   response.headers.set(
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' https://www.googletagmanager.com https://www.google-analytics.com",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
-      "connect-src 'self' https://o4507579070611456.ingest.us.sentry.io",
+      "img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com",
+      "connect-src 'self' https://o4507579070611456.ingest.us.sentry.io https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com",
       "font-src 'self' data:",
       "frame-ancestors 'none'",
       "base-uri 'self'",

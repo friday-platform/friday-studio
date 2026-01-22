@@ -8,4 +8,30 @@ Sentry.init({
   sendDefaultPii: true,
 });
 
+// Analytics - only load in production builds
+if (!__DEV_MODE__) {
+  // Google Analytics - same property as web-client (Friday App Website)
+  const GA_MEASUREMENT_ID = "G-GEJY2HP1CT";
+  const gaScript = document.createElement("script");
+  gaScript.async = true;
+  gaScript.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
+  document.head.appendChild(gaScript);
+
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = (...args: unknown[]) => {
+    window.dataLayer.push(args);
+  };
+
+  // Set consent defaults - required for GA4 Consent Mode v2
+  window.gtag("consent", "default", {
+    analytics_storage: "granted",
+    ad_storage: "granted",
+    ad_user_data: "granted",
+    ad_personalization: "granted",
+  });
+
+  window.gtag("js", new Date());
+  window.gtag("config", GA_MEASUREMENT_ID);
+}
+
 export const handleError = Sentry.handleErrorWithSentry();

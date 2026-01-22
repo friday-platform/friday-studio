@@ -23,5 +23,6 @@ export default defineConfig(({ mode }) => ({
   define: {
     __SENTRY_ENVIRONMENT__: JSON.stringify(mode === "development" ? "local" : sentryEnvironment),
     __SENTRY_RELEASE__: JSON.stringify(`atlas-auth-ui@${gitCommit}`),
+    __DEV_MODE__: JSON.stringify(mode === "development"),
   },
 }));

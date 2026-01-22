@@ -14,6 +14,15 @@ declare global {
 
   /** Sentry release identifier for deployment tracking */
   const __SENTRY_RELEASE__: string;
+
+  /** Whether this is a development build */
+  const __DEV_MODE__: boolean;
+
+  /** Google Analytics gtag function */
+  interface Window {
+    dataLayer: unknown[];
+    gtag: (...args: unknown[]) => void;
+  }
 }
 
 export {};
