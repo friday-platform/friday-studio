@@ -24,6 +24,16 @@ if (!__DEV_MODE__) {
   window.gtag = (...args: unknown[]) => {
     window.dataLayer.push(args);
   };
+
+  // Set consent defaults - required for GA4 Consent Mode v2
+  // Without this, GA4 waits indefinitely for consent signals
+  window.gtag("consent", "default", {
+    analytics_storage: "granted",
+    ad_storage: "granted",
+    ad_user_data: "granted",
+    ad_personalization: "granted",
+  });
+
   window.gtag("js", new Date());
   window.gtag("config", GA_MEASUREMENT_ID);
 
