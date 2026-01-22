@@ -20,7 +20,7 @@ const securityHeaders: Handle = async ({ event, resolve }) => {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' https://www.googletagmanager.com https://www.google-analytics.com",
+      "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com",
       "connect-src 'self' https://o4507579070611456.ingest.us.sentry.io https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com",

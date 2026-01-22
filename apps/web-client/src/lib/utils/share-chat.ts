@@ -131,6 +131,20 @@ async function generateChatHTML(messages: AtlasUIMessage[], title?: string): Pro
   <style>
 ${getEmbeddedStyles()}
   </style>
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NLLF9SE37C"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('consent', 'default', {
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      ad_user_data: 'granted',
+      ad_personalization: 'granted'
+    });
+    gtag('js', new Date());
+    gtag('config', 'G-NLLF9SE37C');
+  </script>
 </head>
 <body>
   <div class="chat-container">
