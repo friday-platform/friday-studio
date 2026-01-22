@@ -25,6 +25,7 @@
   import Response from "$lib/modules/messages/response.svelte";
   import ShowDetails from "$lib/modules/messages/show-details.svelte";
   import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
+  import WorkspaceCreated from "$lib/modules/messages/workspace-created.svelte";
   import { formatChatDate, getDatetimeContext } from "$lib/utils/date";
   import { shareChat } from "$lib/utils/share-chat";
   import { DefaultChatTransport } from "ai";
@@ -32,7 +33,6 @@
   import { circOut } from "svelte/easing";
   import { SvelteMap } from "svelte/reactivity";
   import { slide } from "svelte/transition";
-  import WorkspaceCreated from "$lib/modules/messages/workspace-created.svelte";
 
   /**
    * ChatSession component - handles a single chat instance.

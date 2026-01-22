@@ -69,6 +69,22 @@ describe("matchBundledAgents", () => {
     const match = matches[0];
     expect(match !== undefined && match.agentId === "email").toEqual(true);
   });
+
+  it("google-sheets does not match google-calendar agent", () => {
+    // Regression test for TEM-3652: generic "google" capability was causing
+    // Google Sheets/Docs/Drive to incorrectly route to Google Calendar agent
+    const matches = matchBundledAgents(["google-sheets"]);
+
+    const calendarMatch = matches.find((m) => m.agentId === "google-calendar");
+    expect(calendarMatch).toBeUndefined();
+  });
+
+  it("sheets does not match google-calendar agent", () => {
+    const matches = matchBundledAgents(["sheets"]);
+
+    const calendarMatch = matches.find((m) => m.agentId === "google-calendar");
+    expect(calendarMatch).toBeUndefined();
+  });
 });
 
 describe("mapNeedToMCPServers", () => {

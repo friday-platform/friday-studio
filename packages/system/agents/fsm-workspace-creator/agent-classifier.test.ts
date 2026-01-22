@@ -90,4 +90,29 @@ describe("classifyAgents", () => {
     expect(classified.length).toEqual(1);
     expect(classified[0]?.type.kind).toEqual("llm");
   });
+
+  it("classifies google-sheets agent as llm, not bundled google-calendar (TEM-3652)", () => {
+    // Regression test: google-sheets should use MCP server, not google-calendar bundled agent
+    const plan: WorkspacePlan = {
+      workspace: { name: "test", purpose: "test" },
+      signals: [],
+      agents: [
+        {
+          id: "sheets-agent",
+          name: "Sheets Agent",
+          description: "Read and write spreadsheets",
+          needs: ["google-sheets"],
+        },
+      ],
+      jobs: [],
+    };
+
+    const classified = classifyAgents(plan);
+
+    expect(classified.length).toEqual(1);
+    expect(classified[0]?.type.kind).toEqual("llm");
+    if (classified[0]?.type.kind === "llm") {
+      expect(classified[0]?.type.mcpTools).toContain("google-sheets");
+    }
+  });
 });

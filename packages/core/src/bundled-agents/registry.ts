@@ -159,7 +159,6 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
     capabilities: [
       "google-calendar",
-      "google",
       "calendar",
       "scheduling",
       "meetings",
