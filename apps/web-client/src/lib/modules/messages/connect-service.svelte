@@ -3,6 +3,7 @@
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { client, parseResult } from "@atlas/client/v2";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import Button from "$lib/components/button.svelte";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import { z } from "zod";
@@ -118,6 +119,7 @@
    */
   function completeOAuthFlow() {
     removeMessageListener();
+    trackEvent(GA4.CREDENTIAL_LINK_SUCCESS, { provider, type: providerDetails?.type });
 
     if (providerDetails) {
       chat.sendMessage({
@@ -165,6 +167,7 @@
 
   function startOAuth() {
     popupBlocked = false;
+    trackEvent(GA4.CREDENTIAL_LINK_START, { provider, type: "oauth" });
 
     const daemonUrl = getAtlasDaemonUrl();
     const callbackUrl = new URL("/oauth/callback", window.location.origin);
@@ -191,6 +194,7 @@
    * Fallback: navigate in same tab when popup is blocked for OAuth.
    */
   function startOAuthFallback() {
+    trackEvent(GA4.OAUTH_FALLBACK_CLICK, { provider, type: "oauth" });
     const daemonUrl = getAtlasDaemonUrl();
     const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, daemonUrl);
     url.searchParams.set("redirect_uri", window.location.href);
@@ -203,6 +207,7 @@
    */
   function startAppInstall() {
     popupBlocked = false;
+    trackEvent(GA4.CREDENTIAL_LINK_START, { provider, type: "app_install" });
 
     const daemonUrl = getAtlasDaemonUrl();
     const callbackUrl = new URL("/oauth/callback", window.location.origin);
@@ -232,6 +237,7 @@
    * Fallback: navigate in same tab when popup is blocked.
    */
   function startAppInstallFallback() {
+    trackEvent(GA4.APP_INSTALL_FALLBACK_CLICK, { provider });
     const daemonUrl = getAtlasDaemonUrl();
     const url = new URL(`/api/link/v1/app-install/${provider}/authorize`, daemonUrl);
     url.searchParams.set("redirect_uri", window.location.href);

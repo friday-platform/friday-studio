@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { invalidateAll } from "$app/navigation";
   import Button from "$lib/components/button.svelte";
   import { Dialog } from "$lib/components/dialog";
@@ -49,6 +50,7 @@
         return;
       }
 
+      trackEvent(GA4.CREDENTIAL_RENAME, { credential_id: credentialId });
       await invalidateAll();
       open.set(false);
     } catch {

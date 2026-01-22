@@ -5,6 +5,7 @@
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import { toast } from "$lib/components/notifications/notifications.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
 
   let success = $state(false);
   let submitted = $state(false);
@@ -40,22 +41,24 @@
             }
 
             submitted = true;
+            trackEvent(GA4.SIGNUP_RETRY_SUBMIT);
 
             return async ({ result, update }) => {
               submitted = false;
 
               if (result.type === "failure") {
-                toast(
+                const message =
                   typeof result.data?.message === "string"
                     ? result.data.message
-                    : "Something went wrong",
-                  true,
-                );
+                    : "Something went wrong";
+                trackEvent(GA4.SIGNUP_RETRY_ERROR, { error_message: message });
+                toast(message, true);
 
                 update({ reset: false });
               }
 
               if (result.type === "redirect") {
+                trackEvent(GA4.SIGNUP_RETRY_SUCCESS);
                 update({ reset: true });
                 success = true;
               }
@@ -75,9 +78,10 @@
         </form>
       {:else}
         <p class="details-foot">
-          Your request has been sent. If you do not receive an email, <a
-            href="/signup-retry"
-            data-sveltekit-reload
+          Your request has been sent. If you do not receive an email,
+          <a
+            href="mailto:support@hellofriday.ai"
+            onclick={() => trackEvent(GA4.SIGNUP_SUPPORT_LINK_CLICK, { source: "signup_retry" })}
           >
             Contact Support.
           </a>
@@ -87,14 +91,22 @@
 
     <footer>
       <p>
-        By signing up for Friday, you agree to our <a
+        By signing up for Friday, you agree to our
+        <a
           href="https://hellofriday.ai/privacy"
           target="_blank"
+          onclick={() => trackEvent(GA4.SIGNUP_PRIVACY_LINK_CLICK, { source: "signup_retry" })}
         >
           Privacy Policy
         </a>
         and
-        <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
+        <a
+          href="https://hellofriday.ai/terms"
+          target="_blank"
+          onclick={() => trackEvent(GA4.SIGNUP_TERMS_LINK_CLICK, { source: "signup_retry" })}
+        >
+          Terms of Service
+        </a>
       </p>
     </footer>
   </section>

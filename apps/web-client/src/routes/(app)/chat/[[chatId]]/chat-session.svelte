@@ -24,6 +24,7 @@
   import Request from "$lib/modules/messages/request.svelte";
   import Response from "$lib/modules/messages/response.svelte";
   import ShowDetails from "$lib/modules/messages/show-details.svelte";
+  import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
   import { formatChatDate, getDatetimeContext } from "$lib/utils/date";
   import { shareChat } from "$lib/utils/share-chat";
   import { DefaultChatTransport } from "ai";
@@ -92,6 +93,10 @@
   // Server-provided turn start timestamp for accurate timer display after refresh
   let turnStartedAt = $state<number | null>(null);
 
+  // Track stream timing for analytics
+  let streamStartTime = $state<number | null>(null);
+  let previousStatus = $state<string | null>(null);
+
   const transport = new DefaultChatTransport({
     api: `${getAtlasDaemonUrl()}/api/chat`,
     /**
@@ -100,7 +105,7 @@
      * 2. Injects AbortSignal into GET requests (resumeStream) since ai-sdk
      *    doesn't pass one, causing connection leaks on navigation
      */
-    fetch: async (url, init) => {
+    fetch: async (url, init): Promise<Response> => {
       // For GET requests (resumeStream), inject our abort controller's signal
       // since ai-sdk's reconnectToStream doesn't pass abortSignal to fetch
       if (init?.method === "GET" || !init?.method) {
@@ -108,7 +113,24 @@
         init = { ...init, signal: resumeAbortController.signal };
       }
 
-      const response = await fetch(url, init);
+      let response: Response;
+      try {
+        response = await fetch(url, init);
+      } catch (error) {
+        // Track network errors (connection failures, timeouts, etc.)
+        const message = error instanceof Error ? error.message : "Network error";
+        // Don't track aborted requests (user navigated away)
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          trackNetworkError(String(url), message, init?.method ?? "GET");
+        }
+        throw error;
+      }
+
+      // Track API errors (non-2xx responses)
+      if (!response.ok) {
+        const errorText = await response.clone().text().catch(() => "Unknown error");
+        trackApiError(String(url), response.status, errorText, init?.method ?? "GET");
+      }
 
       // Capture server-provided turn start time for accurate timer display
       const startedAt = response.headers.get("X-Turn-Started-At");
@@ -135,6 +157,43 @@
   // Create Chat instance once - no reactive recreation
   // chatId is immutable for this component's lifetime
   const chat = new Chat<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport });
+
+  // Track streaming lifecycle for analytics
+  $effect(() => {
+    const currentStatus = chat.status;
+
+    // Stream started
+    if (
+      (currentStatus === "streaming" || currentStatus === "submitted") &&
+      previousStatus !== "streaming" &&
+      previousStatus !== "submitted"
+    ) {
+      streamStartTime = Date.now();
+      trackEvent(GA4.STREAM_START, { chat_id: chatId });
+    }
+
+    // Stream completed successfully
+    if (
+      currentStatus === "ready" &&
+      (previousStatus === "streaming" || previousStatus === "submitted")
+    ) {
+      const duration = streamStartTime ? Date.now() - streamStartTime : 0;
+      const messageCount = chat.messages?.length ?? 0;
+      trackEvent(GA4.STREAM_COMPLETE, { chat_id: chatId, message_count: messageCount, duration });
+      streamStartTime = null;
+    }
+
+    // Stream errored
+    if (
+      currentStatus === "error" &&
+      (previousStatus === "streaming" || previousStatus === "submitted")
+    ) {
+      trackEvent(GA4.STREAM_ERROR, { chat_id: chatId, error_message: chat.error?.message ?? "Unknown error" });
+      streamStartTime = null;
+    }
+
+    previousStatus = currentStatus;
+  });
 
   function setup() {
     userHasScrolled = false;
@@ -206,6 +265,7 @@
    * Stop handler - calls DELETE endpoint to abort server-side stream, then stops client
    */
   async function handleStop() {
+    trackEvent(GA4.STREAM_STOP);
     await fetch(`${getAtlasDaemonUrl()}/api/chat/${chatId}/stream`, { method: "DELETE" }).catch(
       () => {},
     );
@@ -336,7 +396,9 @@
                       open={showDetails.get(messageContainer.id) ?? false}
                       onclick={() => {
                         const status = showDetails.get(messageContainer.id) ?? false;
-
+                        if (!status) {
+                          trackEvent(GA4.SHOW_DETAILS_EXPAND);
+                        }
                         showDetails.set(messageContainer.id, !status);
                       }}
                     />
@@ -414,6 +476,7 @@
                   }
                 }
 
+                trackEvent(GA4.MESSAGE_SEND, { is_new: isNew });
                 chat.sendMessage({ text: combinedMessage });
                 message = "";
                 appCtx.stagedFiles.clear();
@@ -434,6 +497,7 @@
                     title={file.error || file.name}
                     onclick={() => {
                       if (file.status !== "uploading") {
+                        trackEvent(GA4.FILE_REMOVE);
                         appCtx.stagedFiles.remove(itemId);
                       }
                     }}
@@ -485,6 +549,7 @@
                         closeOnClick={false}
                         fileInput={{
                           onchange: (files) => {
+                            trackEvent(GA4.FILE_ATTACH, { file_count: files.length });
                             handleFileDrop(appCtx, files);
                             open.set(false);
                           },
@@ -497,6 +562,7 @@
                       {#if !isNew && (chat.messages?.length ?? 0) > 0}
                         <DropdownMenu.Item
                           onclick={async () => {
+                            trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chatId, source: "chat_input_menu" });
                             if (chat.messages) {
                               const chatTitle =
                                 chatContext.recentChats.find((c) => c.id === chatId)?.title ??
@@ -514,6 +580,7 @@
 
                       <DropdownMenu.Item
                         onclick={() => {
+                          trackEvent(GA4.NEW_CHAT_CLICK, { source: "chat_input_menu" });
                           chatContext.startNewChat();
                         }}
                       >
@@ -566,6 +633,9 @@
             <button
               class="toggle-chats"
               onclick={() => {
+                if (!showChats) {
+                  trackEvent(GA4.RECENT_CONVERSATIONS_EXPAND);
+                }
                 showChats = !showChats;
               }}
             >
@@ -574,7 +644,11 @@
             {#if showChats}
               <div class="chat-list" transition:slide={{ duration: 200, easing: circOut }}>
                 {#each chatContext.recentChats.slice(0, 5) as recentChat (recentChat.id)}
-                  <a class="chat-item" href="/chat/{recentChat.id}">
+                  <a
+                    class="chat-item"
+                    href="/chat/{recentChat.id}"
+                    onclick={() => trackEvent(GA4.RECENT_CONVERSATION_SELECT, { chat_id: recentChat.id })}
+                  >
                     <span class="chat--title">{recentChat.title || "(Untitled)"}</span>
                     <span
                       class="chat--date"

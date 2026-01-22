@@ -1,0 +1,7 @@
+{
+  "name": "@atlas/ga4",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts"
+}

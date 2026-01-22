@@ -14,6 +14,7 @@
   import { IconSmall } from "$lib/components/icons/small";
   import { Table } from "$lib/components/table";
   import { getClientContext } from "$lib/modules/client/context.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { getVersion, invoke } from "$lib/utils/tauri-loader";
   import { onMount } from "svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
@@ -39,7 +40,8 @@
   }
 
   // Remove credential by ID
-  async function removeCredential(id: string) {
+  async function removeCredential(id: string, provider: string) {
+    trackEvent(GA4.CREDENTIAL_REMOVE, { provider });
     const res = await parseResult(client.link.v1.credentials[":id"].$delete({ param: { id } }));
 
     if (!res.ok) {
@@ -112,7 +114,7 @@
         header: "",
         cell: (info) =>
           renderComponent(RemoveCredential, {
-            onclick: () => removeCredential(info.row.original.id),
+            onclick: () => removeCredential(info.row.original.id, info.row.original.provider),
           }),
         meta: { shrink: true },
       }),
@@ -186,10 +188,12 @@
   });
 
   function addEntry() {
+    trackEvent(GA4.ENV_VAR_ADD);
     envVars = [...envVars, { key: "", value: "", id: nextId++ }];
   }
 
   async function removeEntry(id: number) {
+    trackEvent(GA4.ENV_VAR_REMOVE);
     envVars = envVars.filter((v) => v.id !== id);
     await saveChanges();
   }
@@ -218,6 +222,7 @@
   async function restartDaemon() {
     if (!invoke) return;
 
+    trackEvent(GA4.DAEMON_RESTART);
     isRestarting = true;
     try {
       const result = (await invoke("restart_atlas_daemon")) as string;
@@ -264,7 +269,14 @@
 
     <div class="advanced-settings" {...$root} use:root>
       <h2>
-        <button {...$trigger} use:trigger class:expanded={$open}>
+        <button
+          {...$trigger}
+          use:trigger
+          class:expanded={$open}
+          onclick={() => {
+            if (!$open) trackEvent(GA4.ADVANCED_SETTINGS_EXPAND);
+          }}
+        >
           Advanced Settings <IconSmall.CaretRight />
         </button>
       </h2>

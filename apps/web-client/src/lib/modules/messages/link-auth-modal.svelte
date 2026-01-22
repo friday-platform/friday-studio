@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { stringifyError } from "@atlas/utils";
   import { Dialog } from "$lib/components/dialog";
   import type { Snippet } from "svelte";
@@ -33,6 +34,7 @@
 
     isSubmitting = true;
     error = null;
+    trackEvent(GA4.CREDENTIAL_LINK_START, { provider, type: "apikey" });
 
     try {
       const result = await parseResult(
@@ -43,13 +45,16 @@
       );
 
       if (result.ok) {
+        trackEvent(GA4.CREDENTIAL_LINK_SUCCESS, { provider, type: "apikey" });
         onSuccess(label.trim());
         open.set(false);
         resetForm();
       } else {
+        trackEvent(GA4.CREDENTIAL_LINK_ERROR, { provider, type: "apikey" });
         error = stringifyError(result.error);
       }
     } catch (err) {
+      trackEvent(GA4.CREDENTIAL_LINK_ERROR, { provider, type: "apikey" });
       error = stringifyError(err);
     } finally {
       isSubmitting = false;

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/sveltekit";
+import { initErrorTracking } from "@atlas/ga4";
 
 Sentry.init({
   dsn: "https://e5d327a9d1eba41a4a4d150c96ab5f9a@o4507579070611456.ingest.us.sentry.io/4510468428726272",
@@ -32,6 +33,10 @@ if (!__DEV_MODE__) {
 
   window.gtag("js", new Date());
   window.gtag("config", GA_MEASUREMENT_ID);
+
+  // Initialize GA4 error tracking for uncaught errors and promise rejections
+  initErrorTracking();
 }
 
+// GA4 error tracking is handled by initErrorTracking() global handlers
 export const handleError = Sentry.handleErrorWithSentry();

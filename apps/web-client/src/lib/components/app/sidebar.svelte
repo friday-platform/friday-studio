@@ -11,6 +11,7 @@
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listSpaces } from "$lib/queries/spaces";
   import { getActivePage } from "$lib/utils/active-page.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
   import NavigationControls from "./navigation-controls.svelte";
@@ -40,7 +41,13 @@
             </span>
           </DropdownMenu.Trigger>
           <DropdownMenu.Content>
-            <DropdownMenu.Item href="/logout" data-sveltekit-reload>Logout</DropdownMenu.Item>
+            <DropdownMenu.Item
+              href="/logout"
+              data-sveltekit-reload
+              onclick={() => trackEvent(GA4.LOGOUT_CLICK)}
+            >
+              Logout
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       </div>
@@ -48,7 +55,12 @@
 
     <ul class="section-list">
       <li>
-        <a href={ctx.routes.main} class:active={getActivePage("/")} class="sidebar-item">
+        <a
+          href={ctx.routes.main}
+          class:active={getActivePage("/")}
+          class="sidebar-item"
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "chat" })}
+        >
           <Icons.Chat />
 
           <span class="text">Chat</span>
@@ -60,6 +72,7 @@
           href={ctx.routes.library.list}
           class:active={getActivePage(["library", "library/[id]"])}
           class="sidebar-item"
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "library" })}
         >
           <Icons.Folder />
 
@@ -72,6 +85,7 @@
           href={ctx.routes.sessions.list}
           class:active={getActivePage(["sessions", "sessions/[sessionId]"])}
           class="sidebar-item"
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
         >
           <Icons.Workspace />
 
@@ -84,6 +98,7 @@
           href={ctx.routes.settings}
           class:active={getActivePage(["settings"])}
           class="sidebar-item"
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "settings" })}
         >
           <Icons.Settings />
 
@@ -111,6 +126,7 @@
                 href={ctx.routes.spaces.item(space.id)}
                 class="sidebar-item"
                 class:active={getActivePage([`spaces/${space.id}`, `spaces/${space.id}/sessions`])}
+                onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
               >
                 <span class="text">{space.name}</span>
               </a>
@@ -126,6 +142,7 @@
       <button
         class="section__add-new"
         onclick={() => {
+          trackEvent(GA4.NEW_CHAT_CLICK, { source: "sidebar" });
           chatContext.startNewChat();
         }}
         aria-label="New Conversation"
@@ -143,7 +160,12 @@
       <ul class="section-list">
         {#each chatContext.recentChats as chat (chat.id)}
           <li class="chat-row">
-            <a class="sidebar-item" class:active={currentChatId === chat.id} href="/chat/{chat.id}">
+            <a
+              class="sidebar-item"
+              class:active={currentChatId === chat.id}
+              href="/chat/{chat.id}"
+              onclick={() => trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id })}
+            >
               <span class="text">{chat.title || "Untitled"}</span>
             </a>
 
@@ -157,6 +179,7 @@
                 <DropdownMenu.Content>
                   <DropdownMenu.Item
                     onclick={async () => {
+                      trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chat.id, source: "sidebar" });
                       const res = await parseResult(
                         client.chat[":chatId"].$get({ param: { chatId: chat.id } }),
                       );
@@ -177,6 +200,7 @@
                       <DropdownMenu.Item
                         accent="destructive"
                         onclick={() => {
+                          trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
                           open.set(true);
                         }}
                       >
@@ -206,6 +230,7 @@
                         {#snippet footer()}
                           <Dialog.Button
                             onclick={async () => {
+                              trackEvent(GA4.DELETE_CHAT_CONFIRM, { chat_id: chat.id });
                               const res = await parseResult(
                                 client.chat[":chatId"].$delete({ param: { chatId: chat.id } }),
                               );
@@ -234,7 +259,15 @@
     </ScrollListener>
   </nav>
 
-  <a href="https://docs.hellofriday.ai" target="_blank" class="help" aria-label="Get Help">?</a>
+  <a
+    href="https://docs.hellofriday.ai"
+    target="_blank"
+    class="help"
+    aria-label="Get Help"
+    onclick={() => trackEvent(GA4.HELP_CLICK)}
+  >
+    ?
+  </a>
 </header>
 
 <style>

@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-window -- this is only loaded in the browser.
 import * as Sentry from "@sentry/sveltekit";
+import { initErrorTracking } from "@atlas/ga4";
 
 Sentry.init({
   dsn: "https://77dace58355275e47253baf5a5b1c5d6@o4507579070611456.ingest.us.sentry.io/4510468388159488",
@@ -37,6 +38,9 @@ if (!__DEV_MODE__) {
   window.gtag("js", new Date());
   window.gtag("config", GA_MEASUREMENT_ID);
 
+  // Initialize GA4 error tracking for uncaught errors and promise rejections
+  initErrorTracking();
+
   // Microsoft Clarity
   const CLARITY_PROJECT_ID = "ug35a2otup";
   if (!window.clarity) {
@@ -57,5 +61,7 @@ export const handleError = Sentry.handleErrorWithSentry(({ error }: { error: unk
   // no longer exist. Reload the page to get the new version.
   if (error instanceof TypeError && error.message.includes("dynamically imported module")) {
     window.location.reload();
+    return;
   }
+  // GA4 error tracking is handled by initErrorTracking() global handlers
 });

@@ -13,6 +13,7 @@
     "lint": "prettier --check . && eslint ."
   },
   "dependencies": {
+    "@atlas/ga4": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.36.0",
     "@sveltejs/kit": "^2.50.0",

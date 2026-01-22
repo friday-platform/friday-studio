@@ -4,11 +4,13 @@
   import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
 
   let submitted = $state(false);
   let agree_to_terms = $state(false);
 
   function handleGoogleAuth() {
+    trackEvent(GA4.SIGNUP_GOOGLE_CLICK);
     window.location.href = "/auth/google?signup=true";
   }
 </script>
@@ -21,7 +23,7 @@
 <main>
   <p class="existing-users">
     Already have an account?
-    <a href="/">Login</a>
+    <a href="/" onclick={() => trackEvent(GA4.SIGNUP_LOGIN_LINK_CLICK)}>Login</a>
   </p>
 
   <section>
@@ -44,33 +46,54 @@
           }
 
           submitted = true;
+          trackEvent(GA4.SIGNUP_EMAIL_SUBMIT);
 
           return async ({ result, update }) => {
             submitted = false;
 
             if (result.type === "failure") {
-              alert(
+              const message =
                 typeof result.data?.message === "string"
                   ? result.data.message
-                  : "Something went wrong",
-              );
+                  : "Something went wrong";
+              trackEvent(GA4.SIGNUP_EMAIL_ERROR, { error_message: message });
+              alert(message);
 
               update({ reset: false });
             }
 
             if (result.type === "redirect") {
+              trackEvent(GA4.SIGNUP_EMAIL_SUCCESS);
               window.location.href = result.location;
             }
           };
         }}
       >
         <label>
-          <input type="checkbox" required name="agree_to_terms" bind:checked={agree_to_terms} />
+          <input
+            type="checkbox"
+            required
+            name="agree_to_terms"
+            bind:checked={agree_to_terms}
+            onchange={() => trackEvent(GA4.SIGNUP_TERMS_TOGGLE, { checked: agree_to_terms })}
+          />
 
           By signing up for Friday, I agree to the
-          <a href="https://hellofriday.ai/privacy" target="_blank">Privacy Policy</a>
+          <a
+            href="https://hellofriday.ai/privacy"
+            target="_blank"
+            onclick={() => trackEvent(GA4.SIGNUP_PRIVACY_LINK_CLICK, { source: "signup" })}
+          >
+            Privacy Policy
+          </a>
           and
-          <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
+          <a
+            href="https://hellofriday.ai/terms"
+            target="_blank"
+            onclick={() => trackEvent(GA4.SIGNUP_TERMS_LINK_CLICK, { source: "signup" })}
+          >
+            Terms of Service
+          </a>
         </label>
 
         <input

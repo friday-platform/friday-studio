@@ -2,7 +2,9 @@
   import { IconSmall } from "$lib/components/icons/small";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import TimelineMain from "$lib/components/session-timeline/timeline-main.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { formatSessionDate } from "$lib/utils/date";
+  import { onMount } from "svelte";
   import Breadcrumbs from "../(components)/breadcrumbs.svelte";
   import type { PageData } from "./$types";
 
@@ -30,6 +32,10 @@
 
   // Show either LLM output or error for failed sessions
   const hasOutput = $derived(outputContent !== undefined || primaryError !== undefined);
+
+  onMount(() => {
+    trackEvent(GA4.SESSION_VIEW, { session_id: session.id, session_status: session.status });
+  });
 </script>
 
 <Breadcrumbs {session} />
@@ -90,7 +96,11 @@
         <ul class="sidebar-list">
           {#each artifacts as artifact (artifact.id)}
             <li>
-              <a href="/library/{artifact.id}" class="sidebar-item">
+              <a
+                href="/library/{artifact.id}"
+                class="sidebar-item"
+                onclick={() => trackEvent(GA4.SESSION_ARTIFACT_CLICK, { session_id: session.id, artifact_id: artifact.id })}
+              >
                 <IconSmall.File />
                 <span class="item-text">{artifact.title ?? "Untitled"}</span>
               </a>
@@ -105,7 +115,11 @@
         <span class="sidebar-label">Chat</span>
         <ul class="sidebar-list">
           <li>
-            <a href="/chat/{session.parentStreamId}" class="sidebar-item">
+            <a
+              href="/chat/{session.parentStreamId}"
+              class="sidebar-item"
+              onclick={() => trackEvent(GA4.SESSION_CHAT_LINK_CLICK, { session_id: session.id, chat_id: session.parentStreamId! })}
+            >
               <span class="item-text">{session.parentTitle ?? "Conversation"}</span>
             </a>
           </li>

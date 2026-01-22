@@ -4,6 +4,7 @@
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { onMount } from "svelte";
 
   let emailValue = $state("");
@@ -12,6 +13,7 @@
   let isSubmitting = $state(false);
 
   function handleGoogleAuth() {
+    trackEvent(GA4.LOGIN_GOOGLE_CLICK);
     window.location.href = "/auth/google";
   }
 
@@ -20,6 +22,7 @@
     if (isSubmitting || !emailValue) return;
 
     isSubmitting = true;
+    trackEvent(GA4.LOGIN_MAGIC_LINK_SUBMIT);
 
     try {
       const response = await fetch("/magiclink", {
@@ -29,11 +32,14 @@
       });
 
       if (response.ok) {
+        trackEvent(GA4.LOGIN_MAGIC_LINK_SUCCESS);
         magiclinkSent = true;
       } else {
+        trackEvent(GA4.LOGIN_MAGIC_LINK_ERROR);
         alert("Failed to send magic link. Please try again.");
       }
     } catch (error) {
+      trackEvent(GA4.LOGIN_MAGIC_LINK_ERROR);
       console.error(error);
       alert("An error occurred. Please try again.");
     } finally {
@@ -60,6 +66,7 @@
           class="login-reset"
           type="button"
           onclick={() => {
+            trackEvent(GA4.LOGIN_GO_BACK);
             magiclinkSent = false;
             emailValue = "";
           }}
@@ -106,7 +113,7 @@
     </div>
 
     <p class="signup">
-      <a href="/signup">Create an Account</a>
+      <a href="/signup" onclick={() => trackEvent(GA4.LOGIN_SIGNUP_LINK_CLICK)}>Create an Account</a>
     </p>
   </section>
 

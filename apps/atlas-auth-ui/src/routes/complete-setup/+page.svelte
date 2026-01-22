@@ -5,6 +5,7 @@
   import Decal from "$lib/components/decal.svelte";
   import { Form } from "$lib/components/form";
   import { toast } from "$lib/components/notifications/notifications.svelte";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { zfd } from "zod-form-data";
 
   const { data } = $props();
@@ -34,6 +35,7 @@
         if (submitted) return;
 
         submitted = true;
+        trackEvent(GA4.SETUP_PROFILE_SUBMIT);
 
         const formData = new FormData(e.currentTarget);
 
@@ -41,6 +43,7 @@
 
         // in case of an error return the data and errors
         if (!input.success) {
+          trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Please enter all required fields" });
           toast("Please enter all required fields", true);
           submitted = false;
         }
@@ -55,18 +58,22 @@
             });
 
             if (response.ok) {
+              trackEvent(GA4.SETUP_PROFILE_SUCCESS);
               window.location.href = data.appUrl;
             } else {
               submitted = false;
 
               if (response.status === 409) {
+                trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Organization name already exists" });
                 toast("Organization name already exists", true);
               } else {
+                trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Failed to complete setup" });
                 toast("Failed to complete setup", true);
               }
             }
           }
         } catch (error) {
+          trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Failed to complete setup" });
           toast("Failed to complete setup", true);
           console.error(error);
           submitted = false;

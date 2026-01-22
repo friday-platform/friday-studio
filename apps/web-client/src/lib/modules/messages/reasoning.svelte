@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { IconSmall } from "$lib/components/icons/small";
   import { markdownToHTML } from "$lib/utils/markdown";
   import { SvelteMap } from "svelte/reactivity";
@@ -7,6 +8,14 @@
   const { parts }: { parts: AtlasUIMessagePart[] } = $props();
 
   let views = new SvelteMap<number, boolean>();
+
+  function toggleView(index: number, section: string) {
+    const status = views.get(index) ?? false;
+    if (!status) {
+      trackEvent(GA4.REASONING_EXPAND, { section });
+    }
+    views.set(index, !status);
+  }
 </script>
 
 <div class="details">
@@ -24,11 +33,7 @@
         <button
           type="button"
           class:open={views.get(index) ?? false}
-          onclick={() => {
-            const status = views.get(index) ?? false;
-
-            views.set(index, !status);
-          }}
+          onclick={() => toggleView(index, "reasoning")}
         >
           <IconSmall.Workspace /> Reasoning
           <span class="indicator"><IconSmall.CaretRight /></span>
@@ -45,11 +50,7 @@
         <button
           type="button"
           class:open={views.get(index) ?? false}
-          onclick={() => {
-            const status = views.get(index) ?? false;
-
-            views.set(index, !status);
-          }}
+          onclick={() => toggleView(index, "artifact")}
         >
           <IconSmall.File /> Displaying Artifact
           <span class="indicator"><IconSmall.CaretRight /></span>
@@ -66,11 +67,7 @@
         <button
           type="button"
           class:open={views.get(index) ?? false}
-          onclick={() => {
-            const status = views.get(index) ?? false;
-
-            views.set(index, !status);
-          }}
+          onclick={() => toggleView(index, "tool_call")}
         >
           <IconSmall.ToolCall /> Calling tools
           <span class="indicator"><IconSmall.CaretRight /></span>
@@ -89,11 +86,7 @@
         <button
           type="button"
           class:open={views.get(index) ?? false}
-          onclick={() => {
-            const status = views.get(index) ?? false;
-
-            views.set(index, !status);
-          }}
+          onclick={() => toggleView(index, "text_output")}
         >
           <IconSmall.Chat /> Outputting text response
           <span class="indicator"><IconSmall.CaretRight /></span>

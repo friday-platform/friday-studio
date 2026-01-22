@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { IconSmall } from "$lib/components/icons/small";
   import { formatDuration } from "$lib/utils/date";
   import MessageWrapper from "./wrapper.svelte";
@@ -118,7 +119,7 @@
 
 <MessageWrapper>
   <div class="container">
-    <button onclick={() => (open = !open)} class:open>
+    <button onclick={() => { if (!open) trackEvent(GA4.PROGRESS_EXPAND); open = !open; }} class:open>
       <span class="thinking">Thinking... <IconSmall.CaretRight /></span>
 
       {#if open}

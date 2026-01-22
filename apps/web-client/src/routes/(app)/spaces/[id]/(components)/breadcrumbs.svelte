@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { getAppContext } from "$lib/app-context.svelte";
@@ -26,6 +27,7 @@
 
   async function handleExportWorkspace() {
     if (!workspace) return;
+    trackEvent(GA4.WORKSPACE_EXPORT, { workspace_id: workspace.id });
 
     try {
       const response = await client.workspace[":workspaceId"].export.$get({
@@ -73,6 +75,7 @@
 
   async function handleDeleteWorkspace() {
     if (!workspace) return;
+    trackEvent(GA4.WORKSPACE_DELETE_CONFIRM, { workspace_id: workspace.id });
 
     try {
       const res = await parseResult(
@@ -127,6 +130,7 @@
             <DropdownMenu.Item
               accent="destructive"
               onclick={() => {
+                trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
                 open.set(true);
               }}
             >

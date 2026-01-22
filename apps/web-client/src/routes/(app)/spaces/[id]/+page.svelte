@@ -11,6 +11,8 @@
   import { Table } from "$lib/components/table";
   import { artifactColumns } from "$lib/modules/library/columns";
   import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
+  import { GA4, trackEvent } from "@atlas/ga4";
+  import { onMount } from "svelte";
   import Breadcrumbs from "./(components)/breadcrumbs.svelte";
   import type { PageData } from "./$types";
 
@@ -80,6 +82,10 @@
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
   });
+
+  onMount(() => {
+    trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
+  });
 </script>
 
 <Breadcrumbs {workspace} />
@@ -100,6 +106,7 @@
             table={artifactsTable}
             rowSize="large"
             rowPath={(item) => `/library/${item.id}`}
+            onRowClick={(item) => trackEvent(GA4.SPACE_ARTIFACT_CLICK, { space_id: workspace.id, artifact_id: item.id })}
             hideHeader
           />
         </div>

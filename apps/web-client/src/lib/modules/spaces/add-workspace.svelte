@@ -4,6 +4,7 @@
   import { getAppContext } from "$lib/app-context.svelte";
   import { Dialog } from "$lib/components/dialog";
   import { Icons } from "$lib/components/icons";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import type { Snippet } from "svelte";
   import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
 
@@ -21,6 +22,7 @@
 
     if (!file) return;
 
+    trackEvent(GA4.WORKSPACE_FILE_SELECT);
     const result = await handleWorkspaceFile(file);
     if (result) {
       workspaceConfig = result.config;
@@ -42,6 +44,7 @@
 
     e.preventDefault();
 
+    trackEvent(GA4.WORKSPACE_FILE_DROP);
     const result = await handleWorkspaceFile(file);
     if (result) {
       workspaceConfig = result.config;
@@ -66,6 +69,9 @@
 
 <Dialog.Root
   onOpenChange={({ next }) => {
+    if (next) {
+      trackEvent(GA4.WORKSPACE_DIALOG_OPEN);
+    }
     appCtx.addWorkspaceDialogOpen = next;
 
     if (!next) {
@@ -108,6 +114,9 @@
               if (!workspaceConfig) return;
 
               try {
+                trackEvent(GA4.WORKSPACE_CREATE, {
+                  workspace_name: workspaceConfig.workspace.name,
+                });
                 await addWorkspace(workspaceConfig, {
                   refreshWorkspaces: () =>
                     queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
@@ -123,7 +132,7 @@
             Create Space
           </Dialog.Button>
         {:else}
-          <Dialog.Button closeOnClick={false} onclick={() => fileInput.click()}>
+          <Dialog.Button closeOnClick={false} onclick={() => { trackEvent(GA4.WORKSPACE_FILE_PICKER_CLICK); fileInput.click(); }}>
             Select File
           </Dialog.Button>
         {/if}

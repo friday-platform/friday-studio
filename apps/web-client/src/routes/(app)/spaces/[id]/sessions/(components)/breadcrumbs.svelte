@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SessionDigest } from "@atlas/core/session/build-session-digest";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
@@ -40,6 +41,7 @@
         <DropdownMenu.Item
           onclick={() => {
             if (!session) return;
+            trackEvent(GA4.COPY_SESSION_ID, { session_id: session.id });
             navigator.clipboard.writeText(session.id);
           }}
         >
@@ -47,6 +49,7 @@
         </DropdownMenu.Item>
         <DropdownMenu.Item
           onclick={() => {
+            trackEvent(GA4.COPY_WORKSPACE_ID, { workspace_id: workspaceId });
             navigator.clipboard.writeText(workspaceId);
           }}
         >

@@ -12,6 +12,7 @@
   import WorkspacePlan from "$lib/modules/artifacts/workspace-plan.svelte";
   import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { z } from "zod";
   import type { PageData } from "./$types";
 
@@ -54,6 +55,7 @@
         if (!result.ok) throw new Error("Failed to get artifact");
 
         artifact = ArtifactDataSchema.parse(result.data.artifact.data);
+        trackEvent(GA4.ARTIFACT_VIEW, { artifact_id: data.artifactId, artifact_type: artifact.type });
 
         // Contents included in same response for file artifacts
         if (result.data.contents) {
@@ -70,6 +72,7 @@
   // Download handler (copy from file.svelte handleDownload)
   async function handleDownload() {
     if (!fileContents) return;
+    trackEvent(GA4.ARTIFACT_DOWNLOAD, { artifact_id: data.artifactId, file_name: fileName });
 
     if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {
       try {
