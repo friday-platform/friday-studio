@@ -83,7 +83,7 @@
     "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.50.0__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.47.1____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.47.1___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.47.1___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_svelte@5.47.1__acorn@8.15.0_typescript@5.9.3_vite@7.3.1__picomatch@4.0.3",
     "npm:@sveltejs/kit@^2.50.0": "2.50.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.47.1___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_svelte@5.47.1__acorn@8.15.0_typescript@5.9.3_vite@7.3.1__picomatch@4.0.3_acorn@8.15.0",
     "npm:@sveltejs/vite-plugin-svelte@^6.2.4": "6.2.4_svelte@5.47.1__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3",
-    "npm:@tanstack/svelte-query@^6.0.16": "6.0.16_svelte@5.47.1__acorn@8.15.0",
+    "npm:@tanstack/svelte-query@^6.0.17": "6.0.17_svelte@5.47.1__acorn@8.15.0",
     "npm:@tanstack/svelte-table@9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.47.1__acorn@8.15.0",
     "npm:@tauri-apps/api@2.9.1": "2.9.1",
     "npm:@tauri-apps/cli@^2.9.6": "2.9.6",
@@ -2341,11 +2341,11 @@
         "tslib"
       ]
     },
-    "@tanstack/query-core@5.90.18": {
-      "integrity": "sha512-rbGx6bHgPNVzutP7BEr+53UPKohpckqlMAad+To9UxTbeaQ+kC/1SDRj+QzkwbQ7qhLT/1IKp34yS6thda6fzA=="
+    "@tanstack/query-core@5.90.19": {
+      "integrity": "sha512-GLW5sjPVIvH491VV1ufddnfldyVB+teCnpPIvweEfkpRx7CfUmUGhoh9cdcUKBh/KwVxk22aNEDxeTsvmyB/WA=="
     },
-    "@tanstack/svelte-query@6.0.16_svelte@5.47.1__acorn@8.15.0": {
-      "integrity": "sha512-s6920j20JXkUuMvbl379dEyWCodRdrdaQDReqcvJLPlqojHFQM8/pr4ld7RriTM8BSoMljI6V3bK/ulCihUIig==",
+    "@tanstack/svelte-query@6.0.17_svelte@5.47.1__acorn@8.15.0": {
+      "integrity": "sha512-SFFsW99Z5DCI9rIowJrPBGEJgl5i+Lzimzoup+P1LhHUIrSyJ4R7KcroFlIxTHz0XaYTAqpNjhXuUUvOqjdTHQ==",
       "dependencies": [
         "@tanstack/query-core",
         "svelte"
@@ -5723,7 +5723,7 @@
             "npm:@sveltejs/adapter-static@^3.0.10",
             "npm:@sveltejs/kit@^2.50.0",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
-            "npm:@tanstack/svelte-query@^6.0.16",
+            "npm:@tanstack/svelte-query@^6.0.17",
             "npm:@tanstack/svelte-table@9.0.0-alpha.10",
             "npm:@tauri-apps/api@2.9.1",
             "npm:@tauri-apps/cli@^2.9.6",
