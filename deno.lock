@@ -92,7 +92,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/papaparse@^5.5.2": "5.5.2",
     "npm:@types/react@^19.2.9": "19.2.9",
-    "npm:@vitest/coverage-v8@4.0.17": "4.0.17_vitest@4.0.17__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0",
+    "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.17__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:ai@^5.0.123": "5.0.123_zod@4.3.5",
     "npm:ai@^5.0.93": "5.0.123_zod@4.3.5",
@@ -2641,11 +2641,11 @@
     "@vercel/oidc@3.1.0": {
       "integrity": "sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w=="
     },
-    "@vitest/coverage-v8@4.0.17_vitest@4.0.17__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0": {
-      "integrity": "sha512-/6zU2FLGg0jsd+ePZcwHRy3+WpNTBBhDY56P4JTRqUN/Dp6CvOEa9HrikcQ4KfV2b2kAHUFB4dl1SuocWXSFEw==",
+    "@vitest/coverage-v8@4.0.18_vitest@4.0.17__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0": {
+      "integrity": "sha512-7i+N2i0+ME+2JFZhfuz7Tg/FqKtilHjGyGvoHYQ6iLV0zahbsJ9sljC9OcFcPDbhYKCet+sG8SsVqlyGvPflZg==",
       "dependencies": [
         "@bcoe/v8-coverage",
-        "@vitest/utils",
+        "@vitest/utils@4.0.18",
         "ast-v8-to-istanbul",
         "istanbul-lib-coverage",
         "istanbul-lib-report",
@@ -2663,7 +2663,7 @@
         "@standard-schema/spec",
         "@types/chai",
         "@vitest/spy",
-        "@vitest/utils",
+        "@vitest/utils@4.0.17",
         "chai",
         "tinyrainbow"
       ]
@@ -2686,17 +2686,23 @@
         "tinyrainbow"
       ]
     },
+    "@vitest/pretty-format@4.0.18": {
+      "integrity": "sha512-P24GK3GulZWC5tz87ux0m8OADrQIUVDPIjjj65vBXYG17ZeU3qD7r+MNZ1RNv4l8CGU2vtTRqixrOi9fYk/yKw==",
+      "dependencies": [
+        "tinyrainbow"
+      ]
+    },
     "@vitest/runner@4.0.17": {
       "integrity": "sha512-JmuQyf8aMWoo/LmNFppdpkfRVHJcsgzkbCA+/Bk7VfNH7RE6Ut2qxegeyx2j3ojtJtKIbIGy3h+KxGfYfk28YQ==",
       "dependencies": [
-        "@vitest/utils",
+        "@vitest/utils@4.0.17",
         "pathe"
       ]
     },
     "@vitest/snapshot@4.0.17": {
       "integrity": "sha512-npPelD7oyL+YQM2gbIYvlavlMVWUfNNGZPcu0aEUQXt7FXTuqhmgiYupPnAanhKvyP6Srs2pIbWo30K0RbDtRQ==",
       "dependencies": [
-        "@vitest/pretty-format",
+        "@vitest/pretty-format@4.0.17",
         "magic-string@0.30.21",
         "pathe"
       ]
@@ -2707,7 +2713,14 @@
     "@vitest/utils@4.0.17": {
       "integrity": "sha512-RG6iy+IzQpa9SB8HAFHJ9Y+pTzI+h8553MrciN9eC6TFBErqrQaTas4vG+MVj8S4uKk8uTT2p0vgZPnTdxd96w==",
       "dependencies": [
-        "@vitest/pretty-format",
+        "@vitest/pretty-format@4.0.17",
+        "tinyrainbow"
+      ]
+    },
+    "@vitest/utils@4.0.18": {
+      "integrity": "sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==",
+      "dependencies": [
+        "@vitest/pretty-format@4.0.18",
         "tinyrainbow"
       ]
     },
@@ -3403,7 +3416,7 @@
         "@stricli/auto-complete",
         "@stricli/core",
         "@vitest/runner",
-        "@vitest/utils",
+        "@vitest/utils@4.0.18",
         "ai",
         "dotenv@16.6.1",
         "fastify",
@@ -5409,11 +5422,11 @@
         "@opentelemetry/api",
         "@vitest/expect",
         "@vitest/mocker",
-        "@vitest/pretty-format",
+        "@vitest/pretty-format@4.0.17",
         "@vitest/runner",
         "@vitest/snapshot",
         "@vitest/spy",
-        "@vitest/utils",
+        "@vitest/utils@4.0.17",
         "es-module-lexer",
         "expect-type",
         "magic-string@0.30.21",
@@ -5618,7 +5631,7 @@
         "npm:@opentelemetry/api@^1.9.0",
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.9",
-        "npm:@vitest/coverage-v8@4.0.17",
+        "npm:@vitest/coverage-v8@4.0.18",
         "npm:ai@^5.0.123",
         "npm:ink@^6.6.0",
         "npm:js-levenshtein@^1.1.6",
