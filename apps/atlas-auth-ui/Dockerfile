@@ -1,5 +1,5 @@
 # Build stage
-FROM denoland/deno:alpine-2.6.5 AS builder
+FROM denoland/deno:alpine-2.6.6 AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ COPY apps/atlas-auth-ui/ ./
 RUN deno task build
 
 # Production stage
-FROM denoland/deno:alpine-2.6.5
+FROM denoland/deno:alpine-2.6.6
 
 WORKDIR /app
 
