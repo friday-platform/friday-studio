@@ -28,5 +28,5 @@
     "evalite": "^1.0.0-beta.15",
     "zod": "^4.3.5"
   },
-  "devDependencies": { "vitest": "^4.0.17" }
+  "devDependencies": { "vitest": "^4.0.18" }
 }

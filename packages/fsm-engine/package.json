@@ -14,7 +14,7 @@
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "npm:ai@^5.0.93",
-    "vitest": "^4.0.17",
+    "vitest": "^4.0.18",
     "zod": "^4.3.5"
   }
 }

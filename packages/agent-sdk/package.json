@@ -15,5 +15,5 @@
     "jsonrepair": "^3.13.2",
     "zod": "^4.3.5"
   },
-  "devDependencies": { "vitest": "^4.0.17" }
+  "devDependencies": { "vitest": "^4.0.18" }
 }
