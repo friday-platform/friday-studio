@@ -6,23 +6,50 @@ import { smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { createSandbox, sandboxOptions } from "./sandbox.ts";
 
-/** Timeout between SDK messages before we consider it stalled (ms) */
-const MESSAGE_TIMEOUT_MS = 60_000;
+/** Base timeout: no SDK messages AND no stderr activity (ms) */
+export const MESSAGE_TIMEOUT_MS = 60_000;
+/** Extended timeout: no SDK messages but stderr was recently active (ms) */
+export const EXTENDED_TIMEOUT_MS = 180_000;
+
+export type ActivityTracker = { lastActivityMs: number };
 
 /**
- * Wraps an async iterable with a timeout that resets on each yielded value.
- * Throws if no value is received within the timeout period.
+ * Wraps an async iterable with a tiered stall-detection timeout.
+ *
+ * Two tiers:
+ * - At baseTimeoutMs: check if stderr was active near this wait. If stale
+ *   (process cold/dead), reject immediately.
+ * - At extendedTimeoutMs: hard cap — always reject. Accommodates subagent
+ *   execution where the process was recently alive but goes silent.
  */
-async function* withMessageTimeout<T>(
+export async function* withMessageTimeout<T>(
   iterable: AsyncIterable<T>,
-  timeoutMs: number,
+  baseTimeoutMs: number,
+  extendedTimeoutMs: number,
   onTimeout: () => Error,
+  activity: ActivityTracker,
 ): AsyncGenerator<T> {
   const iterator = iterable[Symbol.asyncIterator]();
   while (true) {
+    const waitStart = Date.now();
+    let baseTimer: ReturnType<typeof setTimeout> | undefined;
+    let extTimer: ReturnType<typeof setTimeout> | undefined;
     const result = await Promise.race([
-      iterator.next(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(onTimeout()), timeoutMs)),
+      iterator.next().then((r) => {
+        clearTimeout(baseTimer);
+        clearTimeout(extTimer);
+        activity.lastActivityMs = Date.now(); // message = process alive
+        return r;
+      }),
+      new Promise<never>((_, reject) => {
+        baseTimer = setTimeout(() => {
+          if (activity.lastActivityMs < waitStart - baseTimeoutMs) {
+            clearTimeout(extTimer);
+            reject(onTimeout());
+          }
+        }, baseTimeoutMs);
+        extTimer = setTimeout(() => reject(onTimeout()), extendedTimeoutMs);
+      }),
     ]);
     if (result.done) break;
     yield result.value;
@@ -115,6 +142,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
 
     try {
       let responseText = "";
+      const activity: ActivityTracker = { lastActivityMs: Date.now() };
 
       const sdkStream = query({
         prompt,
@@ -131,7 +159,10 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           sandbox: sandboxOptions,
           abortController: controller,
           env: { ...process.env, ANTHROPIC_API_KEY: apiKey, GH_TOKEN: ghToken },
-          stderr: (data) => logger.debug("Claude CLI stderr", { data }),
+          stderr: (data) => {
+            activity.lastActivityMs = Date.now();
+            logger.debug("Claude CLI stderr", { data });
+          },
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
@@ -144,7 +175,9 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       const timedStream = withMessageTimeout(
         sdkStream,
         MESSAGE_TIMEOUT_MS,
+        EXTENDED_TIMEOUT_MS,
         () => new Error(`SDK stalled: no message received in ${MESSAGE_TIMEOUT_MS / 1000}s`),
+        activity,
       );
 
       for await (const message of timedStream) {
