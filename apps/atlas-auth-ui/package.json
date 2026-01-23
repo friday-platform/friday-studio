@@ -16,7 +16,7 @@
     "@atlas/ga4": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.36.0",
-    "@sveltejs/kit": "^2.50.0",
+    "@sveltejs/kit": "^2.50.1",
     "nanoid": "^5.1.6",
     "svelte": "^5.48.0",
     "zod": "^4.3.5",
