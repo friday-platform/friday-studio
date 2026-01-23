@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { page } from "$app/state";
   import logoMarkDark from "$lib/assets/logo-mark-dark.png";
   import logoMark from "$lib/assets/logo-mark.png";
   import Decal from "$lib/components/decal.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
 
   const email = $derived(page.url.searchParams.get("email"));
 </script>
@@ -35,11 +35,19 @@
       <p class="details-foot">
         Not seeing an email?
 
-        <a href="/signup-retry" data-sveltekit-reload onclick={() => trackEvent(GA4.SIGNUP_RESEND_LINK_CLICK)}>
+        <a
+          href="/signup-retry"
+          data-sveltekit-reload
+          onclick={() => trackEvent(GA4.SIGNUP_RESEND_LINK_CLICK)}
+        >
           Resend
         </a>
         or
-        <a href="mailto:support@hellofriday.ai" onclick={() => trackEvent(GA4.SIGNUP_SUPPORT_LINK_CLICK, { source: "signup_confirmation" })}>
+        <a
+          href="mailto:support@hellofriday.ai"
+          onclick={() =>
+            trackEvent(GA4.SIGNUP_SUPPORT_LINK_CLICK, { source: "signup_confirmation" })}
+        >
           contact support
         </a>
       </p>
@@ -51,7 +59,8 @@
         <a
           href="https://hellofriday.ai/privacy"
           target="_blank"
-          onclick={() => trackEvent(GA4.SIGNUP_PRIVACY_LINK_CLICK, { source: "signup_confirmation" })}
+          onclick={() =>
+            trackEvent(GA4.SIGNUP_PRIVACY_LINK_CLICK, { source: "signup_confirmation" })}
         >
           Privacy Policy
         </a>

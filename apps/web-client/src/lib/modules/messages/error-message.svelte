@@ -10,7 +10,13 @@
 
 <MessageWrapper>
   <article class="message">
-    <button onclick={() => { if (!open) trackEvent(GA4.ERROR_DETAILS_EXPAND); open = !open; }} class:open>
+    <button
+      onclick={() => {
+        if (!open) trackEvent(GA4.ERROR_DETAILS_EXPAND);
+        open = !open;
+      }}
+      class:open
+    >
       <span class="header">
         An error happened
         <IconSmall.CaretRight />

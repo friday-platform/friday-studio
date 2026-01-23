@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/ga4";
   import logoMarkDark from "$lib/assets/logo-mark-dark.png";
   import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import { Form } from "$lib/components/form";
   import { toast } from "$lib/components/notifications/notifications.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { zfd } from "zod-form-data";
 
   const { data } = $props();
@@ -43,7 +43,9 @@
 
         // in case of an error return the data and errors
         if (!input.success) {
-          trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Please enter all required fields" });
+          trackEvent(GA4.SETUP_PROFILE_ERROR, {
+            error_message: "Please enter all required fields",
+          });
           toast("Please enter all required fields", true);
           submitted = false;
         }
@@ -64,7 +66,9 @@
               submitted = false;
 
               if (response.status === 409) {
-                trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Organization name already exists" });
+                trackEvent(GA4.SETUP_PROFILE_ERROR, {
+                  error_message: "Organization name already exists",
+                });
                 toast("Organization name already exists", true);
               } else {
                 trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Failed to complete setup" });

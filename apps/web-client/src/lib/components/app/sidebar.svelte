@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { getAppContext } from "$lib/app-context.svelte";
@@ -11,7 +12,6 @@
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listSpaces } from "$lib/queries/spaces";
   import { getActivePage } from "$lib/utils/active-page.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
   import NavigationControls from "./navigation-controls.svelte";

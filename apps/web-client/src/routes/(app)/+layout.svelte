@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { GA4, trackEvent } from "@atlas/ga4";
+  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { browser } from "$app/environment";
   import { getAppContext } from "$lib/app-context.svelte";
@@ -91,7 +91,15 @@
                   <span class="reconnect-countdown">(reconnecting...)</span>
                 {/if}
               </p>
-              <button type="button" onclick={() => { trackEvent(GA4.DAEMON_RECONNECT_CLICK); ctx.checkHealth(); }}>Try again</button>
+              <button
+                type="button"
+                onclick={() => {
+                  trackEvent(GA4.DAEMON_RECONNECT_CLICK);
+                  ctx.checkHealth();
+                }}
+              >
+                Try again
+              </button>
             </div>
           {/if}
           {@render children?.()}

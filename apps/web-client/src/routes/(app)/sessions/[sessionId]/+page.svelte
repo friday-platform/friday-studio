@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { IconSmall } from "$lib/components/icons/small";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import TimelineMain from "$lib/components/session-timeline/timeline-main.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { formatSessionDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import Breadcrumbs from "../(components)/breadcrumbs.svelte";
@@ -99,7 +99,11 @@
               <a
                 href="/library/{artifact.id}"
                 class="sidebar-item"
-                onclick={() => trackEvent(GA4.SESSION_ARTIFACT_CLICK, { session_id: session.id, artifact_id: artifact.id })}
+                onclick={() =>
+                  trackEvent(GA4.SESSION_ARTIFACT_CLICK, {
+                    session_id: session.id,
+                    artifact_id: artifact.id,
+                  })}
               >
                 <IconSmall.File />
                 <span class="item-text">{artifact.title ?? "Untitled"}</span>
@@ -118,7 +122,11 @@
             <a
               href="/chat/{session.parentStreamId}"
               class="sidebar-item"
-              onclick={() => trackEvent(GA4.SESSION_CHAT_LINK_CLICK, { session_id: session.id, chat_id: session.parentStreamId! })}
+              onclick={() =>
+                trackEvent(GA4.SESSION_CHAT_LINK_CLICK, {
+                  session_id: session.id,
+                  chat_id: session.parentStreamId!,
+                })}
             >
               <span class="item-text">{session.parentTitle ?? "Conversation"}</span>
             </a>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ReasoningResultStatusType } from "@atlas/core";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import {
     createColumnHelper,
     createTable,
@@ -11,7 +12,6 @@
   import { Table } from "$lib/components/table";
   import { artifactColumns } from "$lib/modules/library/columns";
   import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { onMount } from "svelte";
   import Breadcrumbs from "./(components)/breadcrumbs.svelte";
   import type { PageData } from "./$types";
@@ -106,7 +106,11 @@
             table={artifactsTable}
             rowSize="large"
             rowPath={(item) => `/library/${item.id}`}
-            onRowClick={(item) => trackEvent(GA4.SPACE_ARTIFACT_CLICK, { space_id: workspace.id, artifact_id: item.id })}
+            onRowClick={(item) =>
+              trackEvent(GA4.SPACE_ARTIFACT_CLICK, {
+                space_id: workspace.id,
+                artifact_id: item.id,
+              })}
             hideHeader
           />
         </div>

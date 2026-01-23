@@ -119,7 +119,13 @@
 
 <MessageWrapper>
   <div class="container">
-    <button onclick={() => { if (!open) trackEvent(GA4.PROGRESS_EXPAND); open = !open; }} class:open>
+    <button
+      onclick={() => {
+        if (!open) trackEvent(GA4.PROGRESS_EXPAND);
+        open = !open;
+      }}
+      class:open
+    >
       <span class="thinking">Thinking... <IconSmall.CaretRight /></span>
 
       {#if open}

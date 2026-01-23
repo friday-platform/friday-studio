@@ -3,6 +3,7 @@
   import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
   import { client, parseResult } from "@atlas/client/v2";
   import type { ArtifactWithContents } from "@atlas/core/artifacts";
+  import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { afterNavigate, beforeNavigate } from "$app/navigation";
   import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
@@ -24,7 +25,6 @@
   import Request from "$lib/modules/messages/request.svelte";
   import Response from "$lib/modules/messages/response.svelte";
   import ShowDetails from "$lib/modules/messages/show-details.svelte";
-  import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
   import WorkspaceCreated from "$lib/modules/messages/workspace-created.svelte";
   import { formatChatDate, getDatetimeContext } from "$lib/utils/date";
   import { shareChat } from "$lib/utils/share-chat";
@@ -128,7 +128,10 @@
 
       // Track API errors (non-2xx responses)
       if (!response.ok) {
-        const errorText = await response.clone().text().catch(() => "Unknown error");
+        const errorText = await response
+          .clone()
+          .text()
+          .catch(() => "Unknown error");
         trackApiError(String(url), response.status, errorText, init?.method ?? "GET");
       }
 
@@ -188,7 +191,10 @@
       currentStatus === "error" &&
       (previousStatus === "streaming" || previousStatus === "submitted")
     ) {
-      trackEvent(GA4.STREAM_ERROR, { chat_id: chatId, error_message: chat.error?.message ?? "Unknown error" });
+      trackEvent(GA4.STREAM_ERROR, {
+        chat_id: chatId,
+        error_message: chat.error?.message ?? "Unknown error",
+      });
       streamStartTime = null;
     }
 
@@ -562,7 +568,10 @@
                       {#if !isNew && (chat.messages?.length ?? 0) > 0}
                         <DropdownMenu.Item
                           onclick={async () => {
-                            trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chatId, source: "chat_input_menu" });
+                            trackEvent(GA4.SHARE_CHAT_CLICK, {
+                              chat_id: chatId,
+                              source: "chat_input_menu",
+                            });
                             if (chat.messages) {
                               const chatTitle =
                                 chatContext.recentChats.find((c) => c.id === chatId)?.title ??
@@ -647,7 +656,8 @@
                   <a
                     class="chat-item"
                     href="/chat/{recentChat.id}"
-                    onclick={() => trackEvent(GA4.RECENT_CONVERSATION_SELECT, { chat_id: recentChat.id })}
+                    onclick={() =>
+                      trackEvent(GA4.RECENT_CONVERSATION_SELECT, { chat_id: recentChat.id })}
                   >
                     <span class="chat--title">{recentChat.title || "(Untitled)"}</span>
                     <span

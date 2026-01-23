@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { enhance } from "$app/forms";
   import logoMarkDark from "$lib/assets/logo-mark-dark.png";
   import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
 
   let submitted = $state(false);
   let agree_to_terms = $state(false);

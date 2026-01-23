@@ -2,8 +2,8 @@
   import type { Chat } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { client, parseResult } from "@atlas/client/v2";
-  import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { GA4, trackEvent } from "@atlas/ga4";
+  import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import Button from "$lib/components/button.svelte";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import { z } from "zod";

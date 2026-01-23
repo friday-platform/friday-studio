@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import { GA4, trackEvent } from "@atlas/ga4";
   import { createCollapsible } from "@melt-ui/svelte";
   import {
     createColumnHelper,
@@ -14,7 +15,6 @@
   import { IconSmall } from "$lib/components/icons/small";
   import { Table } from "$lib/components/table";
   import { getClientContext } from "$lib/modules/client/context.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { getVersion, invoke } from "$lib/utils/tauri-loader";
   import { onMount } from "svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";

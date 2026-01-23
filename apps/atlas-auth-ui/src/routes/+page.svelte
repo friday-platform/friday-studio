@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/ga4";
   import logoMarkDark from "$lib/assets/logo-mark-dark.png";
   import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { onMount } from "svelte";
 
   let emailValue = $state("");
@@ -113,7 +113,9 @@
     </div>
 
     <p class="signup">
-      <a href="/signup" onclick={() => trackEvent(GA4.LOGIN_SIGNUP_LINK_CLICK)}>Create an Account</a>
+      <a href="/signup" onclick={() => trackEvent(GA4.LOGIN_SIGNUP_LINK_CLICK)}>
+        Create an Account
+      </a>
     </p>
   </section>
 
