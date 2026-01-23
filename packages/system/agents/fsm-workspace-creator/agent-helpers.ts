@@ -99,8 +99,10 @@ export async function enrichAgentsWithPipelineContext(
     }
 
     // Use LLM to infer what downstream steps need
-    // stepIndex is valid here (checked above), so currentStep exists
-    const currentStep = jobSteps[stepIndex]!;
+    const currentStep = jobSteps.at(stepIndex);
+    if (!currentStep) {
+      return agent;
+    }
     const dataNeeds = await inferDownstreamDataNeeds(
       currentStep.description,
       downstreamSteps,

@@ -34,7 +34,7 @@ describe("repairJson", () => {
     expect(result).not.toBeNull();
 
     // Validate with Zod schema
-    const parsed = WorkspacePlanResponseSchema.parse(JSON.parse(result!));
+    const parsed = WorkspacePlanResponseSchema.parse(JSON.parse(result ?? ""));
     expect(parsed.plan.workspace.name).toEqual("LinkedIn Connection Outreach Automation");
     expect(parsed.plan.signals.length).toEqual(1);
     expect(parsed.plan.agents.length).toEqual(6);
@@ -54,7 +54,7 @@ describe("repairJson", () => {
 
     expect(result).not.toBeNull();
 
-    const parsed = NestedSchema.parse(JSON.parse(result!));
+    const parsed = NestedSchema.parse(JSON.parse(result ?? ""));
     expect(parsed.outer.inner.deep).toEqual("value");
   });
 
@@ -83,7 +83,7 @@ describe("repairJson", () => {
 
     expect(result).not.toBeNull();
 
-    const parsed = ArrayCaseSchema.parse(JSON.parse(result!));
+    const parsed = ArrayCaseSchema.parse(JSON.parse(result ?? ""));
     expect(parsed.items.length).toEqual(2);
     const firstItem = parsed.items.at(0);
     const secondItem = parsed.items.at(1);
@@ -111,7 +111,7 @@ describe("repairJson", () => {
 
     expect(result).not.toBeNull();
 
-    const parsed = ValidJsonSchema.parse(JSON.parse(result!));
+    const parsed = ValidJsonSchema.parse(JSON.parse(result ?? ""));
     expect(parsed.plan.workspace.name).toEqual("Test Workspace");
   });
 
@@ -134,7 +134,7 @@ describe("repairJson", () => {
     expect(result).not.toBeNull();
 
     // This should pass after repair - key_excerpts should be an actual array
-    const parsed = SummarizedResultSchema.parse(JSON.parse(result!));
+    const parsed = SummarizedResultSchema.parse(JSON.parse(result ?? ""));
     expect(parsed.key_excerpts.length).toEqual(5);
     expect(parsed.key_excerpts[0]).toEqual(
       "Person A - Digital Coordinator at Music Company, a global distribution company",
@@ -166,11 +166,12 @@ describe("repairToolCall", () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result!.toolCallId).toEqual("call_123");
-    expect(result!.toolName).toEqual("search");
+    if (!result) throw new Error("result should not be null");
+    expect(result.toolCallId).toEqual("call_123");
+    expect(result.toolName).toEqual("search");
     // Verify the repaired JSON is valid
     const ParsedSchema = z.object({ query: z.string() });
-    const parsed = ParsedSchema.parse(JSON.parse(result!.input));
+    const parsed = ParsedSchema.parse(JSON.parse(result.input));
     expect(parsed.query).toEqual("test");
   });
 

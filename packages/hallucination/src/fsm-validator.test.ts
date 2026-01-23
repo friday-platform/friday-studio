@@ -49,20 +49,20 @@ describe("traceToAgentResult", () => {
     const result = traceToAgentResult(trace);
 
     expect(result.toolCalls).toBeDefined();
-    expect(result.toolCalls!.length).toEqual(2);
+    expect(result.toolCalls?.length).toEqual(2);
 
-    const first = result.toolCalls![0];
+    const first = result.toolCalls?.[0];
     expect(first).toBeDefined();
-    expect(first!.toolName).toEqual("read_file");
-    expect(first!.input).toEqual({ path: "/foo/bar.txt" });
-    expect(first!.type).toEqual("tool-call");
-    expect(first!.toolCallId).toEqual("call-1");
+    expect(first?.toolName).toEqual("read_file");
+    expect(first?.input).toEqual({ path: "/foo/bar.txt" });
+    expect(first?.type).toEqual("tool-call");
+    expect(first?.toolCallId).toEqual("call-1");
 
-    const second = result.toolCalls![1];
+    const second = result.toolCalls?.[1];
     expect(second).toBeDefined();
-    expect(second!.toolName).toEqual("write_file");
-    expect(second!.input).toEqual({ path: "/baz.txt", content: "hello" });
-    expect(second!.toolCallId).toEqual("call-2");
+    expect(second?.toolName).toEqual("write_file");
+    expect(second?.input).toEqual({ path: "/baz.txt", content: "hello" });
+    expect(second?.toolCallId).toEqual("call-2");
   });
 
   it("passes through toolResults directly (AI SDK format)", () => {
@@ -91,20 +91,20 @@ describe("traceToAgentResult", () => {
     const result = traceToAgentResult(trace);
 
     expect(result.toolResults).toBeDefined();
-    expect(result.toolResults!.length).toEqual(2);
+    expect(result.toolResults?.length).toEqual(2);
 
-    const first = result.toolResults![0];
+    const first = result.toolResults?.[0];
     expect(first).toBeDefined();
-    expect(first!.toolName).toEqual("read_file");
-    expect(first!.toolCallId).toEqual("tc-abc123");
-    expect(first!.output).toEqual("file contents here");
-    expect(first!.type).toEqual("tool-result");
+    expect(first?.toolName).toEqual("read_file");
+    expect(first?.toolCallId).toEqual("tc-abc123");
+    expect(first?.output).toEqual("file contents here");
+    expect(first?.type).toEqual("tool-result");
 
-    const second = result.toolResults![1];
+    const second = result.toolResults?.[1];
     expect(second).toBeDefined();
-    expect(second!.toolName).toEqual("search");
-    expect(second!.toolCallId).toEqual("tc-xyz789");
-    expect(second!.output).toEqual({ matches: ["a", "b"] });
+    expect(second?.toolName).toEqual("search");
+    expect(second?.toolCallId).toEqual("tc-xyz789");
+    expect(second?.output).toEqual({ matches: ["a", "b"] });
   });
 
   it("undefined toolCalls/toolResults stay undefined", () => {
@@ -133,9 +133,9 @@ describe("traceToAgentResult", () => {
     const result = traceToAgentResult(trace);
 
     expect(result.toolCalls).toBeDefined();
-    expect(result.toolCalls!.length).toEqual(0);
+    expect(result.toolCalls?.length).toEqual(0);
     expect(result.toolResults).toBeDefined();
-    expect(result.toolResults!.length).toEqual(0);
+    expect(result.toolResults?.length).toEqual(0);
   });
 
   it("preserves complex nested output exactly", () => {
@@ -174,15 +174,15 @@ describe("traceToAgentResult", () => {
 
     // toolCalls input preserved
     expect(result.toolCalls).toBeDefined();
-    const toolCall = result.toolCalls![0];
+    const toolCall = result.toolCalls?.[0];
     expect(toolCall).toBeDefined();
-    expect(toolCall!.input).toEqual(complexOutput);
+    expect(toolCall?.input).toEqual(complexOutput);
 
     // toolResults output preserved
     expect(result.toolResults).toBeDefined();
-    const toolResult = result.toolResults![0];
+    const toolResult = result.toolResults?.[0];
     expect(toolResult).toBeDefined();
-    expect(toolResult!.output).toEqual(complexOutput);
+    expect(toolResult?.output).toEqual(complexOutput);
   });
 
   it("preserves tool call IDs for correlation", () => {
@@ -218,16 +218,17 @@ describe("traceToAgentResult", () => {
     expect(result.toolResults).toBeDefined();
 
     // Tool call IDs should be preserved (AI SDK format)
-    expect(result.toolCalls![0]?.toolCallId).toEqual("call-abc-123");
-    expect(result.toolCalls![1]?.toolCallId).toEqual("call-def-456");
+    expect(result.toolCalls?.[0]?.toolCallId).toEqual("call-abc-123");
+    expect(result.toolCalls?.[1]?.toolCallId).toEqual("call-def-456");
 
     // Tool results should still have matching IDs (correlation works)
-    expect(result.toolResults![0]?.toolCallId).toEqual("call-abc-123");
-    expect(result.toolResults![1]?.toolCallId).toEqual("call-def-456");
+    expect(result.toolResults?.[0]?.toolCallId).toEqual("call-abc-123");
+    expect(result.toolResults?.[1]?.toolCallId).toEqual("call-def-456");
 
     // Correlation: each tool call ID should have a matching result
-    for (const call of result.toolCalls!) {
-      const matchingResult: unknown = result.toolResults!.find(
+    const toolCalls = result.toolCalls ?? [];
+    for (const call of toolCalls) {
+      const matchingResult: unknown = result.toolResults?.find(
         (r) => r.toolCallId === call.toolCallId,
       );
       expect(matchingResult).toBeDefined();

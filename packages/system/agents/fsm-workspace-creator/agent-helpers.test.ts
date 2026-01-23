@@ -138,12 +138,14 @@ describe("enrichAgentsWithPipelineContext", () => {
     const enriched = await enrichAgentsWithPipelineContext(agents, jobSteps);
 
     // First agent should have downstream data requirements (LLM-inferred)
-    const gmailAgent = enriched.find((a) => a.id === "gmail-priority-monitor")!;
+    const gmailAgent = enriched.find((a) => a.id === "gmail-priority-monitor");
+    if (!gmailAgent) throw new Error("gmailAgent should be defined");
     expect(gmailAgent.description).toContain("DOWNSTREAM DATA REQUIREMENTS");
     // The LLM should infer something about needing email content for TODO extraction
 
     // Last agent should NOT have downstream context (no downstream steps)
-    const todoAgent = enriched.find((a) => a.id === "todo-extractor")!;
+    const todoAgent = enriched.find((a) => a.id === "todo-extractor");
+    if (!todoAgent) throw new Error("todoAgent should be defined");
     expect(todoAgent.description).toEqual(
       "Analyze email content to identify and extract work-related action items",
     );

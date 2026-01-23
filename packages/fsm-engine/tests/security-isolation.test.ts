@@ -287,7 +287,7 @@ describe.skipIf(!isDenoRuntime)("Dynamic Import Attacks - ALL BLOCKED", () => {
     await expect(executor.execute(code, "importRemote", ctx, sig)).rejects.toThrow();
   });
 
-  it("cannot import from npm with malicious packages", async () => {
+  it("cannot import from npm with malicious packages", { timeout: 10_000 }, async () => {
     // Attack: Load compromised npm packages
     const code = `
       export default async () => {

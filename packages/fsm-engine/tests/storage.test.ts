@@ -29,7 +29,7 @@ describe("FSM Engine - Storage & Persistence", () => {
       expect(newEngine.state).toEqual("approved");
       const order = newEngine.getDocument("order");
       expect(order).toBeDefined();
-      expect(order!.data.status).toEqual("approved");
+      expect(order?.data.status).toEqual("approved");
     });
 
     // Skip: requires Deno Web Workers not available in Node.js/vitest
@@ -46,7 +46,7 @@ describe("FSM Engine - Storage & Persistence", () => {
       expect(newEngine.state).toEqual("active");
       const profile = newEngine.getDocument("profile");
       expect(profile).toBeDefined();
-      expect(profile!.data.userId).toEqual("user-123");
+      expect(profile?.data.userId).toEqual("user-123");
     });
   });
 
@@ -105,13 +105,13 @@ describe("FSM Engine - Storage & Persistence", () => {
       const doc = engine.getDocument("doc");
       expect(doc).toBeDefined();
 
-      expect(doc!.data.val).toEqual(0);
+      expect(doc?.data.val).toEqual(0);
 
       // 3. Check store state - it should be 0 (persistence skipped due to error)
       // The store is safe for now because persistence happens at the end
       const storedDoc = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
-      expect(storedDoc).toBeDefined();
-      const storedData = storedDoc!.data.data;
+      if (!storedDoc) throw new Error("storedDoc should be defined");
+      const storedData = storedDoc.data.data;
       expect(storedData.val).toEqual(0);
 
       // 4. Trigger successful transition
@@ -121,8 +121,8 @@ describe("FSM Engine - Storage & Persistence", () => {
       // 5. Verify bad state is now persisted
       // If the in-memory state wasn't rolled back, val: 1 is now in the store
       const storedDoc2 = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
-      expect(storedDoc2).toBeDefined();
-      const storedData2 = storedDoc2!.data.data;
+      if (!storedDoc2) throw new Error("storedDoc2 should be defined");
+      const storedData2 = storedDoc2.data.data;
       expect(storedData2.val).toEqual(0);
     });
 
@@ -188,7 +188,7 @@ describe("FSM Engine - Storage & Persistence", () => {
       // Get original document reference for comparison
       const originalDoc = engine.getDocument("nested");
       expect(originalDoc).toBeDefined();
-      const originalData = originalDoc!.data;
+      const originalData = originalDoc?.data;
       // @ts-expect-error specific document structure isn't type safe
       const originalNestedValue = originalData.nested.value;
       // @ts-expect-error specific document structure isn't type safe
@@ -202,7 +202,7 @@ describe("FSM Engine - Storage & Persistence", () => {
       // Verify document wasn't mutated despite direct mutation attempt
       const docAfterFailure = engine.getDocument("nested");
       expect(docAfterFailure).toBeDefined();
-      const dataAfterFailure = docAfterFailure!.data;
+      const dataAfterFailure = docAfterFailure?.data;
 
       // @ts-expect-error specific document structure isn't type safe
       expect(dataAfterFailure.nested.value).toEqual(originalNestedValue);

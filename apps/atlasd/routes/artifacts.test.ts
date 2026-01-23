@@ -335,10 +335,10 @@ describe("Batch-get endpoint", () => {
     expect(returnedSummary).toBeDefined();
 
     // File artifact should have contents
-    expect(returnedFile!.contents).toEqual(txtContent);
+    expect(returnedFile?.contents).toEqual(txtContent);
 
     // Summary artifact should NOT have contents (not a file type)
-    expect(returnedSummary!.contents).toBeUndefined();
+    expect(returnedSummary?.contents).toBeUndefined();
   });
 });
 

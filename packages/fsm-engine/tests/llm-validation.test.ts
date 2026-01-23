@@ -232,8 +232,8 @@ describe("LLM Action Validation Hook", () => {
       error = e as Error;
     }
     expect(error).toBeInstanceOf(Error);
-    expect(error!.message).toContain("failed validation after retry");
-    expect(error!.message).toContain("Still wrong");
+    expect(error?.message).toContain("failed validation after retry");
+    expect(error?.message).toContain("Still wrong");
 
     // Observable outcome: state unchanged (transaction rolled back)
     expect(engine.state).toEqual("pending");
@@ -317,8 +317,8 @@ describe("LLM Action Validation Hook", () => {
       error = e as Error;
     }
     expect(error).toBeInstanceOf(Error);
-    expect(error!.message).toContain("LLM step failed on retry");
-    expect(error!.message).toContain("Cannot comply with validation");
+    expect(error?.message).toContain("LLM step failed on retry");
+    expect(error?.message).toContain("Cannot comply with validation");
 
     // Observable outcome: state unchanged (transaction rolled back)
     expect(engine.state).toEqual("pending");
