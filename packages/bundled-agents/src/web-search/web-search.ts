@@ -222,7 +222,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     const state: { value: AnalysisState } = { value: { status: "pending" } };
 
     try {
-      await generateText({
+      const response = await generateText({
         model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
         messages: [
           { role: "system", content: QUERY_ANALYSIS_PROMPT },
@@ -252,6 +252,14 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
         maxOutputTokens: 2000,
         abortSignal,
       });
+
+      // Log response for debugging - runtime has invalid/error fields not in TS type
+      logger.info("Query analysis response", {
+        finishReason: response.finishReason,
+        toolCalls: response.toolCalls,
+        text: response.text?.slice(0, 500),
+        stateStatus: state.value.status,
+      });
     } catch (error) {
       logger.error("Query analysis failed", { error, prompt });
       return fail({ reason: "Failed to analyze query" });
@@ -265,7 +273,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     }
 
     if (analysisState.status === "pending") {
-      logger.warn("No analysis tool was called");
+      logger.warn("No analysis tool was called", { prompt: prompt.slice(0, 500) });
       return fail({ reason: "Failed to analyze query" });
     }
 
