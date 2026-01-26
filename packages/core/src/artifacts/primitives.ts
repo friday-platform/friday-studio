@@ -72,6 +72,11 @@ export const WorkspacePlanSchema = z.object({
       name: z
         .string()
         .describe("Human-readable signal name. Example: 'Check Schedule' or 'GitHub Push Event'"),
+      title: z
+        .string()
+        .describe(
+          "Short verb-noun sentence for UI display. Examples: 'Triggers daily at 10am PST', 'Receives GitHub push events', 'Watches for new files'",
+        ),
       signalType: SignalTypeSchema.describe(
         "Signal provider type. 'schedule' for cron-based triggers, 'http' for webhooks/API endpoints, 'fs-watch' for filesystem changes.",
       ),
@@ -127,6 +132,11 @@ export const WorkspacePlanSchema = z.object({
         .string()
         .describe(
           "Human-readable job name. Example: 'Monitor and Notify' or 'Process GitHub Events'",
+        ),
+      title: z
+        .string()
+        .describe(
+          "Short 2-4 word title for UI display. Examples: 'Daily Summary', 'Process Events', 'Send Notifications'",
         ),
       triggerSignalId: z.string().describe("Signal ID that triggers this job"),
       steps: z

@@ -73,7 +73,7 @@
       {@render triggerContents()}
     </Dialog.Trigger>
 
-    <Dialog.Content>
+    <Dialog.Content size="large">
       <Dialog.Close />
 
       {#snippet header()}

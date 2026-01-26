@@ -114,6 +114,10 @@ export const JobSpecificationSchema = z
   .strictObject({
     name: MCPToolNameSchema.optional().describe("MCP-compliant job name"),
     description: z.string().optional(),
+    title: z
+      .string()
+      .optional()
+      .describe("Short human-readable title (2-4 words, e.g., 'Daily Summary')"),
 
     // Triggers
     triggers: z.array(TriggerSpecificationSchema).optional(),

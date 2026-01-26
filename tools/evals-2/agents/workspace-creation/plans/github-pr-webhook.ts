@@ -9,7 +9,11 @@ export const githubPRWebhookPlan: WorkspacePlan = {
     {
       id: "github-pr-webhook",
       name: "github_pr_webhook",
+
+      title: "Receives GitHub PR events",
+
       signalType: "http",
+
       description: "Receives GitHub webhook events when new pull requests are opened",
     },
   ],
@@ -27,6 +31,7 @@ export const githubPRWebhookPlan: WorkspacePlan = {
     {
       id: "pr-code-quality-review",
       name: "PR Code Quality Review",
+      title: "Review PR",
       triggerSignalId: "github-pr-webhook",
       steps: [
         {

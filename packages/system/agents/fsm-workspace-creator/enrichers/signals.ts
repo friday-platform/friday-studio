@@ -102,7 +102,7 @@ IMPORTANT: The description field should contain the EXACT original description, 
 /**
  * Enriches a signal from WorkspacePlan prose into workspace.yml config
  *
- * @param signal - Signal from WorkspacePlan (id, name, description only)
+ * @param signal - Signal from WorkspacePlan (id, name, title, description)
  * @param abortSignal - Optional abort signal for cancellation
  * @returns Enriched signal with id and complete workspace.yml config
  */
@@ -129,8 +129,12 @@ Return a complete workspace.yml signal config object with provider, description,
     experimental_repairText: repairJson,
   });
 
-  // Add payload schema from plan if present
-  const config = { ...result.object.result, schema: signal.payloadSchema || {} };
+  // Add title from plan and payload schema if present
+  const config = {
+    ...result.object.result,
+    title: signal.title,
+    schema: signal.payloadSchema || {},
+  };
 
   return { id: signal.id, config };
 }

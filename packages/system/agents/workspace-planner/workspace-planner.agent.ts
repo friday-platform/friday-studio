@@ -286,6 +286,12 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                   .describe(
                     "Human-readable signal name. Example: 'Check Schedule' or 'GitHub Push Event'",
                   ),
+
+                title: z
+                  .string()
+                  .describe(
+                    "Short verb-noun sentence for UI. Start with verb. Examples: 'Triggers daily at 10am PST', 'Receives GitHub push events', 'Watches for file changes'",
+                  ),
                 signalType: z
                   .enum(["schedule", "http"])
                   .describe(
@@ -550,6 +556,11 @@ Generate jobs that connect the available signals and agents to fulfill the works
                 .string()
                 .describe(
                   "Human-readable job name. Example: 'Monitor and Notify' or 'Process GitHub Events'",
+                ),
+              title: z
+                .string()
+                .describe(
+                  "Short 2-4 word title for UI. Examples: 'Daily Summary', 'Event Processor', 'Send Alerts'",
                 ),
               triggerSignalId: z.enum(signalIds).describe("Signal ID that triggers this job"),
               steps: z

@@ -10,7 +10,11 @@ export const customerSupportTriagePlan: WorkspacePlan = {
     {
       id: "new-zendesk-ticket",
       name: "new-zendesk-ticket",
+
+      title: "Receives new Zendesk tickets",
+
       signalType: "http",
+
       description: "Triggers when a new support ticket is created in Zendesk via webhook",
     },
   ],
@@ -35,6 +39,7 @@ export const customerSupportTriagePlan: WorkspacePlan = {
     {
       id: "zendesk-ticket-triage-and-notification",
       name: "Zendesk Ticket Triage and Notification",
+      title: "Triage Tickets",
       triggerSignalId: "new-zendesk-ticket",
       steps: [
         {

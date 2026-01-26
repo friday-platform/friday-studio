@@ -76,6 +76,7 @@ function buildJobsSection(
 
     jobs[job.id] = {
       name: job.id.replace(/-/g, "_"),
+      title: job.title,
       description: `${job.name} - ${job.steps.map((s) => s.description).join(", ")}`,
       triggers: [{ signal: job.triggerSignalId }],
       fsm,

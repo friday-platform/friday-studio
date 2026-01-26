@@ -111,6 +111,7 @@ export async function generateTaskFSM(
   const jobPlan: WorkspaceJobPlan = {
     id: "task-job",
     name: "Task Execution",
+    title: "Execute Task",
     triggerSignalId: "task-job-trigger",
     steps: jobSteps,
     behavior: "sequential",
@@ -120,6 +121,7 @@ export async function generateTaskFSM(
   const triggerSignal: WorkspaceSignal = {
     id: "task-job-trigger", // Matches fsmId.replace(/-fsm$/, "-trigger")
     name: "Task Trigger",
+    title: "Triggers task execution",
     signalType: "http",
     description: intent,
   };

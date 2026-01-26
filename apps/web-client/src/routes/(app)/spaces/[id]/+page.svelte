@@ -137,18 +137,12 @@
         <h2 class="sidebar-label">Jobs</h2>
         <ul class="sidebar-list">
           {#each Object.keys(workspace.config.jobs) as jobId (jobId)}
-            <li class="sidebar-item">{workspace.config.jobs[jobId].name || jobId}</li>
-          {/each}
-        </ul>
-      </div>
-    {/if}
-
-    {#if workspace.config?.agents}
-      <div class="sidebar-section">
-        <h2 class="sidebar-label">Agents</h2>
-        <ul class="sidebar-list">
-          {#each Object.keys(workspace.config.agents) as agentId (agentId)}
-            <li class="sidebar-item">{agentId}</li>
+            <li class="sidebar-item">
+              {workspace.config.jobs[jobId].title ||
+                workspace.config.jobs[jobId].description ||
+                workspace.config.jobs[jobId].name ||
+                jobId}
+            </li>
           {/each}
         </ul>
       </div>
@@ -160,7 +154,9 @@
         <ul class="sidebar-list">
           {#each Object.keys(workspace.config.signals) as signalId (signalId)}
             <li class="sidebar-item">
-              {signalId}
+              {workspace.config.signals[signalId].title ||
+                workspace.config.signals[signalId].description ||
+                signalId}
             </li>
           {/each}
         </ul>
@@ -210,9 +206,9 @@
   .sidebar-label {
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
-    color: var(--text-1);
-    opacity: 0.5;
+    line-height: var(--font-lineheight-0);
     margin: 0;
+    opacity: 0.6;
   }
 
   .sidebar-list {
@@ -225,10 +221,10 @@
   }
 
   .sidebar-item {
-    color: var(--text-1);
     font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    line-height: 1.25;
+    font-weight: var(--font-weight-4-5);
+    line-height: var(--font-lineheight-1);
+    text-wrap-style: balance;
     word-break: break-word;
   }
 

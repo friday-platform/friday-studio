@@ -12,6 +12,10 @@ import { DurationSchema, SchemaObjectSchema } from "./base.ts";
 
 const BaseSignalConfigSchema = z.strictObject({
   description: z.string(),
+  title: z
+    .string()
+    .optional()
+    .describe("Short human-readable title in verb-noun format (e.g., 'Reads messages from Slack')"),
   schema: SchemaObjectSchema.optional().describe("JSON Schema for signal payload validation"),
 });
 

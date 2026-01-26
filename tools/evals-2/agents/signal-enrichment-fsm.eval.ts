@@ -17,7 +17,11 @@ Deno.test("Signal Enrichment - Daily Schedule with Timezone", async (t) => {
     const signal = {
       id: "daily-standup-reminder",
       name: "Daily Standup Reminder",
+
+      title: "Triggers daily at 9am PT",
+
       signalType: "schedule" as const,
+
       description: "Runs daily at 9am Pacific Time to send standup reminders",
     };
 
@@ -52,7 +56,11 @@ Deno.test("Signal Enrichment - Every 30 Minutes", async (t) => {
     const signal = {
       id: "product-check",
       name: "Product Check",
+
+      title: "Triggers every 30 minutes",
+
       signalType: "schedule" as const,
+
       description: "Runs every 30 minutes to check for new products",
     };
 
@@ -82,7 +90,11 @@ Deno.test("Signal Enrichment - Weekdays Only", async (t) => {
     const signal = {
       id: "morning-briefing",
       name: "Morning Briefing",
+
+      title: "Triggers weekdays at 8am ET",
+
       signalType: "schedule" as const,
+
       description: "Fires every weekday at 8:00 AM EST to generate morning briefing",
     };
 
@@ -117,7 +129,11 @@ Deno.test("Signal Enrichment - HTTP Webhook", async (t) => {
     const signal = {
       id: "github-webhook",
       name: "GitHub Webhook",
+
+      title: "Receives GitHub push events",
+
       signalType: "http" as const,
+
       description: "Webhook endpoint receives GitHub push events to trigger CI builds",
     };
 
@@ -152,7 +168,11 @@ Deno.test("Signal Enrichment - File Watch", async (t) => {
     const signal = {
       id: "notes-watcher",
       name: "Notes Watcher",
+
+      title: "Watches notes directory",
+
       signalType: "fs-watch" as const,
+
       description: "Watches the notes directory for new markdown files",
     };
 

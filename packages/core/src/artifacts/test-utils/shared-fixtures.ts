@@ -34,6 +34,7 @@ export function createWorkspacePlanInput(
           {
             id: "test-signal",
             name: "Test Signal",
+            title: "Triggers on demand",
             signalType: "http",
             description: "A test signal that triggers on demand",
           },
@@ -50,6 +51,7 @@ export function createWorkspacePlanInput(
           {
             id: "test-job",
             name: "Test Job",
+            title: "Test Job",
             triggerSignalId: "test-signal",
             steps: [{ agentId: "test-agent", description: "Test step" }],
             behavior: "sequential",

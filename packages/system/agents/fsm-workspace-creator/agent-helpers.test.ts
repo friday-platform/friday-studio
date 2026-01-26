@@ -11,6 +11,7 @@ describe("buildFSMGenerationPrompt", () => {
     const job: Job = {
       id: "test-job",
       name: "Weather Email Job",
+      title: "Weather Email",
       triggerSignalId: "send-weather-forecast",
       behavior: "sequential",
       steps: [
@@ -41,7 +42,11 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "send-weather-forecast",
       name: "Send Weather Forecast",
+
+      title: "Sends weather forecast email",
+
       signalType: "schedule",
+
       description:
         "Send weather forecast email. Forecast: Saturday Jan 4 will be sunny with 72°F high. Sunday Jan 5 will be cloudy with 65°F high and 40% chance of rain. Send to user@example.com",
     };
@@ -63,6 +68,7 @@ describe("buildFSMGenerationPrompt", () => {
     const job: Job = {
       id: "test-job",
       name: "Test Job",
+      title: "Test Job",
       triggerSignalId: "my-trigger-signal",
       behavior: "sequential",
       steps: [],
@@ -71,7 +77,11 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "my-trigger-signal",
       name: "My Trigger Signal",
+
+      title: "Triggers test",
+
       signalType: "http",
+
       description: "Test description",
     };
 
@@ -85,6 +95,7 @@ describe("buildFSMGenerationPrompt", () => {
     const job: Job = {
       id: "email-triage",
       name: "Email Triage Job",
+      title: "Email Triage",
       triggerSignalId: "daily-email-check",
       behavior: "sequential",
       steps: [
@@ -96,7 +107,11 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "daily-email-check",
       name: "Daily Email Check",
+
+      title: "Triggers daily email check",
+
       signalType: "schedule",
+
       description: "Check emails daily",
     };
 

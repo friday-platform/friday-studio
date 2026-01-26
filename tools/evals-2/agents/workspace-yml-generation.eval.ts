@@ -26,7 +26,11 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
         {
           id: "daily-9-am-pt",
           name: "Daily 9am Pacific",
+
+          title: "Triggers weekdays at 9am PT",
+
           signalType: "schedule",
+
           description: "Runs every weekday at 9am Pacific Time to send reports",
         },
       ],
@@ -43,6 +47,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
         {
           id: "send-report",
           name: "Send Report",
+          title: "Send Report",
           triggerSignalId: "daily-9-am-pt",
           steps: [{ agentId: "report-poster", description: "Post daily report to Discord" }],
           behavior: "sequential",
@@ -241,7 +246,11 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
         {
           id: "github-pr-webhook",
           name: "GitHub PR Webhook",
+
+          title: "Receives GitHub PR events",
+
           signalType: "http",
+
           description: "Webhook receives GitHub pull request events",
         },
       ],
@@ -263,6 +272,7 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
         {
           id: "review-pr",
           name: "Review PR",
+          title: "Review PR",
           triggerSignalId: "github-pr-webhook",
           steps: [
             { agentId: "pr-analyzer", description: "Analyze PR" },

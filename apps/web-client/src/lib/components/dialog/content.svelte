@@ -4,9 +4,15 @@
   import { fade, scale } from "svelte/transition";
   import { getContext } from "./context";
 
-  type Props = { children: Snippet; icon?: Snippet; header: Snippet; footer: Snippet };
+  type Props = {
+    children: Snippet;
+    icon?: Snippet;
+    size?: "regular" | "large";
+    header: Snippet;
+    footer: Snippet;
+  };
 
-  let { children, icon, header, footer }: Props = $props();
+  let { children, icon, size = "regular", header, footer }: Props = $props();
 
   const { content, portalled, overlay, open } = getContext();
 </script>
@@ -21,7 +27,7 @@
     ></div>
 
     <div
-      class="dialog"
+      class="dialog {size}"
       {...$content}
       use:content
       transition:scale={{ duration: 150, start: 0.98, easing: quadInOut, opacity: 0 }}
@@ -81,11 +87,15 @@
     align-items: center;
     gap: var(--size-6);
     inline-size: fit-content;
-    max-inline-size: var(--size-96);
+    max-inline-size: var(--size-72);
     padding-block: var(--size-12) var(--size-8);
     padding-inline: var(--size-6);
     position: relative;
     text-align: center;
+
+    &.large {
+      max-inline-size: var(--size-96);
+    }
   }
 
   header {
