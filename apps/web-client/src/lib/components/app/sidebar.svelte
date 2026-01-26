@@ -1,15 +1,21 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
   import { GA4, trackEvent } from "@atlas/ga4";
-  import { createQuery } from "@tanstack/svelte-query";
+  import {
+    createInfiniteQuery,
+    createQuery,
+    keepPreviousData,
+    useQueryClient,
+  } from "@tanstack/svelte-query";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { getAppContext } from "$lib/app-context.svelte";
-  import { getChatContext } from "$lib/chat-context.svelte";
   import { Dialog } from "$lib/components/dialog";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
+  import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
   import { getActivePage } from "$lib/utils/active-page.svelte";
   import { shareChat } from "$lib/utils/share-chat";
@@ -17,9 +23,21 @@
   import NavigationControls from "./navigation-controls.svelte";
 
   const ctx = getAppContext();
-  const chatContext = getChatContext();
+  const queryClient = useQueryClient();
 
   const query = createQuery(() => ({ queryKey: ["spaces"], queryFn: () => listSpaces() }));
+  const chatsQuery = createInfiniteQuery(() => ({
+    queryKey: ["chats"],
+    queryFn: async ({ pageParam }) => await listChats(pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? null,
+    select: (data) => ({
+      chats: data.pages.flatMap((c) => c.chats).filter((chat) => chat.source === "atlas"),
+      cursor: data.pages.at(-1)?.nextCursor,
+      hasMore: data.pages.at(-1)?.hasMore,
+    }),
+    placeholderData: keepPreviousData,
+  }));
 
   const currentChatId = $derived(page.params.chatId);
 </script>
@@ -143,7 +161,7 @@
         class="section__add-new"
         onclick={() => {
           trackEvent(GA4.NEW_CHAT_CLICK, { source: "sidebar" });
-          chatContext.startNewChat();
+          goto("/chat");
         }}
         aria-label="New Conversation"
       >
@@ -151,112 +169,117 @@
       </button>
     </span>
 
-    <ScrollListener
-      requestLoadItems={() => chatContext.loadChats()}
-      hasMoreItems={chatContext.hasMoreChats}
-      cursor={chatContext.cursor}
-      isFetching={chatContext.isFetching}
-    >
-      <ul class="section-list">
-        {#each chatContext.recentChats as chat (chat.id)}
-          <li class="chat-row">
-            <a
-              class="sidebar-item"
-              class:active={currentChatId === chat.id}
-              href="/chat/{chat.id}"
-              onclick={() => trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id })}
-            >
-              <span class="text">{chat.title || "Untitled"}</span>
-            </a>
+    {#if chatsQuery.isSuccess}
+      <ScrollListener
+        requestLoadItems={() => chatsQuery.fetchNextPage()}
+        hasMoreItems={chatsQuery.hasNextPage}
+        cursor={chatsQuery.data?.cursor}
+        isFetching={chatsQuery.isFetching}
+      >
+        <ul class="section-list">
+          {#each chatsQuery.data.chats as chat (chat.id)}
+            <li class="chat-row">
+              <a
+                class="sidebar-item"
+                class:active={currentChatId === chat.id}
+                href="/chat/{chat.id}"
+                onclick={() => trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id })}
+              >
+                <span class="text">{chat.title || "Untitled"}</span>
+              </a>
 
-            <div class="chat-options">
-              <DropdownMenu.Root positioning={{ placement: "bottom" }}>
-                <DropdownMenu.Trigger aria-label="Chat options">
-                  <div class="chat-trigger">
-                    <Icons.TripleDots />
-                  </div>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content>
-                  <DropdownMenu.Item
-                    onclick={async () => {
-                      trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chat.id, source: "sidebar" });
-                      const res = await parseResult(
-                        client.chat[":chatId"].$get({ param: { chatId: chat.id } }),
-                      );
+              <div class="chat-options">
+                <DropdownMenu.Root positioning={{ placement: "bottom" }}>
+                  <DropdownMenu.Trigger aria-label="Chat options">
+                    <div class="chat-trigger">
+                      <Icons.TripleDots />
+                    </div>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content>
+                    <DropdownMenu.Item
+                      onclick={async () => {
+                        trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chat.id, source: "sidebar" });
+                        const res = await parseResult(
+                          client.chat[":chatId"].$get({ param: { chatId: chat.id } }),
+                        );
 
-                      if (res.ok) {
-                        // @ts-expect-error the type is correct
-                        await shareChat(res.data.messages, chat.title ?? "Untitled");
-                      }
-                    }}
-                  >
-                    <Icons.Share />
+                        if (res.ok) {
+                          // @ts-expect-error the type is correct
+                          await shareChat(res.data.messages, chat.title ?? "Untitled");
+                        }
+                      }}
+                    >
+                      <Icons.Share />
 
-                    Share
-                  </DropdownMenu.Item>
+                      Share
+                    </DropdownMenu.Item>
 
-                  <Dialog.Root>
-                    {#snippet children(open)}
-                      <DropdownMenu.Item
-                        accent="destructive"
-                        onclick={() => {
-                          trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
-                          open.set(true);
-                        }}
-                      >
-                        <Icons.Trash />
-                        Delete
-                      </DropdownMenu.Item>
+                    <Dialog.Root>
+                      {#snippet children(open)}
+                        <DropdownMenu.Item
+                          accent="destructive"
+                          onclick={() => {
+                            trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
+                            open.set(true);
+                          }}
+                        >
+                          <Icons.Trash />
+                          Delete
+                        </DropdownMenu.Item>
 
-                      <Dialog.Content>
-                        <Dialog.Close />
+                        <Dialog.Content>
+                          <Dialog.Close />
 
-                        {#snippet icon()}
-                          <span style:color="var(--color-red)">
-                            <Icons.DeleteSpace />
-                          </span>
-                        {/snippet}
+                          {#snippet icon()}
+                            <span style:color="var(--color-red)">
+                              <Icons.DeleteSpace />
+                            </span>
+                          {/snippet}
 
-                        {#snippet header()}
-                          <Dialog.Title>Delete Conversation</Dialog.Title>
-                          <Dialog.Description>
-                            <p>
-                              Shared conversations may be available for up to 90 days after being
-                              deleted.
-                            </p>
-                          </Dialog.Description>
-                        {/snippet}
+                          {#snippet header()}
+                            <Dialog.Title>Delete Conversation</Dialog.Title>
+                            <Dialog.Description>
+                              <p>
+                                Shared conversations may be available for up to 90 days after being
+                                deleted.
+                              </p>
+                            </Dialog.Description>
+                          {/snippet}
 
-                        {#snippet footer()}
-                          <Dialog.Button
-                            onclick={async () => {
-                              trackEvent(GA4.DELETE_CHAT_CONFIRM, { chat_id: chat.id });
-                              const res = await parseResult(
-                                client.chat[":chatId"].$delete({ param: { chatId: chat.id } }),
-                              );
-                              if (res.ok) {
-                                await chatContext.loadChats({ reset: true });
-                                if (currentChatId === chat.id) {
-                                  chatContext.startNewChat();
+                          {#snippet footer()}
+                            <Dialog.Button
+                              onclick={async () => {
+                                trackEvent(GA4.DELETE_CHAT_CONFIRM, { chat_id: chat.id });
+                                const res = await parseResult(
+                                  client.chat[":chatId"].$delete({ param: { chatId: chat.id } }),
+                                );
+                                if (res.ok) {
+                                  await queryClient.invalidateQueries({
+                                    queryKey: ["chats"],
+                                    refetchType: "all",
+                                  });
+                                  if (currentChatId === chat.id) {
+                                    goto("/chat");
+                                  }
                                 }
-                              }
-                            }}
-                          >
-                            Confirm
-                          </Dialog.Button>
+                              }}
+                            >
+                              Confirm
+                            </Dialog.Button>
 
-                          <Dialog.Cancel>Cancel</Dialog.Cancel>
-                        {/snippet}
-                      </Dialog.Content>
-                    {/snippet}
-                  </Dialog.Root>
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    </ScrollListener>
+                            <Dialog.Cancel>Cancel</Dialog.Cancel>
+                          {/snippet}
+                        </Dialog.Content>
+                      {/snippet}
+                    </Dialog.Root>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </ScrollListener>
+    {/if}
   </nav>
 
   <a

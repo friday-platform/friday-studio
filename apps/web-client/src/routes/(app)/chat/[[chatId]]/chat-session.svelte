@@ -5,9 +5,9 @@
   import type { ArtifactWithContents } from "@atlas/core/artifacts";
   import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-  import { afterNavigate, beforeNavigate } from "$app/navigation";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { afterNavigate, beforeNavigate, goto } from "$app/navigation";
   import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
-  import { getChatContext } from "$lib/chat-context.svelte";
   import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
@@ -27,6 +27,7 @@
   import Response from "$lib/modules/messages/response.svelte";
   import ShowDetails from "$lib/modules/messages/show-details.svelte";
   import WorkspaceCreated from "$lib/modules/messages/workspace-created.svelte";
+  import { listChats } from "$lib/queries/chats";
   import { formatChatDate, getDatetimeContext } from "$lib/utils/date";
   import { shareChat } from "$lib/utils/share-chat";
   import { DefaultChatTransport } from "ai";
@@ -72,7 +73,11 @@
   setContext(ARTIFACTS_KEY, artifacts);
 
   const appCtx = getAppContext();
-  const chatContext = getChatContext();
+  const queryClient = useQueryClient();
+  const chatsQuery = createQuery(() => ({
+    queryKey: ["recent-chats"],
+    queryFn: () => listChats(null),
+  }));
 
   let form = $state<HTMLFormElement | null>(null);
   let message = $state<string>("");
@@ -142,13 +147,14 @@
         turnStartedAt = parseInt(startedAt, 10);
       }
 
-      // Update URL when POST succeeds (chat exists server-side)
-      if (init?.method === "POST" && response.ok && isNew && !hasUpdatedUrl) {
-        hasUpdatedUrl = true;
-        // Update URL without triggering SvelteKit navigation/reload
-        window.history.replaceState({}, "", `/chat/${chatId}`);
-        // Refresh sidebar in background
-        chatContext.loadChats({ reset: true });
+      // Refresh sidebar on every successful message (chat's updatedAt changes)
+      if (init?.method === "POST" && response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["chats"], refetchType: "all" });
+        // Update URL for new chats (only once)
+        if (isNew && !hasUpdatedUrl) {
+          hasUpdatedUrl = true;
+          window.history.replaceState({}, "", `/chat/${chatId}`);
+        }
       }
 
       return response;
@@ -576,11 +582,7 @@
                               source: "chat_input_menu",
                             });
                             if (chat.messages) {
-                              const chatTitle =
-                                chatContext.recentChats.find((c) => c.id === chatId)?.title ??
-                                "Untitled";
-
-                              await shareChat(chat.messages, chatTitle);
+                              await shareChat(chat.messages, title);
                             }
                           }}
                         >
@@ -593,7 +595,7 @@
                       <DropdownMenu.Item
                         onclick={() => {
                           trackEvent(GA4.NEW_CHAT_CLICK, { source: "chat_input_menu" });
-                          chatContext.startNewChat();
+                          goto("/chat");
                         }}
                       >
                         New Chat
@@ -640,7 +642,7 @@
           </form>
         </div>
 
-        {#if isNew && (chat.messages?.length ?? 0) === 0 && chatContext.recentChats.length > 0}
+        {#if isNew && (chat.messages?.length ?? 0) === 0 && (chatsQuery.data?.chats ?? []).length > 0}
           <div class="recent-conversations" class:open={showChats}>
             <button
               class="toggle-chats"
@@ -655,7 +657,7 @@
             </button>
             {#if showChats}
               <div class="chat-list" transition:slide={{ duration: 200, easing: circOut }}>
-                {#each chatContext.recentChats.slice(0, 5) as recentChat (recentChat.id)}
+                {#each (chatsQuery.data?.chats ?? []).slice(0, 5) as recentChat (recentChat.id)}
                   <a
                     class="chat-item"
                     href="/chat/{recentChat.id}"
