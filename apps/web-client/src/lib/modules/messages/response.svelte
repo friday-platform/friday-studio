@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
-  import type { OutputEntry } from "./types";
+  import type { TextEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { message }: { message: OutputEntry; parts: AtlasUIMessagePart[] } = $props();
+  const { message }: { message: TextEntry; parts: AtlasUIMessagePart[] } = $props();
 </script>
 
 <MessageWrapper>

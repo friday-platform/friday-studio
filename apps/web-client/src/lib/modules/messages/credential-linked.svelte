@@ -1,11 +1,11 @@
 <script lang="ts">
   import { IconSmall } from "$lib/components/icons/small";
-  import type { OutputEntry } from "./types";
+  import type { CredentialLinkedEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { message }: { message: OutputEntry } = $props();
+  const { message }: { message: CredentialLinkedEntry } = $props();
 
-  const displayName = $derived(message.metadata?.displayName ?? "service");
+  const displayName = $derived(message.displayName || "service");
 </script>
 
 <MessageWrapper>

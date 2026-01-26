@@ -10,6 +10,7 @@ export const githubCIPipelinePlan: WorkspacePlan = {
     {
       id: "main-branch-push",
       name: "Main Branch Push",
+      signalType: "http",
       description:
         "GitHub webhook triggered when code is pushed to main branch on github.com/myorg/myrepo",
     },

@@ -62,12 +62,8 @@ function extractArtifactIds(messages: AtlasUIMessage[]): string[] {
   for (const message of messages) {
     for (const part of message.parts) {
       const formatted = formatMessage(message, part);
-      if (
-        formatted?.type === "tool_call" &&
-        formatted.metadata?.toolName === "display_artifact" &&
-        typeof formatted.metadata?.artifactId === "string"
-      ) {
-        artifactIds.push(formatted.metadata.artifactId);
+      if (formatted?.type === "display_artifact" && formatted.artifactId) {
+        artifactIds.push(formatted.artifactId);
       }
     }
   }
@@ -188,13 +184,9 @@ function renderMessage(message: AtlasUIMessage, artifacts: Map<string, ArtifactD
       </article>`;
       }
 
-      // Handle display_artifact tool calls - render the artifact
-      if (
-        formatted.type === "tool_call" &&
-        formatted.metadata?.toolName === "display_artifact" &&
-        typeof formatted.metadata?.artifactId === "string"
-      ) {
-        const artifact = artifacts.get(formatted.metadata.artifactId);
+      // Handle display_artifact - render the artifact
+      if (formatted.type === "display_artifact" && formatted.artifactId) {
+        const artifact = artifacts.get(formatted.artifactId);
         if (artifact) {
           return renderArtifactHTML(artifact);
         }

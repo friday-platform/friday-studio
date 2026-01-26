@@ -120,6 +120,7 @@ export async function generateTaskFSM(
   const triggerSignal: WorkspaceSignal = {
     id: "task-job-trigger", // Matches fsmId.replace(/-fsm$/, "-trigger")
     name: "Task Trigger",
+    signalType: "http",
     description: intent,
   };
 

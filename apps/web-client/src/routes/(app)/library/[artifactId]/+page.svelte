@@ -10,7 +10,7 @@
   import Schedule from "$lib/components/primitives/schedule.svelte";
   import WebSearch from "$lib/components/primitives/web-search.svelte";
   import { parseFileContents, type ParsedContent } from "$lib/modules/artifacts/file-utils";
-  import WorkspacePlan from "$lib/modules/artifacts/workspace-plan.svelte";
+  import WorkspacePlanDetails from "$lib/modules/artifacts/workspace-plan-details.svelte";
   import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
   import { z } from "zod";
@@ -132,7 +132,7 @@
         </div>
       {/if}
     {:else if artifact.type === "workspace-plan"}
-      <WorkspacePlan workspacePlan={artifact.data} />
+      <WorkspacePlanDetails workspacePlan={artifact.data} />
     {:else if artifact.type === "table"}
       <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
     {:else if artifact.type === "file"}

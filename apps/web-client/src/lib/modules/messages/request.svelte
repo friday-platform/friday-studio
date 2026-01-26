@@ -1,9 +1,9 @@
 <script lang="ts">
   import { markdownToHTML } from "$lib/utils/markdown";
-  import type { OutputEntry } from "./types";
+  import type { RequestEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { message }: { message: OutputEntry } = $props();
+  const { message }: { message: RequestEntry } = $props();
 
   // Convert markdown to HTML
   const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");

@@ -14,6 +14,7 @@
   import { IconSmall } from "$lib/components/icons/small";
   import Textarea from "$lib/components/textarea.svelte";
   import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
+  import WorkspacePlan from "$lib/modules/artifacts/workspace-plan.svelte";
   import Outline from "$lib/modules/conversation/outline.svelte";
   import ConnectService from "$lib/modules/messages/connect-service.svelte";
   import CredentialLinked from "$lib/modules/messages/credential-linked.svelte";
@@ -381,12 +382,14 @@
                       <Request {message} />
                     {:else if message.type === "text"}
                       <Response {message} parts={messageContainer.parts} />
-                    {:else if message.type === "tool_call" && message.metadata?.toolName === "display_artifact" && message.metadata?.artifactId}
-                      <DisplayArtifact artifactId={message.metadata.artifactId as string} />
-                    {:else if message.type === "tool_call" && message.metadata?.toolName === "connect_service" && message.metadata?.provider}
-                      <ConnectService provider={message.metadata.provider as string} {chat} />
-                    {:else if message.type === "tool_call" && message.metadata?.toolName === "fsm-workspace-creator" && message.metadata?.output && !message.metadata.output.result.isError}
-                      <WorkspaceCreated output={message.metadata.output} />
+                    {:else if message.type === "display_artifact" && message.artifactId}
+                      <DisplayArtifact artifactId={message.artifactId} />
+                    {:else if message.type === "workspace_planner"}
+                      <WorkspacePlan artifactId={message.artifactId} />
+                    {:else if message.type === "connect_service" && message.provider}
+                      <ConnectService provider={message.provider} {chat} />
+                    {:else if message.type === "workspace_creator" && !message.output.result.isError}
+                      <WorkspaceCreated output={message.output} />
                     {:else if message.type === "credential_linked"}
                       <CredentialLinked {message} />
                     {:else if message.type === "intent"}

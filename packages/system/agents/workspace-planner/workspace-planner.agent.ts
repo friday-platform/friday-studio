@@ -34,8 +34,16 @@ import { z } from "zod";
 import { getCapabilitiesSection } from "../conversation/capabilities.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/link-context.ts";
 
+/** Schema for workspace planner success data - exported for use in stop conditions */
+export const WorkspacePlannerSuccessDataSchema = z.object({
+  planSummary: z.string(),
+  artifactId: z.string(),
+  revision: z.number(),
+  nextStep: z.string(),
+});
+
 type WorkspacePlannerResult = Result<
-  { planSummary: string; artifactId: string; revision: number; nextStep: string },
+  z.infer<typeof WorkspacePlannerSuccessDataSchema>,
   { reason: string }
 >;
 
@@ -86,6 +94,16 @@ Atlas workspaces automate tasks using:
 - Signals: Triggers (webhooks, schedules, file watchers)
 - Agents: AI executors that process data and perform actions
 - Jobs: Orchestration connecting signals to agents
+
+## Signal Types
+
+Each signal must have a signalType:
+
+- **schedule**: Cron-based time triggers. Use for "every X", "daily at", "on weekdays", "hourly", or any time-based triggers.
+  Examples: "every Friday at 9am", "every 30 minutes", "weekdays at 8am"
+
+- **http**: Webhook/API endpoints. Use for "webhook", "API endpoint", "receives events", "HTTP POST", or external event triggers.
+  Examples: "GitHub push webhook", "Stripe payment webhook", "manual trigger endpoint"
 
 ## Defining agents
 
@@ -240,7 +258,25 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
               purpose: z
                 .string()
                 .describe(
-                  "What this workspace accomplishes and why it matters. 3-5 sentences that explain the automation's value to the user.",
+                  "What this workspace does and how it works. 1-3 sentences. Focus on the task mechanics, not the value proposition. No marketing speak. Example: 'Fetches merged GitHub PRs from the past week every Friday at 9am and publishes a formatted, categorized summary to Notion.'",
+                ),
+              details: z
+                .array(
+                  z.object({
+                    label: z
+                      .string()
+                      .describe(
+                        "Human-readable label for the value. Examples: 'GitHub Repository', 'Slack Channel', 'Notion Database', 'Email Recipients'",
+                      ),
+                    value: z
+                      .string()
+                      .describe(
+                        "The user-provided value. Examples: 'acme/webapp', '#engineering', 'Release Notes', 'team@company.com'",
+                      ),
+                  }),
+                )
+                .describe(
+                  "User-provided details extracted from requirements. ONLY include human-readable values like repository names (org/repo), channel names (#channel), database/page names, email addresses. NEVER include: IDs, UUIDs, technical identifiers, timezones (shown in schedule), or credential info (shown in integrations). Omit if no specific values were provided.",
                 ),
             }),
             signals: z.array(
@@ -250,10 +286,20 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                   .describe(
                     "Human-readable signal name. Example: 'Check Schedule' or 'GitHub Push Event'",
                   ),
+                signalType: z
+                  .enum(["schedule", "http"])
+                  .describe(
+                    "Signal provider type. 'schedule' for cron/time-based triggers, 'http' for webhooks/API endpoints.",
+                  ),
                 description: z
                   .string()
                   .describe(
                     "When and how this triggers, including rationale. 1-2 sentences. Examples: 'Runs every 30 minutes during business hours to catch new products quickly without overwhelming the website' or 'Webhook endpoint receives GitHub push events to trigger immediate CI builds'",
+                  ),
+                displayLabel: z
+                  .string()
+                  .describe(
+                    "Short badge text for UI display. Examples: 'Every Friday at 9am', 'On GitHub push', 'Every 30 min', 'Manual trigger'. Maximum 5 words.",
                   ),
                 payloadSchema: JSONSchemaSchema.optional().describe(
                   "JSON Schema for signal payload. Define if signal needs user input, file paths, or parameters. " +
@@ -437,14 +483,16 @@ ${integrationsXml}`,
           try {
             const creds = await resolveCredentialsByProvider(field.provider);
             if (creds.length > 0) {
+              // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
+              const firstCred = creds[0]!;
               credentialBindings.push({
                 targetType: "agent",
                 agentId: agent.id,
                 field: field.envKey,
-                // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
-                credentialId: creds[0]!.id,
+                credentialId: firstCred.id,
                 provider: field.provider,
                 key: field.key,
+                label: firstCred.label || undefined,
               });
             }
           } catch (e) {

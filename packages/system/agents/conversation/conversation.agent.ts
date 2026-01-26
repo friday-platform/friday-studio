@@ -24,12 +24,14 @@ import {
   createUIMessageStream,
   hasToolCall,
   jsonSchema,
+  type StopCondition,
   smoothStream,
   stepCountIs,
   streamText,
   tool,
 } from "ai";
 import { z } from "zod";
+import { WorkspacePlannerSuccessDataSchema } from "../workspace-planner/workspace-planner.agent.ts";
 import { getCapabilitiesSection } from "./capabilities.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
@@ -538,6 +540,50 @@ export const conversationAgent = createAgent({
           load_skill: loadSkillTool,
         };
 
+        /**
+         * Stop condition for workspace-planner: only stop if it succeeds.
+         * Does NOT stop when workspace-planner fails (allows retry).
+         */
+        const workspacePlannerSucceeded =
+          (): StopCondition<typeof allTools> =>
+          ({ steps }) => {
+            for (const step of steps) {
+              for (const toolResult of step.toolResults) {
+                if (toolResult.toolName === "workspace-planner") {
+                  // Structure: toolResult.output.result.content[0].text is a JSON string
+                  // containing { result: { ok: true, data: WorkspacePlannerSuccessData } }
+                  try {
+                    const outer = z
+                      .object({
+                        output: z.object({
+                          result: z.object({ content: z.tuple([z.object({ text: z.string() })]) }),
+                        }),
+                      })
+                      .parse(toolResult);
+
+                    const inner = z
+                      .object({
+                        result: z.object({
+                          ok: z.literal(true),
+                          data: WorkspacePlannerSuccessDataSchema,
+                        }),
+                      })
+                      .parse(JSON.parse(outer.output.result.content[0].text));
+
+                    if (inner.result.ok) {
+                      return true;
+                    }
+                  } catch (e) {
+                    logger.debug("workspacePlannerSucceeded check failed (expected during retry)", {
+                      e,
+                    });
+                  }
+                }
+              }
+            }
+            return false;
+          };
+
         // Load scratchpad context for automatic injection
         const scratchpadContext = await fetchScratchpadContext(
           session.streamId,
@@ -683,6 +729,7 @@ export const conversationAgent = createAgent({
               stopWhen: [
                 stepCountIs(40),
                 hasToolCall("connect_service"),
+                workspacePlannerSucceeded(),
                 // @ts-expect-error StopCondition<AtlasTools> is contravariant - allTools has specific keys
                 // but AtlasTools is Record<string, AtlasTool>. Using StopCondition<any> like AI SDK's
                 // hasToolCall would fix this, but we'd lose the (minimal) type safety on step.toolResults.

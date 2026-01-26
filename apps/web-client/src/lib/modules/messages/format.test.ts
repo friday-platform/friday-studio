@@ -8,6 +8,7 @@
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { formatMessage } from "./format.ts";
+import type { ConnectServiceEntry, DisplayArtifactEntry } from "./types.ts";
 
 // Helper to create a minimal mock message
 // Using `unknown` cast because we only need the fields that formatMessage uses
@@ -27,24 +28,22 @@ describe("formatMessage - connect_service tool", () => {
     // Simulates streaming state where output hasn't been populated yet
     const part = mockPart({ type: "tool-connect_service", output: undefined });
 
-    const result = formatMessage(message, part);
+    const result = formatMessage(message, part) as ConnectServiceEntry;
 
-    expect(result?.type).toEqual("tool_call");
-    expect(result?.metadata?.toolName).toEqual("connect_service");
+    expect(result.type).toEqual("connect_service");
     // Documents current behavior: provider defaults to empty string
     // The template guard `&& message.metadata?.provider` prevents rendering
-    expect(result?.metadata?.provider).toEqual("");
+    expect(result.provider).toEqual("");
   });
 
   it("returns provider when output is populated", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-connect_service", output: { provider: "linear" } });
 
-    const result = formatMessage(message, part);
+    const result = formatMessage(message, part) as ConnectServiceEntry;
 
-    expect(result?.type).toEqual("tool_call");
-    expect(result?.metadata?.toolName).toEqual("connect_service");
-    expect(result?.metadata?.provider).toEqual("linear");
+    expect(result.type).toEqual("connect_service");
+    expect(result.provider).toEqual("linear");
   });
 
   it("returns empty provider when output.provider is missing", () => {
@@ -54,9 +53,9 @@ describe("formatMessage - connect_service tool", () => {
       output: {}, // Output exists but provider is missing
     });
 
-    const result = formatMessage(message, part);
+    const result = formatMessage(message, part) as ConnectServiceEntry;
 
-    expect(result?.metadata?.provider).toEqual("");
+    expect(result.provider).toEqual("");
   });
 });
 
@@ -65,18 +64,18 @@ describe("formatMessage - display_artifact tool", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-display_artifact", output: undefined });
 
-    const result = formatMessage(message, part);
+    const result = formatMessage(message, part) as DisplayArtifactEntry;
 
-    expect(result?.metadata?.toolName).toEqual("display_artifact");
-    expect(result?.metadata?.artifactId).toEqual("");
+    expect(result.type).toEqual("display_artifact");
+    expect(result.artifactId).toEqual("");
   });
 
   it("returns artifactId when output is populated", () => {
     const message = mockMessage("assistant");
     const part = mockPart({ type: "tool-display_artifact", output: { artifactId: "art-123" } });
 
-    const result = formatMessage(message, part);
+    const result = formatMessage(message, part) as DisplayArtifactEntry;
 
-    expect(result?.metadata?.artifactId).toEqual("art-123");
+    expect(result.artifactId).toEqual("art-123");
   });
 });

@@ -23,6 +23,7 @@ const ResolvedCredentialSchema = z.object({
   provider: z.string().describe("Provider name"),
   credentialId: z.string().describe("First matching credential ID"),
   key: z.string().describe("Secret key within credential.secret (e.g. access_token)"),
+  label: z.string().optional().describe("Account display name for UI (e.g., 'tempestteam')"),
 });
 
 export type ResolvedCredential = z.infer<typeof ResolvedCredentialSchema>;
@@ -81,12 +82,14 @@ export async function validateRequiredFields(
         const linkField = field as { provider: string; key: string; envKey: string };
         try {
           const credentials = await resolveCredentialsByProvider(linkField.provider);
+          // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
+          const firstCred = credentials[0]!;
           resolvedCredentials.push({
             field: linkField.envKey,
             provider: linkField.provider,
-            // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
-            credentialId: credentials[0]!.id,
+            credentialId: firstCred.id,
             key: linkField.key,
+            label: firstCred.label || undefined,
           });
         } catch (error) {
           if (error instanceof CredentialNotFoundError) {
@@ -140,12 +143,14 @@ export async function validateRequiredFields(
         try {
           const credentials = await resolveCredentialsByProvider(envDef.provider);
           // First-match: use the first credential found
+          // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
+          const firstCred = credentials[0]!;
           resolvedCredentials.push({
             field: field.key,
             provider: envDef.provider,
-            // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
-            credentialId: credentials[0]!.id,
+            credentialId: firstCred.id,
             key: envDef.key,
+            label: firstCred.label || undefined,
           });
         } catch (error) {
           if (error instanceof CredentialNotFoundError) {

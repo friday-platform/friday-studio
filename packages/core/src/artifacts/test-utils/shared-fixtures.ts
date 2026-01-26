@@ -34,6 +34,7 @@ export function createWorkspacePlanInput(
           {
             id: "test-signal",
             name: "Test Signal",
+            signalType: "http",
             description: "A test signal that triggers on demand",
           },
         ],

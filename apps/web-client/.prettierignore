@@ -10,3 +10,4 @@ bun.lockb
 
 # Tauri build output
 /src-tauri/target/
+/src-tauri/gen/

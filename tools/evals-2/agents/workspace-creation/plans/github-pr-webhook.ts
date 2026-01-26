@@ -9,6 +9,7 @@ export const githubPRWebhookPlan: WorkspacePlan = {
     {
       id: "github-pr-webhook",
       name: "github_pr_webhook",
+      signalType: "http",
       description: "Receives GitHub webhook events when new pull requests are opened",
     },
   ],

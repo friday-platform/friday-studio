@@ -1,5 +1,6 @@
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
-import type { OutputEntry } from "./types.ts";
+import type { OutputEntry, ReasoningEntry } from "./types.ts";
+import { parseWorkspacePlannerArtifactId } from "./types.ts";
 
 export function formatMessage(
   message: AtlasUIMessage,
@@ -8,22 +9,19 @@ export function formatMessage(
   if (message.role === "user") {
     if (part.type === "text") {
       return {
-        id: message.id,
         type: "request",
+        id: message.id,
         timestamp: new Date().toISOString(),
         content: String(part.text),
       };
     }
-    // Handle credential-linked data parts from user messages (OAuth completion)
     if (part.type === "data-credential-linked") {
       return {
-        id: message.id,
         type: "credential_linked",
+        id: message.id,
         timestamp: new Date().toISOString(),
-        metadata: {
-          provider: part.data?.provider ?? "",
-          displayName: part.data?.displayName ?? "",
-        },
+        provider: part.data?.provider ?? "",
+        displayName: part.data?.displayName ?? "",
       };
     }
   }
@@ -31,93 +29,103 @@ export function formatMessage(
   if (message.role === "assistant") {
     if (part.type === "reasoning") {
       return {
-        id: crypto.randomUUID(),
         type: "reasoning",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         content: part.text,
-      };
-    } else if (part.type === "text") {
+      } satisfies ReasoningEntry;
+    }
+    if (part.type === "text") {
       return {
-        id: crypto.randomUUID(),
         type: "text",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         content: part.text,
       };
-    } else if (part.type === "tool-table_output") {
+    }
+    if (part.type === "tool-table_output") {
+      return {
+        type: "table_output",
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        result: part.output,
+      };
+    }
+    if (part.type === "tool-workspace-planner") {
+      return {
+        type: "workspace_planner",
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        artifactId: parseWorkspacePlannerArtifactId(part.output) ?? "",
+      };
+    }
+    if (part.type === "tool-connect_service") {
+      return {
+        type: "connect_service",
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        provider: part?.output?.provider ?? "",
+      };
+    }
+
+    if (part.type === "tool-display_artifact") {
+      return {
+        type: "display_artifact",
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        artifactId: part?.output?.artifactId ?? "",
+      };
+    }
+
+    if (part.type === "tool-fsm-workspace-creator" && part.output?.result) {
       return {
         id: crypto.randomUUID(),
-        type: "tool_call",
+        type: "workspace_creator",
         timestamp: new Date().toISOString(),
-        metadata: { toolName: "table_output", result: part.output },
+        output: part.output,
       };
-    } else if (part.type === "tool-workspace_summary") {
+    }
+
+    if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
       return {
-        id: crypto.randomUUID(),
         type: "tool_call",
-        timestamp: new Date().toISOString(),
-        metadata: { toolName: "workspace_summary", result: part.output },
-      };
-    } else if (part.type === "tool-connect_service") {
-      return {
         id: crypto.randomUUID(),
-        type: "tool_call",
         timestamp: new Date().toISOString(),
-        // @TODO: fix
-        metadata: { toolName: "connect_service", provider: part?.output?.provider ?? "" },
+        toolName: "toolName" in part ? part.toolName : part.type.replace("tool-", ""),
       };
-    } else if (part.type === "tool-fsm-workspace-creator") {
-      return {
-        id: crypto.randomUUID(),
-        type: "tool_call",
-        timestamp: new Date().toISOString(),
-        metadata: { toolName: "fsm-workspace-creator", output: part.output },
-      };
-    } else if (part.type === "tool-display_artifact") {
-      return {
-        id: crypto.randomUUID(),
-        type: "tool_call",
-        timestamp: new Date().toISOString(),
-        // @TODO: fix
-        metadata: { toolName: "display_artifact", artifactId: part?.output?.artifactId ?? "" },
-      };
-    } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
-      return {
-        id: crypto.randomUUID(),
-        type: "tool_call",
-        timestamp: new Date().toISOString(),
-        metadata: {
-          // example: tool-atlas_todo_read
-          toolName: "toolName" in part ? part.toolName : part.type.replace("tool-", ""),
-        },
-      };
-    } // @TODO: implement all of these
-    else if (part.type.startsWith("tool-result-")) {
+    }
+    if (part.type.startsWith("tool-result-")) {
       return undefined;
-    } else if (part.type === "data-agent-timeout") {
+    }
+    if (part.type === "data-agent-timeout") {
       return {
-        id: crypto.randomUUID(),
         type: "error",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         content: "Agent timed out",
       };
-    } else if (part.type === "data-error") {
+    }
+    if (part.type === "data-error") {
       return {
-        id: crypto.randomUUID(),
         type: "error",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         content: part.data.error,
       };
-    } else if (part.type === "tool-error") {
+    }
+    if (part.type === "tool-error") {
       return {
-        id: crypto.randomUUID(),
         type: "error",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
-        content: part.errorText,
+        content: part.errorText ?? "Unknown tool error",
       };
-    } else if (part.type === "data-agent-error") {
+    }
+
+    if (part.type === "data-agent-error") {
       return {
-        id: crypto.randomUUID(),
         type: "error",
+        id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         content: part.data.error,
       };

@@ -41,6 +41,7 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "send-weather-forecast",
       name: "Send Weather Forecast",
+      signalType: "schedule",
       description:
         "Send weather forecast email. Forecast: Saturday Jan 4 will be sunny with 72°F high. Sunday Jan 5 will be cloudy with 65°F high and 40% chance of rain. Send to user@example.com",
     };
@@ -70,6 +71,7 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "my-trigger-signal",
       name: "My Trigger Signal",
+      signalType: "http",
       description: "Test description",
     };
 
@@ -94,6 +96,7 @@ describe("buildFSMGenerationPrompt", () => {
     const triggerSignal: Signal = {
       id: "daily-email-check",
       name: "Daily Email Check",
+      signalType: "schedule",
       description: "Check emails daily",
     };
 

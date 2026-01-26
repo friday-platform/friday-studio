@@ -1,10 +1,10 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/ga4";
   import { IconSmall } from "$lib/components/icons/small";
-  import type { OutputEntry } from "./types";
+  import type { ErrorEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { message }: { message: OutputEntry } = $props();
+  const { message }: { message: ErrorEntry } = $props();
   let open = $state(false);
 </script>
 

@@ -10,7 +10,6 @@
   import MessageWrapper from "$lib/modules/messages/wrapper.svelte";
   import { getContext } from "svelte";
   import { z } from "zod";
-  import WorkspacePlan from "./workspace-plan.svelte";
 
   const ARTIFACTS_KEY = Symbol.for("artifacts");
 
@@ -77,8 +76,6 @@
             <MarkdownContent content={artifact.data} />
           </div>
         </Document>
-      {:else if artifact.type === "workspace-plan"}
-        <WorkspacePlan workspacePlan={artifact.data} />
       {:else if artifact.type === "table"}
         <Document name="Table">
           <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />

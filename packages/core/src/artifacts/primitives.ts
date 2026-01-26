@@ -12,6 +12,7 @@ const MCPCredentialBindingSchema = z.object({
   credentialId: z.string().describe("Resolved Link credential ID"),
   provider: z.string().describe("Provider for debugging"),
   key: z.string().describe("Secret key (e.g., access_token)"),
+  label: z.string().optional().describe("Account display name for UI (e.g., 'tempestteam')"),
 });
 
 const AgentCredentialBindingSchema = z.object({
@@ -21,6 +22,7 @@ const AgentCredentialBindingSchema = z.object({
   credentialId: z.string().describe("Resolved Link credential ID"),
   provider: z.string().describe("Provider for debugging"),
   key: z.string().describe("Secret key (e.g., access_token)"),
+  label: z.string().optional().describe("Account display name for UI (e.g., 'tempestteam')"),
 });
 
 export const CredentialBindingSchema = z.discriminatedUnion("targetType", [
@@ -29,16 +31,34 @@ export const CredentialBindingSchema = z.discriminatedUnion("targetType", [
 ]);
 export type CredentialBinding = z.infer<typeof CredentialBindingSchema>;
 
+/**
+ * Signal types for workspace plans.
+ * - schedule: Cron-based time triggers (e.g., "every Friday at 9am")
+ * - http: Webhook/API endpoints (e.g., "GitHub push webhook")
+ * - fs-watch: Filesystem change triggers (e.g., "watches notes directory")
+ */
+const SignalTypeSchema = z.enum(["schedule", "http", "fs-watch"]);
+
 /** Workspace plan data schema */
 /** Workspace plan data schema - prose descriptions of workspace structure */
+/** User-provided detail for UI display */
+const DetailSchema = z.object({
+  label: z.string().describe("Human-readable label (e.g., 'GitHub Repository', 'Slack Channel')"),
+  value: z.string().describe("User-provided value (e.g., 'org/repo', '#releases')"),
+});
+
 export const WorkspacePlanSchema = z.object({
   workspace: z.object({
     name: z.string().describe("Workspace name (concise, human-readable)"),
     purpose: z
       .string()
       .describe(
-        "What this workspace accomplishes and why it matters. 3-5 sentences that explain the automation's value to the user.",
+        "What this workspace does and how it works. 1-3 sentences. Focus on the task mechanics, not the value proposition.",
       ),
+    details: z
+      .array(DetailSchema)
+      .optional()
+      .describe("User-provided details for UI display (e.g., repositories, channels, databases)"),
   }),
 
   credentials: z
@@ -52,6 +72,9 @@ export const WorkspacePlanSchema = z.object({
       name: z
         .string()
         .describe("Human-readable signal name. Example: 'Check Schedule' or 'GitHub Push Event'"),
+      signalType: SignalTypeSchema.describe(
+        "Signal provider type. 'schedule' for cron-based triggers, 'http' for webhooks/API endpoints, 'fs-watch' for filesystem changes.",
+      ),
       description: z
         .string()
         .describe(
@@ -63,6 +86,10 @@ export const WorkspacePlanSchema = z.object({
         .describe(
           "JSON Schema defining required payload fields for this signal. Define if signal needs user input, file paths, or parameters. Example: { type: 'object', required: ['user_input'], properties: { user_input: { type: 'string', description: 'User text input or description' } } }. Use snake_case for field names. Omit for schedule-only triggers.",
         ),
+      displayLabel: z
+        .string()
+        .optional()
+        .describe("Badge text for UI display (e.g., 'Every Friday at 9am')"),
     }),
   ),
 

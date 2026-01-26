@@ -10,6 +10,7 @@ export const investorBriefingPlan: WorkspacePlan = {
     {
       id: "morning-briefing-trigger",
       name: "Morning Briefing Trigger",
+      signalType: "schedule",
       description:
         "Fires daily at 8:00 AM PST, including weekends, to initiate the briefing workflow",
     },

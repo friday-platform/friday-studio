@@ -26,6 +26,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
         {
           id: "daily-9-am-pt",
           name: "Daily 9am Pacific",
+          signalType: "schedule",
           description: "Runs every weekday at 9am Pacific Time to send reports",
         },
       ],
@@ -240,6 +241,7 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
         {
           id: "github-pr-webhook",
           name: "GitHub PR Webhook",
+          signalType: "http",
           description: "Webhook receives GitHub pull request events",
         },
       ],
