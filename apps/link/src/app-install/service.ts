@@ -96,6 +96,7 @@ export class AppInstallService {
   async completeInstall(
     state: string,
     code: string,
+    callbackParams?: URLSearchParams,
   ): Promise<{ credential: Credential; redirectUri?: string; updated: boolean }> {
     // 1. Decode and verify JWT state
     let decoded: AppInstallState;
@@ -113,7 +114,7 @@ export class AppInstallService {
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
 
     // 3. Exchange code for tokens and get workspace identity
-    const result = await provider.completeInstallation(code, callbackUrl);
+    const result = await provider.completeInstallation(code, callbackUrl, callbackParams);
 
     // 4. Check for existing credential by externalId (re-install case)
     const existingCredential = await this.credentialStorage.findByProviderAndExternalId(

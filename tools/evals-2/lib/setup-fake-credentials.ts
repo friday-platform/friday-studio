@@ -25,7 +25,7 @@ export function setupFakeCredentials(envVars: string[] | "all") {
       ? [
           "SENDGRID_API_KEY",
           "TAVILY_API_KEY",
-          "GH_CLASSIC_PAT",
+          "GH_TOKEN",
           "GOOGLE_CALENDAR_ACCESS_TOKEN",
           "GOOGLE_GMAIL_ACCESS_TOKEN",
           "GOOGLE_DRIVE_ACCESS_TOKEN",

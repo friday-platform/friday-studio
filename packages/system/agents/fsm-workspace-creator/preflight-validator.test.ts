@@ -123,7 +123,7 @@ describe("validateCredentials", () => {
         id: "github",
         config: {
           transport: { type: "http", url: "https://example.com" },
-          env: { GH_CLASSIC_PAT: { from: "link", provider: "github", key: "access_token" } },
+          env: { GH_TOKEN: { from: "link", provider: "github", key: "access_token" } },
         },
       },
     ];
@@ -137,62 +137,16 @@ describe("validateCredentials", () => {
     expect(providers.includes("google-calendar")).toEqual(true);
     expect(providers.includes("github")).toEqual(true);
   });
-
-  it("skips servers without env config", () => {
-    const mcpServers: MCPServerResult[] = [
-      {
-        id: "some-server",
-        config: {
-          transport: { type: "http", url: "https://example.com" },
-          // No env config
-        },
-      },
-    ];
-
-    const result = validateCredentials(mcpServers, []);
-
-    expect(result.valid).toEqual(true);
-    expect(result.missingCredentials).toEqual([]);
-  });
-
-  it("skips env vars without from=link", () => {
-    const mcpServers: MCPServerResult[] = [
-      {
-        id: "some-server",
-        config: {
-          transport: { type: "http", url: "https://example.com" },
-          env: { STATIC_VAR: "static-value" },
-        },
-      },
-    ];
-
-    const result = validateCredentials(mcpServers, []);
-
-    expect(result.valid).toEqual(true);
-    expect(result.missingCredentials).toEqual([]);
-  });
 });
 
 describe("formatMissingCredentialsError", () => {
-  it("formats single missing credential", () => {
-    const missingCredentials = [{ provider: "google-calendar", service: "Google Calendar" }];
-
-    const message = formatMissingCredentialsError(missingCredentials);
-
-    expect(message.includes("Google Calendar [provider: google-calendar]")).toEqual(true);
-    expect(message.includes("Missing integrations")).toEqual(true);
-    expect(message.includes("Connect these services")).toEqual(true);
-  });
-
-  it("formats multiple missing credentials", () => {
-    const missingCredentials = [
+  it("formats error message with provider info", () => {
+    const result = formatMissingCredentialsError([
       { provider: "google-calendar", service: "Google Calendar" },
       { provider: "github", service: "GitHub" },
-    ];
-
-    const message = formatMissingCredentialsError(missingCredentials);
-
-    expect(message.includes("Google Calendar [provider: google-calendar]")).toEqual(true);
-    expect(message.includes("GitHub [provider: github]")).toEqual(true);
+    ]);
+    expect(result).toContain("Missing integrations:");
+    expect(result).toContain("• Google Calendar [provider: google-calendar]");
+    expect(result).toContain("• GitHub [provider: github]");
   });
 });

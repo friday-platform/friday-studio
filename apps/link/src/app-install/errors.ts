@@ -10,6 +10,8 @@ export type AppInstallErrorCode =
   | "SLACK_PARSE_ERROR" // Invalid JSON from Slack
   | "SLACK_OAUTH_ERROR" // Slack returned ok: false
   | "SLACK_REFRESH_ERROR" // Slack token refresh failed
+  | "NOT_REFRESHABLE" // Credential cannot be refreshed (e.g., missing refresh_token)
+  | "REFRESH_ERROR" // Token refresh failed (network, API, etc.)
   | "CREDENTIAL_NOT_FOUND" // Race condition
   | "INVALID_CREDENTIAL"; // Missing expected fields
 

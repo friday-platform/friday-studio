@@ -38,6 +38,18 @@ Environment variables:
 | `LINK_CALLBACK_BASE`         | Base URL for OAuth callbacks             | Request origin            |
 | `LINK_ALLOW_INSECURE_HTTP`   | Allow HTTP OAuth callbacks (dev only)    | `false`                   |
 
+### GitHub App Provider
+
+The GitHub App provider allows users to install a GitHub App for organization-level access. All five environment variables are required for the provider to activate.
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_APP_ID_FILE` | Path to file containing the GitHub App's numeric App ID (used for JWT signing) |
+| `GITHUB_APP_CLIENT_ID_FILE` | Path to file containing the GitHub App's OAuth client ID (used for OAuth code exchange) |
+| `GITHUB_APP_CLIENT_SECRET_FILE` | Path to file containing the GitHub App's OAuth client secret |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | Path to file containing the GitHub App's RSA private key (PKCS#1 format from GitHub) |
+| `GITHUB_APP_INSTALLATION_URL` | Full URL to your GitHub App installation page (e.g., `https://github.com/apps/your-app/installations/new`) |
+
 ## Architecture
 
 ```

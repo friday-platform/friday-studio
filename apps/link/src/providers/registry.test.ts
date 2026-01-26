@@ -66,15 +66,15 @@ describe("ProviderRegistry", () => {
 
     expect(apikey).toBeDefined();
     expect(oauth).toBeDefined();
-    expect(apikey!.type).toEqual("apikey");
-    expect(oauth!.type).toEqual("oauth");
+    expect(apikey?.type).toEqual("apikey");
+    expect(oauth?.type).toEqual("oauth");
 
     // TypeScript narrowing allows type-safe access
-    if (apikey!.type === "apikey") {
-      expect(apikey!.secretSchema).toBeDefined();
+    if (apikey?.type === "apikey") {
+      expect(apikey?.secretSchema).toBeDefined();
     }
-    if (oauth!.type === "oauth") {
-      expect(oauth!.oauthConfig).toBeDefined();
+    if (oauth?.type === "oauth") {
+      expect(oauth?.oauthConfig).toBeDefined();
     }
   });
 });

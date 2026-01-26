@@ -7,6 +7,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { AppInstallError } from "../app-install/errors.ts";
 import { factory } from "../factory.ts";
 import * as oauth from "../oauth/client.ts";
 import { discoverAuthorizationServer } from "../oauth/discovery.ts";
@@ -182,7 +183,10 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
 
           try {
             const metadata = await storage.updateMetadata(id, { displayName }, userId);
-            const credential = (await storage.get(id, userId))!;
+            const credential = await storage.get(id, userId);
+            if (!credential) {
+              return c.json({ error: "Credential not found" }, 404);
+            }
             const { secret: _, ...summary } = credential;
             return c.json({ ...summary, metadata });
           } catch (error) {
@@ -297,12 +301,7 @@ export function createInternalCredentialsRoutes(
             return c.json({ credential, status: "ready" });
           }
 
-          // Expiring soon but no refresh token
-          if (!credential.secret.refresh_token) {
-            return c.json({ credential, status: "expired_no_refresh" });
-          }
-
-          // Try refresh - check if this is an app_install provider
+          // Try refresh - check provider type first
           const provider = registry.get(credential.provider);
           if (provider?.type === "app_install" && provider.refreshToken) {
             // App install provider with refresh support
@@ -316,20 +315,15 @@ export function createInternalCredentialsRoutes(
                 });
               }
               const secret = secretResult.data;
+              const refreshResult = await provider.refreshToken(secret);
 
-              if (!secret.refresh_token) {
-                return c.json({ credential, status: "expired_no_refresh" });
-              }
-
-              const refreshResult = await provider.refreshToken(secret.refresh_token);
-
-              // Update credential with new tokens
+              // Update credential with new tokens, preserving platform-specific data
+              // Use new refresh_token if provided (Slack token rotation)
               const updatedSecret: AppInstallCredentialSecret = {
-                externalId: secret.externalId,
+                ...secret,
                 access_token: refreshResult.access_token,
-                token_type: secret.token_type,
-                refresh_token: refreshResult.refresh_token,
-                expires_at: Math.floor(Date.now() / 1000) + refreshResult.expires_in,
+                expires_at: refreshResult.expires_at,
+                ...(refreshResult.refresh_token && { refresh_token: refreshResult.refresh_token }),
               };
 
               const credentialInput: CredentialInput = {
@@ -347,6 +341,10 @@ export function createInternalCredentialsRoutes(
                 status: "refreshed",
               });
             } catch (e) {
+              // NOT_REFRESHABLE is a permanent condition, not a transient failure
+              if (e instanceof AppInstallError && e.code === "NOT_REFRESHABLE") {
+                return c.json({ credential, status: "expired_no_refresh" });
+              }
               logger.error("Credential refresh failed", { credentialId: id, error: e });
               return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
             }

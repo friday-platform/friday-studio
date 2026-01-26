@@ -292,7 +292,7 @@ describe("GET /v1/summary endpoint", () => {
       displayName: "My Custom Name",
       userIdentifier: null, // apikey doesn't have userIdentifier
     });
-    expect(cred!.createdAt).toBeDefined();
-    expect(cred!.updatedAt).toBeDefined();
+    expect(cred?.createdAt).toBeDefined();
+    expect(cred?.updatedAt).toBeDefined();
   });
 });

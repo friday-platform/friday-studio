@@ -18,7 +18,7 @@ describe("generateMCPServers credential bindings", () => {
       {
         targetType: "mcp",
         serverId: "github",
-        field: "GH_CLASSIC_PAT",
+        field: "GH_TOKEN",
         credentialId: "cred_github123",
         provider: "github",
         key: "access_token",
@@ -28,7 +28,7 @@ describe("generateMCPServers credential bindings", () => {
     const servers = generateMCPServers(agents, credentials);
 
     const githubServer = servers.find((s) => s.id === "github");
-    expect(githubServer?.config.env?.GH_CLASSIC_PAT).toEqual({
+    expect(githubServer?.config.env?.GH_TOKEN).toEqual({
       from: "link",
       id: "cred_github123",
       key: "access_token",
@@ -46,7 +46,7 @@ describe("generateMCPServers credential bindings", () => {
       {
         targetType: "mcp",
         serverId: "github",
-        field: "GH_CLASSIC_PAT",
+        field: "GH_TOKEN",
         credentialId: "cred_github123",
         provider: "github",
         key: "access_token",

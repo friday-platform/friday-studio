@@ -10,6 +10,7 @@ declare const Deno: { openKv?: (path?: string) => Promise<Kv> } | undefined;
  * in deno compile scenarios.
  */
 export async function openKv(path?: string): Promise<Kv> {
+  // biome-ignore lint/complexity/useOptionalChain: typeof required for undeclared globals (Node.js)
   if (typeof Deno !== "undefined" && Deno.openKv) {
     return Deno.openKv(path);
   }

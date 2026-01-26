@@ -90,9 +90,9 @@ describe("OAuth Integration", async () => {
     // Verify callback redirected to the right place
     expect(callbackResponse.status).toEqual(302);
     const redirectLocation = callbackResponse.headers.get("Location");
-    expect(redirectLocation).toBeDefined();
+    if (!redirectLocation) throw new Error("redirectLocation should be defined");
     expect(redirectLocation).toMatch(/myapp\.example\.com/);
-    const redirectUrl = new URL(redirectLocation!);
+    const redirectUrl = new URL(redirectLocation);
     expect(redirectUrl.searchParams.get("provider")).toEqual("test-happy-path");
 
     // Verify credential was created
@@ -193,9 +193,9 @@ describe("OAuth Integration", async () => {
     // Initiate flow
     const initiateRes = await app.request(`/v1/oauth/authorize/test-expired-flow`);
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
-    const state = new URL(authUrl!).searchParams.get("state");
-    expect(state).toBeDefined();
+    if (!authUrl) throw new Error("authUrl should be defined");
+    const state = new URL(authUrl).searchParams.get("state");
+    if (!state) throw new Error("state should be defined");
 
     // Use a fake state that was never created (simulates expired or tampered state)
     const fakeState = "expired-or-invalid-state";
@@ -234,16 +234,16 @@ describe("OAuth Integration", async () => {
     // Initiate flow
     const initiateRes = await app.request(`/v1/oauth/authorize/test-reuse-state`);
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
-    const authUrlObj = new URL(authUrl!);
+    if (!authUrl) throw new Error("authUrl should be defined");
+    const authUrlObj = new URL(authUrl);
     const state = authUrlObj.searchParams.get("state");
-    expect(state).toBeDefined();
+    if (!state) throw new Error("state should be defined");
 
     const code = crypto.randomUUID();
     const access_token = "reuse_test_token";
     const redirect_uri = authUrlObj.searchParams.get("redirect_uri");
-    expect(redirect_uri).toBeDefined();
-    mockServer.authCodes.set(state!, { code, redirect_uri: redirect_uri!, access_token });
+    if (!redirect_uri) throw new Error("redirect_uri should be defined");
+    mockServer.authCodes.set(state, { code, redirect_uri, access_token });
 
     // First callback - should succeed
     const firstCallback = await app.request(
@@ -329,14 +329,14 @@ describe("OAuth Integration", async () => {
 
     // Manually update credential to have near-expiring token
     const cred = await storage.get(credentialId, "dev");
-    expect(cred).toBeDefined();
+    if (!cred) throw new Error("cred should be defined");
     const expiringCredInput = {
-      type: cred!.type,
-      provider: cred!.provider,
-      userIdentifier: cred!.userIdentifier,
-      label: cred!.label,
+      type: cred.type,
+      provider: cred.provider,
+      userIdentifier: cred.userIdentifier,
+      label: cred.label,
       secret: {
-        ...cred!.secret,
+        ...cred.secret,
         expires_at: Math.floor(Date.now() / 1000) + 60, // Expires in 1 minute (< 5 min buffer)
       },
     };
@@ -490,7 +490,7 @@ describe("OAuth Integration", async () => {
     // Verify hook result used - check the credential label (which is set to userIdentifier)
     const cred = await storage.get(credentialId, "dev");
     expect(cred).toBeDefined();
-    expect(cred!.label).toEqual("hook-wins");
+    expect(cred?.label).toEqual("hook-wins");
   });
 
   // NOTE: Health check endpoint for credentials not yet implemented
@@ -512,9 +512,9 @@ describe("OAuth Integration", async () => {
       `/v1/oauth/authorize/test-provider-error?redirect_uri=https://app.example.com/settings`,
     );
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
-    const state = new URL(authUrl!).searchParams.get("state");
-    expect(state).toBeDefined();
+    if (!authUrl) throw new Error("authUrl should be defined");
+    const state = new URL(authUrl).searchParams.get("state");
+    if (!state) throw new Error("state should be defined");
 
     // Simulate provider returning error
     const callbackRes = await app.request(
@@ -523,8 +523,8 @@ describe("OAuth Integration", async () => {
 
     expect(callbackRes.status).toEqual(302);
     const redirectLocation = callbackRes.headers.get("Location");
-    expect(redirectLocation).toBeDefined();
-    const redirectUrl = new URL(redirectLocation!);
+    if (!redirectLocation) throw new Error("redirectLocation should be defined");
+    const redirectUrl = new URL(redirectLocation);
     expect(redirectUrl.searchParams.get("error")).toEqual("access_denied");
     expect(redirectUrl.searchParams.get("error_description")).toEqual("User denied access");
   });
@@ -599,7 +599,8 @@ describe("Static OAuth Integration", async () => {
     expect(authUrl).toBeDefined();
 
     // Verify URL components
-    const authUrlObj = new URL(authUrl!);
+    if (!authUrl) throw new Error("authUrl should be defined");
+    const authUrlObj = new URL(authUrl);
     expect(authUrlObj.origin + authUrlObj.pathname).toEqual(`${mockServer.issuer}/authorize`);
     expect(authUrlObj.searchParams.get("client_id")).toEqual("test-client-id");
     expect(authUrlObj.searchParams.get("response_type")).toEqual("code");
@@ -641,9 +642,9 @@ describe("Static OAuth Integration", async () => {
     const initiateRes = await app.request(`/v1/oauth/authorize/test-static-extra-params`);
     expect(initiateRes.status).toEqual(302);
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
+    if (!authUrl) throw new Error("authUrl should be defined");
 
-    const authUrlObj = new URL(authUrl!);
+    const authUrlObj = new URL(authUrl);
     expect(authUrlObj.searchParams.get("access_type")).toEqual("offline");
     expect(authUrlObj.searchParams.get("prompt")).toEqual("consent");
   });
@@ -677,9 +678,9 @@ describe("Static OAuth Integration", async () => {
     const initiateRes = await app.request(`/v1/oauth/authorize/test-static-scopes`);
     expect(initiateRes.status).toEqual(302);
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
+    if (!authUrl) throw new Error("authUrl should be defined");
 
-    const authUrlObj = new URL(authUrl!);
+    const authUrlObj = new URL(authUrl);
     expect(authUrlObj.searchParams.get("scope")).toEqual("openid email profile");
   });
 

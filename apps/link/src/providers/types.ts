@@ -48,23 +48,86 @@ export type OAuthTokens = {
   expires_at?: number;
 };
 
-/**
- * Supported platforms for app installation flows.
- * Currently Slack only, will expand to GitHub, Discord, etc.
- */
-export type Platform = "slack";
+/** Supported platforms for app installation flows. */
+export type Platform = "slack" | "github";
 
 /**
- * Zod schema for app install credential secrets.
- * Contains OAuth tokens and routing key for multi-tenant apps.
+ * Zod schema for Slack credential secrets.
  */
-export const AppInstallCredentialSecretSchema = z.object({
-  externalId: z.string(), // Routing key (team_id, guild_id)
+const SlackCredentialSecretSchema = z.object({
+  platform: z.literal("slack"),
+  externalId: z.string(),
   access_token: z.string(),
   token_type: z.string(),
   refresh_token: z.string().optional(),
   expires_at: z.number().optional(),
+  slack: z
+    .object({
+      botUserId: z.string(),
+      appId: z.string(),
+      teamId: z.string(),
+      teamName: z.string(),
+      scopes: z.array(z.string()),
+    })
+    .optional(),
 });
+
+/**
+ * Zod schema for GitHub App credential secrets.
+ * Note: installationId is the single source of truth for token minting.
+ * No refresh_token needed - we mint fresh tokens from installationId.
+ */
+const GitHubAppCredentialSecretSchema = z.object({
+  platform: z.literal("github"),
+  externalId: z.string(),
+  access_token: z.string(),
+  expires_at: z.number(),
+  github: z.object({
+    installationId: z.number(),
+    organizationName: z.string(),
+    organizationId: z.number(),
+  }),
+});
+
+/**
+ * Normalizes legacy credential data by adding the `platform` discriminant.
+ *
+ * LEGACY DATA HANDLING (added Jan 2026):
+ * Before the GitHub App integration, Slack credentials were stored without a
+ * `platform` field. With the introduction of the discriminated union for
+ * multi-platform support, we need to handle these legacy credentials.
+ *
+ * Why lazy migration instead of a database migration script:
+ * - Credentials are encrypted per-user via Cypher service using user_id as AAD
+ * - A migration script cannot decrypt all users' credentials with a single token
+ * - Lazy migration runs in the user's auth context where decryption works
+ *
+ * Detection heuristic:
+ * - Missing `platform` field + has `externalId` field = legacy Slack credential
+ * - This is safe because GitHub credentials always have `platform: "github"`
+ *
+ * Cleanup: This preprocessor can be removed once all Slack credentials have been
+ * refreshed (tokens expire and get rewritten with the new schema). Monitor for
+ * credentials without `platform` field before removing.
+ */
+function normalizeLegacyCredential(data: unknown): unknown {
+  if (typeof data === "object" && data !== null && !("platform" in data) && "externalId" in data) {
+    return { ...data, platform: "slack" };
+  }
+  return data;
+}
+
+/**
+ * Discriminated union schema for app install credential secrets.
+ * Use platform field to discriminate between Slack and GitHub credentials.
+ *
+ * Includes preprocessing to handle legacy Slack credentials that lack the
+ * `platform` field. See `normalizeLegacyCredential` for details.
+ */
+export const AppInstallCredentialSecretSchema = z.preprocess(
+  normalizeLegacyCredential,
+  z.discriminatedUnion("platform", [SlackCredentialSecretSchema, GitHubAppCredentialSecretSchema]),
+);
 
 /**
  * Base credential secret structure for app install providers.
@@ -250,8 +313,16 @@ export type AppInstallProvider = BaseProviderDefinition & {
   /**
    * Completes installation after OAuth callback.
    * Exchanges code for tokens and returns workspace identity + credentials.
+   *
+   * @param code - OAuth authorization code from callback
+   * @param callbackUrl - The callback URL used in the authorization request
+   * @param callbackParams - Optional URL parameters from callback (e.g., GitHub installation_id)
    */
-  completeInstallation(code: string, callbackUrl: string): Promise<AppInstallResult>;
+  completeInstallation(
+    code: string,
+    callbackUrl: string,
+    callbackParams?: URLSearchParams,
+  ): Promise<AppInstallResult>;
 
   /**
    * Optional health check against upstream service.
@@ -263,11 +334,17 @@ export type AppInstallProvider = BaseProviderDefinition & {
    * Optional token refresh implementation.
    * Called when access token is expired or near expiry.
    * Returns updated tokens that should replace the existing credential.
-   * Provider is responsible for accessing its own client credentials.
+   * Provider returns expires_at as absolute unix timestamp (seconds).
+   * Slack returns new refresh_token (token rotation), GitHub doesn't need one.
+   *
+   * Error handling:
+   * - Throw AppInstallError with code "NOT_REFRESHABLE" if credential cannot
+   *   be refreshed (e.g., Slack credential missing refresh_token).
+   * - Throw other AppInstallError codes for transient failures (network, API errors).
    */
   refreshToken?(
-    refreshToken: string,
-  ): Promise<{ access_token: string; refresh_token: string; expires_in: number }>;
+    secret: AppInstallCredentialSecret,
+  ): Promise<{ access_token: string; expires_at: number; refresh_token?: string }>;
 };
 
 /**

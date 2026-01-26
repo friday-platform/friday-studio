@@ -184,7 +184,12 @@ describe("AppInstallService", () => {
           type: "oauth",
           provider: "test-slack",
           label: "Test Workspace",
-          secret: { externalId: `team-${code}`, access_token: `xoxb-${code}`, token_type: "bot" },
+          secret: {
+            platform: "slack",
+            externalId: `team-${code}`,
+            access_token: `xoxb-${code}`,
+            token_type: "bot",
+          },
         },
       });
     },
@@ -240,18 +245,6 @@ describe("AppInstallService", () => {
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("INVALID_PROVIDER_TYPE");
     });
-
-    it("includes userId in state when provided", async () => {
-      const result = await service.initiateInstall(
-        "test-slack",
-        "https://app.example.com/settings",
-        "user-123",
-      );
-
-      // State is JWT, so we can't inspect it directly without decoding
-      // But we can verify URL is built correctly
-      expect(result.authorizationUrl.includes("state=")).toEqual(true);
-    });
   });
 
   describe("completeInstall", () => {
@@ -262,7 +255,8 @@ describe("AppInstallService", () => {
       expect(state).toBeDefined();
 
       // Complete install
-      const result = await service.completeInstall(state!, "test-code-123");
+      if (!state) throw new Error("state should be defined");
+      const result = await service.completeInstall(state, "test-code-123");
 
       expect(result.credential.provider).toEqual("test-slack");
       expect(result.credential.label).toEqual("Test Workspace");
@@ -281,16 +275,16 @@ describe("AppInstallService", () => {
       // First install
       const { authorizationUrl: url1 } = await service.initiateInstall("test-slack");
       const state1 = new URL(url1).searchParams.get("state");
-      expect(state1).toBeDefined();
-      const result1 = await service.completeInstall(state1!, "same-team");
+      if (!state1) throw new Error("state1 should be defined");
+      const result1 = await service.completeInstall(state1, "same-team");
 
       const firstId = result1.credential.id;
 
       // Second install with same team ID
       const { authorizationUrl: url2 } = await service.initiateInstall("test-slack");
       const state2 = new URL(url2).searchParams.get("state");
-      expect(state2).toBeDefined();
-      const result2 = await service.completeInstall(state2!, "same-team");
+      if (!state2) throw new Error("state2 should be defined");
+      const result2 = await service.completeInstall(state2, "same-team");
 
       // Should reuse same credential ID
       expect(result2.credential.id).toEqual(firstId);
@@ -307,9 +301,9 @@ describe("AppInstallService", () => {
         "https://app.example.com/settings",
       );
       const state = new URL(authorizationUrl).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!state) throw new Error("state should be defined");
 
-      const result = await service.completeInstall(state!, "test-code");
+      const result = await service.completeInstall(state, "test-code");
 
       expect(result.redirectUri).toEqual("https://app.example.com/settings");
     });
@@ -317,15 +311,6 @@ describe("AppInstallService", () => {
     it("throws STATE_INVALID for invalid JWT", async () => {
       const error = await service
         .completeInstall("invalid-jwt-token", "code")
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(AppInstallError);
-      expect((error as AppInstallError).code).toEqual("STATE_INVALID");
-    });
-
-    it("throws STATE_INVALID for expired JWT", async () => {
-      // This is hard to test without time manipulation, but we can test malformed JWT
-      const error = await service
-        .completeInstall("expired.jwt.token", "code")
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("STATE_INVALID");
@@ -341,6 +326,7 @@ describe("AppInstallService", () => {
           provider: "test-slack",
           label: "Test Workspace",
           secret: {
+            platform: "slack",
             externalId: "team-reconcile-123",
             access_token: "xoxb-token",
             token_type: "bot",

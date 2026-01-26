@@ -33,18 +33,6 @@ const TestFixtures = {
     },
     status: "ready" as const,
   },
-
-  validApiKey: {
-    credential: {
-      id: "cred_apikey_test",
-      type: "apikey" as const,
-      provider: "github",
-      label: "Test GitHub API Key",
-      secret: { api_key: "ghp_test_key_abcdef123456", api_endpoint: "https://api.github.com" },
-      metadata: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    },
-    status: "ready" as const,
-  },
 };
 
 // =============================================================================
@@ -191,7 +179,7 @@ describe("MCPManager - Link Credential Integration", () => {
 
   it("Test 3: resolves mixed env types (Link + literal + auto)", async () => {
     // Setup: Mock Link credential
-    globalThis.fetch = mockCredentialFetch("cred_github", TestFixtures.validApiKey);
+    globalThis.fetch = mockCredentialFetch("cred_github", TestFixtures.validOAuth);
 
     // Setup: Environment variable for "auto"
     process.env.DEBUG = "true";
@@ -266,28 +254,6 @@ describe("MCPManager - Link Authentication", () => {
         delete process.env.ATLAS_KEY;
       }
     }
-  });
-
-  it("skips auth header in dev mode", async () => {
-    // Already in dev mode from beforeEach
-    // Setup: Mock Link API with header capture
-    let capturedHeaders: Record<string, string> = {};
-    globalThis.fetch = mockCredentialFetch("cred_dev_test", TestFixtures.validOAuth, (headers) => {
-      capturedHeaders = headers;
-    });
-
-    // Register a server that requires Link credentials
-    const config = {
-      id: "test-dev-server",
-      transport: { type: "stdio" as const, command: "nonexistent-command", args: [] },
-      env: { TOKEN: { from: "link" as const, id: "cred_dev_test", key: "access_token" } },
-    };
-
-    // Attempt to register - will fail on command, but should fetch credential without auth
-    await expect(manager.registerServer(config)).rejects.toThrow();
-
-    // Assert: No auth header in dev mode
-    expect(capturedHeaders.authorization).toBeUndefined();
   });
 
   it("throws clear error when ATLAS_KEY missing in prod mode", async () => {

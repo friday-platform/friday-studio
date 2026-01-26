@@ -2,7 +2,7 @@ import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
-import { githubProvider } from "./github.ts";
+import { createGitHubAppInstallProvider } from "./github-app.ts";
 import {
   createGoogleCalendarProvider,
   createGoogleDocsProvider,
@@ -86,12 +86,18 @@ if (slackAppProvider) {
   );
 }
 
+const githubAppProvider = createGitHubAppInstallProvider();
+if (githubAppProvider) {
+  registry.register(githubAppProvider);
+} else {
+  logger.info("Skipping GitHub App provider: env vars not set");
+}
+
 // Register built-in providers
 registry.register(anthropicProvider);
 registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);
-registry.register(githubProvider);
 registry.register(sentryProvider);
 registry.register(posthogProvider);
 

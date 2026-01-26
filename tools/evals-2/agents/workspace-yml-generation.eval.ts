@@ -384,10 +384,10 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
     const githubServer = parsedConfig.tools.mcp.servers.github;
     if (!githubServer) throw new Error("GitHub server required");
 
-    // Registry uses GH_CLASSIC_PAT (via mcp-remote), not GITHUB_TOKEN
+    // Registry uses GH_TOKEN (via github-app provider)
     if (!githubServer.env) throw new Error("GitHub server env required");
     assert(
-      githubServer.env.GH_CLASSIC_PAT || githubServer.env.GITHUB_TOKEN,
+      githubServer.env.GH_TOKEN || githubServer.env.GITHUB_TOKEN,
       "GitHub server should have auth token",
     );
 

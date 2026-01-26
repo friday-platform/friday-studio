@@ -113,16 +113,11 @@ export const mcpServersRegistry: MCPServersRegistry = {
       securityRating: "high",
       configTemplate: {
         transport: { type: "http", url: "https://api.githubcopilot.com/mcp" },
-        auth: { type: "bearer", token_env: "GH_CLASSIC_PAT" },
-        env: { GH_CLASSIC_PAT: { from: "link", provider: "github", key: "access_token" } },
+        auth: { type: "bearer", token_env: "GH_TOKEN" },
+        env: { GH_TOKEN: { from: "link", provider: "github", key: "access_token" } },
       },
       requiredConfig: [
-        {
-          key: "GH_CLASSIC_PAT",
-          description: "GitHub Classic Personal Access Token.",
-          type: "string",
-          examples: ["ghp_XXXXXXXXX"],
-        },
+        { key: "GH_TOKEN", description: "GitHub App installation token.", type: "string" },
       ],
     },
     hubspot: {

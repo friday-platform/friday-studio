@@ -176,6 +176,7 @@ To add Friday to a channel:
           provider: "slack",
           label: data.team.name,
           secret: {
+            platform: "slack",
             externalId: data.team.id, // Stored for reconcileRoute
             access_token: data.access_token,
             token_type: "bot",
@@ -219,7 +220,17 @@ To add Friday to a channel:
       }
     },
 
-    async refreshToken(refreshToken) {
+    async refreshToken(secret) {
+      if (secret.platform !== "slack") {
+        throw new AppInstallError(
+          "INVALID_CREDENTIAL",
+          `Expected slack platform, got: ${secret.platform}`,
+        );
+      }
+      if (!secret.refresh_token) {
+        throw new AppInstallError("NOT_REFRESHABLE", "Slack credential missing refresh_token");
+      }
+
       let resp: Response;
       try {
         resp = await fetch("https://slack.com/api/oauth.v2.access", {
@@ -228,7 +239,10 @@ To add Friday to a channel:
             "Content-Type": "application/x-www-form-urlencoded",
             Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
           },
-          body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: secret.refresh_token,
+          }),
         });
       } catch (err) {
         throw new AppInstallError(
@@ -264,7 +278,7 @@ To add Friday to a channel:
       return {
         access_token: parsed.access_token,
         refresh_token: parsed.refresh_token,
-        expires_in: parsed.expires_in,
+        expires_at: Math.floor(Date.now() / 1000) + parsed.expires_in,
       };
     },
   });

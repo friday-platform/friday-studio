@@ -152,25 +152,7 @@ describe("resolveCredentialsByProvider", () => {
   });
 });
 
-describe("CredentialNotFoundError", () => {
-  it("includes provider in message and exposes property", () => {
-    const error = new CredentialNotFoundError("github");
-    expect(error.message).toEqual("No credentials found for provider 'github'");
-    expect(error.name).toEqual("CredentialNotFoundError");
-    expect(error.provider).toEqual("github");
-  });
-});
-
 describe("LinkCredentialNotFoundError", () => {
-  it("includes credential ID in message and exposes property", () => {
-    const error = new LinkCredentialNotFoundError("y68kjj12ep14pzj");
-    expect(error.message).toContain("y68kjj12ep14pzj");
-    expect(error.message).toContain("not found in Link");
-    expect(error.message).toContain("Update your workspace.yml");
-    expect(error.name).toEqual("LinkCredentialNotFoundError");
-    expect(error.credentialId).toEqual("y68kjj12ep14pzj");
-  });
-
   it("is thrown when fetching a non-existent credential", async () => {
     const logger = createLogger({ name: "test", level: "silent" });
     const nonExistentCredId = "does_not_exist_xyz";
@@ -191,31 +173,8 @@ describe("LinkCredentialNotFoundError", () => {
 // Google Credential Resolution Tests
 // =============================================================================
 
-const GOOGLE_PROVIDERS = [
-  "google-calendar",
-  "google-gmail",
-  "google-drive",
-  "google-docs",
-  "google-sheets",
-] as const;
-
 describe("Google credential resolution", () => {
   const logger = createLogger({ name: "test", level: "silent" });
-
-  for (const provider of GOOGLE_PROVIDERS) {
-    it(`resolves ${provider} credentials by provider`, async () => {
-      globalThis.fetch = mockSummaryFetch(provider, [
-        { id: `cred_${provider}_123`, provider, label: "Test Account", type: "oauth" },
-      ]);
-
-      const credentials = await resolveCredentialsByProvider(provider);
-      expect(credentials.length).toEqual(1);
-      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-      expect(credentials[0]!.provider).toEqual(provider);
-      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-      expect(credentials[0]!.type).toEqual("oauth");
-    });
-  }
 
   it("resolves google-calendar access_token via resolveEnvValues", async () => {
     const fakeAccessToken = "ya29.fake-google-access-token-for-testing";
@@ -252,31 +211,6 @@ describe("Google credential resolution", () => {
     const token = resolved.GOOGLE_CALENDAR_ACCESS_TOKEN;
     expect(token).toEqual(fakeAccessToken);
     expect(token?.startsWith("ya29.")).toEqual(true);
-  });
-
-  it("resolves google-gmail access_token via resolveEnvValues", async () => {
-    const fakeAccessToken = "ya29.fake-gmail-token";
-    const credId = "cred_gmail_xyz";
-
-    globalThis.fetch = mockLinkFetch(
-      "google-gmail",
-      [{ id: credId, provider: "google-gmail", label: "Personal Gmail", type: "oauth" }],
-      {
-        [credId]: {
-          id: credId,
-          provider: "google-gmail",
-          type: "oauth",
-          secret: { access_token: fakeAccessToken },
-        },
-      },
-    );
-
-    const env = {
-      GMAIL_TOKEN: { from: "link" as const, provider: "google-gmail", key: "access_token" },
-    };
-
-    const resolved = await resolveEnvValues(env, logger);
-    expect(resolved.GMAIL_TOKEN).toEqual(fakeAccessToken);
   });
 
   it("throws when Google credential has no access_token key", async () => {

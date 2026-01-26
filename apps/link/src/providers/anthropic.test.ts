@@ -59,7 +59,7 @@ describe("AnthropicSecretSchema", () => {
     if (!result.success) {
       const firstIssue = result.error.issues[0];
       expect(firstIssue).toBeDefined();
-      const message = firstIssue!.message;
+      const message = firstIssue?.message;
       expect(message).toContain("Invalid Anthropic API key");
     }
   });
@@ -78,8 +78,8 @@ describe("anthropicProvider.health", () => {
       }),
     });
 
-    expect(anthropicProvider.health).toBeDefined();
-    const result = await anthropicProvider.health!({ api_key: "sk-ant-api03-test" });
+    if (!anthropicProvider.health) throw new Error("health should be defined");
+    const result = await anthropicProvider.health({ api_key: "sk-ant-api03-test" });
 
     expect(result.healthy).toEqual(true);
     if (result.healthy) {
@@ -93,8 +93,8 @@ describe("anthropicProvider.health", () => {
       body: JSON.stringify({ error: { message: "Invalid API key provided" } }),
     });
 
-    expect(anthropicProvider.health).toBeDefined();
-    const result = await anthropicProvider.health!({ api_key: "sk-ant-api03-invalid" });
+    if (!anthropicProvider.health) throw new Error("health should be defined");
+    const result = await anthropicProvider.health({ api_key: "sk-ant-api03-invalid" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -105,8 +105,8 @@ describe("anthropicProvider.health", () => {
   it("returns unhealthy with error on network error", async () => {
     using _mockFetch = mockFetchError("https://api.anthropic.com/v1/models", "Network error");
 
-    expect(anthropicProvider.health).toBeDefined();
-    const result = await anthropicProvider.health!({ api_key: "sk-ant-api03-test" });
+    if (!anthropicProvider.health) throw new Error("health should be defined");
+    const result = await anthropicProvider.health({ api_key: "sk-ant-api03-test" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -120,8 +120,8 @@ describe("anthropicProvider.health", () => {
       body: "not json",
     });
 
-    expect(anthropicProvider.health).toBeDefined();
-    const result = await anthropicProvider.health!({ api_key: "sk-ant-api03-test" });
+    if (!anthropicProvider.health) throw new Error("health should be defined");
+    const result = await anthropicProvider.health({ api_key: "sk-ant-api03-test" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -135,8 +135,8 @@ describe("anthropicProvider.health", () => {
       body: JSON.stringify({ data: [] }),
     });
 
-    expect(anthropicProvider.health).toBeDefined();
-    const result = await anthropicProvider.health!({ api_key: "sk-ant-api03-test" });
+    if (!anthropicProvider.health) throw new Error("health should be defined");
+    const result = await anthropicProvider.health({ api_key: "sk-ant-api03-test" });
 
     expect(result.healthy).toEqual(true);
     if (result.healthy) {

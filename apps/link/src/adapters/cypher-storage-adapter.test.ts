@@ -202,8 +202,8 @@ describe("CypherStorageAdapter", () => {
 
     // Verify decrypted result
     expect(result).toMatchObject({ id: "cred-123", secret: { key: "sk-test-key" } });
-    expect(result!.userIdentifier).toBeUndefined(); // null in DB becomes undefined
-    expect(result!.displayName).toBeUndefined(); // null in DB becomes undefined
+    expect(result?.userIdentifier).toBeUndefined(); // null in DB becomes undefined
+    expect(result?.displayName).toBeUndefined(); // null in DB becomes undefined
   });
 
   it("get: returns displayName when set", async () => {
@@ -232,7 +232,7 @@ describe("CypherStorageAdapter", () => {
     const result = await adapter.get("cred-with-display-name", "user-123");
 
     expect(result).toBeDefined();
-    expect(result!.displayName).toEqual("Custom Name");
+    expect(result?.displayName).toEqual("Custom Name");
   });
 
   it("get: returns userIdentifier for OAuth credentials", async () => {

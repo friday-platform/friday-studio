@@ -88,11 +88,14 @@ export function createCallbackRoutes(
       return renderErrorResponse(c, "missing_code", "No authorization code in callback");
     }
 
+    // Extract all callback query params for services that need them (e.g., GitHub App installation_id)
+    const callbackParams = new URLSearchParams(c.req.query());
+
     // Complete flow - both services return same shape { credential, redirectUri }
     const isAppInstall = flowType.k === "app_install";
     try {
       const { credential, redirectUri } = isAppInstall
-        ? await appInstallService.completeInstall(state, code)
+        ? await appInstallService.completeInstall(state, code, callbackParams)
         : await oauthService.completeFlow(state, code);
 
       if (redirectUri) {

@@ -119,7 +119,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       },
       {
         name: "GH_TOKEN",
-        description: "GitHub PAT for gh CLI access to private repos",
+        description: "GitHub token for gh CLI access to private repos",
         linkRef: { provider: "github", key: "access_token" },
       },
     ],

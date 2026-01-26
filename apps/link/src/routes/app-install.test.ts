@@ -194,7 +194,12 @@ describe("App Install Routes", () => {
           type: "oauth",
           provider: "test-slack",
           label: "Test Workspace",
-          secret: { externalId: `team-${code}`, access_token: `xoxb-${code}`, token_type: "bot" },
+          secret: {
+            platform: "slack",
+            externalId: `team-${code}`,
+            access_token: `xoxb-${code}`,
+            token_type: "bot",
+          },
         },
       });
     },
@@ -288,9 +293,9 @@ describe("App Install Routes", () => {
         "/v1/app-install/test-slack/authorize?redirect_uri=https://myapp.example.com/settings",
       );
       const authUrl = startRes.headers.get("Location");
-      expect(authUrl).toBeDefined();
-      const state = new URL(authUrl!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!authUrl) throw new Error("authUrl should be defined");
+      const state = new URL(authUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
 
       // Complete callback via unified route
       const callbackRes = await app.request(
@@ -299,9 +304,9 @@ describe("App Install Routes", () => {
 
       expect(callbackRes.status).toEqual(302);
       const location = callbackRes.headers.get("Location");
-      expect(location).toBeDefined();
+      if (!location) throw new Error("location should be defined");
       expect(location).toMatch(/^https:\/\/myapp\.example\.com\/settings/);
-      const redirectUrl = new URL(location!);
+      const redirectUrl = new URL(location);
       expect(redirectUrl.searchParams.get("credential_id")).toBeDefined();
       expect(redirectUrl.searchParams.get("provider")).toEqual("test-slack");
     });
@@ -310,9 +315,9 @@ describe("App Install Routes", () => {
       // Start without redirect_uri
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      expect(authUrl).toBeDefined();
-      const state = new URL(authUrl!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!authUrl) throw new Error("authUrl should be defined");
+      const state = new URL(authUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
 
       // Complete callback via unified route
       const callbackRes = await app.request(
@@ -331,9 +336,9 @@ describe("App Install Routes", () => {
         "/v1/app-install/test-slack/authorize?redirect_uri=https://myapp.example.com/settings",
       );
       const authUrl = startRes.headers.get("Location");
-      expect(authUrl).toBeDefined();
-      const state = new URL(authUrl!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!authUrl) throw new Error("authUrl should be defined");
+      const state = new URL(authUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
 
       // User denied access - unified callback redirects with error
       const callbackRes = await app.request(
@@ -343,8 +348,8 @@ describe("App Install Routes", () => {
       // Unified callback redirects to redirect_uri with error params
       expect(callbackRes.status).toEqual(302);
       const location = callbackRes.headers.get("Location");
-      expect(location).toBeDefined();
-      const redirectUrl = new URL(location!);
+      if (!location) throw new Error("location should be defined");
+      const redirectUrl = new URL(location);
       expect(redirectUrl.searchParams.get("error")).toEqual("access_denied");
       expect(redirectUrl.searchParams.get("error_description")).toEqual("User denied access");
     });
@@ -363,9 +368,9 @@ describe("App Install Routes", () => {
       // Start flow
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      expect(authUrl).toBeDefined();
-      const state = new URL(authUrl!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!authUrl) throw new Error("authUrl should be defined");
+      const state = new URL(authUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
 
       // Callback without code or error
       const callbackRes = await app.request(`/v1/callback/test-slack?state=${state}`);
@@ -379,9 +384,9 @@ describe("App Install Routes", () => {
       // Start flow for test-slack
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const authUrl = startRes.headers.get("Location");
-      expect(authUrl).toBeDefined();
-      const state = new URL(authUrl!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!authUrl) throw new Error("authUrl should be defined");
+      const state = new URL(authUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
 
       // Callback with wrong provider in URL
       const callbackRes = await app.request(
@@ -397,9 +402,9 @@ describe("App Install Routes", () => {
       // First install
       const start1 = await app.request("/v1/app-install/test-slack/authorize");
       const location1 = start1.headers.get("Location");
-      expect(location1).toBeDefined();
-      const state1 = new URL(location1!).searchParams.get("state");
-      expect(state1).toBeDefined();
+      if (!location1) throw new Error("location1 should be defined");
+      const state1 = new URL(location1).searchParams.get("state");
+      if (!state1) throw new Error("state1 should be defined");
       const callback1 = await app.request(`/v1/callback/test-slack?state=${state1}&code=same-team`);
       expect(callback1.status).toEqual(200);
       const result1 = SuccessResponseSchema.parse(await callback1.json());
@@ -408,9 +413,9 @@ describe("App Install Routes", () => {
       // Second install with same team
       const start2 = await app.request("/v1/app-install/test-slack/authorize");
       const location2 = start2.headers.get("Location");
-      expect(location2).toBeDefined();
-      const state2 = new URL(location2!).searchParams.get("state");
-      expect(state2).toBeDefined();
+      if (!location2) throw new Error("location2 should be defined");
+      const state2 = new URL(location2).searchParams.get("state");
+      if (!state2) throw new Error("state2 should be defined");
       const callback2 = await app.request(`/v1/callback/test-slack?state=${state2}&code=same-team`);
       expect(callback2.status).toEqual(200);
       const result2 = SuccessResponseSchema.parse(await callback2.json());
@@ -429,9 +434,9 @@ describe("App Install Routes", () => {
       // First create a credential via install flow
       const startRes = await app.request("/v1/app-install/test-slack/authorize");
       const location = startRes.headers.get("Location");
-      expect(location).toBeDefined();
-      const state = new URL(location!).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!location) throw new Error("location should be defined");
+      const state = new URL(location).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
       const callback = await app.request(`/v1/callback/test-slack?state=${state}&code=team-123`);
       const { credential_id } = SuccessResponseSchema.parse(await callback.json());
 

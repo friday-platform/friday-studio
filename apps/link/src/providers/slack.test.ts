@@ -49,7 +49,7 @@ describe("SlackSecretSchema", () => {
     if (!result.success) {
       const firstIssue = result.error.issues[0];
       expect(firstIssue).toBeDefined();
-      const message = firstIssue!.message;
+      const message = firstIssue?.message;
       expect(message).toContain("Invalid Slack token");
     }
   });
@@ -71,8 +71,8 @@ describe("slackProvider.health", () => {
       }),
     });
 
-    expect(slackProvider.health).toBeDefined();
-    const result = await slackProvider.health!({ access_token: "xoxb-test-token" });
+    if (!slackProvider.health) throw new Error("health should be defined");
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     expect(result.healthy).toEqual(true);
     if (result.healthy) {
@@ -90,8 +90,8 @@ describe("slackProvider.health", () => {
       body: JSON.stringify({ ok: false, error: "invalid_auth" }),
     });
 
-    expect(slackProvider.health).toBeDefined();
-    const result = await slackProvider.health!({ access_token: "xoxb-invalid-token" });
+    if (!slackProvider.health) throw new Error("health should be defined");
+    const result = await slackProvider.health({ access_token: "xoxb-invalid-token" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -106,8 +106,8 @@ describe("slackProvider.health", () => {
       body: JSON.stringify({ ok: false, error: "token_revoked" }),
     });
 
-    expect(slackProvider.health).toBeDefined();
-    const result = await slackProvider.health!({ access_token: "xoxb-revoked-token" });
+    if (!slackProvider.health) throw new Error("health should be defined");
+    const result = await slackProvider.health({ access_token: "xoxb-revoked-token" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -119,8 +119,8 @@ describe("slackProvider.health", () => {
     // Mock fetch throwing a network error
     using _mockFetch = mockFetchError("https://slack.com/api/auth.test", "Network error");
 
-    expect(slackProvider.health).toBeDefined();
-    const result = await slackProvider.health!({ access_token: "xoxb-test-token" });
+    if (!slackProvider.health) throw new Error("health should be defined");
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
@@ -135,8 +135,8 @@ describe("slackProvider.health", () => {
       body: "not json",
     });
 
-    expect(slackProvider.health).toBeDefined();
-    const result = await slackProvider.health!({ access_token: "xoxb-test-token" });
+    if (!slackProvider.health) throw new Error("health should be defined");
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     expect(result.healthy).toEqual(false);
     if (!result.healthy) {
