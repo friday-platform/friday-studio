@@ -27,11 +27,13 @@ const workspacesRoutes = daemonFactory
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
       const workspaces = await manager.list({ includeSystem: true });
-      const response = workspaces.map((w) => ({
-        ...w,
-        description: w.metadata?.description,
-        type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
-      }));
+      const response = workspaces
+        .map((w) => ({
+          ...w,
+          description: w.metadata?.description,
+          type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       return c.json(response);
     } catch (error) {
       return c.json({ error: `Failed to list workspaces: ${stringifyError(error)}` }, 500);
