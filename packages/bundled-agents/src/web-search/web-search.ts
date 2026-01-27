@@ -74,8 +74,13 @@ DECISION TREE:
    - NO if: Request is purely personal, requires private data, is a command/action, or has no searchable terms
    - YES if: Contains names, topics, concepts, or questions that could appear on the web
 
-2. If YES: Call analyzeQuery with strategic keyword queries
+2. If YES: Call analyzeQuery with strategic keyword queries (2-10 queries max)
 3. If NO: Call failQuery with clear reason why research cannot proceed
+
+QUERY LIMITS:
+- Maximum 10 search queries per request
+- If researching many items (e.g., 12 companies), combine related ones or prioritize the most important
+- Use broader queries that cover multiple items when possible
 
 EXAMPLES:
 
@@ -87,6 +92,9 @@ EXAMPLES:
 
 "OpenAI news from TechCrunch"
 → analyzeQuery: {"complexity":"simple","searchQueries":["OpenAI TechCrunch"],"includeDomains":["techcrunch.com"]}
+
+"Monitor news for 15 portfolio companies"
+→ analyzeQuery: {"complexity":"complex","searchQueries":["company1 company2 company3 news","company4 company5 company6 news",...]} (combine into ≤10 queries)
 
 "What should I have for dinner?"
 → failQuery: {"reason":"Personal preference questions cannot be answered through web research"}

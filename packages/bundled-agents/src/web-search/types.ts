@@ -12,9 +12,9 @@ export const QueryAnalysisSchema = z.object({
   searchQueries: z
     .array(z.string().max(200))
     .min(2)
-    .max(6)
+    .max(10)
     .describe(
-      "2-6 strategic keyword queries targeting different facets of the research. Include specific terms, product names, or key concepts. For comparisons, create separate queries for each item. Use synonyms to cast a wider net.",
+      "2-10 strategic keyword queries targeting different facets of the research. Include specific terms, product names, or key concepts. For many items, combine related ones into fewer queries.",
     ),
   includeDomains: z
     .array(z.string())
