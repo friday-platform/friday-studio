@@ -7,6 +7,6 @@
   "dependencies": {
     "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "hono": "^4.11.5"
+    "hono": "^4.11.6"
   }
 }
