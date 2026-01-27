@@ -2,11 +2,13 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
+import { convertCsvToSqlite } from "./converters/csv-to-sqlite.ts";
 import { LocalStorageAdapter } from "./local-adapter.ts";
 import { assertArtifactEqual, assertResultFail, assertResultOk } from "./test-utils/assertions.ts";
 import {
   cleanupTempFile,
   createCalendarScheduleInput,
+  createDatabaseArtifactInput,
   createFileArtifactInput,
   createSlackSummaryInput,
   createSummaryArtifactInput,
@@ -769,5 +771,168 @@ describe("LocalAdapter: Errors", () => {
 
     assertResultFail(result);
     expect(result.error.includes("not found")).toEqual(true);
+  });
+});
+
+//
+// 9. Database Preview
+//
+
+/**
+ * Helper to create a database artifact from CSV data for testing.
+ */
+async function createTestDatabaseArtifact(adapter: LocalStorageAdapter, rows: string[][]) {
+  const tempCsvFile = await createTempCsvFile(rows);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "db-preview-test-"));
+  const dbPath = path.join(tempDir, "test.db");
+
+  try {
+    const conversionResult = await convertCsvToSqlite(tempCsvFile, dbPath, "test_data");
+    const input = createDatabaseArtifactInput(dbPath, conversionResult.schema);
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+    return { artifact: createResult.data, dbPath, tempCsvFile };
+  } catch (error) {
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
+    throw error;
+  }
+}
+
+describe("LocalAdapter: Database Preview", () => {
+  it("returns preview with headers and rows", async () => {
+    const adapter = await createTestAdapter();
+    const { artifact, dbPath, tempCsvFile } = await createTestDatabaseArtifact(adapter, [
+      ["name", "age", "city"],
+      ["Alice", "30", "NYC"],
+      ["Bob", "25", "LA"],
+      ["Charlie", "35", "Chicago"],
+    ]);
+
+    const result = await adapter.readDatabasePreview({ id: artifact.id });
+
+    assertResultOk(result);
+    expect(result.data.headers).toEqual(["name", "age", "city"]);
+    expect(result.data.rows.length).toEqual(3);
+    expect(result.data.rows[0]).toEqual({ name: "Alice", age: "30", city: "NYC" });
+    expect(result.data.totalRows).toEqual(3);
+    expect(result.data.truncated).toEqual(false);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
+  });
+
+  it("respects maxRows parameter", async () => {
+    const adapter = await createTestAdapter();
+    const rows = [["id", "value"]];
+    for (let i = 1; i <= 100; i++) {
+      rows.push([String(i), `value-${i}`]);
+    }
+    const { artifact, dbPath, tempCsvFile } = await createTestDatabaseArtifact(adapter, rows);
+
+    const result = await adapter.readDatabasePreview({ id: artifact.id, maxRows: 10 });
+
+    assertResultOk(result);
+    expect(result.data.rows.length).toEqual(10);
+    expect(result.data.totalRows).toEqual(100);
+    expect(result.data.truncated).toEqual(true);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
+  });
+
+  it("truncated is false when rows <= maxRows", async () => {
+    const adapter = await createTestAdapter();
+    const { artifact, dbPath, tempCsvFile } = await createTestDatabaseArtifact(adapter, [
+      ["id"],
+      ["1"],
+      ["2"],
+    ]);
+
+    const result = await adapter.readDatabasePreview({ id: artifact.id, maxRows: 1000 });
+
+    assertResultOk(result);
+    expect(result.data.rows.length).toEqual(2);
+    expect(result.data.truncated).toEqual(false);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
+  });
+
+  it("fails for non-database artifacts", async () => {
+    const adapter = await createTestAdapter();
+    const createResult = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(createResult);
+
+    const result = await adapter.readDatabasePreview({ id: createResult.data.id });
+
+    assertResultFail(result);
+    expect(result.error.includes("not a database type")).toEqual(true);
+  });
+
+  it("fails for non-existent artifact", async () => {
+    const adapter = await createTestAdapter();
+
+    const result = await adapter.readDatabasePreview({ id: "non-existent-id" });
+
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
+  });
+
+  it("fails for deleted artifact", async () => {
+    const adapter = await createTestAdapter();
+    const { artifact, dbPath, tempCsvFile } = await createTestDatabaseArtifact(adapter, [
+      ["col"],
+      ["val"],
+    ]);
+    await adapter.deleteArtifact({ id: artifact.id });
+
+    const result = await adapter.readDatabasePreview({ id: artifact.id });
+
+    assertResultFail(result);
+    expect(result.error.includes("not found")).toEqual(true);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
+  });
+
+  it("fails gracefully when database file is missing", async () => {
+    const adapter = await createTestAdapter();
+    const tempCsvFile = await createTempCsvFile([["col"], ["val"]]);
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "db-preview-test-"));
+    const dbPath = path.join(tempDir, "test.db");
+
+    const conversionResult = await convertCsvToSqlite(tempCsvFile, dbPath, "test_data");
+    const input = createDatabaseArtifactInput(dbPath, conversionResult.schema);
+    const createResult = await adapter.create(input);
+    assertResultOk(createResult);
+
+    // Delete the database file
+    await fs.unlink(dbPath);
+
+    const result = await adapter.readDatabasePreview({ id: createResult.data.id });
+
+    assertResultFail(result);
+    expect(result.error.includes("Failed to read database")).toEqual(true);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(tempDir);
+  });
+
+  it("handles columns with special characters in names", async () => {
+    const adapter = await createTestAdapter();
+    const { artifact, dbPath, tempCsvFile } = await createTestDatabaseArtifact(adapter, [
+      ["name with spaces", "has-dash", "has_underscore"],
+      ["value1", "value2", "value3"],
+    ]);
+
+    const result = await adapter.readDatabasePreview({ id: artifact.id });
+
+    assertResultOk(result);
+    expect(result.data.headers).toEqual(["name with spaces", "has-dash", "has_underscore"]);
+    expect(result.data.rows.length).toEqual(1);
+
+    await cleanupTempFile(tempCsvFile);
+    await cleanupTempFile(dbPath);
   });
 });

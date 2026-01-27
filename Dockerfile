@@ -58,7 +58,7 @@ FROM denoland/deno:alpine-2.6.6 AS daemon
 # Version is managed in docker/package.json (updated by Dependabot)
 # Note: LD_LIBRARY_PATH is set to use system libgcc instead of Deno's bundled one
 COPY docker/package.json /tmp/docker-deps/package.json
-RUN apk add --no-cache nodejs npm bash github-cli && \
+RUN apk add --no-cache nodejs npm bash github-cli sqlite-libs && \
     cd /tmp/docker-deps && LD_LIBRARY_PATH=/usr/lib:/usr/local/lib npm install && \
     cp -r node_modules/@anthropic-ai/claude-code /usr/local/lib/claude-code && \
     ln -s /usr/local/lib/claude-code/cli.js /usr/local/bin/claude && \
@@ -96,7 +96,8 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_DAEMON_PORT=8080 \
     ATLAS_NPX_PATH=/usr/bin/npx \
     ATLAS_CLAUDE_PATH=/usr/local/bin/claude \
-    LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
+    LD_LIBRARY_PATH=/usr/lib:/usr/local/lib \
+    DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0
 
 # Expose the daemon port
 EXPOSE 8080

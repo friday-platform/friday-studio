@@ -19,6 +19,17 @@ import { type MCPContext, planTaskEnhanced } from "./planner.ts";
 import type { TaskExecutionContext, TaskProgressEvent } from "./types.ts";
 
 /**
+ * Strip UUIDs from user-facing progress messages.
+ * Artifact IDs are internal identifiers that should never be shown to users.
+ */
+function stripUUIDs(text: string): string {
+  return text
+    .replace(/\s*\(?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\)?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
  * Format progress event for display.
  * Returns empty string for events that should be silent.
  */
@@ -29,7 +40,7 @@ function formatProgressMessage(event: TaskProgressEvent): string {
     case "preparing":
       return "Spinning up agents...";
     case "step-start":
-      return event.description;
+      return stripUUIDs(event.description);
     case "step-complete":
       return "";
   }

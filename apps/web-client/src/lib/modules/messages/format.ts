@@ -24,6 +24,15 @@ export function formatMessage(
         displayName: part.data?.displayName ?? "",
       };
     }
+    if (part.type === "data-artifact-attached") {
+      return {
+        type: "artifact_attached",
+        id: message.id,
+        timestamp: new Date().toISOString(),
+        artifactIds: (part.data?.artifactIds as string[]) ?? [],
+        filenames: (part.data?.filenames as string[]) ?? [],
+      };
+    }
   }
 
   if (message.role === "assistant") {
