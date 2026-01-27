@@ -75,7 +75,7 @@
       <li>
         <a
           href={ctx.routes.main}
-          class:active={getActivePage("/")}
+          class:active={getActivePage(["chat", "chat/[chatId]"])}
           class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "chat" })}
         >
