@@ -1,5 +1,4 @@
 import { logger } from "@atlas/logger";
-import { config } from "../config.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
 import { createGitHubAppInstallProvider } from "./github-app.ts";
@@ -16,7 +15,7 @@ import { notionProvider } from "./notion.ts";
 import { posthogProvider } from "./posthog.ts";
 import { sentryProvider } from "./sentry.ts";
 import { createSlackAppInstallProvider } from "./slack-app.ts";
-import { defineApiKeyProvider, type ProviderDefinition } from "./types.ts";
+import type { ProviderDefinition } from "./types.ts";
 
 /**
  * Provider registry.
@@ -107,19 +106,5 @@ if (hubspotProvider) {
 } else {
   logger.info(
     "Skipping HubSpot provider: HUBSPOT_CLIENT_ID_FILE or HUBSPOT_CLIENT_SECRET_FILE not set",
-  );
-}
-
-// Dev-only test provider for manual testing
-if (config.devMode) {
-  const { z } = await import("zod");
-  registry.register(
-    defineApiKeyProvider({
-      id: "test",
-      displayName: "Test Provider",
-      description: "Development-only test provider for manual testing",
-      secretSchema: z.object({ key: z.string() }),
-      setupInstructions: "Enter any key value for testing.",
-    }),
   );
 }
