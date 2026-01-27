@@ -1,4 +1,9 @@
 import { logger } from "@atlas/logger";
+// Side-effect import: config.ts has a top-level `await loadEnv()` that populates
+// process.env from the DOT_ENV file. This must run before any provider factory
+// reads env vars (e.g. GITHUB_APP_ID_FILE). Without this dependency edge, ES module
+// evaluation order is non-deterministic between registry.ts and config.ts.
+import "../config.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
 import { createGitHubAppInstallProvider } from "./github-app.ts";
