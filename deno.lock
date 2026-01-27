@@ -112,7 +112,7 @@
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.0": "21.3.0",
     "npm:globals@^17.1.0": "17.1.0",
-    "npm:hono-openapi@^1.1.2": "1.2.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.11.6_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.1.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.6_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.1.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.6__@standard-schema+spec@1.1.0__openapi-types@12.1.3__zod@4.3.6__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.6_openapi-types@12.1.3_zod@4.3.6",
+    "npm:hono-openapi@^1.2.0": "1.2.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.11.6_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.1.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.6_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.1.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.6__@standard-schema+spec@1.1.0__openapi-types@12.1.3__zod@4.3.6__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.6_openapi-types@12.1.3_zod@4.3.6",
     "npm:hono@4.11.6": "4.11.6",
     "npm:hono@^4.10.4": "4.11.6",
     "npm:hono@^4.11.1": "4.11.6",
@@ -5746,7 +5746,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:file-type@^21.3.0",
-            "npm:hono-openapi@^1.1.2",
+            "npm:hono-openapi@^1.2.0",
             "npm:hono@^4.11.6",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6031,7 +6031,7 @@
       "packages/openapi-client": {
         "packageJson": {
           "dependencies": [
-            "npm:hono-openapi@^1.1.2",
+            "npm:hono-openapi@^1.2.0",
             "npm:openapi-fetch@0.15",
             "npm:openapi-typescript@^7.10.1"
           ]
