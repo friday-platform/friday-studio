@@ -63,6 +63,7 @@ jobs:
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY-web-client"
 
       - name: Push images to production
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         run: |-
           docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY:$GITHUB_SHA"
           docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY-web-client:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY-web-client:$GITHUB_SHA"

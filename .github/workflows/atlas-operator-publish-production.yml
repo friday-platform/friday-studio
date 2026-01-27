@@ -1,9 +1,9 @@
 name: "atlas-operator: Publish Docker Image to Production"
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+  workflow_dispatch:
 
 env:
   GAR_LOCATION: us-west2

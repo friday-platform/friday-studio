@@ -1,6 +1,8 @@
 name: Build OTEL Collector
 
 on:
+  release:
+    types: [published]
   push:
     branches: [main]
     paths:
@@ -51,6 +53,7 @@ jobs:
           docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:latest"
 
       - name: Tag and push to production
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         run: |
           docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"
           docker push "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"
