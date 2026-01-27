@@ -11,9 +11,9 @@
 
   const ARTIFACTS_KEY = Symbol.for("artifacts");
 
-  type Props = { artifactId: string };
+  type Props = { artifactId: string; onApprove: () => void; onTest: () => void };
 
-  let { artifactId }: Props = $props();
+  let { artifactId, onApprove, onTest }: Props = $props();
 
   const artifactsMap = getContext<Map<string, ArtifactWithContents> | undefined>(ARTIFACTS_KEY);
 
@@ -57,7 +57,7 @@
 <MessageWrapper>
   {#if workspacePlan}
     <div id={`artifact-${artifactId}`}>
-      <WorkspacePlanDetails {workspacePlan} />
+      <WorkspacePlanDetails {workspacePlan} {onApprove} {onTest} />
     </div>
   {/if}
 </MessageWrapper>

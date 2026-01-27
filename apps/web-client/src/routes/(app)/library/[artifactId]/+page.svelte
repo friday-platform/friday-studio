@@ -132,7 +132,7 @@
         </div>
       {/if}
     {:else if artifact.type === "workspace-plan"}
-      <WorkspacePlanDetails workspacePlan={artifact.data} />
+      <WorkspacePlanDetails workspacePlan={artifact.data} hideControls={true} />
     {:else if artifact.type === "table"}
       <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
     {:else if artifact.type === "file"}

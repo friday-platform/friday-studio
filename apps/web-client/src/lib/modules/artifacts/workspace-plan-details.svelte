@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
+  import Button from "$lib/components/button.svelte";
   import GlobeIcon from "$lib/components/icons/globe.svelte";
   import AtlassianIcon from "$lib/components/icons/integrations/atlassian.svelte";
   import GithubIcon from "$lib/components/icons/integrations/github.svelte";
@@ -9,8 +10,13 @@
   import SentryIcon from "$lib/components/icons/integrations/sentry.svelte";
   import SlackIcon from "$lib/components/icons/integrations/slack-color.svelte";
 
-  type Props = { workspacePlan: WorkspacePlan };
-  let { workspacePlan }: Props = $props();
+  type Props = {
+    workspacePlan: WorkspacePlan;
+    hideControls?: boolean;
+    onApprove?: () => void;
+    onTest?: () => void;
+  };
+  let { workspacePlan, hideControls = false, onApprove, onTest }: Props = $props();
 
   // Map signal types to display labels
   const signalTypeLabels: Record<string, string> = { schedule: "Schedule", http: "Webhook" };
@@ -96,6 +102,28 @@
           {/each}
         </ul>
       </section>
+    {/if}
+
+    {#if !hideControls}
+      <div class="actions">
+        <Button
+          size="small"
+          onclick={() => {
+            if (onApprove) onApprove();
+          }}
+        >
+          Approve
+        </Button>
+
+        <Button
+          size="small"
+          onclick={() => {
+            if (onTest) onTest();
+          }}
+        >
+          Test Plan
+        </Button>
+      </div>
     {/if}
   </article>
 </div>
@@ -197,5 +225,11 @@
         opacity: 0.6;
       }
     }
+  }
+
+  .actions {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
   }
 </style>

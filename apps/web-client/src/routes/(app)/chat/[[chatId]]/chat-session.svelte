@@ -391,7 +391,15 @@
                     {:else if message.type === "display_artifact" && message.artifactId}
                       <DisplayArtifact artifactId={message.artifactId} />
                     {:else if message.type === "workspace_planner"}
-                      <WorkspacePlan artifactId={message.artifactId} />
+                      <WorkspacePlan
+                        artifactId={message.artifactId}
+                        onApprove={() => {
+                          chat.sendMessage({ text: "Approve this plan and create a workspace" });
+                        }}
+                        onTest={() => {
+                          chat.sendMessage({ text: "Test this plan and show me the result" });
+                        }}
+                      />
                     {:else if message.type === "connect_service" && message.provider}
                       <ConnectService provider={message.provider} {chat} />
                     {:else if message.type === "workspace_creator" && !message.output.result.isError}
