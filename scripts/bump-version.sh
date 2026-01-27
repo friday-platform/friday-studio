@@ -14,13 +14,20 @@ if ! gh auth status &>/dev/null; then
   exit 1
 fi
 
+# Derive repo from git remote so we don't depend on gh repo set-default
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
+if [[ -z "$REPO" ]]; then
+  echo "Error: could not determine GitHub repo. Run this from inside the git repo." >&2
+  exit 1
+fi
+
 DRY_RUN=false
 if [[ "${1:-}" == "--dry-run" ]]; then
   DRY_RUN=true
 fi
 
 # Get the latest release tag from GitHub (source of truth)
-LATEST_TAG=$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)
+LATEST_TAG=$(gh release view --repo "$REPO" --json tagName --jq '.tagName' 2>/dev/null || true)
 
 if [[ -z "$LATEST_TAG" ]]; then
   echo "No existing GitHub release found. Starting at v1.0.0"
@@ -42,5 +49,5 @@ if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
-gh release create "$NEW_TAG" --title "$NEW_TAG" --generate-notes
+gh release create "$NEW_TAG" --repo "$REPO" --title "$NEW_TAG" --generate-notes
 echo "GitHub release ${NEW_TAG} created."
