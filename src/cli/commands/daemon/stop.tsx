@@ -68,6 +68,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
       } else {
         successOutput("Atlas daemon stopped successfully");
       }
+      process.exit(0);
     } catch (error) {
       // If the request fails, the daemon might have already stopped
       await sleep(1000);

@@ -1,16 +1,19 @@
 # Friday
 
-AI agent orchestration platform that transforms software delivery through human/AI collaboration.
+AI agent orchestration platform that transforms software delivery through
+human/AI collaboration.
 
 ## Overview
 
-Friday enables engineers to create workspaces where humans collaborate seamlessly with specialized,
-autonomous agents in a secure, auditable, and scalable environment.
+Friday enables engineers to create workspaces where humans collaborate
+seamlessly with specialized, autonomous agents in a secure, auditable, and
+scalable environment.
 
 ### Key Features
 
 - **Daemon Architecture** - Central daemon manages all workspace lifecycles
-- **Hierarchical Supervision** - Intelligent supervisors coordinate agent execution
+- **Hierarchical Supervision** - Intelligent supervisors coordinate agent
+  execution
 - **Worker Isolation** - Each agent runs in isolated Deno Web Workers
 - **Session Management** - Track and manage concurrent agent workflows
 - **Configurable Signals** - Trigger workflows via CLI, webhooks, or schedules
@@ -33,8 +36,8 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **macOS:**
 
-- Download the Friday installer `.zip` file (recommended) - Professional installation experience
-  with:
+- Download the Friday installer `.zip` file (recommended) - Professional
+  installation experience with:
   - License agreement integration
   - Optional API key collection and secure storage
   - Automatic PATH configuration
@@ -51,13 +54,13 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
     - Automatic systemd service setup
     - Dedicated atlas system user
   - `.rpm` file for RedHat/Fedora - Features post-install configuration
-- Or download the `.tar.gz` archive for your architecture (amd64 or arm64) and extract to
-  `/usr/local/bin/`
+- Or download the `.tar.gz` archive for your architecture (amd64 or arm64) and
+  extract to `/usr/local/bin/`
 
 **Windows:**
 
-- Download the Friday installer `.exe` file (recommended) - Complete installation experience
-  featuring:
+- Download the Friday installer `.exe` file (recommended) - Complete
+  installation experience featuring:
   - License agreement and professional UI
   - API key collection and secure storage in ~/.atlas/.env
   - Automatic PATH configuration and system integration
@@ -260,7 +263,8 @@ Friday uses a modern daemon-based architecture:
 
 ### Key Benefits
 
-- **Config Caching**: Workspace configurations loaded once and cached with SHA-256 hashing
+- **Config Caching**: Workspace configurations loaded once and cached with
+  SHA-256 hashing
 - **No File I/O at Signal Time**: Secure and performant signal processing
 - **Unified API**: All CLI commands route through daemon API
 - **Persistent State**: Workspace registrations survive daemon restarts
@@ -308,19 +312,21 @@ Each actor level has:
    - Context narrowing in state transitions
    - Type-safe event discrimination
 
-See [`docs/ACTOR_TYPE_SAFETY_PLAN.md`](docs/ACTOR_TYPE_SAFETY_PLAN.md) for implementation details.
+See [`docs/ACTOR_TYPE_SAFETY_PLAN.md`](docs/ACTOR_TYPE_SAFETY_PLAN.md) for
+implementation details.
 
 ## Examples
 
 Explore example workspaces in `examples/workspaces/`:
 
-- **[telephone](examples/workspaces/telephone/)** - Multi-agent telephone game with provider
-  diversity
-- **[k8s-assistant](examples/workspaces/k8s-assistant/)** - Kubernetes management with real-time
-  monitoring
-- **[playwright-mcp](examples/workspaces/playwright-mcp/)** - Web automation via MCP integration
-- **[multi-purpose-dev](examples/workspaces/multi-purpose-dev/)** - Comprehensive development
-  workspace
+- **[telephone](examples/workspaces/telephone/)** - Multi-agent telephone game
+  with provider diversity
+- **[k8s-assistant](examples/workspaces/k8s-assistant/)** - Kubernetes
+  management with real-time monitoring
+- **[playwright-mcp](examples/workspaces/playwright-mcp/)** - Web automation via
+  MCP integration
+- **[multi-purpose-dev](examples/workspaces/multi-purpose-dev/)** -
+  Comprehensive development workspace
 
 Each workspace includes:
 
@@ -331,11 +337,14 @@ Each workspace includes:
 
 ## AI-Assisted Development Workflow
 
-This repo includes Claude slash commands that support a structured planning-to-execution flow:
+This repo includes Claude slash commands that support a structured
+planning-to-execution flow:
 
 ### 1. Design Phase: `/brainstorm`
 
-Start with a rough idea. Claude uses Socratic questioning to refine it into a concrete design:
+Start with a rough idea. Claude uses Socratic questioning to refine it into a
+concrete design:
+
 - One question at a time (multiple choice when possible)
 - Explores 2-3 approaches with trade-offs
 - Presents design in small sections for incremental validation
@@ -345,44 +354,27 @@ Start with a rough idea. Claude uses Socratic questioning to refine it into a co
 /brainstorm I want to add real-time collaboration to workspaces
 ```
 
-### 2. Planning Phase: `/make-beads`
+### 2. Task Generation Phase: `/make-tasks`
 
-Convert the validated design into trackable work items:
+Convert the validated design into trackable work items using
+[Claude Code's Tasks](README.md):
+
 - Creates an epic with tasks and subtasks
-- Establishes dependency structure
-- Adds implementation details to each bead
+- Adds implementation details to each task
 
 ```
-/make-beads docs/plans/2024-12-30-realtime-collab-design.md
+/make-tasks docs/plans/2026-01-20-realtime-collab-design.md
 ```
 
-### 3. Refinement: `/improve-beads`
+### 5. Execution: `/implement-tasks`
 
-Polish beads for worker consumption (1-3 iterations until satisfied):
-- Makes instructions unambiguous and implementation-ready
-- Researches codebase to fill gaps
-- Surfaces unresolved questions
+Spawns sub-agents to execute tasks:
 
-```
-/improve-beads
-```
-
-### 4. Prioritization: `/whats-next`
-
-Uses `bv` and `bd` to identify which beads are ready and highest priority based on the dependency graph.
-
-```
-/whats-next
-```
-
-### 5. Execution: `/spawn-worker`
-
-Spawns sub-agents to execute beads in parallel:
-- One agent per bead
+- One dedicated agent per task
 - Each agent: claims → implements → commits → closes
 
 ```
-/spawn-worker pick up bv-12 and bv-15, they can be done in parallel
+/implement-tasks
 ```
 
 ## Development
@@ -391,16 +383,21 @@ Spawns sub-agents to execute beads in parallel:
 
 Before contributing, install these tools:
 
-**Beads** (issue tracking):
+**[Claude Code Tasks Viewer](https://github.com/L1AD/claude-task-viewer)**:
 
 ```bash
-brew install steveyegge/beads/bd
+npx -Y claude-task-viewer@latest
 ```
 
-**Beads Viewer** (TUI for beads):
+**Shell Setup for Claude Code** (optional but recommended):
+
+Sets `CLAUDE_CODE_TASK_LIST_ID` to your git branch name automatically:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/main/install.sh?$(date +%s)" | bash
+# zsh - add to ~/.zshrc
+source /path/to/atlas/scripts/setup_shell.zsh
+
+# fish - already configured in ~/.config/fish/functions/claude.fish
 ```
 
 **Git Hooks** (run once after cloning):
@@ -409,16 +406,13 @@ curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/mai
 npx husky
 ```
 
-This configures pre-commit hooks for linting and post-checkout hooks that auto-initialize beads when switching branches.
+This configures pre-commit hooks for linting.
 
 ### Running from Source
 
 ```bash
 # Start daemon
-deno task atlas daemon start
-
-# Run interactive mode
-deno task atlas
+deno task dev:full
 
 # Run specific commands
 deno task atlas ps
@@ -429,18 +423,24 @@ deno task atlas signal trigger test
 
 ```bash
 # Run all tests
-deno test --allow-all
+deno task test
 
 # Run with type checking
-deno check src/cli.tsx && deno test --allow-all
+deno check
 
 # Format code
-deno fmt
+deno task fmt
+
+# Lint code
+deno task lint
 ```
 
 ### Code Quality with Knip
 
-[Knip](https://knip.dev/) is a dead code detection tool that finds and removes unused dependencies, exports, and files in JavaScript and TypeScript projects. Friday uses Knip to maintain a clean codebase by identifying code that's no longer referenced.
+[Knip](https://knip.dev/) is a dead code detection tool that finds and removes
+unused dependencies, exports, and files in JavaScript and TypeScript projects.
+Friday uses Knip to maintain a clean codebase by identifying code that's no
+longer referenced.
 
 #### Running Knip
 
@@ -460,6 +460,7 @@ npx knip --debug
 Friday configures Knip with two distinct analysis modes:
 
 **Regular Mode** (`npx knip`):
+
 - Analyzes all code including tests and test utilities
 - Test files are treated as entry points
 - Code imported by tests is marked as "used"
@@ -467,6 +468,7 @@ Friday configures Knip with two distinct analysis modes:
 - Best for: Finding code not used anywhere in the project
 
 **Production Mode** (`npx knip --production`):
+
 - Analyzes only code marked with `!` in `knip.json`
 - Excludes test files and test utilities
 - Identifies code only used by tests (not in production)
@@ -480,21 +482,24 @@ The `knip.json` file uses these patterns:
 ```json
 {
   "entry": [
-    "mod.ts!",           // Production entry (! marker)
+    "mod.ts!", // Production entry (! marker)
     "tests/**/*.test.ts" // Test entry (no marker)
   ],
   "project": [
-    "src/**/*.ts!",      // Production code (! marker)
-    "tests/**/*.ts"      // Test code (no marker)
+    "src/**/*.ts!", // Production code (! marker)
+    "tests/**/*.ts" // Test code (no marker)
   ]
 }
 ```
 
-Production code is marked with `!` suffixes, while test code remains unmarked. This distinction enables Knip to differentiate between production and test dependencies.
+Production code is marked with `!` suffixes, while test code remains unmarked.
+This distinction enables Knip to differentiate between production and test
+dependencies.
 
 ### Architecture Documentation
 
-See [`CLAUDE.md`](CLAUDE.md) for comprehensive development guidelines and architecture details.
+See [`CLAUDE.md`](CLAUDE.md) for comprehensive development guidelines and
+architecture details.
 
 ## Troubleshooting
 
@@ -502,7 +507,8 @@ See [`CLAUDE.md`](CLAUDE.md) for comprehensive development guidelines and archit
 
 1. **Daemon not running**: Use `atlas daemon start` to start the daemon
 2. **Workspace not found**: Use `atlas` to see registered workspaces
-3. **Signal failures**: Check workspace configuration with `atlas config validate`
+3. **Signal failures**: Check workspace configuration with
+   `atlas config validate`
 4. **Permission errors**: Ensure proper file permissions in workspace directory
 
 ### Debug Mode
@@ -524,4 +530,5 @@ atlas daemon logs
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for
+details.

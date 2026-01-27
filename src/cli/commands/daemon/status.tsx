@@ -45,6 +45,7 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     } else {
       displayDaemonStatus(status.data, port);
     }
+    process.exit(0);
   } catch (error) {
     if (argv.json) {
       console.log(

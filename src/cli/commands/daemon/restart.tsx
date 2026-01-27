@@ -85,6 +85,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
         process.exit(1);
       } else {
         successOutput("Existing daemon stopped successfully");
+        process.exit(0);
       }
     } else {
       infoOutput("No existing daemon found");
@@ -131,6 +132,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     const isRunning = await parseResult(client.health.index.$get());
     if (isRunning.ok) {
       successOutput(`Atlas daemon restarted successfully on port ${port}`);
+      process.exit(0);
     } else {
       errorOutput("Daemon failed to start after restart");
       process.exit(1);

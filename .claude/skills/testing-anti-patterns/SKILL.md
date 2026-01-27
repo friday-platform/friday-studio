@@ -62,18 +62,23 @@ describe("CredentialSchema", () => {
   });
 
   test("accepts credential with displayName string", () => {
-    const result = CredentialSchema.parse({ ...baseCredential, displayName: "Work" });
+    const result = CredentialSchema.parse({
+      ...baseCredential,
+      displayName: "Work",
+    });
     expect(result.displayName).toBe("Work");
   });
 
   test("rejects displayName that is not a string", () => {
-    expect(() => CredentialSchema.parse({ ...baseCredential, displayName: 123 })).toThrow();
+    expect(() =>
+      CredentialSchema.parse({ ...baseCredential, displayName: 123 })
+    ).toThrow();
   });
 });
 
 describe("StorageAdapter interface", () => {
   test("includes updateMetadata method", () => {
-    const mockAdapter: StorageAdapter = { /* full mock impl */ };
+    const mockAdapter: StorageAdapter = {/* full mock impl */};
     expect(typeof mockAdapter.updateMetadata).toBe("function");
   });
 });
@@ -145,7 +150,9 @@ BEFORE asserting on any element:
 ```typescript
 // ❌ destroy() only called in tests
 class Session {
-  async destroy() { await this._workspaceManager?.destroyWorkspace(this.id); }
+  async destroy() {
+    await this._workspaceManager?.destroyWorkspace(this.id);
+  }
 }
 
 // ✅ Test utilities, not production class
@@ -264,14 +271,14 @@ it("extracts input with fallback: intent → body.task → summary", () => {
 
 ## Quick Reference
 
-| Anti-Pattern               | Fix                                  |
-| -------------------------- | ------------------------------------ |
-| Testing library behavior   | Delete - library already works       |
-| Assert on mock elements    | Test real component or unmock        |
-| Test-only production code  | Move to test utilities               |
+| Anti-Pattern               | Fix                                   |
+| -------------------------- | ------------------------------------- |
+| Testing library behavior   | Delete - library already works        |
+| Assert on mock elements    | Test real component or unmock         |
+| Test-only production code  | Move to test utilities                |
 | Mock without understanding | Understand deps first, mock minimally |
-| Incomplete mocks           | Mirror real API completely           |
-| Testing ceremony           | Ask "would this catch a real bug?"   |
+| Incomplete mocks           | Mirror real API completely            |
+| Testing ceremony           | Ask "would this catch a real bug?"    |
 
 ## Ratio Awareness
 

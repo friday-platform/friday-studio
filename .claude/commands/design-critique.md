@@ -2,25 +2,31 @@
 description: Deep design critique - spawns Opus to stress-test a plan, then synthesizes findings into an improved version
 ---
 
-You are running a two-pass design critique. First, a subagent deeply analyzes the plan. Then you synthesize findings, apply low-stakes fixes directly, and surface major decisions to the user.
+You are running a two-pass design critique. First, a subagent deeply analyzes
+the plan. Then you synthesize findings, apply low-stakes fixes directly, and
+surface major decisions to the user.
 
 ## Input
 
 $ARGUMENTS
 
 Parse for:
+
 - **Plan path** - path to the architecture/design document (required)
 
-If empty or path doesn't exist, abort with: "Usage: /design-critique <path-to-plan.md>"
+If empty or path doesn't exist, abort with: "Usage: /design-critique
+<path-to-plan.md>"
 
 ## Version Detection
 
 Detect the current version from the input filename:
+
 - `foo.md` → current: v1, output: `foo.v2.md`
 - `foo.v2.md` → current: v2, output: `foo.v3.md`
 - Pattern: `*.vN.md` where N is a number
 
 Store:
+
 - `CURRENT_VERSION` - version number (1 if no version suffix)
 - `NEXT_VERSION` - CURRENT_VERSION + 1
 - `BASE_NAME` - filename without version suffix
@@ -28,7 +34,8 @@ Store:
 
 ## Phase 1: Read the Plan
 
-Read the plan document. That's it. The subagent will do its own deep exploration.
+Read the plan document. That's it. The subagent will do its own deep
+exploration.
 
 ## Phase 2: Spawn Critique Agent
 
@@ -141,14 +148,16 @@ Format:
 
 **Current:**
 ```
-[relevant section from plan]
-```
 
+[relevant section from plan]
+
+```
 **Proposed:**
 ```
-[improved version]
-```
 
+[improved version]
+
+```
 **Why this is better:** [specific reasoning]
 
 ---
@@ -184,13 +193,17 @@ When the subagent returns, YOU (the orchestrator) do additional work:
 
 Read through the subagent's findings. Based on the overall verdict:
 
-- **Solid** - Apply all [LOW-STAKES] fixes, surface any [NEEDS-DECISION] items to user
-- **Needs Work** - Apply [LOW-STAKES] fixes, but hold on [NEEDS-DECISION] until user weighs in
-- **Rethink** - Don't write anything yet. Present the critique and ask user how to proceed.
+- **Solid** - Apply all [LOW-STAKES] fixes, surface any [NEEDS-DECISION] items
+  to user
+- **Needs Work** - Apply [LOW-STAKES] fixes, but hold on [NEEDS-DECISION] until
+  user weighs in
+- **Rethink** - Don't write anything yet. Present the critique and ask user how
+  to proceed.
 
 ### 3b: Do Your Own Validation
 
 With the critique in hand, do a quick pass yourself:
+
 - Read any files the subagent flagged that seem important
 - Verify the proposed fixes actually make sense
 - Check if any [NEEDS-DECISION] items are actually obvious enough to just fix
@@ -198,9 +211,11 @@ With the critique in hand, do a quick pass yourself:
 ### 3c: Create the Updated Plan
 
 If verdict is Solid or Needs Work:
+
 1. Start with the original plan
 2. Apply all [LOW-STAKES] fixes
-3. For [NEEDS-DECISION] items, add inline comments: `<!-- DECISION NEEDED: [summary] -->`
+3. For [NEEDS-DECISION] items, add inline comments:
+   `<!-- DECISION NEEDED: [summary] -->`
 4. This becomes v{NEXT_VERSION}
 
 ## Phase 4: Write Outputs
@@ -210,17 +225,20 @@ If verdict is Solid or Needs Work:
 **Path:** `{OUTPUT_PATH}`
 
 Add header:
+
 ```markdown
 <!-- v{NEXT_VERSION} - [date] - Generated via design-critique from [original-path] -->
 ```
 
-Write the updated plan with [LOW-STAKES] fixes applied and [NEEDS-DECISION] items marked.
+Write the updated plan with [LOW-STAKES] fixes applied and [NEEDS-DECISION]
+items marked.
 
 ### 2. The Critique Report
 
 **Path:** `reviews/{BASE_NAME}-v{NEXT_VERSION}-critique.md`
 
 Create the directory if needed. Include:
+
 - Overall verdict
 - Context explored
 - Full structured critique (preserve all the subagent's reasoning)
@@ -235,18 +253,24 @@ Tell the user:
 2. **Version:** v{CURRENT_VERSION} → v{NEXT_VERSION}
 3. **Files written:** [paths]
 4. **Applied directly:** [count] low-stakes improvements
-5. **Needs your input:** [numbered list of NEEDS-DECISION items with brief context]
+5. **Needs your input:** [numbered list of NEEDS-DECISION items with brief
+   context]
 6. **Strongest parts:** [what NOT to change]
 
 If there are [NEEDS-DECISION] items:
-> "I've marked these in the plan with `<!-- DECISION NEEDED -->` comments. Want to discuss any of them, or should I make a call and proceed?"
+
+> "I've marked these in the plan with `<!-- DECISION NEEDED -->` comments. Want
+> to discuss any of them, or should I make a call and proceed?"
 
 If verdict was Rethink:
-> "This plan has fundamental issues. Here's what the critique found: [summary]. Want to discuss alternatives before I write anything?"
+
+> "This plan has fundamental issues. Here's what the critique found: [summary].
+> Want to discuss alternatives before I write anything?"
 
 ## Error Handling
 
 - Plan path doesn't exist → abort with usage message
 - Plan empty/unreadable → abort
-- Subagent fails → dump whatever partial response was received, ask user how to proceed
+- Subagent fails → dump whatever partial response was received, ask user how to
+  proceed
 - Write fails → output content directly for user to save
