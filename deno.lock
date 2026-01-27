@@ -148,7 +148,7 @@
     "npm:typescript@^5.9.3": "5.9.3",
     "npm:vite@^7.3.1": "7.3.1_picomatch@4.0.3",
     "npm:vitest@^4.0.18": "4.0.18_@opentelemetry+api@1.9.0_vite@7.3.1__picomatch@4.0.3",
-    "npm:xstate@^5.25.1": "5.25.1",
+    "npm:xstate@^5.26.0": "5.26.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod-form-data@^3.0.1": "3.0.1_zod@4.3.6",
     "npm:zod-from-json-schema@~0.5.2": "0.5.2",
@@ -5594,8 +5594,8 @@
     "ws@8.19.0": {
       "integrity": "sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg=="
     },
-    "xstate@5.25.1": {
-      "integrity": "sha512-oyvsNH5pF2qkHmiHEMdWqc3OjDtoZOH2MTAI35r01f/ZQWOD+VLOiYqo65UgQET0XMA5s9eRm8fnsIo+82biEw=="
+    "xstate@5.26.0": {
+      "integrity": "sha512-Fvi9VBoqHgsGYLU2NTag8xDTWtKqUC0+ue7EAhBNBb06wf620QEy05upBaEI1VLMzIn63zugLV8nHb69ZUWYAA=="
     },
     "xtend@4.0.2": {
       "integrity": "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="
@@ -5911,7 +5911,7 @@
             "npm:papaparse@^5.5.3",
             "npm:proper-lockfile@^4.1.2",
             "npm:vitest@^4.0.18",
-            "npm:xstate@^5.25.1",
+            "npm:xstate@^5.26.0",
             "npm:zod@^4.3.5"
           ]
         }
