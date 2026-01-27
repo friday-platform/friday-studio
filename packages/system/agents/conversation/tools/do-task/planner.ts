@@ -60,7 +60,7 @@ async function generateFriendlyDescriptions(
 
     const result = await smallLLM({
       system:
-        "Generate brief, friendly progress messages (≤10 words each) for what an AI assistant is doing. One per line, matching input order. Be specific but concise. No numbering, no punctuation at end.",
+        "Generate brief, friendly progress messages (≤10 words each) for what an AI assistant is doing. One per line, matching input order. Be specific but concise. No numbering, no punctuation at end. NEVER include UUIDs, artifact IDs, or technical identifiers - use filenames or descriptive terms instead.",
       prompt: `User intent: ${intent}\n\nSteps:\n${stepList}`,
       maxOutputTokens: 50 * steps.length,
       abortSignal,

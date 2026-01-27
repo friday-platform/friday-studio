@@ -1,6 +1,7 @@
 {
   "name": "@atlas/core",
   "version": "1.0.0",
+  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13" },
   "exports": {
     ".": "./mod.ts",
     "./kv": "./src/kv.ts",
@@ -9,6 +10,7 @@
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/file-upload": "./src/artifacts/file-upload.ts",
     "./artifacts/server": "./src/artifacts/server.ts",
+    "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",

@@ -243,3 +243,30 @@ export const WebSearchDataSchema = z.object({
     .describe("Sources found in the reasearch"),
 });
 export type WebSearchData = z.infer<typeof WebSearchDataSchema>;
+
+/** Database schema column - describes a single column in the database table */
+export const DatabaseSchemaColumnSchema = z.object({
+  name: z.string().describe("Column name"),
+  type: z.enum(["TEXT", "INTEGER", "REAL"]).describe("SQLite column type"),
+  inferred: z
+    .enum(["text", "numeric", "date", "boolean"])
+    .optional()
+    .describe("Semantic type inferred from column values"),
+});
+export type DatabaseSchemaColumn = z.infer<typeof DatabaseSchemaColumnSchema>;
+
+/** Database schema - describes table structure and row count */
+export const DatabaseSchemaSchema = z.object({
+  tableName: z.string().describe("Name of the table in the SQLite database"),
+  rowCount: z.number().describe("Total number of rows in the table"),
+  columns: z.array(DatabaseSchemaColumnSchema).describe("Column definitions"),
+});
+export type DatabaseSchema = z.infer<typeof DatabaseSchemaSchema>;
+
+/** Database artifact data - SQLite database converted from CSV */
+export const DatabaseDataSchema = z.object({
+  path: z.string().describe("Path to SQLite file (local) or cortex://{id} (remote)"),
+  sourceFileName: z.string().describe("Original filename for display/download"),
+  schema: DatabaseSchemaSchema.describe("Schema metadata for fast access"),
+});
+export type DatabaseData = z.infer<typeof DatabaseDataSchema>;

@@ -4,8 +4,8 @@
  * Used by both server (validation) and client (UX feedback).
  */
 
-/** Maximum file size for uploads (25MB) */
-export const MAX_FILE_SIZE = 25 * 1024 * 1024;
+/** Maximum file size for uploads (500MB) */
+export const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 /**
  * Extension to MIME type mapping for allowed file types.

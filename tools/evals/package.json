@@ -20,5 +20,5 @@
     "papaparse": "^5.5.3",
     "zod": "^4.3.5"
   },
-  "devDependencies": { "@std/assert": "npm:@jsr/std__assert@^1.0.14" }
+  "devDependencies": { "@std/assert": "npm:@jsr/std__assert@^1.0.14", "vitest": "^4.0.18" }
 }

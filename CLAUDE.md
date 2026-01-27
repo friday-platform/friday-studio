@@ -1,7 +1,7 @@
 # Friday
 
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
-signals (HTTP, SSE, cron).
+signals (HTTP, cron).
 
 ## Your Role
 
@@ -21,7 +21,7 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 ```bash
 # Deno/TypeScript
 deno check              # Type check
-deno lint               # Lint
+deno task lint          # Lint
 deno task test $file    # Run tests
 deno task start         # Run daemon
 
@@ -69,7 +69,7 @@ go build                # Build
 
 ## Test Quality
 
-Use the `testing-anti-patterns` skill for guidance.
+Use the `testing-anti-patterns` and `vitest` skills for guidance.
 
 ## Communication
 
