@@ -3,7 +3,7 @@ import { createLogger } from "@atlas/logger";
 import { CortexStorageAdapter } from "./cortex-adapter.ts";
 import { LocalStorageAdapter } from "./local-adapter.ts";
 import type { ArtifactDataInput, CreateArtifactInput } from "./model.ts";
-import type { ArtifactStorageAdapter, ReadDatabasePreviewOptions } from "./types.ts";
+import type { ArtifactStorageAdapter } from "./types.ts";
 
 const logger = createLogger({ name: "artifact-storage" });
 
@@ -74,7 +74,4 @@ export const ArtifactStorage: ArtifactStorageAdapter = {
   listByChat: (input: { chatId: string; limit?: number }) => adapter.listByChat(input),
   deleteArtifact: (input: { id: string }) => adapter.deleteArtifact(input),
   readFileContents: (input: { id: string; revision?: number }) => adapter.readFileContents(input),
-  readDatabasePreview: (input: ReadDatabasePreviewOptions) => adapter.readDatabasePreview(input),
-  downloadDatabaseFile: (input: { id: string; revision?: number; outputDir?: string }) =>
-    adapter.downloadDatabaseFile(input),
 };

@@ -16,7 +16,6 @@
   import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
   import WorkspacePlan from "$lib/modules/artifacts/workspace-plan.svelte";
   import Outline from "$lib/modules/conversation/outline.svelte";
-  import ArtifactAttached from "$lib/modules/messages/artifact-attached.svelte";
   import ConnectService from "$lib/modules/messages/connect-service.svelte";
   import CredentialLinked from "$lib/modules/messages/credential-linked.svelte";
   import ErrorMessage from "$lib/modules/messages/error-message.svelte";
@@ -407,8 +406,6 @@
                       <WorkspaceCreated output={message.output} />
                     {:else if message.type === "credential_linked"}
                       <CredentialLinked {message} />
-                    {:else if message.type === "artifact_attached"}
-                      <ArtifactAttached {message} />
                     {:else if message.type === "intent"}
                       <Intent {message} />
                     {:else if message.type === "error"}
@@ -489,31 +486,21 @@
               if (hasUploadingFiles) return;
 
               if (chat && message.trim()) {
+                // Build message with ready attachments only
+                let combinedMessage = message;
                 const readyFiles = Array.from(appCtx.stagedFiles.state.values()).filter(
                   (f) => f.status === "ready" && f.artifactId,
                 );
 
-                trackEvent(GA4.MESSAGE_SEND, { is_new: isNew });
-
                 if (readyFiles.length > 0) {
-                  // Send message with text AND artifact-attached data part
-                  // The parts array includes both the user's text and the artifact metadata
-                  chat.sendMessage({
-                    parts: [
-                      { type: "text", text: message },
-                      {
-                        type: "data-artifact-attached",
-                        data: {
-                          artifactIds: readyFiles.map((f) => f.artifactId),
-                          filenames: readyFiles.map((f) => f.name),
-                        },
-                      },
-                    ],
-                  });
-                } else {
-                  // No attachments, send simple text message
-                  chat.sendMessage({ text: message });
+                  combinedMessage += "\n\nAttachments:";
+                  for (const file of readyFiles) {
+                    combinedMessage += `\n- artifact:${file.artifactId}`;
+                  }
                 }
+
+                trackEvent(GA4.MESSAGE_SEND, { is_new: isNew });
+                chat.sendMessage({ text: combinedMessage });
                 message = "";
                 appCtx.stagedFiles.clear();
 
@@ -525,23 +512,19 @@
             {#if appCtx.stagedFiles.state.size > 0}
               <div class="staged-files">
                 {#each appCtx.stagedFiles.state.entries() as [itemId, file] (itemId)}
-                  {@const progress =
-                    file.size > 0 ? Math.round((file.loaded / file.size) * 100) : 0}
                   <button
                     class="staged-file"
                     class:uploading={file.status === "uploading"}
                     class:ready={file.status === "ready"}
                     class:error={file.status === "error"}
-                    style:--progress="{progress}%"
                     title={file.error || file.name}
                     onclick={() => {
-                      if (file.status === "uploading") {
-                        appCtx.stagedFiles.cancel(itemId);
-                      } else {
+                      if (file.status !== "uploading") {
                         trackEvent(GA4.FILE_REMOVE);
                         appCtx.stagedFiles.remove(itemId);
                       }
                     }}
+                    disabled={file.status === "uploading"}
                   >
                     {#if file.status === "uploading"}
                       <span class="status-icon spinning"><IconSmall.Progress /></span>
@@ -555,17 +538,15 @@
 
                     {#if file.status === "error"}
                       <span class="error-text">{file.error}</span>
-                    {:else if file.status === "uploading"}
-                      <span class="file-size">
-                        {progress >= 100 ? "Converting..." : `${progress}%`}
-                      </span>
                     {:else}
                       <span class="file-size">{formatFileSize(file.size)}</span>
                     {/if}
 
-                    <span class="close-button">
-                      <IconSmall.Close />
-                    </span>
+                    {#if file.status !== "uploading"}
+                      <span class="close-button">
+                        <IconSmall.Close />
+                      </span>
+                    {/if}
                   </button>
                 {/each}
               </div>
@@ -978,23 +959,12 @@
       max-inline-size: var(--size-56);
       padding-inline: var(--size-1);
       overflow: hidden;
-      position: relative;
       text-align: left;
       transition: all 150ms ease;
 
-      &::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: color-mix(in srgb, var(--color-blue, #3b82f6) 15%, transparent);
-        inline-size: var(--progress, 0%);
-        transition: inline-size 150ms ease;
-        border-radius: inherit;
-        z-index: -1;
-      }
-
       &.uploading {
-        cursor: pointer;
+        opacity: 0.7;
+        cursor: wait;
       }
 
       &.ready {

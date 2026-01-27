@@ -1,25 +1,16 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { decodeBase64, encodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
-import { basename, extname, join } from "@std/path";
+import { basename, extname } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 import { ArtifactDataSchema } from "./model.ts";
-import type { DatabaseSchema } from "./primitives.ts";
-import type {
-  ArtifactStorageAdapter,
-  DatabasePreview,
-  ReadDatabasePreviewOptions,
-} from "./types.ts";
+import type { ArtifactStorageAdapter } from "./types.ts";
 
 const logger = createLogger({ name: "cortex-artifact-storage" });
 const DEFAULT_TIMEOUT_MS = 10_000; // 10 seconds
-const MAX_PREVIEW_DB_SIZE = 50 * 1024 * 1024; // 50MB - skip preview for larger files
 
 /**
  * Detect MIME type from file path
@@ -155,15 +146,14 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   }
 
   /**
-   * Upload binary file to Cortex and return the cortex ID.
+   * Upload file artifact to Cortex.
    * Handles both text and binary files with base64 encoding.
-   * Used by both file and database artifact uploads.
    *
-   * @returns Object containing cortexId for the uploaded content
+   * @returns Object containing cortexId and artifactData for the uploaded file
    */
-  private async uploadBinaryFile(
+  private async uploadFileArtifact(
     localPath: string,
-  ): Promise<Result<{ cortexId: string; mimeType: string }, string>> {
+  ): Promise<Result<{ cortexId: string; artifactData: ArtifactData }, string>> {
     try {
       // 1. Validate file exists
       let fileInfo: Deno.FileInfo;
@@ -217,97 +207,37 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       const fileContentCortexId = fileUploadResponse.id;
 
-      return success({ cortexId: fileContentCortexId, mimeType });
+      // 6. Create artifact data with cortex:// reference
+      const artifactData: ArtifactData = {
+        type: "file",
+        version: 1,
+        data: {
+          path: `cortex://${fileContentCortexId}`,
+          mimeType,
+          // Store original filename for downloads
+          originalName: basename(localPath),
+        },
+      };
+
+      // 7. Upload artifact data as second blob (so get() can retrieve it like non-file artifacts)
+      const artifactDataJson = JSON.stringify(artifactData);
+      const artifactDataUploadResponse = await this.request<CreateObjectResponse>(
+        "POST",
+        "/objects",
+        artifactDataJson,
+        { parseJson: true },
+      );
+
+      if (!artifactDataUploadResponse || !artifactDataUploadResponse.id) {
+        return fail("Failed to upload artifact data to Cortex: no ID returned");
+      }
+
+      const cortexId = artifactDataUploadResponse.id;
+
+      return success({ cortexId, artifactData });
     } catch (error) {
-      return fail(`Binary file upload failed: ${stringifyError(error)}`);
+      return fail(`File upload failed: ${stringifyError(error)}`);
     }
-  }
-
-  /**
-   * Upload file artifact to Cortex.
-   * Uploads the binary file and creates the artifact data blob.
-   *
-   * @returns Object containing cortexId and artifactData for the uploaded file
-   */
-  private async uploadFileArtifact(
-    localPath: string,
-  ): Promise<Result<{ cortexId: string; artifactData: ArtifactData }, string>> {
-    // 1. Upload the binary file
-    const uploadResult = await this.uploadBinaryFile(localPath);
-    if (!uploadResult.ok) {
-      return fail(uploadResult.error);
-    }
-
-    const { cortexId: fileContentCortexId, mimeType } = uploadResult.data;
-
-    // 2. Create artifact data with cortex:// reference
-    const artifactData: ArtifactData = {
-      type: "file",
-      version: 1,
-      data: {
-        path: `cortex://${fileContentCortexId}`,
-        mimeType,
-        // Store original filename for downloads
-        originalName: basename(localPath),
-      },
-    };
-
-    // 3. Upload artifact data as second blob (so get() can retrieve it like non-file artifacts)
-    const artifactDataJson = JSON.stringify(artifactData);
-    const artifactDataUploadResponse = await this.request<CreateObjectResponse>(
-      "POST",
-      "/objects",
-      artifactDataJson,
-      { parseJson: true },
-    );
-
-    if (!artifactDataUploadResponse || !artifactDataUploadResponse.id) {
-      return fail("Failed to upload artifact data to Cortex: no ID returned");
-    }
-
-    return success({ cortexId: artifactDataUploadResponse.id, artifactData });
-  }
-
-  /**
-   * Upload database artifact to Cortex.
-   * Uploads the .db file binary and creates the artifact data blob with schema metadata.
-   *
-   * @returns Object containing cortexId and artifactData for the uploaded database
-   */
-  private async uploadDatabaseArtifact(
-    localPath: string,
-    sourceFileName: string,
-    schema: DatabaseSchema,
-  ): Promise<Result<{ cortexId: string; artifactData: ArtifactData }, string>> {
-    // 1. Upload the binary .db file
-    const uploadResult = await this.uploadBinaryFile(localPath);
-    if (!uploadResult.ok) {
-      return fail(uploadResult.error);
-    }
-
-    const { cortexId: fileContentCortexId } = uploadResult.data;
-
-    // 2. Create artifact data with cortex:// reference and schema metadata
-    const artifactData: ArtifactData = {
-      type: "database",
-      version: 1,
-      data: { path: `cortex://${fileContentCortexId}`, sourceFileName, schema },
-    };
-
-    // 3. Upload artifact data as second blob (so get() can retrieve it like non-file artifacts)
-    const artifactDataJson = JSON.stringify(artifactData);
-    const artifactDataUploadResponse = await this.request<CreateObjectResponse>(
-      "POST",
-      "/objects",
-      artifactDataJson,
-      { parseJson: true },
-    );
-
-    if (!artifactDataUploadResponse || !artifactDataUploadResponse.id) {
-      return fail("Failed to upload artifact data to Cortex: no ID returned");
-    }
-
-    return success({ cortexId: artifactDataUploadResponse.id, artifactData });
   }
 
   /** Create artifact with initial revision 1 */
@@ -330,19 +260,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
         cortexId = uploadResult.data.cortexId;
         artifactData = uploadResult.data.artifactData;
-      } else if (input.data.type === "database") {
-        // Database artifacts: upload .db file binary, store cortex:// reference with schema metadata
-        const { path: localPath, sourceFileName, schema } = input.data.data;
-
-        const uploadResult = await this.uploadDatabaseArtifact(localPath, sourceFileName, schema);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-
-        cortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
       } else {
-        // Non-binary artifacts: serialize as JSON
+        // Non-file artifacts: serialize as JSON
         artifactData = input.data;
         blobContent = JSON.stringify(artifactData);
 
@@ -437,19 +356,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
         newCortexId = uploadResult.data.cortexId;
         artifactData = uploadResult.data.artifactData;
-      } else if (input.data.type === "database") {
-        // Database artifacts: upload .db file binary, store cortex:// reference with schema metadata
-        const { path: localPath, sourceFileName, schema } = input.data.data;
-
-        const uploadResult = await this.uploadDatabaseArtifact(localPath, sourceFileName, schema);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-
-        newCortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
       } else {
-        // Non-binary artifacts: serialize as JSON
+        // Non-file artifacts: serialize as JSON
         artifactData = input.data;
         blobContent = JSON.stringify(artifactData);
 
@@ -953,213 +861,6 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         error: stringifyError(error),
       });
       return fail(`Failed to read file: ${stringifyError(error)}`);
-    }
-  }
-
-  /**
-   * Read database preview for database-type artifacts.
-   *
-   * For databases stored in Cortex:
-   * 1. Check file size before downloading
-   * 2. Files > 50MB: return schema info only (tooLargeForPreview: true)
-   * 3. Files <= 50MB: download to temp file, query, cleanup
-   */
-  async readDatabasePreview(
-    options: ReadDatabasePreviewOptions,
-  ): Promise<Result<DatabasePreview, string>> {
-    const DEFAULT_MAX_ROWS = 1000;
-    const { id, revision, maxRows = DEFAULT_MAX_ROWS } = options;
-
-    try {
-      // 1. Get artifact and verify it's a database type
-      const artifactResult = await this.get({ id, revision });
-      if (!artifactResult.ok) {
-        return fail(artifactResult.error);
-      }
-
-      const artifact = artifactResult.data;
-      if (!artifact) {
-        return fail(`Artifact ${id} not found`);
-      }
-
-      if (artifact.data.type !== "database") {
-        return fail(`Artifact ${id} is not a database type`);
-      }
-
-      const { path, schema } = artifact.data.data;
-
-      // Validate cortex:// path format
-      if (!path.startsWith("cortex://")) {
-        return fail(`Invalid Cortex path: ${path}`);
-      }
-
-      const cortexId = path.replace("cortex://", "");
-
-      // 2. Get object metadata to check content_size
-      const queryUrl = `/objects?${new URLSearchParams({ id: cortexId })}`;
-      const objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
-        parseJson: true,
-      });
-
-      if (!objects || objects.length === 0) {
-        return fail(`Database file not found in Cortex: ${cortexId}`);
-      }
-
-      // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
-      const cortexObject = objects[0]!;
-      const contentSize = cortexObject.content_size;
-
-      // 3. Check size threshold - skip download for large files
-      if (contentSize !== null && contentSize > MAX_PREVIEW_DB_SIZE) {
-        logger.debug("Database too large for preview", {
-          artifactId: id,
-          cortexId,
-          contentSize,
-          threshold: MAX_PREVIEW_DB_SIZE,
-        });
-
-        return success({
-          headers: schema.columns.map((c) => c.name),
-          rows: [],
-          totalRows: schema.rowCount,
-          truncated: true,
-          tooLargeForPreview: true,
-        });
-      }
-
-      // 4. Download database file content (base64 encoded)
-      const contents = await this.request<string>("GET", `/objects/${cortexId}`);
-      if (!contents) {
-        return fail(`Failed to download database file from Cortex`);
-      }
-
-      // 5. Decode base64 and write to temp file
-      let dbBytes: Uint8Array;
-      if (contents.startsWith("base64:")) {
-        const base64Data = contents.slice(7); // Remove "base64:" prefix
-        dbBytes = decodeBase64(base64Data);
-      } else {
-        // Fallback: content might not be base64 encoded
-        dbBytes = new TextEncoder().encode(contents);
-      }
-
-      // Create temp directory and file
-      const tempDir = join(tmpdir(), `atlas-preview-${crypto.randomUUID()}`);
-      const tempPath = join(tempDir, `preview-${id}.db`);
-
-      let db: InstanceType<typeof Database> | null = null;
-      try {
-        await mkdir(tempDir, { recursive: true });
-        await writeFile(tempPath, dbBytes);
-
-        // 6. Query the database
-        db = new Database(tempPath, { readonly: true });
-        const tableName = schema.tableName.replace(/"/g, '""');
-        const rows = db.prepare(`SELECT * FROM "${tableName}" LIMIT ?`).all(maxRows) as Record<
-          string,
-          unknown
-        >[];
-
-        return success({
-          headers: schema.columns.map((c) => c.name),
-          rows,
-          totalRows: schema.rowCount,
-          truncated: schema.rowCount > maxRows,
-        });
-      } finally {
-        // 7. Cleanup: close database and remove temp files
-        db?.close();
-        try {
-          await rm(tempDir, { recursive: true, force: true });
-        } catch (cleanupError) {
-          logger.warn("Failed to cleanup temp preview directory", {
-            tempDir,
-            error: stringifyError(cleanupError),
-          });
-        }
-      }
-    } catch (error) {
-      logger.error("Failed to read database preview", {
-        artifactId: id,
-        error: stringifyError(error),
-      });
-      return fail(`Failed to read database preview: ${stringifyError(error)}`);
-    }
-  }
-
-  /**
-   * Download database file from Cortex to a local path.
-   *
-   * For Cortex storage, downloads the base64-encoded database binary,
-   * decodes it, and writes to a temporary file in the specified output directory.
-   */
-  async downloadDatabaseFile(input: {
-    id: string;
-    revision?: number;
-    outputDir?: string;
-  }): Promise<Result<{ path: string; isTemporary: boolean }, string>> {
-    try {
-      // 1. Get artifact and verify it's a database type
-      const artifactResult = await this.get({ id: input.id, revision: input.revision });
-      if (!artifactResult.ok) {
-        return fail(artifactResult.error);
-      }
-
-      const artifact = artifactResult.data;
-      if (!artifact) {
-        return fail(`Artifact ${input.id} not found`);
-      }
-
-      if (artifact.data.type !== "database") {
-        return fail(`Artifact ${input.id} is not a database type`);
-      }
-
-      const { path: cortexPath } = artifact.data.data;
-
-      // Validate cortex:// path format
-      if (!cortexPath.startsWith("cortex://")) {
-        return fail(`Invalid Cortex path: ${cortexPath}`);
-      }
-
-      const cortexId = cortexPath.replace("cortex://", "");
-
-      // 2. Download database file content (base64 encoded)
-      const contents = await this.request<string>("GET", `/objects/${cortexId}`);
-      if (!contents) {
-        return fail(`Failed to download database file from Cortex`);
-      }
-
-      // 3. Decode base64 and write to temp file
-      let dbBytes: Uint8Array;
-      if (contents.startsWith("base64:")) {
-        const base64Data = contents.slice(7); // Remove "base64:" prefix
-        dbBytes = decodeBase64(base64Data);
-      } else {
-        // Fallback: content might not be base64 encoded
-        dbBytes = new TextEncoder().encode(contents);
-      }
-
-      // Create output path
-      const outputDir = input.outputDir || join(tmpdir(), `atlas-db-${crypto.randomUUID()}`);
-      const outputPath = join(outputDir, `${input.id}.db`);
-
-      await mkdir(outputDir, { recursive: true });
-      await writeFile(outputPath, dbBytes);
-
-      logger.debug("Downloaded database file from Cortex", {
-        artifactId: input.id,
-        cortexId,
-        outputPath,
-        size: dbBytes.length,
-      });
-
-      return success({ path: outputPath, isTemporary: true });
-    } catch (error) {
-      logger.error("Failed to download database file", {
-        artifactId: input.id,
-        error: stringifyError(error),
-      });
-      return fail(`Failed to download database file: ${stringifyError(error)}`);
     }
   }
 }

@@ -41,15 +41,6 @@ export interface CredentialLinkedEntry {
   displayName: string;
 }
 
-/** Artifact attachment (files uploaded by user) */
-export interface ArtifactAttachedEntry {
-  type: "artifact_attached";
-  id: string;
-  timestamp: string;
-  artifactIds: string[];
-  filenames: string[];
-}
-
 /** Tool: display_artifact */
 export interface DisplayArtifactEntry {
   type: "display_artifact";
@@ -113,7 +104,6 @@ export type OutputEntry =
   | ReasoningEntry
   | ErrorEntry
   | CredentialLinkedEntry
-  | ArtifactAttachedEntry
   | DisplayArtifactEntry
   | WorkspacePlannerEntry
   | WorkspaceCreator

@@ -1,6 +1,5 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import { MAX_FILE_SIZE } from "@atlas/core/artifacts/file-upload";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -9,6 +8,9 @@ import { artifactsApp } from "./artifacts.ts";
 // Configure storage to use a temp directory before any imports that might use ArtifactStorage
 const tempDir = makeTempDir();
 process.env.ARTIFACT_STORAGE_PATH = `${tempDir}/artifacts.db`;
+
+/** Maximum file size for uploads (25MB) - must match artifacts.ts */
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 /** Schema for successful artifact response */
 const ArtifactResponseSchema = z.object({
@@ -86,7 +88,7 @@ describe("Upload endpoint", () => {
   });
 
   // Size validation tests
-  it("rejects files over size limit", { timeout: 30_000 }, async () => {
+  it("rejects files over 25MB", async () => {
     const largeContent = createLargeBuffer(MAX_FILE_SIZE + 1);
     const largeFile = createTestFile(largeContent, "large.txt", "text/plain");
     const formData = new FormData();
@@ -96,11 +98,10 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(413);
     const body = await response.json();
-    const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
-    assertErrorResponse(body, `File too large (max ${maxSizeMB}MB)`);
+    assertErrorResponse(body, "File too large (max 25MB)");
   });
 
-  it("accepts files at size limit", { timeout: 30_000 }, async () => {
+  it("accepts files exactly 25MB", async () => {
     const exactContent = createLargeBuffer(MAX_FILE_SIZE);
     const exactFile = createTestFile(exactContent, "exact.txt", "text/plain");
     const formData = new FormData();
@@ -114,15 +115,16 @@ describe("Upload endpoint", () => {
   });
 
   // MIME type validation tests
-  it("accepts allowed MIME types (non-CSV)", async () => {
+  it("accepts allowed MIME types", async () => {
     const testCases = [
-      { name: "test.json", type: "application/json", content: "{}" },
-      { name: "test.txt", type: "text/plain", content: "hello" },
-      { name: "test.md", type: "text/markdown", content: "# Title" },
+      { name: "test.csv", type: "text/csv" },
+      { name: "test.json", type: "application/json" },
+      { name: "test.txt", type: "text/plain" },
+      { name: "test.md", type: "text/markdown" },
     ];
 
-    for (const { name, type, content } of testCases) {
-      const file = createTestFile(content, name, type);
+    for (const { name, type } of testCases) {
+      const file = createTestFile("content", name, type);
       const formData = new FormData();
       formData.set("file", file);
 
@@ -131,7 +133,6 @@ describe("Upload endpoint", () => {
       expect(response.status).toEqual(201);
       const body = ArtifactResponseSchema.parse(await response.json());
       expect(body.artifact).toBeDefined();
-      expect(body.artifact.data.type).toEqual("file");
     }
   });
 
@@ -189,9 +190,9 @@ describe("Upload endpoint", () => {
   });
 
   // Success path tests
-  it("creates file artifact for non-CSV uploads", async () => {
-    const jsonContent = '{"key": "value"}';
-    const file = createTestFile(jsonContent, "data.json", "application/json");
+  it("creates artifact and returns it on success", async () => {
+    const csvContent = "column1,column2\nvalue1,value2";
+    const file = createTestFile(csvContent, "data.csv", "text/csv");
     const formData = new FormData();
     formData.set("file", file);
     formData.set("chatId", "test-chat-123");
@@ -204,49 +205,8 @@ describe("Upload endpoint", () => {
     expect(body.artifact).toBeDefined();
     expect(body.artifact.id).toBeDefined();
     expect(body.artifact.data.type).toEqual("file");
-    expect(body.artifact.title).toEqual("data.json");
-    expect(body.artifact.chatId).toEqual("test-chat-123");
-  });
-
-  it("converts CSV uploads to database artifacts", async () => {
-    const csvContent = "column1,column2\nvalue1,value2";
-    const file = createTestFile(csvContent, "data.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-    formData.set("chatId", "test-chat-csv");
-
-    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
-
-    expect(response.status).toEqual(201);
-    const body = ArtifactResponseSchema.parse(await response.json());
-
-    expect(body.artifact).toBeDefined();
-    expect(body.artifact.id).toBeDefined();
-    expect(body.artifact.data.type).toEqual("database");
     expect(body.artifact.title).toEqual("data.csv");
-    expect(body.artifact.chatId).toEqual("test-chat-csv");
-
-    // Database artifact should have schema metadata
-    const data = body.artifact.data as {
-      type: string;
-      data: { schema: { rowCount: number; columns: { name: string }[] } };
-    };
-    expect(data.data.schema.rowCount).toEqual(1);
-    expect(data.data.schema.columns.length).toEqual(2);
-  });
-
-  it("detects CSV by extension when mimeType is text/plain", async () => {
-    const csvContent = "name,age\nAlice,30";
-    const file = createTestFile(csvContent, "people.csv", "text/plain");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
-
-    expect(response.status).toEqual(201);
-    const body = ArtifactResponseSchema.parse(await response.json());
-
-    expect(body.artifact.data.type).toEqual("database");
+    expect(body.artifact.chatId).toEqual("test-chat-123");
   });
 
   it("assigns to orphan folder when chatId not provided", async () => {
@@ -267,9 +227,9 @@ describe("Upload endpoint", () => {
 
 describe("Batch-get endpoint", () => {
   it("includes contents when includeContents=true for file artifacts", async () => {
-    // Create a file artifact via upload (using JSON, not CSV - CSV becomes database artifact)
-    const jsonContent = '{"name": "Alice", "age": 30}';
-    const file = createTestFile(jsonContent, "people.json", "application/json");
+    // Create a file artifact via upload
+    const csvContent = "name,age\nAlice,30\nBob,25";
+    const file = createTestFile(csvContent, "people.csv", "text/csv");
     const formData = new FormData();
     formData.set("file", file);
 
@@ -294,13 +254,13 @@ describe("Batch-get endpoint", () => {
     // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     expect(batchBody.artifacts[0]!.id).toEqual(artifact.id);
     // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
-    expect(batchBody.artifacts[0]!.contents).toEqual(jsonContent);
+    expect(batchBody.artifacts[0]!.contents).toEqual(csvContent);
   });
 
   it("omits contents when includeContents=false", async () => {
-    // Create a file artifact via upload (using JSON, not CSV)
-    const jsonContent = '{"col1": "val1", "col2": "val2"}';
-    const file = createTestFile(jsonContent, "data.json", "application/json");
+    // Create a file artifact via upload
+    const csvContent = "col1,col2\nval1,val2";
+    const file = createTestFile(csvContent, "data.csv", "text/csv");
     const formData = new FormData();
     formData.set("file", file);
 
@@ -379,242 +339,6 @@ describe("Batch-get endpoint", () => {
 
     // Summary artifact should NOT have contents (not a file type)
     expect(returnedSummary?.contents).toBeUndefined();
-  });
-});
-
-describe("Get artifact endpoint", () => {
-  it("returns preview for database artifacts", async () => {
-    // Create a database artifact via CSV upload
-    const csvContent = "name,age,city\nAlice,30,NYC\nBob,25,LA";
-    const file = createTestFile(csvContent, "people.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-    expect(artifact.data.type).toEqual("database");
-
-    // Get the artifact
-    const getResponse = await artifactsApp.request(`/${artifact.id}`, { method: "GET" });
-
-    expect(getResponse.status).toEqual(200);
-    const body = (await getResponse.json()) as {
-      artifact: unknown;
-      contents?: string;
-      preview?: {
-        headers: string[];
-        rows: Record<string, unknown>[];
-        totalRows: number;
-        truncated: boolean;
-      };
-    };
-
-    expect(body.artifact).toBeDefined();
-    expect(body.contents).toBeUndefined(); // No contents for database artifacts
-    expect(body.preview).toBeDefined();
-    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees preview exists
-    expect(body.preview!.headers).toEqual(["name", "age", "city"]);
-    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees preview exists
-    expect(body.preview!.rows).toHaveLength(2);
-    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees preview exists
-    expect(body.preview!.totalRows).toEqual(2);
-    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees preview exists
-    expect(body.preview!.truncated).toEqual(false);
-  });
-
-  it("returns contents for file artifacts (unchanged behavior)", async () => {
-    // Create a file artifact (JSON, not CSV)
-    const jsonContent = '{"key": "value"}';
-    const file = createTestFile(jsonContent, "data.json", "application/json");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-    expect(artifact.data.type).toEqual("file");
-
-    // Get the artifact
-    const getResponse = await artifactsApp.request(`/${artifact.id}`, { method: "GET" });
-
-    expect(getResponse.status).toEqual(200);
-    const body = (await getResponse.json()) as {
-      artifact: unknown;
-      contents?: string;
-      preview?: unknown;
-    };
-
-    expect(body.artifact).toBeDefined();
-    expect(body.contents).toEqual(jsonContent); // Contents for file artifacts
-    expect(body.preview).toBeUndefined(); // No preview for file artifacts
-  });
-
-  it("returns 404 for non-existent artifact", async () => {
-    const getResponse = await artifactsApp.request("/00000000-0000-0000-0000-000000000000", {
-      method: "GET",
-    });
-
-    expect(getResponse.status).toEqual(404);
-    const body = await getResponse.json();
-    assertErrorResponse(body, "Artifact not found");
-  });
-});
-
-describe("Export endpoint", () => {
-  it("exports database artifact as CSV", async () => {
-    // Create a database artifact via CSV upload
-    const csvContent = "name,age,city\nAlice,30,NYC\nBob,25,LA";
-    const file = createTestFile(csvContent, "people.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-    expect(artifact.data.type).toEqual("database");
-
-    // Export as CSV
-    const exportResponse = await artifactsApp.request(`/${artifact.id}/export?format=csv`, {
-      method: "GET",
-    });
-
-    expect(exportResponse.status).toEqual(200);
-    expect(exportResponse.headers.get("Content-Type")).toEqual("text/csv");
-    expect(exportResponse.headers.get("Content-Disposition")).toEqual(
-      'attachment; filename="people.csv"',
-    );
-
-    const exportedCsv = await exportResponse.text();
-    const lines = exportedCsv.trim().split("\n");
-    expect(lines.length).toEqual(3); // header + 2 data rows
-    expect(lines[0]).toEqual("name,age,city");
-    expect(lines[1]).toEqual("Alice,30,NYC");
-    expect(lines[2]).toEqual("Bob,25,LA");
-  });
-
-  it("handles CSV values with special characters", async () => {
-    // Create CSV with values that need escaping
-    const csvContent = 'note,value\n"contains, comma",normal\n"has ""quotes""",another';
-    const file = createTestFile(csvContent, "special.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-
-    // Export and verify special characters are properly escaped
-    const exportResponse = await artifactsApp.request(`/${artifact.id}/export?format=csv`, {
-      method: "GET",
-    });
-
-    expect(exportResponse.status).toEqual(200);
-    const exportedCsv = await exportResponse.text();
-    const lines = exportedCsv.trim().split("\n");
-    expect(lines.length).toEqual(3);
-    expect(lines[0]).toEqual("note,value");
-    // Values with commas should be quoted, quotes should be doubled
-    expect(lines[1]).toEqual('"contains, comma",normal');
-    expect(lines[2]).toEqual('"has ""quotes""",another');
-  });
-
-  it("returns 404 for non-existent artifact", async () => {
-    const exportResponse = await artifactsApp.request(
-      "/00000000-0000-0000-0000-000000000000/export?format=csv",
-      { method: "GET" },
-    );
-
-    expect(exportResponse.status).toEqual(404);
-    const body = await exportResponse.json();
-    assertErrorResponse(body, "Artifact not found");
-  });
-
-  it("returns 400 for non-database artifact", async () => {
-    // Create a file artifact (JSON, not CSV)
-    const jsonContent = '{"key": "value"}';
-    const file = createTestFile(jsonContent, "data.json", "application/json");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-    expect(artifact.data.type).toEqual("file");
-
-    // Try to export - should fail
-    const exportResponse = await artifactsApp.request(`/${artifact.id}/export?format=csv`, {
-      method: "GET",
-    });
-
-    expect(exportResponse.status).toEqual(400);
-    const body = await exportResponse.json();
-    assertErrorResponse(body, "Export only available for database artifacts");
-  });
-
-  it("works without format query param (defaults to csv)", async () => {
-    // Create a database artifact
-    const csvContent = "col1,col2\nval1,val2";
-    const file = createTestFile(csvContent, "test.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-
-    // Export without format param
-    const exportResponse = await artifactsApp.request(`/${artifact.id}/export`, { method: "GET" });
-
-    expect(exportResponse.status).toEqual(200);
-    expect(exportResponse.headers.get("Content-Type")).toEqual("text/csv");
-  });
-
-  it("handles null and empty values", async () => {
-    // Create CSV with empty values (will be stored as null in SQLite)
-    // Note: the last row with all empty values is skipped by PapaParse (skipEmptyLines: "greedy")
-    const csvContent = "a,b,c\n1,,3\n,2,";
-    const file = createTestFile(csvContent, "sparse.csv", "text/csv");
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const uploadResponse = await artifactsApp.request("/upload", {
-      method: "POST",
-      body: formData,
-    });
-    expect(uploadResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
-
-    const exportResponse = await artifactsApp.request(`/${artifact.id}/export?format=csv`, {
-      method: "GET",
-    });
-
-    expect(exportResponse.status).toEqual(200);
-    const exportedCsv = await exportResponse.text();
-    const lines = exportedCsv.trim().split("\n");
-    expect(lines.length).toEqual(3);
-    expect(lines[0]).toEqual("a,b,c");
-    // Empty values should export as empty strings
-    expect(lines[1]).toEqual("1,,3");
-    expect(lines[2]).toEqual(",2,");
   });
 });
 

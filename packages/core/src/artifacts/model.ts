@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   CalendarScheduleSchema,
-  DatabaseDataSchema,
   FileDataInputSchema,
   FileDataSchema,
   SlackSummaryDataSchema,
@@ -60,12 +59,6 @@ const WebSearchArtifactSchema = z.object({
   data: WebSearchDataSchema,
 });
 
-const DatabaseArtifactSchema = z.object({
-  type: z.literal("database"),
-  version: z.literal(1),
-  data: DatabaseDataSchema,
-});
-
 /** Artifact data schemas for storage (output) */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
@@ -75,7 +68,6 @@ export const ArtifactDataSchema = z.discriminatedUnion("type", [
   FileArtifactSchema,
   TableArtifactSchema,
   WebSearchArtifactSchema,
-  DatabaseArtifactSchema,
 ]);
 
 export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
@@ -93,7 +85,6 @@ const FileArtifactInputSchema = z.object({
 });
 const TableInputSchema = TableArtifactSchema;
 const WebSearchInputSchema = WebSearchArtifactSchema;
-const DatabaseInputSchema = DatabaseArtifactSchema;
 
 export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   WorkspacePlanInputSchema,
@@ -103,7 +94,6 @@ export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   FileArtifactInputSchema,
   TableInputSchema,
   WebSearchInputSchema,
-  DatabaseInputSchema,
 ]);
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
@@ -117,7 +107,6 @@ export const ArtifactTypeSchema = z.enum([
   "file",
   "table",
   "web-search",
-  "database",
 ]);
 
 /** Shared request schemas for REST and MCP */

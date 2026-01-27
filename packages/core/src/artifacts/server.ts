@@ -3,8 +3,6 @@
  * These should not be imported by browser/client code
  */
 
-// Re-export common types from mod.ts for convenience
-export type { Artifact, DatabaseSchema } from "./mod.ts";
 // CSV Parsing (server-only, uses papaparse Node dependency)
 export type { CsvCell, CsvParseResult } from "./parsers/mod.ts";
 export { CsvParseResultSchema, parseCsvContent } from "./parsers/mod.ts";

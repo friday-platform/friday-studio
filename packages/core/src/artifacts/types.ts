@@ -2,35 +2,6 @@ import type { Result } from "@atlas/utils";
 import type { Artifact, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 
 /**
- * Options for reading database artifact preview.
- */
-export interface ReadDatabasePreviewOptions {
-  /** Artifact ID */
-  id: string;
-  /** Specific revision (defaults to latest) */
-  revision?: number;
-  /** Maximum rows to return (default: 1000) */
-  maxRows?: number;
-}
-
-/**
- * Preview data for database artifacts.
- * Used for UI display without loading full dataset.
- */
-export interface DatabasePreview {
-  /** Column names in order */
-  headers: string[];
-  /** Row data as key-value records */
-  rows: Record<string, unknown>[];
-  /** Total number of rows in the database */
-  totalRows: number;
-  /** True if totalRows > returned rows */
-  truncated: boolean;
-  /** True if file too large for preview (Cortex only, always false for local) */
-  tooLargeForPreview?: boolean;
-}
-
-/**
  * Adapter interface for artifact storage backends.
  *
  * Implementations:
@@ -109,38 +80,4 @@ export interface ArtifactStorageAdapter {
    * Returns raw file contents as a string.
    */
   readFileContents(input: { id: string; revision?: number }): Promise<Result<string, string>>;
-
-  /**
-   * Read database preview for database-type artifacts.
-   * Returns first N rows with schema information.
-   *
-   * Opens SQLite file in readonly mode, queries with LIMIT,
-   * and closes connection after read.
-   */
-  readDatabasePreview(input: ReadDatabasePreviewOptions): Promise<Result<DatabasePreview, string>>;
-
-  /**
-   * Download database file to a local path for direct access.
-   *
-   * For LocalStorageAdapter: Returns the existing local path (no download).
-   * For CortexStorageAdapter: Downloads to temp directory.
-   *
-   * Caller is responsible for cleanup when isTemporary is true.
-   */
-  downloadDatabaseFile(input: {
-    id: string;
-    revision?: number;
-    /** Output directory for downloaded file (required for Cortex, ignored for local) */
-    outputDir?: string;
-  }): Promise<
-    Result<
-      {
-        /** Path to the database file */
-        path: string;
-        /** True if file is temporary and should be cleaned up by caller */
-        isTemporary: boolean;
-      },
-      string
-    >
-  >;
 }

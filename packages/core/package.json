@@ -9,7 +9,6 @@
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/file-upload": "./src/artifacts/file-upload.ts",
     "./artifacts/server": "./src/artifacts/server.ts",
-    "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",
@@ -25,7 +24,6 @@
   },
   "main": "./mod.ts",
   "dependencies": {
-    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@deno/kv": "^0.13.0",
     "@ai-sdk/provider": "^2.0.1",
     "@atlas/agent-sdk": "workspace:*",

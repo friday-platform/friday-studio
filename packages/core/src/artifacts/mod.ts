@@ -26,9 +26,6 @@ export {
 export type {
   CalendarSchedule,
   CredentialBinding,
-  DatabaseData,
-  DatabaseSchema,
-  DatabaseSchemaColumn,
   FileData,
   FileDataInput,
   SlackSummaryData,
@@ -40,9 +37,6 @@ export type {
 export {
   CalendarScheduleSchema,
   CredentialBindingSchema,
-  DatabaseDataSchema,
-  DatabaseSchemaColumnSchema,
-  DatabaseSchemaSchema,
   FileDataInputSchema,
   FileDataSchema,
   SlackSummaryDataSchema,
@@ -51,10 +45,3 @@ export {
   WebSearchDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";
-
-// Storage adapter types
-export type {
-  ArtifactStorageAdapter,
-  DatabasePreview,
-  ReadDatabasePreviewOptions,
-} from "./types.ts";

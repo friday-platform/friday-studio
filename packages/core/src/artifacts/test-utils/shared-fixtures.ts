@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CreateArtifactInput } from "../model.ts";
-import type { DatabaseSchema } from "../primitives.ts";
 
 /**
  * Create a summary artifact input for testing.
@@ -229,25 +228,4 @@ export async function cleanupTempFile(path: string): Promise<void> {
   } catch {
     // Ignore errors if file doesn't exist
   }
-}
-
-/**
- * Create a database artifact input for testing.
- * Requires a pre-created SQLite database file.
- */
-export function createDatabaseArtifactInput(
-  dbPath: string,
-  schema: DatabaseSchema,
-  overrides?: Partial<CreateArtifactInput>,
-): CreateArtifactInput {
-  return {
-    data: {
-      type: "database",
-      version: 1,
-      data: { path: dbPath, sourceFileName: "test-data.csv", schema },
-    },
-    title: "Test Database",
-    summary: `${schema.rowCount} rows, ${schema.columns.length} columns`,
-    ...overrides,
-  };
 }

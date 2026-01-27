@@ -31,23 +31,6 @@ export async function openInDownloads(filename: string): Promise<void> {
   }
 }
 
-/**
- * Downloads a file from a URL by creating a temporary anchor element.
- * Triggers browser download without navigating away from current page.
- * @param url The URL to download from (should have Content-Disposition: attachment header)
- * @param filename Optional filename hint (ignored if server provides Content-Disposition)
- */
-export function downloadFromUrl(url: string, filename?: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  if (filename) {
-    a.download = filename;
-  }
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
 export async function copyToClipboard(text: string | Array<string | null>) {
   try {
     const contents = Array.isArray(text) ? text.filter(Boolean).join("\n") : text;

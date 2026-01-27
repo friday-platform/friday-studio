@@ -8,8 +8,6 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
-import { type DataAnalystResult, dataAnalystAgent } from "./data-analyst/agent.ts";
-import type { QueryExecution } from "./data-analyst/sql-tools.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
@@ -28,14 +26,12 @@ export const bundledAgents: AtlasAgent[] = [
   fathomGetTranscriptAgent,
   claudeCodeAgent,
   csvFilterSamplerAgent,
-  dataAnalystAgent,
   tableAgent,
 ];
 
 export {
   claudeCodeAgent,
   csvFilterSamplerAgent,
-  dataAnalystAgent,
   emailAgent,
   fathomGetTranscriptAgent,
   googleCalendarAgent,
@@ -44,5 +40,3 @@ export {
   slackCommunicatorAgent,
   tableAgent,
 };
-
-export type { DataAnalystResult, QueryExecution };

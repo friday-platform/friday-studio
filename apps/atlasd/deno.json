@@ -1,6 +1,1 @@
-{
-  "name": "@atlas/atlasd",
-  "version": "1.0.0",
-  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13" },
-  "exports": "./mod.ts"
-}
+{ "name": "@atlas/atlasd", "version": "1.0.0", "exports": "./mod.ts" }

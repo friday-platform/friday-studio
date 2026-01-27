@@ -24,14 +24,10 @@ export interface StagedFile {
   name: string;
   /** File size in bytes for display */
   size: number;
-  /** Bytes uploaded so far (for progress display) */
-  loaded: number;
   /** Upload lifecycle status */
   status: "uploading" | "ready" | "error";
   /** Error message if status === "error" */
   error?: string;
-  /** AbortController for cancelling in-flight uploads */
-  abortController?: AbortController;
 }
 
 export type KeyboardModifier = "shift" | "option" | "command" | "control";
@@ -65,10 +61,7 @@ function createStagedFiles() {
     },
 
     /** Update an existing staged file by ID. */
-    update: (
-      id: string,
-      updates: Partial<Pick<StagedFile, "artifactId" | "status" | "error" | "loaded">>,
-    ) => {
+    update: (id: string, updates: Partial<Pick<StagedFile, "artifactId" | "status" | "error">>) => {
       const existing = state.get(id);
       if (existing) {
         state.set(id, { ...existing, ...updates });
@@ -77,15 +70,6 @@ function createStagedFiles() {
 
     /** Remove a staged file by ID. */
     remove: (id: string) => {
-      state.delete(id);
-    },
-
-    /** Cancel an in-flight upload and remove it from staged files. */
-    cancel: (id: string) => {
-      const existing = state.get(id);
-      if (existing?.abortController) {
-        existing.abortController.abort();
-      }
       state.delete(id);
     },
 
@@ -153,7 +137,7 @@ export function getAppContext() {
 function validateFile(file: File): { valid: true } | { valid: false; error: string } {
   // Size check first (quick, definitive)
   if (file.size > MAX_FILE_SIZE) {
-    return { valid: false, error: "File too large. Maximum size is 500MB." };
+    return { valid: false, error: "File too large. Maximum size is 25MB." };
   }
 
   // MIME type check (browser-provided, may be empty)
@@ -178,68 +162,39 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Uploads a file to the server artifact endpoint using XHR for progress tracking.
+ * Uploads a file to the server artifact endpoint.
  * Returns a discriminated union - caller uses `'artifactId' in result` to check success.
  *
  * @param file - The File object to upload
  * @param chatId - Optional chat ID to associate the artifact with
- * @param onProgress - Callback invoked with bytes uploaded
- * @param abortSignal - AbortSignal to cancel the upload
  * @returns Success: `{ artifactId: string }` | Failure: `{ error: string }`
  */
 async function uploadFile(
   file: File,
   chatId?: string,
-  onProgress?: (loaded: number) => void,
-  abortSignal?: AbortSignal,
 ): Promise<{ artifactId: string } | { error: string }> {
   const formData = new FormData();
   formData.set("file", file);
   if (chatId) formData.set("chatId", chatId);
 
-  return new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
+  try {
+    const response = await fetch(`${getAtlasDaemonUrl()}/api/artifacts/upload`, {
+      method: "POST",
+      body: formData,
+    });
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(event.loaded);
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const { artifact } = JSON.parse(xhr.responseText);
-          resolve({ artifactId: artifact.id });
-        } catch {
-          resolve({ error: "Invalid response from server" });
-        }
-      } else {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          resolve({ error: data.error || `Upload failed (${xhr.status})` });
-        } catch {
-          resolve({ error: `Upload failed (${xhr.status})` });
-        }
-      }
-    };
-
-    xhr.onerror = () => {
-      resolve({ error: "Network error" });
-    };
-
-    xhr.onabort = () => {
-      resolve({ error: "Upload cancelled" });
-    };
-
-    // Wire up abort signal
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", () => xhr.abort());
+    if (!response.ok) {
+      // response.json() can throw if body isn't valid JSON (e.g., 502 from proxy)
+      const data = await response.json().catch(() => ({}));
+      return { error: data.error || `Upload failed (${response.status})` };
     }
 
-    xhr.open("POST", `${getAtlasDaemonUrl()}/api/artifacts/upload`);
-    xhr.send(formData);
-  });
+    const { artifact } = await response.json();
+    return { artifactId: artifact.id };
+  } catch (error) {
+    // Network error, timeout, or other fetch failure
+    return { error: error instanceof Error ? error.message : "Network error" };
+  }
 }
 
 /**
@@ -259,36 +214,24 @@ export function handleFileDrop(appCtx: AppContext, files: File[], chatId?: strin
       appCtx.stagedFiles.add({
         name: file.name,
         size: file.size,
-        loaded: 0,
         status: "error",
         error: validation.error,
       });
       continue;
     }
 
-    // Create abort controller for this upload
-    const abortController = new AbortController();
-
     // Add as uploading
     const tempId = appCtx.stagedFiles.add({
       name: file.name,
       size: file.size,
-      loaded: 0,
       status: "uploading",
-      abortController,
     });
 
-    // Progress callback updates loaded bytes
-    const onProgress = (loaded: number) => {
-      appCtx.stagedFiles.update(tempId, { loaded });
-    };
-
     // Upload immediately (fire and forget - all uploads run in parallel)
-    uploadFile(file, chatId, onProgress, abortController.signal).then((result) => {
+    uploadFile(file, chatId).then((result) => {
       if ("artifactId" in result) {
         appCtx.stagedFiles.update(tempId, { artifactId: result.artifactId, status: "ready" });
-      } else if (result.error !== "Upload cancelled") {
-        // Only show error if not cancelled (cancelled uploads are removed by cancel())
+      } else {
         appCtx.stagedFiles.update(tempId, { status: "error", error: result.error });
       }
     });

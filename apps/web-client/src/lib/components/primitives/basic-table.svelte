@@ -1,5 +1,5 @@
 <script lang="ts">
-  type Props = { headers: string[]; rows: Record<string, unknown>[] };
+  type Props = { headers: string[]; rows: Record<string, string | number>[] };
 
   const { headers, rows }: Props = $props();
 </script>

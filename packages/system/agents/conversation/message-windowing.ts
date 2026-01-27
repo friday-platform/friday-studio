@@ -44,41 +44,6 @@ function expandCredentialLinkedParts(messages: AtlasUIMessage[]): AtlasUIMessage
 }
 
 /**
- * Expand artifact-attached data parts into text parts for LLM consumption.
- * Transforms: { type: 'data-artifact-attached', data: { artifactIds: ['uuid'], filenames: ['file.csv'] } }
- * Into: { type: 'text', text: '[Attached artifacts: uuid]' }
- *
- * This ensures artifact IDs are available in the prompt text for agents like
- * data-analyst that extract artifact references via regex.
- */
-function expandArtifactAttachedParts(messages: AtlasUIMessage[]): AtlasUIMessage[] {
-  return messages.map((msg) => {
-    const hasArtifactPart = msg.parts.some((p) => p.type === "data-artifact-attached");
-    if (!hasArtifactPart) return msg;
-
-    return {
-      ...msg,
-      parts: msg.parts.map((part) => {
-        if (part.type === "data-artifact-attached" && Array.isArray(part.data?.artifactIds)) {
-          const ids = part.data.artifactIds as string[];
-          const filenames = (part.data.filenames as string[]) ?? [];
-
-          // Build attachment list with both filename and artifact ID
-          // Format: "filename (artifact:uuid)" - filename for friendly display, ID for agent processing
-          const attachments = ids.map((id, i) => {
-            const filename = filenames[i] ?? "file";
-            return `${filename} (artifact:${id})`;
-          });
-
-          return { type: "text" as const, text: `[Attached files: ${attachments.join(", ")}]` };
-        }
-        return part;
-      }),
-    };
-  });
-}
-
-/**
  * Estimate tokens for any input (message object or string) using robust JSON string length heuristic.
  */
 export function estimateTokens(input: unknown): number {
@@ -154,10 +119,8 @@ export function processMessageHistory(
   config: MessageWindowConfig,
   logger: Logger,
 ): ModelMessage[] {
-  // 0. Expand data parts to text before conversion
-  // This ensures structured data (credentials, artifacts) is available in prompt text
-  let expandedMessages = expandCredentialLinkedParts(messages);
-  expandedMessages = expandArtifactAttachedParts(expandedMessages);
+  // 0. Expand credential-linked parts to text before conversion
+  const expandedMessages = expandCredentialLinkedParts(messages);
 
   // 1. Convert to ModelMessages first (to enable pruning)
   const modelMessages = convertToModelMessages(expandedMessages);

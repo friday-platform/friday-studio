@@ -99,10 +99,6 @@ export const AtlasDataEventSchemas = {
   intent: z.object({
     content: z.string(), // e.g., 'Connecting to Notion', 'Creating plan'
   }),
-  "artifact-attached": z.object({
-    artifactIds: z.array(z.string()), // UUIDs of attached artifacts
-    filenames: z.array(z.string()), // Original filenames for display
-  }),
 };
 
 /**
@@ -127,7 +123,6 @@ export type AtlasDataEvents = {
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
-  "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
 };
 
 /**
