@@ -78,7 +78,7 @@
     --button-shadow-outline-color: rgb(238 238 239 / 0.5);
 
     align-items: center;
-    background: var(--background-1);
+    background: var(--color-surface-1);
     block-size: var(--size-6-5);
     box-shadow:
       var(--shadow-1),

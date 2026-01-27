@@ -5,7 +5,9 @@
   import { GA4, trackEvent } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import Button from "$lib/components/button.svelte";
+  import { Icons } from "$lib/components/icons";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
+  import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { z } from "zod";
   import LinkAuthModal from "./link-auth-modal.svelte";
   import MessageWrapper from "./wrapper.svelte";
@@ -20,6 +22,8 @@
   type Props = { provider: string; chat: Chat<AtlasUIMessage> };
 
   const { provider, chat }: Props = $props();
+
+  const icon = $derived(getServiceIcon(provider));
 
   let providerDetails = $state<{
     id: string;
@@ -264,13 +268,39 @@
       <p>{error}</p>
     </div>
   {:else if providerDetails}
-    <div class="link-auth-request">
+    <div
+      class="link-auth-request"
+      style:--background={icon?.background ?? "var(--color-surface02)"}
+      style:--background-dark={icon?.backgroundDark ?? "var(--color-surface02)"}
+    >
       <div class="header">
-        <h3>Connect {providerDetails.displayName}</h3>
-        <p class="description">{providerDetails.description}</p>
+        <div class="header-text">
+          <h2>
+            {#if icon}
+              <div class="icon">
+                {#if icon.type === "component"}
+                  {@const Component = icon.src}
+                  <Component />
+                {:else}
+                  <img src={icon.src} alt={`${provider} logo`} />
+                {/if}
+              </div>
+            {:else}
+              <div
+                class="icon"
+                style:--background="var(--color-highlight-1)"
+                style:--background-dark="var(--color-highlight-1)"
+              >
+                <Icons.Key />
+              </div>
+            {/if}
+            Requesting {providerDetails.displayName} Access
+          </h2>
+          <p class="description">{providerDetails.description}</p>
+        </div>
       </div>
       {#if providerDetails.type === "oauth"}
-        <Button onclick={startOAuth}>
+        <Button onclick={startOAuth} size="small">
           Connect {providerDetails.displayName}
         </Button>
         {#if popupBlocked}
@@ -287,7 +317,7 @@
             <MarkdownContent content={providerDetails.setupInstructions} />
           </div>
         {/if}
-        <Button onclick={startAppInstall}>
+        <Button onclick={startAppInstall} size="small">
           Install {providerDetails.displayName}
         </Button>
         {#if popupBlocked}
@@ -311,7 +341,7 @@
           onSuccess={handleModalSuccess}
         >
           {#snippet triggerContents()}
-            <Button>
+            <Button size="small">
               Connect {providerDetails?.displayName}
             </Button>
           {/snippet}
@@ -319,7 +349,7 @@
       {:else if providerDetails.type === "apikey"}
         <p class="error">Provider missing secret schema</p>
       {:else}
-        <Button disabled>
+        <Button disabled size="small">
           Connect {providerDetails.displayName}
         </Button>
       {/if}
@@ -333,26 +363,50 @@
 
 <style>
   .link-auth-request {
-    background-color: var(--color-surface-1);
+    align-items: start;
+    background-color: var(--background);
     border-radius: var(--radius-4);
-    border: var(--size-px) solid var(--color-border-1);
-    padding: var(--size-4);
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
     gap: var(--size-3);
+    padding: var(--size-6);
+    inline-size: max-content;
+
+    @media (prefers-color-scheme: dark) {
+      background-color: var(--background-dark);
+    }
   }
 
   .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--size-3);
+  }
+
+  .header-text {
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
   }
 
-  .header h3 {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
+  .header-text h2 {
+    align-items: center;
+    display: flex;
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-2);
     margin: 0;
+
+    .icon {
+      flex-shrink: 0;
+      & :global(svg),
+      img {
+        aspect-ratio: 1 / 1;
+        object-fit: contain;
+        inline-size: var(--size-3-5);
+      }
+    }
   }
 
   .description {
