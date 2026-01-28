@@ -3,8 +3,5 @@
   "version": "0.0.1",
   "exports": "./mod.ts",
   "exclude": [".svelte-kit/**", "build/**", "node_modules/**", "src/**"],
-  "tasks": {
-    "fmt": "../web-client/node_modules/.bin/prettier --write .",
-    "fmt:check": "../web-client/node_modules/.bin/prettier --check ."
-  }
+  "tasks": { "fmt": "npx prettier --write .", "fmt:check": "npx prettier --check ." }
 }

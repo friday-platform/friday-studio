@@ -24,17 +24,14 @@ const ModelsResponseSchema = z.object({
 export const anthropicProvider = defineApiKeyProvider({
   id: "anthropic",
   displayName: "Anthropic",
-  description: "Claude AI API access",
+  description: "Create an Anthropic API Key",
   docsUrl: "https://docs.anthropic.com/en/api/getting-started",
   secretSchema: AnthropicSecretSchema,
   setupInstructions: `
-# Anthropic API Key Setup
-
 1. Go to [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
-2. Sign in or create account
+2. Sign in or create an account
 3. Click **Create Key**
-4. Copy immediately (shown only once)
-5. Key starts with \`sk-ant-api03-\`
+5. Copy your key - it starts with \`sk-ant-api03-\`
 `,
   health: async (secret) => {
     try {

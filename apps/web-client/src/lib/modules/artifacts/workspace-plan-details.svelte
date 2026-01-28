@@ -2,6 +2,7 @@
   import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
   import Button from "$lib/components/button.svelte";
   import GlobeIcon from "$lib/components/icons/globe.svelte";
+  import Anthropic from "$lib/components/icons/integrations/anthropic.svelte";
   import AtlassianIcon from "$lib/components/icons/integrations/atlassian.svelte";
   import GithubIcon from "$lib/components/icons/integrations/github.svelte";
   import LinearIcon from "$lib/components/icons/integrations/linear.svelte";
@@ -23,6 +24,7 @@
 
   // Map provider names to icon components
   const providerIcons: Record<string, typeof GithubIcon> = {
+    anthropic: Anthropic,
     github: GithubIcon,
     slack: SlackIcon,
     notion: NotionIcon,

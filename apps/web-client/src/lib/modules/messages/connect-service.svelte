@@ -452,9 +452,6 @@
   }
 
   .instructions {
-    background-color: var(--color-surface-1);
-    border-radius: var(--radius-3);
-    padding: var(--size-3);
     font-size: var(--font-size-2);
     max-inline-size: 100%;
     overflow-x: auto;

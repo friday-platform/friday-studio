@@ -1,4 +1,5 @@
 import Google from "$lib/assets/integrations/google.png";
+import Anthropic from "$lib/components/icons/integrations/anthropic.svelte";
 import Atlassian from "$lib/components/icons/integrations/atlassian.svelte";
 import Github from "$lib/components/icons/integrations/github.svelte";
 import Linear from "$lib/components/icons/integrations/linear.svelte";
@@ -21,6 +22,12 @@ const googleServices = [
 ];
 
 const serviceIcons: Record<string, ServiceIconConfig> = {
+  anthropic: {
+    type: "component",
+    src: Anthropic,
+    background: "#F0EEE6",
+    backgroundDark: "#1F1E1D",
+  },
   slack: { type: "component", src: SlackColor, background: "#EEE9EF", backgroundDark: "#3C173E" },
   notion: { type: "component", src: Notion, background: "#E7E7E8", backgroundDark: "#2E2F33" },
   linear: { type: "component", src: Linear, background: "#EDEFFA", backgroundDark: "#222538" },

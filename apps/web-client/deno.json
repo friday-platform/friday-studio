@@ -22,9 +22,9 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "fmt": "./node_modules/.bin/prettier --write .",
-    "fmt:check": "./node_modules/.bin/prettier --check .",
-    "lint": "./node_modules/.bin/prettier --check . && ./node_modules/.bin/eslint .",
+    "fmt": "npx prettier --write .",
+    "fmt:check": "npx prettier --check .",
+    "lint": "npx prettier --check . && npx eslint .",
     "eslint": "npx eslint .",
     "tauri": "tauri"
   }
