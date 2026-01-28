@@ -81,7 +81,7 @@
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.37.0",
     "npm:@sentry/deno@^10.37.0": "10.37.0",
-    "npm:@sentry/sveltekit@^10.36.0": "10.37.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.48.5____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.48.5___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.48.5__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.48.5___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
+    "npm:@sentry/sveltekit@^10.37.0": "10.37.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.48.5____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.48.5___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.48.5__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.48.5___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
     "npm:@socotra/modelcontextprotocol-sdk@1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
@@ -4063,8 +4063,8 @@
         "resolve-from"
       ]
     },
-    "import-in-the-middle@2.0.5_acorn@8.15.0": {
-      "integrity": "sha512-0InH9/4oDCBRzWXhpOqusspLBrVfK1vPvbn9Wxl8DAQ8yyx5fWJRETICSwkiAMaYntjJAMBP1R4B6cQnEUYVEA==",
+    "import-in-the-middle@2.0.6_acorn@8.15.0": {
+      "integrity": "sha512-3vZV3jX0XRFW3EJDTwzWoZa+RH1b8eTTx6YOCjglrLyPuepwoBti1k3L2dKwdCUrnVEfc5CuRuGstaC/uQJJaw==",
       "dependencies": [
         "acorn",
         "acorn-import-attributes",
@@ -5912,7 +5912,7 @@
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.36.0",
+            "npm:@sentry/sveltekit@^10.37.0",
             "npm:@sveltejs/adapter-node@^5.5.2",
             "npm:@sveltejs/kit@^2.50.1",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
@@ -6003,7 +6003,7 @@
             "npm:@lezer/common@^1.5.0",
             "npm:@lezer/markdown@^1.6.3",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.36.0",
+            "npm:@sentry/sveltekit@^10.37.0",
             "npm:@sveltejs/adapter-static@^3.0.10",
             "npm:@sveltejs/kit@^2.50.1",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
