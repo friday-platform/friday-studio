@@ -10,7 +10,7 @@ COPY . .
 ARG GITHUB_SHA=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o /go/bin/persona ./apps/persona
 
-FROM alpine:3.23.2
+FROM alpine:3.23.3
 
 RUN apk --no-cache add ca-certificates
 
