@@ -131,7 +131,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
         key: "SENDGRID_FROM_EMAIL",
         description: "Default sender email address",
         type: "string",
-        default: "noreply@hellofriday.ai",
+        default: "notifications@hellofriday.ai",
         examples: ["noreply@company.com", "team@startup.io"],
       },
       {

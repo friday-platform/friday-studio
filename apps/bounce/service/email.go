@@ -35,11 +35,11 @@ func newSendgridEmail(cfg Config, opts *SendgridEmailConfig) (SendgridEmailConfi
 	}
 
 	if opts.SenderEmail == "" {
-		opts.SenderEmail = "noreply@" + cfg.EmailDomain
+		opts.SenderEmail = "login@" + cfg.EmailDomain
 	}
 
 	if opts.SenderName == "" {
-		opts.SenderName = "Friday"
+		opts.SenderName = "Friday AI"
 	}
 
 	for k, v := range opts.Data {

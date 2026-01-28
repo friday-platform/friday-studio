@@ -54,7 +54,7 @@ export const emailAgent = createAgent<string, Result>({
       {
         name: "SENDGRID_FROM_EMAIL",
         description: "Default sender email address",
-        default: "noreply@hellofriday.ai",
+        default: "notifications@hellofriday.ai",
       },
       { name: "SENDGRID_FROM_NAME", description: "Default sender name" },
       {
@@ -272,7 +272,7 @@ CONTENT GUIDELINES (for composeEmail):
       data: { toolName: "Email", content: `Sending email to ${params.to}` },
     });
 
-    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@hellofriday.ai";
+    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
     // atlasUserEmail is already validated above - it's required for sending
     const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
 
@@ -297,7 +297,7 @@ CONTENT GUIDELINES (for composeEmail):
         )
         .replace("{{ sender_info }}", senderInfo),
       from: fromEmail,
-      from_name: params.from_name || env.SENDGRID_FROM_NAME,
+      from_name: params.from_name || env.SENDGRID_FROM_NAME || "Friday AI",
       attachments,
     };
 

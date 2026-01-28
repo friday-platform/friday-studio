@@ -51,7 +51,7 @@ export async function sendEmail(params: EmailParams, options?: { sandboxMode?: b
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${atlasKey}` },
     body: JSON.stringify({
       to: params.to,
-      from: params.from || "noreply@hellofriday.ai",
+      from: params.from || "notifications@hellofriday.ai",
       from_name: params.from_name,
       subject: params.subject,
       content: params.content,

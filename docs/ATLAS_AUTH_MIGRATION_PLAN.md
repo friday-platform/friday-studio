@@ -1357,8 +1357,8 @@ func handleSignupEmail(w http.ResponseWriter, r *http.Request) {
         },
         RecipientName:  req.Email,
         RecipientEmail: req.Email,
-        SenderName:     "Atlas",
-        SenderEmail:    "noreply@" + cfg.EmailDomain,
+        SenderName:     "Friday AI",
+        SenderEmail:    "login@" + cfg.EmailDomain,
     })
     if err != nil {
         http.Error(w, "Internal error", http.StatusInternalServerError)

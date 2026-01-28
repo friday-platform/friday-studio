@@ -181,8 +181,8 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 		},
 		RecipientName:  body.Payload.Email,
 		RecipientEmail: body.Payload.Email,
-		SenderName:     "Friday",
-		SenderEmail:    "noreply@" + cfg.EmailDomain,
+		SenderName:     "Friday AI",
+		SenderEmail:    "login@" + cfg.EmailDomain,
 	})
 	if err != nil {
 		log.Error("Could not create Sendgrid email", "error", err)
