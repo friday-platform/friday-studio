@@ -141,6 +141,42 @@ export class AppInstallService {
     return { credential, redirectUri, updated };
   }
 
+  /**
+   * Attempt server-side reconnection for providers with existing installations.
+   * Lists installation IDs via app-level auth, then completes reinstallation for each.
+   * Returns null when provider doesn't support reconnection or has no installations.
+   */
+  async reconnect(providerId: string, userId?: string): Promise<Credential[] | null> {
+    const provider = this.requireAppInstallProvider(providerId);
+
+    if (!provider.listInstallationIds || !provider.completeReinstallation) {
+      return null;
+    }
+
+    const ids = await provider.listInstallationIds();
+    if (ids.length === 0) {
+      return null;
+    }
+
+    const credentials: Credential[] = [];
+    for (const id of ids) {
+      const result = await provider.completeReinstallation(id);
+      const { credential } = await this.persistInstallResult(result, userId);
+      credentials.push(credential);
+
+      this.log.info("app_install_reconnected", {
+        provider: providerId,
+        platform: provider.platform,
+        externalId: result.externalId,
+        externalName: result.externalName,
+        credentialId: credential.id,
+        userId,
+      });
+    }
+
+    return credentials;
+  }
+
   /** Decode and verify JWT state, throwing STATE_INVALID on failure. */
   private async decodeState(state: string): Promise<AppInstallState> {
     try {

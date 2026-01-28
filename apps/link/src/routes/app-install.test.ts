@@ -136,13 +136,13 @@ describe("App Install Routes", () => {
   let app: ReturnType<typeof factory.createApp>;
 
   /** Helper to build a GitHub credential result */
-  function githubCredential(installationId: number, orgName: string) {
+  function githubCredential(installationId: number, orgName: string, providerId = "github") {
     return {
       externalId: String(installationId),
       externalName: orgName,
       credential: {
         type: "oauth" as const,
-        provider: "github",
+        provider: providerId,
         label: orgName,
         secret: {
           platform: "github" as const,
@@ -292,6 +292,91 @@ describe("App Install Routes", () => {
       expect(res.status).toEqual(400);
       const json = ErrorResponseSchema.parse(await res.json());
       expect(json.error).toEqual("INVALID_PROVIDER_TYPE");
+    });
+  });
+
+  describe("GET /v1/app-install/:provider/authorize — reconnect short-circuit", () => {
+    const reconnectProvider = defineAppInstallProvider({
+      id: "github-reconnect",
+      platform: "github",
+      displayName: "GitHub Reconnect",
+      description: "GitHub with listInstallationIds",
+      buildAuthorizationUrl(_callbackUrl, state) {
+        return `https://github.com/apps/test/installations/new?state=${state}`;
+      },
+      completeInstallation() {
+        return Promise.reject(new Error("Should not be called"));
+      },
+      listInstallationIds() {
+        return Promise.resolve([999]);
+      },
+      completeReinstallation(installationId) {
+        return Promise.resolve(githubCredential(installationId, "my-org", "github-reconnect"));
+      },
+    });
+
+    beforeEach(() => {
+      registry.register(reconnectProvider);
+    });
+
+    it("redirects to redirect_uri with credential_id when reconnect succeeds", async () => {
+      const res = await app.request(
+        `/v1/app-install/github-reconnect/authorize?redirect_uri=${encodeURIComponent("https://myapp.example.com/settings")}`,
+      );
+
+      expect(res.status).toEqual(302);
+      const location = res.headers.get("Location");
+      expect(location).toBeDefined();
+      const url = new URL(location!);
+      expect(url.origin + url.pathname).toEqual("https://myapp.example.com/settings");
+      expect(url.searchParams.get("credential_id")).toBeDefined();
+      expect(url.searchParams.get("provider")).toEqual("github-reconnect");
+    });
+
+    it("returns JSON when reconnect succeeds without redirect_uri", async () => {
+      const res = await app.request("/v1/app-install/github-reconnect/authorize");
+
+      expect(res.status).toEqual(200);
+      const ReconnectResponseSchema = z.object({
+        status: z.string(),
+        provider: z.string(),
+        credential_id: z.string(),
+        credentials: z.array(z.object({ id: z.string(), provider: z.string(), label: z.string() })),
+      });
+      const json = ReconnectResponseSchema.parse(await res.json());
+      expect(json.status).toEqual("success");
+      expect(json.provider).toEqual("github-reconnect");
+      expect(json.credential_id).toBeDefined();
+      expect(json.credentials).toHaveLength(1);
+      expect(json.credentials[0]?.label).toEqual("my-org");
+    });
+
+    it("falls through to OAuth redirect when no installations exist", async () => {
+      const emptyProvider = defineAppInstallProvider({
+        id: "github-empty",
+        platform: "github",
+        displayName: "GitHub Empty",
+        description: "No installations",
+        buildAuthorizationUrl(_callbackUrl, state) {
+          return `https://github.com/apps/test/installations/new?state=${state}`;
+        },
+        completeInstallation() {
+          return Promise.reject(new Error("Should not be called"));
+        },
+        listInstallationIds() {
+          return Promise.resolve([]);
+        },
+        completeReinstallation() {
+          return Promise.reject(new Error("Should not be called"));
+        },
+      });
+      registry.register(emptyProvider);
+
+      const res = await app.request("/v1/app-install/github-empty/authorize");
+
+      expect(res.status).toEqual(302);
+      const location = res.headers.get("Location");
+      expect(location).toMatch(/^https:\/\/github\.com\/apps\/test\/installations\/new/);
     });
   });
 

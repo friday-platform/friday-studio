@@ -5,6 +5,7 @@ import { stringifyError } from "@atlas/utils";
 import { createAppAuth } from "@octokit/auth-app";
 import { createOAuthAppAuth } from "@octokit/auth-oauth-app";
 import { request } from "@octokit/request";
+import { z } from "zod";
 import { AppInstallError } from "../app-install/errors.ts";
 import { GitHubAppError } from "../github/errors.ts";
 import {
@@ -204,6 +205,34 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
         access_token: installationAuth.token,
         expires_at: Math.floor(new Date(installationAuth.expiresAt).getTime() / 1000),
       };
+    },
+
+    async listInstallationIds() {
+      const { token: appToken } = await appAuth({ type: "app" }).catch((error) => {
+        throw new GitHubAppError(
+          "TOKEN_MINT_FAILED",
+          `Failed to create app JWT: ${stringifyError(error)}`,
+        );
+      });
+
+      const response = await request("GET /app/installations", {
+        headers: { authorization: `Bearer ${appToken}` },
+      }).catch((error) => {
+        throw new GitHubAppError(
+          "INSTALLATIONS_LIST_FAILED",
+          `Failed to list app installations: ${stringifyError(error)}`,
+        );
+      });
+
+      const installations = z.array(GitHubInstallationSchema).safeParse(response.data);
+      if (!installations.success) {
+        logger.warn("listInstallationIds: invalid installations response", {
+          error: installations.error.message,
+        });
+        return [];
+      }
+
+      return installations.data.map((i) => i.id);
     },
 
     async completeReinstallation(installationId) {

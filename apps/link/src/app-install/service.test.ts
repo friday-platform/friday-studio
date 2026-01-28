@@ -348,6 +348,100 @@ describe("AppInstallService", () => {
     });
   });
 
+  describe("reconnect", () => {
+    function githubResult(installationId: number, orgName: string) {
+      return {
+        externalId: String(installationId),
+        externalName: orgName,
+        credential: {
+          type: "oauth" as const,
+          provider: "test-github-reconnect",
+          label: orgName,
+          secret: {
+            platform: "github" as const,
+            externalId: String(installationId),
+            access_token: `ghs_${installationId}`,
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+            github: { installationId, organizationName: orgName, organizationId: installationId },
+          },
+        },
+      };
+    }
+
+    const mockGitHubReconnectProvider = defineAppInstallProvider({
+      id: "test-github-reconnect",
+      platform: "github",
+      displayName: "Test GitHub Reconnect",
+      description: "Test GitHub provider with listInstallationIds",
+      buildAuthorizationUrl(_callbackUrl, state) {
+        return `https://github.com/apps/test/installations/new?state=${state}`;
+      },
+      completeInstallation() {
+        return Promise.reject(new Error("Should not be called"));
+      },
+      listInstallationIds() {
+        return Promise.resolve([111, 222]);
+      },
+      completeReinstallation(installationId) {
+        const names: Record<number, string> = { 111: "org-one", 222: "org-two" };
+        return Promise.resolve(githubResult(installationId, names[installationId] ?? "unknown"));
+      },
+    });
+
+    const noInstallsProvider = defineAppInstallProvider({
+      id: "test-github-empty",
+      platform: "github",
+      displayName: "Test GitHub Empty",
+      description: "No installations",
+      buildAuthorizationUrl(_callbackUrl, state) {
+        return `https://github.com/apps/test/installations/new?state=${state}`;
+      },
+      completeInstallation() {
+        return Promise.reject(new Error("Should not be called"));
+      },
+      listInstallationIds() {
+        return Promise.resolve([]);
+      },
+      completeReinstallation() {
+        return Promise.reject(new Error("Should not be called"));
+      },
+    });
+
+    beforeEach(() => {
+      registry.register(mockGitHubReconnectProvider);
+      registry.register(noInstallsProvider);
+    });
+
+    it("persists credentials for all installations and returns them", async () => {
+      const result = await service.reconnect("test-github-reconnect", "user-1");
+
+      expect(result).not.toBeNull();
+      expect(result).toHaveLength(2);
+      expect(result![0]?.label).toEqual("org-one");
+      expect(result![1]?.label).toEqual("org-two");
+
+      // Verify routes created
+      expect(routeStorage.getRoute("111")).toEqual("user-1");
+      expect(routeStorage.getRoute("222")).toEqual("user-1");
+    });
+
+    it("returns null when listInstallationIds returns empty", async () => {
+      const result = await service.reconnect("test-github-empty");
+      expect(result).toBeNull();
+    });
+
+    it("returns null when provider has no listInstallationIds", async () => {
+      const result = await service.reconnect("test-slack");
+      expect(result).toBeNull();
+    });
+
+    it("throws PROVIDER_NOT_FOUND for unknown provider", async () => {
+      const error = await service.reconnect("unknown").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("PROVIDER_NOT_FOUND");
+    });
+  });
+
   describe("completeInstall reinstall path", () => {
     const mockGitHubProvider = defineAppInstallProvider({
       id: "test-github",

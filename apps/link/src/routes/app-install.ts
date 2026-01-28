@@ -59,6 +59,29 @@ export function createAppInstallRoutes(service: AppInstallService) {
         }
 
         try {
+          // Try server-side reconnection first (e.g., GitHub App already installed)
+          const credentials = await service.reconnect(provider, userId);
+          if (credentials) {
+            const credentialId = credentials[0]?.id;
+            if (redirect_uri && credentialId) {
+              const url = new URL(redirect_uri);
+              url.searchParams.set("credential_id", credentialId);
+              url.searchParams.set("provider", provider);
+              return c.redirect(url.toString(), 302);
+            }
+            return c.json({
+              status: "success",
+              provider,
+              credential_id: credentialId,
+              credentials: credentials.map((cr) => ({
+                id: cr.id,
+                provider: cr.provider,
+                label: cr.label,
+              })),
+            });
+          }
+
+          // Fall through to normal OAuth redirect
           const { authorizationUrl } = await service.initiateInstall(
             provider,
             redirect_uri,
