@@ -1451,7 +1451,7 @@ export class WorkspaceRuntime {
         availableAgents,
         streamId: undefined, // FSM runtime doesn't have streamId
         artifactIds: sessionResult.artifacts.map((a) => a.id),
-        summary: `FSM ${job.name}: ${sessionResult.status}`,
+        summary: `${job.name}: ${sessionResult.status}`,
         jobDescription: job.description,
       });
 
@@ -1580,7 +1580,7 @@ export class WorkspaceRuntime {
         {
           durationMs,
           failureReason: sessionResult.error?.message,
-          summary: `FSM ${job.name}: ${sessionResult.status}`,
+          summary: `${job.name}: ${sessionResult.status}`,
           output,
         },
       );
