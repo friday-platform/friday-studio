@@ -52,8 +52,19 @@ export function extractArtifactsFromOutput(output: unknown): ArtifactRef[] {
   });
 }
 
+const MAX_RESPONSE_CHARS = 12_000;
+
+function capResponse(text: string): string {
+  if (text.length <= MAX_RESPONSE_CHARS) return text;
+  return (
+    text.slice(0, MAX_RESPONSE_CHARS) +
+    "\n\n[Content truncated — full output stored in artifacts. Use display_artifact to show.]"
+  );
+}
+
 /**
  * Sanitize agent output: strip artifact refs, normalize text field.
+ * Caps response length — full content is already persisted as artifacts.
  * Handles Result wrapper and direct object patterns.
  */
 export function sanitizeAgentOutput(
@@ -66,14 +77,14 @@ export function sanitizeAgentOutput(
   if (wrapperParse.success) {
     const { ok, data, error } = wrapperParse.data;
     const text = data?.response ?? data?.summary ?? data?.content;
-    return { ok, data: text ? { response: text } : undefined, error };
+    return { ok, data: text ? { response: capResponse(text) } : undefined, error };
   }
 
   // Try direct object
   const directParse = SanitizableDataSchema.safeParse(output);
   if (directParse.success) {
     const text = directParse.data.response ?? directParse.data.summary ?? directParse.data.content;
-    return { ok: true, data: text ? { response: text } : undefined };
+    return { ok: true, data: text ? { response: capResponse(text) } : undefined };
   }
 
   return undefined;

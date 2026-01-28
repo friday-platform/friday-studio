@@ -102,4 +102,77 @@ describe("sanitizeAgentOutput", () => {
     expect(result?.ok).toEqual(true);
     expect(result?.data).toEqual(undefined);
   });
+
+  it("passes through response under 12K chars unchanged", () => {
+    const text = "x".repeat(12_000);
+    const result = sanitizeAgentOutput({ ok: true, data: { response: text } });
+    expect(result?.data?.response).toEqual(text);
+  });
+
+  it("truncates response over 12K chars (Result wrapper)", () => {
+    const text = "x".repeat(20_000);
+    const result = sanitizeAgentOutput({ ok: true, data: { response: text } });
+    const response = result?.data?.response ?? "";
+    expect(response.length).toBeLessThan(text.length);
+    expect(response.startsWith("x".repeat(12_000))).toEqual(true);
+    expect(response).toContain("[Content truncated");
+  });
+
+  it("truncates response over 12K chars (direct object)", () => {
+    const text = "y".repeat(20_000);
+    const result = sanitizeAgentOutput({ response: text });
+    const response = result?.data?.response ?? "";
+    expect(response.length).toBeLessThan(text.length);
+    expect(response.startsWith("y".repeat(12_000))).toEqual(true);
+    expect(response).toContain("[Content truncated");
+  });
+
+  it("truncates content field over 12K chars", () => {
+    const text = "z".repeat(15_000);
+    const result = sanitizeAgentOutput({ content: text });
+    const response = result?.data?.response ?? "";
+    expect(response.startsWith("z".repeat(12_000))).toEqual(true);
+    expect(response).toContain("[Content truncated");
+  });
+
+  it("simulated do_task flow: sanitized results stay bounded even with massive agent output", () => {
+    // Simulates the sanitization loop from do-task/index.ts lines 257-263
+    const hugeAgentOutput = {
+      ok: true,
+      data: {
+        response: "x".repeat(200_000), // 200K chars — a full GitHub PR listing
+        artifactRef: { id: "pr-1", type: "code", summary: "PR data" },
+      },
+    };
+
+    const execResults = [{ step: 0, agent: "claude-code", success: true, output: hugeAgentOutput }];
+
+    const sanitizedResults = execResults.map((r) => ({
+      step: r.step,
+      agent: r.agent,
+      success: r.success,
+      output: sanitizeAgentOutput(r.output),
+    }));
+
+    // The tool result that gets appended to messages for step 2
+    const toolResult = { success: true, summary: "Executed 1 step(s)", results: sanitizedResults };
+
+    const serialized = JSON.stringify(toolResult);
+    // Should be well under 50K chars total (12K cap + overhead)
+    expect(serialized.length).toBeLessThan(50_000);
+    // Original would have been 200K+
+    expect(serialized.length).toBeLessThan(200_000);
+    // Verify truncation marker is present
+    expect(serialized).toContain("[Content truncated");
+  });
+
+  it("does not affect existing small outputs from real agent patterns", () => {
+    // Verify all original fixtures pass through unchanged
+    for (const [, fixture] of Object.entries(fixtures)) {
+      const result = sanitizeAgentOutput(fixture);
+      if (result?.data?.response) {
+        expect(result.data.response).not.toContain("[Content truncated");
+      }
+    }
+  });
 });
