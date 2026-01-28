@@ -6,7 +6,7 @@ const GitHubInstallationAccountSchema = z.object({
   type: z.enum(["Organization", "User"]),
 });
 
-const GitHubInstallationSchema = z.object({
+export const GitHubInstallationSchema = z.object({
   id: z.number(),
   account: GitHubInstallationAccountSchema,
   app_id: z.number(),

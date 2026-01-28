@@ -7,7 +7,10 @@ import { createOAuthAppAuth } from "@octokit/auth-oauth-app";
 import { request } from "@octokit/request";
 import { AppInstallError } from "../app-install/errors.ts";
 import { GitHubAppError } from "../github/errors.ts";
-import { GitHubUserInstallationsResponseSchema } from "../github/types.ts";
+import {
+  GitHubInstallationSchema,
+  GitHubUserInstallationsResponseSchema,
+} from "../github/types.ts";
 import { type AppInstallProvider, defineAppInstallProvider } from "./types.ts";
 
 async function listUserInstallations(userToken: string) {
@@ -70,6 +73,31 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
 
   const appAuth = createAppAuth({ appId, privateKey });
 
+  /** Build AppInstallResult from verified installation + minted token. */
+  function buildInstallResult(
+    installationId: number,
+    account: { login: string; id: number },
+    token: string,
+    expiresAt: string,
+  ) {
+    return {
+      externalId: String(installationId),
+      externalName: account.login,
+      credential: {
+        type: "oauth" as const,
+        provider: "github" as const,
+        label: account.login,
+        secret: {
+          platform: "github" as const,
+          externalId: String(installationId),
+          access_token: token,
+          expires_at: Math.floor(new Date(expiresAt).getTime() / 1000),
+          github: { installationId, organizationName: account.login, organizationId: account.id },
+        },
+      },
+    };
+  }
+
   return defineAppInstallProvider({
     id: "github",
     platform: "github",
@@ -84,6 +112,27 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
     },
 
     async completeInstallation(code, _callbackUrl, callbackParams) {
+      // Handle GitHub-specific callback scenarios
+      const setupAction = callbackParams?.get("setup_action");
+
+      // Admin approval pending: setup_action=request means org requires admin approval
+      if (setupAction === "request") {
+        throw new AppInstallError(
+          "APPROVAL_PENDING",
+          "Your GitHub App installation request has been submitted and is pending admin approval. " +
+            "An organization admin must approve the request before you can use this integration.",
+        );
+      }
+
+      // Require code for normal installation flow
+      if (!code) {
+        throw new GitHubAppError(
+          "OAUTH_CODE_EXCHANGE_FAILED",
+          "No authorization code provided",
+          400,
+        );
+      }
+
       // 1. Get installation_id from callback
       const installationId = Number(callbackParams?.get("installation_id"));
       if (!(installationId > 0)) {
@@ -125,27 +174,12 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
       );
 
       // 5. Return credential
-      const expiresAt = Math.floor(new Date(installationAuth.expiresAt).getTime() / 1000);
-      return {
-        externalId: String(installationId),
-        externalName: installation.account.login,
-        credential: {
-          type: "oauth",
-          provider: "github",
-          label: installation.account.login,
-          secret: {
-            platform: "github",
-            externalId: String(installationId),
-            access_token: installationAuth.token,
-            expires_at: expiresAt,
-            github: {
-              installationId,
-              organizationName: installation.account.login,
-              organizationId: installation.account.id,
-            },
-          },
-        },
-      };
+      return buildInstallResult(
+        installationId,
+        installation.account,
+        installationAuth.token,
+        installationAuth.expiresAt,
+      );
     },
 
     async refreshToken(secret) {
@@ -170,6 +204,55 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
         access_token: installationAuth.token,
         expires_at: Math.floor(new Date(installationAuth.expiresAt).getTime() / 1000),
       };
+    },
+
+    async completeReinstallation(installationId) {
+      // 1. Get App JWT for authenticated API calls
+      const { token: appToken } = await appAuth({ type: "app" }).catch((error) => {
+        throw new GitHubAppError(
+          "TOKEN_MINT_FAILED",
+          `Failed to create app JWT: ${stringifyError(error)}`,
+        );
+      });
+
+      // 2. Verify installation exists via App-level API
+      const response = await request("GET /app/installations/{installation_id}", {
+        installation_id: installationId,
+        headers: { authorization: `Bearer ${appToken}` },
+      }).catch((error) => {
+        throw new GitHubAppError(
+          "INSTALLATION_NOT_FOUND",
+          `Installation ${installationId} not found or not accessible: ${stringifyError(error)}`,
+          404,
+        );
+      });
+
+      const parsed = GitHubInstallationSchema.safeParse(response.data);
+      if (!parsed.success) {
+        throw new GitHubAppError(
+          "OAUTH_INVALID_RESPONSE",
+          `Invalid installation response: ${parsed.error.message}`,
+        );
+      }
+      const installation = parsed.data;
+
+      // 3. Mint installation token
+      const installationAuth = await appAuth({ type: "installation", installationId }).catch(
+        (error) => {
+          throw new GitHubAppError(
+            "TOKEN_MINT_FAILED",
+            `Token mint failed: ${stringifyError(error)}`,
+          );
+        },
+      );
+
+      // 4. Return credential
+      return buildInstallResult(
+        installationId,
+        installation.account,
+        installationAuth.token,
+        installationAuth.expiresAt,
+      );
     },
   });
 }

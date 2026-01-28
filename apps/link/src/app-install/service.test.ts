@@ -4,9 +4,9 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
 import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
-import { defineAppInstallProvider, type ProviderDefinition } from "../providers/types.ts";
+import { ProviderRegistry } from "../providers/registry.ts";
+import { defineAppInstallProvider } from "../providers/types.ts";
 import type {
   Credential,
   CredentialInput,
@@ -18,21 +18,8 @@ import { AppInstallError } from "./errors.ts";
 import { AppInstallService } from "./service.ts";
 
 /**
- * Mock implementations for dependencies
+ * Mock implementations for external boundaries (storage, routes)
  */
-
-/** Mock provider registry - only needs get() for service */
-class MockProviderRegistry {
-  private providers = new Map<string, ProviderDefinition>();
-
-  register(provider: ProviderDefinition) {
-    this.providers.set(provider.id, provider);
-  }
-
-  get(id: string): ProviderDefinition | undefined {
-    return this.providers.get(id);
-  }
-}
 
 class MockStorageAdapter implements StorageAdapter {
   private credentials = new Map<string, Credential>();
@@ -83,57 +70,28 @@ class MockStorageAdapter implements StorageAdapter {
     return Promise.resolve();
   }
 
-  upsert(input: CredentialInput, userId: string): Promise<SaveResult> {
-    // Find existing by provider + label + userId
-    for (const [id, cred] of this.credentials.entries()) {
-      if (cred.provider === input.provider && cred.label === input.label) {
-        // Update existing
-        const updated: Credential = {
-          ...cred,
-          ...input,
-          id,
-          metadata: { ...cred.metadata, updatedAt: new Date().toISOString() },
-        };
-        this.credentials.set(id, updated);
-        return Promise.resolve({ id, metadata: updated.metadata });
-      }
-    }
-    // Create new
-    return this.save(input, userId);
-  }
-
   findByProviderAndExternalId(
     provider: string,
     externalId: string,
     _userId: string,
   ): Promise<Credential | null> {
-    const secretSchema = z.object({ externalId: z.string().optional() });
     for (const cred of this.credentials.values()) {
       if (cred.provider === provider) {
-        const secretResult = secretSchema.safeParse(cred.secret);
-        if (!secretResult.success || secretResult.data.externalId !== externalId) {
-          continue;
+        const secret = cred.secret as { externalId?: string };
+        if (secret.externalId === externalId) {
+          return Promise.resolve(cred);
         }
-        return Promise.resolve(cred);
       }
     }
     return Promise.resolve(null);
   }
 
-  updateMetadata(
-    id: string,
-    metadata: { displayName?: string },
-    _userId: string,
-  ): Promise<Metadata> {
-    const existing = this.credentials.get(id);
-    if (!existing) return Promise.reject(new Error("Credential not found"));
-    const updated: Credential = {
-      ...existing,
-      displayName: metadata.displayName ?? existing.displayName,
-      metadata: { ...existing.metadata, updatedAt: new Date().toISOString() },
-    };
-    this.credentials.set(id, updated);
-    return Promise.resolve(updated.metadata);
+  // Not used by service - stub to satisfy interface
+  upsert(): Promise<SaveResult> {
+    throw new Error("MockStorageAdapter.upsert() should not be called");
+  }
+  updateMetadata(): Promise<Metadata> {
+    throw new Error("MockStorageAdapter.updateMetadata() should not be called");
   }
 
   // Test helper
@@ -163,7 +121,7 @@ class MockPlatformRouteRepository implements PlatformRouteRepository {
 }
 
 describe("AppInstallService", () => {
-  let registry: MockProviderRegistry;
+  let registry: ProviderRegistry;
   let storage: MockStorageAdapter;
   let routeStorage: MockPlatformRouteRepository;
   let service: AppInstallService;
@@ -177,6 +135,9 @@ describe("AppInstallService", () => {
       return `https://slack.com/oauth/v2/authorize?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`;
     },
     completeInstallation(code, _callbackUrl) {
+      if (!code) {
+        throw new AppInstallError("MISSING_CODE", "No authorization code provided");
+      }
       return Promise.resolve({
         externalId: `team-${code}`,
         externalName: "Test Workspace",
@@ -196,7 +157,7 @@ describe("AppInstallService", () => {
   });
 
   beforeEach(() => {
-    registry = new MockProviderRegistry();
+    registry = new ProviderRegistry();
     storage = new MockStorageAdapter();
     routeStorage = new MockPlatformRouteRepository();
     service = new AppInstallService(registry, storage, routeStorage, "https://link.example.com");
@@ -384,6 +345,107 @@ describe("AppInstallService", () => {
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("INVALID_CREDENTIAL");
+    });
+  });
+
+  describe("completeInstall reinstall path", () => {
+    const mockGitHubProvider = defineAppInstallProvider({
+      id: "test-github",
+      platform: "github",
+      displayName: "Test GitHub",
+      description: "Test GitHub provider",
+      buildAuthorizationUrl(_callbackUrl, state) {
+        return `https://github.com/apps/test/installations/new?state=${state}`;
+      },
+      completeInstallation() {
+        return Promise.reject(new Error("Should not be called in reinstall flow"));
+      },
+      completeReinstallation(installationId) {
+        return Promise.resolve({
+          externalId: String(installationId),
+          externalName: "test-org",
+          credential: {
+            type: "oauth",
+            provider: "test-github",
+            label: "test-org",
+            secret: {
+              platform: "github",
+              externalId: String(installationId),
+              access_token: "ghs_test_token",
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+              github: { installationId, organizationName: "test-org", organizationId: 12345 },
+            },
+          },
+        });
+      },
+    });
+
+    beforeEach(() => {
+      registry.register(mockGitHubProvider);
+    });
+
+    it("creates new credential on reinstall via completeInstall", async () => {
+      const { authorizationUrl } = await service.initiateInstall("test-github");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      // No code, but installation_id present — triggers reinstall path
+      const params = new URLSearchParams({ installation_id: "98765" });
+      const result = await service.completeInstall(state, undefined, params);
+
+      expect(result.credential.provider).toEqual("test-github");
+      expect(result.credential.label).toEqual("test-org");
+      expect(result.updated).toEqual(false);
+
+      // Verify credential stored
+      const stored = await storage.get(result.credential.id, "dev");
+      expect(stored?.provider).toEqual("test-github");
+
+      // Verify route created
+      expect(routeStorage.getRoute("98765")).toEqual("dev");
+    });
+
+    it("updates existing credential on reinstall via completeInstall", async () => {
+      await storage.save(
+        {
+          type: "oauth",
+          provider: "test-github",
+          label: "test-org",
+          secret: {
+            platform: "github",
+            externalId: "98765",
+            access_token: "old_token",
+            expires_at: 0,
+            github: { installationId: 98765, organizationName: "test-org", organizationId: 12345 },
+          },
+        },
+        "dev",
+      );
+
+      const { authorizationUrl } = await service.initiateInstall("test-github");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      const params = new URLSearchParams({ installation_id: "98765" });
+      const result = await service.completeInstall(state, undefined, params);
+
+      expect(result.updated).toEqual(true);
+
+      const allCreds = await storage.list("oauth", "dev");
+      expect(allCreds.length).toEqual(1);
+    });
+
+    it("falls through to provider when no code and no completeReinstallation", async () => {
+      // test-slack provider doesn't have completeReinstallation — provider throws MISSING_CODE
+      const { authorizationUrl } = await service.initiateInstall("test-slack");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      const error = await service
+        .completeInstall(state, undefined, new URLSearchParams({ installation_id: "12345" }))
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AppInstallError);
+      expect((error as AppInstallError).code).toEqual("MISSING_CODE");
     });
   });
 });

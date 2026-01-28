@@ -10,6 +10,7 @@ import type { PlatformRouteRepository } from "../adapters/platform-route-reposit
 import {
   AppInstallCredentialSecretSchema,
   type AppInstallProvider,
+  type AppInstallResult,
   type ProviderDefinition,
 } from "../providers/types.ts";
 import type { Credential, StorageAdapter } from "../types.ts";
@@ -77,8 +78,12 @@ export class AppInstallService {
    * Exchanges authorization code for tokens, stores credential, and upserts platform route.
    * Handles idempotent re-install (updates existing credential instead of creating new).
    *
+   * For providers that support reinstallation (e.g., GitHub), this method automatically
+   * routes to the reinstall flow when no code is provided but installation_id is present.
+   *
    * @param state - State parameter from OAuth callback
-   * @param code - Authorization code from OAuth callback
+   * @param code - Authorization code from OAuth callback (optional for reinstall flows)
+   * @param callbackParams - Additional callback parameters (e.g., installation_id)
    * @returns Credential, optional redirect URI, and update flag
    * @throws {AppInstallError} If state invalid/expired or installation fails
    *
@@ -95,72 +100,89 @@ export class AppInstallService {
    */
   async completeInstall(
     state: string,
-    code: string,
+    code: string | undefined,
     callbackParams?: URLSearchParams,
   ): Promise<{ credential: Credential; redirectUri?: string; updated: boolean }> {
     // 1. Decode and verify JWT state
-    let decoded: AppInstallState;
-    try {
-      decoded = await decodeAppInstallState(state);
-    } catch {
-      throw new AppInstallError("STATE_INVALID", "OAuth flow not found or expired");
-    }
-
+    const decoded = await this.decodeState(state);
     const { p: providerId, r: redirectUri, u: userId } = decoded;
 
     // 2. Get provider from registry
     const provider = this.requireAppInstallProvider(providerId);
-    // Provider-namespaced callback URL (must match what was used in initiateInstall)
+
+    // 3. Get install result — either reinstall (no code) or normal OAuth exchange
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
-
-    // 3. Exchange code for tokens and get workspace identity
-    const result = await provider.completeInstallation(code, callbackUrl, callbackParams);
-
-    // 4. Check for existing credential by externalId (re-install case)
-    const existingCredential = await this.credentialStorage.findByProviderAndExternalId(
-      result.credential.provider,
-      result.externalId,
-      userId ?? "dev",
-    );
-
-    let credentialId: string;
-    let updated = false;
-
-    if (existingCredential) {
-      // Update existing credential instead of creating new
-      await this.credentialStorage.update(
-        existingCredential.id,
-        result.credential,
-        userId ?? "dev",
-      );
-      credentialId = existingCredential.id;
-      updated = true;
+    let result: AppInstallResult;
+    if (!code) {
+      const installationId = Number(callbackParams?.get("installation_id"));
+      if (provider.completeReinstallation && installationId > 0) {
+        result = await provider.completeReinstallation(installationId);
+      } else {
+        // No reinstall path — let provider handle (throws approval_pending, missing_code, etc.)
+        result = await provider.completeInstallation(code, callbackUrl, callbackParams);
+      }
     } else {
-      // Create new credential
-      const { id } = await this.credentialStorage.save(result.credential, userId ?? "dev");
-      credentialId = id;
+      result = await provider.completeInstallation(code, callbackUrl, callbackParams);
     }
 
-    // 5. Upsert platform route (team_id → user_id)
-    await this.routeStorage.upsert(result.externalId, userId ?? "dev");
-
-    // 6. Fetch saved credential to return with metadata
-    const credential = await this.credentialStorage.get(credentialId, userId ?? "dev");
-    if (!credential) {
-      throw new AppInstallError("CREDENTIAL_NOT_FOUND", "Credential vanished after save");
-    }
+    // 4. Persist credential and route
+    const { credential, updated } = await this.persistInstallResult(result, userId);
 
     this.log.info("app_install_completed", {
       provider: providerId,
       platform: provider.platform,
       externalId: result.externalId,
       externalName: result.externalName,
-      credentialId,
+      credentialId: credential.id,
       updated,
       userId,
     });
 
     return { credential, redirectUri, updated };
+  }
+
+  /** Decode and verify JWT state, throwing STATE_INVALID on failure. */
+  private async decodeState(state: string): Promise<AppInstallState> {
+    try {
+      return await decodeAppInstallState(state);
+    } catch {
+      throw new AppInstallError("STATE_INVALID", "OAuth flow not found or expired");
+    }
+  }
+
+  /** Upsert credential + route from an AppInstallResult. Returns saved credential and update flag. */
+  private async persistInstallResult(
+    result: AppInstallResult,
+    userId: string | undefined,
+  ): Promise<{ credential: Credential; updated: boolean }> {
+    const uid = userId ?? "dev";
+
+    const existingCredential = await this.credentialStorage.findByProviderAndExternalId(
+      result.credential.provider,
+      result.externalId,
+      uid,
+    );
+
+    let credentialId: string;
+    let updated = false;
+
+    if (existingCredential) {
+      await this.credentialStorage.update(existingCredential.id, result.credential, uid);
+      credentialId = existingCredential.id;
+      updated = true;
+    } else {
+      const { id } = await this.credentialStorage.save(result.credential, uid);
+      credentialId = id;
+    }
+
+    await this.routeStorage.upsert(result.externalId, uid);
+
+    const credential = await this.credentialStorage.get(credentialId, uid);
+    if (!credential) {
+      throw new AppInstallError("CREDENTIAL_NOT_FOUND", "Credential vanished after save");
+    }
+
+    return { credential, updated };
   }
 
   /**

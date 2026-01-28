@@ -136,6 +136,11 @@ To add Friday to a channel:
     },
 
     async completeInstallation(code, callbackUrl) {
+      // Slack requires authorization code - no special flows like GitHub reinstall
+      if (!code) {
+        throw new AppInstallError("MISSING_CODE", "No authorization code provided");
+      }
+
       let resp: Response;
       try {
         resp = await fetch("https://slack.com/api/oauth.v2.access", {

@@ -314,12 +314,13 @@ export type AppInstallProvider = BaseProviderDefinition & {
    * Completes installation after OAuth callback.
    * Exchanges code for tokens and returns workspace identity + credentials.
    *
-   * @param code - OAuth authorization code from callback
+   * @param code - OAuth authorization code from callback (may be undefined for special flows)
    * @param callbackUrl - The callback URL used in the authorization request
    * @param callbackParams - Optional URL parameters from callback (e.g., GitHub installation_id)
+   * @throws {AppInstallError} For special cases like approval_pending when no code is provided
    */
   completeInstallation(
-    code: string,
+    code: string | undefined,
     callbackUrl: string,
     callbackParams?: URLSearchParams,
   ): Promise<AppInstallResult>;
@@ -345,6 +346,19 @@ export type AppInstallProvider = BaseProviderDefinition & {
   refreshToken?(
     secret: AppInstallCredentialSecret,
   ): Promise<{ access_token: string; expires_at: number; refresh_token?: string }>;
+
+  /**
+   * Optional reinstallation handler for app-level recovery flows.
+   * Called when app is already installed but credential is missing (e.g., user
+   * deleted credential but app still installed on GitHub org). Uses app-level
+   * auth to verify installation and mint token without OAuth code exchange.
+   *
+   * Currently only applicable to GitHub App installations.
+   *
+   * @param installationId - Installation ID from callback params
+   * @returns Same result as completeInstallation
+   */
+  completeReinstallation?(installationId: number): Promise<AppInstallResult>;
 };
 
 /**

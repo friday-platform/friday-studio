@@ -8,6 +8,7 @@
 import { logger } from "@atlas/logger";
 import { verify } from "hono/jwt";
 import { z } from "zod";
+import { AppInstallError } from "../app-install/errors.ts";
 import type { AppInstallService } from "../app-install/service.ts";
 import { factory } from "../factory.ts";
 import { STATE_JWT_SECRET } from "../oauth/jwt-secret.ts";
@@ -44,9 +45,10 @@ export function createCallbackRoutes(
 ) {
   return factory.createApp().get("/:provider", async (c) => {
     const provider = c.req.param("provider");
+    const rawQuery = c.req.query();
 
     // Parse query params
-    const query = CallbackQuerySchema.safeParse(c.req.query());
+    const query = CallbackQuerySchema.safeParse(rawQuery);
     if (!query.success) {
       return renderErrorResponse(c, "invalid_query", query.error.message);
     }
@@ -83,20 +85,27 @@ export function createCallbackRoutes(
       return renderErrorResponse(c, error, error_description);
     }
 
-    // Must have code
-    if (!code) {
-      return renderErrorResponse(c, "missing_code", "No authorization code in callback");
-    }
+    // Extract all callback query params for providers that need them
+    const callbackParams = new URLSearchParams(rawQuery);
 
-    // Extract all callback query params for services that need them (e.g., GitHub App installation_id)
-    const callbackParams = new URLSearchParams(c.req.query());
-
-    // Complete flow - both services return same shape { credential, redirectUri }
-    const isAppInstall = flowType.k === "app_install";
     try {
-      const { credential, redirectUri } = isAppInstall
-        ? await appInstallService.completeInstall(state, code, callbackParams)
-        : await oauthService.completeFlow(state, code);
+      let credential: { id: string; provider: string };
+      let redirectUri: string | undefined;
+
+      if (flowType.k === "app_install") {
+        // App install service handles no-code cases (reinstall, approval_pending) internally
+        ({ credential, redirectUri } = await appInstallService.completeInstall(
+          state,
+          code,
+          callbackParams,
+        ));
+      } else {
+        // OAuth flows require code
+        if (!code) {
+          return renderErrorResponse(c, "missing_code", "No authorization code in callback");
+        }
+        ({ credential, redirectUri } = await oauthService.completeFlow(state, code));
+      }
 
       if (redirectUri) {
         const url = new URL(redirectUri);
@@ -107,6 +116,13 @@ export function createCallbackRoutes(
 
       return renderSuccessResponse(c, credential.provider, credential.id);
     } catch (e) {
+      // Surface specific AppInstallError codes (e.g., APPROVAL_PENDING)
+      if (e instanceof AppInstallError) {
+        logger.info("app_install_error", { code: e.code, message: e.message });
+        return renderErrorResponse(c, e.code.toLowerCase(), e.message);
+      }
+
+      const isAppInstall = flowType.k === "app_install";
       const errorCode = isAppInstall ? "app_install_failed" : "oauth_completion_failed";
       logger.error(errorCode, { error: e });
       return renderErrorResponse(

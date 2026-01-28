@@ -6,6 +6,7 @@
     "includes": [
       "**",
       "!**/.atlas",
+      "!**/.beads",
       "!**/.svelte-kit",
       "!**/build",
       "!**/.vite",
