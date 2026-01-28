@@ -27,6 +27,7 @@
   .timeline-main {
     display: flex;
     flex-direction: column;
+    gap: var(--size-3);
     padding-block-start: var(--size-3);
   }
 
