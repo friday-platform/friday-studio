@@ -155,7 +155,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
           permissionMode: "bypassPermissions",
           settingSources: [],
-          maxTurns: 25,
+          maxTurns: 500,
           sandbox: sandboxOptions,
           abortController: controller,
           env: { ...process.env, ANTHROPIC_API_KEY: apiKey, GH_TOKEN: ghToken },
