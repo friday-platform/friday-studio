@@ -12,7 +12,13 @@ import {
 } from "@atlas/core";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { InMemoryDocumentStore } from "@atlas/document-store";
-import type { Context, FSMDefinition, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
+import type {
+  AgentAction,
+  Context,
+  FSMDefinition,
+  FSMEvent,
+  SignalWithContext,
+} from "@atlas/fsm-engine";
 import {
   AtlasLLMProviderAdapter,
   createEngine,
@@ -111,10 +117,12 @@ export async function executeTaskViaFSMDirect(
 
     // 4. Create agent executor callback
     const agentExecutor = async (
-      agentId: string,
+      action: AgentAction,
       fsmContext: Context,
       signal: SignalWithContext,
     ) => {
+      const agentId = action.agentId;
+
       // Check abort before each step
       if (context.abortSignal?.aborted) {
         throw new Error("Task cancelled");
@@ -153,7 +161,9 @@ export async function executeTaskViaFSMDirect(
       const contextDocs = expandedDocs
         .map((doc) => `${doc.type}(${doc.id}): ${JSON.stringify(doc.data)}`)
         .join("\n");
-      const taskDescription = stepInfo?.step.description || "Execute task step";
+      // Prompt precedence: action.prompt > step.description > fallback
+      // Matches workspace-runtime.ts buildFinalAgentPrompt behavior
+      const taskDescription = action.prompt || stepInfo?.step.description || "Execute task step";
       const datetimeSection = context.datetime
         ? `## Context Facts\n- Current Date: ${context.datetime.localDate}\n- Current Time: ${context.datetime.localTime} (${context.datetime.timezone})\n- Timestamp: ${context.datetime.timestamp}\n- Timezone Offset: ${context.datetime.timezoneOffset}\n\n`
         : "";

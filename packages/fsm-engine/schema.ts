@@ -21,6 +21,8 @@ export const LLMActionSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
   outputTo: z.string().optional(),
+  /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
+  outputType: z.string().optional(),
 });
 
 export const CodeActionSchema = z.object({ type: z.literal("code"), function: z.string() });
@@ -35,6 +37,8 @@ export const AgentActionSchema = z.object({
   type: z.literal("agent"),
   agentId: z.string(),
   outputTo: z.string().optional(),
+  /** Task instructions for the agent. Takes precedence over agent config prompt. */
+  prompt: z.string().optional(),
 });
 
 export const ActionSchema = z.discriminatedUnion("type", [

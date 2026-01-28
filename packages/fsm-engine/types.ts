@@ -64,6 +64,8 @@ export interface LLMAction {
   prompt: string;
   tools?: string[];
   outputTo?: string;
+  /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
+  outputType?: string;
 }
 
 export interface CodeAction {
@@ -81,6 +83,8 @@ export interface AgentAction {
   type: "agent";
   agentId: string;
   outputTo?: string;
+  /** Task instructions for the agent. Takes precedence over agent config prompt. */
+  prompt?: string;
 }
 
 export interface FunctionDefinition {
@@ -252,5 +256,7 @@ export interface LLMProvider {
     prompt: string;
     tools?: Record<string, import("ai").Tool>;
     toolChoice?: "auto" | "required" | "none";
+    /** Tool names that should trigger early stop when called successfully */
+    stopOnToolCall?: string[];
   }): Promise<LLMResponse>;
 }

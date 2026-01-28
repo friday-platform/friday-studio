@@ -121,6 +121,68 @@ describe("buildFSMGenerationPrompt", () => {
     expect(prompt).toContain("agent.description");
     expect(prompt).toContain("downstream");
   });
+
+  it("instructs LLM to derive Result schemas from downstream Request schemas", () => {
+    const job: Job = {
+      id: "linear-automation",
+      name: "Linear Ticket Automation",
+      title: "Linear Ticket Automation",
+      triggerSignalId: "manual-trigger",
+      behavior: "sequential",
+      steps: [
+        { agentId: "linear-reader", description: "Fetch ticket details" },
+        { agentId: "code-agent", description: "Implement changes" },
+      ],
+    };
+
+    const triggerSignal: Signal = {
+      id: "manual-trigger",
+      name: "Manual Trigger",
+      title: "Manual Trigger",
+      signalType: "http",
+      description: "Trigger automation",
+    };
+
+    const prompt = buildFSMGenerationPrompt(job, [], triggerSignal);
+
+    // Critical instruction: derive Result schemas from downstream Request schemas
+    expect(prompt).toContain("DERIVE FROM DOWNSTREAM REQUEST SCHEMAS");
+    expect(prompt).toContain("NEXT step's prepare function needs to read from this result");
+    expect(prompt).toContain(
+      "Those exact fields (with their types) become this result's schema properties",
+    );
+    expect(prompt).toContain("required array");
+  });
+
+  it("includes example showing Result schema derivation from downstream prepare function", () => {
+    const job: Job = {
+      id: "test-job",
+      name: "Test Job",
+      title: "Test Job",
+      triggerSignalId: "test-trigger",
+      behavior: "sequential",
+      steps: [],
+    };
+
+    const triggerSignal: Signal = {
+      id: "test-trigger",
+      name: "Test Trigger",
+      title: "Test Trigger",
+      signalType: "http",
+      description: "Test",
+    };
+
+    const prompt = buildFSMGenerationPrompt(job, [], triggerSignal);
+
+    // Should include concrete example with ticket_id, ticket_title, ticket_description
+    expect(prompt).toContain("ticket_id: ticketResult.data.ticket_id");
+    expect(prompt).toContain("ticket_title: ticketResult.data.ticket_title");
+    expect(prompt).toContain("ticket_description: ticketResult.data.ticket_description");
+
+    // Should show the resulting schema with those fields
+    expect(prompt).toContain("ticket_id: { type: 'string' }");
+    expect(prompt).toContain("required: ['ticket_id', 'ticket_title', 'ticket_description']");
+  });
 });
 
 describe("enrichAgentsWithPipelineContext", () => {
@@ -195,6 +257,37 @@ describe("enrichAgentsWithPipelineContext", () => {
       executionType: "llm",
       mcpTools: ["tool1", "tool2"],
     });
+  });
+
+  it("uses step description (not agent description) as base for enrichment", async () => {
+    // This tests the critical mapping: bundled agents should receive the STEP's
+    // task instructions (e.g., "Clone repo, use sub-agents...") not the AGENT's
+    // capability summary (e.g., "Implements code changes").
+    const agents: SimplifiedAgent[] = [
+      {
+        id: "code-agent",
+        name: "Code Agent",
+        description: "General capability: implements code changes", // agent.description
+        config: {},
+        executionType: "bundled",
+        bundledAgentId: "claude-code",
+      },
+    ];
+
+    const jobSteps = [
+      { agentId: "code-agent", description: "Clone repo, implement feature X" }, // step.description
+      { agentId: "reviewer", description: "Review the changes" },
+    ];
+
+    const enriched = await enrichAgentsWithPipelineContext(agents, jobSteps);
+
+    const codeAgent = enriched.find((a) => a.id === "code-agent");
+    if (!codeAgent) throw new Error("codeAgent should be defined");
+
+    // Should start with STEP description, not agent description
+    expect(codeAgent.description).toMatch(/^Clone repo, implement feature X/);
+    expect(codeAgent.description).not.toMatch(/^General capability/);
+    expect(codeAgent.description).toContain("DOWNSTREAM DATA REQUIREMENTS");
   });
 
   it("handles agent not in job steps gracefully", async () => {

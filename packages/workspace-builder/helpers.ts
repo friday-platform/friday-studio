@@ -19,11 +19,18 @@ export function codeAction(functionName: string): Action {
  *
  * @example
  * builder.onEntry(agentAction('quality-checker', { outputTo: 'quality_result' }))
+ * builder.onEntry(agentAction('claude-code', { prompt: 'Implement the feature' }))
  */
-export function agentAction(agentId: string, opts?: { outputTo?: string }): Action {
+export function agentAction(
+  agentId: string,
+  opts?: { outputTo?: string; prompt?: string },
+): Action {
   const action: Action = { type: "agent", agentId };
   if (opts?.outputTo !== undefined) {
     action.outputTo = opts.outputTo;
+  }
+  if (opts?.prompt !== undefined) {
+    action.prompt = opts.prompt;
   }
   return action;
 }
@@ -37,7 +44,8 @@ export function agentAction(agentId: string, opts?: { outputTo?: string }): Acti
  *   model: 'claude-sonnet-4-5',
  *   prompt: 'Analyze the data',
  *   tools: ['github.get_pr'],
- *   outputTo: 'analysis_result'
+ *   outputTo: 'analysis_result',
+ *   outputType: 'AnalysisResult'
  * }))
  */
 export function llmAction(opts: {
@@ -46,6 +54,8 @@ export function llmAction(opts: {
   prompt: string;
   tools?: string[];
   outputTo?: string;
+  /** Document type name for schema lookup (enables structured output via complete tool) */
+  outputType?: string;
 }): Action {
   const action: Action = {
     type: "llm",
@@ -58,6 +68,9 @@ export function llmAction(opts: {
   }
   if (opts.outputTo !== undefined) {
     action.outputTo = opts.outputTo;
+  }
+  if (opts.outputType !== undefined) {
+    action.outputType = opts.outputType;
   }
   return action;
 }

@@ -109,7 +109,7 @@ export async function enrichAgentsWithPipelineContext(
       abortSignal,
     );
 
-    const enrichedDescription = `${agent.description}
+    const enrichedDescription = `${currentStep.description}
 
 DOWNSTREAM DATA REQUIREMENTS:
 ${dataNeeds}`;
@@ -236,7 +236,10 @@ For bundled agents (check if agent.executionType === 'bundled'), use agentAction
 
 .onEntry(agentAction(
   agent.bundledAgentId,  // Use the actual bundled agent ID
-  { outputTo: \`\${agent.id.replaceAll('-', '_')}_result\` }  // Normalize hyphens to underscores
+  {
+    outputTo: \`\${agent.id.replaceAll('-', '_')}_result\`,  // Normalize hyphens to underscores
+    prompt: agent.description  // Task instructions for the bundled agent
+  }
 ))
 
 For LLM agents (check if agent.executionType === 'llm'), use llmAction() helper:
@@ -246,16 +249,23 @@ For LLM agents (check if agent.executionType === 'llm'), use llmAction() helper:
   model: 'claude-sonnet-4-5',
   prompt: \`\${agent.description}\\n\\nUse available MCP tools to complete this task.\\nStore results in the output document.\`,
   tools: agent.mcpTools,
-  outputTo: \`\${agent.id.replaceAll('-', '_')}_result\`
+  outputTo: \`\${agent.id.replaceAll('-', '_')}_result\`,
+  outputType: \`\${toPascalCase(agent.id)}Result\`  // Maps snake_case ID to PascalCase type name
 }))
 
 Note: agent.description already contains downstream data requirements (e.g., "DOWNSTREAM DATA REQUIREMENTS: Full email body content...").
 Use the description as-is - it includes what downstream steps need.
 
+**Naming Convention:**
+- outputTo uses snake_case (e.g., "linear_ticket_reader_result")
+- outputType uses PascalCase (e.g., "LinearTicketReaderResult")
+- Convert with: toPascalCase(id) = id.split(/[-_]/).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('')
+
 **Example:**
 If agent = { id: "quality-checker", executionType: "bundled", bundledAgentId: "parallel-quality-checker" }:
 - Use agentId: "parallel-quality-checker" (the bundled agent)
 - Use outputTo: "quality_checker_result" (with underscore, from plan ID)
+- Use outputType: "QualityCheckerResult" (PascalCase for schema lookup)
 - Function names: prepare_quality_checker_request, process_quality_checker_output, has_quality_checker_result
 
 **Context API:**
@@ -382,12 +392,56 @@ builder.addFunction('has_agent_result', 'guard', \\\`
 
 For each agent, generate prepare/process/guard functions following these patterns.
 
-**Document Schemas:**
+**Document Schemas - CRITICAL for Structured Output:**
 
 For each agent, add request and result document type schemas.
-Use generic schemas with additionalProperties: true unless you need specific validation:
 
-Example agent request schema:
+**Request schemas:** Define the fields the prepare function creates.
+
+**Result schemas:** DERIVE FROM DOWNSTREAM REQUEST SCHEMAS.
+Look at what the NEXT step's prepare function needs to read from this result.
+Those fields become this result's schema properties.
+
+Analysis process:
+1. For each step, identify what fields the NEXT step's prepare function reads from this step's result
+2. Those exact fields (with their types) become this result's schema properties
+3. Add them to the required array
+
+Example - if step_1's prepare function does:
+\`\`\`
+const ticketResult = context.documents.find(d => d.id === 'step_0_result');
+const request = {
+  ticket_id: ticketResult.data.ticket_id,
+  ticket_title: ticketResult.data.ticket_title,
+  ticket_description: ticketResult.data.ticket_description
+};
+\`\`\`
+
+Then step_0's result schema MUST include those fields:
+\`\`\`
+builder.addDocumentType('Step0Result', {
+  type: 'object',
+  properties: {
+    ticket_id: { type: 'string' },
+    ticket_title: { type: 'string' },
+    ticket_description: { type: 'string' }
+  },
+  required: ['ticket_id', 'ticket_title', 'ticket_description']
+});
+\`\`\`
+
+For the FINAL step's result (no downstream consumer), use a minimal schema:
+\`\`\`
+builder.addDocumentType('FinalStepResult', {
+  type: 'object',
+  properties: {
+    success: { type: 'boolean' }
+  },
+  required: ['success']
+});
+\`\`\`
+
+Example request schema:
 
 builder.addDocumentType('AgentRequest', {
   type: 'object',
@@ -396,14 +450,6 @@ builder.addDocumentType('AgentRequest', {
     config: { type: 'object' }
   },
   required: ['task', 'config']
-});
-
-Example agent result schema:
-
-builder.addDocumentType('AgentResult', {
-  type: 'object',
-  properties: {},
-  additionalProperties: true  // Accept any result structure
 });
 
 **Output Format:**

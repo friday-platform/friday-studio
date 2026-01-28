@@ -1,10 +1,76 @@
+import { execFile } from "node:child_process";
 import process from "node:process";
+import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { smallLLM } from "@atlas/llm";
+import { registry, smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { createSandbox, sandboxOptions } from "./sandbox.ts";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Schema for extracting repo and task from prompt.
+ */
+const PrepSchema = z.object({
+  repo: z
+    .string()
+    .nullable()
+    .describe("Repository in owner/repo format, or null if no clone instruction"),
+  task: z.string().describe("Task with clone instruction removed, or original prompt verbatim"),
+});
+
+/**
+ * Extract repository and cleaned task from prompt using haiku.
+ * If the prompt contains clone instructions, extracts the repo and removes the instruction.
+ * Otherwise returns null repo and the original prompt verbatim.
+ */
+async function extractRepoAndTask(
+  prompt: string,
+  abortSignal?: AbortSignal,
+): Promise<z.infer<typeof PrepSchema>> {
+  const { object } = await generateObject({
+    model: registry.languageModel("anthropic:claude-haiku-4-5"),
+    schema: PrepSchema,
+    abortSignal,
+    prompt: `Extract repository and task from this prompt.
+
+If the prompt instructs cloning a repository:
+- Extract the repo in "owner/repo" format (not a full URL)
+- Remove the cloning instruction from the task
+- Return the rest of the task verbatim
+
+If no cloning is mentioned: repo is null and task is the original prompt verbatim.
+
+Prompt:
+${prompt}`,
+  });
+  return object;
+}
+
+/**
+ * Clone a repository using the gh CLI.
+ * @param repo - Repository in owner/repo format
+ * @param targetDir - Directory to clone into
+ * @param ghToken - GitHub token for authentication
+ */
+async function cloneRepo(
+  repo: string,
+  targetDir: string,
+  ghToken: string,
+): Promise<Result<void, string>> {
+  try {
+    await execFileAsync("gh", ["repo", "clone", repo, targetDir], {
+      env: { ...process.env, GH_TOKEN: ghToken },
+    });
+    return success(undefined);
+  } catch (error) {
+    return fail(stringifyError(error));
+  }
+}
 
 /** Base timeout: no SDK messages AND no stderr activity (ms) */
 export const MESSAGE_TIMEOUT_MS = 60_000;
@@ -140,12 +206,39 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
     const controller = new AbortController();
     abortSignal?.addEventListener("abort", () => controller.abort());
 
+    // Extract repo from prompt and pre-clone if present
+    let effectivePrompt = prompt;
+    try {
+      const prep = await extractRepoAndTask(prompt, abortSignal);
+      if (prep.repo) {
+        logger.info("Pre-cloning repository", { repo: prep.repo, targetDir: sandbox.workDir });
+        const cloneResult = await cloneRepo(prep.repo, sandbox.workDir, ghToken);
+        if (cloneResult.ok) {
+          effectivePrompt = prep.task;
+          logger.info("Pre-clone successful, CLAUDE.md and skills will be loaded", {
+            repo: prep.repo,
+          });
+        } else {
+          logger.warn("Pre-clone failed, agent will handle", {
+            repo: prep.repo,
+            error: cloneResult.error,
+          });
+        }
+      } else {
+        logger.debug("No repository detected in prompt, skipping pre-clone");
+      }
+    } catch (error) {
+      logger.warn("Repo extraction failed, using original prompt", {
+        error: stringifyError(error),
+      });
+    }
+
     try {
       let responseText = "";
       const activity: ActivityTracker = { lastActivityMs: Date.now() };
 
       const sdkStream = query({
-        prompt,
+        prompt: effectivePrompt,
         options: {
           // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
           pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
@@ -154,7 +247,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           tools: { type: "preset", preset: "claude_code" },
           disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
           permissionMode: "bypassPermissions",
-          settingSources: [],
+          settingSources: ["project"],
           maxTurns: 500,
           sandbox: sandboxOptions,
           abortController: controller,

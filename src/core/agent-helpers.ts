@@ -3,7 +3,8 @@
  * Used by WorkspaceRuntime to integrate FSM agent actions with AgentOrchestrator
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
+import type { LLMAgentConfig, SystemAgentConfig, WorkspaceAgentConfig } from "@atlas/config";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import {
@@ -15,6 +16,72 @@ import {
   SupervisionLevel,
 } from "@atlas/hallucination";
 import { logger } from "@atlas/logger";
+
+/**
+ * Type guard for LLM agent config
+ */
+function isLLMAgent(agent: WorkspaceAgentConfig): agent is LLMAgentConfig {
+  return agent.type === "llm";
+}
+
+/**
+ * Type guard for System agent config
+ */
+function isSystemAgent(agent: WorkspaceAgentConfig): agent is SystemAgentConfig {
+  return agent.type === "system";
+}
+
+/**
+ * Type guard for Atlas agent config
+ */
+function isAtlasAgent(agent: WorkspaceAgentConfig): agent is AtlasAgentConfig {
+  return agent.type === "atlas";
+}
+
+/**
+ * Extract agent prompt from config based on agent type.
+ *
+ * @internal Exported for testing
+ */
+export function extractAgentConfigPrompt(agentConfig: WorkspaceAgentConfig | undefined): string {
+  if (!agentConfig) return "";
+
+  if (isLLMAgent(agentConfig)) {
+    // LLMAgentConfig.config.prompt is required in schema
+    return agentConfig.config.prompt;
+  }
+  if (isAtlasAgent(agentConfig)) {
+    // AtlasAgentConfig.prompt is required in schema
+    return agentConfig.prompt;
+  }
+  if (isSystemAgent(agentConfig) && agentConfig.config?.prompt) {
+    // SystemAgentConfig.config is optional, and config.prompt is optional
+    return agentConfig.config.prompt;
+  }
+  return "";
+}
+
+/**
+ * Build the final prompt for an agent with correct precedence.
+ *
+ * Prompt precedence: action.prompt > agentConfig.prompt > context only
+ *
+ * @param actionPrompt - Prompt from the FSM AgentAction (highest priority)
+ * @param agentConfigPrompt - Prompt from workspace.yml agent config (fallback)
+ * @param documentContext - Built context from FSM documents and signal data
+ * @returns Final prompt to send to the agent
+ *
+ * @internal Exported for testing
+ */
+export function buildFinalAgentPrompt(
+  actionPrompt: string | undefined,
+  agentConfigPrompt: string,
+  documentContext: string,
+): string {
+  // Prompt precedence: action.prompt > agentConfig.prompt > context only
+  const taskPrompt = actionPrompt || agentConfigPrompt;
+  return taskPrompt ? `${taskPrompt}\n\n${documentContext}` : documentContext;
+}
 
 /**
  * Datetime context from client session

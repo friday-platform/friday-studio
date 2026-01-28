@@ -20,6 +20,7 @@ import {
 } from "@atlas/core";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
+  type AgentAction,
   type AgentExecutor,
   AtlasLLMProviderAdapter,
   type Context,
@@ -48,7 +49,12 @@ import type {
   SessionSummary,
 } from "../types/core.ts";
 import { MessageUser } from "../types/core.ts";
-import { buildAgentPrompt, validateAgentOutput } from "./agent-helpers.ts";
+import {
+  buildAgentPrompt,
+  buildFinalAgentPrompt,
+  extractAgentConfigPrompt,
+  validateAgentOutput,
+} from "./agent-helpers.ts";
 
 // Re-export for backward compatibility (was previously defined locally)
 export type { SessionHistoryEventPayload } from "@atlas/core";
@@ -424,8 +430,8 @@ export class WorkspaceRuntime {
     job.documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
 
     // Create agent executor callback for this job
-    const agentExecutor: AgentExecutor = (agentId, context, signal) =>
-      this.executeAgent(agentId, context, job, signal);
+    const agentExecutor: AgentExecutor = (action, context, signal) =>
+      this.executeAgent(action, context, job, signal);
 
     // Always create MCP tool provider when pool available
     // GlobalMCPToolProvider auto-includes atlas-platform for ambient tools (webfetch, artifacts)
@@ -735,35 +741,29 @@ export class WorkspaceRuntime {
    * Integrates FSMEngine with AgentOrchestrator
    */
   private async executeAgent(
-    agentId: string,
+    action: AgentAction,
     fsmContext: Context,
     job: FSMJob,
     signal: SignalWithContext,
   ): Promise<AgentResult> {
+    const agentId = action.agentId;
+
     logger.debug("Executing agent via orchestrator", {
       agentId,
       documentCount: fsmContext.documents.length,
       state: fsmContext.state,
       jobName: job.name,
       hasSignalContext: !!signal._context,
+      hasActionPrompt: !!action.prompt,
     });
 
-    // Look up agent config first to get the configured prompt
+    // Look up agent config to get the configured prompt (fallback)
     const agentConfig = this.config.workspace.agents?.[agentId];
 
-    // Extract agent prompt from config based on agent type
-    let agentPrompt = "";
-    if (agentConfig) {
-      if (agentConfig.type === "llm" && agentConfig.config.prompt) {
-        agentPrompt = agentConfig.config.prompt;
-      } else if (agentConfig.type === "atlas" && agentConfig.prompt) {
-        agentPrompt = agentConfig.prompt;
-      } else if (agentConfig.type === "system" && agentConfig.config?.prompt) {
-        agentPrompt = agentConfig.config.prompt;
-      }
-    }
+    // Extract agent prompt from config (uses type-safe extraction)
+    const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
 
-    // Build context (facts, documents, signal data) with expanded artifacts
+    // Build document context (facts, documents, signal data) with expanded artifacts
     const context = await buildAgentPrompt(
       agentId,
       fsmContext,
@@ -771,9 +771,8 @@ export class WorkspaceRuntime {
       signal._context?.abortSignal,
     );
 
-    // Combine agent prompt with context
-    // Agent prompt comes first, then context
-    const prompt = agentPrompt ? `${agentPrompt}\n\n${context}` : context;
+    // Build final prompt with correct precedence: action.prompt > agentConfig.prompt > context only
+    const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
 
     // Extract streamId from conversation-context document if present
     const conversationContext = fsmContext.documents.find(
