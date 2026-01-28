@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import type { SessionDigest } from "@atlas/core/session/build-session-digest";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
 

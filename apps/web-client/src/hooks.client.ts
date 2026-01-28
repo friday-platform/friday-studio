@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-window -- this is only loaded in the browser.
-import { initErrorTracking } from "@atlas/ga4";
+import { initErrorTracking } from "@atlas/analytics/ga4";
 import * as Sentry from "@sentry/sveltekit";
 
 Sentry.init({

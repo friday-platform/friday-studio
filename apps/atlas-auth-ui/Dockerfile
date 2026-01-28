@@ -10,7 +10,7 @@ COPY apps/atlas-auth-ui/package.json apps/atlas-auth-ui/deno.json ./
 RUN deno install
 
 # Copy workspace dependency directly into node_modules
-COPY packages/ga4/ ./node_modules/@atlas/ga4/
+COPY packages/analytics/ ./node_modules/@atlas/analytics/
 
 # Copy source files
 COPY apps/atlas-auth-ui/ ./

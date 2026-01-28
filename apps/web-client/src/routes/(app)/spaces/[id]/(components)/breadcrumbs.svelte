@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { getAppContext } from "$lib/app-context.svelte";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GA4, trackEvent } from "@atlas/ga4";
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { browser } from "$app/environment";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GA4, trackEvent } from "@atlas/ga4";
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
   import { IconSmall } from "$lib/components/icons/small";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";

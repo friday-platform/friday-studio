@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GA4, trackEvent } from "@atlas/ga4";
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { IconSmall } from "$lib/components/icons/small";
   import type { ErrorEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";

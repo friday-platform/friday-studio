@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@ai-sdk/svelte": "^3.0.123",
+    "@atlas/analytics": "workspace:*",
     "@atlas/core": "workspace:*",
-    "@atlas/ga4": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/system": "workspace:*",
     "@lezer/common": "^1.5.0",

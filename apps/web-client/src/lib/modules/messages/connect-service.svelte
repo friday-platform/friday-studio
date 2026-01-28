@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Chat } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import Button from "$lib/components/button.svelte";
   import { Icons } from "$lib/components/icons";

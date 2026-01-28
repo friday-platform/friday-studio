@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import type { ReasoningResultStatusType } from "@atlas/core";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import {
     createColumnHelper,
     createTable,

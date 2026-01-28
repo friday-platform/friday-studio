@@ -2,7 +2,7 @@
   "name": "@atlas/analytics",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts" },
+  "exports": { ".": "./mod.ts", "./ga4": "./src/ga4/mod.ts" },
   "main": "./mod.ts",
   "dependencies": {
     "@opentelemetry/api-logs": "^0.211.0",

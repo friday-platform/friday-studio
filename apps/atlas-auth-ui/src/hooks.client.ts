@@ -1,4 +1,4 @@
-import { initErrorTracking } from "@atlas/ga4";
+import { initErrorTracking } from "@atlas/analytics";
 import * as Sentry from "@sentry/sveltekit";
 
 Sentry.init({

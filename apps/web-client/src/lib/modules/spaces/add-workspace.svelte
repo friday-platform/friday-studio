@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import type { WorkspaceConfig } from "@atlas/config";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Dialog } from "$lib/components/dialog";

@@ -1,1 +1,5 @@
-{ "name": "@atlas/analytics", "version": "1.0.0", "exports": { ".": "./mod.ts" } }
+{
+  "name": "@atlas/analytics",
+  "version": "1.0.0",
+  "exports": { ".": "./mod.ts", "./ga4": "./src/ga4/mod.ts" }
+}

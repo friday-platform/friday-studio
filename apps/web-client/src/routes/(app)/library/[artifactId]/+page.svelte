@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import { ArtifactDataSchema, type DatabasePreview } from "@atlas/core/artifacts";
-  import { GA4, trackEvent } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";

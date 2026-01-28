@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Chat } from "@ai-sdk/svelte";
   import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
+  import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import type { ArtifactWithContents } from "@atlas/core/artifacts";
-  import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/ga4";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { afterNavigate, beforeNavigate, goto } from "$app/navigation";
