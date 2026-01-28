@@ -11,7 +11,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 go build -o atlas-otel-collector ./apps/atlas-otel-collector
 
-FROM alpine:3.23.2
+FROM alpine:3.23.3
 
 RUN apk add --no-cache ca-certificates tzdata
 
