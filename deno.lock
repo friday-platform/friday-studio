@@ -38,7 +38,7 @@
     "npm:@ai-sdk/openai@^2.0.89": "2.0.89_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
     "npm:@ai-sdk/svelte@^3.0.123": "3.0.123_svelte@5.48.4__acorn@8.15.0_zod@4.3.6",
-    "npm:@anthropic-ai/claude-agent-sdk@~0.2.20": "0.2.20_zod@4.3.6",
+    "npm:@anthropic-ai/claude-agent-sdk@~0.2.22": "0.2.22_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.3.13",
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@eslint/compat@^2.0.1": "2.0.1_eslint@9.39.2",
@@ -337,8 +337,8 @@
         "is-fullwidth-code-point@5.1.0"
       ]
     },
-    "@anthropic-ai/claude-agent-sdk@0.2.20_zod@4.3.6": {
-      "integrity": "sha512-Q2rJlYC2hEhJRKcOswJrcvm0O6H/uhXkRPAAqbAlFR/jbCWeg6jpyr9iUmVBFUFOBzAWqT2C6KLHiTJ8NySvQg==",
+    "@anthropic-ai/claude-agent-sdk@0.2.22_zod@4.3.6": {
+      "integrity": "sha512-AO39PYe8nAfqx748UmQQ26BZAX91sOQomYFdtf5AwMwgOIH0BumrNHsHtrmgBZalsseWn84LAFfKtG5ylGR5Nw==",
       "dependencies": [
         "zod"
       ],
@@ -6064,7 +6064,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@anthropic-ai/claude-agent-sdk@~0.2.20",
+            "npm:@anthropic-ai/claude-agent-sdk@~0.2.22",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
