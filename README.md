@@ -408,6 +408,14 @@ npx husky
 
 This configures pre-commit hooks for linting.
 
+**Development Secrets** (Tempest team only):
+
+```bash
+# Requires 1Password CLI: brew install 1password-cli
+./scripts/setup-secrets.sh        # Fetches secrets, skips existing
+./scripts/setup-secrets.sh --force  # Re-fetch all secrets
+```
+
 ### Running from Source
 
 ```bash

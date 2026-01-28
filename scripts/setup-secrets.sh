@@ -1,6 +1,6 @@
 #!/bin/bash
 # Setup development secrets from 1Password
-# Usage: ./scripts/setup-secrets.sh [secret-name]
+# Usage: ./scripts/setup-secrets.sh [--force] [secret-name]
 #
 # Requires: 1Password CLI (op) - https://developer.1password.com/docs/cli/
 #
@@ -45,6 +45,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+FORCE="${FORCE:-}"
+
 info() { echo -e "${BLUE}info:${NC} $*"; }
 success() { echo -e "${GREEN}ok:${NC} $*"; }
 warn() { echo -e "${YELLOW}warn:${NC} $*"; }
@@ -52,6 +54,14 @@ error() { echo -e "${RED}error:${NC} $*" >&2; }
 die() {
 	error "$@"
 	exit 1
+}
+
+# Check if all given files exist
+all_exist() {
+	for file in "$@"; do
+		[[ -f "$file" ]] || return 1
+	done
+	return 0
 }
 
 require_op() {
@@ -111,37 +121,68 @@ repo_root() {
 # ---------------------------------------------------------------------------
 
 setup_google_oauth() {
-	info "Fetching Google OAuth credentials from 1Password..."
+	local files=("$ATLAS_DIR/google_client_id" "$ATLAS_DIR/google_client_secret")
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "Google OAuth credentials already exist, skipping"
+		return 0
+	fi
 
-	write_secret "$ATLAS_DIR/google_client_id" "$(op_read "$OP_GOOGLE/client_id")"
-	write_secret "$ATLAS_DIR/google_client_secret" "$(op_read "$OP_GOOGLE/client_secret")"
+	info "Fetching Google OAuth credentials from 1Password..."
+	write_secret "${files[0]}" "$(op_read "$OP_GOOGLE/client_id")"
+	write_secret "${files[1]}" "$(op_read "$OP_GOOGLE/client_secret")"
 	success "Wrote Google credentials to $ATLAS_DIR/"
 }
 
 setup_hubspot_oauth() {
-	info "Fetching HubSpot OAuth credentials from 1Password..."
+	local files=("$ATLAS_DIR/hubspot_client_id" "$ATLAS_DIR/hubspot_client_secret")
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "HubSpot OAuth credentials already exist, skipping"
+		return 0
+	fi
 
-	write_secret "$ATLAS_DIR/hubspot_client_id" "$(op_read "$OP_HUBSPOT/client_id")"
-	write_secret "$ATLAS_DIR/hubspot_client_secret" "$(op_read "$OP_HUBSPOT/client_secret")"
+	info "Fetching HubSpot OAuth credentials from 1Password..."
+	write_secret "${files[0]}" "$(op_read "$OP_HUBSPOT/client_id")"
+	write_secret "${files[1]}" "$(op_read "$OP_HUBSPOT/client_secret")"
 	success "Wrote HubSpot credentials to $ATLAS_DIR/"
 }
 
 setup_slack_oauth() {
-	info "Fetching Slack App OAuth credentials from 1Password..."
+	local files=("$ATLAS_DIR/slack_app_client_id" "$ATLAS_DIR/slack_app_client_secret")
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "Slack OAuth credentials already exist, skipping"
+		return 0
+	fi
 
-	write_secret "$ATLAS_DIR/slack_app_client_id" "$(op_read "$OP_SLACK/client_id")"
-	write_secret "$ATLAS_DIR/slack_app_client_secret" "$(op_read "$OP_SLACK/client_secret")"
+	info "Fetching Slack App OAuth credentials from 1Password..."
+	write_secret "${files[0]}" "$(op_read "$OP_SLACK/client_id")"
+	write_secret "${files[1]}" "$(op_read "$OP_SLACK/client_secret")"
 	success "Wrote Slack credentials to $ATLAS_DIR/"
 }
 
 setup_gateway() {
-	info "Fetching Gateway JWT public key from 1Password..."
+	local files=("$ATLAS_DIR/jwt_public_key.pem")
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "Gateway JWT public key already exists, skipping"
+		return 0
+	fi
 
-	write_secret "$ATLAS_DIR/jwt_public_key.pem" "$(op_read "$OP_JWT/public_key")"
+	info "Fetching Gateway JWT public key from 1Password..."
+	write_secret "${files[0]}" "$(op_read "$OP_JWT/public_key")"
 	success "Wrote JWT public key to $ATLAS_DIR/"
 }
 
 setup_bounce() {
+	local files=(
+		"$ATLAS_DIR/jwt_private_key.pem"
+		"$ATLAS_DIR/jwt_public_key.pem"
+		"$ATLAS_DIR/google_oauth_credentials.json"
+		"$ATLAS_DIR/sendgrid_api_key"
+	)
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "Bounce secrets already exist, skipping"
+		return 0
+	fi
+
 	info "Fetching Bounce secrets from 1Password..."
 
 	# JWT keys
@@ -172,6 +213,12 @@ setup_bounce() {
 }
 
 setup_litellm() {
+	local files=("$ATLAS_DIR/litellm-config.yaml" "$ATLAS_DIR/litellm_master_key")
+	if all_exist "${files[@]}" && [[ -z "$FORCE" ]]; then
+		info "LiteLLM config already exists, skipping"
+		return 0
+	fi
+
 	info "Fetching LiteLLM configuration from 1Password..."
 
 	# Download the config document
@@ -233,12 +280,16 @@ EOF
 
 # Generate ~/.atlas/gateway.env
 generate_gateway_env() {
+	local env_file="$ATLAS_DIR/gateway.env"
+	if [[ -f "$env_file" ]] && [[ -z "$FORCE" ]]; then
+		info "gateway.env already exists, skipping"
+		return 0
+	fi
+
 	info "Fetching Gateway API keys from 1Password..."
 	local sendgrid_key parallel_key
 	sendgrid_key=$(op_read "$OP_SENDGRID/credential")
 	parallel_key=$(op_read "$OP_PARALLEL/credential")
-
-	local env_file="$ATLAS_DIR/gateway.env"
 
 	cat >"$env_file" <<EOF
 JWT_PUBLIC_KEY_FILE=${ATLAS_DIR}/jwt_public_key.pem
@@ -280,7 +331,10 @@ EOF
 # ---------------------------------------------------------------------------
 
 usage() {
-	echo "Usage: $0 [secret-name]"
+	echo "Usage: $0 [--force] [secret-name]"
+	echo ""
+	echo "Options:"
+	echo "  --force        Re-fetch secrets even if they already exist"
 	echo ""
 	echo "Available secrets:"
 	echo "  google-oauth   Google OAuth credentials for Link service"
@@ -292,16 +346,26 @@ usage() {
 	echo "  all            Set up all secrets (default)"
 	echo ""
 	echo "Examples:"
-	echo "  $0               # Set up all secrets"
+	echo "  $0               # Set up all secrets (skips existing)"
+	echo "  $0 --force       # Re-fetch all secrets"
 	echo "  $0 google-oauth  # Set up only Google OAuth"
-	echo "  $0 hubspot-oauth # Set up only HubSpot OAuth"
-	echo "  $0 slack-oauth   # Set up only Slack OAuth"
-	echo "  $0 gateway       # Set up only Gateway secrets"
-	echo "  $0 bounce        # Set up only Bounce secrets"
-	echo "  $0 litellm       # Set up only LiteLLM config"
+	echo "  $0 --force bounce # Re-fetch Bounce secrets"
 }
 
 main() {
+	# Parse --force flag
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--force)
+			FORCE=1
+			shift
+			;;
+		*)
+			break
+			;;
+		esac
+	done
+
 	local secret="${1:-all}"
 
 	case "$secret" in
