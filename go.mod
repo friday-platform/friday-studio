@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/bigquery v1.72.0
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/secretmanager v1.16.0
-	cloud.google.com/go/storage v1.59.1
+	cloud.google.com/go/storage v1.59.2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/ggicci/httpin v0.20.2
 	github.com/go-chi/chi/v5 v5.2.4
