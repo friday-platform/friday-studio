@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GA4, trackEvent } from "@atlas/analytics";
+  import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
   import logoMarkDark from "$lib/assets/logo-mark-dark.png";
   import logoMark from "$lib/assets/logo-mark.png";
