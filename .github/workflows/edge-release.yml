@@ -1,8 +1,9 @@
 name: Edge Release
 
 on:
-  push:
-    branches: [main]
+  # Temporarily disabled - not building standalone installers right now
+  # push:
+  #   branches: [main]
   workflow_dispatch:
 
 permissions:

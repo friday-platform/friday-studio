@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  # Temporarily disabled - not building standalone installers right now
+  # push:
+  #   tags:
+  #     - "v*"
   workflow_dispatch:
     inputs:
       tag:
