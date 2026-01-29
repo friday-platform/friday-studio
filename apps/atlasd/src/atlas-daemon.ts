@@ -14,7 +14,6 @@ import {
 import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
-import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
 import { flush as flushSentry } from "@atlas/sentry";
 import { WorkspaceManager } from "@atlas/workspace";
 import type {
@@ -323,18 +322,6 @@ export class AtlasDaemon {
 
     // Start platform session cleanup interval
     this.startPlatformSessionCleanup();
-
-    // Start embedding model download in background (non-blocking)
-    // This prevents the first conversation from being blocked by model downloads
-    logger.info("Starting background initialization of global embedding provider...");
-    embeddingProviderGetInstance()
-      .then(() => {
-        logger.info("Global embedding provider initialized successfully in background");
-      })
-      .catch((error) => {
-        logger.error("Failed to initialize global embedding provider in background", { error });
-        // Continue daemon startup - memory features will initialize lazily when needed
-      });
 
     // Initialize OTEL metrics
     await AtlasMetrics.init();
@@ -1545,14 +1532,6 @@ export class AtlasDaemon {
       } catch (error) {
         logger.error("Failed to close LibraryStorage", { error });
       }
-    }
-
-    // Dispose global embedding provider
-    try {
-      await embeddingProviderForceDispose();
-      logger.info("Global embedding provider disposed");
-    } catch (error) {
-      logger.error("Failed to dispose global embedding provider", { error });
     }
 
     // Shutdown HTTP server

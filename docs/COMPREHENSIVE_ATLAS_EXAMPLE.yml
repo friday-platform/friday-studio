@@ -450,150 +450,6 @@ jobs:
         # Skip planning phase for simple jobs
         # skip_planning: true
 
-      # Memory settings for this job
-      memory:
-        enabled: true
-        # Extract facts from session
-        fact_extraction: true
-        # Include summary in session receipt
-        summary: true
-
-# =============================================================================
-# MEMORY CONFIGURATION (Extended for atlas.yml)
-# =============================================================================
-# Atlas memory configuration is more complex than workspace memory
-# It configures memory at multiple scopes: default, agent, session, workspace
-memory:
-  # Default memory configuration for all components
-  default:
-    enabled: true
-    # Memory storage backend
-    storage: "coala-local"
-    # Enable cognitive processing loop
-    cognitive_loop: true
-    # Retention policy
-    retention:
-      max_age_days: 30
-      max_entries: 1000
-      cleanup_interval_hours: 24
-
-  # Streaming memory configuration for performance (optional)
-  streaming:
-    enabled: true
-    queue_max_size: 1000
-    batch_size: 10
-    # Duration format for flush interval
-    flush_interval: "1s"
-    background_processing: true
-    persistence_enabled: true
-    error_retry_attempts: 3
-    priority_processing: true
-    # Safe migration mode - write to both old and new systems
-    dual_write_enabled: true
-    # Legacy batch processing
-    legacy_batch_enabled: false
-    # Stream all memory operations
-    stream_everything: true
-    # Track performance metrics
-    performance_tracking: true
-
-  # Agent-level memory configuration
-  agent:
-    enabled: true
-    # Scope: "agent", "session", or "workspace"
-    scope: "agent"
-    # Include memory in agent context
-    include_in_context: true
-    # Limits for context assembly
-    context_limits:
-      relevant_memories: 2
-      past_successes: 1
-      past_failures: 1
-    # Memory type configurations
-    memory_types:
-      working:
-        enabled: true
-        max_age_hours: 2
-        max_entries: 50
-      procedural:
-        enabled: true
-        max_age_days: 7
-        max_entries: 100
-      episodic:
-        enabled: false  # Agents shouldn't accumulate episodic memories
-        max_age_days: 1
-        max_entries: 10
-      semantic:
-        enabled: true
-        max_age_days: 14
-        max_entries: 200
-      contextual:
-        enabled: false  # Contextual memory handled at session level
-        max_age_hours: 1
-        max_entries: 5
-
-  # Session-level memory configuration
-  session:
-    enabled: true
-    scope: "session"
-    include_in_context: true
-    context_limits:
-      relevant_memories: 5
-      past_successes: 3
-      past_failures: 2
-    memory_types:
-      working:
-        enabled: true
-        max_age_hours: 24
-        max_entries: 100
-      episodic:
-        enabled: true  # Sessions accumulate episodic memories for task learning
-        max_age_days: 7
-        max_entries: 50
-      procedural:
-        enabled: true
-        max_age_days: 30
-        max_entries: 200
-      semantic:
-        enabled: true
-        max_age_days: 90
-        max_entries: 500
-      contextual:
-        enabled: true
-        max_age_hours: 24
-        max_entries: 100
-
-  # Workspace-level memory configuration
-  workspace:
-    enabled: true
-    scope: "workspace"
-    # Workspace memory not directly included in agent context
-    include_in_context: false
-    context_limits:
-      relevant_memories: 10
-      past_successes: 5
-      past_failures: 3
-    memory_types:
-      working:
-        enabled: false  # Workspace doesn't need working memory
-        max_entries: 0
-      episodic:
-        enabled: true
-        max_age_days: 90
-        max_entries: 1000
-      procedural:
-        enabled: true
-        max_age_days: 365
-        max_entries: 500
-      semantic:
-        enabled: true
-        max_age_days: 365
-        max_entries: 2000
-      contextual:
-        enabled: true
-        max_age_days: 30
-        max_entries: 200
-
 # =============================================================================
 # SUPERVISORS CONFIGURATION (atlas.yml only)
 # =============================================================================
@@ -603,8 +459,6 @@ supervisors:
   workspace:
     # Model for workspace-level decisions
     model: "claude-sonnet-4-20250514"
-    # Memory scope to use
-    memory: "workspace"
     # Supervision configuration - REQUIRED
     supervision:
       # Level: "minimal", "standard", "detailed"
@@ -643,7 +497,6 @@ supervisors:
   # Session supervisor - coordinates agent execution
   session:
     model: "claude-sonnet-4-20250514"
-    memory: "session"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -668,7 +521,6 @@ supervisors:
   # Agent supervisor - manages individual agent execution
   agent:
     model: "claude-sonnet-4-20250514"
-    memory: "agent"
     supervision:
       level: "minimal"
       cache_enabled: true

@@ -18,9 +18,7 @@
 
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import type { CoALAMemoryManager } from "@atlas/memory";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
-import { createErrorCause } from "../utils/error-helpers.ts";
 
 // === Input/Output Types for State Machine Actors ===
 
@@ -48,7 +46,6 @@ type PersistResultsOutput = void;
 type BuildAgentContext = (
   agent: AtlasAgent,
   sessionData: AgentSessionData,
-  sessionMemory: CoALAMemoryManager | null,
   prompt: string,
   overrides?: Partial<AgentContext>,
 ) => Promise<PrepareContextOutput>;
@@ -95,14 +92,13 @@ interface AgentExecutionMachineInput {
  * Creates the agent execution state machine.
  *
  * @param loadAgentFn - Function to load agent code from registry
- * @param contextBuilder - Builds execution context with memory and tools
- * @param sessionMemory - CoALA memory manager (can be null)
+ * @param contextBuilder - Builds execution context with tools
+ * @param logger - Logger instance
  * @returns Configured XState machine
  */
 export function createAgentExecutionMachine(
   loadAgentFn: (agentId: string) => Promise<AtlasAgent>,
   contextBuilder: BuildAgentContext,
-  sessionMemory: CoALAMemoryManager | null,
   logger: Logger,
 ) {
   const machineSetup = setup({
@@ -126,13 +122,7 @@ export function createAgentExecutionMachine(
       prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
         // Pass abortSignal as an override if present
         const overrides = input.abortSignal ? { abortSignal: input.abortSignal } : undefined;
-        return await contextBuilder(
-          input.agent,
-          input.sessionData,
-          sessionMemory,
-          input.prompt,
-          overrides,
-        );
+        return await contextBuilder(input.agent, input.sessionData, input.prompt, overrides);
       }),
 
       executeAgent: fromPromise<ExecuteAgentOutput, ExecuteAgentInput>(async ({ input }) => {
@@ -141,40 +131,13 @@ export function createAgentExecutionMachine(
         return result;
       }),
 
-      persistResults: fromPromise<PersistResultsOutput, PersistResultsInput>(({ input }) => {
-        try {
-          const coala = sessionMemory;
-          if (!coala) {
-            logger.debug("No session memory available; skipping episodic persistence");
-            return Promise.resolve();
-          }
-
-          const eventId = `epi:${Date.now()}:${input.agentId}`;
-          coala.rememberWithMetadata(
-            eventId,
-            {
-              eventType: "agent_execution",
-              agentId: input.agentId,
-              prompt:
-                typeof input.prompt === "string" ? input.prompt : JSON.stringify(input.prompt),
-              output: JSON.stringify(input.result),
-              duration: input.duration.toString(),
-              timestamp: Date.now().toString(),
-            },
-            // Using CoALAMemoryType enum for type safety
-            {
-              memoryType: "episodic",
-              tags: ["agent_execution", "episodic", input.agentId],
-              relevanceScore: Math.min(1, Math.max(0.3, input.duration / 5000)),
-              confidence: 0.9,
-            },
-          );
-        } catch (e) {
-          const errorCause = createErrorCause(e);
-          logger.error("Failed to persist episodic result", { error: e, errorCause });
-        }
-        return Promise.resolve();
-      }),
+      persistResults: fromPromise<PersistResultsOutput, PersistResultsInput>(
+        ({ input: _input }) => {
+          // Memory persistence removed - TEM-3631
+          // This actor is kept as a placeholder for future persistence mechanisms
+          return Promise.resolve();
+        },
+      ),
     },
 
     actions: {

@@ -3,7 +3,6 @@
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
-import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
 import type { MaybePromise } from "@atlas/utils";
 
 /**
@@ -40,7 +39,6 @@ export interface IAtlasScope {
   parentScopeId?: string;
   supervisor?: IWorkspaceSupervisor;
   context: ITempestContextManager;
-  memory: ITempestMemoryManager;
   messages: ITempestMessageManager;
   prompts: { system: string; user: string };
   gates: IAtlasGate[];
@@ -208,56 +206,6 @@ export interface ITempestContextManager {
 export interface ITempestContext {
   source: { type: string; id: string };
   detail: string;
-}
-
-// Enhanced memory interface supporting both legacy and CoALA methods
-export interface ITempestMemoryManager {
-  // CoALA-specific methods (optional for backwards compatibility)
-  rememberWithMetadata?(
-    key: string,
-    content: string | Record<string, string>,
-    metadata: {
-      memoryType: CoALAMemoryType;
-      tags: string[];
-      relevanceScore: number;
-      associations?: string[];
-      confidence?: number;
-      decayRate?: number;
-      source?: string;
-      sourceMetadata?: {
-        agentId?: string;
-        toolName?: string;
-        sessionId?: string;
-        userId?: string;
-        workspaceId?: string;
-      };
-    },
-  ): void;
-
-  queryMemories?(query: {
-    content?: string;
-    memoryType?: string;
-    tags?: string[];
-    minRelevance?: number;
-    maxAge?: number;
-    sourceScope?: string;
-    limit?: number;
-  }): unknown[];
-
-  // Cognitive loop methods
-  reflect?(): unknown[];
-  consolidate?(): void;
-  prune?(): void;
-  adapt?(feedback: unknown): void;
-}
-
-// Enhanced storage adapter for CoALA memory types
-export interface ICoALAMemoryStorageAdapter {
-  commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void>;
-  loadByType(memoryType: CoALAMemoryType): Promise<CoALAMemoryEntry[]>;
-  commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void>;
-  loadAll(): Promise<Record<CoALAMemoryType, CoALAMemoryEntry[]>>;
-  listMemoryTypes(): CoALAMemoryType[];
 }
 
 export interface ITempestMessageManager {

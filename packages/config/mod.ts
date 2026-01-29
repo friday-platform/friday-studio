@@ -19,8 +19,6 @@ export * from "./src/config-loader.ts";
 export * from "./src/jobs.ts";
 // MCP schemas (Platform and Protocol)
 export * from "./src/mcp.ts";
-// Memory configuration schemas
-export * from "./src/memory.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
 // Signal schemas with tagged unions

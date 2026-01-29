@@ -92,15 +92,7 @@ telephone/
 │   └── reinterpretation-agent.ts
 ├── workspace.yml             # Workspace configuration
 ├── setup-workspace.sh        # Quick setup script
-├── .env                      # API keys (create from .env.example)
-└── .atlas/                   # Runtime data (gitignored)
-    └── memory/               # CoALA memory storage by type
-        ├── working.json      # Short-term working memory
-        ├── episodic.json     # Specific session experiences
-        ├── semantic.json     # General knowledge patterns
-        ├── procedural.json   # Transformation techniques
-        ├── contextual.json   # Session-specific context
-        └── index.json        # Memory statistics and overview
+└── .env                      # API keys (create from .env.example)
 ```
 
 ## Configuration

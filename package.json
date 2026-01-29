@@ -23,7 +23,6 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/sentry": "workspace:*",
-    "@atlas/memory": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/signals": "workspace:*",
     "@atlas/storage": "workspace:*",

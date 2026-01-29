@@ -12,7 +12,6 @@
     "@atlas/cron": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp-server": "workspace:*",
-    "@atlas/memory": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/signals": "workspace:*",
     "@atlas/storage": "workspace:*",

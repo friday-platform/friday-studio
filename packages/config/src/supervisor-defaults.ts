@@ -9,7 +9,6 @@ import { type SupervisorsConfig, SupervisorsConfigSchema } from "./atlas.ts";
 const supervisorDefaultsUnvalidated: SupervisorsConfig = {
   workspace: {
     model: "claude-sonnet-4-5",
-    memory: "workspace",
     supervision: {
       level: "standard",
       cache_enabled: true,
@@ -38,7 +37,7 @@ Core process:
 6. Monitor session progress and handle any coordination needs
 
 Context filtering guidelines:
-- Include relevant workspace configuration (agents, tools, memory)
+- Include relevant workspace configuration (agents, tools)
 - Filter out unrelated signals, jobs, or agent configs
 - Provide minimal context needed for effective session execution
 - Preserve important metadata (workspace name, version, etc.)
@@ -64,7 +63,6 @@ Respond in structured format for programmatic processing.`,
 
   session: {
     model: "claude-sonnet-4-5",
-    memory: "session",
     supervision: {
       level: "detailed",
       cache_enabled: true,
@@ -120,7 +118,6 @@ Format as structured execution plan for immediate implementation.`,
 
   agent: {
     model: "claude-sonnet-4-5",
-    memory: "agent",
     supervision: {
       level: "minimal",
       cache_enabled: true,

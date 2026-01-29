@@ -42,7 +42,6 @@ import * as path from "@std/path";
 import { z } from "zod";
 import type {
   ITempestContextManager,
-  ITempestMemoryManager,
   ITempestMessageManager,
   IWorkspaceArtifact,
   IWorkspaceSession,
@@ -147,10 +146,6 @@ const AgentResultArtifactSchema = z.object({
 // Stub factory functions for minimal IAtlasScope manager implementations
 function createStubContextManager(): ITempestContextManager {
   return { add: () => {}, remove: () => {}, search: () => [], size: () => 0 };
-}
-
-function createStubMemoryManager(): ITempestMemoryManager {
-  return {};
 }
 
 function createStubMessageManager(): ITempestMessageManager {
@@ -970,7 +965,6 @@ export class WorkspaceRuntime {
       // IAtlasScope methods (minimal implementation)
       supervisor: undefined,
       context: createStubContextManager(),
-      memory: createStubMemoryManager(),
       messages: createStubMessageManager(),
       prompts: { system: "", user: "" },
       gates: [],

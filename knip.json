@@ -39,10 +39,6 @@
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
-    "packages/memory": {
-      "entry": ["tests/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
-    },
     "packages/notifications": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/openapi-client": {
       "project": ["**/*.{ts,tsx,js,jsx}!"],

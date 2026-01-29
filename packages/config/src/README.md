@@ -69,7 +69,6 @@ if (!result.success) {
 - `signals.ts` - Signal provider schemas with tagged unions
 - `agents.ts` - Agent type schemas with tagged unions
 - `jobs.ts` - Job specification schemas
-- `memory.ts` - Memory configuration (simple and complex)
 - `atlas.ts` - Atlas-specific schemas (supervisors, planning, etc.)
 - `workspace.ts` - Main configuration schemas
 - `index.ts` - Re-exports and helper functions
@@ -145,7 +144,7 @@ const agent = getAgent(config, "data-analyzer");
 
 ### Jobs
 
-- Move `timeout`, `supervision`, and `memory` under `config`
+- Move `timeout` and `supervision` under `config`
 - Replace `input_source` with structured `context`
 - Use `allow`/`deny` instead of `allowed`/`denied`
 

@@ -91,14 +91,6 @@ export function getAtlasMemoryDir(): string {
 }
 
 /**
- * Get MECMF cache directory (global)
- * Used for caching embeddings models and tokenizers
- */
-export function getMECMFCacheDir(): string {
-  return join(getAtlasMemoryDir(), ".cache");
-}
-
-/**
  * Get workspace files directory for a specific workspace
  * Used for storing generated/transformed files that need to persist
  */

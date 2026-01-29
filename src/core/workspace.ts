@@ -130,7 +130,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
       workflows: Object.keys(this.workflows).length,
       sources: Object.keys(this.sources).length,
       actions: Object.keys(this.actions).length,
-      memory: this.memory.size(),
+      memory: 0, // Memory system removed (TEM-3631)
       context: this.context.size(),
       messages: this.messages.history.length,
     };

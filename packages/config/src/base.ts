@@ -20,9 +20,6 @@ export type SupervisionLevel = z.infer<typeof SupervisionLevel>;
 export const SignalProvider = z.enum(["http", "schedule", "system"]);
 export type SignalProvider = z.infer<typeof SignalProvider>;
 
-export const MemoryScope = z.enum(["workspace", "session", "agent"]);
-export type MemoryScope = z.infer<typeof MemoryScope>;
-
 // ==============================================================================
 // UTILITY SCHEMAS
 // ==============================================================================

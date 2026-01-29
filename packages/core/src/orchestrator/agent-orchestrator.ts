@@ -18,7 +18,6 @@ import type {
   ToolResult,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
 import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -62,8 +61,6 @@ export interface AgentExecutionContext {
   reasoning?: string;
   agentTools?: string[]; // Agent-specific tools to filter from workspace tools
   onStreamEvent?: (event: AtlasUIMessageChunk) => void; // NEW: Callback for stream events
-  /** Optional pre-provisioned session memory. If not provided, orchestrator creates one. */
-  memoryManager?: CoALAMemoryManager;
   /** Optional abort signal for cancelling the execution */
   abortSignal?: AbortSignal;
 }
@@ -135,8 +132,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
   private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
-  // Cache CoALA session memories per workspaceId:sessionId
-  private sessionMemories = new Map<string, CoALAMemoryManager>();
   // Track active MCP requests for cancellation
   private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
   // Track active agent executions to prevent premature workspace shutdown
@@ -447,21 +442,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   }
 
   /**
-   * Get or create a CoALAMemoryManager for a given session within a workspace.
-   */
-  private getOrCreateSessionMemory(sessionId: string, workspaceId: string): CoALAMemoryManager {
-    const key = `${workspaceId}:${sessionId}`;
-    const existing = this.sessionMemories.get(key);
-    if (existing) return existing;
-
-    // Create a properly typed scope for CoALAMemoryManager
-    const scope: IMemoryScope = { id: sessionId, workspaceId };
-    const memory = new CoALAMemoryManager(scope);
-    this.sessionMemories.set(key, memory);
-    return memory;
-  }
-
-  /**
    * Execute an agent task. Routes to wrapped agents (in-process)
    * or MCP agents (separate services) based on registration.
    */
@@ -662,11 +642,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       let agentContext: AgentContext;
       let finalPrompt = prompt;
 
-      // Resolve session memory (caller-provided or orchestrator-managed)
-      const sessionMemory =
-        context.memoryManager ??
-        this.getOrCreateSessionMemory(context.sessionId, context.workspaceId);
-
       if (this.buildAgentContext) {
         // Use the context builder to get proper tools and enriched prompt
         try {
@@ -678,13 +653,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
               userId: context.userId,
               streamId: context.streamId,
             },
-            sessionMemory,
             prompt,
             {
               stream: streamEmitter, // Override with our stream emitter
               abortSignal: context.abortSignal, // Pass abort signal
             },
-            context.previousResults, // Pass previous results for context enrichment
           );
 
           agentContext = builtContext;
@@ -760,30 +733,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           throw error.cause;
         }
         throw error;
-      }
-
-      // Safely persist episodic memory for wrapped-agent execution
-      try {
-        const eventKey = `epi:${Date.now()}:${agentId}`;
-        sessionMemory.rememberWithMetadata(
-          eventKey,
-          {
-            agentId,
-            task: this.truncateTask(prompt),
-            output: JSON.stringify(result),
-            duration: (Date.now() - startTime).toString(),
-          },
-          {
-            memoryType: "episodic",
-            tags: ["agent-execution", agentId],
-            relevanceScore: 0.5,
-            confidence: 0.9,
-          },
-        );
-      } catch (memErr) {
-        logger.debug("Failed to persist episodic memory for wrapped agent", {
-          error: memErr instanceof Error ? memErr.message : String(memErr),
-        });
       }
 
       const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(result);
@@ -905,21 +854,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
         this.mcpSessions.delete(sessionId);
 
-        // Clean up session memory if workspaceId exists
-        if (setup.workspaceId) {
-          const memoryKey = `${setup.workspaceId}:${sessionId}`;
-          const memory = this.sessionMemories.get(memoryKey);
-          if (memory) {
-            try {
-              await memory.dispose();
-              this.sessionMemories.delete(memoryKey);
-              this.logger.debug("Cleaned up session memory", { memoryKey });
-            } catch (error) {
-              this.logger.error("Error disposing session memory", { memoryKey, error });
-            }
-          }
-        }
-
         // Clean up stream handlers for this session
         for (const key of this.activeStreamHandlers.keys()) {
           if (key.startsWith(`${sessionId}:`)) {
@@ -940,16 +874,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       clearInterval(this.sessionCleanupInterval);
       this.sessionCleanupInterval = undefined;
     }
-
-    // Dispose session memories
-    for (const memory of this.sessionMemories.values()) {
-      try {
-        await memory.dispose();
-      } catch (error) {
-        this.logger.error("Error disposing session memory", { error });
-      }
-    }
-    this.sessionMemories.clear();
 
     for (const [sessionId, setup] of this.mcpSessions.entries()) {
       try {

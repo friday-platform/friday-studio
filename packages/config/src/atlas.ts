@@ -19,7 +19,6 @@ export type SupervisorPrompts = z.infer<typeof SupervisorPromptsSchema>;
 
 const SupervisorConfigSchema = z.strictObject({
   model: z.string().describe("LLM model to use for supervision"),
-  memory: z.string().optional().describe("Memory scope to use"),
 
   supervision: z.strictObject({
     level: SupervisionLevel,

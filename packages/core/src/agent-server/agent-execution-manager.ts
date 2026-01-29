@@ -15,7 +15,6 @@
 
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import type { CoALAMemoryManager } from "@atlas/memory";
 import { createActor } from "xstate";
 import {
   type AgentExecutionMachineActor,
@@ -26,7 +25,6 @@ import {
 type BuildAgentContext = (
   agent: AtlasAgent,
   sessionData: AgentSessionData,
-  sessionMemory: CoALAMemoryManager | null,
   prompt: string,
   overrides?: Partial<AgentContext>,
 ) => Promise<PrepareContextOutput>;
@@ -44,40 +42,16 @@ export class AgentExecutionManager {
   private activeExecutions = new Map<string, AbortController>();
   private loadAgentFn: (agentId: string) => Promise<AtlasAgent>;
   private contextBuilder: BuildAgentContext;
-  private sessionMemory: CoALAMemoryManager | null;
   private logger: Logger;
 
   constructor(
     loadAgentFn: (agentId: string) => Promise<AtlasAgent>,
     contextBuilder: BuildAgentContext,
-    sessionMemory: CoALAMemoryManager | null = null,
     logger: Logger,
   ) {
     this.loadAgentFn = loadAgentFn;
     this.contextBuilder = contextBuilder;
-    this.sessionMemory = sessionMemory;
     this.logger = logger.child({ component: "AgentExecutionManager" });
-  }
-
-  /**
-   * Update the session memory used for future agent executions.
-   * Clears any cached actors so new machines pick up the updated memory.
-   */
-  setSessionMemory(memory: CoALAMemoryManager): void {
-    this.sessionMemory = memory;
-    // Recreate machines with updated memory for future executions
-    for (const [agentId, actor] of this.activeAgents) {
-      try {
-        actor.stop();
-      } catch (error) {
-        this.logger.error("Error stopping actor during memory update", {
-          agentId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    this.activeAgents.clear();
-    this.logger.info("AgentExecutionManager session memory updated; cleared active actors");
   }
 
   /**
@@ -89,7 +63,6 @@ export class AgentExecutionManager {
       const machine = createAgentExecutionMachine(
         this.loadAgentFn,
         this.contextBuilder,
-        this.sessionMemory,
         this.logger,
       );
       const actor = createActor(machine, { input: { agentId } });

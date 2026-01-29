@@ -112,7 +112,6 @@ packages/
   @atlas/core       # Core types, artifacts, errors
   @atlas/logger     # Structured logging
   @atlas/mcp        # MCP client implementation
-  @atlas/memory     # CoALA/MECMF memory system
   @atlas/signals    # Signal types and routing
   @atlas/storage    # Persistence layer
 src/                  # atlasd internals (not a separate app)
@@ -140,7 +139,7 @@ Quick mental model:
 3. Workspace spawns session
 4. Session supervisor plans execution
 5. Agents execute with MCP tool access
-6. Results stored in memory system
+6. Results returned via SSE stream
 
 ## Local Development with CLI
 

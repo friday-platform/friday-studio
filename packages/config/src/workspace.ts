@@ -14,7 +14,6 @@ import {
 import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
-import { AtlasMemoryConfigSchema, WorkspaceMemoryConfigSchema } from "./memory.ts";
 import { NotificationConfigSchema } from "./notifications.ts";
 import { WorkspaceSignalConfigSchema } from "./signals.ts";
 
@@ -40,9 +39,6 @@ export const WorkspaceConfigSchema = z.strictObject({
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
 
-  // Memory configuration
-  memory: WorkspaceMemoryConfigSchema.optional(),
-
   // Notifications configuration
   notifications: NotificationConfigSchema.optional(),
 
@@ -60,7 +56,6 @@ export const AtlasConfigSchema = WorkspaceConfigSchema.extend({
   // Override with extended versions
   server: AtlasServerConfigSchema.optional(),
   tools: AtlasToolsConfigSchema.optional(),
-  memory: AtlasMemoryConfigSchema.optional(),
 
   // Atlas-specific additions
   supervisors: SupervisorsConfigSchema.optional(),

@@ -7,30 +7,12 @@
  * - Storage interfaces and abstractions
  * - Various storage adapter implementations
  * - Memory persistence utilities
- * - Vector search storage adapters
  */
 
 export const STORAGE_VERSION = "1.0.0";
 
-// Memory storage adapters
-export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
+// Memory storage utilities
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
-export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
-// Core storage interfaces and types
-export type { ICoALAMemoryStorageAdapter } from "./src/types/core.ts";
-
-// Vector search interfaces
-export type {
-  IEmbeddingProvider,
-  IVectorSearchStorageAdapter,
-  VectorEmbedding,
-  VectorIndexStats,
-  VectorSearchConfig,
-  VectorSearchQuery,
-  VectorSearchResult,
-} from "./src/types/vector-search.ts";
-// Vector search storage adapters
-export { VectorSearchLocalStorageAdapter } from "./src/vector/vector-search-local.ts";
 
 // General storage interface
 export interface StorageAdapter {

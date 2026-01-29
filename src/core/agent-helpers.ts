@@ -104,8 +104,7 @@ interface DatetimeContext {
  * - Task description
  *
  * NOTE: Working memory integration would go here if needed, but for the initial
- * FSM integration, we're keeping this minimal. The session supervisor's MECMF
- * integration can be added later if needed.
+ * FSM integration, we're keeping this minimal.
  */
 export async function buildAgentPrompt(
   _agentId: string,

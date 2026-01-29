@@ -7,7 +7,6 @@
 
 import type { AgentResult } from "@atlas/agent-sdk";
 import type {
-  AtlasMemoryConfig,
   JobSpecification,
   RuntimeConfig,
   SupervisorsConfig,
@@ -20,7 +19,6 @@ import type { SessionSupervisorStatusType } from "../constants/supervisor-status
 
 // Type aliases for clarity
 type AgentConfig = WorkspaceAgentConfig;
-type MemoryConfig = AtlasMemoryConfig;
 type SignalsConfig = Record<string, WorkspaceSignalConfig>;
 type JobsConfig = Record<string, JobSpecification>;
 
@@ -38,7 +36,6 @@ export interface WorkspaceSupervisorConfig {
   workspace: WorkspaceConfig["workspace"];
   signals: SignalsConfig;
   jobs: JobsConfig;
-  memory?: MemoryConfig;
   tools?: ToolsConfig;
   supervisorDefaults?: SupervisorsConfig;
   runtime?: RuntimeConfig;
@@ -50,7 +47,6 @@ export interface WorkspaceSupervisorConfig {
  */
 export interface SessionSupervisorConfig {
   agents: Record<string, AgentConfig>;
-  memory?: MemoryConfig;
   tools?: ToolsConfig;
 }
 
@@ -62,7 +58,6 @@ export interface AgentExecutionConfig {
   agentId: string; // The agent's ID (key from agents record)
   agent: AgentConfig;
   tools?: string[]; // Agent's specific tools array
-  memory?: MemoryConfig;
   workspaceTools?: ToolsConfig; // Workspace-level tools config
   workspaceTimeout?: import("@atlas/config").WorkspaceTimeoutConfig; // Workspace timeout configuration
 }

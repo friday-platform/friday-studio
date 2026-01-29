@@ -15,7 +15,6 @@ import type {
 import { type AgentSessionData, AgentSessionDataSchema } from "@atlas/agent-sdk";
 import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
-import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import z from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
@@ -33,7 +32,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   private isRunning = false;
   private sessionId: string;
   private hasActiveSSEFn?: (sessionId?: string) => boolean;
-  private sessionMemory?: CoALAMemoryManager;
 
   /**
    * Format error/cancellation response for both MCP and direct contexts
@@ -106,7 +104,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     this.executionManager = new AgentExecutionManager(
       (agentId) => this.loadAgent(agentId),
       this.buildAgentContext,
-      this.sessionMemory ?? null,
       deps.logger.child({ component: "agent-execution-manager" }),
     );
 
@@ -155,16 +152,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             .optional()
             .catch(() => undefined)
             .parse(request._meta?.requestId);
-
-          // Ensure session memory is initialized once we know the workspace
-          try {
-            const workspaceId = args._sessionContext?.workspaceId;
-            if (workspaceId && !this.sessionMemory) {
-              this.ensureSessionMemory(workspaceId);
-            }
-          } catch (e) {
-            this.#logger.warn("Failed to initialize session memory; proceeding without it", { e });
-          }
 
           this.#logger.debug("MCP tool handler called for agent", {
             args: JSON.stringify(args),
@@ -406,16 +393,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       ...config,
       logger: config.logger.child({ sessionId: config.sessionId }),
     });
-  }
-
-  // Lazily create session-scoped CoALA memory once workspaceId is known
-  private ensureSessionMemory(workspaceId: string): void {
-    if (this.sessionMemory) return;
-    // Create a properly typed scope for CoALAMemoryManager
-    const scope: IMemoryScope = { id: this.sessionId, workspaceId };
-    this.sessionMemory = new CoALAMemoryManager(scope);
-    this.executionManager.setSessionMemory(this.sessionMemory);
-    this.#logger.info("Initialized session memory for MCP server", { workspaceId });
   }
 
   /**

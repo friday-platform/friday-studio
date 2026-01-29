@@ -96,13 +96,6 @@ export const JobConfigSchema = z.strictObject({
       skip_planning: z.boolean().optional().describe("Skip planning phase for simple jobs"),
     })
     .optional(),
-  memory: z
-    .strictObject({
-      enabled: z.boolean().optional().default(true),
-      fact_extraction: z.boolean().optional().default(true),
-      summary: z.boolean().optional().default(true).describe("Include summary in session receipt"),
-    })
-    .optional(),
 });
 export type JobConfig = z.infer<typeof JobConfigSchema>;
 

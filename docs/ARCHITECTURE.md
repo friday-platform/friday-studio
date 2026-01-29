@@ -195,22 +195,6 @@ Key files:
 Invariant: All external input must pass through Zod schemas. No `any`, no `as`
 assertions on config data.
 
-### packages/memory - CoALA Memory System
-
-Multi-tier memory architecture. Five memory types: working, episodic, semantic,
-procedural, contextual.
-
-Key files:
-- `src/coala/` - CoALA memory manager, cognitive loop
-- `src/mecmf/` - Token budget management, context assembly
-- `src/embedding/` - Web-based embeddings (ONNX runtime)
-- `src/vector-search/` - Local FAISS-backed search
-
-Note: The memory system exists and is initialized, but is not actively used in
-the current execution flow. MECMF manager is created per session but only
-extracts semantic facts on session completion. Working memory consolidation
-runs on shutdown but has no effect on agent execution.
-
 ### packages/mcp - MCP Client
 
 Model Context Protocol client using Vercel AI SDK.
@@ -246,8 +230,6 @@ atlas_workspace_create). All tools use Zod v4 input schemas.
 Storage adapters for various backends.
 
 Key files:
-- `src/adapters/coala-local-file.ts` - Multi-file JSON for CoALA memory
-- `src/adapters/vector-search-local.ts` - FAISS vector storage
 - `src/adapters/filesystem-config.ts` - YAML config loading
 
 Invariant: FileWriteCoordinator prevents concurrent write corruption.

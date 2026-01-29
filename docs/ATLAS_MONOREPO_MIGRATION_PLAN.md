@@ -66,11 +66,6 @@ atlas-monorepo/
     │   ├── src/
     │   ├── tests/
     │   └── README.md
-    ├── memory/                  # Memory tools and adapters
-    │   ├── deno.json
-    │   ├── src/
-    │   ├── tests/
-    │   └── README.md
     └── utils/                   # Shared utilities
         ├── deno.json
         ├── src/
@@ -213,18 +208,6 @@ atlas-monorepo/
   - Default configurations
   - Configuration validators
 
-#### `packages/memory` - Memory Tools
-
-- **Current Location**: `src/tools/`, memory-related code from core
-- **Responsibilities**:
-  - Memory management tools
-  - Memory adapters
-  - Memory utilities
-- **Dependencies**: `@atlas/types`, `@atlas/storage`
-- **Exports**:
-  - Memory tools
-  - Memory adapters
-
 #### `packages/utils` - Shared Utilities
 
 - **Current Location**: `src/utils/`, `src/cli/utils/`, `src/core/utils/`
@@ -272,32 +255,27 @@ atlas-monorepo/
    - Extract validation logic
    - Set up workspace initialization defaults
 
-6. **Extract `packages/memory`** (depends on types, storage)
-   - Move memory tools from `src/tools/`
-   - Extract memory-related code from core
-   - Create clean interfaces
-
-7. **Extract `packages/mcp`** (depends on types, utils)
+6. **Extract `packages/mcp`** (depends on types, utils)
    - Move MCP-related code
    - Ensure clean separation
 
-8. **Extract `packages/library`** (depends on types, utils, storage)
+7. **Extract `packages/library`** (depends on types, utils, storage)
    - Move library functionality
    - Update dependencies
 
-9. **Extract `packages/agents`** (depends on types, utils, mcp)
+8. **Extract `packages/agents`** (depends on types, utils, mcp)
    - Move agent system
    - Maintain worker isolation
 
-10. **Extract `packages/core`** (depends on all above except client)
-    - Move core functionality
-    - Ensure clean interfaces
+9. **Extract `packages/core`** (depends on all above except client)
+   - Move core functionality
+   - Ensure clean interfaces
 
-11. **Extract `apps/atlasd`** (depends on core and others)
+10. **Extract `apps/atlasd`** (depends on core and others)
     - Move daemon-specific code
     - Set up proper entry points
 
-12. **Extract `apps/cli`** (depends on types, client, utils)
+11. **Extract `apps/cli`** (depends on types, client, utils)
     - Move CLI code
     - Keep UI components within CLI
     - Maintain command structure
@@ -389,7 +367,6 @@ Throughout the migration:
 - [ ] `@atlas/storage` (stub created, ready for migration)
 - [ ] `@atlas/client`
 - [ ] `@atlas/config` (stub created, ready for migration)
-- [ ] `@atlas/memory`
 - [ ] `@atlas/mcp`
 - [ ] `@atlas/library`
 - [ ] `@atlas/agents`
@@ -412,8 +389,7 @@ Based on feedback, the following decisions have been made:
 2. **Daemon Architecture**: Daemon remains as a separate app (good separation)
 3. **Configuration Files**: Will serve as defaults for workspace initialization, extracted to
    `@atlas/config` package
-4. **Memory Tools**: Extracted from `tools/` directory into separate `@atlas/memory` package
-5. **Config Package**: Created `@atlas/config` package for schemas and defaults (depends on storage)
+4. **Config Package**: Created `@atlas/config` package for schemas and defaults (depends on storage)
 
 ## Additional Decisions
 
