@@ -15,17 +15,13 @@ delivery through human/AI collaboration.
 Get Friday running in 5 minutes:
 
 ```bash
-# 1. Install Friday (Homebrew recommended)
-brew tap tempestteam/tap
-HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
-
-# 2. Set up environment
+# 1. Set up environment
 export ANTHROPIC_API_KEY="your-key-here"
 
-# 3. Start the Friday daemon
+# 2. Start the Friday daemon
 atlas daemon start
 
-# 4. Try an example workspace
+# 3. Try an example workspace
 cd examples/workspaces/telephone
 ```
 

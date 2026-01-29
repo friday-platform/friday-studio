@@ -69,31 +69,7 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 All binaries are signed and notarized for security.
 
-#### Option 2: Homebrew
-
-Friday is available in three channels to suit different usage patterns:
-
-```bash
-# Add the Tempest tap
-brew tap tempestteam/tap
-
-# Choose your channel:
-
-# Stable Channel (Default) - Official releases only
-HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
-
-# Nightly Channel - Daily builds
-HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly
-
-# Edge Channel - Bleeding edge builds from every commit (⚠️ unstable)
-HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-edge
-
-# Verify installation
-atlas --help
-atlas --version  # Shows channel-specific version info
-```
-
-#### Option 3: From Source
+#### Option 2: From Source
 
 ```bash
 git clone https://github.com/tempestteam/atlas
