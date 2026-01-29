@@ -2,7 +2,15 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
+import {
+  ColorSchema,
+  fail,
+  isErrnoException,
+  type Result,
+  randomColor,
+  stringifyError,
+  success,
+} from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 import { z } from "zod";
@@ -23,6 +31,7 @@ const StoredChatSchema = z.object({
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
   source: z.enum(["atlas", "slack", "discord"]),
+  color: ColorSchema.optional(),
   title: z.string().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -96,6 +105,7 @@ async function createChat(input: {
       userId: input.userId,
       workspaceId: input.workspaceId,
       source: input.source,
+      color: randomColor(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],

@@ -36,13 +36,14 @@
   import { circOut } from "svelte/easing";
   import { SvelteMap } from "svelte/reactivity";
   import { slide } from "svelte/transition";
+  import Breadcrumbs from "./breadcrumbs.svelte";
 
   /**
    * ChatSession component - handles a single chat instance.
    *
-   * This component treats chatId as immutable. When the user navigates to a
-   * different chat, the parent destroys this instance and creates a new one
-   * via {#key}. This eliminates complex reactive state for ID management.
+   * This component persists across chat navigations. When chatId changes,
+   * $derived blocks recreate the Chat and transport instances. The
+   * beforeNavigate guard skips cleanup for programmatic goto() calls.
    */
 
   interface Props {
@@ -92,10 +93,17 @@
   // Track whether we've already updated the URL for this new chat
   let hasUpdatedUrl = $state(false);
 
+  // Reset the flag when entering a new chat (handles new → existing → new navigation)
+  $effect(() => {
+    if (isNew) {
+      hasUpdatedUrl = false;
+    }
+  });
+
   // AbortController for resumeStream GET requests. The ai-sdk doesn't pass
   // abortSignal to reconnectToStream, so we inject it via our fetch wrapper.
   // This prevents connection leaks when navigating away during stream resume.
-  let resumeAbortController: AbortController | null = null;
+  let resumeAbortController = $state<AbortController | null>(null);
 
   // Server-provided turn start timestamp for accurate timer display after refresh
   let turnStartedAt = $state<number | null>(null);
@@ -104,70 +112,79 @@
   let streamStartTime = $state<number | null>(null);
   let previousStatus = $state<string | null>(null);
 
-  const transport = new DefaultChatTransport({
-    api: `${getAtlasDaemonUrl()}/api/chat`,
-    /**
-     * Custom fetch wrapper that:
-     * 1. Updates URL when new chat is created (POST succeeds)
-     * 2. Injects AbortSignal into GET requests (resumeStream) since ai-sdk
-     *    doesn't pass one, causing connection leaks on navigation
-     */
-    fetch: async (url, init): Promise<Response> => {
-      // For GET requests (resumeStream), inject our abort controller's signal
-      // since ai-sdk's reconnectToStream doesn't pass abortSignal to fetch
-      if (init?.method === "GET" || !init?.method) {
-        resumeAbortController = new AbortController();
-        init = { ...init, signal: resumeAbortController.signal };
-      }
-
-      let response: Response;
-      try {
-        response = await fetch(url, init);
-      } catch (error) {
-        // Track network errors (connection failures, timeouts, etc.)
-        const message = error instanceof Error ? error.message : "Network error";
-        // Don't track aborted requests (user navigated away)
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          trackNetworkError(String(url), message, init?.method ?? "GET");
+  const transport = $derived(
+    new DefaultChatTransport({
+      api: `${getAtlasDaemonUrl()}/api/chat`,
+      /**
+       * Custom fetch wrapper that:
+       * 1. Updates URL when new chat is created (POST succeeds)
+       * 2. Injects AbortSignal into GET requests (resumeStream) since ai-sdk
+       *    doesn't pass one, causing connection leaks on navigation
+       */
+      fetch: async (url, init): Promise<globalThis.Response> => {
+        // Clear stale timestamp at start of new request so Progress mounts fresh
+        if (init?.method === "POST") {
+          turnStartedAt = null;
         }
-        throw error;
-      }
 
-      // Track API errors (non-2xx responses)
-      if (!response.ok) {
-        const errorText = await response
-          .clone()
-          .text()
-          .catch(() => "Unknown error");
-        trackApiError(String(url), response.status, errorText, init?.method ?? "GET");
-      }
-
-      // Capture server-provided turn start time for accurate timer display
-      const startedAt = response.headers.get("X-Turn-Started-At");
-      if (startedAt) {
-        turnStartedAt = parseInt(startedAt, 10);
-      }
-
-      // Refresh sidebar on every successful message (chat's updatedAt changes)
-      if (init?.method === "POST" && response.ok) {
-        queryClient.invalidateQueries({ queryKey: ["chats"], refetchType: "all" });
-        // Update URL for new chats (only once)
-        if (isNew && !hasUpdatedUrl) {
-          hasUpdatedUrl = true;
-          window.history.replaceState({}, "", `/chat/${chatId}`);
+        // For GET requests (resumeStream), inject our abort controller's signal
+        // since ai-sdk's reconnectToStream doesn't pass abortSignal to fetch
+        if (init?.method === "GET" || !init?.method) {
+          resumeAbortController = new AbortController();
+          init = { ...init, signal: resumeAbortController.signal };
         }
-      }
 
-      return response;
-    },
-    prepareSendMessagesRequest({ messages, id }) {
-      return { body: { message: messages.at(-1), id, datetime: getDatetimeContext() } };
-    },
-  });
+        let response: globalThis.Response;
+        try {
+          response = await fetch(url, init);
+        } catch (error) {
+          // Track network errors (connection failures, timeouts, etc.)
+          const message = error instanceof Error ? error.message : "Network error";
+          // Don't track aborted requests (user navigated away)
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            trackNetworkError(String(url), message, init?.method ?? "GET");
+          }
+          throw error;
+        }
+
+        // Track API errors (non-2xx responses)
+        if (!response.ok) {
+          const errorText = await response
+            .clone()
+            .text()
+            .catch(() => "Unknown error");
+          trackApiError(String(url), response.status, errorText, init?.method ?? "GET");
+        }
+
+        // Capture server-provided turn start time for accurate timer display
+        const startedAt = response.headers.get("X-Turn-Started-At");
+        if (startedAt) {
+          turnStartedAt = parseInt(startedAt, 10);
+        }
+
+        // Refresh sidebar on every successful message (chat's updatedAt changes)
+        if (init?.method === "POST" && response.ok) {
+          queryClient.invalidateQueries({ queryKey: ["chats"], refetchType: "all" });
+          // Update URL for new chats (only once)
+          if (isNew && !hasUpdatedUrl) {
+            hasUpdatedUrl = true;
+            goto(`/chat/${chatId}`, { replaceState: true });
+          }
+        }
+
+        return response;
+      },
+      prepareSendMessagesRequest({ messages, id }) {
+        return { body: { message: messages.at(-1), id, datetime: getDatetimeContext() } };
+      },
+    }),
+  );
 
   // Create Chat instance once - no reactive recreation
   // chatId is immutable for this component's lifetime
-  const chat = new Chat<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport });
+  const chat = $derived(
+    new Chat<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport }),
+  );
 
   // Track streaming lifecycle for analytics
   $effect(() => {
@@ -217,29 +234,7 @@
     }, 100);
   }
 
-  beforeNavigate(() => {
-    showContents = false;
-    // Abort active stream to free HTTP connection for the new page's loader.
-    // Without this, browser connection limits (6 per origin in HTTP/1.1) cause
-    // the navigation to block until the stream completes.
-    chat.stop();
-    // Also abort any pending resumeStream GET request (ai-sdk doesn't handle this)
-    resumeAbortController?.abort();
-    resumeAbortController = null;
-  });
-
-  afterNavigate(() => {
-    // Only setup UI state here - stream resumption is handled by onMount.
-    // Since {#key data.chatId} destroys/recreates this component on navigation,
-    // onMount always fires for the new chat. Calling resumeStream() here too
-    // would create duplicate SSE connections and exhaust browser connection limits.
-    setup();
-  });
-
-  // Handle OAuth return flow on initial mount
-  onMount(async () => {
-    setup();
-
+  async function reconnect() {
     // Resume any active stream for existing chats (initial load)
     if (!isNew) {
       try {
@@ -273,6 +268,29 @@
         window.history.replaceState({}, "", url.toString());
       }
     }
+  }
+
+  beforeNavigate((navigation) => {
+    if (navigation.type === "goto") return;
+    showContents = false;
+    // Abort active stream to free HTTP connection for the new page's loader.
+    // Without this, browser connection limits (6 per origin in HTTP/1.1) cause
+    // the navigation to block until the stream completes.
+    chat.stop();
+    // Also abort any pending resumeStream GET request (ai-sdk doesn't handle this)
+    resumeAbortController?.abort();
+    resumeAbortController = null;
+  });
+
+  afterNavigate(() => {
+    setup();
+    reconnect();
+  });
+
+  // Handle OAuth return flow on initial mount
+  onMount(() => {
+    setup();
+    reconnect();
   });
 
   /**
@@ -359,6 +377,9 @@
       bind:this={scrollContainer}
       onscroll={handleScroll}
     >
+      {#if !isNew}
+        <Breadcrumbs {title} />
+      {/if}
       <div
         class="messages-container"
         style:--additional-padding="{textareaAdditionalSize}px"
@@ -367,13 +388,9 @@
         )}
       >
         <div class="messages-inner">
-          {#if (chat.messages?.length ?? 0) === 0}
+          {#if isNew}
             <div class="first-message">
               <p>What would you like to work on today?</p>
-            </div>
-          {:else if !isNew && title}
-            <div class="first-message">
-              <h2>{title}</h2>
             </div>
           {/if}
 
@@ -494,6 +511,9 @@
                 );
 
                 trackEvent(GA4.MESSAGE_SEND, { is_new: isNew });
+
+                // Clear stale timestamp before sendMessage so Progress mounts fresh
+                turnStartedAt = null;
 
                 if (readyFiles.length > 0) {
                   // Send message with text AND artifact-attached data part
@@ -749,13 +769,6 @@
       text-align: center;
       opacity: 0.8;
     }
-
-    h2 {
-      font-size: var(--font-size-8);
-      font-weight: var(--font-weight-6);
-      line-height: var(--font-lineheight-1);
-      margin-block-end: var(--size-2);
-    }
   }
 
   .messages {
@@ -905,7 +918,7 @@
       button[type="submit"],
       .stop-process {
         align-items: center;
-        background-color: var(--color-yellow);
+        background-color: var(--accent-2);
         block-size: var(--size-7);
         border-radius: var(--radius-4);
         color: var(--color-white);
@@ -915,10 +928,7 @@
         transition: all 200ms ease;
 
         &:hover:not(:disabled) {
-          background-color: var(--color-text);
-          @media (prefers-color-scheme: dark) {
-            color: var(--color-surface-1);
-          }
+          background-color: var(--accent-3);
         }
 
         &:disabled {

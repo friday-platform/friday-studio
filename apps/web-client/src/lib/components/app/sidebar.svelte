@@ -17,7 +17,7 @@
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
-  import { getActivePage } from "$lib/utils/active-page.svelte";
+  import { getActivePage, getActiveParam } from "$lib/utils/active-page.svelte";
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
   import NavigationControls from "./navigation-controls.svelte";
@@ -101,7 +101,7 @@
       <li>
         <a
           href={ctx.routes.sessions.list}
-          class:active={getActivePage(["sessions", "sessions/[sessionId]"])}
+          class:active={getActivePage(["(app)/sessions", "sessions/[sessionId]"])}
           class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
         >
@@ -143,7 +143,7 @@
               <a
                 href={ctx.routes.spaces.item(space.id)}
                 class="sidebar-item"
-                class:active={getActivePage([`spaces/${space.id}`, `spaces/${space.id}/sessions`])}
+                class:active={getActiveParam("spaceId", space.id)}
                 onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
               >
                 <span class="text">{space.name}</span>
@@ -183,7 +183,13 @@
                 class="sidebar-item"
                 class:active={currentChatId === chat.id}
                 href="/chat/{chat.id}"
-                onclick={() => trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id })}
+                onclick={(e) => {
+                  if (currentChatId === chat.id) {
+                    e.preventDefault();
+                  } else {
+                    trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id });
+                  }
+                }}
               >
                 <span class="text">{chat.title || "Untitled"}</span>
               </a>
@@ -295,7 +301,7 @@
 
 <style>
   header {
-    background-color: var(--color-surface-2);
+    background-color: var(--accent-1);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -348,11 +354,11 @@
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-4-5);
     gap: var(--size-2);
-    /* padding-inline: var(--size-7); */
     outline: none;
+    position: relative;
 
     & :global(svg) {
-      color: var(--accent-1);
+      color: var(--color-text);
       flex: none;
       opacity: 0.5;
     }
@@ -363,7 +369,7 @@
 
     &.active,
     &:focus-visible {
-      background-color: var(--color-highlight-1);
+      background-color: color-mix(in srgb, var(--color-text), transparent 92%);
     }
   }
 
@@ -449,7 +455,7 @@
 
     .chat-trigger {
       align-items: center;
-      border-radius: var(--radius-3);
+      border-radius: var(--radius-2);
       block-size: var(--size-6);
       display: flex;
       inline-size: var(--size-6);
@@ -469,7 +475,11 @@
 
   .chat-trigger:hover,
   :global(:focus-visible) .chat-trigger {
-    background-color: var(--color-border-1);
+    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
+  }
+
+  .sidebar-item.active + .chat-options .chat-trigger:hover {
+    background-color: transparent;
   }
 
   .help {

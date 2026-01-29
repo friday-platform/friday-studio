@@ -5,6 +5,132 @@ svg {
   transform: translate3d(0, 0, 0);
 }
 
+@property --accent-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: white;
+}
+
+@property --accent-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: black;
+}
+
+@property --accent-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: black;
+}
+
+@property --yellow-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(20 12% 95%);
+}
+
+@property --yellow-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(42 100% 52%);
+}
+
+@property --yellow-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(42 100% 38%);
+}
+
+@property --green-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(0 0% 95%);
+}
+
+@property --green-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(100 78% 43%);
+}
+
+@property --green-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(99 78% 25%);
+}
+
+@property --red-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(0 20% 95%);
+}
+
+@property --red-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(24 97% 49%);
+}
+
+@property --red-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(24 96% 33%);
+}
+
+@property --blue-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(216 20% 95%);
+}
+
+@property --blue-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(212 97% 49%);
+}
+
+@property --blue-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(212 97% 27%);
+}
+
+@property --brown-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(20 12% 95%);
+}
+
+@property --brown-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(34 100% 32%);
+}
+
+@property --brown-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(35 49% 21%);
+}
+
+@property --purple-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(280 12% 95%);
+}
+
+@property --purple-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(271 61% 54%);
+}
+
+@property --purple-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(271 100% 26%);
+}
+
 :root {
   /* Scale */
   --size-scale: var(--system-scale, 1);
@@ -81,6 +207,7 @@ svg {
   --radius-4: calc(0.75rem * var(--radius-scale));
   --radius-5: calc(0.875rem * var(--radius-scale));
   --radius-6: calc(1rem * var(--radius-scale));
+  --radius-7: calc(1.25rem * var(--radius-scale));
   --radius-round: 9999px;
 
   /* Font familes */
@@ -139,6 +266,17 @@ svg {
 
   /* Colors */
 
+  /* Backwards compatibility */
+  --color-text: hsl(230 32% 14% / 1);
+  --color-blue: hsl(226 74% 52% / 1);
+  --color-green: hsl(109 77% 24% / 1);
+  --color-green-2: hsl(109 47% 44% / 1);
+  --color-purple: hsl(244 37% 49% / 1);
+  --color-red: hsl(5 60% 53% / 1);
+
+  --color-yellow: hsl(41 75% 55% / 1);
+  --color-yellow-2: hsl(33 74% 49% / 1);
+
   /* Surfaces */
   --color-surface-1: hsl(240 100% 100% / 1);
   --color-surface-2: hsl(240 12% 95% / 1);
@@ -151,17 +289,11 @@ svg {
 
   /* Text */
   --color-text: hsl(230 32% 14% / 1);
-  --color-blue: hsl(226 74% 52% / 1);
-  --color-green: hsl(109 77% 24% / 1);
-  --color-green-2: hsl(109 47% 44% / 1);
-  --color-purple: hsl(244 37% 49% / 1);
-  --color-red: hsl(5 60% 53% / 1);
-
-  --color-yellow: hsl(41 75% 55% / 1);
-  --color-yellow-2: hsl(33 74% 49% / 1);
   --color-white: hsl(0 0% 100% / 1);
 
   /* Shadows */
+  --shadow-canvas: 0 4px 16px -8px hsl(0 0 0 / 0.05), 0 0 0 1px hsl(0 0 0 / 0.05);
+
   --shadow-1:
     0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06),
     0px 3px 12px -4px rgba(26, 83, 204, 0.05), 0px 4px 16px -8px rgba(26, 83, 204, 0.05),
@@ -172,6 +304,7 @@ svg {
 
   @media (color-gamut: p3) {
     --color-surface-1: color(display-p3 0.9961 0.9961 1);
+
     --color-surface-2: color(display-p3 0.9451 0.9451 0.9569);
 
     --color-highlight-1: color(display-p3 0.0243 0.1391 0.3785 / 0.06);
@@ -179,6 +312,38 @@ svg {
     --color-border-1: color(display-p3 0.8784 0.8941 0.9255);
 
     --color-text: color(display-p3 0.0941 0.1098 0.1843);
+
+    /* Yellow - display-p3 */
+    --yellow-1: color(display-p3 0.9569 0.949 0.9451);
+    --yellow-2: color(display-p3 1 0.7137 0.0471);
+    --yellow-3: color(display-p3 0.76 0.5317 0);
+
+    /* Green - display-p3 */
+    --green-1: color(display-p3 0.9529 0.9529 0.9529);
+    --green-2: color(display-p3 0.3216 0.7608 0.0941);
+    --green-3: color(display-p3 0.1882 0.4431 0.0549);
+
+    /* Red - display-p3 */
+    --red-1: color(display-p3 0.9608 0.9412 0.9412);
+    --red-2: color(display-p3 0.9715 0.3981 0.0158);
+    --red-3: color(display-p3 0.6494 0.2661 0.0106);
+
+    /* Blue - display-p3 */
+    --blue-1: color(display-p3 0.9412 0.9507 0.9608);
+    --blue-2: color(display-p3 0.0158 0.4618 0.9715);
+    --blue-3: color(display-p3 0.0087 0.2526 0.5313);
+
+    /* Brown - display-p3 */
+    --brown-1: color(display-p3 0.9569 0.949 0.9451);
+    --brown-2: color(display-p3 0.6339 0.3592 0);
+    --brown-3: color(display-p3 0.3102 0.2225 0.1078);
+
+    /* Purple - display-p3 */
+    --purple-1: color(display-p3 0.9529 0.9451 0.9569);
+    --purple-2: color(display-p3 0.5491 0.2588 0.8207);
+    --purple-3: color(display-p3 0.2704 0 0.5234);
+
+    /* Backwards compatible colors */
     --color-blue: color(display-p3 0.1648 0.3306 0.8752);
     --color-green: color(display-p3 0.1249 0.4248 0.0552);
     --color-green-2: color(display-p3 0.3098 0.6471 0.2314);
@@ -190,13 +355,40 @@ svg {
 
   @media (prefers-color-scheme: dark) {
     /* Surfaces */
-    --color-surface-1: hsl(230 11% 11% / 1);
-    --color-surface-2: hsl(228 11% 9% / 1);
+    --color-surface-1: hsl(228 2% 7% / 1);
+    --color-surface-2: hsl(228 2% 9% / 1);
+
     --color-highlight-1: hsl(223 28% 90% / 0.06);
     --color-border-1: hsl(230 10% 24%);
     --color-text: hsl(40 12% 95% / 1);
 
+    /* Yellow */
+    --yellow-1: hsl(30 9% 9%);
+    --yellow-3: hsl(42 100% 78%);
+
+    /* Green */
+    --green-1: hsl(120 4% 9%);
+    --green-3: hsl(100 79% 78%);
+
+    /* Red */
+    --red-1: hsl(0 11% 7%);
+    --red-3: hsl(24 96% 78%);
+
+    /* Blue */
+    --blue-1: hsl(210 9% 9%);
+    --blue-3: hsl(212 96% 78%);
+
+    /* Brown */
+    --brown-1: hsl(15 9% 9%);
+    --brown-3: hsl(34 49% 61%);
+
+    /* Purple */
+    --purple-1: hsl(270 9% 9%);
+    --purple-3: hsl(271 100% 82%);
+
     /* Shadows */
+    --shadow-canvas: 0 0 0 1px hsl(0 0 100 / 0.04);
+
     --shadow-1:
       0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12),
       0px 3px 12px -4px rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12),
@@ -207,12 +399,37 @@ svg {
   }
 
   @media (prefers-color-scheme: dark) and (color-gamut: p3) {
-    --color-surface-1: color(display-p3 0.098 0.102 0.1216);
-    --color-surface-2: color(display-p3 0.0784 0.0824 0.098);
+    --color-surface-1: color(display-p3 0.0686 0.0692 0.0714);
+    --color-surface-2: color(display-p3 0.0884 0.0891 0.092);
+
     --color-highlight-1: color(display-p3 0.8745 0.8902 0.9294 / 0.06);
     --color-border-1: color(display-p3 0.2118 0.2196 0.2588);
 
     --color-text: color(display-p3 0.9569 0.9529 0.9451);
+
+    /* Yellow - display-p3 */
+    --yellow-1: color(display-p3 0.0963 0.0921 0.0837);
+    --yellow-3: color(display-p3 1 0.8678 0.56);
+
+    /* Green - display-p3 */
+    --green-1: color(display-p3 0.0864 0.0936 0.0864);
+    --green-3: color(display-p3 0.7263 0.9515 0.6085);
+
+    /* Red - display-p3 */
+    --red-1: color(display-p3 0.0784 0.0627 0.0627);
+    --red-3: color(display-p3 0.9929 0.7374 0.5671);
+
+    /* Blue - display-p3 */
+    --blue-1: color(display-p3 0.0824 0.0902 0.098);
+    --blue-3: color(display-p3 0.5671 0.7658 0.9929);
+
+    /* Brown - display-p3 */
+    --brown-1: color(display-p3 0.0963 0.0879 0.0837);
+    --brown-3: color(display-p3 0.7989 0.6352 0.4211);
+
+    /* Purple - display-p3 */
+    --purple-1: color(display-p3 0.0921 0.0837 0.0963);
+    --purple-3: color(display-p3 0.826 0.64 1);
   }
 
   @media (prefers-reduced-motion) {
@@ -226,7 +443,6 @@ html {
 }
 
 body {
-  background-color: var(--color-surface-2);
   color: var(--color-text);
   cursor: default;
   block-size: 100dvh;

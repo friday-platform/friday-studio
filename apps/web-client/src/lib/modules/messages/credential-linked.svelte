@@ -26,7 +26,8 @@
 
   .pill {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-green) 15%, transparent);
+    background-color: var(--accent-1);
+    color: var(--accent-3);
     border-radius: var(--radius-round);
     display: flex;
     gap: var(--size-1-5);
@@ -35,14 +36,11 @@
   }
 
   .icon {
-    color: var(--color-green-2);
     display: flex;
   }
 
   .text {
-    color: var(--color-text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
-    opacity: 0.8;
   }
 </style>

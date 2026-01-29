@@ -202,7 +202,7 @@
   }
 
   .accent--primary :global(svg) {
-    color: var(--accent-1);
+    color: var(--color-text);
   }
 
   .accent--destructive :global(svg) {

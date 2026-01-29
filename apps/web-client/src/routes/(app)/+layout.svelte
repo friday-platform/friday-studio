@@ -3,6 +3,7 @@
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import { getAppContext } from "$lib/app-context.svelte";
   import AppContainer from "$lib/components/app/container.svelte";
   import AppSidebar from "$lib/components/app/sidebar.svelte";
@@ -14,13 +15,23 @@
 
   const { data, children } = $props();
 
-  const appCtx = getAppContext();
+  const isNewChat = $derived(page.route.id === "/(app)/chat/[[chatId]]" && !page.params.chatId);
 
+  const appCtx = getAppContext();
   const ctx = setClientContext();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { enabled: browser } } });
 
   let unlisten: (() => void) | undefined;
 
-  const queryClient = new QueryClient({ defaultOptions: { queries: { enabled: browser } } });
+  $effect(() => {
+    document.body.style.backgroundColor = data.color
+      ? `var(--${data.color}-1)`
+      : "var(--color-surface-2)";
+
+    return () => {
+      document.body.style.backgroundColor = "";
+    };
+  });
 
   onMount(async () => {
     appCtx.user = data.user;
@@ -51,7 +62,7 @@
                 }
 
                 const name = path.split("/").pop() || path;
-                appCtx.stagedFiles.add({ name, size: 0, status: "ready" });
+                appCtx.stagedFiles.add({ name, loaded: 0, size: 0, status: "ready" });
               }
             }
           });
@@ -73,7 +84,7 @@
 {/if}
 
 <QueryClientProvider client={queryClient}>
-  <div role="region">
+  <div role="region" class={data.color ?? "default"} class:new-chat={isNewChat}>
     <AppContainer>
       <AppSidebar />
 
@@ -114,14 +125,68 @@
 </QueryClientProvider>
 
 <style>
+  .default {
+    --accent-1: var(--color-surface-2);
+    --accent-2: var(--yellow-2);
+    --accent-3: var(--yellow-3);
+  }
+
+  .yellow {
+    --accent-1: var(--yellow-1);
+    --accent-2: var(--yellow-2);
+    --accent-3: var(--yellow-3);
+  }
+
+  .purple {
+    --accent-1: var(--purple-1);
+    --accent-2: var(--purple-2);
+    --accent-3: var(--purple-3);
+  }
+
+  .red {
+    --accent-1: var(--red-1);
+    --accent-2: var(--red-2);
+    --accent-3: var(--red-3);
+  }
+
+  .blue {
+    --accent-1: var(--blue-1);
+    --accent-2: var(--blue-2);
+    --accent-3: var(--blue-3);
+  }
+
+  .green {
+    --accent-1: var(--green-1);
+    --accent-2: var(--green-2);
+    --accent-3: var(--green-3);
+  }
+
+  .brown {
+    --accent-1: var(--brown-1);
+    --accent-2: var(--brown-2);
+    --accent-3: var(--brown-3);
+  }
+
+  div[role="region"] {
+    background-color: var(--accent-1);
+
+    &.new-chat {
+      animation-name: changeColor;
+      animation-duration: 20s;
+      animation-timing-function: linear;
+      animation-iteration-count: infinite;
+      animation-fill-mode: forwards;
+    }
+  }
+
   main {
     padding: var(--size-1-5);
   }
 
   .app-content {
     background-color: var(--color-surface-1);
-    box-shadow: var(--shadow-1);
-    border-radius: var(--radius-5) var(--radius-5) 1.25rem var(--radius-5);
+    box-shadow: var(--shadow-canvas);
+    border-radius: var(--radius-7);
     overflow: auto;
     scrollbar-width: thin;
     min-block-size: 100%;
@@ -166,6 +231,33 @@
       @media (prefers-color-scheme: dark) {
         color: color-mix(in srgb, #c5634d, #fff 65%);
       }
+    }
+  }
+
+  @keyframes changeColor {
+    0%,
+    100% {
+      --accent-2: var(--yellow-2);
+    }
+    16%,
+    24% {
+      --accent-2: var(--red-2);
+    }
+    32%,
+    40% {
+      --accent-2: var(--purple-2);
+    }
+    48%,
+    56% {
+      --accent-2: var(--blue-2);
+    }
+    64%,
+    72% {
+      --accent-2: var(--green-2);
+    }
+    80%,
+    88% {
+      --accent-2: var(--brown-2);
     }
   }
 </style>

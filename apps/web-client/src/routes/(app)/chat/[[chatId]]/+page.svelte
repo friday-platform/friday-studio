@@ -1,31 +1,22 @@
 <script lang="ts">
+  import ChatSession from "./(components)/chat-session.svelte";
   import type { PageData } from "./$types";
-  import ChatSession from "./chat-session.svelte";
 
   /**
-   * Chat page - thin wrapper around ChatSession that handles remounting.
+   * Chat page - thin wrapper around ChatSession.
    *
-   * The {#key} block destroys and recreates ChatSession when chatId changes.
-   * This eliminates complex reactive state for ID management - the component
-   * is created with its ID and that's final for its lifetime.
+   * ChatSession persists across navigations. When chatId changes, $derived
+   * blocks recreate the Chat/transport instances. The beforeNavigate guard
+   * skips cleanup for programmatic goto() calls (URL updates on new chats).
    */
 
   const { data }: { data: PageData } = $props();
 </script>
 
-<!--
-  Key on chatId to remount ChatSession when navigating between chats.
-  This ensures:
-  1. Fresh Chat instance per chat (no stale state)
-  2. chatId is immutable within ChatSession (no reactive ID gymnastics)
-  3. Clean lifecycle - no need to sync messages on navigation
--->
-{#key data.chatId}
-  <ChatSession
-    chatId={data.chatId}
-    isNew={data.isNew}
-    title={data.title}
-    initialMessages={data.messages}
-    artifacts={data.artifacts}
-  />
-{/key}
+<ChatSession
+  chatId={data.chatId}
+  isNew={data.isNew}
+  title={data.title}
+  initialMessages={data.messages}
+  artifacts={data.artifacts}
+/>

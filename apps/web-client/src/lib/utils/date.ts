@@ -96,17 +96,20 @@ export function formatSessionDate(dateString: string | number): string {
 
 /**
  * Formats a duration between two timestamps as human-readable text.
+ * Minimum output is "1 second" to avoid "0 seconds" on initial display.
  *
  * @example
+ * formatDuration(0, 0)         // "1 second" (minimum)
+ * formatDuration(0, 500)       // "1 second" (minimum)
  * formatDuration(0, 5000)      // "5 seconds"
- * formatDuration(0, 1000)      // "1 second"
  * formatDuration(0, 65000)     // "1 minute 5 seconds"
  * formatDuration(0, 3600000)   // "1 hour"
  * formatDuration(0, 3723000)   // "1 hour 2 minutes 3 seconds"
  * formatDuration(0, 7380000)   // "2 hours 3 minutes"
  */
 export function formatDuration(startMs: number, endMs: number): string {
-  const totalSeconds = endMs <= startMs ? 0 : Math.round((endMs - startMs) / 1000);
+  // Minimum 1 second to avoid "0 seconds" on initial display
+  const totalSeconds = Math.max(1, Math.round((endMs - startMs) / 1000));
 
   // If under 60 seconds, just show seconds
   if (totalSeconds < 60) {

@@ -13,6 +13,7 @@ import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/con
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
+import { randomColor } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
 import { basename, dirname, join } from "@std/path";
@@ -252,6 +253,7 @@ export class WorkspaceManager {
         tags: options?.tags,
         atlasVersion: Deno.version.deno,
         createdBy: options?.createdBy,
+        color: randomColor(),
         ephemeral: isEphemeral,
         expiresAt: isEphemeral
           ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -299,7 +301,12 @@ export class WorkspaceManager {
         status: "inactive",
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
-        metadata: { description: config.workspace.description, system: true, tags: ["system"] },
+        metadata: {
+          description: config.workspace.description,
+          system: true,
+          tags: ["system"],
+          color: randomColor(),
+        },
       };
 
       // Check if already registered

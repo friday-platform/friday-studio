@@ -169,7 +169,6 @@
   .page {
     display: grid;
     grid-template-columns: 1fr var(--size-56);
-    block-size: 100%;
     inline-size: 100%;
     gap: var(--size-6);
     overflow: auto;

@@ -310,7 +310,7 @@
     outline: none;
 
     & :global(svg) {
-      color: var(--accent-1);
+      color: var(--color-text);
       flex: none;
       opacity: 0.5;
     }

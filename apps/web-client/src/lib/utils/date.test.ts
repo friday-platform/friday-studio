@@ -186,10 +186,10 @@ describe("formatSessionDate", () => {
 });
 
 describe("formatDuration", () => {
-  it("0 seconds", () => {
+  it("minimum 1 second for zero/negative duration", () => {
     const start = 1000;
     const end = 1000;
-    expect(formatDuration(start, end)).toEqual("0 seconds");
+    expect(formatDuration(start, end)).toEqual("1 second");
   });
 
   it("1 second", () => {

@@ -103,7 +103,7 @@
     user-select: none;
 
     &:focus-visible {
-      outline: 1px solid var(--accent-1);
+      outline: 1px solid var(--color-text);
       z-index: var(--layer-1);
     }
 

@@ -1,4 +1,5 @@
 import type { MergedConfig } from "@atlas/config";
+import { ColorSchema } from "@atlas/utils";
 import { z } from "zod";
 
 // Single source of truth for workspace types
@@ -11,6 +12,7 @@ export const WorkspaceMetadataSchema = z.object({
   atlasVersion: z.string().optional(),
   /** User ID who created this workspace, used for analytics */
   createdBy: z.string().optional(),
+  color: ColorSchema.optional(),
   // Ephemeral workspace controls
   ephemeral: z.boolean().optional(),
   expiresAt: z.iso.datetime().optional(),

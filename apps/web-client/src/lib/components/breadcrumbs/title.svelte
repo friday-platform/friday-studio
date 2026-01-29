@@ -28,7 +28,9 @@
     </span>
 
     {#if actions && hasActions}
-      <IconSmall.CaretDown />
+      <span class="arrow">
+        <IconSmall.CaretDown />
+      </span>
     {/if}
   </div>
 {/snippet}
@@ -74,6 +76,9 @@
 
     & :global(svg) {
       flex: none;
+    }
+
+    .arrow {
       opacity: 0.5;
     }
 

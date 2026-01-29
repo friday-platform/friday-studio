@@ -220,3 +220,19 @@ export interface ErrnoException extends Error {
 export function isErrnoException(error: unknown): error is ErrnoException {
   return error instanceof Error && ("errno" in error || "code" in error);
 }
+
+export const ColorSchema = z
+  .enum(["yellow", "purple", "red", "blue", "green", "brown"])
+  .catch("yellow");
+export type Color = z.infer<typeof ColorSchema>;
+
+const COLORS = ["yellow", "purple", "red", "blue", "green", "brown"] as const;
+export const randomColor = (): Color => {
+  const index = Math.floor(Math.random() * COLORS.length);
+  const color = COLORS[index];
+  if (color === undefined) {
+    // This should never happen since COLORS is non-empty
+    return "yellow";
+  }
+  return color;
+};

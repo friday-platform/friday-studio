@@ -37,7 +37,7 @@
 
   .item:focus-visible {
     border-radius: var(--radius-1);
-    outline: 1px solid var(--accent-1);
+    outline: 1px solid var(--color-text);
   }
 
   .item:not(.active):hover {

@@ -16,8 +16,8 @@
     display: flex;
     gap: var(--size-3);
     inline-size: fit-content;
-    margin-block: var(--size-3-5) var(--size-1);
-    margin-inline: var(--size-6);
+    padding-block: var(--size-3-5) var(--size-1);
+    padding-inline: var(--size-6);
     position: relative;
     z-index: var(--layer-4);
 

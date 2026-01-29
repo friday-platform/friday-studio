@@ -2,6 +2,8 @@
  * Workspace-related type definitions
  */
 
+import type { Color } from "@atlas/utils";
+
 export interface WorkspaceInfo {
   id: string;
   name: string;
@@ -10,6 +12,7 @@ export interface WorkspaceInfo {
   path: string;
   createdAt: string;
   lastSeen: string;
+  color?: Color;
 }
 
 export interface WorkspaceCreateRequest {

@@ -101,85 +101,102 @@
 </script>
 
 {#if workspace}
-  <Breadcrumbs.Root>
-    <Breadcrumbs.Item>Spaces</Breadcrumbs.Item>
+  <div>
+    <Breadcrumbs.Root>
+      <Breadcrumbs.Item>Spaces</Breadcrumbs.Item>
 
-    <Breadcrumbs.Segment />
+      <Breadcrumbs.Segment />
 
-    <Breadcrumbs.Title hasActions>
-      {workspace.name}
+      <Breadcrumbs.Title hasActions>
+        {#snippet prepend()}
+          <span style:color="var(--accent-2)">
+            <Icons.DotFilled />
+          </span>
+        {/snippet}
 
-      {#snippet actions(actionsOpen)}
-        <Dialog.Root
-          onOpenChange={({ next }) => {
-            if (!next) {
-              setTimeout(() => {
-                actionsOpen.set(false);
-              }, 150);
-            }
-            return next;
-          }}
+        {workspace.name}
+
+        {#snippet actions(actionsOpen)}
+          <Dialog.Root
+            onOpenChange={({ next }) => {
+              if (!next) {
+                setTimeout(() => {
+                  actionsOpen.set(false);
+                }, 150);
+              }
+              return next;
+            }}
+          >
+            {#snippet children(open)}
+              <DropdownMenu.Item onclick={handleExportWorkspace}>
+                <Icons.Share />
+
+                Share
+              </DropdownMenu.Item>
+
+              <DropdownMenu.Item
+                accent="destructive"
+                onclick={() => {
+                  trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
+                  open.set(true);
+                }}
+              >
+                <Icons.DeleteSpace />
+                Remove
+              </DropdownMenu.Item>
+
+              <Dialog.Content>
+                <Dialog.Close />
+
+                {#snippet icon()}
+                  <span style:color="var(--color-red)">
+                    <Icons.DeleteSpace />
+                  </span>
+                {/snippet}
+
+                {#snippet header()}
+                  <Dialog.Title>Remove Space</Dialog.Title>
+                  <Dialog.Description>
+                    <p>Are you sure you want to remove this space?</p>
+                  </Dialog.Description>
+                {/snippet}
+
+                {#snippet footer()}
+                  <Dialog.Button onclick={handleDeleteWorkspace}>Confirm</Dialog.Button>
+
+                  <Dialog.Cancel>Cancel</Dialog.Cancel>
+                {/snippet}
+              </Dialog.Content>
+            {/snippet}
+          </Dialog.Root>
+        {/snippet}
+      </Breadcrumbs.Title>
+
+      <Breadcrumbs.Segment />
+
+      <SegmentedControl.Root>
+        <SegmentedControl.Item
+          active={getActivePage([`(app)/spaces/[spaceId]`])}
+          href={appCtx.routes.spaces.item(workspace.id)}
         >
-          {#snippet children(open)}
-            <DropdownMenu.Item onclick={handleExportWorkspace}>
-              <Icons.Share />
-
-              Share
-            </DropdownMenu.Item>
-
-            <DropdownMenu.Item
-              accent="destructive"
-              onclick={() => {
-                trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
-                open.set(true);
-              }}
-            >
-              <Icons.DeleteSpace />
-              Remove
-            </DropdownMenu.Item>
-
-            <Dialog.Content>
-              <Dialog.Close />
-
-              {#snippet icon()}
-                <span style:color="var(--color-red)">
-                  <Icons.DeleteSpace />
-                </span>
-              {/snippet}
-
-              {#snippet header()}
-                <Dialog.Title>Remove Space</Dialog.Title>
-                <Dialog.Description>
-                  <p>Are you sure you want to remove this space?</p>
-                </Dialog.Description>
-              {/snippet}
-
-              {#snippet footer()}
-                <Dialog.Button onclick={handleDeleteWorkspace}>Confirm</Dialog.Button>
-
-                <Dialog.Cancel>Cancel</Dialog.Cancel>
-              {/snippet}
-            </Dialog.Content>
-          {/snippet}
-        </Dialog.Root>
-      {/snippet}
-    </Breadcrumbs.Title>
-
-    <Breadcrumbs.Segment />
-
-    <SegmentedControl.Root>
-      <SegmentedControl.Item
-        active={getActivePage([`spaces/${workspace.id}`])}
-        href={appCtx.routes.spaces.item(workspace.id)}
-      >
-        Details
-      </SegmentedControl.Item>
-      <SegmentedControl.Item
-        active={getActivePage([`spaces/${workspace.id}/sessions`])}
-        href={appCtx.routes.spaces.item(workspace.id, "sessions")}
-      >
-        Sessions
-      </SegmentedControl.Item>
-    </SegmentedControl.Root>
-  </Breadcrumbs.Root>
+          Details
+        </SegmentedControl.Item>
+        <SegmentedControl.Item
+          active={getActivePage([`spaces/[spaceId]/sessions`])}
+          href={appCtx.routes.spaces.item(workspace.id, "sessions")}
+        >
+          Sessions
+        </SegmentedControl.Item>
+      </SegmentedControl.Root>
+    </Breadcrumbs.Root>
+  </div>
 {/if}
+
+<style>
+  div {
+    background: linear-gradient(to bottom, var(--color-surface-1) 75%, transparent);
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--layer-2);
+  }
+</style>

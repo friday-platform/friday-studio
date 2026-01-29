@@ -54,6 +54,7 @@ describe("ChatStorage", () => {
       expect.assert(getResult.ok && getResult.data);
       expect(getResult.data.userId).toEqual("test-user");
       expect(getResult.data.workspaceId).toEqual("test-ws");
+      expect(getResult.data.color).toBeDefined();
     });
 
     it("appends and retrieves messages", async () => {

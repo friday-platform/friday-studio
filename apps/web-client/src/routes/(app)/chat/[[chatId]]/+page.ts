@@ -5,6 +5,7 @@ import { redirect } from "@sveltejs/kit";
 import { extractArtifactIds } from "$lib/utils/artifacts";
 import { nanoid } from "$lib/utils/id";
 import type { PageLoad } from "./$types";
+import { randomColor } from "@atlas/utils";
 
 export const load: PageLoad = async ({ params }) => {
   // New chat mode - generate ID at load time (not render time)
@@ -14,6 +15,7 @@ export const load: PageLoad = async ({ params }) => {
       chatId: `chat_${nanoid()}`,
       isNew: true,
       title: undefined,
+      color: randomColor(),
       messages: [],
       artifacts: new Map<string, ArtifactWithContents>(),
     };
@@ -55,6 +57,7 @@ export const load: PageLoad = async ({ params }) => {
     chatId: res.data.chat.id,
     isNew: false,
     title: res.data.chat.title,
+    color: res.data.chat.color,
     messages,
     artifacts,
   };

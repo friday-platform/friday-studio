@@ -73,6 +73,7 @@
     padding-inline-end: var(--size-10);
     padding-block-end: var(--size-20);
     position: fixed;
+    z-index: var(--layer-2);
   }
 
   article {
