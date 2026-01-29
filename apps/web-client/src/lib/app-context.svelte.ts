@@ -2,12 +2,15 @@ import type { UserIdentity } from "@atlas/atlasd";
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
+  CHUNK_SIZE,
+  CHUNKED_UPLOAD_THRESHOLD,
   MAX_FILE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { resolve } from "$app/paths";
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
+import { z } from "zod";
 
 const KEY = Symbol();
 
@@ -169,7 +172,7 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
 
   return {
     valid: false,
-    error: "Unsupported file type. Only CSV, JSON, TXT, and MD files are allowed.",
+    error: "Unsupported file type. Only CSV, JSON, TXT, MD, and YML files are allowed.",
   };
 }
 
@@ -178,16 +181,25 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Uploads a file to the server artifact endpoint using XHR for progress tracking.
- * Returns a discriminated union - caller uses `'artifactId' in result` to check success.
- *
- * @param file - The File object to upload
- * @param chatId - Optional chat ID to associate the artifact with
- * @param onProgress - Callback invoked with bytes uploaded
- * @param abortSignal - AbortSignal to cancel the upload
- * @returns Success: `{ artifactId: string }` | Failure: `{ error: string }`
+ * Uploads a file to the server. Automatically picks single-request or chunked
+ * upload based on file size.
  */
 async function uploadFile(
+  file: File,
+  chatId?: string,
+  onProgress?: (loaded: number) => void,
+  abortSignal?: AbortSignal,
+): Promise<{ artifactId: string } | { error: string }> {
+  if (file.size >= CHUNKED_UPLOAD_THRESHOLD) {
+    return uploadFileChunked(file, chatId, onProgress, abortSignal);
+  }
+  return uploadFileSimple(file, chatId, onProgress, abortSignal);
+}
+
+/**
+ * Single-request upload via XHR (for files below CHUNKED_UPLOAD_THRESHOLD).
+ */
+function uploadFileSimple(
   file: File,
   chatId?: string,
   onProgress?: (loaded: number) => void,
@@ -232,7 +244,6 @@ async function uploadFile(
       resolve({ error: "Upload cancelled" });
     };
 
-    // Wire up abort signal
     if (abortSignal) {
       abortSignal.addEventListener("abort", () => xhr.abort());
     }
@@ -240,6 +251,156 @@ async function uploadFile(
     xhr.open("POST", `${getAtlasDaemonUrl()}/api/artifacts/upload`);
     xhr.send(formData);
   });
+}
+
+const ErrorResponseSchema = z.object({ error: z.string() });
+
+function extractError(data: unknown, fallback: string): string {
+  const parsed = ErrorResponseSchema.safeParse(data);
+  return parsed.success ? parsed.data.error : fallback;
+}
+
+const InitResponseSchema = z.object({ uploadId: z.string(), totalChunks: z.number() });
+const StatusResponseSchema = z.object({ completedChunks: z.array(z.number()) });
+const CompleteResponseSchema = z.object({ artifact: z.object({ id: z.string() }) });
+
+/**
+ * Chunked upload with per-chunk retry and resume support.
+ * Splits file into CHUNK_SIZE pieces, uploads sequentially,
+ * and retries each chunk up to 3 times with exponential backoff.
+ */
+async function uploadFileChunked(
+  file: File,
+  chatId?: string,
+  onProgress?: (loaded: number) => void,
+  abortSignal?: AbortSignal,
+): Promise<{ artifactId: string } | { error: string }> {
+  const baseUrl = getAtlasDaemonUrl();
+
+  // 1. Init session
+  let initRes: Response;
+  try {
+    initRes = await fetch(`${baseUrl}/api/chunked-upload/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: file.name, fileSize: file.size, chatId }),
+      signal: abortSignal,
+    });
+  } catch {
+    return { error: "Network error during upload init" };
+  }
+
+  const initBody: unknown = await initRes.json().catch(() => ({}));
+  if (!initRes.ok) {
+    return { error: extractError(initBody, `Init failed (${initRes.status})`) };
+  }
+
+  const initParsed = InitResponseSchema.safeParse(initBody);
+  if (!initParsed.success) {
+    return { error: "Invalid response from server" };
+  }
+  const { uploadId, totalChunks } = initParsed.data;
+
+  // 2. Upload chunks sequentially with retry
+  const MAX_RETRIES = 3;
+  const MAX_RESUME_ATTEMPTS = 1;
+  let completedSet = new Set<number>();
+  let resumeAttempts = 0;
+
+  for (let i = 0; i < totalChunks; i++) {
+    if (abortSignal?.aborted) return { error: "Upload cancelled" };
+    if (completedSet.has(i)) continue;
+
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
+
+    let uploaded = false;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (abortSignal?.aborted) return { error: "Upload cancelled" };
+
+      try {
+        const res = await fetch(`${baseUrl}/api/chunked-upload/${uploadId}/chunk/${i}`, {
+          method: "PUT",
+          body: chunk,
+          signal: abortSignal,
+        });
+
+        if (res.ok) {
+          uploaded = true;
+          completedSet.add(i);
+          onProgress?.(Math.min((i + 1) * CHUNK_SIZE, file.size));
+          break;
+        }
+
+        // Non-retryable client errors
+        if (res.status >= 400 && res.status < 500) {
+          const data: unknown = await res.json().catch(() => ({}));
+          return { error: extractError(data, `Chunk upload failed (${res.status})`) };
+        }
+      } catch {
+        // Network error — retry after backoff
+      }
+
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = Math.round(1000 * 2 ** attempt * (0.5 + Math.random() * 0.5));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, delay);
+          abortSignal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+        if (abortSignal?.aborted) return { error: "Upload cancelled" };
+      }
+    }
+
+    if (!uploaded) {
+      // All retries exhausted — try to resume from server state (once)
+      if (resumeAttempts < MAX_RESUME_ATTEMPTS) {
+        resumeAttempts++;
+        try {
+          const statusRes = await fetch(`${baseUrl}/api/chunked-upload/${uploadId}/status`);
+          if (statusRes.ok) {
+            const statusParsed = StatusResponseSchema.safeParse(await statusRes.json());
+            if (statusParsed.success) {
+              completedSet = new Set(statusParsed.data.completedChunks);
+              i--;
+              continue;
+            }
+          }
+        } catch {
+          // Status check also failed
+        }
+      }
+      return { error: `Failed to upload chunk ${i} after ${MAX_RETRIES} attempts` };
+    }
+  }
+
+  // 3. Complete
+  try {
+    const completeRes = await fetch(`${baseUrl}/api/chunked-upload/${uploadId}/complete`, {
+      method: "POST",
+      signal: abortSignal,
+    });
+
+    if (!completeRes.ok) {
+      const data: unknown = await completeRes.json().catch(() => ({}));
+      return { error: extractError(data, `Complete failed (${completeRes.status})`) };
+    }
+
+    const completeParsed = CompleteResponseSchema.safeParse(await completeRes.json());
+    if (!completeParsed.success) {
+      return { error: "Invalid response from server" };
+    }
+    return { artifactId: completeParsed.data.artifact.id };
+  } catch {
+    return { error: "Network error during upload completion" };
+  }
 }
 
 /**

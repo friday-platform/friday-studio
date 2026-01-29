@@ -144,8 +144,7 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(415);
     const body = await response.json();
-    // Magic byte detection correctly identifies this as binary, even though extension says .exe
-    assertErrorResponse(body, "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML");
+    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML");
   });
 
   it("uses extension fallback when MIME type empty", async () => {

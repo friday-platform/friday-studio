@@ -39,6 +39,11 @@ import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
 import { chatStorageRoutes } from "../routes/chat-storage.ts";
+import {
+  chunkedUploadApp,
+  initChunkedUpload,
+  shutdownChunkedUpload,
+} from "../routes/chunked-upload.ts";
 import { configRoutes } from "../routes/config.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
@@ -339,6 +344,9 @@ export class AtlasDaemon {
       logger.info("OTEL metrics providers registered");
     }
 
+    // Start chunked upload cleanup lifecycle
+    initChunkedUpload();
+
     this.isInitialized = true;
     logger.info("Atlas daemon initialized");
   }
@@ -569,6 +577,7 @@ export class AtlasDaemon {
     this.app.route("/health", healthRoutes);
     this.app.route("/api/workspaces", workspacesRoutes);
     this.app.route("/api/artifacts", artifactsApp);
+    this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
     this.app.route("/api/chat-storage", chatStorageRoutes);
     this.app.route("/api/config", configRoutes);
@@ -1436,6 +1445,9 @@ export class AtlasDaemon {
       Deno.removeSignalListener(signal, handler);
     }
     this.signalHandlers = [];
+
+    // Stop chunked upload cleanup
+    shutdownChunkedUpload();
 
     // Shutdown all workspace runtimes
     const shutdownPromises = Array.from(this.runtimes.keys()).map((workspaceId) =>

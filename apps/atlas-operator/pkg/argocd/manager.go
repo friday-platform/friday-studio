@@ -262,6 +262,9 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 - op: replace
   path: /spec/routes/0/services/0/name
   value: %s
+- op: add
+  path: /spec/routes/0/services/0/serversTransport
+  value: atlas-operator-atlas-upload-transport@kubernetescrd
 `, apiMatchRule, serviceName)
 
 	// CRITICAL: PDB selector must match deployment's pod labels.

@@ -60,6 +60,41 @@ export const ALLOWED_MIME_TYPES = new Set([
   "text/yaml",
 ]);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Chunked upload constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Files above this threshold use chunked upload (50MB) */
+export const CHUNKED_UPLOAD_THRESHOLD = 50 * 1024 * 1024;
+
+/** Size of each chunk for chunked uploads (5MB) */
+export const CHUNK_SIZE = 5 * 1024 * 1024;
+
+/** How long a chunked upload session stays alive before cleanup (2 hours) */
+export const CHUNKED_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
+
+/** Returns true if chatId contains path traversal or unsafe characters */
+export function isInvalidChatId(chatId: string): boolean {
+  return (
+    chatId.includes("..") ||
+    chatId.startsWith("/") ||
+    chatId.includes("\\") ||
+    chatId.includes("\0")
+  );
+}
+
+/** Error message for disallowed file types */
+export const FILE_TYPE_NOT_ALLOWED_ERROR =
+  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML";
+
+/** Extract and validate file extension against EXTENSION_TO_MIME. Returns MIME type or undefined. */
+export function getValidatedMimeType(fileName: string): string | undefined {
+  const dotIdx = fileName.lastIndexOf(".");
+  if (dotIdx < 0) return undefined;
+  const ext = fileName.slice(dotIdx).toLowerCase();
+  return EXTENSION_TO_MIME.get(ext);
+}
+
 /** Allowed file extensions for client-side validation */
 export const ALLOWED_EXTENSIONS = new Set(EXTENSION_TO_MIME.keys());
 

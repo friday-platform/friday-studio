@@ -1,4 +1,5 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, rm, unlink } from "node:fs/promises";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   type ArtifactWithContents,
@@ -7,7 +8,12 @@ import {
   UpdateArtifactSchema,
 } from "@atlas/core/artifacts";
 import { convertCsvToSqlite } from "@atlas/core/artifacts/converters";
-import { EXTENSION_TO_MIME, MAX_FILE_SIZE } from "@atlas/core/artifacts/file-upload";
+import {
+  FILE_TYPE_NOT_ALLOWED_ERROR,
+  getValidatedMimeType,
+  isInvalidChatId,
+  MAX_FILE_SIZE,
+} from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -15,7 +21,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
 import { dirname, extname, join } from "@std/path";
-import { fileTypeFromBlob } from "file-type";
+import { fileTypeFromFile } from "file-type";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { getCurrentUserId } from "./me/adapter.ts";
@@ -29,8 +35,7 @@ type ValidationResult = { valid: true; mimeType: string } | { valid: false; erro
  * Check if uploaded file is a CSV using the canonical extension-to-MIME mapping.
  */
 function isCsvFile(filename: string): boolean {
-  const ext = extname(filename).toLowerCase();
-  return EXTENSION_TO_MIME.get(ext) === "text/csv";
+  return getValidatedMimeType(filename) === "text/csv";
 }
 
 /**
@@ -65,32 +70,141 @@ function formatCsvCell(value: unknown): string {
 }
 
 /**
- * Validate uploaded file by detecting binary content via magic bytes.
- *
- * Uses file-type package which detects 100+ binary formats. Returns undefined
- * for text files (CSV, JSON, TXT, MD) since they have no magic bytes.
- * This catches renamed binaries: malware.exe -> data.csv still detected as EXE.
+ * Validate uploaded file extension. Binary content detection happens later
+ * in createArtifactFromFile via magic bytes after the file is written to disk.
  */
-async function validateUpload(file: File): Promise<ValidationResult> {
-  const detected = await fileTypeFromBlob(file);
-
-  if (detected) {
-    // Binary file detected (exe, zip, png, etc.) - reject
-    logger.warn("Binary file rejected", {
-      filename: file.name,
-      detectedType: detected.mime,
-      detectedExt: detected.ext,
-    });
-    return { valid: false, error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML" };
-  }
-
-  // No magic bytes = not a known binary format, trust extension
-  const ext = `.${file.name.toLowerCase().split(".").pop()}`;
-  const mimeType = EXTENSION_TO_MIME.get(ext);
+function validateUpload(file: File): ValidationResult {
+  const mimeType = getValidatedMimeType(file.name);
   if (!mimeType) {
-    return { valid: false, error: "File type not allowed. Supported: CSV, JSON, TXT, MD, YML" };
+    return { valid: false, error: FILE_TYPE_NOT_ALLOWED_ERROR };
   }
   return { valid: true, mimeType };
+}
+
+/**
+ * Stream a web ReadableStream to a file on disk with backpressure handling.
+ * Parent directory is created if it doesn't exist.
+ */
+export async function streamToFile(
+  stream: ReadableStream<Uint8Array>,
+  destPath: string,
+): Promise<void> {
+  await mkdir(dirname(destPath), { recursive: true });
+  const writer = createWriteStream(destPath);
+
+  try {
+    for await (const chunk of stream) {
+      const ok = writer.write(chunk);
+      if (!ok) await new Promise((resolve) => writer.once("drain", resolve));
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      writer.end((err?: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared artifact creation (used by single-upload and chunked-upload)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function emitArtifactCreatedEvent(artifactId: string, artifactType: string, chatId?: string) {
+  const userId = await getCurrentUserId();
+  if (userId) {
+    analytics.emit({
+      eventName: EventNames.ARTIFACT_CREATED,
+      userId,
+      attributes: { artifactId, artifactType, chatId },
+    });
+  }
+}
+
+/**
+ * Given a validated file already on disk, create an artifact.
+ * - CSV files are converted to SQLite databases (source CSV is deleted).
+ * - Other files become file artifacts (kept at filePath).
+ * Handles cleanup on error.
+ */
+export async function createArtifactFromFile(opts: {
+  filePath: string;
+  fileName: string;
+  chatId?: string;
+}) {
+  const { filePath, fileName, chatId } = opts;
+
+  // Reject binary files based on magic bytes (extension check may have passed)
+  const detected = await fileTypeFromFile(filePath);
+  if (detected) {
+    await rm(filePath, { force: true });
+    return {
+      ok: false as const,
+      error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML",
+    };
+  }
+
+  if (isCsvFile(fileName)) {
+    const dbPath = join(dirname(filePath), `${crypto.randomUUID()}.db`);
+    try {
+      const tableName = sanitizeTableName(fileName);
+      const { schema } = await convertCsvToSqlite(filePath, dbPath, tableName);
+
+      const result = await ArtifactStorage.create({
+        title: fileName,
+        summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
+        data: {
+          type: "database",
+          version: 1,
+          data: { path: dbPath, sourceFileName: fileName, schema },
+        },
+        chatId,
+      });
+
+      if (!result.ok) {
+        await unlink(dbPath).catch(() => {});
+        return { ok: false as const, error: result.error };
+      }
+
+      await emitArtifactCreatedEvent(result.data.id, "database", chatId);
+      return { ok: true as const, artifact: result.data };
+    } catch (error) {
+      await unlink(dbPath).catch(() => {});
+      logger.error("Failed to convert CSV to SQLite", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false as const, error: "CSV conversion failed" };
+    } finally {
+      await unlink(filePath).catch(() => {});
+    }
+  }
+
+  // Non-CSV file artifact
+  try {
+    const result = await ArtifactStorage.create({
+      title: fileName,
+      summary: `Uploaded file: ${fileName}`,
+      data: { type: "file", version: 1, data: { path: filePath, originalName: fileName } },
+      chatId,
+    });
+
+    if (!result.ok) {
+      await unlink(filePath).catch(() => {});
+      return { ok: false as const, error: result.error };
+    }
+
+    await emitArtifactCreatedEvent(result.data.id, "file", chatId);
+    return { ok: true as const, artifact: result.data };
+  } catch (error) {
+    await unlink(filePath).catch(() => {});
+    logger.error("Failed to create file artifact", {
+      filename: fileName,
+      error: stringifyError(error),
+    });
+    return { ok: false as const, error: "Upload failed" };
+  }
 }
 
 const GetArtifactQuery = z.object({ revision: z.coerce.number().int().positive().optional() });
@@ -414,7 +528,7 @@ const artifactsApp = daemonFactory
     const chatId = formData.get("chatId")?.toString() || undefined;
 
     // Path traversal defense - chatId is used in storage path
-    if (chatId && (chatId.includes("..") || chatId.startsWith("/"))) {
+    if (chatId && isInvalidChatId(chatId)) {
       return c.json({ error: "Invalid chatId" }, 400);
     }
 
@@ -424,121 +538,35 @@ const artifactsApp = daemonFactory
       return c.json({ error: `File too large (max ${maxSizeMB}MB)` }, 413);
     }
 
-    // Validate file content via magic bytes detection
-    const validation = await validateUpload(file);
+    const validation = validateUpload(file);
     if (!validation.valid) {
       return c.json({ error: validation.error }, 415);
     }
 
-    // Generate storage path: ~/.atlas/uploads/{chatId || 'orphan'}/{uuid}.{ext}
+    // Stream file to disk, then create artifact
     const atlasHome = getAtlasHome();
     const subdir = chatId || "orphan";
     const uuid = crypto.randomUUID();
-
-    // CSV files get converted to SQLite databases
-    if (isCsvFile(file.name)) {
-      const tempCsvPath = join(atlasHome, "uploads", subdir, `${uuid}.csv.tmp`);
-      const dbPath = join(atlasHome, "uploads", subdir, `${uuid}.db`);
-
-      try {
-        // Write temp CSV for streaming (converter needs file path)
-        await mkdir(dirname(tempCsvPath), { recursive: true });
-        await writeFile(tempCsvPath, new Uint8Array(await file.arrayBuffer()));
-
-        // Convert CSV to SQLite
-        const tableName = sanitizeTableName(file.name);
-        const { schema } = await convertCsvToSqlite(tempCsvPath, dbPath, tableName);
-
-        // Create database artifact
-        const result = await ArtifactStorage.create({
-          title: file.name,
-          summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
-          data: {
-            type: "database",
-            version: 1,
-            data: { path: dbPath, sourceFileName: file.name, schema },
-          },
-          chatId,
-        });
-
-        if (!result.ok) {
-          await unlink(dbPath).catch(() => {});
-          return c.json({ error: result.error }, 500);
-        }
-
-        // Emit analytics event
-        const userId = await getCurrentUserId();
-        if (userId) {
-          analytics.emit({
-            eventName: EventNames.ARTIFACT_CREATED,
-            userId,
-            attributes: { artifactId: result.data.id, artifactType: "database", chatId },
-          });
-        }
-
-        return c.json({ artifact: result.data }, 201);
-      } catch (error) {
-        await unlink(dbPath).catch(() => {});
-
-        logger.error("Failed to convert CSV to SQLite", {
-          filename: file.name,
-          size: file.size,
-          error: stringifyError(error),
-        });
-
-        return c.json({ error: "CSV conversion failed" }, 500);
-      } finally {
-        // Always clean up temp CSV file
-        await unlink(tempCsvPath).catch(() => {});
-      }
-    }
-
-    // Non-CSV files: existing file artifact flow
-    const ext = extname(file.name) || ".bin";
-    const storagePath = join(atlasHome, "uploads", subdir, `${uuid}${ext}`);
+    const ext = extname(file.name) || ".txt";
+    const filePath = join(atlasHome, "uploads", subdir, `${uuid}${ext}`);
 
     try {
-      // Write file to persistent storage
-      await mkdir(dirname(storagePath), { recursive: true });
-      await writeFile(storagePath, new Uint8Array(await file.arrayBuffer()));
-
-      // Create artifact pointing to stored file
-      const result = await ArtifactStorage.create({
-        title: file.name,
-        summary: `Uploaded file: ${file.name}`,
-        data: { type: "file", version: 1, data: { path: storagePath, originalName: file.name } },
-        chatId,
-      });
-
-      if (!result.ok) {
-        // Clean up orphaned file if artifact creation failed
-        await unlink(storagePath).catch(() => {});
-        return c.json({ error: result.error }, 500);
-      }
-
-      // Emit analytics event
-      const userId = await getCurrentUserId();
-      if (userId) {
-        analytics.emit({
-          eventName: EventNames.ARTIFACT_CREATED,
-          userId,
-          attributes: { artifactId: result.data.id, artifactType: "file", chatId },
-        });
-      }
-
-      return c.json({ artifact: result.data }, 201);
+      await streamToFile(file.stream(), filePath);
     } catch (error) {
-      // Clean up orphaned file if write succeeded but something else failed
-      await unlink(storagePath).catch(() => {});
-
-      logger.error("Failed to upload artifact", {
+      await unlink(filePath).catch(() => {});
+      logger.error("Failed to write uploaded file", {
         filename: file.name,
         size: file.size,
         error: stringifyError(error),
       });
-
       return c.json({ error: "Upload failed" }, 500);
     }
+
+    const result = await createArtifactFromFile({ filePath, fileName: file.name, chatId });
+    if (!result.ok) {
+      return c.json({ error: result.error }, 500);
+    }
+    return c.json({ artifact: result.artifact }, 201);
   });
 
 export { artifactsApp };

@@ -319,6 +319,13 @@ func TestBuildApplication(t *testing.T) {
 			if !strings.Contains(patchContent, expectedServiceName) {
 				t.Errorf("IngressRoute patch should contain service name '%s'", expectedServiceName)
 			}
+			// Verify serversTransport is set for extended upload timeouts
+			if !strings.Contains(patchContent, "/spec/routes/0/services/0/serversTransport") {
+				t.Error("IngressRoute patch should contain serversTransport path")
+			}
+			if !strings.Contains(patchContent, "atlas-operator-atlas-upload-transport@kubernetescrd") {
+				t.Error("IngressRoute patch should contain atlas-upload-transport cross-namespace reference")
+			}
 			// Verify PLACEHOLDER_HOSTNAME is NOT present (should not exist in child routes)
 			// Note: Host() matching is now in parent IngressRoute, child routes only match on header
 			if strings.Contains(patchContent, "PLACEHOLDER_HOSTNAME") {
