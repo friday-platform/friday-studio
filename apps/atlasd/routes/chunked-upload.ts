@@ -33,7 +33,8 @@ interface UploadSession {
   chatId?: string;
   tempDir: string;
   createdAt: number;
-  status: "uploading" | "completing" | "failed";
+  status: "uploading" | "completing" | "completed" | "failed";
+  result?: { artifact: { id: string } } | { error: string };
 }
 
 const sessions = new Map<string, UploadSession>();
@@ -148,7 +149,10 @@ export const chunkedUploadApp = daemonFactory
       return c.json({ error: FILE_TYPE_NOT_ALLOWED_ERROR }, 415);
     }
 
-    if (sessions.size >= MAX_CONCURRENT_SESSIONS) {
+    const activeSessions = [...sessions.values()].filter(
+      (s) => s.status === "uploading" || s.status === "completing",
+    ).length;
+    if (activeSessions >= MAX_CONCURRENT_SESSIONS) {
       return c.json({ error: "Too many concurrent uploads. Try again later." }, 429);
     }
 
@@ -233,8 +237,8 @@ export const chunkedUploadApp = daemonFactory
     }
   })
 
-  /** Complete the upload — assemble chunks and create artifact */
-  .post("/:uploadId/complete", zValidator("param", UploadIdParam), async (c) => {
+  /** Complete the upload — validate chunks, kick off async assembly+conversion */
+  .post("/:uploadId/complete", zValidator("param", UploadIdParam), (c) => {
     const { uploadId } = c.req.valid("param");
 
     const session = sessions.get(uploadId);
@@ -254,63 +258,25 @@ export const chunkedUploadApp = daemonFactory
 
     session.status = "completing";
 
-    const uuid = crypto.randomUUID();
-    const ext = extname(session.fileName) || ".txt";
-    const assembledPath = join(tmpdir(), "atlas-chunked-upload", "assembled", `${uuid}${ext}`);
-
-    try {
-      await mkdir(dirname(assembledPath), { recursive: true });
-
-      const writeStream = createWriteStream(assembledPath);
-      try {
-        for (let i = 0; i < session.totalChunks; i++) {
-          const chunkStream = createReadStream(join(session.tempDir, `chunk-${i}`));
-          await pipeline(chunkStream, writeStream, { end: false });
-        }
-      } finally {
-        await new Promise<void>((resolve, reject) => {
-          writeStream.end((err?: Error | null) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      }
-
-      // Verify assembled file size matches declared size
-      const assembled = await stat(assembledPath);
-      if (assembled.size !== session.fileSize) {
-        await rm(assembledPath, { force: true });
-        cleanupSession(uploadId, session);
-        return c.json(
-          { error: `Size mismatch: expected ${session.fileSize} bytes, got ${assembled.size}` },
-          400,
-        );
-      }
-
-      const result = await createArtifactFromFile({
-        filePath: assembledPath,
-        fileName: session.fileName,
-        chatId: session.chatId,
-      });
-      if (!result.ok) {
-        cleanupSession(uploadId, session);
-        return c.json({ error: result.error }, 500);
-      }
-
-      cleanupSession(uploadId, session);
-      return c.json({ artifact: result.artifact }, 201);
-    } catch (error) {
-      logger.error("Failed to complete chunked upload", {
+    // Fire-and-forget: assemble chunks and create artifact in background
+    assembleAndConvert(uploadId, session).catch((error) => {
+      // Safety net — assembleAndConvert handles its own errors internally.
+      // This only fires if something truly unexpected escapes.
+      logger.error("Unexpected error in chunked upload assembly", {
         uploadId,
         filename: session.fileName,
         error: stringifyError(error),
       });
-      cleanupSession(uploadId, session);
-      return c.json({ error: "Upload completion failed" }, 500);
-    }
+      if (session.status !== "failed") {
+        session.status = "failed";
+        session.result = { error: "Upload completion failed" };
+      }
+    });
+
+    return c.json({ status: "completing" }, 202);
   })
 
-  /** Get upload status — used by client to resume */
+  /** Get upload status — used by client to resume or poll for completion */
   .get("/:uploadId/status", zValidator("param", UploadIdParam), (c) => {
     const { uploadId } = c.req.valid("param");
 
@@ -324,6 +290,7 @@ export const chunkedUploadApp = daemonFactory
       totalChunks: session.totalChunks,
       completedChunks: [...session.completedChunks].sort((a, b) => a - b),
       status: session.status,
+      ...(session.result && { result: session.result }),
     });
   });
 
@@ -340,9 +307,73 @@ export function _getSessionForTest(uploadId: string): UploadSession | undefined 
 /** @internal Exposed for tests only — run expired session cleanup. */
 export const _cleanupExpiredSessionsForTest = cleanupExpiredSessions;
 
-/** Remove session from map and delete temp directory */
-function cleanupSession(uploadId: string, session: UploadSession): void {
-  sessions.delete(uploadId);
+/** Assemble chunks into a single file and create the artifact (runs in background). */
+async function assembleAndConvert(uploadId: string, session: UploadSession): Promise<void> {
+  const uuid = crypto.randomUUID();
+  const ext = extname(session.fileName) || ".txt";
+  const assembledPath = join(tmpdir(), "atlas-chunked-upload", "assembled", `${uuid}${ext}`);
+
+  try {
+    await mkdir(dirname(assembledPath), { recursive: true });
+
+    const writeStream = createWriteStream(assembledPath);
+    writeStream.setMaxListeners(session.totalChunks + 1);
+    try {
+      for (let i = 0; i < session.totalChunks; i++) {
+        const chunkStream = createReadStream(join(session.tempDir, `chunk-${i}`));
+        await pipeline(chunkStream, writeStream, { end: false });
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        writeStream.end((err?: Error | null) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+
+    // Verify assembled file size matches declared size
+    const assembled = await stat(assembledPath);
+    if (assembled.size !== session.fileSize) {
+      await rm(assembledPath, { force: true });
+      session.status = "failed";
+      session.result = {
+        error: `Size mismatch: expected ${session.fileSize} bytes, got ${assembled.size}`,
+      };
+      cleanupTempDir(uploadId, session);
+      return;
+    }
+
+    const result = await createArtifactFromFile({
+      filePath: assembledPath,
+      fileName: session.fileName,
+      chatId: session.chatId,
+    });
+
+    if (!result.ok) {
+      session.status = "failed";
+      session.result = { error: result.error };
+      cleanupTempDir(uploadId, session);
+      return;
+    }
+
+    session.status = "completed";
+    session.result = { artifact: { id: result.artifact.id } };
+    cleanupTempDir(uploadId, session);
+  } catch (error) {
+    logger.error("assembleAndConvert failed", {
+      uploadId,
+      filename: session.fileName,
+      error: stringifyError(error),
+    });
+    session.status = "failed";
+    session.result = { error: "Upload completion failed" };
+    cleanupTempDir(uploadId, session);
+  }
+}
+
+/** Delete temp directory but keep session in map (for status polling). */
+function cleanupTempDir(uploadId: string, session: UploadSession): void {
   rm(session.tempDir, { recursive: true, force: true }).catch((err) => {
     logger.warn("Failed to cleanup chunked upload temp dir", {
       uploadId,

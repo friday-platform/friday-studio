@@ -55,6 +55,8 @@ export function convertCsvToSqlite(
   // Set pragmas for optimal conversion
   db.exec("PRAGMA journal_mode = DELETE");
   db.exec("PRAGMA page_size = 4096");
+  // NORMAL is safe: source CSV is the durable copy; SQLite is a derived artifact.
+  db.exec("PRAGMA synchronous = NORMAL");
 
   let columns: string[] = [];
   let insertStmt: ReturnType<typeof db.prepare> | null = null;

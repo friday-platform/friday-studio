@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import process from "node:process";
 import {
   CHUNK_SIZE,
@@ -8,6 +8,7 @@ import {
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { artifactsApp } from "./artifacts.ts";
 import {
   _cleanupExpiredSessionsForTest,
   _getSessionForTest,
@@ -30,24 +31,21 @@ const InitResponseSchema = z.object({
 /** Schema for chunk upload response */
 const ChunkResponseSchema = z.object({ received: z.number().int().nonnegative() });
 
-/** Schema for complete response */
-const CompleteResponseSchema = z.object({
-  artifact: z
-    .object({
-      id: z.string(),
-      type: z.string(),
-      title: z.string(),
-      data: z.object({ type: z.string() }).passthrough(),
-    })
-    .passthrough(),
-});
+/** Schema for async complete response (202) */
+const CompleteAcceptedSchema = z.object({ status: z.literal("completing") });
 
 /** Schema for status response */
 const StatusResponseSchema = z.object({
   uploadId: z.string().uuid(),
   totalChunks: z.number().int().positive(),
   completedChunks: z.array(z.number().int().nonnegative()),
-  status: z.enum(["uploading", "completing", "failed"]),
+  status: z.enum(["uploading", "completing", "completed", "failed"]),
+  result: z
+    .union([
+      z.object({ artifact: z.object({ id: z.string() }).passthrough() }),
+      z.object({ error: z.string() }),
+    ])
+    .optional(),
 });
 
 const assertErrorResponse = (body: unknown, expected: string) => {
@@ -80,6 +78,33 @@ function completeUpload(uploadId: string) {
 /** Get upload status */
 function getStatus(uploadId: string) {
   return chunkedUploadApp.request(`/${uploadId}/status`, { method: "GET" });
+}
+
+/** Complete upload and poll until finished. Returns the status response with result. */
+async function completeAndWait(uploadId: string, maxAttempts = 50) {
+  const completeRes = await completeUpload(uploadId);
+  expect(completeRes.status).toEqual(202);
+  const completeBody = CompleteAcceptedSchema.parse(await completeRes.json());
+  expect(completeBody.status).toEqual("completing");
+
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    const statusRes = await getStatus(uploadId);
+    if (!statusRes.ok) {
+      if (statusRes.status === 404) {
+        throw new Error(`Session ${uploadId} disappeared during polling (404)`);
+      }
+      if (i === maxAttempts - 1) {
+        throw new Error(`Status endpoint returned ${statusRes.status} on final attempt`);
+      }
+      continue;
+    }
+    const body = StatusResponseSchema.parse(await statusRes.json());
+    if (body.status === "completed" || body.status === "failed") {
+      return body;
+    }
+  }
+  throw new Error("Timed out waiting for upload completion");
 }
 
 // Reset sessions between tests to avoid cross-test pollution (e.g. rate limit)
@@ -207,12 +232,10 @@ describe("Complete (POST /:uploadId/complete)", () => {
     const chunkRes = await uploadChunk(uploadId, 0, new Blob([content]));
     expect(chunkRes.status).toEqual(200);
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
-    const body = CompleteResponseSchema.parse(await completeRes.json());
-    expect(body.artifact.id).toBeDefined();
-    expect(body.artifact.title).toEqual("hello.txt");
-    expect(body.artifact.data.type).toEqual("file");
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
+    expect(result.result).toBeDefined();
+    expect("artifact" in result.result!).toBe(true);
   });
 
   it("creates database artifact for CSV file", async () => {
@@ -224,14 +247,31 @@ describe("Complete (POST /:uploadId/complete)", () => {
 
     await uploadChunk(uploadId, 0, new Blob([csv]));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
-    const body = CompleteResponseSchema.parse(await completeRes.json());
-    expect(body.artifact.data.type).toEqual("database");
-    expect(body.artifact.title).toEqual("people.csv");
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
+    expect(result.result).toBeDefined();
+    expect("artifact" in result.result!).toBe(true);
   });
 
-  it("returns 404 on second complete (session cleaned up after success)", async () => {
+  it("returns intermediate 'completing' status before terminal state", async () => {
+    const content = "intermediate status test";
+    const fileSize = new Blob([content]).size;
+
+    const initRes = await initUpload({ fileName: "intermediate.txt", fileSize });
+    const { uploadId } = InitResponseSchema.parse(await initRes.json());
+    await uploadChunk(uploadId, 0, new Blob([content]));
+
+    const completeRes = await completeUpload(uploadId);
+    expect(completeRes.status).toEqual(202);
+
+    // Poll immediately — should see "completing" before it transitions
+    const statusRes = await getStatus(uploadId);
+    expect(statusRes.status).toEqual(200);
+    const body = StatusResponseSchema.parse(await statusRes.json());
+    expect(["completing", "completed"]).toContain(body.status);
+  });
+
+  it("returns 409 on second complete (session is completing)", async () => {
     const content = "double complete test";
     const fileSize = new Blob([content]).size;
 
@@ -240,10 +280,13 @@ describe("Complete (POST /:uploadId/complete)", () => {
     await uploadChunk(uploadId, 0, new Blob([content]));
 
     const first = await completeUpload(uploadId);
-    expect(first.status).toEqual(201);
+    expect(first.status).toEqual(202);
 
+    // Second complete should be rejected since status is now "completing"
     const second = await completeUpload(uploadId);
-    expect(second.status).toEqual(404);
+    expect(second.status).toEqual(409);
+    const body = await second.json();
+    expect(body).toHaveProperty("error");
   });
 });
 
@@ -292,11 +335,10 @@ describe("End-to-end", () => {
     // Upload chunk 1
     await uploadChunk(uploadId, 1, blob.slice(CHUNK_SIZE));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
-    const body = CompleteResponseSchema.parse(await completeRes.json());
-    expect(body.artifact.id).toBeDefined();
-    expect(body.artifact.data.type).toEqual("file");
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
+    expect(result.result).toBeDefined();
+    expect("artifact" in result.result!).toBe(true);
   });
 
   it("handles CSV multi-chunk upload producing database artifact", async () => {
@@ -308,10 +350,10 @@ describe("End-to-end", () => {
 
     await uploadChunk(uploadId, 0, new Blob([csv]));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
-    const body = CompleteResponseSchema.parse(await completeRes.json());
-    expect(body.artifact.data.type).toEqual("database");
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
+    expect(result.result).toBeDefined();
+    expect("artifact" in result.result!).toBe(true);
   });
 });
 
@@ -324,8 +366,8 @@ describe("Edge cases", () => {
 
     await uploadChunk(uploadId, 0, new Blob(["x"]));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
   });
 
   it("handles file where last chunk is smaller", async () => {
@@ -340,8 +382,8 @@ describe("Edge cases", () => {
     await uploadChunk(uploadId, 0, blob.slice(0, CHUNK_SIZE));
     await uploadChunk(uploadId, 1, blob.slice(CHUNK_SIZE));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
   });
 });
 
@@ -359,14 +401,16 @@ describe("Content integrity", () => {
     await uploadChunk(uploadId, 0, blob.slice(0, CHUNK_SIZE));
     await uploadChunk(uploadId, 1, blob.slice(CHUNK_SIZE));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(201);
-    const body = CompleteResponseSchema.parse(await completeRes.json());
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
 
-    // Read the file from disk and verify content matches
-    const artifactData = body.artifact.data as { type: string; data: { path: string } };
-    const ondisk = await readFile(artifactData.data.path, "utf-8");
-    expect(ondisk).toEqual(fullContent);
+    // Fetch the artifact via the API and verify file content matches
+    const artifactId = z.object({ artifact: z.object({ id: z.string() }) }).parse(result.result)
+      .artifact.id;
+    const artifactRes = await artifactsApp.request(`/${artifactId}`);
+    expect(artifactRes.status).toEqual(200);
+    const artifact = z.object({ contents: z.string() }).parse(await artifactRes.json());
+    expect(artifact.contents).toEqual(fullContent);
   });
 });
 
@@ -387,7 +431,7 @@ describe("Rate limiting", () => {
 });
 
 describe("Size mismatch", () => {
-  it("returns 400 when assembled file size differs from declared", async () => {
+  it("fails when assembled file size differs from declared", async () => {
     // Declare 200 bytes but upload only 5
     const initRes = await initUpload({ fileName: "mismatch.txt", fileSize: 200 });
     const { uploadId } = InitResponseSchema.parse(await initRes.json());
@@ -396,24 +440,10 @@ describe("Size mismatch", () => {
     // Upload a chunk with only 5 bytes
     await uploadChunk(uploadId, 0, new Blob(["hello"]));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(400);
-    const body = await completeRes.json();
-    expect(body).toMatchObject({ error: expect.stringMatching(/Size mismatch/) });
-  });
-
-  it("cleans up session after size mismatch failure", async () => {
-    const initRes = await initUpload({ fileName: "fail.txt", fileSize: 200 });
-    const { uploadId } = InitResponseSchema.parse(await initRes.json());
-
-    await uploadChunk(uploadId, 0, new Blob(["small"]));
-
-    const firstComplete = await completeUpload(uploadId);
-    expect(firstComplete.status).toEqual(400);
-
-    // Session should be cleaned up after failure
-    const statusRes = await getStatus(uploadId);
-    expect(statusRes.status).toEqual(404);
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("failed");
+    const errorResult = z.object({ error: z.string() }).parse(result.result);
+    expect(errorResult.error).toMatch(/Size mismatch/);
   });
 });
 
@@ -426,7 +456,9 @@ describe("Completing rejection (409)", () => {
     await uploadChunk(uploadId, 0, new Blob(["a".repeat(CHUNK_SIZE)]));
     await uploadChunk(uploadId, 1, new Blob(["b"]));
 
-    // Manually set status to "completing" to simulate race
+    // Direct mutation via test-only export to simulate a race condition where
+    // complete fires between chunk upload and chunk write. Triggering this state
+    // via HTTP would require precise timing control that's fragile in tests.
     const session = _getSessionForTest(uploadId);
     expect(session).toBeDefined();
     session!.status = "completing";
@@ -440,7 +472,7 @@ describe("Completing rejection (409)", () => {
 });
 
 describe("Artifact creation failure (500)", () => {
-  it("returns 500 when file is detected as binary", async () => {
+  it("fails when file is detected as binary", async () => {
     // PNG file with enough magic bytes for file-type detection
     const pngHeader = new Uint8Array([
       0x89,
@@ -483,15 +515,15 @@ describe("Artifact creation failure (500)", () => {
 
     await uploadChunk(uploadId, 0, new Blob([pngHeader]));
 
-    const completeRes = await completeUpload(uploadId);
-    expect(completeRes.status).toEqual(500);
-    const body = await completeRes.json();
-    expect(body).toHaveProperty("error");
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("failed");
+    expect(result.result).toBeDefined();
+    expect("error" in result.result!).toBe(true);
   });
 });
 
 describe("TTL expiration", () => {
-  it("cleans up expired sessions", async () => {
+  it("cleans up expired sessions in uploading state", async () => {
     const initRes = await initUpload({ fileName: "expire.txt", fileSize: 100 });
     const { uploadId } = InitResponseSchema.parse(await initRes.json());
 
@@ -503,6 +535,50 @@ describe("TTL expiration", () => {
     await _cleanupExpiredSessionsForTest();
 
     // Session should be gone
+    const statusRes = await getStatus(uploadId);
+    expect(statusRes.status).toEqual(404);
+  });
+
+  it("cleans up completed sessions after TTL", async () => {
+    const content = "ttl-completed";
+    const fileSize = new Blob([content]).size;
+
+    const initRes = await initUpload({ fileName: "ttl-done.txt", fileSize });
+    const { uploadId } = InitResponseSchema.parse(await initRes.json());
+    await uploadChunk(uploadId, 0, new Blob([content]));
+
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("completed");
+
+    // Backdate the completed session to exceed TTL
+    const session = _getSessionForTest(uploadId);
+    expect(session).toBeDefined();
+    session!.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
+
+    await _cleanupExpiredSessionsForTest();
+
+    // Completed session should be cleaned up
+    const statusRes = await getStatus(uploadId);
+    expect(statusRes.status).toEqual(404);
+  });
+
+  it("cleans up failed sessions after TTL", async () => {
+    // Declare 200 bytes but upload only 5 to trigger size mismatch failure
+    const initRes = await initUpload({ fileName: "ttl-fail.txt", fileSize: 200 });
+    const { uploadId } = InitResponseSchema.parse(await initRes.json());
+    await uploadChunk(uploadId, 0, new Blob(["hello"]));
+
+    const result = await completeAndWait(uploadId);
+    expect(result.status).toEqual("failed");
+
+    // Backdate the failed session to exceed TTL
+    const session = _getSessionForTest(uploadId);
+    expect(session).toBeDefined();
+    session!.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
+
+    await _cleanupExpiredSessionsForTest();
+
+    // Failed session should be cleaned up
     const statusRes = await getStatus(uploadId);
     expect(statusRes.status).toEqual(404);
   });

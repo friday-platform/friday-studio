@@ -167,6 +167,10 @@ export async function createArtifactFromFile(opts: {
       });
 
       if (!result.ok) {
+        logger.error("ArtifactStorage.create failed for CSV", {
+          filename: fileName,
+          error: result.error,
+        });
         await unlink(dbPath).catch(() => {});
         return { ok: false as const, error: result.error };
       }

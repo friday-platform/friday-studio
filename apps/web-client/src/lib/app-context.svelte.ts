@@ -30,11 +30,15 @@ export interface StagedFile {
   /** Bytes uploaded so far (for progress display) */
   loaded: number;
   /** Upload lifecycle status */
-  status: "uploading" | "ready" | "error";
+  status: "uploading" | "converting" | "ready" | "error";
   /** Error message if status === "error" */
   error?: string;
   /** AbortController for cancelling in-flight uploads */
   abortController?: AbortController;
+}
+
+export function isFileInProgress(file: StagedFile): boolean {
+  return file.status === "uploading" || file.status === "converting";
 }
 
 export type KeyboardModifier = "shift" | "option" | "command" | "control";
@@ -189,9 +193,10 @@ async function uploadFile(
   chatId?: string,
   onProgress?: (loaded: number) => void,
   abortSignal?: AbortSignal,
+  onStatusChange?: (status: StagedFile["status"]) => void,
 ): Promise<{ artifactId: string } | { error: string }> {
   if (file.size >= CHUNKED_UPLOAD_THRESHOLD) {
-    return uploadFileChunked(file, chatId, onProgress, abortSignal);
+    return uploadFileChunked(file, chatId, onProgress, abortSignal, onStatusChange);
   }
   return uploadFileSimple(file, chatId, onProgress, abortSignal);
 }
@@ -262,7 +267,13 @@ function extractError(data: unknown, fallback: string): string {
 
 const InitResponseSchema = z.object({ uploadId: z.string(), totalChunks: z.number() });
 const StatusResponseSchema = z.object({ completedChunks: z.array(z.number()) });
-const CompleteResponseSchema = z.object({ artifact: z.object({ id: z.string() }) });
+const CompleteAcceptedSchema = z.object({ status: z.literal("completing") });
+const StatusPollResponseSchema = z.object({
+  status: z.enum(["uploading", "completing", "completed", "failed"]),
+  result: z
+    .union([z.object({ artifact: z.object({ id: z.string() }) }), z.object({ error: z.string() })])
+    .optional(),
+});
 
 /**
  * Chunked upload with per-chunk retry and resume support.
@@ -274,6 +285,7 @@ async function uploadFileChunked(
   chatId?: string,
   onProgress?: (loaded: number) => void,
   abortSignal?: AbortSignal,
+  onStatusChange?: (status: StagedFile["status"]) => void,
 ): Promise<{ artifactId: string } | { error: string }> {
   const baseUrl = getAtlasDaemonUrl();
 
@@ -381,7 +393,7 @@ async function uploadFileChunked(
     }
   }
 
-  // 3. Complete
+  // 3. Complete — server returns 202, then we poll for result
   try {
     const completeRes = await fetch(`${baseUrl}/api/chunked-upload/${uploadId}/complete`, {
       method: "POST",
@@ -393,11 +405,66 @@ async function uploadFileChunked(
       return { error: extractError(data, `Complete failed (${completeRes.status})`) };
     }
 
-    const completeParsed = CompleteResponseSchema.safeParse(await completeRes.json());
-    if (!completeParsed.success) {
+    const completeBody: unknown = await completeRes.json().catch(() => ({}));
+
+    const asyncParsed = CompleteAcceptedSchema.safeParse(completeBody);
+    if (!asyncParsed.success) {
       return { error: "Invalid response from server" };
     }
-    return { artifactId: completeParsed.data.artifact.id };
+
+    // Signal "converting" state
+    onProgress?.(file.size);
+    onStatusChange?.("converting");
+
+    const POLL_INTERVAL_MS = 2000;
+    const MAX_POLL_ATTEMPTS = 300; // 10 minutes max
+
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+      if (abortSignal?.aborted) return { error: "Upload cancelled" };
+
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, POLL_INTERVAL_MS);
+        abortSignal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      if (abortSignal?.aborted) return { error: "Upload cancelled" };
+
+      try {
+        const statusRes = await fetch(`${baseUrl}/api/chunked-upload/${uploadId}/status`, {
+          signal: abortSignal,
+        });
+        if (statusRes.status === 404) {
+          return { error: "Upload session expired" };
+        }
+        if (!statusRes.ok) continue;
+
+        const statusParsed = StatusPollResponseSchema.safeParse(await statusRes.json());
+        if (!statusParsed.success) continue;
+
+        const { status, result } = statusParsed.data;
+
+        if (status === "completed" && result && "artifact" in result) {
+          return { artifactId: result.artifact.id };
+        }
+
+        if (status === "failed") {
+          const errorMsg = result && "error" in result ? result.error : "Conversion failed";
+          return { error: errorMsg };
+        }
+
+        // Still completing — keep polling
+      } catch {
+        // Network error on poll — retry
+      }
+    }
+
+    return { error: "Conversion timed out" };
   } catch {
     return { error: "Network error during upload completion" };
   }
@@ -444,8 +511,12 @@ export function handleFileDrop(appCtx: AppContext, files: File[], chatId?: strin
       appCtx.stagedFiles.update(tempId, { loaded });
     };
 
+    const onStatusChange = (status: StagedFile["status"]) => {
+      appCtx.stagedFiles.update(tempId, { status });
+    };
+
     // Upload immediately (fire and forget - all uploads run in parallel)
-    uploadFile(file, chatId, onProgress, abortController.signal).then((result) => {
+    uploadFile(file, chatId, onProgress, abortController.signal, onStatusChange).then((result) => {
       if ("artifactId" in result) {
         appCtx.stagedFiles.update(tempId, { artifactId: result.artifactId, status: "ready" });
       } else if (result.error !== "Upload cancelled") {

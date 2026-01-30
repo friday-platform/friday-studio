@@ -7,7 +7,7 @@
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { afterNavigate, beforeNavigate, goto } from "$app/navigation";
-  import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
+  import { getAppContext, handleFileDrop, isFileInProgress } from "$lib/app-context.svelte";
   import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
@@ -500,8 +500,8 @@
               e.preventDefault();
 
               // Check if still uploading
-              const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some(
-                (f) => f.status === "uploading",
+              const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some((f) =>
+                isFileInProgress(f),
               );
               if (hasUploadingFiles) return;
 
@@ -549,13 +549,13 @@
                     file.size > 0 ? Math.round((file.loaded / file.size) * 100) : 0}
                   <button
                     class="staged-file"
-                    class:uploading={file.status === "uploading"}
+                    class:uploading={isFileInProgress(file)}
                     class:ready={file.status === "ready"}
                     class:error={file.status === "error"}
                     style:--progress="{progress}%"
                     title={file.error || file.name}
                     onclick={() => {
-                      if (file.status === "uploading") {
+                      if (isFileInProgress(file)) {
                         appCtx.stagedFiles.cancel(itemId);
                       } else {
                         trackEvent(GA4.FILE_REMOVE);
@@ -563,7 +563,7 @@
                       }
                     }}
                   >
-                    {#if file.status === "uploading"}
+                    {#if isFileInProgress(file)}
                       <span class="status-icon spinning"><IconSmall.Progress /></span>
                     {:else if file.status === "ready"}
                       <span class="status-icon"><IconSmall.Check /></span>
@@ -575,10 +575,10 @@
 
                     {#if file.status === "error"}
                       <span class="error-text">{file.error}</span>
+                    {:else if file.status === "converting"}
+                      <span class="file-size">Converting...</span>
                     {:else if file.status === "uploading"}
-                      <span class="file-size">
-                        {progress >= 100 ? "Converting..." : `${progress}%`}
-                      </span>
+                      <span class="file-size">{progress}%</span>
                     {:else}
                       <span class="file-size">{formatFileSize(file.size)}</span>
                     {/if}
@@ -678,7 +678,7 @@
                   </button>
                 {:else}
                   {@const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some(
-                    (f) => f.status === "uploading",
+                    (f) => isFileInProgress(f),
                   )}
                   <button type="submit" aria-label="Send message" disabled={hasUploadingFiles}>
                     <Icons.ArrowUp />
