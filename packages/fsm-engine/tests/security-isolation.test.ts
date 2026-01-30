@@ -291,7 +291,7 @@ describe.skipIf(!isDenoRuntime)("Dynamic Import Attacks - ALL BLOCKED", () => {
     // Attack: Load compromised npm packages
     const code = `
       export default async () => {
-        const pkg = await import('npm:evil-package@latest');
+        const pkg = await import('npm:totally-fake-pkg-that-does-not-exist@0.0.0');
         return pkg.default();
       }
     `;
