@@ -354,6 +354,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       const timeoutMs = Math.max(60_000, (fileSize / (1024 * 1024)) * 2000);
 
       // 4. Upload file as octet-stream (streamed via ReadableStream)
+      // Note: file.readable auto-closes the file resource when the stream is fully consumed.
+      // We only call file.close() on error to clean up if the stream was never (fully) consumed.
       let fileUploadResponse: CreateObjectResponse;
       try {
         fileUploadResponse = await this.request<CreateObjectResponse>(
@@ -362,8 +364,15 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
           file.readable,
           { parseJson: true, timeoutMs },
         );
-      } finally {
-        file.close();
+      } catch (error) {
+        try {
+          file.close();
+        } catch (closeErr) {
+          logger.debug("file.close() after stream error — resource already closed", {
+            error: stringifyError(closeErr),
+          });
+        }
+        throw error;
       }
 
       if (!fileUploadResponse || !fileUploadResponse.id) {
