@@ -1,3 +1,4 @@
+import { createWriteStream } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import process from "node:process";
@@ -5,7 +6,7 @@ import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
-import { decodeBase64, encodeBase64 } from "@std/encoding/base64";
+import { decodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
 import { basename, extname, join } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
@@ -20,6 +21,15 @@ import type {
 const logger = createLogger({ name: "cortex-artifact-storage" });
 const DEFAULT_TIMEOUT_MS = 10_000; // 10 seconds
 const MAX_PREVIEW_DB_SIZE = 50 * 1024 * 1024; // 50MB - skip preview for larger files
+const BASE64_PREFIX = new Uint8Array([98, 97, 115, 101, 54, 52, 58]); // "base64:"
+
+function hasBase64Prefix(bytes: Uint8Array): boolean {
+  if (bytes.length < BASE64_PREFIX.length) return false;
+  for (let i = 0; i < BASE64_PREFIX.length; i++) {
+    if (bytes[i] !== BASE64_PREFIX[i]) return false;
+  }
+  return true;
+}
 
 /**
  * Detect MIME type from file path
@@ -99,34 +109,60 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   /**
    * Generic HTTP request with timeout and authentication.
    * Handles common error cases and response parsing.
-   * Strings are sent as-is, objects are JSON.stringify'd.
+   * Strings are sent as-is, objects are JSON.stringify'd, ReadableStreams sent raw.
    */
   private async request<T>(
     method: string,
     endpoint: string,
     body?: unknown,
-    options?: { parseJson?: boolean },
+    options?: {
+      parseJson?: boolean;
+      rawBytes?: boolean;
+      streamResponse?: boolean;
+      timeoutMs?: number;
+    },
   ): Promise<T> {
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    const timeoutId = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+
+    const isStream = body instanceof ReadableStream;
 
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const headers: Record<string, string> = { Authorization: `Bearer ${this.getAuthToken()}` };
+
+      if (isStream) {
+        headers["Content-Type"] = "application/octet-stream";
+      } else {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const fetchOptions: RequestInit & { duplex?: string } = {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.getAuthToken()}`,
-        },
-        body: body ? (typeof body === "string" ? body : JSON.stringify(body)) : undefined,
+        headers,
+        body: isStream
+          ? (body as ReadableStream)
+          : body
+            ? typeof body === "string"
+              ? body
+              : JSON.stringify(body)
+            : undefined,
         signal: controller.signal,
-      });
+      };
+
+      // Required for streaming request bodies with fetch
+      if (isStream) {
+        fetchOptions.duplex = "half";
+      }
+
+      const response = await fetch(`${this.baseUrl}${endpoint}`, fetchOptions);
 
       if (response.status === 401) {
-        await response.text(); // Consume body to prevent resource leak
+        await response.text();
         throw new Error("Authentication failed: invalid ATLAS_KEY");
       }
       if (response.status === 503) {
-        await response.text(); // Consume body to prevent resource leak
+        await response.text();
         throw new Error("Cortex service unavailable");
       }
       if (!response.ok && response.status !== 404) {
@@ -135,23 +171,148 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       }
 
       if (response.status === 404) {
-        await response.text(); // Consume body to prevent resource leak
+        await response.text();
         return null as T;
+      }
+
+      if (options?.streamResponse) {
+        return response as unknown as T;
       }
 
       if (options?.parseJson) {
         return (await response.json()) as T;
+      } else if (options?.rawBytes) {
+        const buf = await response.arrayBuffer();
+        return new Uint8Array(buf) as T;
       } else {
         return (await response.text()) as T;
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("Request timeout after 10s");
+        throw new Error(`Request timeout after ${(timeoutMs / 1000).toFixed(1)}s`);
       }
       throw error;
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  /**
+   * Download a blob from Cortex as raw bytes.
+   * Handles both old (base64-prefixed text) and new (raw binary) uploads.
+   */
+  private async downloadBinaryBlob(cortexId: string): Promise<Uint8Array | null> {
+    // Try raw bytes first — this is the new upload format
+    const bytes = await this.request<Uint8Array>("GET", `/objects/${cortexId}`, undefined, {
+      rawBytes: true,
+    });
+    if (!bytes || bytes.length === 0) {
+      return null;
+    }
+
+    // Check for old base64-prefixed format: "base64:"
+    if (hasBase64Prefix(bytes)) {
+      const base64Data = new TextDecoder().decode(bytes.subarray(7));
+      return decodeBase64(base64Data);
+    }
+
+    return bytes;
+  }
+
+  /**
+   * Download a blob from Cortex and stream it directly to a file on disk.
+   * Avoids buffering the entire response in memory.
+   * Handles old base64-prefixed format by sniffing the first 7 bytes.
+   *
+   * @returns true if file was written, false if 404/empty
+   */
+  private async downloadBlobToFile(cortexId: string, destPath: string): Promise<boolean> {
+    // Streaming downloads can take a long time for large files.
+    // Disable the abort timeout — backpressure and TCP timeouts govern the flow.
+    const response = await this.request<Response>("GET", `/objects/${cortexId}`, undefined, {
+      streamResponse: true,
+      timeoutMs: 0,
+    });
+
+    if (!response || !response.body) {
+      return false;
+    }
+
+    const reader = response.body.getReader();
+
+    // Read enough to check for base64 prefix
+    const initialChunks: Uint8Array[] = [];
+    let initialLength = 0;
+
+    // Accumulate at least 7 bytes to check prefix
+    while (initialLength < BASE64_PREFIX.length) {
+      const { done, value } = await reader.read();
+      if (done || !value) {
+        // Stream ended before we got 7 bytes — write what we have directly
+        if (initialLength === 0) {
+          reader.releaseLock();
+          return false;
+        }
+        break;
+      }
+      initialChunks.push(value);
+      initialLength += value.length;
+    }
+
+    // Concatenate initial chunks for prefix check
+    const headBuffer = new Uint8Array(initialLength);
+    let offset = 0;
+    for (const chunk of initialChunks) {
+      headBuffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    // Check for old base64 format
+    const isBase64 = hasBase64Prefix(headBuffer);
+
+    if (isBase64) {
+      // Old format: read remaining stream into memory and base64-decode
+      // Old uploads were bounded by the former 100MB limit, so this is safe
+      const remaining: Uint8Array[] = [headBuffer.subarray(BASE64_PREFIX.length)];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || !value) break;
+        remaining.push(value);
+      }
+      reader.releaseLock();
+
+      const totalLength = remaining.reduce((sum, chunk) => sum + chunk.length, 0);
+      const combined = new Uint8Array(totalLength);
+      let pos = 0;
+      for (const chunk of remaining) {
+        combined.set(chunk, pos);
+        pos += chunk.length;
+      }
+
+      const base64Data = new TextDecoder().decode(combined);
+      const decoded = decodeBase64(base64Data);
+      await writeFile(destPath, decoded);
+      return true;
+    }
+
+    // New format: stream directly to disk
+    const writeStream = createWriteStream(destPath);
+    try {
+      // Write the initial bytes we already read
+      await writeChunk(writeStream, headBuffer);
+
+      // Pipe the remainder
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || !value) break;
+        await writeChunk(writeStream, value);
+      }
+    } finally {
+      reader.releaseLock();
+      await closeWriteStream(writeStream);
+    }
+
+    return true;
   }
 
   /**
@@ -180,36 +341,30 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       // 2. Detect MIME type
       const mimeType = detectMimeType(localPath);
 
-      // 3. Read file contents (binary safe)
-      let fileBytes: Uint8Array;
+      // 3. Stream file directly to Cortex (no base64, no buffering)
+      let file: Deno.FsFile;
       try {
-        fileBytes = await Deno.readFile(localPath);
+        file = await Deno.open(localPath, { read: true });
       } catch (error) {
-        return fail(`Failed to read file: ${localPath} (${stringifyError(error)})`);
+        return fail(`Failed to open file: ${localPath} (${stringifyError(error)})`);
       }
 
-      // 4. Encode as base64 for JSON transport if binary
-      // Cortex API expects {content: string}, so we base64 encode binary data
-      const decoder = new TextDecoder();
+      // Scale timeout: 2s per MB, minimum 60s
+      const fileSize = fileInfo.size;
+      const timeoutMs = Math.max(60_000, (fileSize / (1024 * 1024)) * 2000);
 
-      let contentForUpload: string;
-      if (mimeType.startsWith("text/") || mimeType === "application/json") {
-        // Text files: decode as UTF-8 string
-        contentForUpload = decoder.decode(fileBytes);
-      } else {
-        // Binary files: base64 encode
-        // Prefix with marker so Cortex/downloads can detect encoding
-        const base64 = encodeBase64(fileBytes);
-        contentForUpload = `base64:${base64}`;
+      // 4. Upload file as octet-stream (streamed via ReadableStream)
+      let fileUploadResponse: CreateObjectResponse;
+      try {
+        fileUploadResponse = await this.request<CreateObjectResponse>(
+          "POST",
+          "/objects",
+          file.readable,
+          { parseJson: true, timeoutMs },
+        );
+      } finally {
+        file.close();
       }
-
-      // 5. Upload file content to Cortex (first blob)
-      const fileUploadResponse = await this.request<CreateObjectResponse>(
-        "POST",
-        "/objects",
-        contentForUpload,
-        { parseJson: true },
-      );
 
       if (!fileUploadResponse || !fileUploadResponse.id) {
         return fail("Failed to upload file to Cortex: no ID returned");
@@ -927,26 +1082,15 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       }
 
       const cortexId = path.replace("cortex://", "");
-      const contents = await this.request<string>("GET", `/objects/${cortexId}`);
 
-      if (!contents) {
+      // Download as raw bytes to handle both old (base64-prefixed) and new (raw binary) uploads
+      const bytes = await this.downloadBinaryBlob(cortexId);
+      if (!bytes) {
         return fail(`Failed to download file contents from Cortex`);
       }
 
-      // Decode base64 if it was encoded during upload
-      if (contents.startsWith("base64:")) {
-        const base64Data = contents.slice(7); // Remove "base64:" prefix
-        try {
-          // Decode base64 to binary, then to UTF-8 string
-          const bytes = decodeBase64(base64Data);
-          const decoder = new TextDecoder();
-          return success(decoder.decode(bytes));
-        } catch (error) {
-          return fail(`Failed to decode base64 content: ${stringifyError(error)}`);
-        }
-      }
-
-      return success(contents);
+      const decoder = new TextDecoder();
+      return success(decoder.decode(bytes));
     } catch (error) {
       logger.error("Failed to read file contents", {
         artifactId: input.id,
@@ -1027,30 +1171,17 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         });
       }
 
-      // 4. Download database file content (base64 encoded)
-      const contents = await this.request<string>("GET", `/objects/${cortexId}`);
-      if (!contents) {
-        return fail(`Failed to download database file from Cortex`);
-      }
-
-      // 5. Decode base64 and write to temp file
-      let dbBytes: Uint8Array;
-      if (contents.startsWith("base64:")) {
-        const base64Data = contents.slice(7); // Remove "base64:" prefix
-        dbBytes = decodeBase64(base64Data);
-      } else {
-        // Fallback: content might not be base64 encoded
-        dbBytes = new TextEncoder().encode(contents);
-      }
-
-      // Create temp directory and file
+      // 4. Stream database file directly to temp file on disk
       const tempDir = join(tmpdir(), `atlas-preview-${crypto.randomUUID()}`);
       const tempPath = join(tempDir, `preview-${id}.db`);
 
       let db: InstanceType<typeof Database> | null = null;
       try {
         await mkdir(tempDir, { recursive: true });
-        await writeFile(tempPath, dbBytes);
+        const downloaded = await this.downloadBlobToFile(cortexId, tempPath);
+        if (!downloaded) {
+          return fail(`Failed to download database file from Cortex`);
+        }
 
         // 6. Query the database
         db = new Database(tempPath, { readonly: true });
@@ -1123,34 +1254,20 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       const cortexId = cortexPath.replace("cortex://", "");
 
-      // 2. Download database file content (base64 encoded)
-      const contents = await this.request<string>("GET", `/objects/${cortexId}`);
-      if (!contents) {
-        return fail(`Failed to download database file from Cortex`);
-      }
-
-      // 3. Decode base64 and write to temp file
-      let dbBytes: Uint8Array;
-      if (contents.startsWith("base64:")) {
-        const base64Data = contents.slice(7); // Remove "base64:" prefix
-        dbBytes = decodeBase64(base64Data);
-      } else {
-        // Fallback: content might not be base64 encoded
-        dbBytes = new TextEncoder().encode(contents);
-      }
-
-      // Create output path
+      // 2. Stream database file directly to disk
       const outputDir = input.outputDir || join(tmpdir(), `atlas-db-${crypto.randomUUID()}`);
       const outputPath = join(outputDir, `${input.id}.db`);
 
       await mkdir(outputDir, { recursive: true });
-      await writeFile(outputPath, dbBytes);
+      const downloaded = await this.downloadBlobToFile(cortexId, outputPath);
+      if (!downloaded) {
+        return fail(`Failed to download database file from Cortex`);
+      }
 
       logger.debug("Downloaded database file from Cortex", {
         artifactId: input.id,
         cortexId,
         outputPath,
-        size: dbBytes.length,
       });
 
       return success({ path: outputPath, isTemporary: true });
@@ -1162,4 +1279,25 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       return fail(`Failed to download database file: ${stringifyError(error)}`);
     }
   }
+}
+
+/** Write a chunk to a Node writable stream, resolving when flushed. */
+function writeChunk(
+  stream: ReturnType<typeof createWriteStream>,
+  chunk: Uint8Array,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.write(chunk, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+/** Close a Node writable stream and wait for it to finish. */
+function closeWriteStream(stream: ReturnType<typeof createWriteStream>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on("error", reject);
+    stream.end(() => resolve());
+  });
 }

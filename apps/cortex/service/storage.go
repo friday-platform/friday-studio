@@ -49,21 +49,22 @@ func StoragePath(id uuid.UUID) string {
 	return fmt.Sprintf("%s/%s/%s", s[:8], s[9:13], s)
 }
 
-func (sc *StorageClient) Upload(ctx context.Context, id uuid.UUID, data io.Reader) error {
+func (sc *StorageClient) Upload(ctx context.Context, id uuid.UUID, data io.Reader) (int64, error) {
 	path := StoragePath(id)
 	obj := sc.bucket.Object(path)
 
 	w := obj.NewWriter(ctx)
-	if _, err := io.Copy(w, data); err != nil {
+	n, err := io.Copy(w, data)
+	if err != nil {
 		_ = w.Close()
-		return fmt.Errorf("failed to upload: %w", err)
+		return 0, fmt.Errorf("failed to upload: %w", err)
 	}
 
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("failed to close writer: %w", err)
+		return 0, fmt.Errorf("failed to close writer: %w", err)
 	}
 
-	return nil
+	return n, nil
 }
 
 func (sc *StorageClient) Download(ctx context.Context, id uuid.UUID) (io.ReadCloser, error) {

@@ -15,8 +15,8 @@ type Config struct {
 
 	JWTPublicKeyFile string `env:"JWT_PUBLIC_KEY_FILE,required"`
 
-	MaxUploadSize        int64 `env:"MAX_UPLOAD_SIZE" envDefault:"104857600"` // 100MB
-	MaxConcurrentUploads int   `env:"MAX_CONCURRENT_UPLOADS" envDefault:"50"` // Limit concurrent uploads to prevent OOM
+	MaxUploadSize        int64 `env:"MAX_UPLOAD_SIZE" envDefault:"5368709120"` // 5GB
+	MaxConcurrentUploads int   `env:"MAX_CONCURRENT_UPLOADS" envDefault:"50"`  // Limit concurrent uploads to prevent OOM
 
 	TLSConfig *server.TLSConfig
 }

@@ -21,7 +21,7 @@ var (
 
 // Storage defines the interface for blob storage operations.
 type Storage interface {
-	Upload(ctx context.Context, id uuid.UUID, data io.Reader) error
+	Upload(ctx context.Context, id uuid.UUID, data io.Reader) (int64, error)
 	Download(ctx context.Context, id uuid.UUID) (io.ReadCloser, error)
 }
 

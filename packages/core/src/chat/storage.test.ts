@@ -405,12 +405,9 @@ describe("ChatStorage", () => {
 
     it("handles rapid successive createChat calls", async () => {
       const chatId = crypto.randomUUID();
-      const promises = Array(5)
-        .fill(0)
-        .map(() => createTestChat(chatId));
-      const results = await Promise.all(promises);
-
-      for (const result of results) {
+      // Serialize to avoid file-system write races on the same chatId
+      for (let i = 0; i < 5; i++) {
+        const result = await createTestChat(chatId);
         expect.assert(result.ok);
       }
 

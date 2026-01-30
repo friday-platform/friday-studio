@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -23,7 +24,9 @@ var _ Storage = (*mockStorage)(nil)
 
 // mockStorage implements Storage interface in-memory for testing.
 type mockStorage struct {
-	objects map[uuid.UUID][]byte
+	objects         map[uuid.UUID][]byte
+	uploadErr       error // when set, Upload returns this error
+	uploadFailAfter int64 // when >0, read this many bytes then fail (simulates mid-stream failure)
 }
 
 func newMockStorage() *mockStorage {
@@ -32,13 +35,22 @@ func newMockStorage() *mockStorage {
 	}
 }
 
-func (m *mockStorage) Upload(_ context.Context, id uuid.UUID, data io.Reader) error {
+func (m *mockStorage) Upload(_ context.Context, id uuid.UUID, data io.Reader) (int64, error) {
+	if m.uploadErr != nil {
+		return 0, m.uploadErr
+	}
+	if m.uploadFailAfter > 0 {
+		// Read exactly uploadFailAfter bytes, then return an error
+		buf := make([]byte, m.uploadFailAfter)
+		n, _ := io.ReadFull(data, buf)
+		return int64(n), errors.New("simulated mid-stream failure")
+	}
 	content, err := io.ReadAll(data)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	m.objects[id] = content
-	return nil
+	return int64(len(content)), nil
 }
 
 func (m *mockStorage) Download(_ context.Context, id uuid.UUID) (io.ReadCloser, error) {
@@ -171,6 +183,183 @@ func TestHandlersIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("StreamingUpload", func(t *testing.T) {
+		body := []byte("streaming file content")
+		req := httptest.NewRequest(http.MethodPost, "/objects", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("Streaming upload failed: status=%d, body=%s", rec.Code, rec.Body.String())
+		}
+
+		var resp map[string]string
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		streamID := resp["id"]
+		if streamID == "" {
+			t.Fatal("Streaming upload response missing 'id'")
+		}
+
+		// Verify object was stored in mock storage with correct content
+		parsedID := uuid.MustParse(streamID)
+		stored, ok := mockStorage.objects[parsedID]
+		if !ok {
+			t.Fatal("Object not found in mock storage after streaming upload")
+		}
+		if string(stored) != "streaming file content" {
+			t.Errorf("Stored content mismatch: got %q", string(stored))
+		}
+	})
+
+	t.Run("StreamingUpload_ContentSize", func(t *testing.T) {
+		// Upload a known payload and verify content_size is persisted
+		payload := []byte("content size verification payload")
+		req := httptest.NewRequest(http.MethodPost, "/objects", bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("Streaming upload failed: status=%d, body=%s", rec.Code, rec.Body.String())
+		}
+
+		var resp map[string]string
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("Failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+
+		var contentSize *int64
+		err = conn.QueryRow(ctx,
+			`SELECT content_size FROM cortex.object WHERE id = $1 AND user_id = $2`,
+			resp["id"], userID).Scan(&contentSize)
+		if err != nil {
+			t.Fatalf("Failed to query content_size: %v", err)
+		}
+		if contentSize == nil {
+			t.Error("content_size is NULL after streaming upload")
+		} else if *contentSize != int64(len(payload)) {
+			t.Errorf("content_size = %d, want %d", *contentSize, len(payload))
+		}
+	})
+
+	t.Run("StreamingUpload_StorageFailure", func(t *testing.T) {
+		// Use a failing mock to test orphan cleanup
+		failMock := newMockStorage()
+		failMock.uploadErr = errors.New("GCS unavailable")
+		failRouter := testRouter(s, userID, pool, failMock)
+
+		body := []byte("will fail")
+		req := httptest.NewRequest(http.MethodPost, "/objects", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		rec := httptest.NewRecorder()
+
+		failRouter.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("Expected 500 for storage failure, got %d", rec.Code)
+		}
+
+		// Verify orphaned DB record was cleaned up
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("Failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+
+		var orphanCount int
+		err = conn.QueryRow(ctx,
+			`SELECT COUNT(*) FROM cortex.object WHERE user_id = $1 AND content_size IS NULL`,
+			userID).Scan(&orphanCount)
+		if err != nil {
+			t.Fatalf("Failed to query orphaned records: %v", err)
+		}
+		if orphanCount != 0 {
+			t.Errorf("Found %d orphaned DB records with NULL content_size", orphanCount)
+		}
+	})
+
+	t.Run("StreamingUpload_SemaphoreRejection", func(t *testing.T) {
+		// Create a service with semaphore capacity of 0 (always full)
+		busyService := &Service{
+			Logger:    s.Logger,
+			config:    s.config,
+			pool:      pool,
+			uploadSem: make(chan struct{}, 1),
+		}
+		// Fill the semaphore
+		busyService.uploadSem <- struct{}{}
+
+		busyRouter := testRouter(busyService, userID, pool, mockStorage)
+
+		body := []byte("should be rejected")
+		req := httptest.NewRequest(http.MethodPost, "/objects", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		rec := httptest.NewRecorder()
+
+		busyRouter.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected 503 for semaphore rejection, got %d", rec.Code)
+		}
+
+		// Drain semaphore
+		<-busyService.uploadSem
+	})
+
+	t.Run("StreamingUpload_MidStreamFailure", func(t *testing.T) {
+		// Mock fails after reading 5 bytes (simulates GCS io.Copy failure mid-stream)
+		failMock := newMockStorage()
+		failMock.uploadFailAfter = 5
+		failRouter := testRouter(s, userID, pool, failMock)
+
+		body := []byte("this payload is longer than 5 bytes")
+		req := httptest.NewRequest(http.MethodPost, "/objects", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		rec := httptest.NewRecorder()
+
+		failRouter.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("Expected 500 for mid-stream failure, got %d", rec.Code)
+		}
+
+		// Verify orphaned DB record was cleaned up (same as StorageFailure test)
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("Failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+
+		var orphanCount int
+		err = conn.QueryRow(ctx,
+			`SELECT COUNT(*) FROM cortex.object WHERE user_id = $1 AND content_size IS NULL`,
+			userID).Scan(&orphanCount)
+		if err != nil {
+			t.Fatalf("Failed to query orphaned records: %v", err)
+		}
+		if orphanCount != 0 {
+			t.Errorf("Found %d orphaned DB records after mid-stream failure", orphanCount)
+		}
+	})
+
+	// NOTE: UpdateContentSize failure path (non-fatal, returns 201 with NULL size) is not
+	// tested here because it requires injecting a DB-level failure after a successful upload.
+	// The current integration test setup uses a real Postgres connection, and there's no
+	// clean way to make only UpdateContentSize fail without a DB mock layer. The code path
+	// is a simple log + continue (upload.go:168-171), so the risk is low.
+
 	t.Run("List", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/objects", nil)
 		rec := httptest.NewRecorder()
@@ -186,12 +375,15 @@ func TestHandlersIntegration(t *testing.T) {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if len(objects) != 1 {
-			t.Errorf("Expected 1 object, got %d", len(objects))
+		found := false
+		for _, obj := range objects {
+			if obj.ID == createdObjectID {
+				found = true
+				break
+			}
 		}
-
-		if objects[0].ID != createdObjectID {
-			t.Errorf("Object ID mismatch: got %s, want %s", objects[0].ID, createdObjectID)
+		if !found {
+			t.Errorf("Created object %s not found in list of %d objects", createdObjectID, len(objects))
 		}
 	})
 
@@ -308,8 +500,10 @@ func TestHandlersIntegration(t *testing.T) {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if len(objects) != 0 {
-			t.Errorf("Expected 0 objects after delete, got %d", len(objects))
+		for _, obj := range objects {
+			if obj.ID == createdObjectID {
+				t.Errorf("Deleted object %s still appears in list", createdObjectID)
+			}
 		}
 	})
 
