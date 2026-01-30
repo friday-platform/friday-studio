@@ -47,6 +47,16 @@ type CodegenResult =
   | { success: true; result: Result<FSMDefinition, BuildError[]> }
   | { success: false; error: CodegenError };
 
+/** Node-style Worker API (used by compiled Deno) */
+interface NodeWorker extends Worker {
+  on(event: "message", listener: (data: unknown) => void): void;
+  on(event: "error" | "messageerror", listener: (error: Error | ErrorEvent) => void): void;
+}
+
+function hasNodeWorkerApi(worker: Worker): worker is NodeWorker {
+  return typeof (worker as NodeWorker).on === "function";
+}
+
 /**
  * Execute TypeScript code that builds FSM via Web Worker
  */
@@ -76,10 +86,7 @@ export function executeCodegen(input: CodegenInput): Promise<CodegenResult> {
       });
     }, timeout + 1000); // Give worker slightly more time than its internal timeout
 
-    // NodeWorker (from compiled Deno) uses EventEmitter API, not Web Worker API
-    // Use .on('message') instead of onmessage property
-    // @ts-expect-error - NodeWorker has .on() method but types don't reflect this
-    worker.on("message", (rawData: unknown) => {
+    const handleMessage = (rawData: unknown) => {
       clearTimeout(overallTimeoutId);
 
       // Parse JSON string response
@@ -144,37 +151,42 @@ export function executeCodegen(input: CodegenInput): Promise<CodegenResult> {
         worker.terminate();
         resolve({ success: false, error: data.error as CodegenError });
       }
-    });
+    };
 
-    // NodeWorker uses .on('error') instead of onerror property
-    // @ts-expect-error - NodeWorker has .on() method
-    worker.on("error", (error: Error) => {
+    const handleError = (error: Error | ErrorEvent) => {
       clearTimeout(overallTimeoutId);
       worker.terminate();
+      const errorMsg = error instanceof Error ? error.message : (error as ErrorEvent).message;
+      resolve({
+        success: false,
+        error: { type: "execution_error", message: `Worker error: ${errorMsg || String(error)}` },
+      });
+    };
 
+    const handleMessageError = (error: Error | ErrorEvent) => {
+      clearTimeout(overallTimeoutId);
+      worker.terminate();
+      const errorMsg = error instanceof Error ? error.message : (error as ErrorEvent).message;
       resolve({
         success: false,
         error: {
           type: "execution_error",
-          message: `Worker error: ${error.message || String(error)}`,
+          message: `Message deserialization error: ${errorMsg || String(error)}`,
         },
       });
-    });
+    };
 
-    // NodeWorker uses .on('messageerror') for deserialization errors
-    // @ts-expect-error - NodeWorker has .on() method
-    worker.on("messageerror", (error: Error) => {
-      clearTimeout(overallTimeoutId);
-      worker.terminate();
-
-      resolve({
-        success: false,
-        error: {
-          type: "execution_error",
-          message: `Message deserialization error: ${error.message || String(error)}`,
-        },
-      });
-    });
+    // Support both NodeWorker (.on) and standard Web Worker (onmessage) APIs
+    if (hasNodeWorkerApi(worker)) {
+      worker.on("message", handleMessage);
+      worker.on("error", handleError);
+      worker.on("messageerror", handleMessageError);
+    } else {
+      worker.onmessage = (event: MessageEvent) => handleMessage(event.data);
+      worker.onerror = handleError;
+      worker.onmessageerror = (event: MessageEvent) =>
+        handleMessageError(new Error(`Message deserialization failed: ${String(event.data)}`));
+    }
 
     // Send code to worker for execution
     worker.postMessage({ requestId, code, timeout });

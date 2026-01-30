@@ -141,16 +141,15 @@ export class WorkerExecutor {
       };
 
       // Support both NodeWorker (.on) and standard Web Worker (onmessage) APIs
-      // NodeWorker is used by compiled Deno, Web Worker by deno test
       if (hasNodeWorkerApi(worker)) {
-        // NodeWorker API (compiled Deno)
         worker.on("message", handleMessage);
         worker.on("error", handleError);
         worker.on("messageerror", handleError);
       } else {
-        // Standard Web Worker API (deno test)
         worker.onmessage = (event: MessageEvent) => handleMessage(event.data);
         worker.onerror = handleError;
+        worker.onmessageerror = (event: MessageEvent) =>
+          handleError(new Error(`Message deserialization failed: ${String(event.data)}`));
       }
 
       const request: WorkerRequest = {
