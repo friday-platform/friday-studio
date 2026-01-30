@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   type ArtifactWithContents,
@@ -146,7 +147,12 @@ export async function createArtifactFromFile(opts: {
     };
   }
 
-  const artifactsDir = join(getAtlasHome(), "uploads", "artifacts");
+  // Cortex adapter uploads to remote storage — local files are transient, use /tmp.
+  // Local adapter keeps files on the PVC as permanent storage.
+  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
+  const artifactsDir = usingCortex
+    ? join(tmpdir(), "atlas-artifacts")
+    : join(getAtlasHome(), "uploads", "artifacts");
   await mkdir(artifactsDir, { recursive: true });
 
   if (isCsvFile(fileName)) {
@@ -175,6 +181,16 @@ export async function createArtifactFromFile(opts: {
         return { ok: false as const, error: result.error };
       }
 
+      // Cortex uploaded the file — local copy is no longer needed
+      if (usingCortex) {
+        await unlink(dbPath).catch((err) => {
+          logger.debug("Failed to cleanup temp database file", {
+            path: dbPath,
+            error: stringifyError(err),
+          });
+        });
+      }
+
       await emitArtifactCreatedEvent(result.data.id, "database", chatId);
       return { ok: true as const, artifact: result.data };
     } catch (error) {
@@ -189,7 +205,7 @@ export async function createArtifactFromFile(opts: {
     }
   }
 
-  // Non-CSV file artifact — copy to persistent storage
+  // Non-CSV file artifact — copy to staging dir (persistent for local, /tmp for Cortex)
   const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${extname(fileName) || ".txt"}`);
   try {
     await copyFile(filePath, persistedPath);
@@ -208,6 +224,15 @@ export async function createArtifactFromFile(opts: {
     }
 
     await unlink(filePath).catch(() => {});
+    if (usingCortex) {
+      await unlink(persistedPath).catch((err) => {
+        logger.debug("Failed to cleanup temp artifact file", {
+          path: persistedPath,
+          error: stringifyError(err),
+        });
+      });
+    }
+
     await emitArtifactCreatedEvent(result.data.id, "file", chatId);
     return { ok: true as const, artifact: result.data };
   } catch (error) {
