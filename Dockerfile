@@ -14,7 +14,7 @@
 # ============================================================================
 
 # Stage 1: Build daemon binary
-FROM denoland/deno:alpine-2.6.6 AS daemon-builder
+FROM denoland/deno:alpine-2.6.7 AS daemon-builder
 
 # Set working directory
 WORKDIR /app
@@ -52,7 +52,7 @@ RUN OTEL_DENO=true deno compile \
     src/cli.tsx
 
 # Stage 2: Daemon runtime
-FROM denoland/deno:alpine-2.6.6 AS daemon
+FROM denoland/deno:alpine-2.6.7 AS daemon
 
 # Install Node.js, npm, GitHub CLI, and Claude Code CLI
 # Version is managed in docker/package.json (updated by Dependabot)
@@ -110,7 +110,7 @@ CMD ["atlas", "daemon", "start", "--hostname", "0.0.0.0", "--port", "8080"]
 # ============================================================================
 
 # Stage 3: Build web client static assets
-FROM denoland/deno:alpine-2.6.6 AS web-client-builder
+FROM denoland/deno:alpine-2.6.7 AS web-client-builder
 
 # Accept build args for version info
 ARG GITHUB_SHA=unknown
