@@ -79,7 +79,7 @@
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.38.0",
     "npm:@sentry/deno@^10.37.0": "10.38.0",
-    "npm:@sentry/sveltekit@^10.37.0": "10.38.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.49.0____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.49.0___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.49.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.49.0___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
+    "npm:@sentry/sveltekit@^10.38.0": "10.38.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.49.0____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.49.0___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.49.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.49.0___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
     "npm:@socotra/modelcontextprotocol-sdk@1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
@@ -3386,8 +3386,8 @@
     "ee-first@1.1.1": {
       "integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="
     },
-    "electron-to-chromium@1.5.282": {
-      "integrity": "sha512-FCPkJtpst28UmFzd903iU7PdeVTfY0KAeJy+Lk0GLZRwgwYHn/irRcaCbQQOmr5Vytc/7rcavsYLvTM8RiHYhQ=="
+    "electron-to-chromium@1.5.283": {
+      "integrity": "sha512-3vifjt1HgrGW/h76UEeny+adYApveS9dH2h3p57JYzBSXJIKUJAvtmIytDKjcSCt9xHfrNCFJ7gts6vkhuq++w=="
     },
     "emoji-regex@10.6.0": {
       "integrity": "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="
@@ -5922,7 +5922,7 @@
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.37.0",
+            "npm:@sentry/sveltekit@^10.38.0",
             "npm:@sveltejs/adapter-node@^5.5.2",
             "npm:@sveltejs/kit@^2.50.1",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
@@ -6013,7 +6013,7 @@
             "npm:@lezer/common@^1.5.0",
             "npm:@lezer/markdown@^1.6.3",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.37.0",
+            "npm:@sentry/sveltekit@^10.38.0",
             "npm:@sveltejs/adapter-static@^3.0.10",
             "npm:@sveltejs/kit@^2.50.1",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
