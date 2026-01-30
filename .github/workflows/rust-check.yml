@@ -1,19 +1,20 @@
 name: Rust Check
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/atlas-installer/src-tauri/**"
-      - "apps/web-client/src-tauri/**"
-      - ".github/workflows/rust-check.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/atlas-installer/src-tauri/**"
-      - "apps/web-client/src-tauri/**"
-      - ".github/workflows/rust-check.yml"
-  merge_group:
+  workflow_dispatch: # Paused - not building standalone clients right now
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "apps/atlas-installer/src-tauri/**"
+  #     - "apps/web-client/src-tauri/**"
+  #     - ".github/workflows/rust-check.yml"
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - "apps/atlas-installer/src-tauri/**"
+  #     - "apps/web-client/src-tauri/**"
+  #     - ".github/workflows/rust-check.yml"
+  # merge_group:
 
 permissions:
   contents: read
