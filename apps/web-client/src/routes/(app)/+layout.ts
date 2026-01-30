@@ -1,5 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
-import  {type  Color, ColorSchema } from "@atlas/utils";
+import { ColorSchema, type Color } from "@atlas/utils";
 import type { LayoutLoad } from "./$types";
 
 export const load: LayoutLoad = async ({ params }) => {

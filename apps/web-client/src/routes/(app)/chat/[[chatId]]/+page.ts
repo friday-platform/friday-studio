@@ -1,11 +1,11 @@
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { ArtifactWithContents } from "@atlas/core/artifacts";
+import { randomColor } from "@atlas/utils";
 import { redirect } from "@sveltejs/kit";
 import { extractArtifactIds } from "$lib/utils/artifacts";
 import { nanoid } from "$lib/utils/id";
 import type { PageLoad } from "./$types";
-import { randomColor } from "@atlas/utils";
 
 export const load: PageLoad = async ({ params }) => {
   // New chat mode - generate ID at load time (not render time)
