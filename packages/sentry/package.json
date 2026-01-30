@@ -3,5 +3,5 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "dependencies": { "@sentry/deno": "^10.37.0" }
+  "dependencies": { "@sentry/deno": "^10.38.0" }
 }

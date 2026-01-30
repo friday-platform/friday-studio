@@ -78,8 +78,8 @@
     "npm:@opentelemetry/sdk-logs@0.211": "0.211.0_@opentelemetry+api@1.9.0",
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.38.0",
-    "npm:@sentry/deno@^10.37.0": "10.38.0",
-    "npm:@sentry/sveltekit@^10.38.0": "10.38.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.49.0____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.49.0___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.49.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.49.0___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
+    "npm:@sentry/deno@^10.38.0": "10.38.0",
+    "npm:@sentry/sveltekit@^10.37.0": "10.38.0_@sveltejs+kit@2.50.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.49.0____acorn@8.15.0___vite@7.3.1____picomatch@4.0.3__svelte@5.49.0___acorn@8.15.0__typescript@5.9.3__vite@7.3.1___picomatch@4.0.3__acorn@8.15.0_vite@7.3.1__picomatch@4.0.3_svelte@5.49.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.49.0___acorn@8.15.0__vite@7.3.1___picomatch@4.0.3_typescript@5.9.3",
     "npm:@socotra/modelcontextprotocol-sdk@1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.3.6_ajv@8.17.1_express@5.2.1",
@@ -6274,7 +6274,7 @@
       "packages/sentry": {
         "packageJson": {
           "dependencies": [
-            "npm:@sentry/deno@^10.37.0"
+            "npm:@sentry/deno@^10.38.0"
           ]
         }
       },
