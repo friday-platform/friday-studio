@@ -1,5 +1,6 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, rm, unlink } from "node:fs/promises";
+import { copyFile, mkdir, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   type ArtifactWithContents,
@@ -145,8 +146,11 @@ export async function createArtifactFromFile(opts: {
     };
   }
 
+  const artifactsDir = join(getAtlasHome(), "uploads", "artifacts");
+  await mkdir(artifactsDir, { recursive: true });
+
   if (isCsvFile(fileName)) {
-    const dbPath = join(dirname(filePath), `${crypto.randomUUID()}.db`);
+    const dbPath = join(artifactsDir, `${crypto.randomUUID()}.db`);
     try {
       const tableName = sanitizeTableName(fileName);
       const { schema } = await convertCsvToSqlite(filePath, dbPath, tableName);
@@ -181,23 +185,29 @@ export async function createArtifactFromFile(opts: {
     }
   }
 
-  // Non-CSV file artifact
+  // Non-CSV file artifact — copy to persistent storage
+  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${extname(fileName) || ".txt"}`);
   try {
+    await copyFile(filePath, persistedPath);
+
     const result = await ArtifactStorage.create({
       title: fileName,
       summary: `Uploaded file: ${fileName}`,
-      data: { type: "file", version: 1, data: { path: filePath, originalName: fileName } },
+      data: { type: "file", version: 1, data: { path: persistedPath, originalName: fileName } },
       chatId,
     });
 
     if (!result.ok) {
+      await unlink(persistedPath).catch(() => {});
       await unlink(filePath).catch(() => {});
       return { ok: false as const, error: result.error };
     }
 
+    await unlink(filePath).catch(() => {});
     await emitArtifactCreatedEvent(result.data.id, "file", chatId);
     return { ok: true as const, artifact: result.data };
   } catch (error) {
+    await unlink(persistedPath).catch(() => {});
     await unlink(filePath).catch(() => {});
     logger.error("Failed to create file artifact", {
       filename: fileName,
@@ -543,12 +553,12 @@ const artifactsApp = daemonFactory
       return c.json({ error: validation.error }, 415);
     }
 
-    // Stream file to disk, then create artifact
-    const atlasHome = getAtlasHome();
-    const subdir = chatId || "orphan";
+    // Stream file to /tmp, then createArtifactFromFile persists to ATLAS_HOME
+    const uploadTmpDir = join(tmpdir(), "atlas-upload");
+    await mkdir(uploadTmpDir, { recursive: true });
     const uuid = crypto.randomUUID();
     const ext = extname(file.name) || ".txt";
-    const filePath = join(atlasHome, "uploads", subdir, `${uuid}${ext}`);
+    const filePath = join(uploadTmpDir, `${uuid}${ext}`);
 
     try {
       await streamToFile(file.stream(), filePath);

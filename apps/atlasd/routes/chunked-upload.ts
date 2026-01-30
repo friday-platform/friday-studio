@@ -1,5 +1,6 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import {
   CHUNK_SIZE,
@@ -11,7 +12,6 @@ import {
 } from "@atlas/core/artifacts/file-upload";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { dirname, extname, join } from "@std/path";
 import { z } from "zod";
@@ -54,7 +54,7 @@ async function cleanupExpiredSessions(): Promise<void> {
 
 /** Remove temp dirs from previous runs not tracked by active sessions. */
 async function cleanupOrphanedTempDirs(): Promise<void> {
-  const chunkedDir = join(getAtlasHome(), "uploads", "chunked");
+  const chunkedDir = join(tmpdir(), "atlas-chunked-upload");
   let entries: string[];
   try {
     entries = await readdir(chunkedDir);
@@ -65,6 +65,25 @@ async function cleanupOrphanedTempDirs(): Promise<void> {
   const activeDirs = new Set([...sessions.values()].map((s) => s.uploadId));
 
   for (const entry of entries) {
+    // Clean up orphaned assembled files
+    if (entry === "assembled") {
+      const assembledDir = join(chunkedDir, entry);
+      try {
+        const files = await readdir(assembledDir);
+        for (const file of files) {
+          const filePath = join(assembledDir, file);
+          const info = await stat(filePath);
+          if (Date.now() - info.mtimeMs > CHUNKED_UPLOAD_TTL_MS) {
+            await rm(filePath, { force: true });
+            logger.info("Cleaned up orphaned assembled file", { file });
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+      continue;
+    }
+
     if (activeDirs.has(entry)) continue;
     const dirPath = join(chunkedDir, entry);
     try {
@@ -139,7 +158,7 @@ export const chunkedUploadApp = daemonFactory
 
     const uploadId = crypto.randomUUID();
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
-    const tempDir = join(getAtlasHome(), "uploads", "chunked", uploadId);
+    const tempDir = join(tmpdir(), "atlas-chunked-upload", uploadId);
 
     await mkdir(tempDir, { recursive: true });
 
@@ -235,11 +254,9 @@ export const chunkedUploadApp = daemonFactory
 
     session.status = "completing";
 
-    const atlasHome = getAtlasHome();
-    const subdir = session.chatId || "orphan";
     const uuid = crypto.randomUUID();
     const ext = extname(session.fileName) || ".txt";
-    const assembledPath = join(atlasHome, "uploads", subdir, `${uuid}${ext}`);
+    const assembledPath = join(tmpdir(), "atlas-chunked-upload", "assembled", `${uuid}${ext}`);
 
     try {
       await mkdir(dirname(assembledPath), { recursive: true });
