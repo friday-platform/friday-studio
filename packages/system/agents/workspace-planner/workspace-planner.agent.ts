@@ -330,7 +330,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                 needs: z
                   .array(z.string())
                   .describe(
-                    "What this agent needs beyond built-in capabilities (webfetch, artifacts). Use [] if built-in capabilities are enough. File ops, bash, and csv require explicit MCP config. List service integrations (e.g., slack, github, email) or specialized capabilities. IMPORTANT: Use 'code-analysis' or 'coding' for analyzing code/debugging/root-cause analysis. Use 'research' ONLY for web search of external information.",
+                    "What this agent needs beyond built-in capabilities (webfetch, artifacts). Use [] if built-in capabilities are enough. File ops, bash, and csv require explicit MCP config. List service integrations (e.g., slack, github, email) or specialized capabilities. IMPORTANT: Use 'data-analysis' or 'sql' for analyzing datasets, database artifacts, CSV files, or producing reports from tabular data. Use 'code-analysis' or 'coding' for analyzing code/debugging/root-cause analysis. Use 'research' ONLY for web search of external information (NEVER for analyzing private data or artifacts).",
                   ),
                 configuration: z
                   .record(z.string(), z.unknown())

@@ -275,4 +275,35 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     requiredConfig: [{ key: "FATHOM_API_KEY", description: "Fathom API key", type: "string" }],
     packagePath: "@atlas/bundled-agents/fathom",
   },
+
+  "data-analyst": {
+    id: "data-analyst",
+    name: "Data Analyst",
+    version: "1.0.0",
+    description:
+      "Analyzes tabular data from database artifacts and CSV files using SQL queries to answer questions, extract metrics, and produce actionable insights",
+    capabilities: ["data-analysis", "sql", "reporting", "database", "analytics", "csv-analysis"],
+    examples: [
+      "Analyze Q4 revenue trends from this sales data",
+      "What are the top performing campaigns in this dataset?",
+      "Extract key metrics and patterns from this daily flash report",
+    ],
+    requiredConfig: [],
+    packagePath: "@atlas/bundled-agents/data-analyst",
+  },
+
+  table: {
+    id: "table",
+    name: "Table Generator",
+    version: "1.0.0",
+    description:
+      "Generate structured tables with headers and rows from natural language descriptions",
+    capabilities: ["table-generation", "tables", "visualization"],
+    examples: [
+      "Create a table of the top 5 programming languages with columns for name, year created, and creator",
+      "Generate a comparison table of cloud providers with pricing and features",
+    ],
+    requiredConfig: [],
+    packagePath: "@atlas/bundled-agents/table",
+  },
 };
