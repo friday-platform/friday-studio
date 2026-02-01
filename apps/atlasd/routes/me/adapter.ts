@@ -68,6 +68,7 @@ function extractFromJwt(atlasKey: string | undefined): Result<UserIdentity | nul
       updated_at: now,
       display_name: name,
       profile_photo: null,
+      usage: 0,
     });
   } catch (error) {
     logger.error("Failed to decode ATLAS_KEY JWT", { error: stringifyError(error) });

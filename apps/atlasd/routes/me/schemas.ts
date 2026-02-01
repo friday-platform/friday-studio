@@ -17,6 +17,11 @@ export const UserIdentitySchema = z.object({
     .nullable()
     .meta({ description: "Preferred display name, may differ from full_name" }),
   profile_photo: z.url().nullable().meta({ description: "Profile photo URL, null if not set" }),
+  usage: z
+    .number()
+    .min(0)
+    .max(1)
+    .meta({ description: "LLM budget usage ratio (spend/max_budget), 0 when unavailable" }),
 });
 
 export type UserIdentity = z.infer<typeof UserIdentitySchema>;
