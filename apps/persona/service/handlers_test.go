@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func ptr(s string) *string { return &s }
@@ -21,6 +24,7 @@ func TestMeResponse_JSON(t *testing.T) {
 		UpdatedAt:    "2024-01-02T00:00:00.000000Z",
 		DisplayName:  ptr("testuser"),
 		ProfilePhoto: ptr("https://example.com/photo.jpg"),
+		Usage:        0.004058031,
 	}
 
 	data, err := json.Marshal(resp)
@@ -48,6 +52,9 @@ func TestMeResponse_JSON(t *testing.T) {
 	if *decoded.ProfilePhoto != *resp.ProfilePhoto {
 		t.Errorf("ProfilePhoto = %q, want %q", *decoded.ProfilePhoto, *resp.ProfilePhoto)
 	}
+	if decoded.Usage != resp.Usage {
+		t.Errorf("Usage = %f, want %f", decoded.Usage, resp.Usage)
+	}
 }
 
 func TestMeResponse_NullFields(t *testing.T) {
@@ -59,6 +66,7 @@ func TestMeResponse_NullFields(t *testing.T) {
 		UpdatedAt:    "2024-01-02T00:00:00.000000Z",
 		DisplayName:  nil,
 		ProfilePhoto: nil,
+		Usage:        0,
 	}
 
 	data, err := json.Marshal(resp)
@@ -78,6 +86,70 @@ func TestMeResponse_NullFields(t *testing.T) {
 	if raw["profile_photo"] != nil {
 		t.Errorf("profile_photo should be null, got %v", raw["profile_photo"])
 	}
+}
+
+func TestGetUsage(t *testing.T) {
+	tests := []struct {
+		name      string
+		spend     float64
+		maxBudget float64
+		scanErr   error
+		want      float64
+	}{
+		{"happy path", 5, 100, nil, 0.05},
+		{"half used", 50, 100, nil, 0.5},
+		{"fully used", 100, 100, nil, 1.0},
+		{"overspend clamped", 120, 100, nil, 1.0},
+		{"zero budget", 10, 0, nil, 0},
+		{"negative budget", 10, -5, nil, 0},
+		{"negative spend", -10, 100, nil, 0},
+		{"no rows", 0, 0, pgx.ErrNoRows, 0},
+		{"db error", 0, 0, errors.New("connection refused"), 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &fakeDBTX{spend: tt.spend, maxBudget: tt.maxBudget, err: tt.scanErr}
+			got := getUsage(context.Background(), db, "test-user")
+			if got != tt.want {
+				t.Errorf("getUsage() = %f, want %f", got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeDBTX implements litellmrepo.DBTX for testing getUsage.
+type fakeDBTX struct {
+	spend     float64
+	maxBudget float64
+	err       error
+}
+
+func (f *fakeDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (f *fakeDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, nil
+}
+
+func (f *fakeDBTX) QueryRow(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+	return &fakeRow{spend: f.spend, maxBudget: f.maxBudget, err: f.err}
+}
+
+type fakeRow struct {
+	spend     float64
+	maxBudget float64
+	err       error
+}
+
+func (r *fakeRow) Scan(dest ...interface{}) error {
+	if r.err != nil {
+		return r.err
+	}
+	*dest[0].(*float64) = r.spend
+	*dest[1].(*float64) = r.maxBudget
+	return nil
 }
 
 // Note: handleMe requires httplog context from middleware, so we test it
