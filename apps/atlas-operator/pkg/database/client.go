@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/phuslu/lru"
 	"github.com/tempestteam/atlas/apps/atlas-operator/repo"
 )
 
@@ -26,9 +27,10 @@ type User struct {
 
 // Client manages database connections and queries.
 type Client struct {
-	pool    *pgxpool.Pool
-	queries *repo.Queries
-	logger  *slog.Logger
+	pool            *pgxpool.Pool
+	queries         *repo.Queries
+	logger          *slog.Logger
+	virtualKeyCache *lru.TTLCache[string, struct{}]
 }
 
 // NewClient creates a new database client.
@@ -60,9 +62,10 @@ func NewClient(databaseURL string, logger *slog.Logger) (*Client, error) {
 	)
 
 	return &Client{
-		pool:    pool,
-		queries: repo.New(pool),
-		logger:  logger,
+		pool:            pool,
+		queries:         repo.New(pool),
+		logger:          logger,
+		virtualKeyCache: lru.NewTTLCache[string, struct{}](4096),
 	}, nil
 }
 
@@ -77,9 +80,31 @@ func (c *Client) GetUsers(ctx context.Context, limit int, afterID string) ([]Use
 		limit = 0
 	}
 
-	rows, err := c.queries.GetUsers(ctx, &repo.GetUsersParams{
+	// Use separate queries to avoid OR that defeats index usage.
+	if afterID == "" {
+		return c.getUsersFirstPage(ctx, int32(limit)) //nolint:gosec // limit is bounded above
+	}
+	return c.getUsersAfterCursor(ctx, int32(limit), afterID) //nolint:gosec // limit is bounded above
+}
+
+func (c *Client) getUsersFirstPage(ctx context.Context, limit int32) ([]User, error) {
+	rows, err := c.queries.GetUsersFirstPage(ctx, limit)
+	if err != nil {
+		c.logger.Error("Failed to query users", "error", err)
+		return nil, fmt.Errorf("query users: %w", err)
+	}
+
+	users := make([]User, len(rows))
+	for i, row := range rows {
+		users[i] = userFromFirstPageRow(row)
+	}
+	return users, nil
+}
+
+func (c *Client) getUsersAfterCursor(ctx context.Context, limit int32, afterID string) ([]User, error) {
+	rows, err := c.queries.GetUsersAfterCursor(ctx, &repo.GetUsersAfterCursorParams{
 		Column1: afterID,
-		Limit:   int32(limit), //nolint:gosec // limit is bounded above
+		Limit:   limit,
 	})
 	if err != nil {
 		c.logger.Error("Failed to query users", "error", err)
@@ -88,9 +113,8 @@ func (c *Client) GetUsers(ctx context.Context, limit int, afterID string) ([]Use
 
 	users := make([]User, len(rows))
 	for i, row := range rows {
-		users[i] = userFromRow(row)
+		users[i] = userFromAfterCursorRow(row)
 	}
-
 	return users, nil
 }
 
@@ -147,12 +171,28 @@ func (c *Client) CreatePoolUser(ctx context.Context) (string, error) {
 	return userID, nil
 }
 
+// virtualKeyTTL is how long we cache the existence of a virtual key.
+// Once a key exists it won't be deleted, so false-positives aren't possible
+// and false-negatives (cache miss) just mean one extra DB query.
+const virtualKeyTTL = 60 * time.Second
+
 // HasVirtualKey checks if a user already has a virtual key stored.
+// Results are cached in an LRU with TTL to avoid hammering the database
+// on every reconciliation loop (this query accounts for ~78% of total DB time).
 func (c *Client) HasVirtualKey(ctx context.Context, userID string) (bool, error) {
+	if _, ok := c.virtualKeyCache.Get(userID); ok {
+		return true, nil
+	}
+
 	exists, err := c.queries.HasVirtualKey(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("check virtual key: %w", err)
 	}
+
+	if exists {
+		c.virtualKeyCache.Set(userID, struct{}{}, virtualKeyTTL)
+	}
+
 	return exists, nil
 }
 
@@ -171,30 +211,44 @@ func (c *Client) InsertVirtualKey(ctx context.Context, userID string, ciphertext
 		)
 		return fmt.Errorf("insert virtual key: %w", err)
 	}
+
+	c.virtualKeyCache.Set(userID, struct{}{}, virtualKeyTTL)
 	return nil
 }
 
-// userFromRow converts a GetUsersRow to a User.
-func userFromRow(row *repo.GetUsersRow) User {
-	var bounceAuthUserID, fullName, email, displayName, profilePhoto *string
-
+// userFromFirstPageRow converts a GetUsersFirstPageRow to a User.
+func userFromFirstPageRow(row *repo.GetUsersFirstPageRow) User {
+	var bounceAuthUserID *string
 	if row.BounceAuthUserID.Valid {
 		bounceAuthUserID = &row.BounceAuthUserID.String
 	}
-	fullName = &row.FullName
-	email = &row.Email
-	displayName = &row.DisplayName
-	profilePhoto = &row.ProfilePhoto
-
 	return User{
 		ID:               row.ID,
 		BounceAuthUserID: bounceAuthUserID,
-		FullName:         fullName,
-		Email:            email,
+		FullName:         &row.FullName,
+		Email:            &row.Email,
 		CreatedAt:        row.CreatedAt.Time,
 		UpdatedAt:        row.UpdatedAt.Time,
-		DisplayName:      displayName,
-		ProfilePhoto:     profilePhoto,
+		DisplayName:      &row.DisplayName,
+		ProfilePhoto:     &row.ProfilePhoto,
+	}
+}
+
+// userFromAfterCursorRow converts a GetUsersAfterCursorRow to a User.
+func userFromAfterCursorRow(row *repo.GetUsersAfterCursorRow) User {
+	var bounceAuthUserID *string
+	if row.BounceAuthUserID.Valid {
+		bounceAuthUserID = &row.BounceAuthUserID.String
+	}
+	return User{
+		ID:               row.ID,
+		BounceAuthUserID: bounceAuthUserID,
+		FullName:         &row.FullName,
+		Email:            &row.Email,
+		CreatedAt:        row.CreatedAt.Time,
+		UpdatedAt:        row.UpdatedAt.Time,
+		DisplayName:      &row.DisplayName,
+		ProfilePhoto:     &row.ProfilePhoto,
 	}
 }
 

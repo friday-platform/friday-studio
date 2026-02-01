@@ -97,7 +97,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (*GetUserByIDRow, 
 	return &i, err
 }
 
-const getUsers = `-- name: GetUsers :many
+const getUsersAfterCursor = `-- name: GetUsersAfterCursor :many
 SELECT
     id,
     bounce_auth_user_id,
@@ -108,17 +108,17 @@ SELECT
     display_name,
     profile_photo
 FROM public."user"
-WHERE ($1::text = '' OR id > $1::text)
+WHERE id > $1::text
 ORDER BY id
 LIMIT $2
 `
 
-type GetUsersParams struct {
+type GetUsersAfterCursorParams struct {
 	Column1 string `db:"column_1" json:"column1"`
 	Limit   int32  `db:"limit" json:"limit"`
 }
 
-type GetUsersRow struct {
+type GetUsersAfterCursorRow struct {
 	ID               string             `db:"id" json:"id"`
 	BounceAuthUserID pgtype.Text        `db:"bounce_auth_user_id" json:"bounceAuthUserId"`
 	FullName         string             `db:"full_name" json:"fullName"`
@@ -129,7 +129,7 @@ type GetUsersRow struct {
 	ProfilePhoto     string             `db:"profile_photo" json:"profilePhoto"`
 }
 
-// Retrieves users with cursor-based pagination. Use afterID=” for the first page.
+// Retrieves users after the given cursor ID.
 //
 //	SELECT
 //	    id,
@@ -141,18 +141,87 @@ type GetUsersRow struct {
 //	    display_name,
 //	    profile_photo
 //	FROM public."user"
-//	WHERE ($1::text = '' OR id > $1::text)
+//	WHERE id > $1::text
 //	ORDER BY id
 //	LIMIT $2
-func (q *Queries) GetUsers(ctx context.Context, arg *GetUsersParams) ([]*GetUsersRow, error) {
-	rows, err := q.db.Query(ctx, getUsers, arg.Column1, arg.Limit)
+func (q *Queries) GetUsersAfterCursor(ctx context.Context, arg *GetUsersAfterCursorParams) ([]*GetUsersAfterCursorRow, error) {
+	rows, err := q.db.Query(ctx, getUsersAfterCursor, arg.Column1, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []*GetUsersRow{}
+	items := []*GetUsersAfterCursorRow{}
 	for rows.Next() {
-		var i GetUsersRow
+		var i GetUsersAfterCursorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BounceAuthUserID,
+			&i.FullName,
+			&i.Email,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DisplayName,
+			&i.ProfilePhoto,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersFirstPage = `-- name: GetUsersFirstPage :many
+SELECT
+    id,
+    bounce_auth_user_id,
+    full_name,
+    email,
+    created_at,
+    updated_at,
+    display_name,
+    profile_photo
+FROM public."user"
+ORDER BY id
+LIMIT $1
+`
+
+type GetUsersFirstPageRow struct {
+	ID               string             `db:"id" json:"id"`
+	BounceAuthUserID pgtype.Text        `db:"bounce_auth_user_id" json:"bounceAuthUserId"`
+	FullName         string             `db:"full_name" json:"fullName"`
+	Email            string             `db:"email" json:"email"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at" json:"createdAt"`
+	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"updatedAt"`
+	DisplayName      string             `db:"display_name" json:"displayName"`
+	ProfilePhoto     string             `db:"profile_photo" json:"profilePhoto"`
+}
+
+// Retrieves the first page of users (no cursor).
+//
+//	SELECT
+//	    id,
+//	    bounce_auth_user_id,
+//	    full_name,
+//	    email,
+//	    created_at,
+//	    updated_at,
+//	    display_name,
+//	    profile_photo
+//	FROM public."user"
+//	ORDER BY id
+//	LIMIT $1
+func (q *Queries) GetUsersFirstPage(ctx context.Context, limit int32) ([]*GetUsersFirstPageRow, error) {
+	rows, err := q.db.Query(ctx, getUsersFirstPage, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*GetUsersFirstPageRow{}
+	for rows.Next() {
+		var i GetUsersFirstPageRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.BounceAuthUserID,

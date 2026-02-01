@@ -1,5 +1,5 @@
--- name: GetUsers :many
--- Retrieves users with cursor-based pagination. Use afterID='' for the first page.
+-- name: GetUsersFirstPage :many
+-- Retrieves the first page of users (no cursor).
 SELECT
     id,
     bounce_auth_user_id,
@@ -10,7 +10,22 @@ SELECT
     display_name,
     profile_photo
 FROM public."user"
-WHERE ($1::text = '' OR id > $1::text)
+ORDER BY id
+LIMIT $1;
+
+-- name: GetUsersAfterCursor :many
+-- Retrieves users after the given cursor ID.
+SELECT
+    id,
+    bounce_auth_user_id,
+    full_name,
+    email,
+    created_at,
+    updated_at,
+    display_name,
+    profile_photo
+FROM public."user"
+WHERE id > $1::text
 ORDER BY id
 LIMIT $2;
 
