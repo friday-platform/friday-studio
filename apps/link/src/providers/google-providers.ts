@@ -7,11 +7,17 @@ import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
  * Google API scopes for each Workspace service.
  */
 const GOOGLE_SCOPES = {
-  calendar: "https://www.googleapis.com/auth/calendar",
-  docs: "https://www.googleapis.com/auth/documents",
-  drive: "https://www.googleapis.com/auth/drive",
-  gmail: "https://www.googleapis.com/auth/gmail.modify",
-  sheets: "https://www.googleapis.com/auth/spreadsheets",
+  calendar: ["https://www.googleapis.com/auth/calendar"],
+  docs: [
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.readonly",
+  ],
+  drive: ["https://www.googleapis.com/auth/drive"],
+  gmail: ["https://www.googleapis.com/auth/gmail.modify"],
+  sheets: [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.readonly",
+  ],
 } as const;
 
 type GoogleService = keyof typeof GOOGLE_SCOPES;
@@ -52,7 +58,7 @@ function createGoogleProvider(
       clientId,
       clientSecret,
       clientAuthMethod: "client_secret_post",
-      scopes: ["openid", "email", GOOGLE_SCOPES[service]],
+      scopes: ["openid", "email", ...GOOGLE_SCOPES[service]],
       extraAuthParams: { access_type: "offline", prompt: "consent" },
     },
     identify: async (tokens) => {
