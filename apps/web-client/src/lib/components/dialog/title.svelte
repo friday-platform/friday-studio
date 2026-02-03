@@ -14,7 +14,7 @@
 
 <style>
   h2 {
-    font-size: var(--font-size-7);
+    font-size: var(--font-size-6);
     font-weight: var(--font-weight-6);
   }
 </style>

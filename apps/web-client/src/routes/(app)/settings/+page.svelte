@@ -21,7 +21,7 @@
   import Logo from "./(components)/logo-column.svelte";
   import ProviderDetails from "./(components)/provider-details-column.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
-  import RemoveCredential from "./(components)/remove-credential-column.svelte";
+  import RemoveCredentialDialog from "./(components)/remove-credential-dialog.svelte";
   import RenameCredentialModal from "./(components)/rename-credential-modal.svelte";
   import ValueInputCell from "./(components)/value-input-cell.svelte";
   import type { PageData } from "./$types";
@@ -113,8 +113,11 @@
         id: "actions",
         header: "",
         cell: (info) =>
-          renderComponent(RemoveCredential, {
-            onclick: () => removeCredential(info.row.original.id, info.row.original.provider),
+          renderComponent(RemoveCredentialDialog, {
+            credentialId: info.row.original.id,
+            provider: info.row.original.provider,
+            displayName: info.row.original.displayName ?? info.row.original.label,
+            onRemove: removeCredential,
           }),
         meta: { shrink: true },
       }),
