@@ -49,7 +49,7 @@
   "devDependencies": {
     "@total-typescript/ts-reset": "^0.6.1",
     "@vitest/coverage-v8": "4.0.18",
-    "knip": "5.82.1",
+    "knip": "5.83.0",
     "vitest": "^4.0.18"
   },
   "knip": { "ignoreWorkspaces": ["tools/evals-2"] }
