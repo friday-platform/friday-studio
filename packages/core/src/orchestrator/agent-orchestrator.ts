@@ -554,8 +554,15 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(output);
 
+      // Detect structured failure results ({ok: false, error: ...}) from agents
+      // that use the Result<T,E> pattern (e.g. fail() from @atlas/utils).
+      // Without this, the FSM engine sees error=undefined and treats the step
+      // as successful, passing garbage data to subsequent steps.
+      const structuredFailure = isStructuredFailure(outputWithoutTools);
+
       this.logger.info(`Agent ${agentId} execution completed with result:`, {
         executionResultType: executionResult.type,
+        structuredFailure: structuredFailure !== undefined,
         output: JSON.stringify(outputWithoutTools),
         duration: Date.now() - startTime,
       });
@@ -565,6 +572,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: this.truncateTask(prompt),
         input: context,
         output: outputWithoutTools,
+        error: structuredFailure,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
@@ -742,6 +750,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: this.truncateTask(prompt),
         input: context,
         output: outputWithoutTools,
+        error: isStructuredFailure(outputWithoutTools),
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         toolCalls,
@@ -887,4 +896,29 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     this.mcpSessions.clear();
     this.activeStreamHandlers.clear();
   }
+}
+
+/**
+ * Detect structured failure results from agents using the Result<T,E> pattern.
+ * Agents call `fail()` from @atlas/utils which produces `{ok: false, error: ...}`.
+ * Returns a string error message if the output is a failure, undefined otherwise.
+ *
+ * Error extraction priority: string → {reason} → {message} → JSON.stringify → String()
+ */
+const DEFAULT_FAILURE_MESSAGE = "Agent returned a failure result";
+
+const ErrorToStringSchema = z
+  .string()
+  .or(z.object({ reason: z.string() }).transform((e) => e.reason))
+  .or(z.object({ message: z.string() }).transform((e) => e.message))
+  .or(z.record(z.string(), z.unknown()).transform((e) => JSON.stringify(e)))
+  .or(z.unknown().transform((e) => (e === undefined ? DEFAULT_FAILURE_MESSAGE : String(e))));
+
+const StructuredFailureSchema = z
+  .object({ ok: z.literal(false), error: ErrorToStringSchema.optional() })
+  .transform((result) => result.error ?? DEFAULT_FAILURE_MESSAGE);
+
+export function isStructuredFailure(output: unknown): string | undefined {
+  const parsed = StructuredFailureSchema.safeParse(output);
+  return parsed.success ? parsed.data : undefined;
 }
