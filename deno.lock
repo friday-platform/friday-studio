@@ -37,7 +37,7 @@
     "npm:@ai-sdk/mcp@^0.0.13": "0.0.13_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.89": "2.0.89_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.124": "3.0.124_svelte@5.49.1__acorn@8.15.0_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.125": "3.0.125_svelte@5.49.1__acorn@8.15.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.29": "0.2.29_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.3.13",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -101,8 +101,8 @@
     "npm:@types/react@^19.2.10": "19.2.10",
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
-    "npm:ai@^5.0.124": "5.0.124_zod@4.3.6",
-    "npm:ai@^5.0.93": "5.0.124_zod@4.3.6",
+    "npm:ai@^5.0.124": "5.0.125_zod@4.3.6",
+    "npm:ai@^5.0.93": "5.0.125_zod@4.3.6",
     "npm:better-sqlite3@^12.6.2": "12.6.2",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.5.0": "5.5.0",
@@ -110,7 +110,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.2",
     "npm:eslint-plugin-svelte@^3.14.0": "3.14.0_eslint@9.39.2_svelte@5.49.1__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.2": "9.39.2",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.124__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.125__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.0": "21.3.0",
     "npm:globals@^17.3.0": "17.3.0",
@@ -259,8 +259,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.30_zod@4.3.6": {
-      "integrity": "sha512-5Nrkj8B4MzkkOfjjA+Cs5pamkbkK4lI11bx80QV7TFcen/hWA8wEC+UVzwuM5H2zpekoNMjvl6GonHnR62XIZw==",
+    "@ai-sdk/gateway@2.0.31_zod@4.3.6": {
+      "integrity": "sha512-HcglYbIFqKhUYqK5qSNc2RwYxVyuhADy2R/8HMSTaUqHVFfUIFyCyDHeuNBxJcSDtHVMebPdn6Bxa0YogeiwcA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
@@ -316,8 +316,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.124_svelte@5.49.1__acorn@8.15.0_zod@4.3.6": {
-      "integrity": "sha512-IZT3VH4x1+WX+Pv6emLELtzXT+VVa5XS3MfF5xa6oeCErjG3eJf3Ky65MbYqNPw+Kx6H/lgQA/JP0Wiqz5dwug==",
+    "@ai-sdk/svelte@3.0.125_svelte@5.49.1__acorn@8.15.0_zod@4.3.6": {
+      "integrity": "sha512-v3swEbcnOryNspdUksCz0YKM8hjtKhhddzku9Uksfp4LKIpBS3gFD5A2EzoccMmTnu86/CrfA3ELLNHekFz3pA==",
       "dependencies": [
         "@ai-sdk/provider-utils",
         "ai",
@@ -2919,8 +2919,8 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai@5.0.124_zod@4.3.6": {
-      "integrity": "sha512-Li6Jw9F9qsvFJXZPBfxj38ddP2iURCnMs96f9Q3OeQzrDVcl1hvtwSEAuxA/qmfh6SDV2ERqFUOFzigvr0697g==",
+    "ai@5.0.125_zod@4.3.6": {
+      "integrity": "sha512-M4gVfuxOP7eywi9zKbonVKGYMYV2IMuj9jki5/7FpogzNq+P9u7/ZvBivt4iu5A3z/V5BJojZ8vdBsEqbGnsHA==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -3585,7 +3585,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.124__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6": {
+    "evalite@1.0.0-beta.15_ai@5.0.125__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -5955,7 +5955,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.124",
+            "npm:@ai-sdk/svelte@^3.0.125",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
