@@ -26,6 +26,18 @@ const fixtures = {
   },
   summaryAgent: { artifactRefs: [{ id: "sum-1", type: "summary", summary: "Executive summary" }] },
   emailAgent: { response: "Email sent", message_id: "msg-123" },
+  /** Shape observed from Google Sheets FSM agent in production.
+   *  outputKeys: ["success", "spreadsheets", "response"], path: "direct", textField: "response" */
+  googleSheetsFSM: {
+    success: true,
+    response:
+      "Successfully listed 3 spreadsheets including project tracker, Q4 budget, and team roster.",
+    spreadsheets: [
+      { id: "sp-1", name: "Project Tracker", modified: "2026-01-20" },
+      { id: "sp-2", name: "Q4 Budget", modified: "2026-01-15" },
+      { id: "sp-3", name: "Team Roster", modified: "2026-01-10" },
+    ],
+  },
 };
 
 describe("extractArtifactsFromOutput", () => {
@@ -97,8 +109,47 @@ describe("sanitizeAgentOutput", () => {
     expect(result?.error).toEqual({ reason: "limit" });
   });
 
-  it("returns undefined data when no text fields", () => {
+  it("returns undefined data when no text fields and only artifact keys", () => {
     const result = sanitizeAgentOutput(fixtures.summaryAgent);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data).toEqual(undefined);
+  });
+
+  it("fallback-serializes direct structured data with no text fields", () => {
+    const input = { spreadsheets: [{ name: "Budget" }, { name: "Expenses" }] };
+    const result = sanitizeAgentOutput(input);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data?.response).toContain("Budget");
+    expect(result?.data?.response).toContain("Expenses");
+    expect(JSON.parse(result!.data!.response!)).toEqual({ spreadsheets: input.spreadsheets });
+  });
+
+  it("fallback-serializes wrapper structured data with no text fields", () => {
+    const input = { ok: true, data: { events: [{ title: "Standup" }] } };
+    const result = sanitizeAgentOutput(input);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data?.response).toContain("Standup");
+    expect(JSON.parse(result!.data!.response!)).toEqual({ events: [{ title: "Standup" }] });
+  });
+
+  it("fallback respects 12K char cap", () => {
+    const input = { bigData: "x".repeat(20_000) };
+    const result = sanitizeAgentOutput(input);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data?.response).toContain("[Content truncated");
+    expect(result!.data!.response!.length).toBeLessThan(20_000);
+  });
+
+  it("uses response field over fallback when both present", () => {
+    const input = { response: "Summary text", spreadsheets: [{ name: "Budget" }] };
+    const result = sanitizeAgentOutput(input);
+    expect(result?.data?.response).toEqual("Summary text");
+  });
+
+  it("returns undefined for non-serializable data (circular reference)", () => {
+    const circular: Record<string, unknown> = { key: "value" };
+    circular.self = circular;
+    const result = sanitizeAgentOutput(circular);
     expect(result?.ok).toEqual(true);
     expect(result?.data).toEqual(undefined);
   });
@@ -164,6 +215,28 @@ describe("sanitizeAgentOutput", () => {
     expect(serialized.length).toBeLessThan(200_000);
     // Verify truncation marker is present
     expect(serialized).toContain("[Content truncated");
+  });
+
+  it("real Google Sheets FSM output: uses response field, preserves structured data in text", () => {
+    const result = sanitizeAgentOutput(fixtures.googleSheetsFSM);
+    expect(result?.ok).toEqual(true);
+    expect(result?.data?.response).toEqual(fixtures.googleSheetsFSM.response);
+    // spreadsheets key is not in the sanitized output — only response text
+    expect(result?.data).toEqual({ response: fixtures.googleSheetsFSM.response });
+  });
+
+  it("real Google Sheets FSM output without response field: falls back to serialization", () => {
+    // Simulates pre-fix behavior or LLM not populating optional response field
+    const { response: _, ...withoutResponse } = fixtures.googleSheetsFSM;
+    const result = sanitizeAgentOutput(withoutResponse);
+    expect(result?.ok).toEqual(true);
+    // Fallback should serialize the spreadsheets array
+    expect(result?.data?.response).toContain("Project Tracker");
+    expect(result?.data?.response).toContain("Q4 Budget");
+    const parsed: unknown = JSON.parse(result!.data!.response!);
+    expect(parsed).toEqual(
+      expect.objectContaining({ spreadsheets: fixtures.googleSheetsFSM.spreadsheets }),
+    );
   });
 
   it("does not affect existing small outputs from real agent patterns", () => {

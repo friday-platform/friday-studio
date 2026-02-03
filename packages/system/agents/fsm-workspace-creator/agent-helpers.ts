@@ -435,7 +435,8 @@ For the FINAL step's result (no downstream consumer), use a minimal schema:
 builder.addDocumentType('FinalStepResult', {
   type: 'object',
   properties: {
-    success: { type: 'boolean' }
+    success: { type: 'boolean' },
+    response: { type: 'string', description: 'Human-readable summary of what was done and what was found. Include key details (names, counts, highlights) but not exhaustive data — full results are stored in artifacts.' }
   },
   required: ['success']
 });
