@@ -69,7 +69,7 @@
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.49.1__acorn@8.15.0",
     "npm:@modelcontextprotocol/sdk@^1.25.3": "1.25.3_zod@4.3.6_hono@4.11.7_ajv@8.17.1_express@5.2.1",
     "npm:@octokit/auth-app@^7.2.0": "7.2.2",
-    "npm:@octokit/auth-app@^8.1.2": "8.1.2",
+    "npm:@octokit/auth-app@^8.2.0": "8.2.0",
     "npm:@octokit/auth-oauth-app@^8.1.3": "8.1.4",
     "npm:@octokit/auth-oauth-app@^9.0.3": "9.0.3",
     "npm:@octokit/request@^10.0.7": "10.0.7",
@@ -1284,8 +1284,8 @@
         "universal-user-agent"
       ]
     },
-    "@octokit/auth-app@8.1.2": {
-      "integrity": "sha512-db8VO0PqXxfzI6GdjtgEFHY9tzqUql5xMFXYA12juq8TeTgPAuiiP3zid4h50lwlIP457p5+56PnJOgd2GGBuw==",
+    "@octokit/auth-app@8.2.0": {
+      "integrity": "sha512-vVjdtQQwomrZ4V46B9LaCsxsySxGoHsyw6IYBov/TqJVROrlYdyNgw5q6tQbB7KZt53v1l1W53RiqTvpzL907g==",
       "dependencies": [
         "@octokit/auth-oauth-app@9.0.3",
         "@octokit/auth-oauth-user@6.0.2",
@@ -5938,7 +5938,7 @@
           "dependencies": [
             "npm:@hono/zod-validator@0.7.6",
             "npm:@jsr/std__async@1.0.15",
-            "npm:@octokit/auth-app@^8.1.2",
+            "npm:@octokit/auth-app@^8.2.0",
             "npm:@octokit/auth-oauth-app@^9.0.3",
             "npm:@octokit/request@^10.0.7",
             "npm:@socotra/modelcontextprotocol-sdk@1.21.0",
