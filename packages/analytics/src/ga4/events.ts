@@ -52,6 +52,9 @@ export const GA4 = {
   WORKSPACE_FILE_DROP: "workspace_file_drop",
   WORKSPACE_CREATE: "workspace_create",
 
+  // Web Client - Use Cases
+  USE_CASE_SELECTED: "use_case_selected",
+
   // Web Client - Chat Session
   MESSAGE_SEND: "message_send",
   STREAM_START: "stream_start",

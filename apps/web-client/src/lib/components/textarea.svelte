@@ -2,7 +2,6 @@
   import type { HTMLTextareaAttributes } from "svelte/elements";
 
   type Props = {
-    onTextChange: (value: string) => void;
     value: string | null | undefined;
     placeholder?: string;
     size?: "regular" | "small";
@@ -12,7 +11,6 @@
   } & HTMLTextareaAttributes;
 
   let {
-    onTextChange,
     value = $bindable(),
     placeholder,
     size: _size = "regular",
@@ -51,10 +49,9 @@
     {disabled}
     name="message"
     {placeholder}
-    {value}
+    bind:value
     {...rest}
     minlength="1"
-    oninput={(e) => onTextChange(e.currentTarget.value)}
   ></textarea>
 </div>
 

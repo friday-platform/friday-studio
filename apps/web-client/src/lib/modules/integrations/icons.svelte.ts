@@ -1,4 +1,8 @@
-import Google from "$lib/assets/integrations/google.png";
+import Gmail from "$lib/components/icons/integrations/gmail.svelte";
+import GoogleCalendar from "$lib/components/icons/integrations/google-calendar.svelte";
+import GoogleDrive from "$lib/components/icons/integrations/google-drive.svelte";
+import GoogleSheets from "$lib/components/icons/integrations/google-sheets.svelte";
+import GoogleDocs from "$lib/components/icons/integrations/google-docs.svelte";
 import Anthropic from "$lib/components/icons/integrations/anthropic.svelte";
 import Atlassian from "$lib/components/icons/integrations/atlassian.svelte";
 import Github from "$lib/components/icons/integrations/github.svelte";
@@ -13,13 +17,7 @@ export type ServiceIcon = { type: "component"; src: Component } | { type: "image
 
 export type ServiceIconConfig = ServiceIcon & { background: string; backgroundDark: string };
 
-const googleServices = [
-  "google-calendar",
-  "google-gmail",
-  "google-drive",
-  "google-docs",
-  "google-sheets",
-];
+
 
 const serviceIcons: Record<string, ServiceIconConfig> = {
   anthropic: {
@@ -27,6 +25,36 @@ const serviceIcons: Record<string, ServiceIconConfig> = {
     src: Anthropic,
     background: "#F0EEE6",
     backgroundDark: "#1F1E1D",
+  },
+  "google-calendar": {
+    type: "component",
+    src: GoogleCalendar,
+    background: "#EAF5FF",
+    backgroundDark: "#1E2F40",
+  },
+  "google-gmail": {
+    type: "component",
+    src: Gmail,
+    background: "#EAF5FF",
+    backgroundDark: "#1E2F40",
+  },
+  "google-drive": {
+    type: "component",
+    src: GoogleDrive,
+    background: "#EAF5FF",
+    backgroundDark: "#1E2F40",
+  },
+  "google-sheets": {
+    type: "component",
+    src: GoogleSheets,
+    background: "#EAF5FF",
+    backgroundDark: "#1E2F40",
+  },
+  "google-docs": {
+    type: "component",
+    src: GoogleDocs,
+    background: "#EAF5FF",
+    backgroundDark: "#1E2F40",
   },
   slack: { type: "component", src: SlackColor, background: "#EEE9EF", backgroundDark: "#3C173E" },
   notion: { type: "component", src: Notion, background: "#E7E7E8", backgroundDark: "#2E2F33" },
@@ -42,17 +70,6 @@ const serviceIcons: Record<string, ServiceIconConfig> = {
   posthog: { type: "component", src: Posthog, background: "#FDF5E5", backgroundDark: "#362C1B" },
 };
 
-// Add Google services with shared config
-const googleConfig: ServiceIconConfig = {
-  type: "image",
-  src: Google,
-  background: "#EAF5FF",
-  backgroundDark: "#1E2F40",
-};
-
-for (const service of googleServices) {
-  serviceIcons[service] = googleConfig;
-}
 
 export function getServiceIcon(provider: string): ServiceIconConfig | undefined {
   return serviceIcons[provider];

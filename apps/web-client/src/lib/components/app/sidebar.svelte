@@ -101,7 +101,7 @@
       <li>
         <a
           href={ctx.routes.sessions.list}
-          class:active={getActivePage(["(app)/sessions", "sessions/[sessionId]"])}
+          class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
           class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
         >

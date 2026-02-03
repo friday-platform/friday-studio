@@ -1,6 +1,15 @@
 import { BaseDirectory, openFile } from "$lib/utils/tauri-loader";
 
 /**
+ * Formats a file size in bytes to a human-readable string.
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
  * Downloads a file to the user's computer.
  * @param filename The name of the file to download.
  * @param content The content of the file to download.
