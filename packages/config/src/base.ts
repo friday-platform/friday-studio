@@ -71,7 +71,10 @@ export const MCPToolNameSchema = z
 export type MCPToolName = z.infer<typeof MCPToolNameSchema>;
 
 /**
- * JSON Schema object representation
+ * JSON Schema object representation.
+ *
+ * Properties may use `format: "artifact-ref"` on string fields to indicate
+ * artifact ID references. See resolve-artifact-refs.ts for resolution logic.
  */
 export const SchemaObjectSchema = z.record(z.string(), z.unknown());
 export type SchemaObject = z.infer<typeof SchemaObjectSchema>;

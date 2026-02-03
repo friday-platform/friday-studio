@@ -62,6 +62,28 @@ function findCompleteToolArgs(response: LLMResponse): Record<string, unknown> | 
 }
 
 /**
+ * Search an LLM response for a `failStep` tool call's arguments.
+ *
+ * Mirrors `findCompleteToolArgs` — searches `data.toolCalls` first (handles
+ * multi-tool scenarios where `calledTool` points to the first tool, not
+ * `failStep`), then falls back to `calledTool`.
+ */
+function findFailStepToolArgs(response: LLMResponse): Record<string, unknown> | undefined {
+  const failCall = response.data?.toolCalls?.find(
+    (tc) => "toolName" in tc && tc.toolName === "failStep",
+  );
+  if (failCall && "input" in failCall && isRecord(failCall.input)) {
+    return failCall.input;
+  }
+
+  if (response.calledTool?.name === "failStep" && isRecord(response.calledTool.args)) {
+    return response.calledTool.args;
+  }
+
+  return undefined;
+}
+
+/**
  * Transform code for Function constructor (same as function-executor.worker.ts).
  */
 function transformForExecution(code: string): string {
@@ -764,15 +786,16 @@ export class FSMEngine {
             prompt: contextPrompt,
             tools,
             toolChoice: "auto", // Let LLM decide when to stop calling tools
-            stopOnToolCall: completeToolInjected ? ["complete"] : undefined,
+            stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
           });
 
           // Emit tool events for UI visibility
           this.emitToolEvents(response, action, sig, currentState);
 
-          // Check if LLM called failStep
-          if (response.calledTool?.name === "failStep") {
-            throw new Error(`LLM step failed: ${JSON.stringify(response.calledTool.args)}`);
+          // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
+          const failArgs = findFailStepToolArgs(response);
+          if (failArgs) {
+            throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
           }
 
           // Check if LLM called complete tool - capture the structured output.
@@ -808,17 +831,16 @@ export class FSMEngine {
                 prompt: retryPrompt,
                 tools,
                 toolChoice: "auto", // Let LLM decide when to stop calling tools
-                stopOnToolCall: completeToolInjected ? ["complete"] : undefined,
+                stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
               });
 
               // Emit tool events for UI visibility (retry call)
               this.emitToolEvents(response, action, sig, currentState);
 
-              // Check if LLM called failStep on retry
-              if (response.calledTool?.name === "failStep") {
-                throw new Error(
-                  `LLM step failed on retry: ${JSON.stringify(response.calledTool.args)}`,
-                );
+              // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
+              const retryFailArgs = findFailStepToolArgs(response);
+              if (retryFailArgs) {
+                throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
               }
 
               // Check if LLM called complete tool on retry

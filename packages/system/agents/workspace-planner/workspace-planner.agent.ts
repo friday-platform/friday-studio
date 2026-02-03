@@ -311,7 +311,11 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                   "JSON Schema for signal payload. Define if signal needs user input, file paths, or parameters. " +
                     "Required: array of field names. Properties: field definitions. " +
                     "Example: { type: 'object', required: ['user_input'], properties: { user_input: { type: 'string', description: 'User text input or description' } } }. " +
-                    "Use snake_case for field names. Omit for schedule-only triggers.",
+                    "Use snake_case for field names. Omit for schedule-only triggers. " +
+                    "For fields that reference uploaded files or artifacts, add format: 'artifact-ref' to the field definition. " +
+                    "Use type: 'string' with format: 'artifact-ref' for single artifact fields, or type: 'array' with items: { type: 'string', format: 'artifact-ref' } for multiple artifacts. " +
+                    "Example: { file: { type: 'string', format: 'artifact-ref', description: 'Uploaded CSV file' } }. " +
+                    "Only use artifact-ref for fields that carry artifact/file references — NOT for plain text inputs like user_input.",
                 ),
               }),
             ),

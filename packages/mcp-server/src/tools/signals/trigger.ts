@@ -9,6 +9,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
+import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-refs.ts";
 
 export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -22,14 +23,19 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         payload: z
           .record(z.string(), z.unknown())
           .optional()
-          .describe("Optional payload data to send with the signal"),
+          .describe(
+            "Optional payload data to send with the signal. For fields with format 'artifact-ref', pass the bare artifact UUID (e.g. '4a3e2c5b-f352-4882-904b-bb479afa6322'). Do NOT add prefixes like 'artifact:' or 'cortex://'.",
+          ),
         // Session context injected by callers - we extract datetime for timezone-aware signals
         _sessionContext: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    async ({ workspaceId, signalId, payload, _sessionContext }) => {
-      // Extract datetime from session context for timezone-aware signal processing
+    async ({ workspaceId, signalId, payload: rawPayload, _sessionContext }) => {
+      // Extract datetime and streamId from session context
       const datetime = _sessionContext?.datetime;
+      const streamId =
+        typeof _sessionContext?.streamId === "string" ? _sessionContext.streamId : undefined;
+      let payload = rawPayload;
 
       ctx.logger.info("MCP workspace_signal_trigger called", {
         workspaceId,
@@ -47,6 +53,52 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         if (wsResult.ok) {
           const signalConfig = wsResult.data.config?.signals?.[signalId];
           if (signalConfig) {
+            // Resolve artifact-ref fields before validation
+            if (signalConfig.schema && streamId && hasArtifactRefFields(signalConfig.schema)) {
+              try {
+                const artifactsResponse = await parseResult(
+                  client.artifactsStorage.index.$get({
+                    query: { chatId: streamId, limit: "1000" },
+                  }),
+                );
+                if (!artifactsResponse.ok) {
+                  ctx.logger.error("Failed to fetch artifacts for reference resolution", {
+                    workspaceId,
+                    signalId,
+                    error: artifactsResponse.error,
+                  });
+                  return createErrorResponse(
+                    `Cannot resolve artifact references: failed to fetch artifacts from chat`,
+                  );
+                }
+                const resolution = resolveArtifactRefs(
+                  signalConfig.schema,
+                  payload ?? {},
+                  artifactsResponse.data.artifacts,
+                );
+                if (!resolution.success) {
+                  ctx.logger.error("Artifact reference resolution failed", {
+                    workspaceId,
+                    signalId,
+                    error: resolution.error,
+                  });
+                  return createErrorResponse(
+                    `Artifact reference resolution failed: ${resolution.error}`,
+                  );
+                }
+                payload = resolution.payload;
+              } catch (artifactError) {
+                ctx.logger.error("Failed to fetch artifacts for reference resolution", {
+                  workspaceId,
+                  signalId,
+                  error: artifactError,
+                });
+                return createErrorResponse(
+                  `Cannot resolve artifact references: failed to fetch artifacts from chat`,
+                );
+              }
+            }
+
             const validation = validateSignalPayload(signalConfig, payload);
             if (!validation.success) {
               ctx.logger.error("Signal payload validation failed", {

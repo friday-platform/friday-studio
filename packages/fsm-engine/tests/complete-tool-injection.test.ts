@@ -652,4 +652,236 @@ describe("complete tool injection for LLM actions", () => {
     // Should NOT have raw toolCalls array stored as data
     expect(doc?.data.data.toolCalls).toBeUndefined();
   });
+
+  it("detects failStep when it is the only tool called", async () => {
+    const fsm: FSMDefinition = {
+      id: "failstep-only-test",
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                { type: "llm", provider: "test", model: "test-model", prompt: "Do something" },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const { engine } = await createLLMEngine({
+      fsm,
+      llmResponses: [
+        { content: "", calledTool: { name: "failStep", args: { reason: "Cannot proceed" } } },
+      ],
+    });
+
+    await expect(engine.signal({ type: "RUN" })).rejects.toThrow("LLM step failed");
+  });
+
+  it("detects failStep when LLM calls other tools first (multi-tool)", async () => {
+    const fsm: FSMDefinition = {
+      id: "failstep-multi-tool-test",
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Fetch data and process",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const { engine } = await createLLMEngine({
+      fsm,
+      llmResponses: [
+        {
+          // calledTool is the first tool (artifacts_get), NOT failStep
+          content: "",
+          calledTool: { name: "artifacts_get", args: { id: "doc-1" } },
+          data: {
+            toolCalls: [
+              {
+                type: "tool-call",
+                toolCallId: "call-1",
+                toolName: "artifacts_get",
+                input: { id: "doc-1" },
+              },
+              {
+                type: "tool-call",
+                toolCallId: "call-2",
+                toolName: "failStep",
+                input: { reason: "Missing required data" },
+              },
+            ],
+            toolResults: [],
+          },
+        },
+      ],
+    });
+
+    await expect(engine.signal({ type: "RUN" })).rejects.toThrow(
+      /LLM step failed.*Missing required data/,
+    );
+  });
+
+  it("does not false-positive on failStep when LLM calls complete", async () => {
+    const fsm: FSMDefinition = {
+      id: "no-false-failstep-test",
+      initial: "pending",
+      states: {
+        pending: {
+          documents: [{ id: "result", type: "TicketResult", data: {} }],
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Extract info",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      documentTypes: {
+        TicketResult: { type: "object", properties: { ticket_id: { type: "string" } } },
+      },
+    };
+
+    const { engine } = await createLLMEngine({
+      fsm,
+      llmResponses: [
+        { content: "", calledTool: { name: "complete", args: { ticket_id: "OK-1" } } },
+      ],
+    });
+
+    // Should NOT throw — complete is not failStep
+    await engine.signal({ type: "RUN" });
+    expect(engine.state).toEqual("done");
+  });
+
+  it("falls through when LLM calls neither complete nor failStep", async () => {
+    const fsm: FSMDefinition = {
+      id: "neither-tool-test",
+      initial: "pending",
+      states: {
+        pending: {
+          documents: [{ id: "result", type: "GenericResult", data: {} }],
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Do something",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      documentTypes: { GenericResult: { type: "object", additionalProperties: true } },
+    };
+
+    const { engine } = await createLLMEngine({
+      fsm,
+      llmResponses: [{ content: "just text response" }],
+    });
+
+    // Should succeed — falls through to normal storage path
+    await engine.signal({ type: "RUN" });
+    expect(engine.state).toEqual("done");
+  });
+
+  it("detects failStep on retry after validation failure (multi-tool)", async () => {
+    const fsm: FSMDefinition = {
+      id: "failstep-retry-multi-test",
+      initial: "pending",
+      states: {
+        pending: {
+          documents: [{ id: "result", type: "TicketResult", data: {} }],
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Extract info",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      documentTypes: {
+        TicketResult: { type: "object", properties: { ticket_id: { type: "string" } } },
+      },
+    };
+
+    const { engine } = await createLLMEngine({
+      fsm,
+      validator: (trace) => {
+        if (trace.content === "first attempt") {
+          return Promise.resolve({ valid: false, feedback: "Try again" });
+        }
+        return Promise.resolve({ valid: true });
+      },
+      llmResponses: [
+        // First attempt: text only, fails validation
+        { content: "first attempt" },
+        // Retry: calls artifacts_get then failStep
+        {
+          content: "",
+          calledTool: { name: "artifacts_get", args: { id: "doc-1" } },
+          data: {
+            toolCalls: [
+              {
+                type: "tool-call",
+                toolCallId: "call-1",
+                toolName: "artifacts_get",
+                input: { id: "doc-1" },
+              },
+              {
+                type: "tool-call",
+                toolCallId: "call-2",
+                toolName: "failStep",
+                input: { reason: "Gave up on retry" },
+              },
+            ],
+            toolResults: [],
+          },
+        },
+      ],
+    });
+
+    await expect(engine.signal({ type: "RUN" })).rejects.toThrow("LLM step failed on retry");
+  });
 });
