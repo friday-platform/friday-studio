@@ -9,7 +9,7 @@ async function makeTempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "link-summary-test-"));
 }
 
-import { DenoKVStorageAdapter } from "../adapters/deno-kv-adapter.ts";
+import { FileSystemStorageAdapter } from "../adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
@@ -65,7 +65,7 @@ describe("GET /v1/summary endpoint", () => {
 
   beforeAll(async () => {
     tempDir = await makeTempDir();
-    const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+    const storage = new FileSystemStorageAdapter(tempDir);
     const oauthService = new OAuthService(registry, storage);
     app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
@@ -166,9 +166,9 @@ describe("GET /v1/summary endpoint", () => {
   });
 
   it("empty arrays when no credentials exist", async () => {
-    // Create new temp DB with no credentials
+    // Create new temp directory with no credentials
     const emptyTempDir = await makeTempDir();
-    const emptyStorage = new DenoKVStorageAdapter(`${emptyTempDir}/kv.db`);
+    const emptyStorage = new FileSystemStorageAdapter(emptyTempDir);
     const emptyOauthService = new OAuthService(registry, emptyStorage);
     const emptyApp = await createApp(
       emptyStorage,

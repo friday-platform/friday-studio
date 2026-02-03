@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
+import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
@@ -119,12 +119,12 @@ const testProviders = {
 
 describe("Link HTTP routes", () => {
   let tempDir: string;
-  let storage: DenoKVStorageAdapter;
+  let storage: FileSystemStorageAdapter;
   let app: Awaited<ReturnType<typeof createApp>>;
 
   beforeAll(async () => {
     tempDir = makeTempDir();
-    storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+    storage = new FileSystemStorageAdapter(tempDir);
     const oauthService = new OAuthService(registry, storage);
     app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 

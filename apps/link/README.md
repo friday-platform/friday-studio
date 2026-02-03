@@ -7,7 +7,7 @@ unified interface for agents to access external services.
 
 ## What Link Does
 
-1. **Stores credentials** — API keys and OAuth tokens persisted in Deno KV,
+1. **Stores credentials** — API keys and OAuth tokens persisted to filesystem,
    scoped by user
 2. **Orchestrates OAuth flows** — Handles authorization, token exchange, PKCE,
    and dynamic client registration
@@ -31,7 +31,7 @@ Environment variables:
 | Variable                     | Description                              | Default                   |
 | ---------------------------- | ---------------------------------------- | ------------------------- |
 | `LINK_PORT`                  | HTTP server port                         | `3100`                    |
-| `LINK_DB_PATH`               | Deno KV database path                    | `~/.atlas/credentials.db` |
+| `LINK_CREDENTIALS_PATH`      | Credentials storage directory            | `~/.atlas/credentials`    |
 | `LINK_DEV_MODE`              | Skip JWT verification                    | `false`                   |
 | `LINK_JWT_PUBLIC_KEY_FILE`   | Path to RS256 public key (prod mode)     | Required if not dev mode  |
 | `LINK_STATE_SIGNING_KEY_FILE`| Secret for signing OAuth state JWTs      | Random UUID (ephemeral)   |
@@ -67,7 +67,7 @@ The GitHub App provider allows users to install a GitHub App for organization-le
 ├─────────────────────────────────────────────────────────────┤
 │  OAuthService       Flow orchestration, token refresh       │
 │  ProviderRegistry   Provider definitions and lookup         │
-│  StorageAdapter     Credential persistence (Deno KV)        │
+│  StorageAdapter     Credential persistence (Filesystem)     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,7 +79,7 @@ operations are scoped to this user.
 
 ### Multi-Tenancy
 
-Credentials are stored with composite keys: `["credentials", userId, credentialId]`.
+Credentials are stored with tenant isolation: `<basePath>/<userId>/<credentialId>.json`.
 Users can only access their own credentials.
 
 ## API Reference
@@ -269,7 +269,7 @@ src/
 │   ├── types.ts          Provider type definitions
 │   └── *.ts              Built-in providers (slack, google, notion)
 └── adapters/
-    └── deno-kv-adapter.ts  Deno KV storage implementation
+    └── filesystem-adapter.ts  Filesystem storage implementation
 ```
 
 ## Key Patterns
@@ -287,7 +287,7 @@ Agents don't handle token lifecycle.
 validation against provider schemas.
 
 **Adapter pattern** — Storage abstraction allows pluggable backends. Currently
-Deno KV; production could use Vault, AWS Secrets Manager, etc.
+filesystem for local development; production uses Cypher service with Postgres.
 
 ## Development
 

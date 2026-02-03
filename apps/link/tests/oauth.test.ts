@@ -8,7 +8,7 @@ import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
+import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
@@ -62,7 +62,7 @@ function registerTestOAuthProvider(
 
 describe("OAuth Integration", async () => {
   const tempDir = makeTempDir();
-  const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+  const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
   const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
@@ -558,7 +558,7 @@ describe("OAuth Integration", async () => {
 
 describe("Static OAuth Integration", async () => {
   const tempDir = makeTempDir();
-  const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
+  const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
   const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 

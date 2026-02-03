@@ -10,7 +10,7 @@ import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import postgres from "postgres";
 import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
-import { DenoKVStorageAdapter } from "./adapters/deno-kv-adapter.ts";
+import { FileSystemStorageAdapter } from "./adapters/filesystem-adapter.ts";
 import {
   NoOpPlatformRouteRepository,
   type PlatformRouteRepository,
@@ -255,9 +255,9 @@ function createStorage(): StorageAdapter {
     return new CypherStorageAdapter(cypher, sql);
   }
 
-  // Fall back to DenoKV for credential storage (platform_route still uses Postgres if available)
-  logger.info("Using DenoKVStorageAdapter", { dbPath: config.dbPath });
-  return new DenoKVStorageAdapter(config.dbPath);
+  // Fall back to filesystem storage for credential storage (platform_route still uses Postgres if available)
+  logger.info("Using FileSystemStorageAdapter");
+  return new FileSystemStorageAdapter();
 }
 
 /** Shutdown state to prevent multiple shutdown attempts */

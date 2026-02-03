@@ -20,7 +20,7 @@ async function makeTempFile(): Promise<string> {
   return join(dir, "key.pem");
 }
 
-import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
+import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
@@ -40,7 +40,7 @@ async function createTestJWT(userId: string, privateKey: CryptoKey): Promise<str
  * Returns app instance with cleanup function
  */
 async function setupProdAuthApp(
-  storage: DenoKVStorageAdapter,
+  storage: FileSystemStorageAdapter,
   oauthService: OAuthService,
   options: {
     /** Use simple RSA keypair (jose) instead of Web Crypto */
@@ -111,8 +111,9 @@ async function setupProdAuthApp(
 }
 
 describe("auth middleware", () => {
-  // Use in-memory KV for testing
-  const storage = new DenoKVStorageAdapter(":memory:");
+  // Use temp directory for testing
+  const tempDir = makeTempDir();
+  const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
 
   it("dev mode: no secret = userId defaults to dev", async () => {
@@ -231,9 +232,9 @@ describe("auth middleware", () => {
  * Tests X-Atlas-User-ID header extraction edge cases for multi-tenant isolation
  */
 describe("tenancy middleware", () => {
-  // Use temp file-based KV for testing (":memory:" creates separate DBs per open call)
+  // Use temp directory for testing
   const tempDir = makeTempDir();
-  const storage = new DenoKVStorageAdapter(`${tempDir}/tenancy-test.db`);
+  const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
 
   // Register test provider without health check
