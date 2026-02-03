@@ -2,6 +2,7 @@
   "name": "@atlas/evals-2",
   "version": "0.1.0",
   "type": "module",
+  "exports": { "./lib/load-credentials": "./lib/load-credentials.ts" },
   "scripts": { "eval:dev": "evalite watch" },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",

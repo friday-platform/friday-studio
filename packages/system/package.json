@@ -6,7 +6,10 @@
     "./workspaces": "./workspaces/mod.ts",
     "./agents": "./agents/mod.ts",
     "./agent-types": "./agent-types/mod.ts",
-    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts"
+    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts",
+    "./agents/fsm-workspace-creator/agent-classifier": "./agents/fsm-workspace-creator/agent-classifier.ts",
+    "./agents/fsm-workspace-creator/agent-helpers": "./agents/fsm-workspace-creator/agent-helpers.ts",
+    "./agents/fsm-workspace-creator/fsm-generation-core": "./agents/fsm-workspace-creator/fsm-generation-core.ts"
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",

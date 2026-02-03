@@ -1,4 +1,12 @@
+import type { AtlasAgent } from "@atlas/agent-sdk";
 import { z } from "zod";
+import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
+import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
+import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
+import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
+import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
+import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
+import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
 
 /**
  * Configuration field descriptor for bundled agents
@@ -74,24 +82,52 @@ export type BundledAgentRegistryItem = {
   // Integration
   packagePath: string; // e.g., "@atlas/bundled-agents/slack"
   requiresMCP?: string[]; // MCP server IDs this agent needs
+
+  // Output contract
+  outputSchema?: z.core.JSONSchema.BaseSchema; // JSONSchema describing result.output shape
 };
+
+/**
+ * Build a registry entry from an agent instance + output schema + overrides.
+ * Derives id, name, version, description, capabilities, and examples
+ * from the agent metadata. Overrides take precedence.
+ */
+function fromAgent(
+  agent: AtlasAgent,
+  outputSchema: z.ZodType,
+  overrides: Omit<
+    BundledAgentRegistryItem,
+    "id" | "name" | "version" | "description" | "capabilities" | "examples" | "outputSchema"
+  > &
+    Partial<Pick<BundledAgentRegistryItem, "name" | "description" | "capabilities" | "examples">>,
+): BundledAgentRegistryItem {
+  const { metadata } = agent;
+
+  return {
+    id: metadata.id,
+    name: overrides.name ?? metadata.displayName ?? metadata.id,
+    version: metadata.version,
+    description: overrides.description ?? metadata.description,
+    capabilities: overrides.capabilities ?? metadata.expertise.domains,
+    examples: overrides.examples ?? metadata.expertise.examples,
+    outputSchema: z.toJSONSchema(outputSchema),
+    requiresMCP: overrides.requiresMCP,
+    requiredConfig: overrides.requiredConfig,
+    optionalConfig: overrides.optionalConfig,
+    packagePath: overrides.packagePath,
+  };
+}
 
 /**
  * Registry of bundled agents compiled into Atlas
  * These agents are available to all workspaces by default
+ *
+ * Agent metadata (id, name, version, description, capabilities, examples, requiresMCP)
+ * is derived from the agent instances. Only config and overrides are specified here.
  */
 export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
-  slack: {
-    id: "slack",
-    name: "Slack",
-    version: "1.0.0",
-    description:
-      "Post messages to Slack channels and DMs; search message history across channels, threads, and conversations; manage channels and users via slack-mcp-server",
+  slack: fromAgent(slackCommunicatorAgent, SlackOutputSchema, {
     capabilities: ["slack", "messaging", "notifications", "communication"],
-    examples: [
-      "Post update to #general: Shipping v1.2 today",
-      "Send this artifact to #product: {{artifact_id}}",
-    ],
     requiredConfig: [
       {
         from: "link",
@@ -103,21 +139,10 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     ],
     packagePath: "@atlas/bundled-agents/slack",
     requiresMCP: ["slack-mcp-server"],
-  },
+  }),
 
-  email: {
-    id: "email",
-    name: "Email",
-    version: "1.0.0",
-    description:
-      "Compose and send email notifications via SendGrid through Atlas gateway. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
+  email: fromAgent(emailAgent, EmailOutputSchema, {
     capabilities: ["email", "gmail", "notifications", "sendgrid", "messaging"],
-    examples: [
-      "Send email to john@example.com with subject 'Test' saying hello",
-      "Email sarah@company.com a meeting reminder for 2pm today",
-      "Send deployment completion notification to team@startup.io",
-      "Create professional pricing report email from this data and send to client@company.com",
-    ],
     requiredConfig: [
       {
         key: "FRIDAY_GATEWAY_URL",
@@ -149,14 +174,9 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       },
     ],
     packagePath: "@atlas/bundled-agents/email",
-  },
+  }),
 
-  "google-calendar": {
-    id: "google-calendar",
-    name: "Google Calendar",
-    version: "1.0.0",
-    description:
-      "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
+  "google-calendar": fromAgent(googleCalendarAgent, GoogleCalendarOutputSchema, {
     capabilities: [
       "google-calendar",
       "calendar",
@@ -164,14 +184,6 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       "meetings",
       "events",
       "availability",
-    ],
-    examples: [
-      "Get all of my events for today",
-      "Create a meeting with john@example.com tomorrow at 2pm for 1 hour",
-      "Schedule a team standup every Monday at 9am with Google Meet",
-      "Move my 3pm meeting to 4pm",
-      "Delete the meeting with Sarah",
-      "What's on my calendar this week?",
     ],
     requiredConfig: [
       {
@@ -184,23 +196,16 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     ],
     packagePath: "@atlas/bundled-agents/google",
     requiresMCP: ["google-calendar"],
-  },
+  }),
 
-  "get-summary": {
-    id: "get-summary",
+  "get-summary": fromAgent(summaryAgent, SummaryOutputSchema, {
     name: "Summarizer",
-    version: "1.0.0",
-    description: "Create a summary of the provided content",
     capabilities: ["summaries", "summarization", "content-analysis"],
-    examples: ["Create a summary of the provided content", "Summarize this content"],
     requiredConfig: [],
     packagePath: "@atlas/bundled-agents/summary",
-  },
+  }),
 
-  research: {
-    id: "research",
-    name: "Research",
-    version: "1.0.0",
+  research: fromAgent(webSearchAgent, ResearchOutputSchema, {
     description:
       "Multi-agent research system with parallel sub-agents for comprehensive web research and report generation",
     capabilities: ["research", "web-search", "web-research", "web"],
@@ -224,14 +229,9 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       },
     ],
     packagePath: "@atlas/bundled-agents/research",
-  },
+  }),
 
-  "claude-code": {
-    id: "claude-code",
-    name: "Claude Code",
-    version: "1.0.0",
-    description:
-      "Execute coding tasks, analyze codebases, debug issues, and identify root causes using Claude API with sandboxed filesystem access",
+  "claude-code": fromAgent(claudeCodeAgent, ClaudeCodeOutputSchema, {
     capabilities: [
       "code-generation",
       "coding",
@@ -241,13 +241,6 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       "code-analysis",
       "debugging",
       "root-cause-analysis",
-    ],
-    examples: [
-      "Write a TypeScript function to parse JSON",
-      "Read and analyze the package.json file",
-      "Generate a React component",
-      "Analyze stack traces and identify root causes",
-      "Debug this error in the codebase",
     ],
     requiredConfig: [
       {
@@ -259,22 +252,12 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       },
     ],
     packagePath: "@atlas/bundled-agents/claude-code",
-  },
+  }),
 
-  "fathom-get-transcript": {
-    id: "fathom-get-transcript",
-    name: "Fathom Get Transcript",
-    version: "1.0.0",
-    description: "Get the latest meeting from Fathom AI and retrieve its transcript",
-    capabilities: ["fathom", "meetings", "transcripts", "recording"],
-    examples: [
-      "Get the transcript of my latest Fathom meeting",
-      "Show me the most recent meeting transcript",
-      "What was discussed in my last meeting?",
-    ],
+  "fathom-get-transcript": fromAgent(fathomGetTranscriptAgent, FathomOutputSchema, {
     requiredConfig: [{ key: "FATHOM_API_KEY", description: "Fathom API key", type: "string" }],
     packagePath: "@atlas/bundled-agents/fathom",
-  },
+  }),
 
   "data-analyst": {
     id: "data-analyst",

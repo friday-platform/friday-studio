@@ -3,6 +3,7 @@
  */
 
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import type { z } from "zod";
 
 /**
  * Agent classification result: either uses a bundled agent or LLM with MCP tools
@@ -34,6 +35,7 @@ export interface SimplifiedAgent {
   executionType: "bundled" | "llm";
   bundledAgentId?: string; // If executionType === 'bundled'
   mcpTools?: string[]; // If executionType === 'llm'
+  outputSchema?: z.core.JSONSchema.BaseSchema;
 }
 
 /**

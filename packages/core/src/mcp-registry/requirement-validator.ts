@@ -1,7 +1,7 @@
 import process from "node:process";
+import type { BundledAgentConfigFieldInput } from "@atlas/bundled-agents/registry";
 import type { MCPServerConfig } from "@atlas/config";
 import { z } from "zod";
-import type { BundledAgentConfigFieldInput } from "../bundled-agents/registry.ts";
 import { CredentialNotFoundError, resolveCredentialsByProvider } from "./credential-resolver.ts";
 import type { RequiredConfigField } from "./schemas.ts";
 

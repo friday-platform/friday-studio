@@ -6175,6 +6175,7 @@
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.93",
+            "npm:dotenv@17.2.3",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]

@@ -1,13 +1,13 @@
 import { env } from "node:process";
-import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { OutlineRef } from "@atlas/core";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
+import { ArtifactRefsSchema, OutlineRefsSchema } from "../shared-schemas.ts";
 
 /**
  * Google Calendar Agent
@@ -16,19 +16,14 @@ import { z } from "zod";
  * and invoked from Google Calendar through google-calendar-mcp. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-type GoogleCalendarAgentResult = {
-  response: string;
-  toolCalls?: ToolCall[];
-  toolResults?: ToolResult[];
-  artifactRefs?: Array<{ id: string; type: string; summary: string }>;
-  outlineRefs?: OutlineRef[];
-};
 
-export const GoogleCalendarAgentResultSchema = z.object({
-  response: z.string(),
-  toolCalls: z.array(z.unknown()).optional(),
-  toolResults: z.array(z.unknown()).optional(),
+export const GoogleCalendarOutputSchema = z.object({
+  response: z.string().describe("Calendar operation result text"),
+  artifactRefs: ArtifactRefsSchema.optional(),
+  outlineRefs: OutlineRefsSchema.optional(),
 });
+
+type GoogleCalendarAgentResult = z.infer<typeof GoogleCalendarOutputSchema>;
 
 /** Max characters for summary (schema max is 5000, leave buffer) */
 const SUMMARY_MAX_CHARS = 4500;
@@ -175,8 +170,6 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         return {
           response:
             "Cannot complete: Google Calendar tools unavailable. Provide Google Calendar MCP tools to proceed.",
-          toolCalls: [],
-          toolResults: [],
         };
       }
 

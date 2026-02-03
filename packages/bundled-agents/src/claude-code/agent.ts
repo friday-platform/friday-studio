@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { ArtifactRefSchema, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
@@ -122,7 +122,18 @@ export async function* withMessageTimeout<T>(
   }
 }
 
-type CCAgentResult = Result<{ response: string; artifactRef: ArtifactRef }, { reason: string }>;
+export const ClaudeCodeOutputSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    data: z.object({
+      response: z.string().describe("Claude Code output text"),
+      artifactRef: ArtifactRefSchema,
+    }),
+  }),
+  z.object({ ok: z.literal(false), error: z.object({ reason: z.string() }) }),
+]);
+
+type CCAgentResult = z.infer<typeof ClaudeCodeOutputSchema>;
 
 /**
  * Format tool invocation as concise single-line status message (≤50 chars).

@@ -2,6 +2,7 @@
  * Helper functions for agent processing and LLM code generation
  */
 
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { JSONSchema } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -12,14 +13,18 @@ import type { ClassifiedAgent, Job, Signal, SimplifiedAgent } from "./types.ts";
  * Removes discriminated union complexity
  */
 export function flattenAgent(classified: ClassifiedAgent): SimplifiedAgent {
+  const bundledId = classified.type.kind === "bundled" ? classified.type.bundledId : undefined;
+  const registryEntry = bundledId ? bundledAgentsRegistry[bundledId] : undefined;
+
   return {
     id: classified.id,
     name: classified.name,
     description: classified.description,
     config: classified.config,
     executionType: classified.type.kind,
-    bundledAgentId: classified.type.kind === "bundled" ? classified.type.bundledId : undefined,
+    bundledAgentId: bundledId,
     mcpTools: classified.type.kind === "llm" ? classified.type.mcpTools : undefined,
+    outputSchema: registryEntry?.outputSchema,
   };
 }
 
@@ -130,6 +135,16 @@ export function buildFSMGenerationPrompt(
   triggerSignal: Signal,
   signalPayloadSchema?: JSONSchema,
 ): string {
+  const agentBlocks = agents
+    .map((agent) => {
+      let block = JSON.stringify(agent, null, 2);
+      if (agent.outputSchema) {
+        block += `\n\nIMPORTANT: When this agent's output is stored via outputTo, the document data will have EXACTLY this shape. Generate prepare functions that read these fields — do NOT invent fields that aren't in this schema.`;
+      }
+      return block;
+    })
+    .join("\n\n---\n\n");
+
   return `Generate TypeScript code using the FSMBuilder API to create a finite state machine for this job.
 
 **Job Details:**
@@ -144,7 +159,7 @@ ${job.steps
   .join("\n")}
 
 **Available Agents:**
-${JSON.stringify(agents, null, 2)}
+${agentBlocks}
 
 ${
   signalPayloadSchema?.required?.length
@@ -398,12 +413,11 @@ For each agent, add request and result document type schemas.
 
 **Request schemas:** Define the fields the prepare function creates.
 
-**Result schemas:** DERIVE FROM DOWNSTREAM REQUEST SCHEMAS.
-Look at what the NEXT step's prepare function needs to read from this result.
-Those fields become this result's schema properties.
+**Result schemas:** Use the agent's outputSchema when available (shown in the agent block above).
+If an agent has an outputSchema, its result document will have EXACTLY that shape — use it directly as the document type schema and read only the fields it declares.
 
-Analysis process:
-1. For each step, identify what fields the NEXT step's prepare function reads from this step's result
+For agents WITHOUT an outputSchema, derive the result schema from downstream needs:
+1. For each step, identify what fields the NEXT step's prepare function reads from this result
 2. Those exact fields (with their types) become this result's schema properties
 3. Add them to the required array
 

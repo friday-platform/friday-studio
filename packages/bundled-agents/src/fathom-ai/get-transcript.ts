@@ -1,6 +1,7 @@
 import { env } from "node:process";
 import { createAgent } from "@atlas/agent-sdk";
 import { z } from "zod";
+import { ArtifactRefsSchema } from "../shared-schemas.ts";
 
 /**
  * Fathom AI Get Transcript Agent
@@ -46,10 +47,12 @@ const TranscriptItemSchema = z.object({
 
 const TranscriptResponseSchema = z.object({ transcript: z.array(TranscriptItemSchema) });
 
-type FathomGetTranscriptResult = {
-  response: string;
-  artifactRefs?: Array<{ id: string; type: string; summary: string }>;
-};
+export const FathomOutputSchema = z.object({
+  response: z.string().describe("Meeting title and transcript text"),
+  artifactRefs: ArtifactRefsSchema.optional(),
+});
+
+type FathomGetTranscriptResult = z.infer<typeof FathomOutputSchema>;
 
 export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptResult>({
   id: "fathom-get-transcript",

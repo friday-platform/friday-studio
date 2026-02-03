@@ -1,19 +1,22 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, ArtifactRefSchema, createAgent } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { generateText, stepCountIs } from "ai";
+import { z } from "zod";
+
 import { buildAnalysisPrompt } from "./prompts.ts";
 import { buildSchemaContext, type LoadedTableInfo } from "./schema.ts";
 import {
   createExecuteSqlTool,
   createSaveResultsTool,
   type QueryExecution,
+  QueryExecutionSchema,
   type SavedResults,
 } from "./sql-tools.ts";
 
@@ -294,12 +297,13 @@ async function createDataArtifact(
   return { id: result.data.id, type: "file", summary: result.data.summary };
 }
 
-export type DataAnalystResult = {
-  summary: string;
-  artifactRefs: ArtifactRef[];
-  /** All SQL queries executed during analysis, in order */
-  queries: QueryExecution[];
-};
+export const DataAnalystOutputSchema = z.object({
+  summary: z.string().describe("Analysis narrative"),
+  artifactRefs: z.array(ArtifactRefSchema),
+  queries: z.array(QueryExecutionSchema).describe("All SQL queries executed during analysis"),
+});
+
+export type DataAnalystResult = z.infer<typeof DataAnalystOutputSchema>;
 
 export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   id: "data-analyst",

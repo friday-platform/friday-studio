@@ -1,5 +1,5 @@
-import type { BundledAgentConfigFieldInput } from "../bundled-agents/registry.ts";
-import { bundledAgentsRegistry } from "../bundled-agents/registry.ts";
+import type { BundledAgentConfigFieldInput } from "@atlas/bundled-agents/registry";
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
 import type { RequiredConfigField } from "./schemas.ts";
 

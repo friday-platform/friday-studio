@@ -10,10 +10,11 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import type { OutlineRef } from "@atlas/core";
+
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
+import { ArtifactRefsSchema, type OutlineRef, OutlineRefsSchema } from "../shared-schemas.ts";
 import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
 
 /**
@@ -23,7 +24,13 @@ import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
  * and invoked from Slack through slack-mcp-server. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-type Result = { response: string; artifactRefs: ArtifactRef[] | null; outlineRefs?: OutlineRef[] };
+export const SlackOutputSchema = z.object({
+  response: z.string().describe("Slack execution result text"),
+  artifactRefs: ArtifactRefsSchema.nullable(),
+  outlineRefs: OutlineRefsSchema.optional(),
+});
+
+type Result = z.infer<typeof SlackOutputSchema>;
 
 export const slackCommunicatorAgent = createAgent<string, Result>({
   id: "slack",

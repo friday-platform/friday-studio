@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { env } from "node:process";
 import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-import type { OutlineRef } from "@atlas/core";
+
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
@@ -12,6 +12,7 @@ import { resolve } from "@std/path";
 import { generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
+import { OutlineRefsSchema } from "../shared-schemas.ts";
 import { validateRecipient } from "./recipient-validation.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
@@ -22,12 +23,21 @@ import { template } from "./template.ts";
  * Generates and sends email notifications via SendGrid.
  * Takes natural language prompts with data/context and composes appropriate email content.
  */
-type Result = {
-  response: string;
-  message_id?: string;
-  email?: { to: string | string[]; subject: string; content: string; from: string };
-  outlineRefs?: OutlineRef[];
-};
+export const EmailOutputSchema = z.object({
+  response: z.string().describe("Confirmation message"),
+  message_id: z.string().describe("SendGrid message ID").optional(),
+  email: z
+    .object({
+      to: z.union([z.string(), z.array(z.string())]).describe("Recipient email address(es)"),
+      subject: z.string(),
+      content: z.string(),
+      from: z.string(),
+    })
+    .optional(),
+  outlineRefs: OutlineRefsSchema.optional(),
+});
+
+type Result = z.infer<typeof EmailOutputSchema>;
 
 export const emailAgent = createAgent<string, Result>({
   id: "email",

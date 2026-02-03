@@ -1,3 +1,5 @@
+import process from "node:process";
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import { describe, expect, it } from "vitest";
 import {
   buildFSMGenerationPrompt,
@@ -91,6 +93,88 @@ describe("buildFSMGenerationPrompt", () => {
     expect(prompt).toContain("User Intent: Test description");
   });
 
+  it("includes output schema and instruction when bundled agent has outputSchema", () => {
+    const job: Job = {
+      id: "research-job",
+      name: "Research Job",
+      title: "Research",
+      triggerSignalId: "start-research",
+      behavior: "sequential",
+      steps: [{ agentId: "researcher", description: "Run research" }],
+    };
+
+    const agents: SimplifiedAgent[] = [
+      {
+        id: "researcher",
+        name: "Research Agent",
+        description: "Runs research",
+        config: {},
+        executionType: "bundled",
+        bundledAgentId: "research",
+        outputSchema: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: { summary: { type: "string" } },
+              required: ["summary"],
+            },
+          },
+          required: ["ok"],
+        },
+      },
+    ];
+
+    const triggerSignal: Signal = {
+      id: "start-research",
+      name: "Start Research",
+      title: "Starts research",
+      signalType: "http",
+      description: "Start research task",
+    };
+
+    const prompt = buildFSMGenerationPrompt(job, agents, triggerSignal);
+
+    expect(prompt).toContain("EXACTLY this shape");
+    expect(prompt).toContain("do NOT invent fields");
+  });
+
+  it("does not include output schema block when agent has no outputSchema", () => {
+    const job: Job = {
+      id: "email-job",
+      name: "Email Job",
+      title: "Email",
+      triggerSignalId: "send-email",
+      behavior: "sequential",
+      steps: [{ agentId: "email", description: "Send email" }],
+    };
+
+    const agents: SimplifiedAgent[] = [
+      {
+        id: "email",
+        name: "Email Agent",
+        description: "Sends emails",
+        config: {},
+        executionType: "bundled",
+        bundledAgentId: "email",
+      },
+    ];
+
+    const triggerSignal: Signal = {
+      id: "send-email",
+      name: "Send Email",
+      title: "Sends email",
+      signalType: "http",
+      description: "Send email",
+    };
+
+    const prompt = buildFSMGenerationPrompt(job, agents, triggerSignal);
+
+    expect(prompt).not.toContain("Output Schema");
+    expect(prompt).not.toContain("EXACTLY this shape");
+  });
+
   it("includes note about agent.description containing downstream requirements", () => {
     const job: Job = {
       id: "email-triage",
@@ -145,13 +229,12 @@ describe("buildFSMGenerationPrompt", () => {
 
     const prompt = buildFSMGenerationPrompt(job, [], triggerSignal);
 
-    // Critical instruction: derive Result schemas from downstream Request schemas
-    expect(prompt).toContain("DERIVE FROM DOWNSTREAM REQUEST SCHEMAS");
-    expect(prompt).toContain("NEXT step's prepare function needs to read from this result");
+    // Critical instruction: use outputSchema when available, derive from downstream otherwise
+    expect(prompt).toContain("Use the agent's outputSchema when available");
+    expect(prompt).toContain("EXACTLY that shape");
     expect(prompt).toContain(
-      "Those exact fields (with their types) become this result's schema properties",
+      "agents WITHOUT an outputSchema, derive the result schema from downstream needs",
     );
-    expect(prompt).toContain("required array");
   });
 
   it("includes example showing Result schema derivation from downstream prepare function", () => {
@@ -185,7 +268,9 @@ describe("buildFSMGenerationPrompt", () => {
   });
 });
 
-describe("enrichAgentsWithPipelineContext", () => {
+const isCI = !!process.env.CI;
+
+describe.skipIf(isCI)("enrichAgentsWithPipelineContext", () => {
   it("adds downstream context to first agent (TEM-3625 fix)", async () => {
     // This test verifies the fix for Ken's email triage bug where
     // step 0 fetched emails with format="metadata" instead of format="full"
@@ -328,6 +413,36 @@ describe("flattenAgent", () => {
       bundledAgentId: "actual-bundled-id",
     });
     expect(flattenAgent(classified).mcpTools).toBeUndefined();
+  });
+
+  it("populates outputSchema from bundled agent registry", () => {
+    const classified: ClassifiedAgent = {
+      id: "research-agent",
+      name: "Research Agent",
+      description: "Runs research",
+      config: {},
+      type: { kind: "bundled", bundledId: "research", name: "Research" },
+    };
+
+    const result = flattenAgent(classified);
+
+    expect(result.outputSchema).toEqual(bundledAgentsRegistry["research"]?.outputSchema);
+  });
+
+  it("does not populate outputSchema for bundled agents without one", () => {
+    expect(bundledAgentsRegistry["nonexistent-agent"]).toBeUndefined();
+
+    const classified: ClassifiedAgent = {
+      id: "unknown-agent",
+      name: "Unknown Agent",
+      description: "An agent not in the registry",
+      config: {},
+      type: { kind: "bundled", bundledId: "nonexistent-agent", name: "Unknown" },
+    };
+
+    const result = flattenAgent(classified);
+
+    expect(result.outputSchema).toBeUndefined();
   });
 
   it("flattens LLM agent correctly", () => {

@@ -1,24 +1,35 @@
 import process from "node:process";
-import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import {
+  ArtifactRefSchema,
+  createAgent,
+  createFailTool,
+  repairJson,
+  repairToolCall,
+} from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { OutlineRef } from "@atlas/core";
 import { registry, smallLLM } from "@atlas/llm";
-import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
+import { fail, getTodaysDate, success } from "@atlas/utils";
 import { generateObject, generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { Parallel } from "parallel-web";
 import { z } from "zod";
+import { OutlineRefsSchema } from "../shared-schemas.ts";
 import { executeSearch } from "./search-tool.ts";
 import { type QueryAnalysis, QueryAnalysisSchema, type SearchResult } from "./types.ts";
 
-export type WebSearchAgentResult = Result<
-  {
-    summary: string;
-    artifactRef: { id: string; type: string; summary: string };
-    outlineRefs: OutlineRef[];
-  },
-  { reason: string }
->;
+export const ResearchOutputSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    data: z.object({
+      summary: z.string().describe("Research summary narrative"),
+      artifactRef: ArtifactRefSchema,
+      outlineRefs: OutlineRefsSchema,
+    }),
+  }),
+  z.object({ ok: z.literal(false), error: z.object({ reason: z.string() }) }),
+]);
+
+export type WebSearchAgentResult = z.infer<typeof ResearchOutputSchema>;
 
 export type {
   QueryAnalysis,

@@ -6,17 +6,17 @@
  */
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { claudeCodeAgent } from "./claude-code/agent.ts";
+import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
 import { type DataAnalystResult, dataAnalystAgent } from "./data-analyst/agent.ts";
 import type { QueryExecution } from "./data-analyst/sql-tools.ts";
-import { emailAgent } from "./email/communicator.ts";
-import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
-import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
-import { slackCommunicatorAgent } from "./slack/communicator.ts";
-import { summaryAgent } from "./summary.ts";
+import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
+import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
+import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
+import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
+import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
-import { webSearchAgent } from "./web-search/web-search.ts";
+import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
 
 // Add more bundled agents here as they are created
 export const bundledAgents: AtlasAgent[] = [
@@ -39,10 +39,24 @@ export {
   emailAgent,
   fathomGetTranscriptAgent,
   googleCalendarAgent,
-  GoogleCalendarAgentResultSchema,
   webSearchAgent,
   slackCommunicatorAgent,
+  summaryAgent,
   tableAgent,
+  ClaudeCodeOutputSchema,
+  EmailOutputSchema,
+  FathomOutputSchema,
+  GoogleCalendarOutputSchema,
+  ResearchOutputSchema,
+  SlackOutputSchema,
+  SummaryOutputSchema,
 };
 
 export type { DataAnalystResult, QueryExecution };
+
+export {
+  type BundledAgentConfigField,
+  type BundledAgentConfigFieldInput,
+  type BundledAgentRegistryItem,
+  bundledAgentsRegistry,
+} from "./registry.ts";

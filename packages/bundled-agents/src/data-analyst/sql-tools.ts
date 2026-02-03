@@ -4,14 +4,16 @@ import { tool } from "ai";
 import { z } from "zod";
 
 /** Record of an executed SQL query */
-export type QueryExecution = {
-  sql: string;
-  success: boolean;
-  rowCount: number | null;
-  error: string | null;
-  durationMs: number;
-  tool: "execute_sql" | "save_results";
-};
+export const QueryExecutionSchema = z.object({
+  sql: z.string(),
+  success: z.boolean(),
+  rowCount: z.number().nullable(),
+  error: z.string().nullable(),
+  durationMs: z.number(),
+  tool: z.enum(["execute_sql", "save_results"]),
+});
+
+export type QueryExecution = z.infer<typeof QueryExecutionSchema>;
 
 type QueryResult =
   | { success: true; rows: Record<string, unknown>[] }

@@ -1,7 +1,7 @@
 import { createAgent, repairJson } from "@atlas/agent-sdk";
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import { client, parseResult } from "@atlas/client/v2";
 import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
-import { bundledAgentsRegistry } from "@atlas/core/bundled-agents/registry";
 import {
   type ClarificationItem,
   createAmbiguousBundledClarification,

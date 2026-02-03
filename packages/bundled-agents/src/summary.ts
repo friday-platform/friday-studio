@@ -1,11 +1,12 @@
-import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
+import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import type { OutlineRef } from "@atlas/core";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { generateText, stepCountIs } from "ai";
+import { z } from "zod";
+import { ArtifactRefsSchema, OutlineRefsSchema } from "./shared-schemas.ts";
 
 /**
  * Summary Tool
@@ -15,7 +16,14 @@ import { generateText, stepCountIs } from "ai";
  * tools and agents.
  */
 
-type Result = { artifactRefs: ArtifactRef[] | null; outlineRefs?: OutlineRef[] };
+export const SummaryOutputSchema = z.object({
+  artifactRefs: ArtifactRefsSchema.nullable().describe(
+    "Summary artifact references (null on failure)",
+  ),
+  outlineRefs: OutlineRefsSchema.optional(),
+});
+
+type Result = z.infer<typeof SummaryOutputSchema>;
 
 export const summaryAgent = createAgent({
   id: "get-summary",
