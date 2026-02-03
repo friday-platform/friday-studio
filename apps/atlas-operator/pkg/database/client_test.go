@@ -338,6 +338,48 @@ func TestHasVirtualKey_FalseNotCached(t *testing.T) {
 	}
 }
 
+func TestDeleteVirtualKey_InvalidatesCache(t *testing.T) {
+	db := &fakeDBTX{hasKeyResult: true}
+	client := newTestClient(db)
+	ctx := context.Background()
+
+	// First, populate cache via HasVirtualKey
+	got, err := client.HasVirtualKey(ctx, "user-del")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Fatal("expected true, got false")
+	}
+
+	// Cache should be populated — verify no extra DB call
+	before := db.queryCount.Load()
+	got, err = client.HasVirtualKey(ctx, "user-del")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Fatal("expected true from cache")
+	}
+	if db.queryCount.Load() != before {
+		t.Fatal("expected no DB call for cached entry")
+	}
+
+	// Delete the key — should invalidate cache
+	err = client.DeleteVirtualKey(ctx, "user-del")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Now HasVirtualKey should hit DB again (cache invalidated)
+	// fakeDBTX still returns true, but the point is it hits the DB
+	before = db.queryCount.Load()
+	_, _ = client.HasVirtualKey(ctx, "user-del")
+	if db.queryCount.Load() != before+1 {
+		t.Fatal("expected DB call after cache invalidation")
+	}
+}
+
 func TestHasVirtualKey_InsertPopulatesCache(t *testing.T) {
 	db := &fakeDBTX{hasKeyResult: false}
 	client := newTestClient(db)

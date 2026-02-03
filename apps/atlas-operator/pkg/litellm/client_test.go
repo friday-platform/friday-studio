@@ -197,6 +197,69 @@ func TestKeyAliasForUser(t *testing.T) {
 	}
 }
 
+func TestHasKey_Exists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/key/list" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("user_id") != "user-1" {
+			t.Errorf("unexpected user_id: %s", r.URL.Query().Get("user_id"))
+		}
+		if r.URL.Query().Get("page_size") != "1" {
+			t.Errorf("unexpected page_size: %s", r.URL.Query().Get("page_size"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"keys": [{"token": "sk-123"}], "total_count": 1}`))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+
+	got, err := c.HasKey(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Error("expected true, got false")
+	}
+}
+
+func TestHasKey_NotExists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"keys": [], "total_count": 0}`))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+
+	got, err := c.HasKey(context.Background(), "user-missing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("expected false, got true")
+	}
+}
+
+func TestHasKey_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`internal error`))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+
+	_, err := c.HasKey(context.Background(), "user-1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func TestFloat64Ptr(t *testing.T) {
 	val := 123.45
 	ptr := Float64Ptr(val)

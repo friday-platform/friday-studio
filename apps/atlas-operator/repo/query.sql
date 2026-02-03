@@ -57,3 +57,6 @@ SELECT EXISTS(SELECT 1 FROM public.llm_virtualkey WHERE user_id = $1);
 INSERT INTO public.llm_virtualkey (user_id, ciphertext)
 VALUES ($1, $2)
 ON CONFLICT (user_id) DO UPDATE SET ciphertext = EXCLUDED.ciphertext;
+
+-- name: DeleteVirtualKey :exec
+DELETE FROM public.llm_virtualkey WHERE user_id = $1;

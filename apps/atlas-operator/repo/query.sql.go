@@ -43,6 +43,18 @@ func (q *Queries) CreatePoolUser(ctx context.Context) (string, error) {
 	return id, err
 }
 
+const deleteVirtualKey = `-- name: DeleteVirtualKey :exec
+DELETE FROM public.llm_virtualkey WHERE user_id = $1
+`
+
+// DeleteVirtualKey
+//
+//	DELETE FROM public.llm_virtualkey WHERE user_id = $1
+func (q *Queries) DeleteVirtualKey(ctx context.Context, userID string) error {
+	_, err := q.db.Exec(ctx, deleteVirtualKey, userID)
+	return err
+}
+
 const getUserByID = `-- name: GetUserByID :one
 SELECT
     id,

@@ -888,3 +888,337 @@ func TestReconcile_WithLiteLLM_RecreatesOrphanedKey(t *testing.T) {
 		t.Errorf("expected 2 keys stored, got %d", len(mockDB.VirtualKeys))
 	}
 }
+
+func TestEnsureVirtualKey_CleansOrphanedLiteLLMKey(t *testing.T) {
+	// DB says no key, but litellm HasKey returns true → should delete litellm key, then create fresh
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-orphan"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{
+			"user-orphan": true,
+		},
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The orphaned litellm key should be deleted
+	if len(mockLiteLLM.DeletedUserIDs) != 1 || mockLiteLLM.DeletedUserIDs[0] != "user-orphan" {
+		t.Errorf("expected orphaned litellm key deleted for user-orphan, got: %v", mockLiteLLM.DeletedUserIDs)
+	}
+
+	// A new key should be created
+	if _, ok := mockLiteLLM.CreatedKeys["user-orphan"]; !ok {
+		t.Error("expected new key created for user-orphan")
+	}
+
+	// Key should be stored in DB
+	if _, ok := mockDB.VirtualKeys["user-orphan"]; !ok {
+		t.Error("expected key stored in DB for user-orphan")
+	}
+}
+
+func TestVerifyVirtualKeys_DeletesOrphanedDBRow(t *testing.T) {
+	// DB says key exists, litellm says no → should delete DB row
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-orphan-db"},
+		},
+		VirtualKeys: map[string][]byte{
+			"user-orphan-db": []byte("stale-key"),
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{}, // litellm has no key for this user
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	// Force verification to run on this cycle (every 10th)
+	r.reconcileCount = 9
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The orphaned DB row should be deleted
+	if len(mockDB.DeletedVirtualKeys) != 1 || mockDB.DeletedVirtualKeys[0] != "user-orphan-db" {
+		t.Errorf("expected orphaned DB key deleted for user-orphan-db, got: %v", mockDB.DeletedVirtualKeys)
+	}
+}
+
+func TestVerifyVirtualKeys_SkipsHealthyKeys(t *testing.T) {
+	// DB says key exists, litellm says yes → no action
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-healthy"},
+		},
+		VirtualKeys: map[string][]byte{
+			"user-healthy": []byte("good-key"),
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{
+			"user-healthy": true,
+		},
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	// Force verification to run
+	r.reconcileCount = 9
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No DB keys should be deleted
+	if len(mockDB.DeletedVirtualKeys) != 0 {
+		t.Errorf("expected no DB keys deleted, got: %v", mockDB.DeletedVirtualKeys)
+	}
+}
+
+func TestReconcile_VerificationEvery10Cycles(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+		VirtualKeys: map[string][]byte{
+			"user-1": []byte("key"), // DB has key, litellm doesn't → orphaned
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{}, // no keys in litellm
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+
+	// Run 9 cycles — verification should NOT run
+	for i := 0; i < 9; i++ {
+		_ = r.Reconcile(ctx)
+	}
+	if len(mockDB.DeletedVirtualKeys) != 0 {
+		t.Errorf("expected no DB keys deleted before 10th cycle, got: %v", mockDB.DeletedVirtualKeys)
+	}
+
+	// 10th cycle — verification SHOULD run
+	_ = r.Reconcile(ctx)
+	if len(mockDB.DeletedVirtualKeys) != 1 {
+		t.Errorf("expected 1 DB key deleted on 10th cycle, got: %d", len(mockDB.DeletedVirtualKeys))
+	}
+}
+
+func TestEnsureVirtualKey_HasKeyError_ProceedsWithCreate(t *testing.T) {
+	// HasKey returns error → should log warning and proceed to create normally
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		HasKeyErr: fmt.Errorf("litellm unreachable"),
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Key should still be created despite HasKey error
+	if _, ok := mockLiteLLM.CreatedKeys["user-1"]; !ok {
+		t.Error("expected key created for user-1 despite HasKey error")
+	}
+	if _, ok := mockDB.VirtualKeys["user-1"]; !ok {
+		t.Error("expected key stored in DB for user-1")
+	}
+}
+
+func TestEnsureVirtualKey_OrphanDeleteFails_ReturnsError(t *testing.T) {
+	// HasKey returns true (orphaned key), but delete fails → should return error
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{
+			"user-1": true,
+		},
+		DeleteKeyErr: fmt.Errorf("delete failed"),
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	// Reconcile itself doesn't fail (it logs and continues), but no key should be created
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Key should NOT be created since orphan delete failed
+	if len(mockLiteLLM.CreatedKeys) != 0 {
+		t.Errorf("expected no keys created, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+}
+
+func TestVerifyVirtualKeys_RotatesThroughUsers(t *testing.T) {
+	// Use 75 users (> verifyBatchSize=50) so batching actually matters.
+	// Cycle 1: users[0:50], Cycle 2: users[50:75], cursor wraps to 0.
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	users := make([]database.User, 75)
+	virtualKeys := make(map[string][]byte, 75)
+	for i := range users {
+		id := fmt.Sprintf("user-%03d", i)
+		users[i] = database.User{ID: id}
+		virtualKeys[id] = []byte("key")
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users:       users,
+		VirtualKeys: virtualKeys,
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{}, // no keys in litellm → all orphaned
+	}
+
+	r := NewReconciler(Deps{DB: mockDB, LiteLLM: mockLiteLLM, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+
+	// Cycle 1: should verify users[0:50], cursor advances to 50
+	r.verifyVirtualKeys(ctx, users)
+	if r.verifyCursor != 50 {
+		t.Fatalf("after cycle 1: expected verifyCursor=50, got %d", r.verifyCursor)
+	}
+	if len(mockDB.DeletedVirtualKeys) != 50 {
+		t.Fatalf("after cycle 1: expected 50 deletions, got %d", len(mockDB.DeletedVirtualKeys))
+	}
+
+	// Cycle 2: should verify users[50:75], cursor wraps to 0
+	r.verifyVirtualKeys(ctx, users)
+	if r.verifyCursor != 0 {
+		t.Fatalf("after cycle 2: expected verifyCursor=0, got %d", r.verifyCursor)
+	}
+	if len(mockDB.DeletedVirtualKeys) != 75 {
+		t.Fatalf("after cycle 2: expected 75 total deletions, got %d", len(mockDB.DeletedVirtualKeys))
+	}
+}
+
+func TestVerifyVirtualKeys_CursorResetOnShrink(t *testing.T) {
+	// If the user list shrinks below the cursor position, cursor should reset to 0.
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		VirtualKeys: map[string][]byte{
+			"user-a": []byte("key"),
+		},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{}, // orphaned
+	}
+
+	r := NewReconciler(Deps{DB: mockDB, LiteLLM: mockLiteLLM, Config: cfg, Logger: logger})
+
+	// Cursor is past the end of a 2-user list
+	r.verifyCursor = 100
+
+	users := []database.User{{ID: "user-a"}, {ID: "user-b"}}
+	ctx := context.Background()
+	r.verifyVirtualKeys(ctx, users)
+
+	// Cursor should have been reset to 0, then processed from the start
+	if r.verifyCursor != 0 {
+		t.Errorf("expected verifyCursor reset to 0 after wrap, got %d", r.verifyCursor)
+	}
+	// user-a has an orphaned DB key → should be cleaned
+	if len(mockDB.DeletedVirtualKeys) < 1 || mockDB.DeletedVirtualKeys[0] != "user-a" {
+		t.Errorf("expected user-a deleted, got: %v", mockDB.DeletedVirtualKeys)
+	}
+}

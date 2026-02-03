@@ -172,8 +172,8 @@ func (c *Client) CreatePoolUser(ctx context.Context) (string, error) {
 }
 
 // virtualKeyTTL is how long we cache the existence of a virtual key.
-// Once a key exists it won't be deleted, so false-positives aren't possible
-// and false-negatives (cache miss) just mean one extra DB query.
+// DeleteVirtualKey invalidates the cache, so false-positives are short-lived.
+// False-negatives (cache miss) just mean one extra DB query.
 const virtualKeyTTL = 60 * time.Second
 
 // HasVirtualKey checks if a user already has a virtual key stored.
@@ -213,6 +213,21 @@ func (c *Client) InsertVirtualKey(ctx context.Context, userID string, ciphertext
 	}
 
 	c.virtualKeyCache.Set(userID, struct{}{}, virtualKeyTTL)
+	return nil
+}
+
+// DeleteVirtualKey removes a user's virtual key from the database and invalidates the cache.
+func (c *Client) DeleteVirtualKey(ctx context.Context, userID string) error {
+	err := c.queries.DeleteVirtualKey(ctx, userID)
+	if err != nil {
+		c.logger.Error("Failed to delete virtual key",
+			"error", err,
+			"user_id", userID,
+		)
+		return fmt.Errorf("delete virtual key: %w", err)
+	}
+
+	c.virtualKeyCache.Delete(userID)
 	return nil
 }
 

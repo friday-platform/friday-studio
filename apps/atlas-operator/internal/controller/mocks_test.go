@@ -21,9 +21,11 @@ type MockDatabaseClient struct {
 	CreatePoolErr    error
 	CreatedPoolUsers []string
 	// Virtual key mocks
-	VirtualKeys      map[string][]byte
-	HasVirtualKeyErr error
-	InsertKeyErr     error
+	VirtualKeys         map[string][]byte
+	HasVirtualKeyErr    error
+	InsertKeyErr        error
+	DeleteVirtualKeyErr error
+	DeletedVirtualKeys  []string
 }
 
 func (m *MockDatabaseClient) GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error) {
@@ -94,6 +96,15 @@ func (m *MockDatabaseClient) InsertVirtualKey(ctx context.Context, userID string
 		m.VirtualKeys = make(map[string][]byte)
 	}
 	m.VirtualKeys[userID] = ciphertext
+	return nil
+}
+
+func (m *MockDatabaseClient) DeleteVirtualKey(ctx context.Context, userID string) error {
+	if m.DeleteVirtualKeyErr != nil {
+		return m.DeleteVirtualKeyErr
+	}
+	delete(m.VirtualKeys, userID)
+	m.DeletedVirtualKeys = append(m.DeletedVirtualKeys, userID)
 	return nil
 }
 
@@ -196,8 +207,11 @@ type MockLiteLLMClient struct {
 	DeletedUserIDs     []string
 	CreateKeyErr       error
 	DeleteKeyErr       error
+	HasKeyErr          error
 	CreateKeyResult    *litellm.CreateVirtualKeyResponse
 	OrphanedKeyUserIDs map[string]bool // userIDs that have orphaned keys in LiteLLM
+	// LiteLLMKeys tracks which users have keys in litellm (for HasKey)
+	LiteLLMKeys map[string]bool
 }
 
 func (m *MockLiteLLMClient) CreateVirtualKey(ctx context.Context, req litellm.CreateVirtualKeyRequest) (*litellm.CreateVirtualKeyResponse, error) {
@@ -232,7 +246,25 @@ func (m *MockLiteLLMClient) DeleteVirtualKeyByUserID(ctx context.Context, userID
 	if m.OrphanedKeyUserIDs != nil {
 		delete(m.OrphanedKeyUserIDs, userID)
 	}
+	// Clear from LiteLLMKeys tracking
+	if m.LiteLLMKeys != nil {
+		delete(m.LiteLLMKeys, userID)
+	}
 	return nil
+}
+
+func (m *MockLiteLLMClient) HasKey(ctx context.Context, userID string) (bool, error) {
+	if m.HasKeyErr != nil {
+		return false, m.HasKeyErr
+	}
+	if m.LiteLLMKeys != nil {
+		return m.LiteLLMKeys[userID], nil
+	}
+	// Also check OrphanedKeyUserIDs for backward compat with existing tests
+	if m.OrphanedKeyUserIDs != nil {
+		return m.OrphanedKeyUserIDs[userID], nil
+	}
+	return false, nil
 }
 
 // MockCypherClient is a mock implementation of CypherClient for testing.

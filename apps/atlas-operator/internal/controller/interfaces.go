@@ -15,6 +15,7 @@ type DatabaseClient interface {
 	CreatePoolUser(ctx context.Context) (string, error)
 	HasVirtualKey(ctx context.Context, userID string) (bool, error)
 	InsertVirtualKey(ctx context.Context, userID string, ciphertext []byte) error
+	DeleteVirtualKey(ctx context.Context, userID string) error
 	Health() error
 	Close() error
 }
@@ -36,6 +37,7 @@ type PoolManager interface {
 type LiteLLMClient interface {
 	CreateVirtualKey(ctx context.Context, req litellm.CreateVirtualKeyRequest) (*litellm.CreateVirtualKeyResponse, error)
 	DeleteVirtualKeyByUserID(ctx context.Context, userID string) error
+	HasKey(ctx context.Context, userID string) (bool, error)
 }
 
 // CypherClient defines the interface for Cypher encryption operations.

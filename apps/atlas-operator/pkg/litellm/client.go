@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -145,6 +146,47 @@ func (c *Client) DeleteVirtualKeyByUserID(ctx context.Context, userID string) er
 	)
 
 	return nil
+}
+
+// keyListResponse is the response from listing keys.
+type keyListResponse struct {
+	TotalCount int `json:"total_count"`
+}
+
+// HasKey checks if a user has at least one key in LiteLLM.
+func (c *Client) HasKey(ctx context.Context, userID string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	reqURL := fmt.Sprintf("%s/key/list?user_id=%s&page_size=1", c.endpoint, url.QueryEscape(userID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return false, fmt.Errorf("execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result keyListResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return false, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	return result.TotalCount > 0, nil
 }
 
 // KeyAliasForUser returns the key alias for a given user ID.

@@ -18,6 +18,10 @@ import (
 const (
 	// usersPageSize is the number of users to fetch per database query.
 	usersPageSize = 100
+
+	// verifyBatchSize is the max number of users to verify per verification cycle.
+	// At 10-cycle intervals (30s each = 5min), 1000 users are fully audited in ~100min.
+	verifyBatchSize = 50
 )
 
 // Metrics holds Prometheus metrics for the reconciler.
@@ -43,7 +47,9 @@ type Deps struct {
 // Reconciler handles the main reconciliation loop.
 type Reconciler struct {
 	Deps
-	stopCh chan struct{}
+	stopCh         chan struct{}
+	reconcileCount int
+	verifyCursor   int // index into user list for rotating verification
 }
 
 // NewReconciler creates a new reconciler.
@@ -223,6 +229,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 	}
 
+	// Periodic verification: check for orphaned DB rows every 10 cycles
+	r.reconcileCount++
+	if r.LiteLLM != nil && r.reconcileCount%10 == 0 {
+		r.verifyVirtualKeys(ctx, dbUsers)
+	}
+
 	r.Logger.Info("Reconciliation completed",
 		"db_users", len(dbUsers),
 		"existing_apps", len(apps),
@@ -247,13 +259,29 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 // Returns (true, nil) if a new key was created, (false, nil) if user already has a key,
 // or (false, error) if key creation failed.
 func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool, error) {
-	// Check if user already has a virtual key
+	// Check if user already has a virtual key in our DB
 	hasKey, err := r.DB.HasVirtualKey(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("check virtual key: %w", err)
 	}
 	if hasKey {
 		return false, nil // Already has a key, nothing to do
+	}
+
+	// DB says no key — check if litellm has an orphaned key and clean it up
+	litellmHasKey, err := r.LiteLLM.HasKey(ctx, userID)
+	if err != nil {
+		r.Logger.Warn("Failed to check LiteLLM for existing key, proceeding with create",
+			"user_id", userID,
+			"error", err.Error(),
+		)
+	} else if litellmHasKey {
+		r.Logger.Warn("Found orphaned LiteLLM key (not in DB), deleting before recreate",
+			"user_id", userID,
+		)
+		if delErr := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); delErr != nil {
+			return false, fmt.Errorf("delete orphaned litellm key: %w", delErr)
+		}
 	}
 
 	// Create virtual key via LiteLLM
@@ -321,6 +349,69 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 	)
 
 	return true, nil
+}
+
+// verifyVirtualKeys checks a batch of users for orphaned DB rows (DB says key exists but litellm
+// doesn't have it). Rotates through the full user list across successive calls using verifyCursor.
+// When an orphan is found, the DB row is deleted so the next reconciliation cycle recreates the key.
+func (r *Reconciler) verifyVirtualKeys(ctx context.Context, users []database.User) {
+	if len(users) == 0 {
+		return
+	}
+
+	// Reset cursor if it's past the end (user list shrank)
+	if r.verifyCursor >= len(users) {
+		r.verifyCursor = 0
+	}
+
+	start := r.verifyCursor
+	end := min(start+verifyBatchSize, len(users))
+	batch := users[start:end]
+	r.verifyCursor = end % len(users)
+
+	cleaned := 0
+	for _, user := range batch {
+		hasDBKey, err := r.DB.HasVirtualKey(ctx, user.ID)
+		if err != nil {
+			r.Logger.Warn("Failed to check DB virtual key during verification",
+				"user_id", user.ID,
+				"error", err.Error(),
+			)
+			continue
+		}
+		if !hasDBKey {
+			continue
+		}
+
+		hasLiteLLMKey, err := r.LiteLLM.HasKey(ctx, user.ID)
+		if err != nil {
+			r.Logger.Warn("Failed to check LiteLLM key during verification",
+				"user_id", user.ID,
+				"error", err.Error(),
+			)
+			continue
+		}
+		if !hasLiteLLMKey {
+			r.Logger.Warn("Orphaned DB virtual key detected (not in LiteLLM), deleting DB row",
+				"user_id", user.ID,
+			)
+			if err := r.DB.DeleteVirtualKey(ctx, user.ID); err != nil {
+				r.Logger.Error("Failed to delete orphaned DB virtual key",
+					"user_id", user.ID,
+					"error", err.Error(),
+				)
+				continue
+			}
+			cleaned++
+		}
+	}
+
+	if cleaned > 0 {
+		r.Logger.Info("Virtual key verification completed",
+			"orphaned_db_keys_cleaned", cleaned,
+			"batch_size", len(batch),
+		)
+	}
 }
 
 // Health checks the health of the reconciler components.
