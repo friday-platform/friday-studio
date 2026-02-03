@@ -16,7 +16,7 @@
     "@atlas/analytics": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.38.0",
-    "@sveltejs/kit": "^2.50.1",
+    "@sveltejs/kit": "^2.50.2",
     "nanoid": "^5.1.6",
     "svelte": "^5.49.1",
     "zod": "^4.3.5",
