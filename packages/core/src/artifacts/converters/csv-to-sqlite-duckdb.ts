@@ -8,11 +8,14 @@
  */
 
 import { spawn } from "node:child_process";
-import { access, constants, unlink } from "node:fs/promises";
+import { access, constants, stat, unlink } from "node:fs/promises";
 import process from "node:process";
+import { createLogger } from "@atlas/logger";
 import { Database } from "@db/sqlite";
 import type { DatabaseSchema, DatabaseSchemaColumn } from "../primitives.ts";
 import type { ConversionResult } from "./csv-to-sqlite.ts";
+
+const logger = createLogger({ component: "csv-converter" });
 
 // CLI paths from environment (with fallback to PATH lookup)
 const DUCKDB_PATH = process.env.ATLAS_DUCKDB_PATH ?? "duckdb";
@@ -92,8 +95,9 @@ function convertWithDuckdb(
   tableName: string,
 ): Promise<ConversionResult> {
   const sanitizedTable = tableName.replace(/"/g, '""');
-  const escapedCsvPath = csvPath.replace(/'/g, "''");
-  const escapedOutputPath = outputPath.replace(/'/g, "''");
+  // DuckDB uses C-style escape sequences in strings; escape backslashes first, then quotes
+  const escapedCsvPath = csvPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+  const escapedOutputPath = outputPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
 
   const sql = `
     INSTALL sqlite;
@@ -186,7 +190,9 @@ function convertWithSqlite3(
 
     let stderr = "";
     sqlite.stderr.on("data", (data) => {
-      stderr += data.toString();
+      if (stderr.length < MAX_STDERR_BYTES) {
+        stderr += data.toString().slice(0, MAX_STDERR_BYTES - stderr.length);
+      }
     });
 
     sqlite.on("error", (err) => {
@@ -252,29 +258,68 @@ export async function convertCsvToSqliteFast(
   outputPath: string,
   tableName: string,
 ): Promise<ConversionResult> {
-  // Verify input file exists
+  // Verify input file exists and get size
+  let fileSizeBytes: number;
   try {
     await access(csvPath, constants.R_OK);
+    const stats = await stat(csvPath);
+    fileSizeBytes = stats.size;
   } catch {
     throw new Error(`CSV file not found or not readable: ${csvPath}`);
   }
 
+  const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+
   // Check CLI availability (cached)
   if (availableCli === undefined) {
     availableCli = await checkCliAvailability();
+    logger.info("CSV converter initialized", { method: availableCli ?? "papaparse" });
   }
 
+  const method = availableCli ?? "papaparse";
+  const startTime = performance.now();
+
+  logger.info("CSV conversion started", {
+    method,
+    tableName,
+    fileSizeMB: `${fileSizeMB}MB`,
+    fileSizeBytes,
+  });
+
+  let result: ConversionResult;
   switch (availableCli) {
     case "duckdb":
-      return convertWithDuckdb(csvPath, outputPath, tableName);
+      result = await convertWithDuckdb(csvPath, outputPath, tableName);
+      break;
     case "sqlite3":
-      return convertWithSqlite3(csvPath, outputPath, tableName);
+      result = await convertWithSqlite3(csvPath, outputPath, tableName);
+      break;
     default: {
       // Fallback to JS implementation
       const { convertCsvToSqlite } = await import("./csv-to-sqlite.ts");
-      return convertCsvToSqlite(csvPath, outputPath, tableName);
+      result = await convertCsvToSqlite(csvPath, outputPath, tableName);
+      break;
     }
   }
+
+  const durationMs = Math.round(performance.now() - startTime);
+  const rowsPerSecond =
+    durationMs > 0
+      ? Math.round(result.schema.rowCount / (durationMs / 1000))
+      : result.schema.rowCount;
+
+  logger.info("CSV conversion completed", {
+    method,
+    tableName,
+    durationMs,
+    durationSec: (durationMs / 1000).toFixed(2),
+    rowCount: result.schema.rowCount,
+    columnCount: result.schema.columns.length,
+    fileSizeMB: `${fileSizeMB}MB`,
+    rowsPerSecond,
+  });
+
+  return result;
 }
 
 /**

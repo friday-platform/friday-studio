@@ -6,10 +6,13 @@
  */
 
 import { createReadStream } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
+import { createLogger } from "@atlas/logger";
 import { Database } from "@db/sqlite";
 import Papa from "papaparse";
 import type { DatabaseSchema } from "../primitives.ts";
+
+const logger = createLogger({ component: "csv-converter-papaparse" });
 
 /** Batch size for INSERT transactions (5000 rows per commit) */
 const BATCH_SIZE = 5000;
@@ -45,11 +48,23 @@ function escapeSqlIdentifier(name: string): string {
  * @returns Promise resolving to conversion result with schema metadata
  * @throws Error if CSV is empty or conversion fails
  */
-export function convertCsvToSqlite(
+export async function convertCsvToSqlite(
   csvPath: string,
   outputPath: string,
   tableName: string,
 ): Promise<ConversionResult> {
+  const startTime = performance.now();
+  let fileSizeMB = "unknown";
+
+  try {
+    const stats = await stat(csvPath);
+    fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+  } catch {
+    // Ignore - file size logging is optional
+  }
+
+  logger.debug("PapaParse conversion started", { tableName, fileSizeMB: `${fileSizeMB}MB` });
+
   const db = new Database(outputPath);
 
   // Set pragmas for optimal conversion
@@ -131,6 +146,14 @@ export function convertCsvToSqlite(
 
         insertStmt?.finalize();
         db.close();
+
+        const durationMs = Math.round(performance.now() - startTime);
+        logger.debug("PapaParse conversion completed", {
+          tableName,
+          durationMs,
+          rowCount,
+          columnCount: columns.length,
+        });
 
         resolve({
           dbPath: outputPath,

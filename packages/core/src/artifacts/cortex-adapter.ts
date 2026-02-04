@@ -810,6 +810,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         if (!result.success) {
           logger.error("Invalid artifact data schema", {
             artifactId: input.id,
+            receivedType: (parsed as Record<string, unknown>)?.type,
             error: result.error.message,
           });
           return fail(`Invalid artifact data: ${result.error.message}`);
@@ -977,6 +978,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
                 logger.warn("Invalid artifact data schema in list", {
                   cortexId: obj.id,
                   artifactId: obj.metadata.artifact_id,
+                  receivedType: (parsed as Record<string, unknown>)?.type,
                   error: result.error.message,
                 });
                 return null;
