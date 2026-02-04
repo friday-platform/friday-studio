@@ -13,6 +13,18 @@
 # DAEMON BUILD STAGES
 # ============================================================================
 
+# Stage 0: Build DuckDB for Alpine (musl)
+# DuckDB provides 2.5x faster CSV→SQLite conversion with type inference
+FROM alpine:3.23.3 AS duckdb-builder
+
+RUN apk add --no-cache g++ git make cmake ninja
+
+# Clone and build DuckDB CLI only (minimal build)
+ARG DUCKDB_VERSION=v1.4.4
+RUN git clone --depth 1 --branch ${DUCKDB_VERSION} https://github.com/duckdb/duckdb.git /duckdb
+WORKDIR /duckdb
+RUN GEN=ninja BUILD_SHELL=0 BUILD_UNITTESTS=0 make release
+
 # Stage 1: Build daemon binary
 FROM denoland/deno:alpine-2.6.7 AS daemon-builder
 
@@ -57,13 +69,18 @@ FROM denoland/deno:alpine-2.6.7 AS daemon
 # Install Node.js, npm, GitHub CLI, and Claude Code CLI
 # Version is managed in docker/package.json (updated by Dependabot)
 # Note: LD_LIBRARY_PATH is set to use system libgcc instead of Deno's bundled one
+# libstdc++ is required for DuckDB (C++ runtime)
 COPY docker/package.json /tmp/docker-deps/package.json
-RUN apk add --no-cache nodejs npm bash github-cli sqlite-libs && \
+RUN apk add --no-cache nodejs npm bash github-cli sqlite-libs sqlite libstdc++ && \
     cd /tmp/docker-deps && LD_LIBRARY_PATH=/usr/lib:/usr/local/lib npm install && \
     cp -r node_modules/@anthropic-ai/claude-code /usr/local/lib/claude-code && \
     ln -s /usr/local/lib/claude-code/cli.js /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
+
+# Copy DuckDB binary for fast CSV→SQLite conversion (2.5x faster than JS)
+COPY --from=duckdb-builder /duckdb/build/release/duckdb /usr/local/bin/duckdb
+RUN chmod 755 /usr/local/bin/duckdb
 
 # Create atlas user and group matching Kubernetes securityContext (65534:266)
 RUN addgroup -g 266 -S atlas && \
@@ -96,6 +113,8 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_DAEMON_PORT=8080 \
     ATLAS_NPX_PATH=/usr/bin/npx \
     ATLAS_CLAUDE_PATH=/usr/local/bin/claude \
+    ATLAS_DUCKDB_PATH=/usr/local/bin/duckdb \
+    ATLAS_SQLITE3_PATH=/usr/bin/sqlite3 \
     LD_LIBRARY_PATH=/usr/lib:/usr/local/lib \
     DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0
 
