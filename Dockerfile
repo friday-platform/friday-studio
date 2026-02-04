@@ -13,18 +13,6 @@
 # DAEMON BUILD STAGES
 # ============================================================================
 
-# Stage 0: Build DuckDB for Alpine (musl)
-# DuckDB provides 2.5x faster CSV→SQLite conversion with type inference
-FROM alpine:3.23.3 AS duckdb-builder
-
-RUN apk add --no-cache g++ git make cmake ninja
-
-# Clone and build DuckDB CLI only (minimal build)
-ARG DUCKDB_VERSION=v1.4.4
-RUN git clone --depth 1 --branch ${DUCKDB_VERSION} https://github.com/duckdb/duckdb.git /duckdb
-WORKDIR /duckdb
-RUN GEN=ninja BUILD_SHELL=0 BUILD_UNITTESTS=0 make release
-
 # Stage 1: Build daemon binary
 FROM denoland/deno:alpine-2.6.7 AS daemon-builder
 
@@ -79,8 +67,8 @@ RUN apk add --no-cache nodejs npm bash github-cli sqlite-libs sqlite libstdc++ &
     rm -rf /tmp/docker-deps
 
 # Copy DuckDB binary for fast CSV→SQLite conversion (2.5x faster than JS)
-COPY --from=duckdb-builder /duckdb/build/release/duckdb /usr/local/bin/duckdb
-RUN chmod 755 /usr/local/bin/duckdb
+# Pre-built for Alpine/musl at https://github.com/tempestteam/duckdb
+COPY --from=ghcr.io/tempestteam/duckdb:1.4.4 /usr/local/bin/duckdb /usr/local/bin/duckdb
 
 # Create atlas user and group matching Kubernetes securityContext (65534:266)
 RUN addgroup -g 266 -S atlas && \
