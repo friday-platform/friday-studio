@@ -63,7 +63,11 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
   // with slack-mcp-server using XOXP token via npx.
   mcp: {
     slack: {
-      transport: { type: "stdio", command: "npx", args: ["-y", "slack-mcp-server@latest"] },
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@tempestteam/slack-mcp-server@latest"],
+      },
       env: {
         SLACK_MCP_XOXP_TOKEN: {
           from: "link",
@@ -71,11 +75,6 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
           key: "access_token",
         } satisfies LinkCredentialRef,
         SLACK_MCP_ADD_MESSAGE_TOOL: "true",
-        // Disable file-based cache to ensure fresh channel/user data on each invocation.
-        // Workaround for https://linear.app/tempestteam/issue/TEM-3664 - slack-mcp-server
-        // has no cache invalidation, so new channels are invisible until cache is deleted.
-        SLACK_MCP_CHANNELS_CACHE: "/dev/null",
-        SLACK_MCP_USERS_CACHE: "/dev/null",
       },
       client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
     },
