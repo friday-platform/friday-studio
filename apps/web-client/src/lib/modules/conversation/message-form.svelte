@@ -11,6 +11,7 @@
     message: string;
     textareaAdditionalSize?: number;
     status: "submitted" | "streaming" | "ready" | "error";
+    chatId?: string;
     onSubmit: (message: string) => void;
     onStop: () => void;
   };
@@ -21,6 +22,7 @@
     message = $bindable(""),
     textareaAdditionalSize = $bindable(1),
     status,
+    chatId,
     onSubmit,
     onStop,
   }: Props = $props();
@@ -111,7 +113,7 @@
           const files = e.currentTarget.files;
           if (files?.length) {
             trackEvent(GA4.FILE_ATTACH, { file_count: files.length });
-            handleFileDrop(appCtx, Array.from(files));
+            handleFileDrop(appCtx, Array.from(files), chatId);
           }
         }}
       />

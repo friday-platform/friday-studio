@@ -1,11 +1,13 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { z } from "zod";
 import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
+import { DataAnalystOutputSchema, dataAnalystAgent } from "./data-analyst/agent.ts";
 import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
+import { TableOutputSchema, tableAgent } from "./table.ts";
 import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
 
 /**
@@ -259,34 +261,15 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     packagePath: "@atlas/bundled-agents/fathom",
   }),
 
-  "data-analyst": {
-    id: "data-analyst",
-    name: "Data Analyst",
-    version: "1.0.0",
-    description:
-      "Analyzes tabular data from database artifacts and CSV files using SQL queries to answer questions, extract metrics, and produce actionable insights",
+  "data-analyst": fromAgent(dataAnalystAgent, DataAnalystOutputSchema, {
     capabilities: ["data-analysis", "sql", "reporting", "database", "analytics", "csv-analysis"],
-    examples: [
-      "Analyze Q4 revenue trends from this sales data",
-      "What are the top performing campaigns in this dataset?",
-      "Extract key metrics and patterns from this daily flash report",
-    ],
     requiredConfig: [],
     packagePath: "@atlas/bundled-agents/data-analyst",
-  },
+  }),
 
-  table: {
-    id: "table",
-    name: "Table Generator",
-    version: "1.0.0",
-    description:
-      "Generate structured tables with headers and rows from natural language descriptions",
+  table: fromAgent(tableAgent, TableOutputSchema, {
     capabilities: ["table-generation", "tables", "visualization"],
-    examples: [
-      "Create a table of the top 5 programming languages with columns for name, year created, and creator",
-      "Generate a comparison table of cloud providers with pricing and features",
-    ],
     requiredConfig: [],
     packagePath: "@atlas/bundled-agents/table",
-  },
+  }),
 };

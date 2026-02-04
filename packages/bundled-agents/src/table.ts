@@ -6,19 +6,22 @@
 
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { OutlineRef } from "@atlas/core";
 import { TableDataSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
+import { z } from "zod";
+import { OutlineRefSchema } from "./shared-schemas.ts";
 
-type TableAgentResult = {
-  artifactId: string;
-  type: string;
-  summary: string;
-  rowCount: number;
-  outlineRefs: OutlineRef[];
-};
+export const TableOutputSchema = z.object({
+  artifactId: z.string(),
+  type: z.string(),
+  summary: z.string(),
+  rowCount: z.number(),
+  outlineRefs: z.array(OutlineRefSchema),
+});
+
+type TableAgentResult = z.infer<typeof TableOutputSchema>;
 
 export const tableAgent = createAgent<string, TableAgentResult>({
   id: "table",

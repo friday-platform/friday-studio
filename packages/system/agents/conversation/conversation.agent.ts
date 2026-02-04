@@ -49,16 +49,18 @@ import { fetchUserIdentitySection } from "./user-identity.ts";
 const ROLE_SYSTEM = "system" as const;
 
 /**
- * Fetch all workspaces and their jobs from the daemon
+ * Fetch all workspaces, jobs, and signals from the daemon
  */
-async function fetchWorkspacesAndJobs(
+async function fetchWorkspaceContext(
   logger: Logger,
 ): Promise<{
   workspaces: Array<{ id: string; name: string; description?: string }>;
   jobsByWorkspace: Map<string, string[]>;
+  signalsByWorkspace: Map<string, string[]>;
 }> {
   const workspaces: Array<{ id: string; name: string; description?: string }> = [];
   const jobsByWorkspace = new Map<string, string[]>();
+  const signalsByWorkspace = new Map<string, string[]>();
 
   // Fetch workspaces
   const workspacesResult = await parseResult(client.workspace.index.$get());
@@ -66,10 +68,10 @@ async function fetchWorkspacesAndJobs(
     logger.error("Failed to fetch workspaces for prompt injection", {
       error: workspacesResult.error,
     });
-    return { workspaces, jobsByWorkspace };
+    return { workspaces, jobsByWorkspace, signalsByWorkspace };
   }
 
-  // For each workspace, fetch its jobs
+  // For each workspace, fetch its jobs and signals
   for (const ws of workspacesResult.data) {
     workspaces.push({ id: ws.id, name: ws.name, description: ws.description });
 
@@ -88,17 +90,35 @@ async function fetchWorkspacesAndJobs(
       });
       jobsByWorkspace.set(ws.id, []);
     }
+
+    // Fetch signals for this workspace
+    const signalsResult = await parseResult(
+      client.workspace[":workspaceId"].signals.$get({ param: { workspaceId: ws.id } }),
+    );
+    if (signalsResult.ok) {
+      signalsByWorkspace.set(
+        ws.id,
+        signalsResult.data.signals.map((s) => s.name),
+      );
+    } else {
+      logger.warn("Failed to fetch signals for workspace", {
+        workspaceId: ws.id,
+        error: signalsResult.error,
+      });
+      signalsByWorkspace.set(ws.id, []);
+    }
   }
 
-  return { workspaces, jobsByWorkspace };
+  return { workspaces, jobsByWorkspace, signalsByWorkspace };
 }
 
 /**
- * Format workspaces and jobs as structured prompt section
+ * Format workspaces, jobs, and signals as structured prompt section
  */
 function formatWorkspacesAndJobsSection(
   workspaces: Array<{ id: string; name: string; description?: string }>,
   jobsByWorkspace: Map<string, string[]>,
+  signalsByWorkspace: Map<string, string[]>,
 ): string {
   if (workspaces.length === 0) {
     return `<available_workspaces>
@@ -118,6 +138,11 @@ No workspaces currently available.
     const jobs = jobsByWorkspace.get(ws.id) || [];
     if (jobs.length > 0) {
       section += `Jobs: ${jobs.join(", ")}\n`;
+    }
+
+    const signals = signalsByWorkspace.get(ws.id) || [];
+    if (signals.length > 0) {
+      section += `Signals: ${signals.join(", ")}\n`;
     }
     section += "\n";
   }
@@ -419,15 +444,22 @@ export const conversationAgent = createAgent({
 
         // Parallel fetch of startup context
         logger.info("Fetching startup context for prompt injection");
-        const [{ workspaces, jobsByWorkspace }, linkSummary, userIdentitySection] =
-          await Promise.all([
-            fetchWorkspacesAndJobs(logger),
-            fetchLinkSummary(logger),
-            fetchUserIdentitySection(logger),
-          ]);
+        const [
+          { workspaces, jobsByWorkspace, signalsByWorkspace },
+          linkSummary,
+          userIdentitySection,
+        ] = await Promise.all([
+          fetchWorkspaceContext(logger),
+          fetchLinkSummary(logger),
+          fetchUserIdentitySection(logger),
+        ]);
 
         // Format sections from fetched data
-        const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
+        const workspacesSection = formatWorkspacesAndJobsSection(
+          workspaces,
+          jobsByWorkspace,
+          signalsByWorkspace,
+        );
         const agentsSection = formatAgentsSection(agentNames);
         const integrationsSection = linkSummary
           ? formatIntegrationsSection(linkSummary)

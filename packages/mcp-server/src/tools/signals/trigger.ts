@@ -19,7 +19,11 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         "Trigger a signal on a workspace to initiate automated job execution. This directly invokes the signal without using shell commands, providing better error handling and integration.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID to trigger the signal on"),
-        signalId: z.string().describe("Signal ID to trigger"),
+        signalId: z
+          .string()
+          .describe(
+            "Signal ID to trigger (obtain from atlas_workspace_describe or atlas_workspace_signals_list)",
+          ),
         payload: z
           .record(z.string(), z.unknown())
           .optional()

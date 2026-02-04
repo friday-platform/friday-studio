@@ -450,6 +450,7 @@
             isDisabled={Array.from(appCtx.stagedFiles.state.values()).some((f) =>
               isFileInProgress(f),
             )}
+            {chatId}
             bind:message
             bind:textareaAdditionalSize
             onSubmit={(message) => {

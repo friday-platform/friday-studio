@@ -215,11 +215,12 @@
         ondragover={(e) => e.preventDefault()}
         ondrop={(e) => {
           e.preventDefault();
-          handleFileDrop(appCtx, Array.from(e.dataTransfer?.files ?? []), undefined);
+          handleFileDrop(appCtx, Array.from(e.dataTransfer?.files ?? []), chatId);
         }}
       >
         <div class="interactive-container-int">
           <MessageForm
+            {chatId}
             isDisabled={Array.from(appCtx.stagedFiles.state.values()).some((f) =>
               isFileInProgress(f),
             )}

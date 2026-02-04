@@ -21,9 +21,9 @@ type QueryResult =
 
 /**
  * Validates, executes, and logs a read-only SQL query.
- * Rejects anything that isn't a SELECT statement.
+ * Uses SQLite's stmt.readonly property to reject any mutating statements.
  */
-function executeReadOnlyQuery(
+export function executeReadOnlyQuery(
   db: Database,
   sql: string,
   toolName: QueryExecution["tool"],
@@ -31,21 +31,23 @@ function executeReadOnlyQuery(
 ): QueryResult {
   const start = performance.now();
 
-  const normalized = sql.trim().toUpperCase();
-  if (!normalized.startsWith("SELECT")) {
-    queryLog.push({
-      sql,
-      success: false,
-      rowCount: null,
-      error: "Only SELECT queries are allowed",
-      durationMs: performance.now() - start,
-      tool: toolName,
-    });
-    return { success: false, error: "Only SELECT queries are allowed" };
-  }
-
   try {
-    const rows = db.prepare(sql).all<Record<string, unknown>>();
+    const stmt = db.prepare(sql);
+
+    if (!stmt.readonly) {
+      const error = "Only read-only queries are allowed";
+      queryLog.push({
+        sql,
+        success: false,
+        rowCount: null,
+        error,
+        durationMs: performance.now() - start,
+        tool: toolName,
+      });
+      return { success: false, error };
+    }
+
+    const rows = stmt.all<Record<string, unknown>>();
     queryLog.push({
       sql,
       success: true,
@@ -79,7 +81,7 @@ type SqlExecuteResult =
 export function createExecuteSqlTool(db: Database, logger: Logger, queryLog: QueryExecution[]) {
   return tool({
     description: "Execute a read-only SQL query against the loaded data tables",
-    inputSchema: z.object({ sql: z.string().describe("SQL query to execute (SELECT only)") }),
+    inputSchema: z.object({ sql: z.string().describe("Read-only SQL query to execute") }),
     execute: ({ sql }): SqlExecuteResult => {
       const result = executeReadOnlyQuery(db, sql, "execute_sql", queryLog);
       if (!result.success) {
