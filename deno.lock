@@ -126,7 +126,7 @@
     "npm:jsonrepair@^3.13.2": "3.13.2",
     "npm:knip@5.83.0": "5.83.0_@types+node@25.2.0_typescript@5.9.3",
     "npm:lint-staged@^16.2.7": "16.2.7",
-    "npm:minimatch@^10.1.1": "10.1.1",
+    "npm:minimatch@^10.1.2": "10.1.2",
     "npm:nanoid@5.1.6": "5.1.6",
     "npm:nanoid@^5.1.6": "5.1.6",
     "npm:oauth4webapi@3.8.3": "3.8.3",
@@ -1046,8 +1046,8 @@
     "@isaacs/balanced-match@4.0.1": {
       "integrity": "sha512-yzMTt9lEb8Gv7zRioUilSglI0c0smZ9k5D65677DLWLtWJaXIS3CqcGyUFByYKlnUj6TkjLVs54fBl6+TiGQDQ=="
     },
-    "@isaacs/brace-expansion@5.0.0": {
-      "integrity": "sha512-ZT55BDLV0yv0RBm2czMiZ+SqCGO7AvmOM3G/w2xhVPH+te0aKgFjmBvGlL1dH+ql2tgGO3MVrbb3jCKyvpgnxA==",
+    "@isaacs/brace-expansion@5.0.1": {
+      "integrity": "sha512-WMz71T1JS624nWj2n2fnYAuPovhv7EUhk69R6i9dsVyzxt5eM3bjwvgk9L+APE1TRscGysAVMANkB0jh0LQZrQ==",
       "dependencies": [
         "@isaacs/balanced-match"
       ]
@@ -3969,7 +3969,7 @@
       "dependencies": [
         "foreground-child",
         "jackspeak@4.1.1",
-        "minimatch@10.1.1",
+        "minimatch@10.1.2",
         "minipass",
         "package-json-from-dist",
         "path-scurry@2.0.1"
@@ -4486,8 +4486,8 @@
     "mimic-response@3.1.0": {
       "integrity": "sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ=="
     },
-    "minimatch@10.1.1": {
-      "integrity": "sha512-enIvLvRAFZYXJzkCYG5RKmPfrFArdLv+R+lbQ53BmIMLIry74bjKzX6iHAm8WYamJkhSSEabrWN5D97XnKObjQ==",
+    "minimatch@10.1.2": {
+      "integrity": "sha512-fu656aJ0n2kcXwsnwnv9g24tkU5uSmOlTjd6WyyaKm2Z+h1qmY6bAjrcaIxF/BslFqbZ8UBtbJi7KgQOZD2PTw==",
       "dependencies": [
         "@isaacs/brace-expansion"
       ]
@@ -6235,7 +6235,7 @@
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
             "npm:ai@^5.0.125",
             "npm:fast-glob@^3.3.3",
-            "npm:minimatch@^10.1.1",
+            "npm:minimatch@^10.1.2",
             "npm:papaparse@^5.5.3",
             "npm:turndown@7.2.2",
             "npm:vitest@^4.0.18",
