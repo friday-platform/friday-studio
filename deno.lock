@@ -48,7 +48,7 @@
     "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.11.7_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.11.7_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.11.7_zod@4.3.6",
-    "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0": "4.7.0_prettier@3.8.1",
+    "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1": "4.7.1_prettier@3.8.1",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.6.0__@types+react@19.2.11__react@19.2.4_@types+react@19.2.11_react@19.2.4",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
     "npm:@jsr/std__assert@^1.0.14": "1.0.18",
@@ -920,8 +920,8 @@
     "@humanwhocodes/retry@0.4.3": {
       "integrity": "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="
     },
-    "@ianvs/prettier-plugin-sort-imports@4.7.0_prettier@3.8.1": {
-      "integrity": "sha512-soa2bPUJAFruLL4z/CnMfSEKGznm5ebz29fIa9PxYtu8HHyLKNE1NXAs6dylfw1jn/ilEIfO2oLLN6uAafb7DA==",
+    "@ianvs/prettier-plugin-sort-imports@4.7.1_prettier@3.8.1": {
+      "integrity": "sha512-jmTNYGlg95tlsoG3JLCcuC4BrFELJtLirLAkQW/71lXSyOhVt/Xj7xWbbGcuVbNq1gwWgSyMrPjJc9Z30hynVw==",
       "dependencies": [
         "@babel/generator",
         "@babel/parser@7.29.0",
@@ -5937,7 +5937,7 @@
           "dependencies": [
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^9.39.2",
-            "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
+            "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sentry/sveltekit@^10.38.0",
             "npm:@sveltejs/adapter-node@^5.5.2",
@@ -6025,7 +6025,7 @@
             "npm:@ai-sdk/svelte@^3.0.126",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^9.39.2",
-            "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
+            "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@lezer/common@^1.5.1",
             "npm:@lezer/markdown@^1.6.3",
