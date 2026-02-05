@@ -1,6 +1,5 @@
 <script lang="ts">
   import ChatSession from "$lib/modules/conversation/chat-session.svelte";
-  import NewChatSession from "$lib/modules/conversation/new-chat-session.svelte";
   import type { PageData } from "./$types";
 
   /**
@@ -14,18 +13,10 @@
   const { data }: { data: PageData } = $props();
 </script>
 
-{#if data.isNew}
-  <NewChatSession
-    chatId={data.chatId}
-    title="What would you like to work on today?"
-    initialMessages={data.messages}
-    artifacts={data.artifacts}
-  />
-{:else}
-  <ChatSession
-    chatId={data.chatId}
-    title={data.title}
-    initialMessages={data.messages}
-    artifacts={data.artifacts}
-  />
-{/if}
+<ChatSession
+  chatId={data.chatId}
+  isNew={data.isNew}
+  title={data.title ?? "What would you like to work on today?"}
+  initialMessages={data.messages}
+  artifacts={data.artifacts}
+/>

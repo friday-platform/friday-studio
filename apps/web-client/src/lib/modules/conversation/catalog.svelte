@@ -174,7 +174,6 @@
 
 <style>
   section {
-    block-size: 0;
     overflow: visible;
   }
 

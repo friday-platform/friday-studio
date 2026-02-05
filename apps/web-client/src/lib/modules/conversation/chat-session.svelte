@@ -11,6 +11,7 @@
   import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
   import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
   import WorkspacePlan from "$lib/modules/artifacts/workspace-plan.svelte";
+  import Catalog from "$lib/modules/conversation/catalog.svelte";
   import MessageForm from "$lib/modules/conversation/message-form.svelte";
   import Outline from "$lib/modules/conversation/outline.svelte";
   import ArtifactAttached from "$lib/modules/messages/artifact-attached.svelte";
@@ -48,9 +49,10 @@
     initialMessages: AtlasUIMessage[];
     /** Pre-fetched artifacts map */
     artifacts: Map<string, ArtifactWithContents>;
+    isNew: boolean;
   }
 
-  const { chatId, title, initialMessages, artifacts }: Props = $props();
+  const { chatId, title, initialMessages, artifacts, isNew }: Props = $props();
 
   // Expose artifacts map to child components via context
   const ARTIFACTS_KEY = Symbol.for("artifacts");
@@ -134,8 +136,6 @@
         // Refresh sidebar on every successful message (chat's updatedAt changes)
         if (init?.method === "POST" && response.ok) {
           queryClient.invalidateQueries({ queryKey: ["chats"], refetchType: "all" });
-          // Update URL for new chats (only once)
-          // TODO: not sure we need this anymore
           if (!hasUpdatedUrl) {
             hasUpdatedUrl = true;
             goto(`/chat/${chatId}`, { replaceState: true });
@@ -155,6 +155,12 @@
   const chat = $derived(
     new Chat<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport }),
   );
+
+  $effect(() => {
+    if (isNew) {
+      hasUpdatedUrl = false;
+    }
+  });
 
   // Track streaming lifecycle for analytics
   $effect(() => {
@@ -206,11 +212,12 @@
 
   async function reconnect() {
     // Resume any active stream for existing chats (initial load)
-
-    try {
-      await chat.resumeStream();
-    } catch {
-      // No active stream to resume - that's expected
+    if (!isNew) {
+      try {
+        await chat.resumeStream();
+      } catch {
+        // No active stream to resume - that's expected
+      }
     }
 
     // Handle OAuth return flow
@@ -278,6 +285,8 @@
 
   // Handle Scrolling
   function handleScroll() {
+    if (isNew) return;
+
     userHasScrolled = true;
 
     if (!scrollContainer) return;
@@ -297,8 +306,9 @@
 
   // Scroll to the bottom of the container
   function continuouslyScrollToBottom() {
-    if (!scrollContainer) return;
-    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (scrollContainer && !isNew) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
     animationFrameId = requestAnimationFrame(continuouslyScrollToBottom);
   }
 
@@ -339,15 +349,13 @@
   let showDetails = new SvelteMap<string, boolean>();
 </script>
 
-<div class="chat" class:visible={showContents}>
+<div class="chat" class:visible={showContents} class:has-messages={chat.messages.length > 0}>
   <div class="main">
-    <div
-      class="messages"
-      class:has-messages={(chat.messages?.length ?? 0) > 0}
-      bind:this={scrollContainer}
-      onscroll={handleScroll}
-    >
-      <Breadcrumbs {title} />
+    <!-- class:has-messages={chat.messages.length > 0} -->
+    <div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
+      {#if chat.messages.length > 0}
+        <Breadcrumbs {title} />
+      {/if}
 
       <div
         class="messages-container"
@@ -357,6 +365,12 @@
         )}
       >
         <div class="messages-inner">
+          {#if chat.messages.length === 0}
+            <div class="first-message">
+              <p>{title}</p>
+            </div>
+          {/if}
+
           {#each chat.messages ?? [] as messageContainer, index ((messageContainer.id, index))}
             {@const messages = messageContainer.parts
               .map((message) => formatMessage(messageContainer, message))
@@ -507,6 +521,20 @@
         </div>
       </div>
 
+      {#if chat.messages.length === 0}
+        <div class="catalog">
+          <Catalog
+            onclick={(item) => {
+              message = item.prompt;
+
+              if (scrollContainer) {
+                scrollContainer.scrollTop = 0;
+              }
+            }}
+          />
+        </div>
+      {/if}
+
       <ChatBufferBlur />
     </div>
   </div>
@@ -536,6 +564,15 @@
     position: relative;
   }
 
+  .first-message {
+    p {
+      font-size: var(--font-size-7);
+      font-weight: var(--font-weight-5);
+      padding-block: var(--size-16) 0;
+      text-align: center;
+    }
+  }
+
   .messages {
     block-size: 100%;
     display: flex;
@@ -544,22 +581,32 @@
     padding-block: 0 var(--size-16);
     position: relative;
     scrollbar-width: thin;
+    scroll-behavior: smooth;
   }
 
   .spacer {
-    flex: 1;
+    flex: 0;
+
+    .has-messages & {
+      flex: 1;
+    }
   }
 
   .messages-container {
     display: grid;
     grid-template-columns: 1fr 0;
-    padding-block: var(--size-10) calc(var(--size-16) + var(--additional-padding, 0));
+    padding-block: var(--size-10) var(--size-4);
     transition:
       grid-template-columns 450ms ease-in-out,
       gap 450ms ease-in-out;
 
     &.has-outline {
       grid-template-columns: 1fr var(--size-56);
+    }
+
+    /* new */
+    .has-messages & {
+      padding-block: var(--size-10) calc(var(--size-32) + var(--additional-padding, 0));
     }
   }
 
@@ -594,13 +641,27 @@
   }
 
   .interactive-container {
-    --local__translate-y: var(--size-4);
-    inset-block-end: var(--size-16);
-    inset-inline-start: calc(var(--size-56));
-    inset-inline-end: var(--size-1-5);
-    position: fixed;
+    inline-size: 100%;
+    inset-block-end: 0;
+    margin-inline: auto;
+    max-inline-size: var(--size-160);
+    padding-inline: var(--size-8);
+    position: sticky;
     transition: all 450ms ease-in-out;
     z-index: var(--layer-2);
+
+    .has-messages & {
+      --local__translate-y: var(--size-4);
+
+      inline-size: unset;
+      inset-block-end: var(--size-16);
+      inset-inline-end: var(--size-1-5);
+      inset-inline-start: calc(var(--size-56) + var(--size-1-5));
+      margin-inline: unset;
+      max-inline-size: unset;
+      padding-inline: unset;
+      position: fixed;
+    }
 
     &.has-outline {
       inset-inline-end: calc(var(--size-56));
@@ -611,5 +672,11 @@
       max-inline-size: var(--size-160);
       padding-inline: var(--size-8);
     }
+  }
+
+  .catalog {
+    padding-block: var(--size-16) 0;
+    position: relative;
+    z-index: var(--layer-2);
   }
 </style>

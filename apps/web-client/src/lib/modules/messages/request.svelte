@@ -23,7 +23,7 @@
 
 <style>
   .request {
-    background-color: var(--color-surface-2);
+    background-color: var(--accent-1, var(--color-surface-2));
     border-radius: var(--radius-3);
     inline-size: fit-content;
     margin-inline-end: unset;
