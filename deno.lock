@@ -66,7 +66,7 @@
     "npm:@lezer/common@^1.5.1": "1.5.1",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.49.1__acorn@8.15.0",
-    "npm:@modelcontextprotocol/sdk@^1.25.3": "1.25.3_zod@4.3.6_hono@4.11.7_ajv@8.17.1_express@5.2.1",
+    "npm:@modelcontextprotocol/sdk@^1.26.0": "1.26.0_zod@4.3.6_hono@4.11.7_ajv@8.17.1_express@5.2.1",
     "npm:@octokit/auth-app@^7.2.0": "7.2.2",
     "npm:@octokit/auth-app@^8.2.0": "8.2.0",
     "npm:@octokit/auth-oauth-app@^8.1.3": "8.1.4",
@@ -1225,8 +1225,8 @@
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
-    "@modelcontextprotocol/sdk@1.25.3_zod@4.3.6_hono@4.11.7_ajv@8.17.1_express@5.2.1": {
-      "integrity": "sha512-vsAMBMERybvYgKbg/l4L1rhS7VXV1c0CtyJg72vwxONVX0l4ZfKVAnZEWTQixJGTzKnELjQ59e4NbdFDALRiAQ==",
+    "@modelcontextprotocol/sdk@1.26.0_zod@4.3.6_hono@4.11.7_ajv@8.17.1_express@5.2.1": {
+      "integrity": "sha512-Y5RmPncpiDtTXDbLKswIJzTqu2hyBKxTNsgKqKclDbhIgg1wgtf1fRuvxgTnRfcnxtvvgbIEcqUOzZrJ6iSReg==",
       "dependencies": [
         "@hono/node-server",
         "ajv@8.17.1",
@@ -1237,7 +1237,8 @@
         "eventsource",
         "eventsource-parser",
         "express",
-        "express-rate-limit",
+        "express-rate-limit@8.2.1_express@5.2.1",
+        "hono",
         "jose",
         "json-schema-typed",
         "pkce-challenge",
@@ -2369,7 +2370,7 @@
         "eventsource",
         "eventsource-parser",
         "express",
-        "express-rate-limit",
+        "express-rate-limit@7.5.1_express@5.2.1",
         "pkce-challenge",
         "raw-body",
         "zod"
@@ -3655,6 +3656,13 @@
         "express"
       ]
     },
+    "express-rate-limit@8.2.1_express@5.2.1": {
+      "integrity": "sha512-PCZEIEIxqwhzw4KF0n7QF4QqruVTcF73O5kFKUnGOyjbCCgizBBiFaYpd/fnBLUMPw/BWw9OsiN7GgrNYr7j6g==",
+      "dependencies": [
+        "express",
+        "ip-address"
+      ]
+    },
     "express@5.2.1": {
       "integrity": "sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==",
       "dependencies": [
@@ -4133,6 +4141,9 @@
       "optionalPeers": [
         "@types/react"
       ]
+    },
+    "ip-address@10.0.1": {
+      "integrity": "sha512-NWv9YLW4PoW2B7xtzaS3NCot75m6nK7Icdv0o3lfMceJVRfSoQwqD4wEH5rLwoKJwUiZ/rfpiVBhnaF0FK4HoA=="
     },
     "ipaddr.js@1.9.1": {
       "integrity": "sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g=="
@@ -6292,7 +6303,7 @@
           "dependencies": [
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@modelcontextprotocol/sdk@^1.25.3",
+            "npm:@modelcontextprotocol/sdk@^1.26.0",
             "npm:ai@^5.0.125",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.18",
