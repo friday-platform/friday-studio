@@ -15,6 +15,7 @@ import { buildSchemaContext, type LoadedTableInfo } from "./schema.ts";
 import {
   createExecuteSqlTool,
   createSaveResultsTool,
+  type DbAttachment,
   type QueryExecution,
   QueryExecutionSchema,
   type SavedResults,
@@ -24,11 +25,12 @@ import {
 const ARTIFACT_ID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 /**
- * Extracts all UUID-formatted artifact IDs from prompt.
- * Returns empty array if none found.
+ * Extracts unique UUID-formatted artifact IDs from prompt.
+ * Returns empty array if none found. Deduplicates to avoid attaching the same database twice.
  */
 function extractArtifactIds(prompt: string): string[] {
-  return prompt.match(ARTIFACT_ID_REGEX) ?? [];
+  const matches = prompt.match(ARTIFACT_ID_REGEX) ?? [];
+  return [...new Set(matches.map((id) => id.toLowerCase()))];
 }
 
 /**
@@ -106,6 +108,8 @@ function escapeSqlitePath(path: string): string {
 interface LoadArtifactsResult {
   /** Loaded table information */
   tables: LoadedTableInfo[];
+  /** Database attachments for DuckDB CLI queries */
+  databases: DbAttachment[];
   /** Cleanup function to remove temp files (call when done with analysis) */
   cleanup: () => Promise<void>;
 }
@@ -125,6 +129,7 @@ async function loadArtifactsIntoDatabase(
   logger: Logger,
 ): Promise<LoadArtifactsResult> {
   const tables: LoadedTableInfo[] = [];
+  const databases: DbAttachment[] = [];
   const tempFiles: string[] = [];
 
   for (const [i, artifact] of artifacts.entries()) {
@@ -162,13 +167,16 @@ async function loadArtifactsIntoDatabase(
       });
     }
 
-    // Attach the database file
+    // Collect database attachment for DuckDB CLI queries
+    databases.push({ alias, path: attachPath });
+
+    // Attach the database file to SQLite for sample data reads
     db.exec(`ATTACH DATABASE '${escapeSqlitePath(attachPath)}' AS "${alias}"`);
 
     // Full table name is alias.tableName
     const fullTableName = `${alias}."${schema.tableName}"`;
 
-    // Fetch sample data for LLM context
+    // Fetch sample data for LLM context (fast SQLite read)
     const sampleData = db
       .prepare(`SELECT * FROM ${fullTableName} LIMIT 3`)
       .all<Record<string, unknown>>();
@@ -198,23 +206,28 @@ async function loadArtifactsIntoDatabase(
     }
   };
 
-  return { tables, cleanup };
+  return { tables, databases, cleanup };
 }
 
 /**
  * Runs the LLM analysis loop with SQL tools.
  * Uses generateText with tool loop, step limit, and abort handling.
+ * Queries are executed via DuckDB CLI for analytical performance.
  */
 async function runAnalysisLoop(
-  db: Database,
+  databases: DbAttachment[],
   schemaContext: string,
   question: string,
   logger: Logger,
   queryLog: QueryExecution[],
   abortSignal?: AbortSignal,
 ): Promise<{ summary: string; savedResults: SavedResults | null }> {
-  const executeSqlTool = createExecuteSqlTool(db, logger, queryLog);
-  const [saveResultsTool, getSavedResults] = createSaveResultsTool(db, queryLog);
+  const executeSqlTool = createExecuteSqlTool(databases, logger, queryLog, abortSignal);
+  const [saveResultsTool, getSavedResults] = createSaveResultsTool(
+    databases,
+    queryLog,
+    abortSignal,
+  );
   const analysisPrompt = buildAnalysisPrompt(schemaContext);
 
   const result = await generateText({
@@ -318,6 +331,8 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
     ],
   },
   handler: async (prompt, { session, logger, abortSignal, stream }): Promise<DataAnalystResult> => {
+    const startTime = performance.now();
+
     // 1. Parse prompt
     const artifactIds = extractArtifactIds(prompt);
     const question = extractQuestion(prompt);
@@ -355,13 +370,13 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
       // 5. Build schema context
       const schemaContext = buildSchemaContext(loadResult.tables);
 
-      // 6. Run analysis
+      // 6. Run analysis (DuckDB CLI for analytical queries)
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Data Analyst", content: "Analyzing data..." },
       });
       const { summary, savedResults } = await runAnalysisLoop(
-        db,
+        loadResult.databases,
         schemaContext,
         question,
         logger,
@@ -387,6 +402,20 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
           artifactId: summaryRef.id,
           artifactLabel: "View Analysis",
         },
+      });
+
+      // 9. Log timing breakdown
+      const totalDurationMs = performance.now() - startTime;
+      const queryDurationMs = queryLog.reduce((sum, q) => sum + q.durationMs, 0);
+      const successCount = queryLog.filter((q) => q.success).length;
+      const failCount = queryLog.filter((q) => !q.success).length;
+      logger.info("Analysis complete", {
+        totalDurationMs: Math.round(totalDurationMs),
+        queryDurationMs: Math.round(queryDurationMs),
+        llmDurationMs: Math.round(totalDurationMs - queryDurationMs),
+        queryCount: queryLog.length,
+        successCount,
+        failCount,
       });
 
       return { summary, artifactRefs, queries: queryLog };
