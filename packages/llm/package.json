@@ -7,7 +7,7 @@
   "dependencies": {
     "@ai-sdk/groq": "^2.0.34",
     "@atlas/logger": "workspace:*",
-    "@ai-sdk/anthropic": "^2.0.58",
+    "@ai-sdk/anthropic": "^2.0.59",
     "@ai-sdk/google": "^2.0.52",
     "@ai-sdk/openai": "^2.0.89",
     "@ai-sdk/provider": "^2.0.1",
