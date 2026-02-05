@@ -5,7 +5,12 @@
  * Guards and actions are executed via dynamic import from code strings.
  */
 
-import { type FailInput, FailInputSchema } from "@atlas/agent-sdk";
+import {
+  type AgentResult as AgentSDKExecutionResult,
+  type FailInput,
+  FailInputSchema,
+} from "@atlas/agent-sdk";
+import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -15,18 +20,19 @@ import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
 import { expandArtifactRefsInDocuments } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
-import { hasDefinedSchema, isRecord } from "./schema-utils.ts";
+import { hasDefinedSchema } from "./schema-utils.ts";
 import * as serializer from "./serializer.ts";
 import type {
   Action,
   AgentAction,
+  AgentResult,
   Context,
   Document,
   EmittedEvent,
   FSMDefinition,
+  FSMLLMOutput,
   LLMActionTrace,
   LLMProvider,
-  LLMResponse,
   OutputValidator,
   Signal,
   SignalWithContext,
@@ -36,51 +42,27 @@ import { WorkerExecutor } from "./worker-executor.ts";
 
 const FSMStateSchema = z.object({ state: z.string() });
 
-/**
- * Search an LLM response for a `complete` tool call's arguments.
- *
- * In multi-step scenarios the LLM calls MCP tools before `complete`, so
- * `response.calledTool` (derived from the first tool call) won't be `complete`.
- * This searches `data.toolCalls` for the `complete` entry, falling back to
- * `calledTool` for single-step cases where `complete` is the only call.
- */
-function findCompleteToolArgs(response: LLMResponse): Record<string, unknown> | undefined {
-  // Search assembled tool calls first (handles multi-step)
-  const completeCall = response.data?.toolCalls?.find(
-    (tc) => "toolName" in tc && tc.toolName === "complete",
-  );
-  if (completeCall && "input" in completeCall && isRecord(completeCall.input)) {
-    return completeCall.input;
-  }
+type LLMResult = AgentResult<string, FSMLLMOutput>;
 
-  // Fall back to calledTool (single-step / mock compatibility)
-  if (response.calledTool?.name === "complete" && isRecord(response.calledTool.args)) {
-    return response.calledTool.args;
+/** Extract `complete` tool args from LLM result, or structured data if already extracted */
+function findCompleteToolArgs(result: LLMResult): Record<string, unknown> | undefined {
+  if (!result.ok) return undefined;
+
+  const fromToolCalls = extractToolCallInput(result.toolCalls ?? [], "complete");
+  if (fromToolCalls) return fromToolCalls;
+
+  // Fallback: non-response data means structured output was pre-extracted
+  if (result.data && !("response" in result.data)) {
+    return result.data;
   }
 
   return undefined;
 }
 
-/**
- * Search an LLM response for a `failStep` tool call's arguments.
- *
- * Mirrors `findCompleteToolArgs` — searches `data.toolCalls` first (handles
- * multi-tool scenarios where `calledTool` points to the first tool, not
- * `failStep`), then falls back to `calledTool`.
- */
-function findFailStepToolArgs(response: LLMResponse): Record<string, unknown> | undefined {
-  const failCall = response.data?.toolCalls?.find(
-    (tc) => "toolName" in tc && tc.toolName === "failStep",
-  );
-  if (failCall && "input" in failCall && isRecord(failCall.input)) {
-    return failCall.input;
-  }
-
-  if (response.calledTool?.name === "failStep" && isRecord(response.calledTool.args)) {
-    return response.calledTool.args;
-  }
-
-  return undefined;
+/** Extract `failStep` tool args from LLM result */
+function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | undefined {
+  if (!result.ok) return undefined;
+  return extractToolCallInput(result.toolCalls ?? [], "failStep");
 }
 
 /**
@@ -145,38 +127,28 @@ function validateAndFixFunctionSyntax(code: string, functionName: string): strin
 }
 
 /**
- * Build LLMActionTrace from an LLM response for hallucination detection.
+ * Build LLMActionTrace from an LLM result envelope for hallucination detection.
  * Passes through AI SDK tool types directly without transformation.
  */
 export function buildLLMActionTrace(
-  response: LLMResponse,
+  result: LLMResult,
   model: string,
   prompt: string,
 ): LLMActionTrace {
+  // Extract content from result - use response field if present, otherwise stringify data
+  const content = result.ok
+    ? "response" in result.data
+      ? String(result.data.response)
+      : JSON.stringify(result.data)
+    : result.error.reason;
+
   return {
-    content: response.content,
-    toolCalls: response.data?.toolCalls,
-    toolResults: response.data?.toolResults,
+    content,
+    toolCalls: result.ok ? result.toolCalls : undefined,
+    toolResults: result.ok ? result.toolResults : undefined,
     model,
     prompt,
   };
-}
-
-/**
- * Agent execution result interface
- * Matches AgentResult from @atlas/agent-sdk
- */
-export interface AgentResult {
-  agentId: string;
-  task: string;
-  input: unknown;
-  output: unknown;
-  reasoning?: string;
-  error?: string;
-  duration: number;
-  timestamp?: string;
-  /** Artifact references created by this agent */
-  artifactRefs?: Array<{ id: string; type: string; summary: string }>;
 }
 
 /**
@@ -191,7 +163,7 @@ export type AgentExecutor = (
   action: AgentAction,
   context: Context,
   signal: SignalWithContext,
-) => Promise<AgentResult>;
+) => Promise<AgentSDKExecutionResult>;
 
 export interface FSMEngineOptions {
   llmProvider?: LLMProvider;
@@ -781,7 +753,11 @@ export class FSMEngine {
               "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
           }
 
-          let response = await this.options.llmProvider.call({
+          // Build agentId for the LLM action
+          const llmAgentId = `fsm:${this.definition.id}:${action.outputTo ?? "llm"}`;
+
+          let result = await this.options.llmProvider.call({
+            agentId: llmAgentId,
             model: action.model,
             prompt: contextPrompt,
             tools,
@@ -789,25 +765,30 @@ export class FSMEngine {
             stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
           });
 
+          // Check for adapter-level errors (network, API, etc.)
+          if (!result.ok) {
+            throw new Error(`LLM call failed: ${result.error.reason}`);
+          }
+
           // Emit tool events for UI visibility
-          this.emitToolEvents(response, action, sig, currentState);
+          this.emitToolEvents(result, action, sig, currentState);
 
           // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
-          const failArgs = findFailStepToolArgs(response);
+          const failArgs = findFailStepToolArgs(result);
           if (failArgs) {
             throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
           }
 
           // Check if LLM called complete tool - capture the structured output.
-          // Search data.toolCalls (not calledTool) because in multi-step scenarios
-          // calledTool is the first tool call, but complete is typically the last.
+          // The adapter already extracts complete args into result.data, but we
+          // also check toolCalls for backward compatibility with mock providers.
           if (completeToolInjected) {
-            capturedCompleteOutput = findCompleteToolArgs(response);
+            capturedCompleteOutput = findCompleteToolArgs(result);
           }
 
           // Validate output if validator provided
           if (this.options.validateOutput) {
-            const trace = buildLLMActionTrace(response, action.model, contextPrompt);
+            const trace = buildLLMActionTrace(result, action.model, contextPrompt);
 
             const validation = await this.options.validateOutput(trace);
             // Note: If validator throws, error propagates and aborts the action (fail-closed)
@@ -826,7 +807,8 @@ export class FSMEngine {
                 }\n</validation-feedback>\n` +
                 `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
 
-              response = await this.options.llmProvider.call({
+              result = await this.options.llmProvider.call({
+                agentId: llmAgentId,
                 model: action.model,
                 prompt: retryPrompt,
                 tools,
@@ -834,21 +816,26 @@ export class FSMEngine {
                 stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
               });
 
+              // Check for adapter-level errors on retry
+              if (!result.ok) {
+                throw new Error(`LLM call failed on retry: ${result.error.reason}`);
+              }
+
               // Emit tool events for UI visibility (retry call)
-              this.emitToolEvents(response, action, sig, currentState);
+              this.emitToolEvents(result, action, sig, currentState);
 
               // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
-              const retryFailArgs = findFailStepToolArgs(response);
+              const retryFailArgs = findFailStepToolArgs(result);
               if (retryFailArgs) {
                 throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
               }
 
               // Check if LLM called complete tool on retry
               if (completeToolInjected) {
-                capturedCompleteOutput = findCompleteToolArgs(response);
+                capturedCompleteOutput = findCompleteToolArgs(result);
               }
 
-              const retryTrace = buildLLMActionTrace(response, action.model, retryPrompt);
+              const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
               const retryValidation = await this.options.validateOutput(retryTrace);
 
               if (!retryValidation.valid) {
@@ -874,10 +861,9 @@ export class FSMEngine {
           if (action.outputTo) {
             const outputDoc = documents.get(action.outputTo);
             const newDocType = action.outputType ?? "LLMResult";
-            const dataToStore = capturedCompleteOutput ?? {
-              ...response.data,
-              content: response.content,
-            };
+            // Use captured complete output if available, otherwise fall back to result.data
+            // result.data is { response: string } for text output, or structured for complete tool
+            const dataToStore = capturedCompleteOutput ?? result.data;
 
             if (capturedCompleteOutput) {
               logger.debug("Storing structured output from complete tool", {
@@ -936,16 +922,19 @@ export class FSMEngine {
           };
 
           // Execute agent via callback, passing full action object for prompt access
+          // Agent returns AgentResult envelope directly
           const result = await this.options.agentExecutor(action, agentContext, sig);
 
-          if (result.error) {
-            throw new Error(result.error);
+          // Check envelope's ok discriminant for error
+          if (!result.ok) {
+            throw new Error(result.error.reason);
           }
 
           // Store result in document if outputTo specified
-          if (action.outputTo && result.output) {
-            const parsed = z.record(z.string(), z.unknown()).safeParse(result.output);
-            const baseData = parsed.success ? parsed.data : { value: result.output };
+          // result.data is the structured output from the agent
+          if (action.outputTo && result.data) {
+            const parsed = z.record(z.string(), z.unknown()).safeParse(result.data);
+            const baseData = parsed.success ? parsed.data : { value: result.data };
 
             // Include artifactRefs so subsequent steps can access artifact references
             const data =
@@ -964,7 +953,7 @@ export class FSMEngine {
           logger.debug("Agent action completed", {
             agentId: action.agentId,
             outputTo: action.outputTo,
-            duration: result.duration,
+            durationMs: result.durationMs,
           });
           break;
         }
@@ -1036,20 +1025,20 @@ export class FSMEngine {
   }
 
   /**
-   * Emit tool call and tool result events from an LLM response.
+   * Emit tool call and tool result events from an LLM result envelope.
    * Called after LLM calls to stream tool activity for UI visibility.
-   * @param response - The LLM response containing toolCalls/toolResults
+   * @param result - The LLM result envelope containing toolCalls/toolResults
    * @param action - The LLM action being executed (used for actionId correlation)
    * @param sig - Signal with context containing onEvent callback
    * @param currentState - Current FSM state for event correlation
    */
   private emitToolEvents(
-    response: LLMResponse,
+    result: LLMResult,
     action: Action,
     sig: SignalWithContext,
     currentState: string,
   ): void {
-    if (!sig._context?.onEvent) return;
+    if (!sig._context?.onEvent || !result.ok) return;
 
     const actionId = this.getActionId(action);
     const timestamp = Date.now();
@@ -1063,15 +1052,15 @@ export class FSMEngine {
     };
 
     // Emit tool call events
-    if (response.data?.toolCalls) {
-      for (const toolCall of response.data.toolCalls) {
+    if (result.toolCalls) {
+      for (const toolCall of result.toolCalls) {
         sig._context.onEvent({ type: "data-fsm-tool-call", data: { ...baseData, toolCall } });
       }
     }
 
     // Emit tool result events
-    if (response.data?.toolResults) {
-      for (const toolResult of response.data.toolResults) {
+    if (result.toolResults) {
+      for (const toolResult of result.toolResults) {
         sig._context.onEvent({ type: "data-fsm-tool-result", data: { ...baseData, toolResult } });
       }
     }

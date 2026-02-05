@@ -150,21 +150,19 @@ evalite<DataAnalystInput, DataAnalystOutput, string>("Data Analyst Agent - Core 
   task: async (input) => {
     const { context } = adapter.createContext();
 
-    try {
-      // dataAnalystAgent.execute returns DataAnalystResult directly, throws on error
-      const result = await dataAnalystAgent.execute(input.prompt, context);
+    const result = await dataAnalystAgent.execute(input.prompt, context);
 
-      // Extract row count from summary if available (for deterministic scoring)
-      // Look for patterns like "2 rows" or mentions of row counts
-      const rowCountMatch = result.summary.match(/(\d+)\s*rows?/i);
-      const rowCount = rowCountMatch?.[1] ? parseInt(rowCountMatch[1], 10) : undefined;
-
-      return { summary: result.summary, rowCount };
-    } catch (error) {
-      // Handler threw - return error in format FailureScorer expects
-      const message = error instanceof Error ? error.message : String(error);
-      return { summary: `Error: ${message}`, rowCount: 0 };
+    if (!result.ok) {
+      // Return error in format FailureScorer expects
+      return { summary: `Error: ${result.error.reason}`, rowCount: 0 };
     }
+
+    // Extract row count from summary if available (for deterministic scoring)
+    // Look for patterns like "2 rows" or mentions of row counts
+    const rowCountMatch = result.data.summary.match(/(\d+)\s*rows?/i);
+    const rowCount = rowCountMatch?.[1] ? parseInt(rowCountMatch[1], 10) : undefined;
+
+    return { summary: result.data.summary, rowCount };
   },
 
   scorers: [LLMJudge, RowCountScorer, FailureScorer],

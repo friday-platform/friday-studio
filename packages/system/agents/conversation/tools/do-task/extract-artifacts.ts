@@ -1,54 +1,55 @@
-import { type ArtifactRef, ArtifactRefSchema } from "@atlas/agent-sdk";
+import { AgentResultSchema, type ArtifactRef, ArtifactRefSchema } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 
-const OutputWithArtifactsSchema = z.looseObject({
-  artifactRef: ArtifactRefSchema.optional(),
-  artifactRefs: z.array(ArtifactRefSchema).optional(),
-});
-
-const ResultWrapperSchema = z.object({ ok: z.literal(true), data: OutputWithArtifactsSchema });
-
-const SanitizableDataSchema = z.looseObject({
-  response: z.string().optional(),
-  summary: z.string().optional(),
-  content: z.string().optional(),
-  artifactRef: z.unknown().optional(),
-  artifactRefs: z.unknown().optional(),
-});
-
-const SanitizableWrapperSchema = z.object({
-  ok: z.boolean(),
-  data: SanitizableDataSchema.optional(),
-  error: z.unknown().optional(),
-});
+/**
+ * Minimal schema for flattened FSM output (no envelope metadata).
+ * FSM document storage strips agentId/timestamp/durationMs, leaving domain data + artifactRefs.
+ *
+ * @see docs/plans/2026-02-03-unified-agent-envelope-design.md
+ * TODO: Remove after FSM storage migration stores full envelope
+ */
+const FlattenedOutputSchema = z
+  .object({
+    response: z.string().optional(),
+    artifactRefs: z.array(ArtifactRefSchema).optional(),
+    error: z.unknown().optional(),
+  })
+  .passthrough();
 
 /**
- * Extract artifact references from heterogeneous agent outputs.
+ * Extract artifact references from agent execution output.
  *
- * Handles:
- * - Result wrapper: { ok: true, data: { artifactRef | artifactRefs } }
- * - Direct object: { artifactRef | artifactRefs }
- * - Singular vs plural forms
+ * Handles two shapes (until FSM stores full envelope):
+ * - Envelope: { ok, data, artifactRefs } — parsed via AgentResultSchema
+ * - Flattened: { response, ...fields, artifactRefs } — parsed via FlattenedOutputSchema
  *
- * Returns deduplicated array by artifact ID.
+ * @see docs/plans/2026-02-03-unified-agent-envelope-design.md
+ * TODO: Simplify after FSM storage migration stores full envelope
  */
 export function extractArtifactsFromOutput(output: unknown): ArtifactRef[] {
-  if (!output || typeof output !== "object") return [];
+  // Try envelope first
+  const envelope = AgentResultSchema.safeParse(output);
+  if (envelope.success && envelope.data.ok) {
+    return dedupeArtifacts(envelope.data.artifactRefs);
+  }
 
-  const wrapperParse = ResultWrapperSchema.safeParse(output);
-  const data = wrapperParse.success ? wrapperParse.data.data : output;
+  // Fall back to flattened shape
+  const flattened = FlattenedOutputSchema.safeParse(output);
+  if (flattened.success) {
+    return dedupeArtifacts(flattened.data.artifactRefs);
+  }
 
-  const parse = OutputWithArtifactsSchema.safeParse(data);
-  if (!parse.success) return [];
+  return [];
+}
 
-  const { artifactRef, artifactRefs = [] } = parse.data;
-  const all = artifactRef ? [artifactRef, ...artifactRefs] : artifactRefs;
-
+/** Deduplicate artifacts by ID, preserving order */
+function dedupeArtifacts(refs: ArtifactRef[] | undefined): ArtifactRef[] {
+  if (!refs) return [];
   const seen = new Set<string>();
-  return all.filter((a) => {
-    if (seen.has(a.id)) return false;
-    seen.add(a.id);
+  return refs.filter((ref) => {
+    if (seen.has(ref.id)) return false;
+    seen.add(ref.id);
     return true;
   });
 }
@@ -63,133 +64,100 @@ function capResponse(text: string): string {
   );
 }
 
-/** Artifact/tool metadata keys to strip before fallback serialization — not domain data. */
-const FALLBACK_STRIP_KEYS = new Set([
-  "artifactRef",
-  "artifactRefs",
+/** Keys to strip when serializing fallback output. */
+const STRIP_KEYS = new Set([
+  "agentId",
+  "timestamp",
+  "input",
   "ok",
+  "error",
+  "reasoning",
   "toolCalls",
   "toolResults",
+  "artifactRefs",
+  "outlineRefs",
+  "durationMs",
 ]);
 
-/** Try to JSON-serialize an object, stripping noise keys. Returns undefined if empty or on error. */
-function trySerializeFallback(obj: Record<string, unknown>): string | undefined {
+/**
+ * Schema for envelope shape (has `ok` discriminant).
+ * Looser than AgentResultSchema — accepts partial envelopes missing metadata fields.
+ * This handles both full envelopes and test fixtures with minimal fields.
+ */
+const EnvelopeSchema = z.object({
+  ok: z.boolean(),
+  data: z.unknown().optional(),
+  error: z.unknown().optional(),
+});
+
+/**
+ * Schema for data field that may contain a response string.
+ * Passthrough allows additional domain-specific fields for fallback serialization.
+ */
+const DataWithResponseSchema = z.object({ response: z.string().optional() }).passthrough();
+
+/**
+ * Sanitize agent output: extract text response, strip metadata.
+ *
+ * Handles two shapes (until FSM stores full envelope):
+ * - Envelope: { ok, data: { response }, error }
+ * - Flattened: { response, ...fields }
+ *
+ * @see docs/plans/2026-02-03-unified-agent-envelope-design.md
+ * TODO: Simplify after FSM storage migration stores full envelope
+ */
+export function sanitizeAgentOutput(
+  output: unknown,
+): { ok: boolean; data?: { response?: string }; error?: unknown } | undefined {
+  // Try envelope shape first (has `ok` discriminant)
+  const envelope = EnvelopeSchema.safeParse(output);
+  if (envelope.success) {
+    if (envelope.data.ok) {
+      const dataParsed = DataWithResponseSchema.safeParse(envelope.data.data);
+      const dataObj = dataParsed.success ? dataParsed.data : undefined;
+      const response = dataObj?.response ?? serializeFallback(dataObj);
+      return { ok: true, data: response ? { response: capResponse(response) } : undefined };
+    } else {
+      return { ok: false, error: envelope.data.error };
+    }
+  }
+
+  // Fall back to flattened shape (no `ok` field)
+  const flattened = FlattenedOutputSchema.safeParse(output);
+  if (flattened.success) {
+    const hasError = flattened.data.error !== undefined && flattened.data.error !== null;
+    const response = flattened.data.response ?? serializeFallback(flattened.data);
+    return {
+      ok: !hasError,
+      data: response ? { response: capResponse(response) } : undefined,
+      error: hasError ? flattened.data.error : undefined,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * Serialize non-metadata fields as JSON fallback when no response string exists.
+ * Strips envelope metadata keys to produce clean domain data.
+ */
+function serializeFallback(obj: Record<string, unknown> | undefined): string | undefined {
+  if (!obj) return undefined;
+
   const filtered: Record<string, unknown> = {};
   let hasKeys = false;
   for (const [key, value] of Object.entries(obj)) {
-    if (!FALLBACK_STRIP_KEYS.has(key)) {
+    if (!STRIP_KEYS.has(key)) {
       filtered[key] = value;
       hasKeys = true;
     }
   }
   if (!hasKeys) return undefined;
+
   try {
     return JSON.stringify(filtered, null, 2);
   } catch (err) {
-    logger.warn("Failed to serialize fallback agent output", {
-      error: err,
-      keys: Object.keys(obj),
-    });
+    logger.warn("Failed to serialize fallback agent output", { error: err });
     return undefined;
   }
-}
-
-/**
- * Sanitize agent output: strip artifact refs, normalize text field.
- * Caps response length — full content is already persisted as artifacts.
- * Handles Result wrapper and direct object patterns.
- *
- * When a parse succeeds but yields no text field, and the data contains
- * other meaningful keys, JSON-serializes them as a fallback response.
- * This prevents silent data loss for structured outputs (e.g. spreadsheet lists).
- */
-export function sanitizeAgentOutput(
-  output: unknown,
-): { ok: boolean; data?: { response?: string }; error?: unknown } | undefined {
-  if (!output || typeof output !== "object") return undefined;
-
-  const outputKeys = Object.keys(output);
-
-  // Try Result wrapper first
-  const wrapperParse = SanitizableWrapperSchema.safeParse(output);
-  if (wrapperParse.success) {
-    const { ok, data, error } = wrapperParse.data;
-    const textField = data?.response
-      ? "response"
-      : data?.summary
-        ? "summary"
-        : data?.content
-          ? "content"
-          : undefined;
-    const text = textField ? data?.[textField] : undefined;
-
-    if (text) {
-      logger.debug("sanitizeAgentOutput: wrapper text field", {
-        path: "wrapper",
-        textField,
-        outputKeys,
-        charCount: text.length,
-      });
-      return { ok, data: { response: capResponse(text) }, error };
-    }
-
-    // Fallback: serialize remaining meaningful fields from wrapper data
-    if (data) {
-      const fallback = trySerializeFallback(data);
-      if (fallback) {
-        logger.debug("sanitizeAgentOutput: wrapper fallback serialization", {
-          path: "wrapper-fallback",
-          outputKeys,
-          dataKeys: Object.keys(data),
-          charCount: fallback.length,
-        });
-        return { ok, data: { response: capResponse(fallback) }, error };
-      }
-    }
-    logger.debug("sanitizeAgentOutput: wrapper dropped", {
-      path: "wrapper-dropped",
-      outputKeys,
-      hasData: !!data,
-    });
-    return { ok, data: undefined, error };
-  }
-
-  // Try direct object
-  const directParse = SanitizableDataSchema.safeParse(output);
-  if (directParse.success) {
-    const textField = directParse.data.response
-      ? "response"
-      : directParse.data.summary
-        ? "summary"
-        : directParse.data.content
-          ? "content"
-          : undefined;
-    const text = textField ? directParse.data[textField] : undefined;
-
-    if (text) {
-      logger.debug("sanitizeAgentOutput: direct text field", {
-        path: "direct",
-        textField,
-        outputKeys,
-        charCount: text.length,
-      });
-      return { ok: true, data: { response: capResponse(text) } };
-    }
-
-    // Fallback: serialize remaining meaningful fields
-    const fallback = trySerializeFallback(directParse.data);
-    if (fallback) {
-      logger.debug("sanitizeAgentOutput: direct fallback serialization", {
-        path: "direct-fallback",
-        outputKeys,
-        charCount: fallback.length,
-      });
-      return { ok: true, data: { response: capResponse(fallback) } };
-    }
-    logger.debug("sanitizeAgentOutput: direct dropped", { path: "direct-dropped", outputKeys });
-    return { ok: true, data: undefined };
-  }
-
-  logger.debug("sanitizeAgentOutput: unparseable", { path: "unparseable", outputKeys });
-  return undefined;
 }

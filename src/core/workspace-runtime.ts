@@ -39,7 +39,6 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import * as path from "@std/path";
-import { z } from "zod";
 import type {
   ITempestContextManager,
   ITempestMessageManager,
@@ -128,20 +127,6 @@ function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
   }
   return null;
 }
-
-// Zod schema for AgentResult artifact data validation
-const AgentResultArtifactSchema = z.object({
-  agentId: z.string(),
-  task: z.string(),
-  input: z.unknown(),
-  output: z.unknown(),
-  reasoning: z.string().optional(),
-  error: z.string().optional(),
-  duration: z.number(),
-  timestamp: z.string(),
-  toolCalls: z.array(z.any()).optional(),
-  toolResults: z.array(z.any()).optional(),
-});
 
 // Stub factory functions for minimal IAtlasScope manager implementations
 function createStubContextManager(): ITempestContextManager {
@@ -734,6 +719,8 @@ export class WorkspaceRuntime {
   /**
    * Agent executor callback for FSM agent actions
    * Integrates FSMEngine with AgentOrchestrator
+   *
+   * Returns AgentResult directly - no transformation.
    */
   private async executeAgent(
     action: AgentAction,
@@ -789,7 +776,7 @@ export class WorkspaceRuntime {
         }
       | undefined;
 
-    // Execute agent via orchestrator
+    // Execute agent via orchestrator - returns AgentResult directly
     const result = await this.orchestrator.executeAgent(agentId, prompt, {
       sessionId: signal._context?.sessionId || crypto.randomUUID(), // Use signal's sessionId or generate new
       workspaceId: signal._context?.workspaceId || this.workspace.id,
@@ -819,7 +806,7 @@ export class WorkspaceRuntime {
     // Validate agent output (hallucination detection only runs for LLM agents)
     await validateAgentOutput(result, fsmContext, undefined, SupervisionLevel.STANDARD, agentType);
 
-    logger.debug("Agent execution completed", { agentId, success: !result.error });
+    logger.debug("Agent execution completed", { agentId, ok: result.ok });
 
     return result;
   }
@@ -837,7 +824,6 @@ export class WorkspaceRuntime {
       "review-result",
       "report",
       "summary",
-      "agent-result",
       "AgentResult",
       "LLMResult",
     ];
@@ -861,31 +847,7 @@ export class WorkspaceRuntime {
       ? sessionResult.completedAt.getTime() - sessionResult.startedAt.getTime()
       : 0;
 
-    // Extract agent results from artifacts and normalize to agent-sdk format
-    const results: AgentResult[] = sessionResult.artifacts
-      .filter((artifact) => artifact.type === "agent-result")
-      .map((artifact) => {
-        const parseResult = AgentResultArtifactSchema.safeParse(artifact.data);
-
-        if (!parseResult.success) {
-          logger.warn("Invalid agent result artifact", {
-            artifactId: artifact.id,
-            error: parseResult.error,
-          });
-          return {
-            agentId: "unknown",
-            task: "",
-            input: undefined,
-            output: undefined,
-            duration: 0,
-            timestamp: new Date().toISOString(),
-          };
-        }
-
-        return parseResult.data;
-      });
-
-    // Map FSM states to "phases" - count unique state transitions
+    // Count FSM state transitions as "phases"
     const stateTransitions =
       job.engine?.documents.filter(
         (doc) => doc.type === "state-transition" || doc.type === "fsm-state",
@@ -895,23 +857,16 @@ export class WorkspaceRuntime {
     const completedPhases =
       sessionResult.status === "completed" ? totalPhases : Math.max(0, totalPhases - 1);
 
-    // Count agent executions (success = no error)
-    const totalAgents = results.length;
-    const executedAgents = results.filter((r) => !r.error).length;
-
     return {
       sessionId: sessionResult.id,
       workspaceId: sessionResult.workspaceId,
       status: sessionResult.status,
       totalPhases,
-      totalAgents,
       completedPhases,
-      executedAgents,
       duration,
       reasoning: sessionResult.error
         ? `Failed: ${sessionResult.error.message}`
         : "Completed successfully",
-      results,
     };
   }
 

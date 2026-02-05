@@ -2,7 +2,7 @@
  * Core type definitions for the FSM Engine
  */
 
-import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
@@ -210,26 +210,19 @@ export interface EmittedEvent {
   data?: Record<string, unknown>;
 }
 
-export interface LLMResponse {
-  content: string;
-  data?: { toolCalls?: ToolCall[]; toolResults?: ToolResult[]; [key: string]: unknown };
-  calledTool?: { name: string; args: unknown };
-}
+export type FSMLLMOutput = Record<string, unknown>;
 
 /**
- * Trace data from an LLM action, capturing what is needed for hallucination detection.
- * Uses AI SDK's native ToolCall/ToolResult types via @atlas/agent-sdk.
+ * Re-export AgentResult for FSM consumers
  */
+export type { AgentResult };
+
+/** Trace data from an LLM action for hallucination detection */
 export interface LLMActionTrace {
-  /** The LLMs final output content */
   content: string;
-  /** Tool calls made during execution - uses AI SDK's native format */
   toolCalls?: ToolCall[];
-  /** Tool results returned - uses AI SDK's native format */
   toolResults?: ToolResult[];
-  /** Model identifier used for the call */
   model: string;
-  /** Full prompt including any injected document context */
   prompt: string;
 }
 
@@ -252,11 +245,13 @@ export type OutputValidator = (trace: LLMActionTrace) => Promise<LLMOutputValida
 
 export interface LLMProvider {
   call(params: {
+    /** Synthetic agent ID for the LLM action (e.g., "fsm:job-name:output-doc") */
+    agentId: string;
     model: string;
     prompt: string;
     tools?: Record<string, import("ai").Tool>;
     toolChoice?: "auto" | "required" | "none";
     /** Tool names that should trigger early stop when called successfully */
     stopOnToolCall?: string[];
-  }): Promise<LLMResponse>;
+  }): Promise<AgentResult<string, FSMLLMOutput>>;
 }

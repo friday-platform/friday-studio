@@ -1,58 +1,71 @@
+import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine } from "../fsm-engine.ts";
-import type { FSMDefinition, LLMResponse, OutputValidator } from "../types.ts";
+import type { FSMDefinition, FSMLLMOutput, OutputValidator } from "../types.ts";
 
 /**
  * Part 1: Pure Function Tests for buildLLMActionTrace
  *
- * Tests the transformation from LLMResponse → LLMActionTrace.
+ * Tests the transformation from AgentResult → LLMActionTrace.
  * All sync, no mocks needed.
  */
 describe("buildLLMActionTrace", () => {
   it("extracts content, model, and prompt fields", () => {
-    const response: LLMResponse = { content: "Hello world" };
-    const trace = buildLLMActionTrace(response, "gpt-4", "What is 2+2?");
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "What is 2+2?",
+      ok: true,
+      data: { response: "Hello world" },
+      durationMs: 0,
+    };
+    const trace = buildLLMActionTrace(result, "gpt-4", "What is 2+2?");
 
     expect(trace.content).toEqual("Hello world");
     expect(trace.model).toEqual("gpt-4");
     expect(trace.prompt).toEqual("What is 2+2?");
   });
 
-  it("passes through toolCalls and toolResults arrays from data (AI SDK format)", () => {
-    const response: LLMResponse = {
-      content: "Result from tools",
-      data: {
-        toolCalls: [
-          { type: "tool-call", toolCallId: "tc1", toolName: "search", input: { query: "test" } },
-          {
-            type: "tool-call",
-            toolCallId: "tc2",
-            toolName: "fetch",
-            input: { url: "http://example.com" },
-          },
-        ],
-        toolResults: [
-          {
-            type: "tool-result",
-            toolCallId: "tc1",
-            toolName: "search",
-            input: {},
-            output: { results: ["a", "b"] },
-          },
-          {
-            type: "tool-result",
-            toolCallId: "tc2",
-            toolName: "fetch",
-            input: {},
-            output: { body: "<html>" },
-          },
-        ],
+  it("passes through toolCalls and toolResults arrays (AI SDK format)", () => {
+    const toolCalls: ToolCall[] = [
+      { type: "tool-call", toolCallId: "tc1", toolName: "search", input: { query: "test" } },
+      {
+        type: "tool-call",
+        toolCallId: "tc2",
+        toolName: "fetch",
+        input: { url: "http://example.com" },
       },
+    ];
+    const toolResults: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "tc1",
+        toolName: "search",
+        input: {},
+        output: { results: ["a", "b"] },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "tc2",
+        toolName: "fetch",
+        input: {},
+        output: { body: "<html>" },
+      },
+    ];
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "Do research",
+      ok: true,
+      data: { response: "Result from tools" },
+      toolCalls,
+      toolResults,
+      durationMs: 0,
     };
 
-    const trace = buildLLMActionTrace(response, "claude-3", "Do research");
+    const trace = buildLLMActionTrace(result, "claude-3", "Do research");
 
     expect(trace.toolCalls?.length).toEqual(2);
     expect(trace.toolCalls?.[0]?.toolCallId).toEqual("tc1");
@@ -70,47 +83,122 @@ describe("buildLLMActionTrace", () => {
     expect(trace.toolResults?.[1]?.output).toEqual({ body: "<html>" });
   });
 
-  it("returns undefined toolCalls/toolResults for empty data object", () => {
-    const response: LLMResponse = { content: "No tools", data: {} };
-    const trace = buildLLMActionTrace(response, "gpt-4", "Simple question");
+  it("returns undefined toolCalls/toolResults when not present", () => {
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "Simple question",
+      ok: true,
+      data: { response: "No tools" },
+      durationMs: 0,
+    };
+    const trace = buildLLMActionTrace(result, "gpt-4", "Simple question");
 
     expect(trace.toolCalls).toEqual(undefined);
     expect(trace.toolResults).toEqual(undefined);
   });
 
-  it("returns empty arrays when data has empty arrays (not undefined)", () => {
-    const response: LLMResponse = {
-      content: "Empty tools",
-      data: { toolCalls: [], toolResults: [] },
+  it("returns empty arrays when result has empty arrays (not undefined)", () => {
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "No tools needed",
+      ok: true,
+      data: { response: "Empty tools" },
+      toolCalls: [],
+      toolResults: [],
+      durationMs: 0,
     };
-    const trace = buildLLMActionTrace(response, "gpt-4", "No tools needed");
+    const trace = buildLLMActionTrace(result, "gpt-4", "No tools needed");
 
     expect(trace.toolCalls).toEqual([]);
     expect(trace.toolResults).toEqual([]);
   });
 
   it("passes through toolResults with AI SDK format", () => {
-    const response: LLMResponse = {
-      content: "Mapped result",
-      data: {
-        toolResults: [
-          {
-            type: "tool-result",
-            toolCallId: "call-xyz-123",
-            toolName: "calculator",
-            input: {},
-            output: 42,
-          },
-        ],
-      },
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "Calculate",
+      ok: true,
+      data: { response: "Mapped result" },
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "call-xyz-123",
+          toolName: "calculator",
+          input: {},
+          output: 42,
+        },
+      ],
+      durationMs: 0,
     };
-    const trace = buildLLMActionTrace(response, "claude-3", "Calculate");
+    const trace = buildLLMActionTrace(result, "claude-3", "Calculate");
 
     expect(trace.toolResults?.[0]?.toolCallId).toEqual("call-xyz-123");
     expect(trace.toolResults?.[0]?.toolName).toEqual("calculator");
     expect(trace.toolResults?.[0]?.output).toEqual(42);
   });
+
+  it("extracts error reason for failed results", () => {
+    const result: AgentResult<string, FSMLLMOutput> = {
+      agentId: "test",
+      timestamp: new Date().toISOString(),
+      input: "Do something",
+      ok: false,
+      error: { reason: "API rate limit exceeded" },
+      durationMs: 0,
+    };
+    const trace = buildLLMActionTrace(result, "gpt-4", "Do something");
+
+    expect(trace.content).toEqual("API rate limit exceeded");
+    expect(trace.toolCalls).toEqual(undefined);
+    expect(trace.toolResults).toEqual(undefined);
+  });
 });
+
+/**
+ * Mock LLM response format for tests.
+ * Simplified format that gets converted to AgentResult.
+ */
+interface MockLLMResponse {
+  content: string;
+  data?: Record<string, unknown>;
+  calledTool?: { name: string; args: unknown };
+}
+
+/**
+ * Convert mock LLM response to AgentResult envelope.
+ */
+function mockToEnvelope(
+  mock: MockLLMResponse,
+  agentId: string,
+  prompt: string,
+): AgentResult<string, FSMLLMOutput> {
+  // Build tool calls array from calledTool if present
+  const toolCalls: ToolCall[] = [];
+  if (mock.calledTool) {
+    toolCalls.push({
+      type: "tool-call",
+      toolCallId: `mock-${mock.calledTool.name}`,
+      toolName: mock.calledTool.name,
+      input: mock.calledTool.args,
+    });
+  }
+
+  // Build data - use response field for text content
+  const data: FSMLLMOutput = { response: mock.content, ...mock.data };
+
+  return {
+    agentId,
+    timestamp: new Date().toISOString(),
+    input: prompt,
+    ok: true,
+    data,
+    toolCalls,
+    durationMs: 0,
+  };
+}
 
 /**
  * Part 2: Behavior Tests for Validation Hook
@@ -122,7 +210,7 @@ describe("LLM Action Validation Hook", () => {
   /** Helper: Create FSM engine with LLM action and optional validator */
   async function createLLMEngine(opts: {
     validator?: OutputValidator;
-    llmResponses: LLMResponse[];
+    llmResponses: MockLLMResponse[];
   }) {
     const store = new InMemoryDocumentStore();
     const scope = { workspaceId: "test", sessionId: "test-session" };
@@ -153,14 +241,14 @@ describe("LLM Action Validation Hook", () => {
 
     let callCount = 0;
     const mockLLMProvider: import("../types.ts").LLMProvider = {
-      call: (_params) => {
-        const response =
+      call: (params) => {
+        const mockResponse =
           opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
         callCount++;
-        if (!response) {
+        if (!mockResponse) {
           throw new Error("No LLM response available for mock");
         }
-        return Promise.resolve(response);
+        return Promise.resolve(mockToEnvelope(mockResponse, params.agentId, params.prompt));
       },
     };
 
@@ -175,7 +263,7 @@ describe("LLM Action Validation Hook", () => {
     return { engine, store, scope, fsm, getLLMCallCount: () => callCount };
   }
 
-  it("validation pass → document persisted with content, state is done", async () => {
+  it("validation pass → document persisted with response, state is done", async () => {
     const { engine, store, scope, fsm } = await createLLMEngine({
       validator: () => Promise.resolve({ valid: true }),
       llmResponses: [{ content: "validated response", data: { extra: "info" } }],
@@ -186,13 +274,13 @@ describe("LLM Action Validation Hook", () => {
     // Observable outcome: state transitioned
     expect(engine.state).toEqual("done");
 
-    // Observable outcome: document persisted with LLM content
+    // Observable outcome: document persisted with LLM response
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("validated response");
+    expect(doc?.data.data.response).toEqual("validated response");
     expect(doc?.data.data.extra).toEqual("info");
   });
 
-  it("retry success → final output persisted with retry content", async () => {
+  it("retry success → final output persisted with retry response", async () => {
     const { engine, store, scope, fsm } = await createLLMEngine({
       validator: (trace) => {
         // Fail first attempt, pass retry
@@ -212,9 +300,9 @@ describe("LLM Action Validation Hook", () => {
     // Observable outcome: state transitioned after retry
     expect(engine.state).toEqual("done");
 
-    // Observable outcome: document has retry content (not original bad content)
+    // Observable outcome: document has retry response (not original bad response)
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("good retry response");
+    expect(doc?.data.data.response).toEqual("good retry response");
     expect(doc?.data.data.retried).toEqual(true);
   });
 
@@ -252,7 +340,7 @@ describe("LLM Action Validation Hook", () => {
 
     // Observable outcome: document persisted
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("direct response");
+    expect(doc?.data.data.response).toEqual("direct response");
 
     // LLM called exactly once (no retry without validator)
     expect(getLLMCallCount()).toEqual(1);
@@ -273,7 +361,7 @@ describe("LLM Action Validation Hook", () => {
     expect(engine.state).toEqual("pending");
   });
 
-  it("empty content string → document persisted with empty string", async () => {
+  it("empty response string → document persisted with empty string", async () => {
     const { engine, store, scope, fsm } = await createLLMEngine({
       validator: () => Promise.resolve({ valid: true }),
       llmResponses: [{ content: "", data: { hasTools: false } }],
@@ -286,7 +374,7 @@ describe("LLM Action Validation Hook", () => {
 
     // Observable outcome: empty string persisted (not undefined/null)
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("");
+    expect(doc?.data.data.response).toEqual("");
     expect(doc?.data.data.hasTools).toEqual(false);
   });
 

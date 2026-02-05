@@ -9,7 +9,7 @@
  */
 import process from "node:process";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
-import { createAgent, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { createAgent, ok, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { OutlineRefsResultSchema } from "@atlas/core";
@@ -47,6 +47,13 @@ import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 
 const ROLE_SYSTEM = "system" as const;
+
+/**
+ * Output type for conversation agent - the text response from the LLM
+ */
+interface ConversationResult {
+  text: string | undefined;
+}
 
 /**
  * Fetch all workspaces, jobs, and signals from the daemon
@@ -274,7 +281,7 @@ async function getAgentServerClient(streamId: string, logger: Logger) {
 }
 
 // Export the agent
-export const conversationAgent = createAgent({
+export const conversationAgent = createAgent<string, ConversationResult>({
   id: "conversation",
   displayName: "Conversation Agent",
   version: "1.0.0",
@@ -965,7 +972,7 @@ export const conversationAgent = createAgent({
       logger.error("Failed to close MCP transport", { error: closeError });
     }
 
-    return { text: finalText };
+    return ok({ text: finalText });
   },
   environment: {
     required: [],

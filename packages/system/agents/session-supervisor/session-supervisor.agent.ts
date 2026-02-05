@@ -1,7 +1,7 @@
-import { createAgent, repairJson } from "@atlas/agent-sdk";
+import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
-import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { stringifyError } from "@atlas/utils";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -61,10 +61,7 @@ const SupervisorOutputSchema = z.object({
 
 type SupervisorOutput = z.infer<typeof SupervisorOutputSchema>;
 
-export const sessionSupervisorAgent = createAgent<
-  SupervisorInput,
-  Result<SupervisorOutput, { reason: string }>
->({
+export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOutput>({
   id: "session-supervisor",
   displayName: " Session Supervisor",
   version: "1.0.0",
@@ -157,10 +154,10 @@ export const sessionSupervisorAgent = createAgent<
         includedPreviousCount: result.object.metadata.includedPreviousCount,
       });
 
-      return success(result.object);
+      return ok(result.object);
     } catch (error) {
       logger.error(" supervisor failed to optimize context", { error });
-      return fail({ reason: stringifyError(error) });
+      return err(stringifyError(error));
     }
   },
 

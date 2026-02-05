@@ -6,16 +6,16 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { type WorkspacePlan, WorkspacePlanSchema } from "@atlas/core/artifacts";
 import { type ValidatedFSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
-import { fail, stringifyError, success } from "@atlas/utils";
+import { stringifyError } from "@atlas/utils";
 import { executeCodegen } from "@atlas/workspace-builder";
 import { toKebabCase } from "@std/text";
 import { stringify as stringifyYaml } from "@std/yaml";
 import { z } from "zod";
-import type { FSMCreatorResult } from "../../agent-types/mod.ts";
+import type { FSMCreatorSuccessData } from "../../agent-types/mod.ts";
 import { classifyAgents } from "./agent-classifier.ts";
 import { enrichAgentsWithPipelineContext, flattenAgent } from "./agent-helpers.ts";
 import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
@@ -41,7 +41,7 @@ type FSMCreatorInput = z.infer<typeof FSMCreatorInputSchema>;
  * Uses LLM to generate TypeScript code with FSMBuilder API instead of templates.
  * Supports multiple jobs with one FSM per job.
  */
-export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorResult>({
+export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorSuccessData>({
   id: "fsm-workspace-creator",
   displayName: "FSM Workspace Creator",
   version: "2.0.0",
@@ -76,14 +76,14 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
 
       // Validate plan has jobs
       if (!plan.jobs || plan.jobs.length === 0) {
-        return fail({ reason: "WorkspacePlan must have at least one job" });
+        return err("WorkspacePlan must have at least one job");
       }
 
       // Check for duplicate job IDs
       const jobIds = new Set<string>();
       for (const job of plan.jobs) {
         if (jobIds.has(job.id)) {
-          return fail({ reason: `Duplicate job ID found: ${job.id}` });
+          return err(`Duplicate job ID found: ${job.id}`);
         }
         jobIds.add(job.id);
       }
@@ -91,9 +91,9 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       // Validate agent IDs (kebab-case only)
       for (const agent of plan.agents) {
         if (!/^[a-z][a-z0-9-]*$/.test(agent.id)) {
-          return fail({
-            reason: `Invalid agent ID '${agent.id}': must be lowercase kebab-case (a-z, 0-9, hyphens only)`,
-          });
+          return err(
+            `Invalid agent ID '${agent.id}': must be lowercase kebab-case (a-z, 0-9, hyphens only)`,
+          );
         }
       }
 
@@ -107,11 +107,14 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       const preflightResult = validateCredentials(mcpServersPrecheck, plan.credentials);
 
       if (!preflightResult.valid) {
-        return fail({
-          reason: formatMissingCredentialsError(preflightResult.missingCredentials),
-          missingCredentials: preflightResult.missingCredentials,
-          suggestedAction: "connect_service",
-        });
+        // Include structured credential info in error for LLM recovery
+        const errorWithCredentials = [
+          formatMissingCredentialsError(preflightResult.missingCredentials),
+          "",
+          "missingCredentials: " + JSON.stringify(preflightResult.missingCredentials),
+          "suggestedAction: connect_service",
+        ].join("\n");
+        return err(errorWithCredentials);
       }
 
       logger.info("Credential pre-flight passed", { servers: mcpServersPrecheck.map((s) => s.id) });
@@ -171,7 +174,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
 
         // Check for duplicate (defensive)
         if (fsms.has(job.id)) {
-          return fail({ reason: `Duplicate job ID: ${job.id}` });
+          return err(`Duplicate job ID: ${job.id}`);
         }
 
         // Filter and flatten agents for this job, then enrich with pipeline context
@@ -187,9 +190,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
 
         const triggerSignal = plan.signals.find((s) => s.id === job.triggerSignalId);
         if (!triggerSignal) {
-          return fail({
-            reason: `Job '${job.id}' references unknown trigger signal '${job.triggerSignalId}'`,
-          });
+          return err(`Job '${job.id}' references unknown trigger signal '${job.triggerSignalId}'`);
         }
 
         // Generate TypeScript code via LLM with retry on validation failures
@@ -276,9 +277,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
 
         // Check if we succeeded
         if (!fsm) {
-          return fail({
-            reason: lastError ?? `FSM generation failed for job '${job.id}' after all retries`,
-          });
+          return err(lastError ?? `FSM generation failed for job '${job.id}' after all retries`);
         }
 
         // Store validated FSM
@@ -332,11 +331,11 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
           path: absoluteWorkspacePath,
           error: registrationResponse.error,
         });
-        return fail({
-          reason: `Workspace files created but registration failed: ${stringifyError(
+        return err(
+          `Workspace files created but registration failed: ${stringifyError(
             registrationResponse.error,
           )}`,
-        });
+        );
       }
 
       logger.info("Workspace generation and registration complete", {
@@ -352,7 +351,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
         ),
       });
 
-      return success({
+      return ok({
         workspaceId: registrationResponse.data.id,
         workspaceName: plan.workspace.name,
         workspaceDescription: plan.workspace.purpose,
@@ -362,7 +361,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       });
     } catch (error) {
       logger.error("FSM creation failed", { error: stringifyError(error) });
-      return fail({ reason: stringifyError(error) });
+      return err(stringifyError(error));
     }
   },
 });

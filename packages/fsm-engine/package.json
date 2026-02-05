@@ -20,7 +20,6 @@
   },
   "devDependencies": {
     "@atlas/document-store": "workspace:*",
-    "@atlas/evals-2": "workspace:*",
     "@atlas/system": "workspace:*",
     "@atlas/workspace-builder": "workspace:*"
   }

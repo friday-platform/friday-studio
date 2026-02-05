@@ -8,9 +8,13 @@
 
 // Core types
 export type { IWorkspaceSession } from "../../src/types/core.ts";
-export type { WrappedAgentResult } from "./src/agent-conversion/from-llm.ts";
-// Export strongly-typed LLM converter directly to preserve WrappedAgentResult generic
-export { convertLLMToAgent, wrapAtlasAgent } from "./src/agent-conversion/from-llm.ts";
+// Export LLM agent conversion types and functions
+export type { LLMOutput } from "./src/agent-conversion/from-llm.ts";
+export {
+  convertLLMToAgent,
+  LLMOutputSchema,
+  wrapAtlasAgent,
+} from "./src/agent-conversion/from-llm.ts";
 export type { LLMAgentConfig } from "./src/agent-conversion/index.ts";
 // Agent Conversion Layer
 export { convertLLMAgentToSDK } from "./src/agent-conversion/index.ts";
@@ -74,7 +78,6 @@ export {
 } from "./src/streaming/stream-emitters.ts";
 // Actor Types
 export * from "./src/types/actors.ts";
-export * from "./src/types/agent-execution.ts";
 // Export error types explicitly
 export type {
   APIErrorCause,

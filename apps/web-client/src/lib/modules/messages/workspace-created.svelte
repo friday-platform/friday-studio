@@ -7,6 +7,7 @@
   import Button from "$lib/components/button.svelte";
   import { onMount } from "svelte";
   import z from "zod";
+  import { MCPExecutionResultSchema } from "./types.ts";
   import MessageWrapper from "./wrapper.svelte";
 
   type Props = { output: { result: { content: Array<{ type: string; text?: string }> } } };
@@ -18,18 +19,40 @@
     queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
   });
 
+  /**
+   * Schema for AgentResult envelope from execution layer.
+   * System agents return payloads wrapped with metadata.
+   */
+  const AgentResultSchema = z.object({
+    agentId: z.string(),
+    timestamp: z.string(),
+    input: z.unknown(),
+    durationMs: z.number(),
+    ok: z.literal(true),
+    data: FSMCreatorSuccessDataSchema,
+  });
+
   const workspace: FSMCreatorSuccessData | null = $derived.by(() => {
     try {
       const mcpResult = output.result.content.at(0)?.text;
       if (!mcpResult) return null;
 
-      const parsed = z
-        .object({ result: z.object({ data: FSMCreatorSuccessDataSchema }) })
-        .parse(JSON.parse(mcpResult));
+      const parsed = JSON.parse(mcpResult);
+      const executionResult = MCPExecutionResultSchema.safeParse(parsed);
+      if (!executionResult.success) return null;
 
-      return parsed.result.data;
+      // Parse as AgentResult envelope - data field contains FSMCreatorSuccessData
+      const envelope = AgentResultSchema.safeParse(executionResult.data.result);
+      if (envelope.success) {
+        return envelope.data.data;
+      }
+
+      // If parsing fails, it might be an error result (ok: false)
+      // Return null to gracefully hide the component
+      console.warn("fsm-workspace-creator result was not a success", parsed);
+      return null;
     } catch (e) {
-      console.error(e);
+      console.error("Failed to parse fsm-workspace-creator output", e);
       return null;
     }
   });

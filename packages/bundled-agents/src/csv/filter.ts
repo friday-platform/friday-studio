@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
-import type { OutlineRef } from "@atlas/core";
+import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
+import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { join } from "@std/path";
@@ -18,11 +18,11 @@ import { z } from "zod";
  * Designed for CSV filtering and sampling workflows.
  */
 
-type CsvFilterSamplerResult = {
-  summary: string;
-  artifactRef: ArtifactRef;
-  outlineRefs?: OutlineRef[];
-};
+export const CsvFilterSamplerOutputSchema = z.object({
+  response: z.string().describe("Human-readable summary of the filtering operation"),
+});
+
+type CsvFilterSamplerResult = z.infer<typeof CsvFilterSamplerOutputSchema>;
 
 export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>({
   id: "csv-filter-sampler",
@@ -30,6 +30,7 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
   version: "1.0.0",
   description:
     "Read and filter CSV files using natural language queries, randomly sample N records, return structured JSON artifact",
+  outputSchema: CsvFilterSamplerOutputSchema,
   expertise: {
     domains: ["csv", "filtering", "sampling"],
     examples: [
@@ -39,7 +40,7 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     ],
   },
 
-  handler: async (prompt, { session, logger, abortSignal }): Promise<CsvFilterSamplerResult> => {
+  handler: async (prompt, { session, logger, abortSignal }) => {
     try {
       logger.info("Parsing prompt to extract artifact ID and filter criteria");
 
@@ -107,15 +108,10 @@ Call validateArtifact tool with the extracted information to verify the artifact
         experimental_repairToolCall: repairToolCall,
       });
 
-      // Log token usage including cache statistics
-      logger.debug("AI SDK generateText completed", {
-        agent: "csv-filter-sampler",
-        step: "parse-prompt",
-        usage: parseResult.usage,
-      });
+      logger.debug("Parse prompt completed", { usage: parseResult.usage });
 
       if (!artifactId || !csvContent) {
-        throw new Error("Failed to extract valid artifact ID from prompt");
+        return err("Failed to extract valid artifact ID from prompt");
       }
 
       logger.info("Parsing CSV", { artifactId });
@@ -166,33 +162,24 @@ Call validateArtifact tool with the extracted information to verify the artifact
         description: "Build SQL WHERE clause for filtering CSV data",
         inputSchema: SqlWhereSchema,
         execute: (params: z.infer<typeof SqlWhereSchema>) => {
-          // Validate SQL by executing COUNT query
-          // Note: Direct SQL interpolation from LLM output. Risk mitigated by:
-          // - In-memory temporary database (no persistent data at risk)
-          // - Validation via execution catches syntax errors
-          // - No data exfiltration possible (isolated process)
-          try {
-            const testQuery = params.whereClause
-              ? `SELECT COUNT(*) as count FROM data WHERE ${params.whereClause}`
-              : "SELECT COUNT(*) as count FROM data";
-            const result = db.prepare(testQuery).get<{ count: number }>();
+          // Direct SQL interpolation from LLM. Safe: in-memory DB, isolated process, no exfil path.
+          const testQuery = params.whereClause
+            ? `SELECT COUNT(*) as count FROM data WHERE ${params.whereClause}`
+            : "SELECT COUNT(*) as count FROM data";
+          const result = db.prepare(testQuery).get<{ count: number }>();
 
-            if (!result) {
-              throw new Error("Query returned no results");
-            }
-
-            whereClause = params.whereClause;
-            logger.info("SQL WHERE clause validated", { whereClause, matchCount: result.count });
-
-            return {
-              success: true,
-              matchCount: result.count,
-              message: `Valid SQL WHERE clause. Matches ${result.count} rows.`,
-            };
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Invalid SQL WHERE clause: ${errorMessage}`);
+          if (!result) {
+            throw new Error("Query returned no results");
           }
+
+          whereClause = params.whereClause;
+          logger.info("SQL WHERE clause validated", { whereClause, matchCount: result.count });
+
+          return {
+            success: true,
+            matchCount: result.count,
+            message: `Valid SQL WHERE clause. Matches ${result.count} rows.`,
+          };
         },
       });
 
@@ -249,12 +236,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
         experimental_repairToolCall: repairToolCall,
       });
 
-      // Log token usage including cache statistics
-      logger.debug("AI SDK generateText completed", {
-        agent: "csv-filter-sampler",
-        step: "build-sql-where",
-        usage: sqlResult.usage,
-      });
+      logger.debug("SQL generation completed", { usage: sqlResult.usage });
 
       logger.info("Executing SQL query", { sampleCount });
       const query = whereClause
@@ -300,38 +282,42 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       await writeFile(jsonFilePath, JSON.stringify(artifactData, null, 2), "utf-8");
 
       // Create file artifact
-      const createResult = await ArtifactStorage.create({
+      const artifactResult = await ArtifactStorage.create({
         workspaceId: session.workspaceId,
         data: { type: "file", version: 1, data: { path: jsonFilePath } },
         title: `CSV Filter: ${artifactId.slice(0, 8)}`,
         summary: `CSV filter results: ${samples.length} sample(s) from ${filteredCount} filtered record(s)`,
       });
 
-      if (!createResult.ok) {
-        throw new Error(`Failed to create artifact: ${createResult.error}`);
+      if (!artifactResult.ok) {
+        return err(`Failed to create artifact: ${artifactResult.error}`);
       }
 
-      logger.info("Artifact created", { artifactId: createResult.data.id });
+      logger.info("Artifact created", { artifactId: artifactResult.data.id });
 
       const summary = `Filtered ${parsedCsv.rowCount} total records to ${filteredCount} matching records, sampled ${samples.length} random record(s). ${filteredCount - samples.length} record(s) left unprocessed.`;
 
-      return {
-        summary,
-        artifactRef: { id: createResult.data.id, type: "file", summary: createResult.data.summary },
-        outlineRefs: [
-          {
-            service: "internal",
-            title: "CSV Filter",
-            content: summary,
-            artifactId: createResult.data.id,
-            artifactLabel: "View Filter",
-            type: "file",
-          },
-        ],
-      };
+      const { id, type, summary: artifactSummary } = artifactResult.data;
+
+      return ok(
+        { response: summary },
+        {
+          artifactRefs: [{ id, type, summary: artifactSummary }],
+          outlineRefs: [
+            {
+              service: "internal",
+              title: "CSV Filter",
+              content: summary,
+              artifactId: id,
+              artifactLabel: "View Filter",
+              type: "file",
+            },
+          ],
+        },
+      );
     } catch (error) {
-      logger.error("CSV filter agent failed", { error });
-      throw error;
+      logger.error("csv-filter-sampler agent failed", { error });
+      return err(stringifyError(error));
     }
   },
 });

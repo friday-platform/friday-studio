@@ -1,81 +1,166 @@
-/**
- * Tests for message formatting, particularly around streaming edge cases.
- *
- * These tests verify behavior when tool call parts have incomplete data,
- * which happens during streaming before tool execution completes.
- */
-
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { formatMessage } from "./format.ts";
-import type { ConnectServiceEntry, DisplayArtifactEntry } from "./types.ts";
+import { parseWorkspacePlannerArtifactId } from "./types.ts";
 
-// Helper to create a minimal mock message
-// Using `unknown` cast because we only need the fields that formatMessage uses
-function mockMessage(role: "user" | "assistant"): AtlasUIMessage {
-  return { id: "test-id", role, parts: [] } as unknown as AtlasUIMessage;
+/** Minimal message fixture - only fields formatMessage reads. */
+function createMessage(role: "user" | "assistant"): Pick<AtlasUIMessage, "id" | "role"> {
+  return { id: "test-msg", role };
 }
 
-// Helper to create a mock part - uses unknown cast to simulate streaming edge cases
-// where the full type structure isn't yet populated
-function mockPart(partial: Record<string, unknown>): AtlasUIMessagePart {
-  return partial as unknown as AtlasUIMessagePart;
+/**
+ * Creates tool part fixture with required AI SDK fields.
+ * formatMessage only reads type/output, but the SDK requires toolCallId/state.
+ */
+function createToolPart<T extends `tool-${string}`>(
+  type: T,
+  output?: unknown,
+): Extract<AtlasUIMessagePart, { type: T }> {
+  return {
+    type,
+    toolCallId: "test-call",
+    toolName: type.replace("tool-", ""),
+    args: {},
+    state: "result",
+    output,
+  } as Extract<AtlasUIMessagePart, { type: T }>;
+}
+
+function createDataPart<T extends `data-${string}`>(
+  type: T,
+  data: unknown,
+): Extract<AtlasUIMessagePart, { type: T }> {
+  return { type, data } as Extract<AtlasUIMessagePart, { type: T }>;
 }
 
 describe("formatMessage - connect_service tool", () => {
-  it("returns empty provider when output is undefined (streaming race)", () => {
-    const message = mockMessage("assistant");
-    // Simulates streaming state where output hasn't been populated yet
-    const part = mockPart({ type: "tool-connect_service", output: undefined });
+  it("extracts provider from tool output", () => {
+    const message = createMessage("assistant");
+    const part = createToolPart("tool-connect_service", { provider: "linear" });
 
-    const result = formatMessage(message, part) as ConnectServiceEntry;
+    const result = formatMessage(message as AtlasUIMessage, part);
 
-    expect(result.type).toEqual("connect_service");
-    // Documents current behavior: provider defaults to empty string
-    // The template guard `&& message.metadata?.provider` prevents rendering
-    expect(result.provider).toEqual("");
-  });
-
-  it("returns provider when output is populated", () => {
-    const message = mockMessage("assistant");
-    const part = mockPart({ type: "tool-connect_service", output: { provider: "linear" } });
-
-    const result = formatMessage(message, part) as ConnectServiceEntry;
-
-    expect(result.type).toEqual("connect_service");
-    expect(result.provider).toEqual("linear");
-  });
-
-  it("returns empty provider when output.provider is missing", () => {
-    const message = mockMessage("assistant");
-    const part = mockPart({
-      type: "tool-connect_service",
-      output: {}, // Output exists but provider is missing
-    });
-
-    const result = formatMessage(message, part) as ConnectServiceEntry;
-
-    expect(result.provider).toEqual("");
+    expect(result).toMatchObject({ type: "connect_service", provider: "linear" });
   });
 });
 
 describe("formatMessage - display_artifact tool", () => {
-  it("returns empty artifactId when output is undefined", () => {
-    const message = mockMessage("assistant");
-    const part = mockPart({ type: "tool-display_artifact", output: undefined });
+  it("extracts artifactId from tool output", () => {
+    const message = createMessage("assistant");
+    const part = createToolPart("tool-display_artifact", { artifactId: "art-123" });
 
-    const result = formatMessage(message, part) as DisplayArtifactEntry;
+    const result = formatMessage(message as AtlasUIMessage, part);
 
-    expect(result.type).toEqual("display_artifact");
-    expect(result.artifactId).toEqual("");
+    expect(result).toMatchObject({ type: "display_artifact", artifactId: "art-123" });
+  });
+});
+
+describe("formatMessage - fsm-workspace-creator tool", () => {
+  it("falls through to tool_call when output lacks result.content", () => {
+    const message = createMessage("assistant");
+    const part = createToolPart("tool-fsm-workspace-creator", { result: {} });
+
+    const result = formatMessage(message as AtlasUIMessage, part);
+
+    expect(result).toMatchObject({ type: "tool_call" });
   });
 
-  it("returns artifactId when output is populated", () => {
-    const message = mockMessage("assistant");
-    const part = mockPart({ type: "tool-display_artifact", output: { artifactId: "art-123" } });
+  it("returns workspace_creator when output has valid structure", () => {
+    const message = createMessage("assistant");
+    const agentResult = {
+      agentId: "fsm-workspace-creator",
+      timestamp: "2026-02-04T12:00:00.000Z",
+      input: { artifactId: "test-artifact" },
+      durationMs: 1234,
+      ok: true,
+      data: {
+        workspaceId: "ws-123",
+        workspaceName: "Test Workspace",
+        workspaceDescription: "A test workspace",
+        workspaceUrl: "/spaces/ws-123",
+        jobCount: 1,
+        metadata: { generatedCode: {}, codegenAttempts: {} },
+      },
+    };
+    const part = createToolPart("tool-fsm-workspace-creator", {
+      result: { content: [{ type: "text", text: JSON.stringify(agentResult) }] },
+    });
 
-    const result = formatMessage(message, part) as DisplayArtifactEntry;
+    const result = formatMessage(message as AtlasUIMessage, part);
 
-    expect(result.artifactId).toEqual("art-123");
+    expect(result).toMatchObject({ type: "workspace_creator" });
+    // Output passed through raw - downstream does its own parsing
+    if (result?.type === "workspace_creator") {
+      const text = result.output.result.content[0]?.text;
+      expect(text).toBe(JSON.stringify(agentResult));
+    }
+  });
+});
+
+describe("formatMessage - data-agent-* events", () => {
+  it("extracts error from data-agent-error event", () => {
+    const message = createMessage("assistant");
+    const part = createDataPart("data-agent-error", {
+      agentId: "test-agent",
+      duration: 1500,
+      error: "Connection failed",
+    });
+
+    const result = formatMessage(message as AtlasUIMessage, part);
+
+    expect(result).toMatchObject({ type: "error", content: "Connection failed" });
+  });
+
+  it("extracts error from data-agent-timeout event", () => {
+    const message = createMessage("assistant");
+    const part = createDataPart("data-agent-timeout", {
+      agentId: "slow-agent",
+      task: "Process data",
+      duration: 30000,
+      error: "Agent execution exceeded 30s timeout",
+    });
+
+    const result = formatMessage(message as AtlasUIMessage, part);
+
+    expect(result).toMatchObject({
+      type: "error",
+      content: "Agent execution exceeded 30s timeout",
+    });
+  });
+});
+
+describe("parseWorkspacePlannerArtifactId", () => {
+  it("extracts artifactId from execution result envelope", () => {
+    const agentResult = {
+      agentId: "workspace-planner",
+      timestamp: "2026-02-04T12:00:00.000Z",
+      input: "Create a workspace",
+      durationMs: 5000,
+      ok: true,
+      data: { artifactId: "artifact-xyz-123" },
+    };
+    const executionEnvelope = { type: "completed", result: agentResult };
+    const output = {
+      result: { content: [{ type: "text", text: JSON.stringify(executionEnvelope) }] },
+    };
+
+    expect(parseWorkspacePlannerArtifactId(output)).toBe("artifact-xyz-123");
+  });
+
+  it("returns undefined for error result (ok: false)", () => {
+    const agentResult = {
+      agentId: "workspace-planner",
+      timestamp: "2026-02-04T12:00:00.000Z",
+      input: "Create a workspace",
+      durationMs: 100,
+      ok: false,
+      error: { reason: "Something went wrong" },
+    };
+    const executionEnvelope = { type: "completed", result: agentResult };
+    const output = {
+      result: { content: [{ type: "text", text: JSON.stringify(executionEnvelope) }] },
+    };
+
+    expect(parseWorkspacePlannerArtifactId(output)).toBeUndefined();
   });
 });

@@ -86,7 +86,7 @@ export function formatMessage(
       };
     }
 
-    if (part.type === "tool-fsm-workspace-creator" && part.output?.result) {
+    if (part.type === "tool-fsm-workspace-creator" && part.output?.result?.content) {
       return {
         id: crypto.randomUUID(),
         type: "workspace_creator",
@@ -111,7 +111,7 @@ export function formatMessage(
         type: "error",
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
-        content: "Agent timed out",
+        content: part.data.error,
       };
     }
     if (part.type === "data-error") {

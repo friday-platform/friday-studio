@@ -194,11 +194,11 @@ export async function executeTaskViaFSMDirect(
         context.onProgress({
           type: "step-complete",
           stepIndex: stepInfo.index,
-          success: !result.error,
+          success: result.ok,
         });
       }
 
-      logger.debug("Agent execution completed", { agentId, success: !result.error });
+      logger.debug("Agent execution completed", { agentId, ok: result.ok });
       return result;
     };
 

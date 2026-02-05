@@ -1,12 +1,7 @@
-/**
- * Create Agent Function
- *
- * Main API for creating domain expert agents that interpret natural language
- * prompts and accomplish tasks within their expertise.
- */
-
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
+import type { AgentPayload } from "./result.ts";
+import { err } from "./result.ts";
 import type {
   AgentContext,
   AgentEnvironmentConfig,
@@ -24,9 +19,6 @@ import {
   MCPServerConfigSchema,
 } from "./types.ts";
 
-/**
- * Internal implementation of AtlasAgent
- */
 class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<TInput, TOutput> {
   metadata: AgentMetadata;
   private handler: AgentHandler<TInput, TOutput>;
@@ -35,7 +27,6 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
   private llm?: AgentLLMConfig;
 
   constructor(config: CreateAgentConfig<TInput, TOutput>) {
-    // Extract metadata from config
     this.metadata = {
       id: config.id,
       displayName: config.displayName,
@@ -44,25 +35,22 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
       constraints: config.constraints,
       expertise: config.expertise,
       inputSchema: config.inputSchema,
+      outputSchema: config.outputSchema,
     };
 
     this.handler = config.handler;
     this.environment = config.environment;
     this.mcp = config.mcp;
     this.llm = config.llm;
-
-    // Validate configuration
     this.validateConfig();
   }
 
   private validateConfig(): void {
-    // Validate metadata using Zod schema
     const metadataResult = AgentMetadataSchema.safeParse(this.metadata);
     if (!metadataResult.success) {
       throw new Error(z.prettifyError(metadataResult.error));
     }
 
-    // Validate optional configurations if present
     if (this.environment) {
       const envResult = AgentEnvironmentConfigSchema.safeParse(this.environment);
       if (!envResult.success) {
@@ -89,19 +77,16 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
     }
   }
 
-  async execute(input: TInput, context: AgentContext): Promise<TOutput> {
+  async execute(input: TInput, context: AgentContext): Promise<AgentPayload<TOutput>> {
     try {
-      // Execute the handler with the input and context
       return await this.handler(input, context);
     } catch (error) {
-      // Re-throw AbortError exceptions for proper cancellation handling
+      // AbortError must propagate for cancellation to work
       if (error instanceof DOMException && error.name === "AbortError") {
         throw error;
       }
-
-      // Re-throw other errors without wrapping - agent context is already in AgentResult
-      // Wrapping here would create redundancy since orchestrator/callers already have agent metadata
-      throw new Error(stringifyError(error));
+      // Execution layer wraps with metadata (agentId, timestamp, etc)
+      return err(stringifyError(error));
     }
   }
 
@@ -119,39 +104,19 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
 }
 
 /**
- * Create a domain expert agent with typed input and output
- *
- * Generic type parameters allow specifying exact types for input and output.
- *
- * @param TInput - The input type (string by default, or structured via inputSchema)
- * @param TOutput - The output type (defaults to unknown)
+ * Creates a domain expert agent with typed input/output.
  *
  * @example
  * ```typescript
- * // Agent with structured input
- * const plannerInput = z.object({
- *   intent: z.string(),
- *   artifactId: z.string().optional(),
- * });
- *
- * type PlannerInput = z.infer<typeof plannerInput>;
- *
- * interface PlannerResult {
- *   planSummary: string;
- *   artifactId: string;
- * }
- *
- * export const plannerAgent = createAgent<PlannerInput, PlannerResult>({
+ * const plannerAgent = createAgent<string, PlannerResult>({
  *   id: "planner",
  *   displayName: "Planner",
  *   version: "1.0.0",
  *   description: "Plans workspaces",
  *   expertise: { domains: ["planning"], examples: [] },
- *   inputSchema: plannerInput,
  *   handler: async (input, { logger }) => {
- *     // input is typed as { intent: string; artifactId?: string }
- *     logger.info("Planning", { artifactId: input.artifactId });
- *     return { planSummary: "...", artifactId: "..." };
+ *     if (!input) return err("No input provided");
+ *     return ok({ planSummary: "...", artifactId: "..." });
  *   }
  * });
  * ```

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { ArtifactRefSchema, createAgent } from "@atlas/agent-sdk";
+import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
@@ -122,18 +122,14 @@ export async function* withMessageTimeout<T>(
   }
 }
 
-export const ClaudeCodeOutputSchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    data: z.object({
-      response: z.string().describe("Claude Code output text"),
-      artifactRef: ArtifactRefSchema,
-    }),
-  }),
-  z.object({ ok: z.literal(false), error: z.object({ reason: z.string() }) }),
-]);
+/**
+ * Output schema for Claude Code agent - describes the success data shape
+ */
+export const ClaudeCodeOutputSchema = z.object({
+  response: z.string().describe("Claude Code output text"),
+});
 
-type CCAgentResult = z.infer<typeof ClaudeCodeOutputSchema>;
+export type ClaudeCodeAgentResult = z.infer<typeof ClaudeCodeOutputSchema>;
 
 /**
  * Format tool invocation as concise single-line status message (≤50 chars).
@@ -163,12 +159,13 @@ Read package.json → "Reading package.json"
   });
 }
 
-export const claudeCodeAgent = createAgent<string, CCAgentResult>({
+export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
   id: "claude-code",
   displayName: "Claude Code",
   version: "1.0.0",
   description:
     "Execute coding tasks, analyze codebases, debug issues, and identify root causes using Claude API with sandboxed filesystem access",
+  outputSchema: ClaudeCodeOutputSchema,
   expertise: {
     domains: [
       "code-generation",
@@ -204,12 +201,12 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
   handler: async (prompt, { logger, abortSignal, stream, session, env }) => {
     const apiKey = env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return fail({ reason: "ANTHROPIC_API_KEY not set. Connect Anthropic in Link." });
+      return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
     }
 
     const ghToken = env.GH_TOKEN;
     if (!ghToken) {
-      return fail({ reason: "GH_TOKEN not set. Connect GitHub in Link." });
+      return err("GH_TOKEN not set. Connect GitHub in Link.");
     }
 
     const sandbox = await createSandbox(session.sessionId);
@@ -311,7 +308,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           if (message.subtype === "success") {
             // API auth failures have subtype=success but is_error=true
             if (message.is_error) {
-              return fail({ reason: message.result || "Execution failed" });
+              return err(message.result || "Execution failed");
             }
 
             responseText = message.result;
@@ -321,9 +318,8 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
             });
           } else {
             // Error types: error_max_turns, error_during_execution, etc.
-            const errorMsg = message.subtype;
-            logger.error("Execution failed", { subtype: errorMsg });
-            return fail({ reason: errorMsg });
+            logger.error("Execution failed", { subtype: message.subtype });
+            return err(message.subtype);
           }
         }
       }
@@ -340,13 +336,14 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       );
 
       if (!artifactResponse.ok) {
-        return fail({ reason: stringifyError(artifactResponse.error) });
+        return err(stringifyError(artifactResponse.error));
       }
 
-      return success({ response: responseText, artifactRef: artifactResponse.data.artifact });
+      const { id, type, summary } = artifactResponse.data.artifact;
+      return ok({ response: responseText }, { artifactRefs: [{ id, type, summary }] });
     } catch (error) {
       logger.error("Claude Code agent failed", { error });
-      return fail({ reason: stringifyError(error) });
+      return err(stringifyError(error));
     } finally {
       await sandbox.cleanup();
     }

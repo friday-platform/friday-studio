@@ -199,13 +199,22 @@ export async function validateAgentOutput(
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
   agentType?: "llm" | "system" | "sdk",
 ): Promise<void> {
-  // Skip validation if no output
-  if (!result.output) {
+  // Skip validation for error results
+  if (!result.ok) {
+    logger.warn("Agent returned error, skipping validation", {
+      agentId: result.agentId,
+      error: result.error.reason,
+    });
+    return;
+  }
+
+  // Skip validation if no data
+  if (!result.data) {
     logger.warn("Agent produced no output", { agentId: result.agentId });
     return;
   }
 
-  if (result.output === "") {
+  if (result.data === "") {
     logger.error("Agent output is empty!", { agentId: result.agentId });
     throw new Error(`Agent ${result.agentId} produced empty output`);
   }
@@ -213,15 +222,13 @@ export async function validateAgentOutput(
   // Only run hallucination detection for ad-hoc LLM agents
   // System agents and SDK agents are code-based and should not be checked
   if (agentType === "llm") {
-    const singleAgentResults: AgentResult[] = [result];
-
     const hallucinationDetectorConfig: HallucinationDetectorConfig = {
       logger: logger.child({ component: "hallucination-detector" }),
     };
 
     try {
       const analysis: HallucinationAnalysis = await analyzeHallucinations(
-        singleAgentResults,
+        [result],
         supervisionLevel,
         hallucinationDetectorConfig,
       );
@@ -272,8 +279,8 @@ export async function validateAgentOutput(
   }
 
   // Validate against schema if provided
-  if (expectedSchema && result.output) {
-    const validation = validateJSONSchema(result.output, expectedSchema);
+  if (expectedSchema && result.data) {
+    const validation = validateJSONSchema(result.data, expectedSchema);
     if (!validation.valid) {
       throw new Error(
         `Agent ${result.agentId} output failed schema validation: ${validation.errors.join(", ")}`,
@@ -282,7 +289,7 @@ export async function validateAgentOutput(
   }
 
   // Check for hallucinations (agent referencing non-existent documents)
-  const referencedDocIds = extractDocumentReferences(result.output);
+  const referencedDocIds = extractDocumentReferences(result.data);
   const existingDocIds = new Set(context.documents.map((d) => d.id));
 
   const hallucinations = referencedDocIds.filter((id) => !existingDocIds.has(id));

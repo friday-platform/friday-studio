@@ -1,3 +1,4 @@
+import { AgentResultSchema } from "@atlas/agent-sdk";
 import { z } from "zod";
 
 /** User text message */
@@ -66,6 +67,18 @@ export interface WorkspacePlannerEntry {
   artifactId: string;
 }
 
+/**
+ * Tool output for fsm-workspace-creator.
+ *
+ * The output structure is an MCP tool result containing the AgentResult envelope:
+ * { result: { content: [{ type: "text", text: JSON }] } }
+ *
+ * The JSON text contains the full AgentResult with:
+ * - agentId, timestamp, input, durationMs (envelope metadata)
+ * - ok: true/false (success discriminant)
+ * - data: FSMCreatorSuccessData (when ok: true)
+ * - error: { reason: string } (when ok: false)
+ */
 export interface WorkspaceCreator {
   type: "workspace_creator";
   id: string;
@@ -122,28 +135,44 @@ export type OutputEntry =
   | Intent
   | GenericToolEntry;
 
-/** Schema for workspace-planner part.output structure */
-const WorkspacePlannerOutputSchema = z.object({
+/** Schema for MCP tool result outer structure (used by system agent tools) */
+const MCPToolResultSchema = z.object({
   result: z.object({ content: z.array(z.object({ text: z.string() })) }),
 });
 
-/** Schema for the inner JSON text content */
-const WorkspacePlannerInnerSchema = z.object({
-  result: z.object({ data: z.object({ artifactId: z.string() }) }),
+/** Schema for MCP execution result envelope (wraps AgentResult) */
+export const MCPExecutionResultSchema = z.object({
+  type: z.literal("completed"),
+  result: z.unknown(),
 });
 
-/** Extract artifactId from workspace-planner's part.output */
+/** Schema for workspace-planner success data */
+const WorkspacePlannerSuccessDataSchema = z.object({ artifactId: z.string() });
+
+/**
+ * Extract artifactId from workspace-planner's part.output.
+ *
+ * Supports the AgentResult envelope structure:
+ * { agentId, timestamp, input, durationMs, ok: true, data: { artifactId } }
+ */
 export function parseWorkspacePlannerArtifactId(output: unknown): string | undefined {
-  const outer = WorkspacePlannerOutputSchema.safeParse(output);
+  const outer = MCPToolResultSchema.safeParse(output);
   if (!outer.success) return undefined;
 
   const firstContent = outer.data.result.content[0];
   if (!firstContent) return undefined;
 
   try {
-    const inner = WorkspacePlannerInnerSchema.safeParse(JSON.parse(firstContent.text));
-    if (inner.success) {
-      return inner.data.result.data.artifactId;
+    const parsed = JSON.parse(firstContent.text);
+    const executionResult = MCPExecutionResultSchema.safeParse(parsed);
+    if (!executionResult.success) return undefined;
+
+    const envelope = AgentResultSchema.safeParse(executionResult.data.result);
+    if (envelope.success && envelope.data.ok) {
+      const data = WorkspacePlannerSuccessDataSchema.safeParse(envelope.data.data);
+      if (data.success) {
+        return data.data.artifactId;
+      }
     }
   } catch {
     // JSON parse failed

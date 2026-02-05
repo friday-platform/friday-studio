@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { BundledAgentConfigFieldInput } from "@atlas/bundled-agents/registry";
+import type { BundledAgentConfigField } from "@atlas/bundled-agents/registry";
 import type { MCPServerConfig } from "@atlas/config";
 import { z } from "zod";
 import { CredentialNotFoundError, resolveCredentialsByProvider } from "./credential-resolver.ts";
@@ -31,7 +31,7 @@ export type ResolvedCredential = z.infer<typeof ResolvedCredentialSchema>;
 /**
  * Unified config field type (works with both bundled agents and MCP servers)
  */
-type ConfigField = BundledAgentConfigFieldInput | RequiredConfigField;
+type ConfigField = BundledAgentConfigField | RequiredConfigField;
 
 /**
  * Result of credential resolution validation

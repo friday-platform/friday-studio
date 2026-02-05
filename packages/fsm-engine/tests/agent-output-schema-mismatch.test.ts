@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import type { AgentResult } from "@atlas/agent-sdk/types";
+import type { AgentExecutionSuccess, AgentResult } from "@atlas/agent-sdk";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { InMemoryDocumentStore } from "@atlas/document-store";
@@ -97,46 +97,42 @@ const plan: WorkspacePlan = {
 function mockResearchAgentResult(agentId: string): AgentResult {
   return {
     agentId,
-    task: "Search for SpaceX news",
-    input: "Search the web for the latest news about SpaceX",
-    output: {
-      ok: true,
-      data: {
-        summary: "SpaceX is targeting mid-March 2026 for the debut launch of Starship V3.",
-        artifactRef: {
-          id: "f223fe95-d52a-40a8-a8ba-1b70b96388a3",
-          type: "web-search",
-          summary: "SpaceX latest news report",
-        },
-        outlineRefs: [
-          {
-            service: "internal",
-            title: "Search Result",
-            content: "Latest SpaceX News Updates",
-            artifactId: "f223fe95-d52a-40a8-a8ba-1b70b96388a3",
-            artifactLabel: "View Report",
-            type: "web-search",
-          },
-        ],
-      },
-    },
-    duration: 5000,
     timestamp: new Date().toISOString(),
+    input: "Search the web for the latest news about SpaceX",
+    ok: true,
+    data: {
+      summary: "SpaceX is targeting mid-March 2026 for the debut launch of Starship V3.",
+      artifactRef: {
+        id: "f223fe95-d52a-40a8-a8ba-1b70b96388a3",
+        type: "web-search",
+        summary: "SpaceX latest news report",
+      },
+      outlineRefs: [
+        {
+          service: "internal",
+          title: "Search Result",
+          content: "Latest SpaceX News Updates",
+          artifactId: "f223fe95-d52a-40a8-a8ba-1b70b96388a3",
+          artifactLabel: "View Report",
+          type: "web-search",
+        },
+      ],
+    },
+    durationMs: 5000,
   };
 }
 
 function mockSummaryAgentResult(agentId: string): AgentResult {
   return {
     agentId,
-    task: "Summarize research",
-    input: "Summarize SpaceX research",
-    output: {
-      artifactRefs: [
-        { id: "summary-artifact", type: "summary", summary: "SpaceX Starship V3 summary" },
-      ],
-    },
-    duration: 1000,
     timestamp: new Date().toISOString(),
+    input: "Summarize SpaceX research",
+    ok: true,
+    data: { response: "Summary of SpaceX research" },
+    artifactRefs: [
+      { id: "summary-artifact", type: "summary", summary: "SpaceX Starship V3 summary" },
+    ],
+    durationMs: 1000,
   };
 }
 
@@ -190,7 +186,17 @@ async function driveFSM(fsm: FSMDefinition, triggerSignalId: string): Promise<st
   };
 
   const mockLLMProvider: LLMProvider = {
-    call: () => Promise.resolve({ content: "Mock LLM response" }),
+    call: (params) => {
+      const startMs = Date.now();
+      return Promise.resolve({
+        agentId: params.agentId,
+        timestamp: new Date().toISOString(),
+        input: params.prompt,
+        ok: true,
+        data: { response: "Mock LLM response" },
+        durationMs: Date.now() - startMs,
+      } satisfies AgentExecutionSuccess);
+    },
   };
 
   const engine = new FSMEngine(fsm, {

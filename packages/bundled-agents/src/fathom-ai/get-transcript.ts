@@ -1,7 +1,7 @@
 import { env } from "node:process";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, err, ok } from "@atlas/agent-sdk";
+import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
-import { ArtifactRefsSchema } from "../shared-schemas.ts";
 
 /**
  * Fathom AI Get Transcript Agent
@@ -49,7 +49,6 @@ const TranscriptResponseSchema = z.object({ transcript: z.array(TranscriptItemSc
 
 export const FathomOutputSchema = z.object({
   response: z.string().describe("Meeting title and transcript text"),
-  artifactRefs: ArtifactRefsSchema.optional(),
 });
 
 type FathomGetTranscriptResult = z.infer<typeof FathomOutputSchema>;
@@ -59,6 +58,7 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
   displayName: "Fathom Get Transcript",
   version: "1.0.0",
   description: "Get the latest meeting from Fathom AI and retrieve its transcript",
+  outputSchema: FathomOutputSchema,
   expertise: {
     domains: ["fathom", "meetings", "transcripts"],
     examples: [
@@ -71,9 +71,9 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
     required: [{ name: "FATHOM_API_KEY", description: "Fathom AI API key for authentication" }],
   },
 
-  handler: async (_, { logger, stream }): Promise<FathomGetTranscriptResult> => {
+  handler: async (_input, { logger, stream }) => {
     if (!env.FATHOM_API_KEY) {
-      throw new Error("FATHOM_API_KEY environment variable is required");
+      return err("FATHOM_API_KEY environment variable is required");
     }
 
     try {
@@ -88,23 +88,19 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
       });
 
       if (!meetingsResponse.ok) {
-        throw new Error(
-          `Fathom API error: ${meetingsResponse.status} ${meetingsResponse.statusText}`,
-        );
+        return err(`Fathom API error: ${meetingsResponse.status} ${meetingsResponse.statusText}`);
       }
 
-      const meetingsData = await meetingsResponse.json();
-      const meetings = MeetingsResponseSchema.parse(meetingsData);
+      const meetings = MeetingsResponseSchema.parse(await meetingsResponse.json());
 
       if (!meetings.items || meetings.items.length === 0) {
-        return { response: "No meetings found in Fathom AI" };
+        return ok({ response: "No meetings found in Fathom AI" });
       }
 
-      // Get the latest meeting (first item in the list)
       const latestMeeting = meetings.items[0];
 
       if (!latestMeeting || !latestMeeting.recording_id) {
-        return { response: "Latest meeting has no recording ID available" };
+        return ok({ response: "Latest meeting has no recording ID available" });
       }
 
       logger.info(`Latest meeting: ${latestMeeting.title} (ID: ${latestMeeting.recording_id})`);
@@ -123,13 +119,12 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
       );
 
       if (!transcriptResponse.ok) {
-        throw new Error(
+        return err(
           `Fathom transcript API error: ${transcriptResponse.status} ${transcriptResponse.statusText}`,
         );
       }
 
-      const transcriptData = await transcriptResponse.json();
-      const transcript = TranscriptResponseSchema.parse(transcriptData);
+      const transcript = TranscriptResponseSchema.parse(await transcriptResponse.json());
 
       logger.info(`Retrieved transcript with ${transcript.transcript.length} items`);
 
@@ -137,12 +132,12 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
         .map((item) => `[${item.timestamp}] ${item.speaker.display_name}: ${item.text}`)
         .join("\n");
 
-      return {
+      return ok({
         response: `Latest meeting: "${latestMeeting.title}"\n\nTranscript:\n${transcriptText}`,
-      };
+      });
     } catch (error) {
-      logger.error("fathom-list-meetings failed", { error });
-      throw error;
+      logger.error("fathom-get-transcript failed", { error });
+      return err(stringifyError(error));
     }
   },
 });

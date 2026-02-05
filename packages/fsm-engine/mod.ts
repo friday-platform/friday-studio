@@ -5,6 +5,8 @@
  * Executes finite state machines defined in YAML with TypeScript functions.
  */
 
+// Re-export AgentResult from agent-sdk for consumers
+export type { AgentResult } from "@atlas/agent-sdk";
 // Artifact expansion for multi-step workflows
 export {
   type DocumentWithArtifactContent,
@@ -15,7 +17,6 @@ export * from "./document-schemas.ts";
 // Core engine and execution
 export type {
   AgentExecutor,
-  AgentResult,
   FSMEngineOptions,
 } from "./fsm-engine.ts";
 export { FSMEngine } from "./fsm-engine.ts";

@@ -6,9 +6,9 @@
  */
 
 import type {
-  AgentExecutionResult,
   AgentMetadata,
   AgentRegistry,
+  AgentResult,
   AgentServerAdapter,
   AtlasAgent,
 } from "@atlas/agent-sdk";
@@ -188,7 +188,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             resultType: typeof result,
           });
 
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          // Wrap in MCP execution result format (matches error/cancel pattern)
+          return {
+            content: [{ type: "text", text: JSON.stringify({ type: "completed", result }) }],
+          };
         } catch (error) {
           // Use helper to format error response
           return this.formatErrorResponse(error, agent.id, true);
@@ -317,7 +320,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     prompt: string,
     sessionData: AgentSessionData,
     requestId?: string,
-  ): Promise<AgentExecutionResult> {
+  ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
       sessionId: sessionData.sessionId,
@@ -327,16 +330,22 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       requestId,
     });
 
-    // Use execution manager with session data and requestId
-    const result = await this.executionManager.executeAgent(
+    const startTime = Date.now();
+
+    const payload = await this.executionManager.executeAgent(
       agentId,
       prompt,
       sessionData,
       requestId,
     );
 
-    // Wrap successful results in structured response
-    return { type: "completed", result };
+    return {
+      agentId,
+      timestamp: new Date().toISOString(),
+      input: prompt,
+      durationMs: Date.now() - startTime,
+      ...payload,
+    };
   }
 
   /**

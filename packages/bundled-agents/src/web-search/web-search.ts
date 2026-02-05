@@ -1,33 +1,18 @@
 import process from "node:process";
-import {
-  ArtifactRefSchema,
-  createAgent,
-  createFailTool,
-  repairJson,
-  repairToolCall,
-} from "@atlas/agent-sdk";
+import { createAgent, createFailTool, err, ok, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
-import { fail, getTodaysDate, success } from "@atlas/utils";
+import { getTodaysDate } from "@atlas/utils";
 import { generateObject, generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { Parallel } from "parallel-web";
 import { z } from "zod";
-import { OutlineRefsSchema } from "../shared-schemas.ts";
 import { executeSearch } from "./search-tool.ts";
 import { type QueryAnalysis, QueryAnalysisSchema, type SearchResult } from "./types.ts";
 
-export const ResearchOutputSchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    data: z.object({
-      summary: z.string().describe("Research summary narrative"),
-      artifactRef: ArtifactRefSchema,
-      outlineRefs: OutlineRefsSchema,
-    }),
-  }),
-  z.object({ ok: z.literal(false), error: z.object({ reason: z.string() }) }),
-]);
+export const ResearchOutputSchema = z.object({
+  response: z.string().describe("Research summary narrative"),
+});
 
 export type WebSearchAgentResult = z.infer<typeof ResearchOutputSchema>;
 
@@ -175,12 +160,7 @@ ${excerpts}`;
     maxOutputTokens: 8192,
   });
 
-  return {
-    title: result.object.title,
-    response: result.object.response,
-    sources: result.object.sources,
-    summary: result.object.summary,
-  };
+  return result.object;
 }
 
 export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
@@ -189,6 +169,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
   version: "2.0.0",
   description:
     "Web research with cross-referenced, cited sources. Use for: news/daily digests, company/person/product research, competitive intelligence, market analysis, fact-checking, or any question needing current web information.",
+  outputSchema: ResearchOutputSchema,
   expertise: {
     domains: [
       "research",
@@ -216,15 +197,17 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     const apiKey = process.env.PARALLEL_API_KEY;
 
     if (!gatewayUrl && !apiKey) {
-      throw new Error("FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required");
+      return err("FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required");
     }
     if (gatewayUrl && !atlasKey) {
-      throw new Error("ATLAS_KEY is required when using FRIDAY_GATEWAY_URL");
+      return err("ATLAS_KEY is required when using FRIDAY_GATEWAY_URL");
     }
 
-    const baseURL = gatewayUrl ? `${gatewayUrl}/v1/parallel` : undefined;
-    const defaultHeaders = gatewayUrl ? { Authorization: `Bearer ${atlasKey}` } : undefined;
-    const parallelClient = new Parallel({ apiKey: apiKey ?? "", baseURL, defaultHeaders });
+    const parallelClient = new Parallel({
+      apiKey: apiKey ?? "",
+      baseURL: gatewayUrl ? `${gatewayUrl}/v1/parallel` : undefined,
+      defaultHeaders: gatewayUrl ? { Authorization: `Bearer ${atlasKey}` } : undefined,
+    });
 
     stream?.emit({
       type: "data-tool-progress",
@@ -281,19 +264,19 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       });
     } catch (error) {
       logger.error("Query analysis failed", { error, prompt });
-      return fail({ reason: "Failed to analyze query" });
+      return err("Failed to analyze query");
     }
 
     const analysisState = state.value;
 
     if (analysisState.status === "failed") {
       logger.warn("Query analysis failed", { reason: analysisState.reason });
-      return fail({ reason: analysisState.reason });
+      return err(analysisState.reason);
     }
 
     if (analysisState.status === "pending") {
       logger.warn("No analysis tool was called", { prompt: prompt.slice(0, 500) });
-      return fail({ reason: "Failed to analyze query" });
+      return err("Failed to analyze query");
     }
 
     const { analysis } = analysisState;
@@ -312,7 +295,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     if (searchResult.results.length === 0) {
       logger.warn("No search results returned");
-      return fail({ reason: "No relevant results found for your query" });
+      return err("No relevant results found for your query");
     }
 
     const {
@@ -335,26 +318,28 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to create artifact: ${JSON.stringify(response.error)}`);
+      return err(`Failed to create artifact: ${JSON.stringify(response.error)}`);
     }
 
-    const artifactId = response.data.artifact.id;
+    const { id: artifactId, type, summary: artifactSummary } = response.data.artifact;
 
     logger.info("Research completed", { artifactId });
 
-    return success({
-      summary,
-      artifactRef: { id: artifactId, type: "web-search", summary },
-      outlineRefs: [
-        {
-          service: "internal",
-          title: "Search Result",
-          content: reportDescription,
-          artifactId,
-          artifactLabel: "View Report",
-          type: "web-search",
-        },
-      ],
-    });
+    return ok(
+      { response: summary },
+      {
+        artifactRefs: [{ id: artifactId, type, summary: artifactSummary }],
+        outlineRefs: [
+          {
+            service: "internal",
+            title: "Search Result",
+            content: reportDescription,
+            artifactId,
+            artifactLabel: "View Report",
+            type: "web-search",
+          },
+        ],
+      },
+    );
   },
 });

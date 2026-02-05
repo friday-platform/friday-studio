@@ -449,14 +449,18 @@ Return ONLY valid JSON:
  * Build validation input with full data visibility
  */
 function buildValidationInput(result: AgentResult): string {
+  // Extract toolCalls/toolResults from success envelope
+  const toolCalls = result.ok ? result.toolCalls : undefined;
+  const toolResults = result.ok ? result.toolResults : undefined;
+
   // Safely stringify tool calls
   const toolCallsSummary = (() => {
-    if (!Array.isArray(result.toolCalls) || result.toolCalls.length === 0) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
       return "NONE - Agent did not call any tools";
     }
 
     try {
-      return JSON.stringify(result.toolCalls, null, 2);
+      return JSON.stringify(toolCalls, null, 2);
     } catch {
       return "Failed to serialize tool calls";
     }
@@ -464,11 +468,11 @@ function buildValidationInput(result: AgentResult): string {
 
   // Safely stringify tool results - show full data
   const toolResultsText = (() => {
-    if (!Array.isArray(result.toolResults) || result.toolResults.length === 0) {
+    if (!Array.isArray(toolResults) || toolResults.length === 0) {
       return "No tool results available";
     }
 
-    return result.toolResults
+    return toolResults
       .map((tr, i) => {
         try {
           const text = typeof tr === "string" ? tr : JSON.stringify(tr, null, 2);
@@ -481,14 +485,13 @@ function buildValidationInput(result: AgentResult): string {
       .join("\n\n");
   })();
 
-  // Format output
+  // Format output - use data for success, error.reason for failure
   const outputText = (() => {
+    const output = result.ok ? result.data : result.error.reason;
     try {
-      return typeof result.output === "string"
-        ? result.output
-        : JSON.stringify(result.output, null, 2);
+      return typeof output === "string" ? output : JSON.stringify(output, null, 2);
     } catch {
-      return String(result.output);
+      return String(output);
     }
   })();
 
@@ -525,7 +528,7 @@ Check if factual claims in the agent output are present in:
 2. Input data above
 3. Logical inferences from #1 or #2
 
-Agent: ${result.agentId} | Duration: ${result.duration}ms`;
+Agent: ${result.agentId} | Duration: ${result.durationMs}ms`;
 }
 
 // JSON parsing helpers removed due to structured output usage

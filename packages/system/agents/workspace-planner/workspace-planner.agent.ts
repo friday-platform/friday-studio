@@ -1,4 +1,4 @@
-import { createAgent, repairJson } from "@atlas/agent-sdk";
+import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import { client, parseResult } from "@atlas/client/v2";
 import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
@@ -26,7 +26,7 @@ import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-val
 import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
+import { getTodaysDate, stringifyError } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
 import { generateObject, generateText } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
@@ -42,10 +42,7 @@ export const WorkspacePlannerSuccessDataSchema = z.object({
   nextStep: z.string(),
 });
 
-type WorkspacePlannerResult = Result<
-  z.infer<typeof WorkspacePlannerSuccessDataSchema>,
-  { reason: string }
->;
+type WorkspacePlannerSuccessData = z.infer<typeof WorkspacePlannerSuccessDataSchema>;
 
 const WorkspacePlannerInputSchema = z.object({
   intent: z.string().describe("Workspace requirements or modification request"),
@@ -189,7 +186,10 @@ Focus on user intent and deliver maximum clarity in minimum words.
 - No enterprise speak: "robust", "comprehensive", "leverage", "facilitate"
 - Precision > politeness`;
 
-export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, WorkspacePlannerResult>({
+export const workspacePlannerAgent = createAgent<
+  WorkspacePlannerInput,
+  WorkspacePlannerSuccessData
+>({
   id: "workspace-planner",
   displayName: "Workspace Planner",
   version: "1.0.0",
@@ -524,9 +524,9 @@ ${integrationsXml}`,
         logger.warn("Workspace planning blocked by missing information", {
           clarificationCount: clarifications.length,
         });
-        return fail({
-          reason: `Cannot create workspace plan - missing required information:\n\n${clarificationMessage}`,
-        });
+        return err(
+          `Cannot create workspace plan - missing required information:\n\n${clarificationMessage}`,
+        );
       }
       const signalIds = signalsWithIds.map((s) => s.id);
       const agentIds = agentsWithIds.map((a) => a.id);
@@ -660,7 +660,7 @@ Requirements: ${input.intent}`,
         if (!response.ok) {
           throw new Error(`Failed to update artifact: ${JSON.stringify(response.error)}`);
         }
-        return success({
+        return ok({
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,
           revision: response.data.artifact.revision,
@@ -689,7 +689,7 @@ Requirements: ${input.intent}`,
         if (!response.ok) {
           throw new Error(`Failed to create artifact: ${JSON.stringify(response.error)}`);
         }
-        return success({
+        return ok({
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,
           revision: 1,
@@ -699,7 +699,7 @@ Requirements: ${input.intent}`,
       }
     } catch (error) {
       logger.error("Failed to plan workspace", { error });
-      return fail({ reason: stringifyError(error) });
+      return err(stringifyError(error));
     }
   },
 

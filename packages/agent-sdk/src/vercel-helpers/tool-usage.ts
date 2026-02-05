@@ -1,25 +1,36 @@
 import { ArtifactSchema } from "@atlas/core/artifacts";
 import { logger } from "@atlas/logger";
-import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
+import type { StepResult, ToolSet, TypedToolCall, TypedToolResult } from "ai";
 import type { ArtifactRef, AtlasTools, ToolCall, ToolResult } from "../types.ts";
 
 /**
- * Collect tool usage from AI SDK responses, preferring per-step data when available.
- *
- * - Flattens steps[].toolCalls and steps[].toolResults to capture dynamic tool usage
- * - Falls back to top-level toolCalls/toolResults if no per-step entries exist
+ * Find a tool call by name and return its input if it's an object.
+ * Returns undefined if not found or input is null/primitive.
  */
-export function collectToolUsageFromSteps(res: {
-  steps?: Array<StepResult<AtlasTools>>;
-  toolCalls?: Array<TypedToolCall<AtlasTools>>;
-  toolResults?: Array<TypedToolResult<AtlasTools>>;
-}): { assembledToolCalls: ToolCall[]; assembledToolResults: ToolResult[] } {
-  const steps: Array<StepResult<AtlasTools>> = Array.isArray(res.steps) ? res.steps : [];
+export function extractToolCallInput<T extends Record<string, unknown> = Record<string, unknown>>(
+  toolCalls: ToolCall[],
+  toolName: string,
+): T | undefined {
+  const call = toolCalls.find((tc) => tc.toolName === toolName);
+  if (!call || typeof call.input !== "object" || call.input === null) {
+    return undefined;
+  }
+  return call.input as T;
+}
 
-  const stepToolCalls: Array<TypedToolCall<AtlasTools>> = steps.flatMap(
-    (step) => step.toolCalls ?? [],
-  );
-  const stepToolResults: Array<TypedToolResult<AtlasTools>> = steps.flatMap(
+/**
+ * Flatten tool calls/results from AI SDK multi-step responses.
+ * Prefers per-step data, falls back to top-level arrays.
+ */
+export function collectToolUsageFromSteps<T extends ToolSet = AtlasTools>(res: {
+  steps?: Array<StepResult<T>>;
+  toolCalls?: Array<TypedToolCall<T>>;
+  toolResults?: Array<TypedToolResult<T>>;
+}): { assembledToolCalls: ToolCall[]; assembledToolResults: ToolResult[] } {
+  const steps: Array<StepResult<T>> = Array.isArray(res.steps) ? res.steps : [];
+
+  const stepToolCalls: Array<TypedToolCall<T>> = steps.flatMap((step) => step.toolCalls ?? []);
+  const stepToolResults: Array<TypedToolResult<T>> = steps.flatMap(
     (step) => step.toolResults ?? [],
   );
 
@@ -36,11 +47,7 @@ export function collectToolUsageFromSteps(res: {
   return { assembledToolCalls, assembledToolResults };
 }
 
-/**
- * Extract artifact references with full metadata from tool results
- * @param toolResults - Tool results
- * @returns Artifact references with id, type, and summary
- */
+/** Extract artifact references from tool results */
 export function extractArtifactRefsFromToolResults(toolResults: ToolResult[]): ArtifactRef[] {
   const refs: ArtifactRef[] = [];
 
@@ -62,10 +69,9 @@ export function extractArtifactRefsFromToolResults(toolResults: ToolResult[]): A
             summary: outputArtifact.data.summary,
           });
         }
-      } catch (_error) {
-        // Skip results that aren't valid JSON
+      } catch (error) {
         logger.debug("failed to parse artifact refs from tool result", {
-          error: _error,
+          error,
           toolResult: result,
         });
       }

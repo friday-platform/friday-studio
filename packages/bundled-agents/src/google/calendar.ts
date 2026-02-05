@@ -1,13 +1,20 @@
 import { env } from "node:process";
-import type { LinkCredentialRef } from "@atlas/agent-sdk";
-import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import {
+  createAgent,
+  createFailTool,
+  err,
+  type LinkCredentialRef,
+  ok,
+  repairJson,
+  repairToolCall,
+} from "@atlas/agent-sdk";
+import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
-import { ArtifactRefsSchema, OutlineRefsSchema } from "../shared-schemas.ts";
 
 /**
  * Google Calendar Agent
@@ -19,8 +26,6 @@ import { ArtifactRefsSchema, OutlineRefsSchema } from "../shared-schemas.ts";
 
 export const GoogleCalendarOutputSchema = z.object({
   response: z.string().describe("Calendar operation result text"),
-  artifactRefs: ArtifactRefsSchema.optional(),
-  outlineRefs: OutlineRefsSchema.optional(),
 });
 
 type GoogleCalendarAgentResult = z.infer<typeof GoogleCalendarOutputSchema>;
@@ -75,6 +80,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   version: "1.0.0",
   description:
     "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
+  outputSchema: GoogleCalendarOutputSchema,
   expertise: {
     domains: ["calendar", "schedule", "meetings", "events", "availability", "scheduling"],
     examples: [
@@ -112,12 +118,9 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
     },
   },
 
-  handler: async (
-    prompt,
-    { tools, logger, abortSignal, stream, session },
-  ): Promise<GoogleCalendarAgentResult> => {
+  handler: async (prompt, { tools, logger, abortSignal, stream, session }) => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
+      return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
     const system = `You are a Google Calendar assistant. Be concise, direct, and factual.
@@ -167,10 +170,9 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
 
       // If no tools are available, do not attempt execution; return a clear message.
       if (!tools || Object.keys(tools).length === 0) {
-        return {
-          response:
-            "Cannot complete: Google Calendar tools unavailable. Provide Google Calendar MCP tools to proceed.",
-        };
+        return err(
+          "Cannot complete: Google Calendar tools unavailable. Provide Google Calendar MCP tools to proceed.",
+        );
       }
 
       const result = await generateText({
@@ -193,30 +195,27 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         usage: result.usage,
       });
 
+      // Collect tool usage from the result (helper handles steps vs top-level fallback)
+      const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
+        steps: result.steps,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
+      });
+
       // Check if the agent signaled failure
       if (state.failure) {
-        return { response: state.failure.reason };
+        return err(state.failure.reason);
       }
 
-      const { steps, text } = result;
-
-      // Extract tool names from all steps to determine what operations were performed
-      const calledToolNames = new Set<string>();
-      for (const step of steps) {
-        if (step.toolCalls) {
-          for (const tc of step.toolCalls) {
-            calledToolNames.add(tc.toolName);
-          }
-        }
-      }
-
+      // Determine what operations were performed from assembled tool calls
+      const calledToolNames = new Set(assembledToolCalls.map((tc) => tc.toolName));
       const writeToolNames = new Set(["create_event", "modify_event", "delete_event"]);
       const calledWriteTools = [...calledToolNames].some((name) => writeToolNames.has(name));
       const calledGetEvents = calledToolNames.has("get_events");
 
       // Only create artifact if get_events was called AND no write operations were performed
       if (calledGetEvents && !calledWriteTools) {
-        const extractionResult = await generateObject({
+        const { object: calendarData } = await generateObject({
           model: registry.languageModel("anthropic:claude-haiku-4-5"),
           schema: CalendarScheduleSchema,
           experimental_repairText: repairJson,
@@ -230,8 +229,6 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
             { role: "user", content: `Extract all events from:\n${result.text}` },
           ],
         });
-
-        const calendarData = extractionResult.object;
 
         // Generate rich summary with actual event names and times
         const summary = await generateCalendarSummary(calendarData, abortSignal);
@@ -250,34 +247,41 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         );
 
         if (!artifactResponse.ok) {
-          throw new Error(
+          return err(
             `Failed to create calendar artifact: ${stringifyError(artifactResponse.error)}`,
           );
         }
 
-        const artifactId = artifactResponse.data.artifact.id;
+        const artifact = artifactResponse.data.artifact;
 
-        return {
-          response: "",
-          artifactRefs: [{ id: artifactId, type: "calendar-schedule", summary }],
-          outlineRefs: [
-            {
-              service: "google-calendar",
-              title: "Calendar retrieved",
-              content: summary,
-              artifactId,
-              artifactLabel: "View Calendar",
-              type: "calendar-schedule",
-            },
-          ],
-        };
+        return ok(
+          { response: "" },
+          {
+            toolCalls: assembledToolCalls,
+            toolResults: assembledToolResults,
+            artifactRefs: [{ id: artifact.id, type: artifact.type, summary: artifact.summary }],
+            outlineRefs: [
+              {
+                service: "google-calendar",
+                title: "Calendar retrieved",
+                content: summary,
+                artifactId: artifact.id,
+                artifactLabel: "View Calendar",
+                type: "calendar-schedule",
+              },
+            ],
+          },
+        );
       }
 
       // No artifact for write operations or when get_events wasn't called
-      return { response: text.trim() };
+      return ok(
+        { response: result.text.trim() },
+        { toolCalls: assembledToolCalls, toolResults: assembledToolResults },
+      );
     } catch (error) {
       logger.error("google-calendar failed", { error });
-      throw error;
+      return err(stringifyError(error));
     }
   },
 });

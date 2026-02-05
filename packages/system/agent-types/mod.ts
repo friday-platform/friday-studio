@@ -34,14 +34,10 @@ export const FSMCreatorSuccessDataSchema = z.object({
 
 /**
  * Error payload for FSMCreatorResult.
+ * Note: For credential errors, missingCredentials JSON is embedded in the reason string
+ * so the LLM can still parse it for recovery (e.g., calling connect_service).
  */
-export const FSMCreatorErrorDataSchema = z.object({
-  reason: z.string(),
-  /** Structured credential info for LLM to call connect_service */
-  missingCredentials: z.array(MissingCredentialSchema).optional(),
-  /** Suggested recovery action for the LLM */
-  suggestedAction: z.literal("connect_service").optional(),
-});
+export const FSMCreatorErrorDataSchema = z.object({ reason: z.string() });
 
 /**
  * Discriminated union Result type as Zod schema.

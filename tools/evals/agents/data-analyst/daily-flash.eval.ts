@@ -5,13 +5,30 @@
  * See: docs/plans/2026-01-03-data-analyst-agent-eval-plan.md
  */
 
-import { dataAnalystAgent, type QueryExecution } from "@atlas/bundled-agents";
+import {
+  type DataAnalystResult,
+  dataAnalystAgent,
+  type QueryExecution,
+} from "@atlas/bundled-agents";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { join } from "@std/path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
+
+/**
+ * Unwraps AgentResult, throwing on failure.
+ * Simplifies test code by allowing direct access to result fields.
+ */
+function unwrapResult(
+  result: Awaited<ReturnType<typeof dataAnalystAgent.execute>>,
+): DataAnalystResult {
+  if (!result.ok) {
+    throw new Error(`Agent execution failed: ${result.error.reason}`);
+  }
+  return result.data;
+}
 
 // Path to the daily flash CSV (checked into repo under data/)
 const evalDir = import.meta.dirname ?? ".";
@@ -102,8 +119,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. How many rows are in the dataset?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -140,8 +158,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What was the total revenue across all campaigns?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -179,8 +198,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. How many unique campaigns are in the dataset?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -219,8 +239,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What was total revenue by ad type?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -270,8 +291,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. How did daily revenue trend over the date range? Show me revenue by day.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -315,8 +337,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What are the top 10 manufacturers by revenue?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -358,8 +381,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What's the overall click-through rate (CTR)? CTR = clicks / impressions.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -405,8 +429,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. Break down revenue by both ad type and page type.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -461,8 +486,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What percentage of campaigns generate 80% of total revenue? This is a Pareto/concentration analysis.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -507,8 +533,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. Which parent companies advertise in BOTH the Dog AND Cat categories (CATEGORY_LEVEL1)? Rank them by their combined revenue across both categories.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -555,8 +582,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. In the "Vitamins & Supplements" subcategory (CATEGORY_LEVEL3), which manufacturer has the highest market share by revenue? What percentage of that subcategory's revenue do they capture?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -604,8 +632,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. For each ad type, what percentage of rows have impressions > 0 but revenue = 0 or missing? Call this the "wasted impression" rate. Which ad type wastes the most impressions?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -660,8 +689,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. Find campaigns that were active (had revenue) on ALL 9 days in the dataset. Among those, which campaigns had the most CONSISTENT daily revenue - meaning lowest variance or standard deviation in their day-to-day revenue? Show me the top 5 most consistent campaigns that also had meaningful total revenue (>$1000).`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -717,8 +747,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. Find manufacturers where their revenue rank is much worse than their impression rank. For example, a manufacturer ranked #5 by impressions but #50 by revenue is undermonetizing. Which manufacturers have the biggest gap between impression rank and revenue rank?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -767,8 +798,9 @@ describe("Data Analyst - Daily Flash Dataset", () => {
     const prompt = `Analyze artifact ${artifactId}. What's the total revenue for Sponsored Products only?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 

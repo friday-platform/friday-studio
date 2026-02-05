@@ -1,12 +1,6 @@
 import { APICallError } from "@ai-sdk/provider";
-import type {
-  ArtifactRef,
-  AtlasAgent,
-  LinkCredentialRef,
-  ToolCall,
-  ToolResult,
-} from "@atlas/agent-sdk";
-import { createAgent, repairToolCall } from "@atlas/agent-sdk";
+import type { AtlasAgent, LinkCredentialRef } from "@atlas/agent-sdk";
+import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -16,39 +10,40 @@ import { getDefaultProviderOpts, registry, validateProvider } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { stepCountIs, streamText } from "ai";
+import { z } from "zod";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
-export type WrappedAgentResult = {
-  response: string;
-  reasoning?: string;
-  toolCalls?: ToolCall[];
-  toolResults?: ToolResult[];
-  artifactRefs?: ArtifactRef[];
-};
-type WrappedAgent = AtlasAgent<string, WrappedAgentResult>;
-
-// Tool usage collector moved to @atlas/agent-sdk/vercel-helpers
+/**
+ * Default output schema for LLM agents.
+ * Text response wrapped as `{ response: string }` for consistent extraction.
+ */
+export const LLMOutputSchema = z.object({ response: z.string().describe("LLM text response") });
+export type LLMOutput = z.infer<typeof LLMOutputSchema>;
 
 /**
  * Convert workspace LLM config to AtlasAgent.
  * Creates a runnable agent using workspace.yml LLM settings.
+ *
+ * Handler returns AgentPayload via ok()/err() helpers.
+ * Execution layer wraps with metadata (agentId, timestamp, input, durationMs).
  */
 export function convertLLMToAgent(
   config: LLMAgentConfig,
   agentId: string,
   logger: Logger,
-): WrappedAgent {
+): AtlasAgent<string, LLMOutput> {
   // Use configured retries or default to 3 for better resilience against 529 errors
   const maxRetries = config.config.max_retries ?? 3;
 
   const provider = validateProvider(config.config.provider);
   const model = registry.languageModel(`${provider}:${config.config.model}`);
 
-  const agent = createAgent<string, WrappedAgentResult>({
+  const agent = createAgent<string, LLMOutput>({
     id: agentId,
     version: "1.0.0",
     description: config.description,
+    outputSchema: LLMOutputSchema,
     expertise: { domains: ["general"], examples: [] },
     handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
@@ -117,22 +112,25 @@ export function convertLLMToAgent(
 
         const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
-        return {
-          reasoning,
-          response: text,
-          toolCalls: assembledToolCalls,
-          toolResults: assembledToolResults,
-          artifactRefs,
-        };
+        return ok(
+          { response: text },
+          {
+            reasoning: reasoning || undefined,
+            toolCalls: assembledToolCalls,
+            toolResults: assembledToolResults,
+            artifactRefs,
+          },
+        );
       } catch (error) {
         // Simply check if we were aborted, don't try to detect from error
         if (abortSignal?.aborted) {
-          logger.info("Wrapped agent execution cancelled", { agentId });
+          logger.info("LLM agent execution cancelled", { agentId });
           stream?.emit({
             type: "data-tool-progress",
             data: { toolName: agentId, content: "Cancelling" },
           });
-          throw new DOMException("Agent execution cancelled", "AbortError");
+          // Return error payload for cancellation instead of throwing
+          return err("Agent execution cancelled");
         }
 
         // Enhanced error logging for API overload situations
@@ -150,7 +148,7 @@ export function convertLLMToAgent(
             (error instanceof Error && error.message.includes("Overloaded")),
         };
 
-        logger.error("Error when invoking wrapped agent", errorDetails);
+        logger.error("Error when invoking LLM agent", errorDetails);
 
         // Log guidance for overload errors
         if (errorDetails.isOverloaded) {
@@ -163,7 +161,7 @@ export function convertLLMToAgent(
           );
         }
 
-        // For 529 errors, throw with structured cause and user-friendly message
+        // 529 errors are retried by the AI SDK - throw to let retry logic work
         if (isAPIError && error.statusCode === 529) {
           throwWithCause("API is overloaded. The service will automatically retry.", {
             type: "api",
@@ -172,7 +170,9 @@ export function convertLLMToAgent(
           });
         }
 
-        throw error;
+        // For other errors, return error payload
+        const reason = error instanceof Error ? error.message : String(error);
+        return err(reason);
       }
     },
   });

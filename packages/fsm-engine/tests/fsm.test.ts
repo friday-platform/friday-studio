@@ -185,12 +185,24 @@ describe("FSM Engine - Core Mechanics", () => {
 
       const { store, scope } = await createTestEngine(fsm, { initialState: "start" });
 
-      // Create engine with mock LLM provider that returns failStep
+      // Create engine with mock LLM provider that returns failStep in AgentResult format
       const mockLLMProvider = {
-        call: () =>
+        call: (params: { agentId: string; prompt: string }) =>
           Promise.resolve({
-            content: "",
-            calledTool: { name: "failStep", args: { reason: "Missing required data" } },
+            agentId: params.agentId,
+            timestamp: new Date().toISOString(),
+            input: params.prompt,
+            ok: true as const,
+            data: { response: "" },
+            toolCalls: [
+              {
+                type: "tool-call" as const,
+                toolCallId: "mock-failStep",
+                toolName: "failStep",
+                input: { reason: "Missing required data" },
+              },
+            ],
+            durationMs: 0,
           }),
       };
 

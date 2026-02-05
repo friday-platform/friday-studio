@@ -1,18 +1,17 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { env } from "node:process";
-import { createAgent, repairToolCall } from "@atlas/agent-sdk";
+import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
 
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
-import { getTodaysDate } from "@atlas/utils";
+import { getTodaysDate, stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
 import { resolve } from "@std/path";
 import { generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
-import { OutlineRefsSchema } from "../shared-schemas.ts";
 import { validateRecipient } from "./recipient-validation.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
@@ -34,12 +33,11 @@ export const EmailOutputSchema = z.object({
       from: z.string(),
     })
     .optional(),
-  outlineRefs: OutlineRefsSchema.optional(),
 });
 
-type Result = z.infer<typeof EmailOutputSchema>;
+type EmailOutput = z.infer<typeof EmailOutputSchema>;
 
-export const emailAgent = createAgent<string, Result>({
+export const emailAgent = createAgent<string, EmailOutput>({
   id: "email",
   displayName: "Email",
   version: "1.0.0",
@@ -47,8 +45,9 @@ export const emailAgent = createAgent<string, Result>({
     "Compose and send email notifications via SendGrid. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
   constraints:
     "Recipients restricted to authenticated user's email or same organization domain. External recipients are automatically redirected to sender. Single recipient only - no CC, BCC, or multi-send supported.",
+  outputSchema: EmailOutputSchema,
   expertise: {
-    domains: ["email", "notifications", "sendgrid"],
+    domains: ["email", "gmail", "notifications", "sendgrid", "messaging"],
     examples: [
       "Send me an email summary of today's meeting notes",
       "Email me a reminder about the 2pm deadline",
@@ -74,9 +73,9 @@ export const emailAgent = createAgent<string, Result>({
     ],
   },
 
-  handler: async (prompt, { logger, abortSignal, stream }): Promise<Result> => {
+  handler: async (prompt, { logger, abortSignal, stream }) => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
+      return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
     stream?.emit({
@@ -171,12 +170,12 @@ CONTENT GUIDELINES (for composeEmail):
 
     if (failureState.failed) {
       logger.warn("Email composition refused", { reason: failureState.reason });
-      throw new Error(`Cannot compose email: ${failureState.reason}`);
+      return err(`Cannot compose email: ${failureState.reason}`);
     }
 
     if (!composedEmail) {
       logger.warn("Email composition did not complete - no tool called");
-      throw new Error("Cannot compose email: The agent did not produce a result");
+      return err("Cannot compose email: The agent did not produce a result");
     }
 
     // TS can't track mutation in tool execute callback
@@ -185,7 +184,7 @@ CONTENT GUIDELINES (for composeEmail):
     // Validate recipient based on user's email domain
     const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
     if (!atlasUserEmail) {
-      throw new Error(
+      return err(
         "User email required from ATLAS_KEY to send emails. Please ensure you are authenticated.",
       );
     }
@@ -202,7 +201,7 @@ CONTENT GUIDELINES (for composeEmail):
 
     // Security check: verify recipient is in prompt (skip if we overrode it)
     if (!recipientResult.overridden && !prompt.toLowerCase().includes(params.to.toLowerCase())) {
-      throw new Error(
+      return err(
         `Security: Recipient email "${params.to}" not found in prompt. The agent may be hallucinating email addresses.`,
       );
     }
@@ -220,19 +219,19 @@ CONTENT GUIDELINES (for composeEmail):
       contentLength: params.content.length,
     });
 
-    let attachments: EmailParams["attachments"];
-    if (params.attachment_paths && params.attachment_paths.length > 0) {
-      stream?.emit({
-        type: "data-tool-progress",
-        data: {
-          toolName: "Email",
-          content: `Processing ${params.attachment_paths.length} attachment(s)`,
-        },
-      });
+    try {
+      let attachments: EmailParams["attachments"];
+      if (params.attachment_paths && params.attachment_paths.length > 0) {
+        stream?.emit({
+          type: "data-tool-progress",
+          data: {
+            toolName: "Email",
+            content: `Processing ${params.attachment_paths.length} attachment(s)`,
+          },
+        });
 
-      attachments = await Promise.all(
-        params.attachment_paths.map(async (filePath) => {
-          try {
+        attachments = await Promise.all(
+          params.attachment_paths.map(async (filePath) => {
             const absolutePath = resolve(filePath);
             if (!absolutePath.startsWith(resolve(homedir()))) {
               throw new Error(
@@ -264,83 +263,89 @@ CONTENT GUIDELINES (for composeEmail):
               type: contentType(ext) || "application/octet-stream",
               disposition: "attachment" as const,
             };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to attach file ${filePath}: ${message}`);
-          }
-        }),
-      );
+          }),
+        );
 
-      logger.debug("Processed attachments", {
-        count: attachments.length,
-        filenames: attachments.map((a) => a.filename),
+        logger.debug("Processed attachments", {
+          count: attachments.length,
+          filenames: attachments.map((a) => a.filename),
+        });
+      }
+
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Email", content: `Sending email to ${params.to}` },
       });
-    }
 
-    stream?.emit({
-      type: "data-tool-progress",
-      data: { toolName: "Email", content: `Sending email to ${params.to}` },
-    });
+      const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
+      // atlasUserEmail is already validated above - it's required for sending
+      const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
 
-    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
-    // atlasUserEmail is already validated above - it's required for sending
-    const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
-
-    const emailParams: EmailParams = {
-      to: params.to,
-      subject: params.subject,
-      content: template
-        .replace(
-          "{{ content }}",
-          params.content
-            .map((c) => {
-              if (c.tag === "paragraph") {
-                return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
-              } else if (c.tag === "heading") {
-                return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
-              } else if (c.tag === "link") {
-                return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
-              }
-              return c.content;
-            })
-            .join(""),
-        )
-        .replace("{{ sender_info }}", senderInfo),
-      from: fromEmail,
-      from_name: params.from_name || env.SENDGRID_FROM_NAME || "Friday AI",
-      attachments,
-    };
-
-    const sandboxMode = env.SENDGRID_SANDBOX_MODE === "true";
-
-    logger.debug("Sending email via SendGrid", {
-      to: emailParams.to,
-      from: emailParams.from,
-      content: emailParams.content,
-      sandboxMode,
-    });
-
-    const result = await sendEmail(emailParams, { sandboxMode });
-    const message_id = result.headers.get("x-message-id") ?? undefined;
-
-    logger.info("Email sent successfully", { to: emailParams.to, message_id });
-
-    return {
-      response: `Email sent successfully to ${params.to}`,
-      message_id,
-      email: {
-        to: emailParams.to,
-        subject: emailParams.subject,
-        content: emailParams.content,
+      const emailParams: EmailParams = {
+        to: params.to,
+        subject: params.subject,
+        content: template
+          .replace(
+            "{{ content }}",
+            params.content
+              .map((c) => {
+                if (c.tag === "paragraph") {
+                  return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
+                } else if (c.tag === "heading") {
+                  return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
+                } else if (c.tag === "link") {
+                  return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
+                }
+                return c.content;
+              })
+              .join(""),
+          )
+          .replace("{{ sender_info }}", senderInfo),
         from: fromEmail,
-      },
-      outlineRefs: [
+        from_name: params.from_name || env.SENDGRID_FROM_NAME || "Friday AI",
+        attachments,
+      };
+
+      const sandboxMode = env.SENDGRID_SANDBOX_MODE === "true";
+
+      logger.debug("Sending email via SendGrid", {
+        to: emailParams.to,
+        from: emailParams.from,
+        content: emailParams.content,
+        sandboxMode,
+      });
+
+      const result = await sendEmail(emailParams, { sandboxMode });
+      const message_id = result.headers.get("x-message-id") ?? undefined;
+
+      logger.info("Email sent successfully", { to: emailParams.to, message_id });
+
+      return ok(
         {
-          service: "email",
-          title: "Email sent",
-          content: `Email sent successfully to ${emailParams.to}`,
+          response: `Email sent successfully to ${params.to}`,
+          message_id,
+          email: {
+            to: emailParams.to,
+            subject: emailParams.subject,
+            content: emailParams.content,
+            from: fromEmail,
+          },
         },
-      ],
-    };
+        {
+          toolCalls: res.toolCalls,
+          toolResults: res.toolResults,
+          outlineRefs: [
+            {
+              service: "email",
+              title: "Email sent",
+              content: `Email sent successfully to ${emailParams.to}`,
+            },
+          ],
+        },
+      );
+    } catch (error) {
+      logger.error("email-communicator failed", { error });
+      return err(stringifyError(error));
+    }
   },
 });

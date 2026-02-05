@@ -26,16 +26,16 @@ import { SupervisionLevel } from "./supervision-levels.ts";
  * @param trace - LLM action trace from FSM engine execution
  * @returns AgentResult compatible with hallucination detector
  */
-export function traceToAgentResult(trace: LLMActionTrace): AgentResult {
+export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, string> {
   return {
     agentId: "fsm-llm-action",
-    task: trace.prompt,
+    timestamp: new Date().toISOString(),
     input: trace.prompt,
-    output: trace.content,
+    ok: true,
+    data: trace.content,
     toolCalls: trace.toolCalls,
     toolResults: trace.toolResults,
-    duration: 0, // Not tracked in FSM trace
-    timestamp: new Date().toISOString(),
+    durationMs: 0, // Not tracked in FSM trace
   };
 }
 

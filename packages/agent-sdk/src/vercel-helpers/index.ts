@@ -10,4 +10,5 @@ export { pipeUIMessageStream } from "./stream-mapper.ts";
 export {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
+  extractToolCallInput,
 } from "./tool-usage.ts";

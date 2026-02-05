@@ -135,12 +135,15 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
 
     // Verify result structure
     assert(result, "Should return a result");
-    assert(result.summary, "Should return summary");
-    assert(result.artifactRef, "Should return artifactRef");
-    assertEquals(result.artifactRef.type, "file", "ArtifactRef should be type 'file'");
+    assert(result.ok, "Should return ok: true");
+    assert(result.data.response, "Should return response");
+    const artifactRefs = result.artifactRefs ?? [];
+    assert(artifactRefs.length > 0, "Should return artifactRefs");
+    const artifactRef = artifactRefs[0]!;
+    assertEquals(artifactRef.type, "file", "ArtifactRef should be type 'file'");
 
     // Load and verify artifact content
-    const artifactResult = await ArtifactStorage.get({ id: result.artifactRef.id });
+    const artifactResult = await ArtifactStorage.get({ id: artifactRef.id });
     assert(artifactResult.ok, "Should load artifact");
     assert(artifactResult.data, "Artifact data should exist");
     assert(artifactResult.data.data.type === "file", "Artifact should be file type");
@@ -233,9 +236,11 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
       const result = await csvFilterSamplerAgent.execute(prompt, context);
 
       assert(result, `Run ${i + 1} should return a result`);
-      assert(result.artifactRef, `Run ${i + 1} should return artifactRef`);
+      assert(result.ok, `Run ${i + 1} should return ok: true`);
+      const runArtifactRefs = result.artifactRefs ?? [];
+      assert(runArtifactRefs.length > 0, `Run ${i + 1} should return artifactRefs`);
 
-      const artifactResult = await ArtifactStorage.get({ id: result.artifactRef.id });
+      const artifactResult = await ArtifactStorage.get({ id: runArtifactRefs[0]!.id });
       assert(artifactResult.ok, "Should load artifact");
       assert(artifactResult.data, "Artifact data should exist");
       assert(artifactResult.data.data.type === "file", "Artifact should be file type");
@@ -295,10 +300,12 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     snapshot({ result, metrics: { ...metrics, timing: { executionTimeMs } } });
 
     assert(result, "Agent should handle empty results gracefully");
-    assert(result.artifactRef, "Should return artifactRef even with empty results");
+    assert(result.ok, "Should return ok: true even with empty results");
+    const emptyArtifactRefs = result.artifactRefs ?? [];
+    assert(emptyArtifactRefs.length > 0, "Should return artifactRefs even with empty results");
 
     // Load artifact
-    const artifactResult = await ArtifactStorage.get({ id: result.artifactRef.id });
+    const artifactResult = await ArtifactStorage.get({ id: emptyArtifactRefs[0]!.id });
     assert(artifactResult.ok, "Should load artifact");
     assert(artifactResult.data, "Artifact data should exist");
     assert(artifactResult.data.data.type === "file", "Artifact should be file type");

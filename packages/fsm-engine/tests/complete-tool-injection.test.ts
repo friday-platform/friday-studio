@@ -1,22 +1,58 @@
+import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
-import type { FSMDefinition, LLMProvider, LLMResponse, OutputValidator } from "../types.ts";
+import type { FSMDefinition, FSMLLMOutput, LLMProvider, OutputValidator } from "../types.ts";
+
+/** Mock LLM response - simplified format converted to AgentResult */
+interface MockLLMResponse {
+  content: string;
+  calledTool?: { name: string; args: unknown };
+  data?: { toolCalls?: ToolCall[]; toolResults?: unknown[]; [key: string]: unknown };
+}
+
+/** Convert mock response to AgentResult (mirrors real adapter behavior) */
+function mockToEnvelope(
+  mock: MockLLMResponse,
+  agentId: string,
+  prompt: string,
+): AgentResult<string, FSMLLMOutput> {
+  const toolCalls: ToolCall[] = mock.data?.toolCalls ?? [];
+
+  // Merge calledTool shorthand into toolCalls array
+  if (mock.calledTool && !toolCalls.some((tc) => tc.toolName === mock.calledTool?.name)) {
+    toolCalls.unshift({
+      type: "tool-call",
+      toolCallId: `mock-${mock.calledTool.name}`,
+      toolName: mock.calledTool.name,
+      input: mock.calledTool.args,
+    });
+  }
+
+  // Raw text - FSM engine extracts structured output from toolCalls
+  const data: FSMLLMOutput = { response: mock.content };
+
+  return {
+    agentId,
+    timestamp: new Date().toISOString(),
+    input: prompt,
+    ok: true,
+    data,
+    toolCalls,
+    durationMs: 0,
+  };
+}
 
 /**
- * Tests for `complete` tool injection in LLM actions.
- *
- * When an LLM action has `outputTo` pointing to a document whose type has
- * a schema with properties defined (not just additionalProperties), the
- * FSM engine should inject a `complete` tool. The LLM calls this tool with
- * structured data matching the schema, and that data is stored directly.
+ * Tests for `complete` tool injection. When outputTo targets a document with
+ * a defined schema, FSM injects a `complete` tool. LLM calls it with structured
+ * data matching the schema.
  */
 describe("complete tool injection for LLM actions", () => {
-  /** Helper to create an FSM engine with LLM provider */
   async function createLLMEngine(opts: {
     fsm: FSMDefinition;
-    llmResponses: LLMResponse[];
+    llmResponses: MockLLMResponse[];
     validator?: OutputValidator;
   }) {
     const store = new InMemoryDocumentStore();
@@ -31,13 +67,13 @@ describe("complete tool injection for LLM actions", () => {
         capturedPrompts.push(params.prompt);
         capturedTools.push(Object.keys(params.tools ?? {}));
 
-        const response =
+        const mockResponse =
           opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
         callCount++;
-        if (!response) {
+        if (!mockResponse) {
           throw new Error("No LLM response available for mock");
         }
-        return Promise.resolve(response);
+        return Promise.resolve(mockToEnvelope(mockResponse, params.agentId, params.prompt));
       },
     };
 
@@ -244,15 +280,14 @@ describe("complete tool injection for LLM actions", () => {
 
     const { engine, store, scope } = await createLLMEngine({
       fsm,
-      llmResponses: [{ content: "I found ticket PROJ-456", data: { someRawData: true } }],
+      llmResponses: [{ content: "I found ticket PROJ-456" }],
     });
 
     await engine.signal({ type: "RUN" });
 
-    // Verify raw response was stored (fallback behavior)
+    // Verify raw response was stored (fallback behavior) - now uses { response: string }
     const doc = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("I found ticket PROJ-456");
-    expect(doc?.data.data.someRawData).toEqual(true);
+    expect(doc?.data.data.response).toEqual("I found ticket PROJ-456");
   });
 
   it("augments prompt with complete tool instruction", async () => {

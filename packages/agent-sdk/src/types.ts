@@ -1,15 +1,9 @@
-/**
- * Atlas Agent SDK Core Types
- *
- * Types for building agents that handle natural language prompts.
- * Used by TypeScript agents.
- */
-
 import type { Logger } from "@atlas/logger";
 import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
+import type { AgentPayload } from "./result.ts";
 
 // Re-export message types for convenience
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
@@ -18,9 +12,6 @@ export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
 // BASE UTILITY SCHEMAS
 // ==============================================================================
 
-/**
- * Duration format validation (e.g., "30s", "5m", "2h")
- */
 export const DurationSchema = z
   .string()
   .regex(/^\d+[smh]$/, {
@@ -28,9 +19,6 @@ export const DurationSchema = z
   });
 export type Duration = z.infer<typeof DurationSchema>;
 
-/**
- * Allow/Deny filter with mutual exclusion validation
- */
 export const AllowDenyFilterSchema = z
   .strictObject({ allow: z.array(z.string()).optional(), deny: z.array(z.string()).optional() })
   .refine((data) => !(data.allow && data.deny), {
@@ -38,9 +26,6 @@ export const AllowDenyFilterSchema = z
   });
 export type AllowDenyFilter = z.infer<typeof AllowDenyFilterSchema>;
 
-/**
- * Workspace timeout configuration schema
- */
 export const WorkspaceTimeoutConfigSchema = z.strictObject({
   progressTimeout: DurationSchema.default("2m").describe(
     "Time allowed between progress signals before cancelling for inactivity",
@@ -53,9 +38,6 @@ export type WorkspaceTimeoutConfig = z.infer<typeof WorkspaceTimeoutConfigSchema
 // MCP TRANSPORT AND AUTH
 // ==============================================================================
 
-/**
- * MCP transport configuration
- */
 const MCPTransportStdioSchema = z.strictObject({
   type: z.literal("stdio"),
   command: z.string(),
@@ -70,26 +52,18 @@ export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
 ]);
 export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
 
-/**
- * MCP authentication configuration
- */
 export const MCPAuthConfigSchema = z.strictObject({
   type: z.literal("bearer"),
   token_env: z.string().optional().describe("Environment variable containing the token"),
 });
 export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
 
-/**
- * Tool filter for MCP servers - which tools to allow/deny
- */
 export const MCPServerToolFilterSchema = AllowDenyFilterSchema.describe(
   "Filter which tools to allow or deny from this MCP server",
 );
 export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
 
-/**
- * Link credential reference for retrieving secrets from Link service
- */
+/** Retrieves secrets from Link service */
 export const LinkCredentialRefSchema = z
   .strictObject({
     from: z.literal("link"),
@@ -102,14 +76,8 @@ export const LinkCredentialRefSchema = z
   });
 export type LinkCredentialRef = z.infer<typeof LinkCredentialRefSchema>;
 
-/**
- * Environment variable value - either a string or a Link credential reference
- */
 const EnvValueSchema = z.union([z.string(), LinkCredentialRefSchema]);
 
-/**
- * Individual MCP server configuration
- */
 export const MCPServerConfigSchema = z.strictObject({
   transport: MCPTransportConfigSchema,
   client_config: z.strictObject({ timeout: WorkspaceTimeoutConfigSchema.optional() }).optional(),
@@ -151,6 +119,10 @@ export const AgentMetadataSchema = z.object({
     .any()
     .optional()
     .meta({ description: "Optional input schema for structured input" }),
+  outputSchema: z
+    .any()
+    .optional()
+    .meta({ description: "Optional output schema for structured output" }),
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -158,12 +130,7 @@ export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 /** MCP server config - same format as workspace MCP servers */
 export type AgentMCPServerConfig = MCPServerConfig;
 
-/**
- * Simple link reference schema for nested linkRef usage.
- * Used in AgentEnvironmentConfig where `from: "link"` discriminator is unnecessary
- * since the field is already named `linkRef`.
- * Uses same field names as LinkCredentialRefSchema for consistency.
- */
+/** Like LinkCredentialRefSchema but without `from: "link"` - field name provides context */
 const SimpleLinkRefSchema = z.strictObject({
   provider: z.string().describe("Provider name (e.g., 'slack', 'github')"),
   key: z.string().describe("Key within credential.secret object (e.g., 'access_token')"),
@@ -228,33 +195,24 @@ export const AgentLLMConfigSchema = z.object({
 
 export type AgentLLMConfig = z.infer<typeof AgentLLMConfigSchema>;
 
-/**
- * Atlas tool type - directly uses AI SDK Tool for zero-conversion compatibility
- *
- * This is a re-export of the AI SDK Tool type, ensuring that tools from MCP
- * can be used directly with AI SDK without any conversion or wrapping.
- */
+/** Re-export of AI SDK Tool - MCP tools work without conversion */
 export type AtlasTool = Tool;
 export type AtlasTools = Record<string, AtlasTool>;
 
-/** Tool execution context from MCP calls */
 export interface ToolContext {
   toolCallId: string;
   messages: Array<{ role: string; content: string }>;
 }
 
-/** Tool execution result from agent runs */
 export type ToolResult = TypedToolResult<AtlasTools>;
 export type ToolCall = TypedToolCall<AtlasTools>;
 
-/** Stream emitter passed to agent handlers */
 export interface StreamEmitter<T extends AtlasUIMessageChunk = AtlasUIMessageChunk> {
   emit: (event: T) => void;
   end: () => void | Promise<void>;
   error: (error: Error) => void;
 }
 
-/** Atlas session data from request headers */
 export const AgentSessionDataSchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
@@ -273,113 +231,52 @@ export const AgentSessionDataSchema = z.object({
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;
 
-/**
- * Telemetry configuration for agent execution.
- * Compatible with AI SDK's experimental_telemetry option.
- * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
- */
+/** @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry */
 export interface AgentTelemetryConfig {
-  /** OpenTelemetry tracer for span collection */
   tracer: Tracer;
-  /** Whether to record agent input/output data */
   recordInputs: boolean;
   recordOutputs: boolean;
 }
 
-/**
- * Context passed to agent handlers
- *
- * Contains everything agents need: tools, environment, streaming, logging.
- * Built by AtlasAgentsMCPServer before calling agent.execute().
- * Memory context is handled transparently by enriching the prompt.
- */
+/** Built by AtlasAgentsMCPServer before agent.execute() */
 export interface AgentContext {
-  /** All available tools from all servers (unified access) */
   tools: AtlasTools;
-
-  /** Session info (workspace, user, etc.) */
   session: AgentSessionData;
-
-  /** Environment variables validated at execution time */
   env: Record<string, string>;
-
-  /** Agent configuration from workspace.yml or atlas.yml */
   config?: Record<string, unknown>;
-
-  /** Stream events back to Atlas - always provided */
   stream: StreamEmitter | undefined;
-
-  /** Logger instance with session context pre-configured */
   logger: Logger;
-
-  /** Optional abort signal for cancelling agent execution */
   abortSignal?: AbortSignal;
-
-  /** Optional telemetry configuration for observability */
   telemetry?: AgentTelemetryConfig;
 }
 
-/**
- * Agent handler function - receives input and context
- *
- * This is where agents interpret requests and decide what to do.
- * Input can be a string prompt or structured data based on inputSchema.
- */
+/** Returns AgentPayload<TOutput> via ok()/err(). Execution layer adds metadata. */
 export type AgentHandler<TInput = string, TOutput = unknown> = (
   input: TInput,
   context: AgentContext,
-) => Promise<TOutput>;
+) => Promise<AgentPayload<TOutput>>;
 
-/**
- * Config for createAgent() function
- *
- * TypeScript interface because handler functions can't be validated with Zod.
- * Use CreateAgentConfigValidationSchema for validating the non-function parts.
- */
+/** Interface (not Zod) because handler is a function */
 export interface CreateAgentConfig<TInput = string, TOutput = unknown> extends AgentMetadata {
-  /** Optional input schema for structured input validation */
   inputSchema?: z.ZodSchema<TInput>;
-
-  /** Handler that processes all prompts for this agent */
   handler: AgentHandler<TInput, TOutput>;
-
-  /** Environment variables this agent needs */
   environment?: AgentEnvironmentConfig;
-
-  /** MCP servers this agent uses */
   mcp?: Record<string, AgentMCPServerConfig>;
-
-  /** LLM config (unused by TypeScript agents) */
   llm?: AgentLLMConfig;
 }
 
-/** Zod validation for createAgent() config (excluding handler function) */
 export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
   environment: AgentEnvironmentConfigSchema.optional(),
   mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
   llm: AgentLLMConfigSchema.optional(),
 });
 
-/**
- * Atlas Agent instance
- *
- * Created by createAgent() function.
- * Stored in registry and executed by AtlasAgentsMCPServer.
- */
+/** Created by createAgent(), stored in registry, executed by AtlasAgentsMCPServer */
 export interface AtlasAgent<TInput = string, TOutput = unknown> {
-  /** Agent metadata for registry */
   metadata: AgentMetadata;
-
-  /** Execute agent with input (string or structured based on inputSchema) */
-  execute(input: TInput, context: AgentContext): Promise<TOutput>;
-
-  /** Environment config (used by server for validation) */
+  execute(input: TInput, context: AgentContext): Promise<AgentPayload<TOutput>>;
   readonly environmentConfig: AgentEnvironmentConfig | undefined;
-
-  /** MCP server config (used by server for tool access) */
   readonly mcpConfig: Record<string, AgentMCPServerConfig> | undefined;
-
-  /** LLM config (used by configuration-based agents only) */
   readonly llmConfig: AgentLLMConfig | undefined;
 }
 
@@ -408,24 +305,7 @@ export interface AgentRegistry {
   getAgentsByDomain(domain: string): Promise<AgentMetadata[]>;
 }
 
-/**
- * Atlas Agent configuration schema for workspace.yml
- *
- * @example
- * ```yaml
- * agents:
- *   github:
- *     type: "atlas"
- *     agent: "github"
- *     description: "GitHub operations - PRs, issues, code scanning"
- *     version: "1.0.0"
- *     config:
- *       default_patterns: ["eval(", "innerHTML"]
- *       auto_merge_checks: ["tests", "security", "lint"]
- *     environment:
- *       GITHUB_TOKEN: "${GITHUB_TOKEN}"
- * ```
- */
+/** workspace.yml agent configuration */
 export const AtlasAgentConfigSchema = z.object({
   type: z.literal("atlas"),
   agent: z.string().describe("Atlas Agent ID from registry"),
@@ -450,12 +330,6 @@ export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
 // AGENT EXECUTION RESULTS
 // ==============================================================================
 
-/**
- * Artifact reference with metadata
- *
- * Used when agents create or reference artifacts.
- * Includes ID for lookup, type for categorization, and summary for context.
- */
 export const ArtifactRefSchema = z.object({
   id: z.string().describe("Artifact ID"),
   type: z.string().describe("Artifact type (e.g., document, code, data)"),
@@ -464,35 +338,64 @@ export const ArtifactRefSchema = z.object({
 
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 
+/** Structured references displayed in UI outline */
+export const OutlineRefSchema = z.object({
+  service: z.string().describe("Service identifier (e.g., 'google-calendar', 'slack', 'internal')"),
+  title: z.string().describe("Display title for the reference"),
+  content: z.string().optional().describe("Optional summary text"),
+  artifactId: z.string().optional().describe("Optional associated artifact ID"),
+  artifactLabel: z.string().optional().describe("Optional label for the artifact"),
+  type: z.string().optional().describe("Optional type discriminator"),
+});
+
+export type OutlineRef = z.infer<typeof OutlineRefSchema>;
+
+export const AgentExecutionSuccessSchema = z.object({
+  agentId: z.string().describe("Agent identifier"),
+  timestamp: z.string().describe("ISO 8601 timestamp of execution"),
+  input: z.unknown().describe("Input provided to the agent"),
+  ok: z.literal(true).describe("Success discriminant"),
+  data: z.unknown().describe("Output produced by the agent"),
+  reasoning: z.string().optional().describe("Model or agent reasoning text"),
+  // z.any() not z.unknown() - allows z.infer to produce any[] which is assignable to ToolCall[]
+  // without type assertions at parse sites. Tradeoff: weaker validation, cleaner consumer code.
+  toolCalls: z.array(z.any()).optional().describe("Tool calls made during execution"),
+  toolResults: z.array(z.any()).optional().describe("Results from tool executions"),
+  artifactRefs: z.array(ArtifactRefSchema).optional().describe("Artifact references"),
+  outlineRefs: z.array(OutlineRefSchema).optional().describe("Outline references for UI"),
+  durationMs: z.number().describe("Execution duration in milliseconds"),
+});
+
+export const AgentExecutionErrorSchema = z.object({
+  agentId: z.string().describe("Agent identifier"),
+  timestamp: z.string().describe("ISO 8601 timestamp of execution"),
+  input: z.unknown().describe("Input provided to the agent"),
+  ok: z.literal(false).describe("Failure discriminant"),
+  error: z.object({ reason: z.string() }).describe("Error information"),
+  durationMs: z.number().describe("Execution duration in milliseconds"),
+});
+
+/** Discriminated union on `ok` - use for parsing unknown data */
+export const AgentResultSchema = z.discriminatedUnion("ok", [
+  AgentExecutionSuccessSchema,
+  AgentExecutionErrorSchema,
+]);
+
 /**
- * Result from agent execution - consolidated interface used across Atlas
- *
- * Contains execution metadata, timing, and tool usage information.
- * Used by hallucination detector, orchestrator, and session supervisors.
+ * Omit toolCalls/toolResults from Zod and re-add with AI SDK types.
+ * Zod uses z.unknown() (loose runtime), TypeScript gets precise types.
  */
-export interface AgentResult {
-  /** Agent identifier */
-  agentId: string;
-  /** Task or prompt that was executed */
-  task: string;
-  /** Input provided to the agent */
-  input: unknown;
-  /** Output produced by the agent */
-  output: unknown;
-  /** Model or agent reasoning text, when available */
-  reasoning?: string;
-  /** Error message if execution failed */
-  error?: string;
-  /** Execution duration in milliseconds */
-  duration: number;
-  /** ISO timestamp of execution */
-  timestamp: string;
-  /** Tool calls made during execution */
-  toolCalls?: ToolCall[];
-  /** Results from tool executions */
-  toolResults?: ToolResult[];
-  /** Memory context (optional, used by some services) */
-  memory?: unknown[];
-  /** Artifact references with full metadata (id, type, summary) */
-  artifactRefs?: ArtifactRef[];
-}
+export type AgentExecutionSuccess<TInput = unknown, TOutput = unknown> = Omit<
+  z.infer<typeof AgentExecutionSuccessSchema>,
+  "input" | "data" | "toolCalls" | "toolResults"
+> & { input: TInput; data: TOutput; toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
+
+export type AgentExecutionError<TInput = unknown> = Omit<
+  z.infer<typeof AgentExecutionErrorSchema>,
+  "input"
+> & { input: TInput };
+
+/** Discriminated union on `ok` - typed version of AgentResultSchema */
+export type AgentResult<TInput = unknown, TOutput = unknown> =
+  | AgentExecutionSuccess<TInput, TOutput>
+  | AgentExecutionError<TInput>;

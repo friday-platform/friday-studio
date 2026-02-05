@@ -1,10 +1,11 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type ArtifactRef, ArtifactRefSchema, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { generateText, stepCountIs } from "ai";
@@ -272,7 +273,7 @@ async function createSummaryArtifact(
     throw new Error(`Failed to create summary artifact: ${result.error}`);
   }
 
-  return { id: result.data.id, type: "summary", summary: result.data.summary };
+  return { id: result.data.id, type: result.data.type, summary: result.data.summary };
 }
 
 /**
@@ -307,12 +308,11 @@ async function createDataArtifact(
     throw new Error(`Failed to create data artifact: ${result.error}`);
   }
 
-  return { id: result.data.id, type: "file", summary: result.data.summary };
+  return { id: result.data.id, type: result.data.type, summary: result.data.summary };
 }
 
 export const DataAnalystOutputSchema = z.object({
   summary: z.string().describe("Analysis narrative"),
-  artifactRefs: z.array(ArtifactRefSchema),
   queries: z.array(QueryExecutionSchema).describe("All SQL queries executed during analysis"),
 });
 
@@ -323,6 +323,7 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   displayName: "Data Analyst",
   version: "1.0.0",
   description: "Analyzes tabular data to answer questions and produce actionable insights",
+  outputSchema: DataAnalystOutputSchema,
   expertise: {
     domains: ["data-analysis", "sql", "reporting"],
     examples: [
@@ -330,27 +331,19 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
       "What are the top performing campaigns in this dataset?",
     ],
   },
-  handler: async (prompt, { session, logger, abortSignal, stream }): Promise<DataAnalystResult> => {
+  handler: async (prompt, { session, logger, abortSignal, stream }) => {
     const startTime = performance.now();
-
-    // 1. Parse prompt
     const artifactIds = extractArtifactIds(prompt);
     const question = extractQuestion(prompt);
 
-    // 2. Fetch & validate artifacts
-    const artifacts = await fetchAndValidateArtifacts(artifactIds, logger);
-
-    // 3. Create in-memory SQLite database as coordinator
     const db = new Database(":memory:");
-
-    // Query log accumulates all executed queries for debugging/eval
     const queryLog: QueryExecution[] = [];
-
-    // Cleanup function for temp files (populated by loadArtifactsIntoDatabase)
     let cleanup: (() => Promise<void>) | null = null;
 
     try {
-      // 4. Load artifacts into database via ATTACH DATABASE
+      const artifacts = await fetchAndValidateArtifacts(artifactIds, logger);
+
+      // Load artifacts into database via ATTACH DATABASE
       // - Local paths: attached directly
       // - Cortex paths: downloaded to temp files first
       stream?.emit({
@@ -361,16 +354,13 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
       const loadResult = await loadArtifactsIntoDatabase(artifacts, db, logger);
       cleanup = loadResult.cleanup;
 
-      // Validate not all empty
       const totalRows = loadResult.tables.reduce((sum, t) => sum + t.schema.rowCount, 0);
       if (totalRows === 0) {
-        throw new Error("All specified artifacts contain no data rows");
+        return err("All specified artifacts contain no data rows");
       }
 
-      // 5. Build schema context
       const schemaContext = buildSchemaContext(loadResult.tables);
 
-      // 6. Run analysis (DuckDB CLI for analytical queries)
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Data Analyst", content: "Analyzing data..." },
@@ -384,14 +374,12 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         abortSignal,
       );
 
-      // 7. Create artifacts
       const summaryRef = await createSummaryArtifact(summary, question, session);
       const dataRef = await createDataArtifact(savedResults, session);
 
       const artifactRefs: ArtifactRef[] = [summaryRef];
       if (dataRef) artifactRefs.push(dataRef);
 
-      // 8. Emit completion
       stream?.emit({
         type: "data-outline-update",
         data: {
@@ -418,7 +406,10 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         failCount,
       });
 
-      return { summary, artifactRefs, queries: queryLog };
+      return ok({ summary, queries: queryLog }, { artifactRefs });
+    } catch (error) {
+      logger.error("data-analyst failed", { error });
+      return err(stringifyError(error));
     } finally {
       // Close database before cleanup (must detach before deleting temp files)
       db.close();

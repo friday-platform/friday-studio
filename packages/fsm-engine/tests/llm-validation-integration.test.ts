@@ -11,12 +11,13 @@
  */
 
 import process from "node:process";
+import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createFSMOutputValidator } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
-import type { FSMDefinition, LLMResponse } from "../types.ts";
+import type { FSMDefinition, FSMLLMOutput } from "../types.ts";
 
 /**
  * Check if we can run integration tests.
@@ -29,11 +30,42 @@ const IS_CI = process.env.CI === "true";
 const CAN_RUN_INTEGRATION = !IS_CI && Boolean(ANTHROPIC_API_KEY);
 
 /**
+ * Mock LLM response format for tests.
+ * Simplified format that gets converted to AgentResult.
+ */
+interface MockLLMResponse {
+  content: string;
+  data?: { toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
+}
+
+/**
+ * Convert mock LLM response to AgentResult envelope.
+ */
+function mockToEnvelope(
+  mock: MockLLMResponse,
+  agentId: string,
+  prompt: string,
+): AgentResult<string, FSMLLMOutput> {
+  const data: FSMLLMOutput = { response: mock.content };
+
+  return {
+    agentId,
+    timestamp: new Date().toISOString(),
+    input: prompt,
+    ok: true,
+    data,
+    toolCalls: mock.data?.toolCalls,
+    toolResults: mock.data?.toolResults,
+    durationMs: 0,
+  };
+}
+
+/**
  * Helper to create an FSM engine with a real validator and mock LLM provider.
  * The validator calls Haiku for hallucination detection.
  * The LLM provider returns scripted responses.
  */
-async function createIntegrationEngine(opts: { llmResponses: LLMResponse[] }) {
+async function createIntegrationEngine(opts: { llmResponses: MockLLMResponse[] }) {
   const store = new InMemoryDocumentStore();
   const scope = { workspaceId: "integration-test", sessionId: "test-session" };
 
@@ -63,14 +95,14 @@ async function createIntegrationEngine(opts: { llmResponses: LLMResponse[] }) {
 
   let callCount = 0;
   const mockLLMProvider: import("../types.ts").LLMProvider = {
-    call: (_params) => {
-      const response =
+    call: (params) => {
+      const mockResponse =
         opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
       callCount++;
-      if (!response) {
+      if (!mockResponse) {
         throw new Error("No LLM response available for mock");
       }
-      return Promise.resolve(response);
+      return Promise.resolve(mockToEnvelope(mockResponse, params.agentId, params.prompt));
     },
   };
 
@@ -170,9 +202,9 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
     // State should transition
     expect(engine.state).toEqual("done");
 
-    // Document should be persisted with content
+    // Document should be persisted with response
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual(
+    expect(doc?.data.data.response).toEqual(
       "Found 42 users in the system. The primary contact is Alice Smith at TechCorp.",
     );
   });
@@ -223,9 +255,9 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
       // State should transition
       expect(engine.state).toEqual("done");
 
-      // Document should have retry content, not fabricated content
+      // Document should have retry response, not fabricated response
       const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-      expect(doc?.data.data.content).toEqual("The query returned 127 records from the database.");
+      expect(doc?.data.data.response).toEqual("The query returned 127 records from the database.");
     },
   );
 
@@ -264,7 +296,7 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
     expect(engine.state).toEqual("done");
 
     const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.content).toEqual("No matching records were found in the search.");
+    expect(doc?.data.data.response).toEqual("No matching records were found in the search.");
   });
 });
 

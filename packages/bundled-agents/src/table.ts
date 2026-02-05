@@ -4,21 +4,23 @@
  * Creates table artifacts from natural language prompts
  */
 
-import { createAgent, repairJson } from "@atlas/agent-sdk";
+import {
+  type ArtifactRef,
+  createAgent,
+  err,
+  type OutlineRef,
+  ok,
+  repairJson,
+} from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { TableDataSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { OutlineRefSchema } from "./shared-schemas.ts";
 
-export const TableOutputSchema = z.object({
-  artifactId: z.string(),
-  type: z.string(),
-  summary: z.string(),
-  rowCount: z.number(),
-  outlineRefs: z.array(OutlineRefSchema),
+const TableOutputSchema = z.object({
+  rowCount: z.number().describe("Number of rows in the generated table"),
 });
 
 type TableAgentResult = z.infer<typeof TableOutputSchema>;
@@ -29,6 +31,7 @@ export const tableAgent = createAgent<string, TableAgentResult>({
   version: "1.0.0",
   description:
     "Generate structured tables with headers and rows from natural language descriptions",
+  outputSchema: TableOutputSchema,
   expertise: {
     domains: ["data", "tables", "visualization"],
     examples: [
@@ -82,33 +85,29 @@ Output clean, well-organized data appropriate for tabular display.`;
       );
 
       if (!artifactResponse.ok) {
-        throw new Error(
-          `Failed to create table artifact: ${stringifyError(artifactResponse.error)}`,
-        );
+        return err(`Failed to create table artifact: ${stringifyError(artifactResponse.error)}`);
       }
 
-      const artifactId = artifactResponse.data.artifact.id;
+      const { id: artifactId, type, summary: artifactSummary } = artifactResponse.data.artifact;
       const rowCount = tableData.rows.length;
 
-      return {
-        artifactId,
-        type: "table",
-        summary: artifactResponse.data.artifact.summary,
-        rowCount,
-        outlineRefs: [
-          {
-            service: "internal",
-            title: "Table",
-            content: artifactResponse.data.artifact.summary,
-            artifactId,
-            artifactLabel: "View Table",
-            type: "table",
-          },
-        ],
-      };
+      const artifactRefs: ArtifactRef[] = [{ id: artifactId, type, summary: artifactSummary }];
+
+      const outlineRefs: OutlineRef[] = [
+        {
+          service: "internal",
+          title: "Table",
+          content: artifactResponse.data.artifact.summary,
+          artifactId,
+          artifactLabel: "View Table",
+          type: "table",
+        },
+      ];
+
+      return ok({ rowCount }, { artifactRefs, outlineRefs });
     } catch (error) {
       logger.error("table agent failed", { error });
-      throw error;
+      return err(stringifyError(error));
     }
   },
 });

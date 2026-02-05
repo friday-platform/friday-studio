@@ -426,7 +426,7 @@ describe("flattenAgent", () => {
 
     const result = flattenAgent(classified);
 
-    expect(result.outputSchema).toEqual(bundledAgentsRegistry["research"]?.outputSchema);
+    expect(result.outputSchema).toEqual(bundledAgentsRegistry["research"]?.outputJsonSchema);
   });
 
   it("does not populate outputSchema for bundled agents without one", () => {

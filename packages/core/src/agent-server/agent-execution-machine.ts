@@ -16,7 +16,7 @@
  *   idle → loading → ready → preparing → executing → persisting → completed
  */
 
-import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
+import type { AgentContext, AgentPayload, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 
@@ -35,7 +35,7 @@ type PrepareContextInput = {
 export type PrepareContextOutput = { context: AgentContext; enrichedPrompt: string };
 
 type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentContext };
-type ExecuteAgentOutput = unknown;
+type ExecuteAgentOutput = AgentPayload<unknown>;
 
 type PersistResultsInput = { agentId: string; prompt: string; result: unknown; duration: number };
 // biome-ignore lint/suspicious/noConfusingVoidType: `void` is the correct type for the state machine state.
@@ -59,7 +59,7 @@ interface AgentExecutionContext {
   sessionData?: AgentSessionData;
   abortSignal?: AbortSignal;
   preparedContext?: AgentContext;
-  result?: unknown;
+  result?: AgentPayload<unknown>;
   error?: Error;
   startTime?: number;
   endTime?: number;
@@ -75,7 +75,7 @@ type AgentExecutionEvents =
   | { type: "UNLOAD" }
   | { type: "xstate.done.actor.loadAgent"; output: LoadAgentOutput }
   | { type: "xstate.done.actor.prepareContext"; output: PrepareContextOutput }
-  | { type: "xstate.done.actor.executeAgent"; output: unknown }
+  | { type: "xstate.done.actor.executeAgent"; output: AgentPayload<unknown> }
   | { type: "xstate.done.actor.persistResults"; output: PersistResultsOutput }
   | { type: "xstate.error.actor.loadAgent"; error: unknown }
   | { type: "xstate.error.actor.prepareContext"; error: unknown }

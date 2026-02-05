@@ -24,7 +24,7 @@ export function flattenAgent(classified: ClassifiedAgent): SimplifiedAgent {
     executionType: classified.type.kind,
     bundledAgentId: bundledId,
     mcpTools: classified.type.kind === "llm" ? classified.type.mcpTools : undefined,
-    outputSchema: registryEntry?.outputSchema,
+    outputSchema: registryEntry?.outputJsonSchema,
   };
 }
 

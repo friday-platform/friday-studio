@@ -118,8 +118,10 @@ evalite.each([{ name: "Web Search", input: { agent: webSearchAgent } }])<
       throw new Error(`Agent execution failed: ${result.error?.reason}`);
     }
 
-    const { summary, artifactRef } = result.data;
-    assert(artifactRef.id, "Missing artifact ID");
+    const { response: summary } = result.data;
+    const artifactRefs = result.artifactRefs ?? [];
+    const artifactRef = artifactRefs[0];
+    assert(artifactRef?.id, "Missing artifact ID");
 
     // Fetch artifact to verify it was created and get full report
     const artifactResponse = await parseResult(
@@ -209,7 +211,10 @@ evalite.each([{ name: "Web Search", input: { agent: webSearchAgent } }])<
     const result = await variant.agent.execute(input.prompt, context);
 
     if (result.ok) {
-      const { summary, artifactRef } = result.data;
+      const { response: summary } = result.data;
+      const artifactRefs = result.artifactRefs ?? [];
+      const artifactRef = artifactRefs[0];
+      if (!artifactRef) throw new Error("Missing artifact reference");
 
       // Fetch artifact to get full report
       const artifactResponse = await parseResult(

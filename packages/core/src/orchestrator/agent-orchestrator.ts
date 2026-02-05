@@ -1,21 +1,22 @@
 /**
- * Agent Orchestrator coordinates agent execution in the Atlas system.
+ * Routes agent execution to either MCP services (distributed) or wrapped agents (in-process).
  *
- * In Atlas architecture:
- * - Agents are distributed services that perform specific tasks
- * - This orchestrator connects to them via MCP (Model Context Protocol)
- * - Supports both MCP-based agents and wrapped LLM agents
+ * MCP agents: Separate services, isolated per-session via StreamableHTTP transport.
+ * Wrapped agents: In-process LLM agents that bypass MCP for lightweight tasks.
+ *
+ * Session lifecycle: Each user session gets its own MCP client with SSE streaming.
+ * Sessions auto-cleanup after 30min inactivity.
  */
 
-import type {
-  AgentContext,
-  AgentMetadata,
-  AgentResult,
-  AtlasAgent,
-  AtlasUIMessageChunk,
-  StreamEmitter,
-  ToolCall,
-  ToolResult,
+import {
+  type AgentContext,
+  type AgentExecutionError,
+  type AgentMetadata,
+  type AgentResult,
+  AgentResultSchema,
+  type AtlasAgent,
+  type AtlasUIMessageChunk,
+  type StreamEmitter,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -24,7 +25,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { retry } from "@std/async";
 import { z } from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
-import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
@@ -34,7 +34,7 @@ import {
   StreamContentNotificationSchema,
 } from "../streaming/stream-emitters.ts";
 
-// FIXME: this is wrong.
+// TODO(structured-output): Replace with proper agent result schema once agents produce structured output
 const MCPToolResultSchema = z.object({
   content: z.array(
     z.discriminatedUnion("type", [
@@ -44,11 +44,13 @@ const MCPToolResultSchema = z.object({
   ),
 });
 
+/** Context passed to agent execution - identifies the session and enables streaming. */
 export interface AgentExecutionContext {
   sessionId: string;
   workspaceId: string;
   userId?: string;
-  streamId?: string; // For HTTP streaming
+  /** Required for SSE streaming alongside onStreamEvent callback */
+  streamId?: string;
   datetime?: {
     timezone: string;
     timestamp: string;
@@ -59,51 +61,40 @@ export interface AgentExecutionContext {
   previousResults?: AgentResult[];
   additionalContext?: unknown;
   reasoning?: string;
-  agentTools?: string[]; // Agent-specific tools to filter from workspace tools
-  onStreamEvent?: (event: AtlasUIMessageChunk) => void; // NEW: Callback for stream events
-  /** Optional abort signal for cancelling the execution */
+  /** Filter workspace tools to only these names */
+  agentTools?: string[];
+  /** Stream events callback - requires streamId to be set */
+  onStreamEvent?: (event: AtlasUIMessageChunk) => void;
   abortSignal?: AbortSignal;
 }
 
 export interface AgentOrchestratorConfig {
-  /** URL of the atlas-agents MCP server */
+  /** URL of the atlas-agents MCP server (StreamableHTTP endpoint) */
   agentsServerUrl: string;
-  /** Headers to include in MCP requests */
   headers?: Record<string, string>;
-  /** Timeout for MCP requests in milliseconds */
+  /** Default: 300000ms (5min) */
   requestTimeoutMs?: number;
-  /** Optional pre-provisioned MCP client pool */
+  /** Required for wrapped agents to have tool access */
   mcpServerPool?: GlobalMCPServerPool;
-  /** Optional daemon URL for MCP agents */
+  /** Required for wrapped agents to have tool access */
   daemonUrl?: string;
 }
 
-const AgentExecutionResultSchema = z.object({
+const MCPExecutionResultSchema = z.object({
   type: z.literal("completed"),
   result: z.unknown(), // Agent-specific result
 });
 
-type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
+type MCPExecutionResult = z.infer<typeof MCPExecutionResultSchema>;
 
-/**
- * Orchestrator interface for executing Atlas agents.
- * Handles both MCP-based distributed agents and in-process wrapped agents.
- */
 export interface IAgentOrchestrator {
-  /** Initialize the orchestrator */
   initialize(): void;
-
-  /** Discover available agents via MCP */
   discoverAgents(): Promise<AgentMetadata[]>;
-
-  /** Run an agent with a task */
   executeAgent(
     agentId: string,
     prompt: string,
     context: AgentExecutionContext,
   ): Promise<AgentResult>;
-
-  /** Clean up connections */
   shutdown(): Promise<void>;
 }
 
@@ -114,38 +105,23 @@ interface MCPSessionSetup {
   workspaceId?: string;
 }
 
-/**
- * Orchestrates agent execution across Atlas distributed system.
- *
- * Atlas Architecture:
- * - MCP agents: Run as separate services, communicate via Model Context Protocol
- * - Wrapped agents: Run in-process for lightweight tasks
- * - Session-based: Each user session gets isolated MCP connection
- */
 export class AgentOrchestrator implements IAgentOrchestrator {
-  private mcpSessions = new Map<string, MCPSessionSetup>(); // Per-session MCP clients
+  private mcpSessions = new Map<string, MCPSessionSetup>();
   private config: Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">> &
     Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
   private logger: Logger;
   private sessionCleanupInterval?: number;
-  private wrappedAgents = new Map<string, AtlasAgent<string, WrappedAgentResult>>(); // LLM agents that bypass MCP
-  // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
+  private wrappedAgents = new Map<string, AtlasAgent<string, unknown>>();
+  /** Keyed by `${sessionId}:${agentId}` - handles multi-workspace scenarios */
   private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
-  // Track active MCP requests for cancellation
   private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
-  // Track active agent executions to prevent premature workspace shutdown
+  /** Prevents premature workspace shutdown while agents are running */
   private activeAgentExecutions = new Map<
     string,
     { agentId: string; sessionId: string; startTime: number }
   >();
 
-  // (No ad-hoc resource parsing; we read the typed agents list resource instead)
-
-  /**
-   * @param config Connection settings for atlas-agents MCP server
-   * @param logger Logger instance for debugging and monitoring
-   */
   constructor(config: AgentOrchestratorConfig, logger: Logger) {
     this.logger = logger;
     this.config = {
@@ -185,10 +161,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Discover available agents by querying the agent server via MCP.
-   * Returns metadata about all registered agents.
-   */
+  /** Queries MCP server for agent:// resources. Falls back to wrapped agents if MCP fails. */
   async discoverAgents(): Promise<AgentMetadata[]> {
     const discoverySessionId = `discovery-${Date.now()}`;
 
@@ -279,11 +252,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Register an LLM agent that runs in-process instead of via MCP.
-   * Used for lightweight agents that don't need service isolation.
-   */
-  registerWrappedAgent(agentId: string, agent: AtlasAgent<string, WrappedAgentResult>): void {
+  /** Register an in-process agent that bypasses MCP. */
+  registerWrappedAgent(agentId: string, agent: AtlasAgent<string, unknown>): void {
     this.wrappedAgents.set(agentId, agent);
     this.logger.debug("Registered wrapped agent for direct execution", {
       agentId,
@@ -292,18 +262,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     });
   }
 
-  /**
-   * Check if there are any active agent executions.
-   * Used by the daemon to prevent premature workspace shutdown.
-   */
+  /** Used by daemon to prevent workspace shutdown while agents are running. */
   hasActiveExecutions(): boolean {
     return this.activeAgentExecutions.size > 0;
   }
 
-  /**
-   * Get count and details of active agent executions.
-   * Used for debugging and monitoring.
-   */
   getActiveExecutions(): Array<{ agentId: string; sessionId: string; durationMs: number }> {
     const now = Date.now();
     return Array.from(this.activeAgentExecutions.values()).map((exec) => ({
@@ -313,48 +276,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }));
   }
 
-  /**
-   * Extract tool metadata from agent output, removing it from the output object
-   * to prevent double-counting in token calculations.
-   */
-  private extractToolMetadata(output: unknown): {
-    toolCalls?: ToolCall[];
-    toolResults?: ToolResult[];
-    outputWithoutTools: unknown;
-  } {
-    let outputWithoutTools = output;
-    let toolCalls: ToolCall[] | undefined;
-    let toolResults: ToolResult[] | undefined;
-
-    if (
-      typeof output === "object" &&
-      output !== null &&
-      "toolCalls" in output &&
-      "toolResults" in output
-    ) {
-      const extracted = output as {
-        toolCalls: ToolCall[];
-        toolResults: ToolResult[];
-        [key: string]: unknown;
-      };
-      ({ toolCalls, toolResults, ...outputWithoutTools } = extracted);
-    }
-
-    return { toolCalls, toolResults, outputWithoutTools };
-  }
-
-  /**
-   * Truncate text to a maximum length with ellipsis
-   */
-  private truncateTask(text: string, maxLength = 100): string {
-    return text.length > maxLength ? `${text.substring(0, maxLength - 3)}...` : text;
-  }
-
-  /**
-   * Extract agent response from MCP format.
-   * MCP wraps responses as: { content: [{ type: "text", text: JSON }] }
-   */
-  private parseAgentResponse(toolResult: unknown): AgentExecutionResult {
+  /** Unwraps MCP response format: { content: [{ type: "text", text: JSON }] } */
+  private parseAgentResponse(toolResult: unknown): MCPExecutionResult {
     const validatedResult = MCPToolResultSchema.parse(toolResult);
 
     if (!validatedResult.content?.[0] || validatedResult.content[0].type !== "text") {
@@ -366,44 +289,41 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     try {
       const parsed = JSON.parse(textContent);
 
-      // Handle error/cancellation responses from agent server
-      // @ts-expect-error `agents-should-produce-structured-output`
+      // @ts-expect-error `agents-should-produce-structured-output` - untyped until agents produce structured output
       if (parsed.type === "error") {
         // @ts-expect-error `agents-should-produce-structured-output`
         throw new Error(`Agent ${parsed.agentId || "unknown"} failed: ${parsed.error}`);
       }
-
       // @ts-expect-error `agents-should-produce-structured-output`
       if (parsed.type === "cancelled") {
         // @ts-expect-error `agents-should-produce-structured-output`
         return { type: "completed", result: parsed.result || "Cancelled by user" };
       }
 
-      return AgentExecutionResultSchema.parse(parsed);
+      return MCPExecutionResultSchema.parse(parsed);
     } catch (error) {
-      // Legacy cancellation message format
+      // Legacy format from before structured cancellation was added
       if (textContent.includes("No output generated. Check the stream for errors.")) {
         return { type: "completed", result: "Canceled by user" };
       }
 
-      // Log the full response text for debugging (truncated in error message)
       this.logger.error("Failed to parse MCP response as JSON", {
         component: "AgentOrchestrator",
-        textContent: textContent.substring(0, 500), // Log first 500 chars
+        textContent: textContent.substring(0, 500),
         textLength: textContent.length,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
 
-      // Re-throw agent errors and validation errors with context
       if (error instanceof z.ZodError) {
         throw new Error(`Invalid agent execution result: ${error.message}`);
       }
+      // Re-throw formatted agent errors we created above
       if (
         error instanceof Error &&
         error.message.includes("Agent") &&
         error.message.includes("failed:")
       ) {
-        throw error; // Re-throw our formatted agent errors
+        throw error;
       }
       throw new Error(
         `Invalid JSON in MCP response: ${error instanceof Error ? error.message : String(error)}. Response text: ${textContent.substring(0, 200)}`,
@@ -411,10 +331,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Starts cleanup intervals for session management.
-   * MCP connections are created per-session on demand.
-   */
+  /** Starts 5-minute cleanup interval for inactive sessions. */
   initialize(): void {
     try {
       this.logger.info("Initializing agent orchestrator", {
@@ -433,17 +350,13 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Creates unique key for stream handlers.
-   * Handles multi-workspace scenarios where same agent runs in different sessions.
-   */
   getStreamHandlerKey(sessionId: string, agentId: string): string {
     return `${sessionId}:${agentId}`;
   }
 
   /**
-   * Execute an agent task. Routes to wrapped agents (in-process)
-   * or MCP agents (separate services) based on registration.
+   * Routes to wrapped agent (in-process) or MCP agent based on registration.
+   * Streaming requires both streamId and onStreamEvent in context.
    */
   async executeAgent(
     agentId: string,
@@ -453,7 +366,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     const startTime = Date.now();
     const logger = this.logger.child({ agentId, sessionId: context.sessionId });
 
-    // Track this execution to prevent premature workspace shutdown
     const executionKey = `${context.sessionId}:${agentId}`;
     this.activeAgentExecutions.set(executionKey, {
       agentId,
@@ -465,8 +377,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       activeExecutionsCount: this.activeAgentExecutions.size,
     });
 
-    // Set up real-time event streaming if requested
-    // Only register handler if both callback and streamId are provided
     if (context.onStreamEvent && context.streamId) {
       const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
       this.activeStreamHandlers.set(handlerKey, context.onStreamEvent);
@@ -496,16 +406,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         hasStreamCallback: !!context.onStreamEvent,
       });
 
-      // Generate request ID for tracking
       const requestId = crypto.randomUUID();
-
-      // Store for cancellation
       this.activeMCPRequests.set(`${context.sessionId}:${agentId}`, {
         requestId,
         sessionId: context.sessionId,
       });
 
-      // Handle abort signal
       if (context.abortSignal) {
         context.abortSignal.addEventListener("abort", async () => {
           const notification: CancellationNotification = {
@@ -547,37 +453,15 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         this.activeMCPRequests.delete(`${context.sessionId}:${agentId}`);
       }
 
-      const executionResult = this.parseAgentResponse(toolResult);
+      const mcpResponse = this.parseAgentResponse(toolResult);
+      const envelope = AgentResultSchema.parse(mcpResponse.result);
 
-      const output =
-        executionResult.type === "completed" ? executionResult.result : executionResult;
-
-      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(output);
-
-      // Detect structured failure results ({ok: false, error: ...}) from agents
-      // that use the Result<T,E> pattern (e.g. fail() from @atlas/utils).
-      // Without this, the FSM engine sees error=undefined and treats the step
-      // as successful, passing garbage data to subsequent steps.
-      const structuredFailure = isStructuredFailure(outputWithoutTools);
-
-      this.logger.info(`Agent ${agentId} execution completed with result:`, {
-        executionResultType: executionResult.type,
-        structuredFailure: structuredFailure !== undefined,
-        output: JSON.stringify(outputWithoutTools),
-        duration: Date.now() - startTime,
+      this.logger.info(`Agent ${agentId} execution completed`, {
+        ok: envelope.ok,
+        durationMs: envelope.durationMs,
       });
 
-      return {
-        agentId,
-        task: this.truncateTask(prompt),
-        input: context,
-        output: outputWithoutTools,
-        error: structuredFailure,
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-        toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
-      };
+      return envelope;
     } catch (error) {
       const errorCause = createErrorCause(error);
       const errorMessage = stringifyError(error);
@@ -589,30 +473,24 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         duration: Date.now() - startTime,
       });
 
-      // Provide user-friendly error messages based on error type
       const userFriendlyError = getErrorDisplayMessage(errorCause) || errorMessage;
 
       return {
         agentId,
-        task: this.truncateTask(prompt),
-        input: context,
-        output: null,
-        error: userFriendlyError,
-        duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        toolCalls: undefined,
-        toolResults: undefined,
-      };
+        input: prompt,
+        ok: false,
+        error: { reason: userFriendlyError },
+        durationMs: Date.now() - startTime,
+      } satisfies AgentExecutionError<string>;
     } finally {
-      // Clean up stream handler - must happen here to avoid race conditions
-      // with late-arriving notifications after finish event
+      // Must cleanup here to avoid race with late-arriving notifications after finish
       if (context.onStreamEvent && context.streamId) {
         const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
         this.activeStreamHandlers.delete(handlerKey);
         logger.debug("Cleaned up stream handler", { handlerKey });
       }
 
-      // Always clean up execution tracking, whether success or failure
       const executionKey = `${context.sessionId}:${agentId}`;
       const wasTracking = this.activeAgentExecutions.delete(executionKey);
       if (wasTracking) {
@@ -625,11 +503,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Execute in-process LLM agents without MCP overhead.
-   */
   private async executeWrappedAgent(
-    agent: AtlasAgent<string, WrappedAgentResult>,
+    agent: AtlasAgent<string, unknown>,
     agentId: string,
     prompt: string,
     context: AgentExecutionContext,
@@ -637,7 +512,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     logger: Logger,
   ): Promise<AgentResult> {
     try {
-      // Only enable streaming if both streamId and callback are provided
       let streamEmitter: StreamEmitter | undefined;
       if (context.onStreamEvent && context.streamId) {
         streamEmitter = new CallbackStreamEmitter(
@@ -683,10 +557,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             error: error,
           });
 
-          // Fallback to minimal context on error
           agentContext = {
             logger: logger.child({ agentId, sessionId: context.sessionId }),
-            tools: {},
+            tools: {}, // No tools on fallback
             session: {
               sessionId: context.sessionId,
               workspaceId: context.workspaceId,
@@ -698,7 +571,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           };
         }
       } else {
-        // No context builder available - use minimal context
         logger.warn(
           "No context builder available for wrapped agent - agent will run without tool access",
           {
@@ -714,7 +586,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
         agentContext = {
           logger: logger.child({ agentId, sessionId: context.sessionId }),
-          tools: {}, // Empty tools - no MCP access
+          tools: {},
           session: {
             sessionId: context.sessionId,
             workspaceId: context.workspaceId,
@@ -726,58 +598,50 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         };
       }
 
-      let result: WrappedAgentResult;
       try {
-        result = await retry(() => agent.execute(finalPrompt, agentContext), {
-          maxAttempts: 11, // 1 initial + 10 retries
+        const payload = await retry(() => agent.execute(finalPrompt, agentContext), {
+          maxAttempts: 11,
           minTimeout: 1000,
           maxTimeout: 30000,
           multiplier: 2,
-          jitter: 1, // Full jitter to prevent thundering herd
+          jitter: 1,
         });
+
+        const result: AgentResult = {
+          agentId,
+          timestamp: new Date().toISOString(),
+          input: prompt,
+          durationMs: Date.now() - startTime,
+          ...payload,
+        };
+
+        logger.info("Wrapped agent execution completed", {
+          agentId,
+          ok: result.ok,
+          durationMs: result.durationMs,
+        });
+
+        return result;
       } catch (error) {
-        // Unwrap RetryError to get the original error
-        if (error && typeof error === "object" && "cause" in error) {
-          throw error.cause;
-        }
+        // @std/async RetryError wraps the original - unwrap it
+        if (error && typeof error === "object" && "cause" in error) throw error.cause;
         throw error;
       }
-
-      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(result);
-
-      return {
-        agentId,
-        task: this.truncateTask(prompt),
-        input: context,
-        output: outputWithoutTools,
-        error: isStructuredFailure(outputWithoutTools),
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        toolCalls,
-        toolResults,
-        artifactRefs: result.artifactRefs,
-      };
     } catch (error) {
       this.logger.error("Wrapped agent execution failed", { error });
 
       return {
         agentId,
-        task: this.truncateTask(prompt),
-        input: context,
-        output: null,
-        error: stringifyError(error),
-        duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        toolCalls: undefined,
-        toolResults: undefined,
-      };
+        input: prompt,
+        ok: false,
+        error: { reason: stringifyError(error) },
+        durationMs: Date.now() - startTime,
+      } satisfies AgentExecutionError<string>;
     }
   }
 
-  /**
-   * Get or create an MCP client for a specific session.
-   * Each session gets its own transport and SSE connection.
-   */
+  /** Each session gets its own MCP client with StreamableHTTP transport. */
   private async getOrCreateSessionClient(
     sessionId: string,
     workspaceId?: string,
@@ -795,16 +659,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       await client.connect(transport);
 
-      /**
-       * Handles streaming notifications from Agents and passes them up to the session supervisor.
-       * @see packages/core/src/streaming/stream-emitters.ts - MCPStreamEmitter
-       */
+      // Forward streaming notifications from MCP agents to the session's stream handler
       client.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
         const { toolName: agentId, sessionId, event } = notification.params;
-        // @ts-expect-error right now, uiMessageChunkSchema isn't exported by the Vercel AI SDK.
-        // The chunk is emitted from the MCPStreamEmitter so we'll have to line those up by hand.
-        // @see https://github.com/vercel/ai/issues/8100
-        const evt: AtlasUIMessageChunk = event;
+        // uiMessageChunkSchema isn't exported by Vercel AI SDK - see https://github.com/vercel/ai/issues/8100
+        const evt: AtlasUIMessageChunk = event as AtlasUIMessageChunk;
         const handlerKey = this.getStreamHandlerKey(sessionId, agentId);
         const handler = this.activeStreamHandlers.get(handlerKey);
         if (handler) {
@@ -818,7 +677,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       this.mcpSessions.set(sessionId, setup);
 
-      // Handle MCP session ID mapping if different
+      // MCP server may assign different session ID - store under both keys
       if (mcpSessionId && mcpSessionId !== sessionId) {
         this.logger.info("MCP session ID differs from orchestrator session ID", {
           orchestratorSessionId: sessionId,
@@ -827,7 +686,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         this.mcpSessions.set(mcpSessionId, setup);
       }
 
-      // Verify MCP connection works
+      // Verify connection is healthy
       try {
         await client.listTools();
       } catch (error) {
@@ -843,13 +702,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     return setup;
   }
 
-  /**
-   * Clean up inactive sessions.
-   * Sessions are considered inactive after 30 minutes.
-   */
+  /** Cleans up sessions inactive for >30 minutes. */
   private async cleanupInactiveSessions(): Promise<void> {
     const now = Date.now();
-    const maxAge = 30 * 60 * 1000; // 30 minutes
+    const maxAge = 30 * 60 * 1000;
 
     for (const [sessionId, setup] of this.mcpSessions.entries()) {
       if (now - setup.lastActivity > maxAge) {
@@ -873,9 +729,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
   }
 
-  /**
-   * Clean up all connections and pending operations.
-   */
   async shutdown(): Promise<void> {
     this.logger.info("Shutting down agent orchestrator");
 
@@ -896,29 +749,4 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     this.mcpSessions.clear();
     this.activeStreamHandlers.clear();
   }
-}
-
-/**
- * Detect structured failure results from agents using the Result<T,E> pattern.
- * Agents call `fail()` from @atlas/utils which produces `{ok: false, error: ...}`.
- * Returns a string error message if the output is a failure, undefined otherwise.
- *
- * Error extraction priority: string → {reason} → {message} → JSON.stringify → String()
- */
-const DEFAULT_FAILURE_MESSAGE = "Agent returned a failure result";
-
-const ErrorToStringSchema = z
-  .string()
-  .or(z.object({ reason: z.string() }).transform((e) => e.reason))
-  .or(z.object({ message: z.string() }).transform((e) => e.message))
-  .or(z.record(z.string(), z.unknown()).transform((e) => JSON.stringify(e)))
-  .or(z.unknown().transform((e) => (e === undefined ? DEFAULT_FAILURE_MESSAGE : String(e))));
-
-const StructuredFailureSchema = z
-  .object({ ok: z.literal(false), error: ErrorToStringSchema.optional() })
-  .transform((result) => result.error ?? DEFAULT_FAILURE_MESSAGE);
-
-export function isStructuredFailure(output: unknown): string | undefined {
-  const parsed = StructuredFailureSchema.safeParse(output);
-  return parsed.success ? parsed.data : undefined;
 }

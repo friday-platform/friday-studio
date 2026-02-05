@@ -8,7 +8,7 @@
  */
 
 import { rm } from "node:fs/promises";
-import { dataAnalystAgent } from "@atlas/bundled-agents";
+import { type DataAnalystResult, dataAnalystAgent } from "@atlas/bundled-agents";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { join } from "@std/path";
@@ -21,6 +21,18 @@ import {
   generateSalesCSV,
   generateSalesData,
 } from "./generate-test-data.ts";
+
+/**
+ * Unwraps AgentResult, throwing on failure.
+ */
+function unwrapResult(
+  result: Awaited<ReturnType<typeof dataAnalystAgent.execute>>,
+): DataAnalystResult {
+  if (!result.ok) {
+    throw new Error(`Agent execution failed: ${result.error.reason}`);
+  }
+  return result.data;
+}
 
 describe("Data Analyst Agent", () => {
   let adapter: AgentContextAdapter;
@@ -74,8 +86,9 @@ describe("Data Analyst Agent", () => {
     const prompt = `Analyze artifact ${artifactId}. What is the total revenue across all sales?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
     const streamEvents = adapter.getStreamEvents();
@@ -92,20 +105,18 @@ describe("Data Analyst Agent", () => {
       pass: true,
     });
 
-    // Verify result structure
-    expect(result).toBeDefined();
-    expect(result.summary).toBeDefined();
-    expect(result.artifactRefs).toBeDefined();
-    expect(result.artifactRefs.length).toBeGreaterThanOrEqual(1);
+    // Verify summary addresses the revenue question
+    expect(result.summary.toLowerCase()).toMatch(/revenue|total/);
 
-    // Verify summary mentions revenue (LLM will format the number)
-    const summaryLower = result.summary.toLowerCase();
-    expect(summaryLower.includes("revenue") || summaryLower.includes("total")).toBe(true);
+    // Verify at least one artifact was produced (unwrapResult ensures ok:true)
+    if (!rawResult.ok) throw new Error("unreachable");
+    const artifactRefs = rawResult.artifactRefs ?? [];
+    expect(artifactRefs.length).toBeGreaterThanOrEqual(1);
 
     console.log(`Test passed:`);
     console.log(`  Expected total revenue: $${expected.totalRevenue.toLocaleString()}`);
     console.log(`  Summary: ${result.summary.slice(0, 200)}...`);
-    console.log(`  Artifacts: ${result.artifactRefs.length}`);
+    console.log(`  Artifacts: ${artifactRefs.length}`);
   });
 
   it("Answer region breakdown question", async () => {
@@ -116,8 +127,9 @@ describe("Data Analyst Agent", () => {
     const prompt = `Analyze artifact ${artifactId}. Which region had the highest total revenue?`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -132,13 +144,8 @@ describe("Data Analyst Agent", () => {
       pass: true,
     });
 
-    // Verify result structure
-    expect(result).toBeDefined();
-    expect(result.summary).toBeDefined();
-
-    // Verify summary mentions the top region
-    const summaryLower = result.summary.toLowerCase();
-    expect(summaryLower).toContain(expected.topRegion.toLowerCase());
+    // Verify summary identifies the top region
+    expect(result.summary.toLowerCase()).toContain(expected.topRegion.toLowerCase());
 
     console.log(`Test passed:`);
     console.log(`  Expected top region: ${expected.topRegion}`);
@@ -153,8 +160,9 @@ describe("Data Analyst Agent", () => {
     const prompt = `Analyze artifact ${artifactId}. Give me a breakdown of total revenue by region. Save the results.`;
 
     const startTime = performance.now();
-    const result = await dataAnalystAgent.execute(prompt, context);
+    const rawResult = await dataAnalystAgent.execute(prompt, context);
     const executionTimeMs = performance.now() - startTime;
+    const result = unwrapResult(rawResult);
 
     const metrics = adapter.getMetrics();
 
@@ -165,17 +173,14 @@ describe("Data Analyst Agent", () => {
       pass: true,
     });
 
-    // Verify result structure
-    expect(result).toBeDefined();
-    expect(result.summary).toBeDefined();
-    expect(result.artifactRefs).toBeDefined();
-
-    // Should have summary artifact, might have data artifact too
-    const summaryArtifact = result.artifactRefs.find((a) => a.type === "summary");
-    expect(summaryArtifact).toBeDefined();
+    // Verify artifact refs include a summary artifact (unwrapResult ensures ok:true)
+    if (!rawResult.ok) throw new Error("unreachable");
+    const artifactRefs = rawResult.artifactRefs ?? [];
+    expect(artifactRefs.length).toBeGreaterThanOrEqual(1);
+    expect(artifactRefs.some((a) => a.type === "summary")).toBe(true);
 
     console.log(`Test passed:`);
-    console.log(`  Artifacts: ${result.artifactRefs.length}`);
-    console.log(`  Types: ${result.artifactRefs.map((a) => a.type).join(", ")}`);
+    console.log(`  Artifacts: ${artifactRefs.length}`);
+    console.log(`  Types: ${artifactRefs.map((a) => a.type).join(", ")}`);
   });
 });

@@ -13,7 +13,7 @@
  *   Agent Execution Machines (XState actors)
  */
 
-import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
+import type { AgentContext, AgentPayload, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { createActor } from "xstate";
 import {
@@ -89,7 +89,7 @@ export class AgentExecutionManager {
     prompt: string,
     sessionData: AgentSessionData,
     requestId?: string,
-  ): Promise<unknown> {
+  ): Promise<AgentPayload<unknown>> {
     this.logger.info("Executing agent", { agentId, prompt, requestId, ...sessionData });
     const actor = this.getOrCreateExecutionActor(agentId);
 

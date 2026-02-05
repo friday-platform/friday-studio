@@ -1,36 +1,28 @@
 // Core Atlas interfaces based on technical design document
 
-import type { AgentResult } from "@atlas/agent-sdk";
 import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
 import type { MaybePromise } from "@atlas/utils";
 
 /**
- * Summary of session execution state for supervisor coordination.
+ * Summary of session execution state.
  *
- * Returned from FSM execution to track phase/agent counts and overall
- * status. Used by the supervisor to coordinate multi-step execution
- * and determine when a session is complete.
+ * Returned from FSM execution to track phase counts and overall status.
+ * Used by waitForCompletion() to signal session termination.
  *
  * @remarks
  * This is distinct from {@link SessionDigest} (packages/core/src/session/build-session-digest.ts)
  * which captures full I/O content for agent analysis. SessionSummary focuses
- * on orchestration metrics; SessionDigest focuses on actual data.
- *
- * Use SessionSummary when: supervisor needs execution progress/state
- * Use SessionDigest when: agent needs to understand what happened
+ * on orchestration status; SessionDigest focuses on actual data.
  */
 export interface SessionSummary {
   sessionId: string;
   workspaceId: string;
   status: string;
   totalPhases: number;
-  totalAgents: number;
   completedPhases: number;
-  executedAgents: number;
   duration: number;
   reasoning: string;
-  results: AgentResult[];
 }
 
 export interface IAtlasScope {

@@ -6,12 +6,7 @@
  */
 
 // Adapter interfaces for server implementations
-export type {
-  AgentExecutionResult,
-  AgentServerAdapter,
-  AgentSessionManager,
-  CompletedAgentResult,
-} from "./adapter.ts";
+export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
 export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
@@ -30,10 +25,20 @@ export {
   MessageMetadataSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
+export type {
+  AgentExtras,
+  AgentPayload,
+  AgentPayloadError,
+  AgentPayloadSuccess,
+} from "./result.ts";
+// Payload helpers for agent handlers
+export { err, ok } from "./result.ts";
 // Types
 export type {
   AgentContext,
   AgentEnvironmentConfig,
+  AgentExecutionError,
+  AgentExecutionSuccess,
   AgentExpertise,
   AgentHandler,
   AgentLLMConfig,
@@ -55,6 +60,7 @@ export type {
   MCPServerConfig,
   MCPServerToolFilter,
   MCPTransportConfig,
+  OutlineRef,
   StreamEmitter,
   ToolCall,
   ToolContext,
@@ -63,9 +69,12 @@ export type {
 // Zod Schemas for runtime validation
 export {
   AgentEnvironmentConfigSchema,
+  AgentExecutionErrorSchema,
+  AgentExecutionSuccessSchema,
   AgentExpertiseSchema,
   AgentLLMConfigSchema,
   AgentMetadataSchema,
+  AgentResultSchema,
   AgentSessionDataSchema,
   AgentSessionStateSchema,
   ArtifactRefSchema,
@@ -76,6 +85,7 @@ export {
   MCPServerConfigSchema,
   MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
+  OutlineRefSchema,
 } from "./types.ts";
 // Vercel AI SDK helpers
 export { repairJson, repairToolCall } from "./vercel-helpers/json-repair.ts";
