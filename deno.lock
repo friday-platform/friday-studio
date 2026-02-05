@@ -104,7 +104,7 @@
     "npm:@types/react@^19.2.13": "19.2.13",
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__@types+node@25.2.1__vite@7.3.1___@types+node@25.2.1___picomatch@4.0.3_@opentelemetry+api@1.9.0_@types+node@25.2.1",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
-    "npm:ai@^5.0.127": "5.0.128_zod@4.3.6",
+    "npm:ai@^5.0.128": "5.0.128_zod@4.3.6",
     "npm:ai@^5.0.93": "5.0.128_zod@4.3.6",
     "npm:better-sqlite3@^12.6.2": "12.6.2",
     "npm:cookie@^1.0.2": "1.1.1",
@@ -5885,7 +5885,7 @@
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.13",
         "npm:@vitest/coverage-v8@4.0.18",
-        "npm:ai@^5.0.127",
+        "npm:ai@^5.0.128",
         "npm:ink@^6.6.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.83.0",
@@ -6033,7 +6033,7 @@
             "npm:@tauri-apps/plugin-fs@~2.4.5",
             "npm:@tauri-apps/plugin-opener@^2.5.3",
             "npm:@types/papaparse@^5.5.2",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.14.0",
             "npm:eslint@^9.39.2",
@@ -6056,7 +6056,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:jsonrepair@^3.13.2",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6089,7 +6089,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@types/better-sqlite3@^7.6.13",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:better-sqlite3@^12.6.2",
             "npm:evalite@^1.0.0-beta.15",
             "npm:parallel-web@0.3.1",
@@ -6132,7 +6132,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:jose@^6.1.3",
             "npm:papaparse@^5.5.3",
             "npm:proper-lockfile@^4.1.2",
@@ -6189,7 +6189,7 @@
       "packages/hallucination": {
         "packageJson": {
           "dependencies": [
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
@@ -6204,7 +6204,7 @@
             "npm:@ai-sdk/openai@^2.0.89",
             "npm:@ai-sdk/provider@^2.0.1",
             "npm:@jsr/std__collections@^1.1.3",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6225,7 +6225,7 @@
             "npm:@jsr/std__async@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
@@ -6236,7 +6236,7 @@
           "dependencies": [
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.1.2",
             "npm:papaparse@^5.5.3",
@@ -6296,7 +6296,7 @@
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@modelcontextprotocol/sdk@^1.26.0",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6351,7 +6351,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6366,7 +6366,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
-            "npm:ai@^5.0.127",
+            "npm:ai@^5.0.128",
             "npm:dotenv@17.2.4",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.18",
