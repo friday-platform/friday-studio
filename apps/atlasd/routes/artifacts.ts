@@ -97,7 +97,7 @@ export async function streamToFile(
   try {
     for await (const chunk of stream) {
       const ok = writer.write(chunk);
-      if (!ok) await new Promise((resolve) => writer.once("drain", resolve));
+      if (!ok) await new Promise<void>((resolve) => writer.once("drain", () => resolve()));
     }
   } finally {
     await new Promise<void>((resolve, reject) => {

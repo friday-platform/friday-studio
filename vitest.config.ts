@@ -8,7 +8,7 @@ export default defineConfig({
     include: ["**/*.{test,spec,eval}.?(c|m)[jt]s?(x)"],
     // Exclude eval files in CI - they require ATLAS_KEY credentials
     exclude: process.env.GITHUB_ACTIONS
-      ? ["**/node_modules/**", "**/*.eval.?(c|m)[jt]s?(x)"]
-      : ["**/node_modules/**"],
+      ? ["**/node_modules/**", "**/*.eval.?(c|m)[jt]s?(x)", "apps/friday-website/**"]
+      : ["**/node_modules/**", "apps/friday-website/**"],
   },
 });

@@ -452,6 +452,25 @@ updates:
       - dependency-name: "postgres"
         versions: [">= 3.4.8"]
 
+  # Keep npm dependencies up to date (for friday-website)
+  - package-ecosystem: "npm"
+    directory: "/apps/friday-website"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "friday-website"
+    rebase-strategy: "auto"
+
   # Keep Docker dependencies up to date (for static service)
   - package-ecosystem: "docker"
     directory: "/apps/static"
