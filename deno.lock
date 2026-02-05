@@ -49,7 +49,7 @@
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.11.7_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.11.7_zod@4.3.6",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0": "4.7.0_prettier@3.8.1",
-    "npm:@inkjs/ui@2": "2.0.0_ink@6.6.0__@types+react@19.2.10__react@19.2.4_@types+react@19.2.10_react@19.2.4",
+    "npm:@inkjs/ui@2": "2.0.0_ink@6.6.0__@types+react@19.2.11__react@19.2.4_@types+react@19.2.11_react@19.2.4",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
     "npm:@jsr/std__assert@^1.0.14": "1.0.18",
     "npm:@jsr/std__async@1.0.15": "1.0.15",
@@ -97,7 +97,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/better-sqlite3@^7.6.13": "7.6.13",
     "npm:@types/papaparse@^5.5.2": "5.5.2",
-    "npm:@types/react@^19.2.10": "19.2.10",
+    "npm:@types/react@^19.2.11": "19.2.11",
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__vite@7.3.1___picomatch@4.0.3_@opentelemetry+api@1.9.0",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:ai@^5.0.125": "5.0.125_zod@4.3.6",
@@ -119,7 +119,7 @@
     "npm:hono@^4.10.4": "4.11.7",
     "npm:hono@^4.11.1": "4.11.7",
     "npm:hono@^4.11.6": "4.11.7",
-    "npm:ink@^6.6.0": "6.6.0_@types+react@19.2.10_react@19.2.4",
+    "npm:ink@^6.6.0": "6.6.0_@types+react@19.2.11_react@19.2.4",
     "npm:jose@6.1.3": "6.1.3",
     "npm:jose@^6.1.3": "6.1.3",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
@@ -1027,7 +1027,7 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@inkjs/ui@2.0.0_ink@6.6.0__@types+react@19.2.10__react@19.2.4_@types+react@19.2.10_react@19.2.4": {
+    "@inkjs/ui@2.0.0_ink@6.6.0__@types+react@19.2.11__react@19.2.4_@types+react@19.2.11_react@19.2.4": {
       "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
       "dependencies": [
         "chalk@5.6.2",
@@ -2689,8 +2689,8 @@
         "pg-types"
       ]
     },
-    "@types/react@19.2.10": {
-      "integrity": "sha512-WPigyYuGhgZ/cTPRXB2EwUw+XvsRA3GqHlsP4qteqrnnjDrApbS7MxcGr/hke5iUoeB7E/gQtrs9I37zAJ0Vjw==",
+    "@types/react@19.2.11": {
+      "integrity": "sha512-tORuanb01iEzWvMGVGv2ZDhYZVeRMrw453DCSAIn/5yvcSVnMoUMTyf33nQJLahYEnv9xqrTNbgz4qY5EfSh0g==",
       "dependencies": [
         "csstype"
       ]
@@ -4109,7 +4109,7 @@
     "ini@1.3.8": {
       "integrity": "sha512-JV/yugV2uzW5iMRSiZAyDtQd+nxtUnjeLt0acNdw98kKLrvuRVyB80tsREOE7yvGVgalhZ6RNXCmEHkUKBKxew=="
     },
-    "ink@6.6.0_@types+react@19.2.10_react@19.2.4": {
+    "ink@6.6.0_@types+react@19.2.11_react@19.2.4": {
       "integrity": "sha512-QDt6FgJxgmSxAelcOvOHUvFxbIUjVpCH5bx+Slvc5m7IEcpGt3dYwbz/L+oRnqEGeRvwy1tineKK4ect3nW1vQ==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
@@ -5917,7 +5917,7 @@
         "npm:@jsr/std__yaml@^1.0.10",
         "npm:@opentelemetry/api@^1.9.0",
         "npm:@total-typescript/ts-reset@~0.6.1",
-        "npm:@types/react@^19.2.10",
+        "npm:@types/react@^19.2.11",
         "npm:@vitest/coverage-v8@4.0.18",
         "npm:ai@^5.0.125",
         "npm:ink@^6.6.0",
