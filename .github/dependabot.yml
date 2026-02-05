@@ -87,7 +87,7 @@ updates:
       - dependency-name: "denoland/deno"
         versions: ["2.6.8"]
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Rust dependencies up to date (for web-client/src-tauri)
   - package-ecosystem: "cargo"
@@ -179,7 +179,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for traefik)
   - package-ecosystem: "docker"
@@ -277,7 +277,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for gist service)
   - package-ecosystem: "docker"
@@ -297,7 +297,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for bounce service)
   - package-ecosystem: "docker"
@@ -317,7 +317,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for atlas-auth-ui)
   - package-ecosystem: "docker"
@@ -381,7 +381,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep google-workspace-mcp Python dependencies up to date
   - package-ecosystem: "pip"
@@ -421,7 +421,7 @@ updates:
     # Block Python 3.15 - PyO3 (used by rpds-py, pydantic-core) only supports up to 3.14
     ignore:
       - dependency-name: "python"
-        versions: [">= 3.15"]
+        versions: [">= 3.15.a"]
 
   # Keep npm dependencies up to date (for link service)
   - package-ecosystem: "npm"
@@ -487,7 +487,7 @@ updates:
     rebase-strategy: "auto"
     ignore:
       - dependency-name: "golang"
-        versions: [">= 1.26"]
+        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for atlas-otel-collector)
   - package-ecosystem: "docker"
