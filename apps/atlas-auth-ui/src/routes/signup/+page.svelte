@@ -1,10 +1,9 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { enhance } from "$app/forms";
-  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-  import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import Logo from "$lib/components/logo.svelte";
 
   let submitted = $state(false);
   let agree_to_terms = $state(false);
@@ -29,11 +28,8 @@
   <section>
     <div class="form">
       <div class="title">
-        <picture>
-          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
-          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
-          <img src={logoMark} alt="Friday logo" />
-        </picture>
+        <Logo />
+        <!-- <img src={logoMark} alt="Friday logo" /> -->
 
         <h1>Sign up for Friday</h1>
       </div>
@@ -162,8 +158,8 @@
     padding: var(--size-8);
 
     .title {
-      & :global(img) {
-        inline-size: var(--size-28);
+      & :global(svg) {
+        inline-size: var(--size-10);
         margin: 0 auto;
       }
 

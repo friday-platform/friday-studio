@@ -1,10 +1,9 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-  import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import Logo from "$lib/components/logo.svelte";
   import { onMount } from "svelte";
 
   let emailValue = $state("");
@@ -75,11 +74,7 @@
         </button>
       {:else}
         <div class="wordmark">
-          <picture>
-            <source srcset={logoMark} media="(prefers-color-scheme: light)" />
-            <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
-            <img src={logoMark} alt="Friday logo" />
-          </picture>
+          <Logo />
         </div>
 
         <h1>Login to Friday</h1>
@@ -158,8 +153,8 @@
     transform: translateY(calc(-1 * var(--size-2)));
   }
 
-  .wordmark img {
-    inline-size: var(--size-28);
+  .wordmark :global(svg) {
+    inline-size: var(--size-10);
   }
 
   .details {

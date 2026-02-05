@@ -1,10 +1,9 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-  import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import { Form } from "$lib/components/form";
+  import Logo from "$lib/components/logo.svelte";
   import { toast } from "$lib/components/notifications/notifications.svelte";
   import { zfd } from "zod-form-data";
 
@@ -20,11 +19,7 @@
 
   <section>
     <div class="wordmark">
-      <picture>
-        <source srcset={logoMark} media="(prefers-color-scheme: light)" />
-        <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
-        <img src={logoMark} alt="Friday logo" />
-      </picture>
+      <Logo />
     </div>
 
     <form
@@ -138,7 +133,7 @@
       inset-inline-start: var(--size-8);
       position: absolute;
 
-      img {
+      & :global(svg) {
         aspect-ratio: 1 / 1;
         object-fit: contain;
         inline-size: 100%;

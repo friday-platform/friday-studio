@@ -1,9 +1,8 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
-  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-  import logoMark from "$lib/assets/logo-mark.png";
   import Decal from "$lib/components/decal.svelte";
+  import Logo from "$lib/components/logo.svelte";
 
   const email = $derived(page.url.searchParams.get("email"));
 </script>
@@ -18,11 +17,7 @@
   <section>
     <div class="details">
       <div class="title">
-        <picture>
-          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
-          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
-          <img src={logoMark} alt="Friday logo" />
-        </picture>
+        <Logo />
 
         <h1>Almost done!</h1>
         {#if email}
@@ -93,8 +88,8 @@
     padding-block-end: 0;
 
     .title {
-      & :global(img) {
-        inline-size: var(--size-28);
+      & :global(svg) {
+        inline-size: var(--size-10);
         margin: 0 auto;
       }
 

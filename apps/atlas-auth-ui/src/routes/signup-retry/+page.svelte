@@ -1,10 +1,9 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { enhance } from "$app/forms";
-  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-  import logoMark from "$lib/assets/logo-mark.png";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
+  import Logo from "$lib/components/logo.svelte";
   import { toast } from "$lib/components/notifications/notifications.svelte";
 
   let success = $state(false);
@@ -21,11 +20,7 @@
   <section>
     <div class="details">
       <div class="title">
-        <picture>
-          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
-          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
-          <img src={logoMark} alt="Friday logo" />
-        </picture>
+        <Logo />
 
         <h1>Resend Confirmation Email</h1>
         <p>Enter the email you used to sign up with to get a new one.</p>
@@ -128,8 +123,8 @@
     padding-block-end: 0;
 
     .title {
-      & :global(img) {
-        inline-size: var(--size-28);
+      & :global(svg) {
+        inline-size: var(--size-10);
         margin: 0 auto;
       }
 
