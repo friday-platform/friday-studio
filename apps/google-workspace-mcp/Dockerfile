@@ -1,4 +1,4 @@
-FROM python:3.15.0a5-alpine3.23
+FROM python:3.14-alpine
 
 ARG WORKSPACE_MCP_VERSION
 

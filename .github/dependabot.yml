@@ -78,11 +78,16 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno alpine-2.6.8 - ships glibc libs that break apk
+    # Block denoland/deno 2.6.8 - ships glibc libs that break apk
     # See: https://github.com/denoland/deno/issues/32037
+    # Block golang >= 1.26 (still RC). Docker `versions` uses Bundler syntax
+    # on the extracted numeric version, not the full tag.
+    # See: https://github.com/dependabot/dependabot-core/issues/9007
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["alpine-2.6.8"]
+        versions: ["2.6.8"]
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Rust dependencies up to date (for web-client/src-tauri)
   - package-ecosystem: "cargo"
@@ -172,6 +177,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Docker dependencies up to date (for traefik)
   - package-ecosystem: "docker"
@@ -267,6 +275,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Docker dependencies up to date (for gist service)
   - package-ecosystem: "docker"
@@ -284,6 +295,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Docker dependencies up to date (for bounce service)
   - package-ecosystem: "docker"
@@ -301,6 +315,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Docker dependencies up to date (for atlas-auth-ui)
   - package-ecosystem: "docker"
@@ -322,7 +339,7 @@ updates:
     # See: https://github.com/denoland/deno/issues/32037
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["alpine-2.6.8"]
+        versions: ["2.6.8"]
 
   # Keep Docker dependencies up to date (for link service)
   - package-ecosystem: "docker"
@@ -344,7 +361,7 @@ updates:
     # See: https://github.com/denoland/deno/issues/32037
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["alpine-2.6.8"]
+        versions: ["2.6.8"]
 
   # Keep Docker dependencies up to date (for signal-gateway)
   - package-ecosystem: "docker"
@@ -362,6 +379,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep google-workspace-mcp Python dependencies up to date
   - package-ecosystem: "pip"
@@ -398,6 +418,10 @@ updates:
       - "docker"
       - "mcp"
     rebase-strategy: "auto"
+    # Block Python 3.15 - PyO3 (used by rpds-py, pydantic-core) only supports up to 3.14
+    ignore:
+      - dependency-name: "python"
+        versions: [">= 3.15"]
 
   # Keep npm dependencies up to date (for link service)
   - package-ecosystem: "npm"
@@ -461,6 +485,9 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "golang"
+        versions: [">= 1.26"]
 
   # Keep Docker dependencies up to date (for atlas-otel-collector)
   - package-ecosystem: "docker"
