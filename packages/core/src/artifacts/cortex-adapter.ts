@@ -98,6 +98,9 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
     this.baseUrl = baseUrl ? baseUrl.replace(/\/+$/, "") : ""; // Remove trailing slashes
   }
 
+  /**
+   * Get ATLAS_KEY from environment for Cortex authentication.
+   */
   private getAuthToken(): string {
     const token = process.env.ATLAS_KEY;
     if (!token) {
@@ -1298,7 +1301,7 @@ function writeChunk(
   chunk: Uint8Array,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    stream.write(chunk, (err) => {
+    stream.write(chunk, (err: Error | null | undefined) => {
       if (err) reject(err);
       else resolve();
     });

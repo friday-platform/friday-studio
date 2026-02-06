@@ -13,6 +13,8 @@ import {
 import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import { logger } from "@atlas/logger";
+import type { SkillSummary } from "@atlas/skills";
+import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
@@ -689,8 +691,39 @@ export class FSMEngine {
             outputTo: action.outputTo,
           });
 
+          // Fetch workspace skills for injection
+          const workspaceId = sig._context?.workspaceId;
+          let skills: SkillSummary[] = [];
+          if (workspaceId) {
+            const skillsResult = await SkillStorage.list(workspaceId);
+            if (!skillsResult.ok) {
+              logger.error("Failed to fetch workspace skills", {
+                workspaceId,
+                error: skillsResult.error,
+              });
+            }
+            skills = skillsResult.ok ? skillsResult.data : [];
+            logger.debug("Workspace skills query result", {
+              workspaceId,
+              ok: skillsResult.ok,
+              skillCount: skills.length,
+              skillNames: skills.map((s) => s.name),
+            });
+          } else {
+            logger.debug("Skipping skill injection - no workspaceId in signal context", {
+              hasContext: !!sig._context,
+              signalType: sig.type,
+            });
+          }
+
           // Build base tools from action definition
           const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
+
+          // Add load_skill tool if workspace has skills
+          if (skills.length > 0 && workspaceId) {
+            // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
+            baseTools.load_skill = createLoadSkillTool(workspaceId) as Tool;
+          }
 
           // Inject failStep tool for explicit failure signaling
           const failStepTool = tool({
@@ -741,8 +774,8 @@ export class FSMEngine {
             }
           }
 
-          // Build prompt with appropriate instructions
-          let contextPrompt = await this.buildContextPrompt(action.prompt, documents);
+          // Build prompt with expanded artifact content and skills
+          let contextPrompt = await this.buildContextPrompt(action.prompt, documents, skills);
 
           if (completeToolInjected) {
             contextPrompt +=
@@ -1118,21 +1151,29 @@ export class FSMEngine {
   private async buildContextPrompt(
     basePrompt: string,
     documents: Map<string, Document> = this._documents,
+    skills: SkillSummary[] = [],
   ): Promise<string> {
+    let prompt = basePrompt;
+
     // Inject document context into prompt with expanded artifact content
     const docs = Array.from(documents.values());
-    if (docs.length === 0) {
-      return basePrompt;
+    if (docs.length > 0) {
+      // Expand artifact refs to include actual content for downstream LLM steps
+      const expandedDocs = await expandArtifactRefsInDocuments(docs);
+
+      const docsContext = expandedDocs
+        .map((doc) => `Document ${doc.id} (${doc.type}): ${JSON.stringify(doc.data, null, 2)}`)
+        .join("\n\n");
+
+      prompt = `${prompt}\n\nAvailable Documents:\n${docsContext}`;
     }
 
-    // Expand artifact refs to include actual content for downstream LLM steps
-    const expandedDocs = await expandArtifactRefsInDocuments(docs);
+    // Append available skills if any exist
+    if (skills.length > 0) {
+      prompt = `${prompt}\n\n${formatAvailableSkills(skills)}`;
+    }
 
-    const docsContext = expandedDocs
-      .map((doc) => `Document ${doc.id} (${doc.type}): ${JSON.stringify(doc.data, null, 2)}`)
-      .join("\n\n");
-
-    return `${basePrompt}\n\nAvailable Documents:\n${docsContext}`;
+    return prompt;
   }
 
   /**

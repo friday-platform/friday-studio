@@ -263,6 +263,9 @@ export interface CreateAgentConfig<TInput = string, TOutput = unknown> extends A
   environment?: AgentEnvironmentConfig;
   mcp?: Record<string, AgentMCPServerConfig>;
   llm?: AgentLLMConfig;
+
+  /** Whether this agent can load workspace skills. Default: false */
+  useWorkspaceSkills?: boolean;
 }
 
 export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
@@ -278,6 +281,9 @@ export interface AtlasAgent<TInput = string, TOutput = unknown> {
   readonly environmentConfig: AgentEnvironmentConfig | undefined;
   readonly mcpConfig: Record<string, AgentMCPServerConfig> | undefined;
   readonly llmConfig: AgentLLMConfig | undefined;
+
+  /** Whether this agent uses workspace skills */
+  readonly useWorkspaceSkills: boolean;
 }
 
 /** Agent session state - persisted between executions */

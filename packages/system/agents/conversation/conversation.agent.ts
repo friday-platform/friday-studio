@@ -18,6 +18,8 @@ import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@at
 import { registry, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import type { SkillSummary } from "@atlas/skills";
+import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
@@ -37,11 +39,10 @@ import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { wrapToolsWithSessionContext } from "./session-context.ts";
-import { formatSkillsSection } from "./skills/index.ts";
+import { skills } from "./skills/index.ts";
 import { workspaceCreationComplete } from "./stop-conditions.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
-import { loadSkillTool } from "./tools/load-skill.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
@@ -175,6 +176,31 @@ ${agents.join(", ")}
 }
 
 /**
+ * Build combined skills section from hardcoded and workspace skills.
+ * Returns empty string if no skills available.
+ */
+function buildSkillsSection(
+  hardcodedSkills: typeof skills,
+  workspaceSkills: SkillSummary[],
+): string {
+  const hardcodedEntries = hardcodedSkills.map(
+    (s) => `<skill name="${s.id}">${s.description}</skill>`,
+  );
+  const workspaceEntries = workspaceSkills.map(
+    (s) => `<skill name="${s.name}">${s.description}</skill>`,
+  );
+
+  const allEntries = [...hardcodedEntries, ...workspaceEntries];
+
+  if (allEntries.length === 0) return "";
+
+  return `<available_skills>
+<instruction>Load skills with load_skill when task matches.</instruction>
+${allEntries.join("\n")}
+</available_skills>`;
+}
+
+/**
  * Build system prompt with optional context sections.
  *
  * Sections are appended in order:
@@ -289,6 +315,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
   // Expose /agents endpoint as an MCP server for tool access
 
   expertise: { domains: ["conversation"], examples: [] },
+  useWorkspaceSkills: true,
 
   /**
    * Main conversation handler that processes user prompts with streaming responses.
@@ -472,9 +499,6 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           ? formatIntegrationsSection(linkSummary)
           : undefined;
 
-        // Load skills for prompt injection
-        const skillsSection = formatSkillsSection();
-
         // Generate capabilities section from bundled agents + MCP registry
         const supportedDomainsSection = getCapabilitiesSection();
 
@@ -555,12 +579,19 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // Wrap platform tools to inject session context (datetime for timezone-aware operations)
         const filteredTools = wrapToolsWithSessionContext(tools, sessionContext, ALLOWED_TOOLS);
 
+        const workspaceId = session.workspaceId || "atlas-conversation";
+
+        // Fetch workspace skills and combine with hardcoded skills
+        const workspaceSkillsResult = await SkillStorage.list(workspaceId);
+        const workspaceSkills = workspaceSkillsResult.ok ? workspaceSkillsResult.data : [];
+        const skillsSection = buildSkillsSection(skills, workspaceSkills);
+
         // Create do_task tool with writer closure for progress
         const doTaskTool = createDoTaskTool(
           writer,
           {
             sessionId: session.sessionId || `session-${Date.now()}`,
-            workspaceId: session.workspaceId || "atlas-conversation",
+            workspaceId,
             streamId: session.streamId,
             userId: session.userId,
             daemonUrl: getAtlasDaemonUrl(),
@@ -569,6 +600,8 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           logger,
           abortSignal,
         );
+
+        const loadSkillTool = createLoadSkillTool(workspaceId, { hardcodedSkills: skills });
 
         const allTools = {
           ...filteredTools,

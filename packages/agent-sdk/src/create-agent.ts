@@ -25,6 +25,7 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
   private environment?: AgentEnvironmentConfig;
   private mcp?: Record<string, AgentMCPServerConfig>;
   private llm?: AgentLLMConfig;
+  private _useWorkspaceSkills: boolean;
 
   constructor(config: CreateAgentConfig<TInput, TOutput>) {
     this.metadata = {
@@ -42,6 +43,7 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
     this.environment = config.environment;
     this.mcp = config.mcp;
     this.llm = config.llm;
+    this._useWorkspaceSkills = config.useWorkspaceSkills ?? false;
     this.validateConfig();
   }
 
@@ -100,6 +102,10 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
 
   get llmConfig(): AgentLLMConfig | undefined {
     return this.llm;
+  }
+
+  get useWorkspaceSkills(): boolean {
+    return this._useWorkspaceSkills;
   }
 }
 

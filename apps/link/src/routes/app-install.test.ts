@@ -327,7 +327,6 @@ describe("App Install Routes", () => {
       expect(res.status).toEqual(302);
       const location = res.headers.get("Location");
       expect(location).toBeDefined();
-      // Type narrowing after toBeDefined assertion
       if (!location) throw new Error("location should be defined");
       const url = new URL(location);
       expect(url.origin + url.pathname).toEqual("https://myapp.example.com/settings");

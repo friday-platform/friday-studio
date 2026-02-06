@@ -10,6 +10,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
@@ -77,8 +78,24 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       agent.environmentConfig,
     );
 
-    // 3. Pass prompt through unchanged
-    const enrichedPrompt = prompt;
+    // 3. Enrich prompt with workspace skills (if agent opts in)
+    let enrichedPrompt = prompt;
+
+    if (agent.useWorkspaceSkills) {
+      const skillsResult = await SkillStorage.list(sessionData.workspaceId);
+      const skills = skillsResult.ok ? skillsResult.data : [];
+
+      if (skills.length > 0) {
+        // Add workspace-scoped load_skill tool only if one doesn't already exist.
+        // This preserves any unified or specialized load_skill tool (e.g., conversation agent's
+        // unified tool that checks hardcoded skills first).
+        if (!allTools.load_skill) {
+          allTools.load_skill = createLoadSkillTool(sessionData.workspaceId);
+        }
+        // Append available skills to prompt
+        enrichedPrompt = `${enrichedPrompt}\n\n${formatAvailableSkills(skills)}`;
+      }
+    }
 
     // 4. Create stream emitter based on context
     let streamEmitter = overrides?.stream;

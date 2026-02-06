@@ -54,6 +54,7 @@ import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
+import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -594,6 +595,7 @@ export class AtlasDaemon {
     this.app.route("/api/share", shareRoutes);
     this.app.route("/api/link", linkRoutes);
     this.app.route("/api/me", meRoutes);
+    this.app.route("/api/skills", skillsRoutes);
 
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));

@@ -10,6 +10,7 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
+    "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",

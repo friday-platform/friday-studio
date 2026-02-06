@@ -1,0 +1,5 @@
+{
+  "name": "@atlas/skills",
+  "version": "0.0.1",
+  "exports": { ".": "./src/mod.ts", "./schemas": "./src/schemas.ts" }
+}

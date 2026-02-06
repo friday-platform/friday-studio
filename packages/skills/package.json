@@ -1,0 +1,13 @@
+{
+  "name": "@atlas/skills",
+  "version": "0.0.1",
+  "exports": { ".": "./src/mod.ts", "./schemas": "./src/schemas.ts" },
+  "dependencies": {
+    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
+    "ai": "^5.0.121",
+    "ulid": "^2.3.0",
+    "vitest": "^4.0.17",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {}
+}

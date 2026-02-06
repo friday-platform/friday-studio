@@ -22,6 +22,7 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
+    "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace-builder": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.26.0",

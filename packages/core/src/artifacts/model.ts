@@ -4,6 +4,7 @@ import {
   DatabaseDataSchema,
   FileDataInputSchema,
   FileDataSchema,
+  SkillDraftSchema,
   SlackSummaryDataSchema,
   SummaryDataSchema,
   TableDataSchema,
@@ -60,6 +61,12 @@ const WebSearchArtifactSchema = z.object({
   data: WebSearchDataSchema,
 });
 
+const SkillDraftArtifactSchema = z.object({
+  type: z.literal("skill-draft"),
+  version: z.literal(1),
+  data: SkillDraftSchema,
+});
+
 const DatabaseArtifactSchema = z.object({
   type: z.literal("database"),
   version: z.literal(1),
@@ -75,6 +82,7 @@ export const ArtifactDataSchema = z.discriminatedUnion("type", [
   FileArtifactSchema,
   TableArtifactSchema,
   WebSearchArtifactSchema,
+  SkillDraftArtifactSchema,
   DatabaseArtifactSchema,
 ]);
 
@@ -93,6 +101,7 @@ const FileArtifactInputSchema = z.object({
 });
 const TableInputSchema = TableArtifactSchema;
 const WebSearchInputSchema = WebSearchArtifactSchema;
+const SkillDraftInputSchema = SkillDraftArtifactSchema;
 const DatabaseInputSchema = DatabaseArtifactSchema;
 
 export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
@@ -103,6 +112,7 @@ export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   FileArtifactInputSchema,
   TableInputSchema,
   WebSearchInputSchema,
+  SkillDraftInputSchema,
   DatabaseInputSchema,
 ]);
 
@@ -117,6 +127,7 @@ export const ArtifactTypeSchema = z.enum([
   "file",
   "table",
   "web-search",
+  "skill-draft",
   "database",
 ]);
 

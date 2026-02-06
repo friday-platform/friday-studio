@@ -17,6 +17,7 @@
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
+    "@atlas/skills": "workspace:*",
     "@atlas/link": "workspace:*",
     "@atlas-vendor/hono-mcp": "workspace:*",
     "@hono/standard-validator": "^0.2.2",

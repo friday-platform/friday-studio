@@ -103,6 +103,7 @@
     "npm:@types/react@^19.2.13": "19.2.13",
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__@types+node@25.2.1__vite@7.3.1___@types+node@25.2.1___picomatch@4.0.3_@opentelemetry+api@1.9.0_@types+node@25.2.1",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
+    "npm:ai@^5.0.121": "5.0.128_zod@4.3.6",
     "npm:ai@^5.0.128": "5.0.128_zod@4.3.6",
     "npm:ai@^5.0.93": "5.0.128_zod@4.3.6",
     "npm:better-sqlite3@^12.6.2": "12.6.2",
@@ -156,8 +157,10 @@
     "npm:typescript-eslint@^8.53.1": "8.54.0_eslint@9.39.2_typescript@5.9.3_@typescript-eslint+parser@8.54.0__eslint@9.39.2__typescript@5.9.3",
     "npm:typescript-eslint@^8.54.0": "8.54.0_eslint@9.39.2_typescript@5.9.3_@typescript-eslint+parser@8.54.0__eslint@9.39.2__typescript@5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
+    "npm:ulid@^2.3.0": "2.4.0",
     "npm:vite-plugin-compression2@^2.4.0": "2.4.0",
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.2.1_picomatch@4.0.3",
+    "npm:vitest@^4.0.17": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.2.1_vite@7.3.1__@types+node@25.2.1__picomatch@4.0.3",
     "npm:vitest@^4.0.18": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.2.1_vite@7.3.1__@types+node@25.2.1__picomatch@4.0.3",
     "npm:xstate@^5.26.0": "5.26.0",
     "npm:yargs@18": "18.0.0",
@@ -5580,6 +5583,10 @@
     "uint8array-extras@1.5.0": {
       "integrity": "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="
     },
+    "ulid@2.4.0": {
+      "integrity": "sha512-fIRiVTJNcSRmXKPZtGzFQv9WRrZ3M9eoptl/teFJvjOzmpU+/K/JH6HZ8deBfb5vMEpicJcLn7JmvdknlMq7Zg==",
+      "bin": true
+    },
     "undici-types@7.16.0": {
       "integrity": "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="
     },
@@ -6256,6 +6263,17 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__path@^1.1.2"
+          ]
+        }
+      },
+      "packages/skills": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@jsr/db__sqlite@0.12",
+            "npm:ai@^5.0.121",
+            "npm:ulid@^2.3.0",
+            "npm:vitest@^4.0.17",
+            "npm:zod@^4.3.5"
           ]
         }
       },

@@ -5,6 +5,7 @@
   "main": "./mod.ts",
   "exports": {
     ".": "./mod.ts",
+    "./cortex-http": "./src/cortex-http.ts",
     "./paths.server": "./src/paths.ts",
     "./telemetry.server": "./src/telemetry.ts",
     "./temp.server": "./src/temp.server.ts"
