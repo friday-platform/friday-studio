@@ -18,10 +18,12 @@ const COMPRESSIBLE_TYPES = [
   "image/svg+xml",
 ];
 
+const REPORT_ENDPOINT = "https://dm35suqd.uriports.com/reports";
+
 const CSP_HEADER = [
   "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'report-sample'",
+  "style-src 'self' 'unsafe-inline' 'report-sample'",
   "img-src 'self' data:",
   "frame-src 'self' https://www.youtube.com",
   "font-src 'self'",
@@ -31,16 +33,37 @@ const CSP_HEADER = [
   "base-uri 'self'",
   "form-action 'self'",
   "upgrade-insecure-requests",
+  `report-uri ${REPORT_ENDPOINT}/report`,
+  "report-to default",
 ].join("; ");
 
 function setSecurityHeaders(headers: Headers): void {
-  // SvelteKit handles CSP for HTML via svelte.config.js (meta tags for prerendered,
-  // nonce-based headers for SSR). Only add CSP for non-HTML responses.
+  // Reporting API endpoints (URIports)
+  headers.set("reporting-endpoints", `default="${REPORT_ENDPOINT}"`);
+  headers.set(
+    "report-to",
+    JSON.stringify({
+      group: "default",
+      max_age: 10886400,
+      endpoints: [{ url: REPORT_ENDPOINT }],
+      include_subdomains: true,
+    }),
+  );
+  headers.set(
+    "nel",
+    JSON.stringify({
+      report_to: "default",
+      max_age: 2592000,
+      include_subdomains: true,
+      failure_fraction: 1.0,
+    }),
+  );
+
+  // SvelteKit's csp config (svelte.config.js) adds CSP headers for SSR responses,
+  // so `headers.has()` will be true for HTML pages. This acts as a fallback for
+  // non-HTML responses (metrics, errors) or if SvelteKit doesn't set CSP.
   if (!headers.has("content-security-policy")) {
-    const ct = headers.get("content-type") ?? "";
-    if (!ct.includes("text/html")) {
-      headers.set("content-security-policy", CSP_HEADER);
-    }
+    headers.set("content-security-policy", CSP_HEADER);
   }
   if (!headers.has("cross-origin-opener-policy")) {
     headers.set("cross-origin-opener-policy", "same-origin");
@@ -60,6 +83,14 @@ function setSecurityHeaders(headers: Headers): void {
       "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
     );
   }
+
+  // Report-only headers — monitor without enforcing
+  headers.set("cross-origin-embedder-policy-report-only", 'require-corp; report-to="default"');
+  headers.set("cross-origin-opener-policy-report-only", 'same-origin; report-to="default"');
+  headers.set(
+    "permissions-policy-report-only",
+    "camera=();report-to=default, microphone=();report-to=default, geolocation=();report-to=default, payment=();report-to=default, usb=();report-to=default",
+  );
 }
 
 function setCacheHeaders(response: Response): void {

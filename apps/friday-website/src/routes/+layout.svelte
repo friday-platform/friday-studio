@@ -17,7 +17,6 @@ const currentYear = new Date().getFullYear();
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<link rel="preload" as="image" href={logo} type="image/svg+xml" />
 	<link rel="canonical" href="https://hellofriday.ai{page.url.pathname}" />
 	<title>Friday</title>
 	<meta property="og:site_name" content="Friday" />
