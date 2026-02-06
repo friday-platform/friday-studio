@@ -129,7 +129,7 @@ describe("Init endpoint (POST /init)", () => {
     const res = await initUpload({ fileName: "malware.exe", fileSize: 1024 });
     expect(res.status).toEqual(415);
     const body = await res.json();
-    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML");
+    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
   });
 
   it("rejects oversized file with 400", async () => {

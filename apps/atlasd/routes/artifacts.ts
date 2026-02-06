@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, rm, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
@@ -9,14 +9,16 @@ import {
   type DatabasePreview,
   UpdateArtifactSchema,
 } from "@atlas/core/artifacts";
-import { convertCsvToSqlite } from "@atlas/core/artifacts/converters";
+import { convertCsvToSqlite, pdfToMarkdown } from "@atlas/core/artifacts/converters";
 import {
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isInvalidChatId,
   MAX_FILE_SIZE,
+  MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -38,6 +40,13 @@ type ValidationResult = { valid: true; mimeType: string } | { valid: false; erro
  */
 function isCsvFile(filename: string): boolean {
   return getValidatedMimeType(filename) === "text/csv";
+}
+
+/**
+ * Check if uploaded file is a PDF using the canonical extension-to-MIME mapping.
+ */
+function isPdfFile(filename: string): boolean {
+  return getValidatedMimeType(filename) === "application/pdf";
 }
 
 /**
@@ -138,12 +147,13 @@ export async function createArtifactFromFile(opts: {
   const { filePath, fileName, chatId } = opts;
 
   // Reject binary files based on magic bytes (extension check may have passed)
+  // Exception: PDFs are allowed through - they get converted to markdown later
   const detected = await fileTypeFromFile(filePath);
-  if (detected) {
+  if (detected && detected.mime !== "application/pdf") {
     await rm(filePath, { force: true });
     return {
       ok: false as const,
-      error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML",
+      error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF",
     };
   }
 
@@ -201,6 +211,92 @@ export async function createArtifactFromFile(opts: {
       });
       return { ok: false as const, error: "CSV conversion failed" };
     } finally {
+      await unlink(filePath).catch(() => {});
+    }
+  }
+
+  if (isPdfFile(fileName)) {
+    const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
+    try {
+      // Enforce PDF size limit before reading into memory (chunked uploads bypass route-level check)
+      const { size } = await stat(filePath);
+      if (size > MAX_PDF_SIZE) {
+        await rm(filePath, { force: true });
+        const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
+        return { ok: false as const, error: `PDF too large (max ${maxSizeMB}MB)` };
+      }
+
+      const buffer = await readFile(filePath);
+      const markdown = await pdfToMarkdown(buffer, fileName);
+      await writeFile(mdPath, markdown, "utf-8");
+
+      const pageCount = (markdown.match(/## Page \d+/g) ?? []).length;
+      const placeholderSummary = `PDF document, ${pageCount} page${pageCount !== 1 ? "s" : ""}`;
+
+      const result = await ArtifactStorage.create({
+        title: fileName,
+        summary: placeholderSummary,
+        data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+        chatId,
+      });
+
+      if (!result.ok) {
+        logger.error("ArtifactStorage.create failed for PDF", {
+          filename: fileName,
+          error: result.error,
+        });
+        await unlink(mdPath).catch(() => {});
+        return { ok: false as const, error: result.error };
+      }
+
+      // Cortex uploaded the file — local copy is no longer needed
+      if (usingCortex) {
+        await unlink(mdPath).catch((err) => {
+          logger.debug("Failed to cleanup temp markdown file", {
+            path: mdPath,
+            error: stringifyError(err),
+          });
+        });
+      }
+
+      await emitArtifactCreatedEvent(result.data.id, "file", chatId);
+
+      // Fire-and-forget: use small LLM to generate a content-aware summary
+      const artifactId = result.data.id;
+      const truncated = markdown.slice(0, 2000);
+      smallLLM({
+        system:
+          "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
+        prompt: truncated,
+        maxOutputTokens: 60,
+      })
+        .then(async (llmSummary) => {
+          const trimmed = llmSummary.trim().slice(0, 200);
+          if (trimmed) {
+            await ArtifactStorage.update({
+              id: artifactId,
+              summary: trimmed,
+              data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+            });
+          }
+        })
+        .catch((err) => {
+          logger.debug("Failed to generate PDF summary via LLM", { error: stringifyError(err) });
+        });
+
+      return { ok: true as const, artifact: result.data };
+    } catch (error) {
+      await unlink(mdPath).catch(() => {});
+      const message = error instanceof Error ? error.message : "";
+      const isUserFacing =
+        message.includes("password-protected") || message.includes("corrupted or invalid");
+      logger.error("Failed to convert PDF to markdown", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false as const, error: isUserFacing ? message : "PDF conversion failed" };
+    } finally {
+      // Delete the original PDF regardless of success/failure
       await unlink(filePath).catch(() => {});
     }
   }
@@ -571,7 +667,11 @@ const artifactsApp = daemonFactory
       return c.json({ error: "Invalid chatId" }, 400);
     }
 
-    // Size validation
+    // Size validation - PDFs have a lower limit due to memory usage during extraction
+    if (isPdfFile(file.name) && file.size > MAX_PDF_SIZE) {
+      const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
+      return c.json({ error: `PDF too large (max ${maxSizeMB}MB)` }, 413);
+    }
     if (file.size > MAX_FILE_SIZE) {
       const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
       return c.json({ error: `File too large (max ${maxSizeMB}MB)` }, 413);

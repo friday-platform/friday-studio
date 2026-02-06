@@ -1,7 +1,8 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import { MAX_FILE_SIZE } from "@atlas/core/artifacts/file-upload";
+import { MAX_FILE_SIZE, MAX_PDF_SIZE } from "@atlas/core/artifacts/file-upload";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import { black, PDF } from "@libpdf/core";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { artifactsApp } from "./artifacts.ts";
@@ -21,6 +22,32 @@ const ArtifactResponseSchema = z.object({
       chatId: z.string().optional(),
     })
     .passthrough(),
+});
+
+/** Schema for file artifact responses (PDF, JSON, TXT, etc.) */
+const FileArtifactResponseSchema = z.object({
+  artifact: z
+    .object({
+      id: z.string(),
+      type: z.string(),
+      title: z.string(),
+      data: z.object({
+        type: z.literal("file"),
+        data: z.object({
+          path: z.string(),
+          mimeType: z.string().optional(),
+          originalName: z.string().optional(),
+        }),
+      }),
+      chatId: z.string().optional(),
+    })
+    .passthrough(),
+});
+
+/** Schema for GET artifact response with contents */
+const ArtifactWithContentsSchema = z.object({
+  artifact: z.object({}).passthrough(),
+  contents: z.string().optional(),
 });
 
 /** Schema for batch-get response */
@@ -144,7 +171,37 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(415);
     const body = await response.json();
-    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML");
+    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
+  });
+
+  it("rejects corrupt PDFs with user-friendly error", async () => {
+    // PDF magic bytes only - not a valid PDF structure
+    const pdfMagicBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e]);
+    const file = createTestFile(pdfMagicBytes.buffer, "test.pdf", "application/pdf");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    // Corrupt PDF should fail conversion with user-friendly message
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    assertErrorResponse(body, "This PDF appears to be corrupted or invalid.");
+  });
+
+  it("rejects binary files detected by magic bytes (non-PDF)", async () => {
+    // ZIP magic bytes disguised with .txt extension
+    // This tests that binary detection catches files even when extension passes
+    const zipMagicBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const file = createTestFile(zipMagicBytes.buffer, "sneaky.txt", "text/plain");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    assertErrorResponse(body, "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
   });
 
   it("uses extension fallback when MIME type empty", async () => {
@@ -614,6 +671,114 @@ describe("Export endpoint", () => {
     // Empty values should export as empty strings
     expect(lines[1]).toEqual("1,,3");
     expect(lines[2]).toEqual(",2,");
+  });
+});
+
+describe("PDF upload integration", () => {
+  /**
+   * Generate a valid PDF with sufficient text to pass the empty content threshold.
+   * Returns ArrayBuffer for File constructor compatibility.
+   */
+  async function createValidPdf(text: string): Promise<ArrayBuffer> {
+    const pdf = PDF.create();
+    pdf.addPage({ size: "letter" });
+    const page = pdf.getPage(0);
+    if (!page) throw new Error("Failed to get page");
+
+    // Pad text to ensure it passes the 15 char empty threshold
+    const paddedText = text.padEnd(20, ".");
+
+    page.drawText(paddedText, { x: 50, y: 350, size: 12, color: black });
+
+    const bytes = await pdf.save();
+    return new Uint8Array(bytes).buffer;
+  }
+
+  it("returns 201 with artifact for valid PDF upload", async () => {
+    const pdfBytes = await createValidPdf("Integration test document content");
+    const file = new File([pdfBytes], "report.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("chatId", "test-chat-pdf");
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact).toBeDefined();
+    expect(body.artifact.id).toBeDefined();
+    expect(body.artifact.chatId).toEqual("test-chat-pdf");
+  });
+
+  it("returns artifact with data.type='file' and data.data.mimeType='text/markdown'", async () => {
+    const pdfBytes = await createValidPdf("Testing converted mimeType");
+    const file = new File([pdfBytes], "doc.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = FileArtifactResponseSchema.parse(await response.json());
+
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.data.data.mimeType).toEqual("text/markdown");
+  });
+
+  it("preserves .pdf extension in originalName field", async () => {
+    const pdfBytes = await createValidPdf("Original filename preservation test");
+    const file = new File([pdfBytes], "quarterly-report.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = FileArtifactResponseSchema.parse(await response.json());
+
+    expect(body.artifact.data.data.originalName).toEqual("quarterly-report.pdf");
+  });
+
+  it("includes extracted text in artifact contents", async () => {
+    const testText = "Unique searchable content in the PDF document";
+    const pdfBytes = await createValidPdf(testText);
+    const file = new File([pdfBytes], "searchable.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Fetch artifact with contents
+    const getResponse = await artifactsApp.request(`/${artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+
+    const body = ArtifactWithContentsSchema.parse(await getResponse.json());
+
+    const contents = body.contents;
+    expect(contents).toBeDefined();
+    expect(contents).toContain("# searchable.pdf");
+    expect(contents).toContain(testText);
+  });
+
+  it("rejects PDFs over 50MB size limit with 413", { timeout: 30_000 }, async () => {
+    // Create a buffer just over the PDF size limit
+    const largeContent = createLargeBuffer(MAX_PDF_SIZE + 1);
+    const largePdf = new File([largeContent], "huge.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", largePdf);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(413);
+    const body = await response.json();
+    const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
+    assertErrorResponse(body, `PDF too large (max ${maxSizeMB}MB)`);
   });
 });
 
