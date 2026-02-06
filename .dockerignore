@@ -23,6 +23,9 @@ coverage/
 *.swo
 *~
 
+# Apps with their own Dockerfiles (separate build pipelines)
+apps/friday-website/
+
 # Node modules (if any)
 node_modules/
 
