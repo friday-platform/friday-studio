@@ -70,6 +70,16 @@
         "$env/*": ["../../node_modules/@sveltejs/kit/src/runtime/env/*"]
       }
     },
+    "apps/friday-website": {
+      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.spec.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    },
     "apps/web-client": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],

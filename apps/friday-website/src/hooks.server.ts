@@ -1,5 +1,6 @@
 import process from "node:process";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
+import { httpRequestDuration } from "$lib/server/metrics";
 
 function log(level: "info" | "error", message: string, context: Record<string, unknown>) {
   const entry = JSON.stringify({
@@ -15,24 +16,33 @@ function log(level: "info" | "error", message: string, context: Record<string, u
 export const handle: Handle = async ({ event, resolve }) => {
   const start = performance.now();
   const response = await resolve(event);
-  const duration = Math.round(performance.now() - start);
+  const durationSec = (performance.now() - start) / 1000;
+  const durationMs = Math.round(durationSec * 1000);
 
-  let ip: string | undefined;
-  try {
-    ip = event.getClientAddress();
-  } catch {
-    // adapter-node throws if address header is missing (e.g. health checks)
+  const route = event.route.id ?? "(unmatched)";
+  const method = event.request.method;
+  const status = String(response.status);
+
+  if (event.url.pathname !== "/metrics") {
+    httpRequestDuration.observe({ method, route, status }, durationSec);
+
+    let ip: string | undefined;
+    try {
+      ip = event.getClientAddress();
+    } catch {
+      // adapter-node throws if address header is missing (e.g. health checks)
+    }
+
+    log(response.status >= 500 ? "error" : "info", "request", {
+      method,
+      path: event.url.pathname,
+      status: response.status,
+      duration: durationMs,
+      userAgent: event.request.headers.get("user-agent"),
+      ip,
+      ...(event.locals.error ? { error: event.locals.error, stack: event.locals.stack } : {}),
+    });
   }
-
-  log(response.status >= 500 ? "error" : "info", "request", {
-    method: event.request.method,
-    path: event.url.pathname,
-    status: response.status,
-    duration,
-    userAgent: event.request.headers.get("user-agent"),
-    ip,
-    ...(event.locals.error ? { error: event.locals.error, stack: event.locals.stack } : {}),
-  });
 
   return response;
 };

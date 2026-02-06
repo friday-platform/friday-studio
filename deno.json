@@ -20,6 +20,8 @@
     "apps/atlas-auth-ui/.svelte-kit",
     "apps/atlas-auth-ui/build",
     "apps/atlas-auth-ui/src/**",
+    "apps/friday-website/.svelte-kit",
+    "apps/friday-website/src/**",
     "apps/atlas-installer",
     "packages/vendor/**",
     "apps/web-client/src-tauri/**"
