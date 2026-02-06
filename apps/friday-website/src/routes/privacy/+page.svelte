@@ -4,12 +4,13 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 
 <svelte:head>
 	<title>Friday — Privacy Policy</title>
-	<meta name="description" content="Privacy Policy for Friday by Tempest Labs, Inc." />
+	<meta name="description" content="Learn how Tempest Labs, Inc. collects, uses, and protects your personal information when you use Friday, our AI-powered conversational automation platform." />
+	<meta name="robots" content="noindex, follow" />
 	<meta property="og:type" content="website" />
 	<meta property="og:title" content="Friday — Privacy Policy" />
-	<meta property="og:description" content="Privacy Policy for Friday by Tempest Labs, Inc." />
+	<meta property="og:description" content="Learn how Tempest Labs, Inc. collects, uses, and protects your personal information when you use Friday, our AI-powered conversational automation platform." />
 	<meta name="twitter:title" content="Friday — Privacy Policy" />
-	<meta name="twitter:description" content="Privacy Policy for Friday by Tempest Labs, Inc." />
+	<meta name="twitter:description" content="Learn how Tempest Labs, Inc. collects, uses, and protects your personal information when you use Friday, our AI-powered conversational automation platform." />
 </svelte:head>
 
 <LegalArticle>
@@ -65,7 +66,7 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 		<li>Prevent, identify, investigate and deter fraudulent, harmful, unauthorized, unethical or illegal activity, including cyberattacks and identity theft.</li>
 	</ul>
 
-	<h3>How we disclose your personal information</h3>
+	<h2>How we disclose your personal information</h2>
 
 	<p><strong>Affiliates.</strong> We may disclose your personal information to our subsidiaries and affiliates for purposes consistent with this Privacy Policy.</p>
 
@@ -75,7 +76,7 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 
 	<p><strong>Business transfers.</strong> We may sell, transfer or otherwise share some or all of our business or assets, including your personal information, in connection with a business transaction (or potential business transaction) such as a corporate divestiture, merger, consolidation, acquisition, reorganization or sale of assets, or in the event of bankruptcy or dissolution.</p>
 
-	<h3>Your choices</h3>
+	<h2>Your choices</h2>
 
 	<p><strong>Opt out of marketing communications.</strong> You may opt out of marketing-related emails by following the opt-out or unsubscribe instructions at the bottom of the email. You may continue to receive service-related and other non-marketing emails.</p>
 
@@ -90,27 +91,27 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 
 	<p><strong>Do Not Track.</strong> Some Internet browsers may be configured to send "Do Not Track" signals to the online services that you visit. We currently do not respond to "Do Not Track" or similar signals.</p>
 
-	<h3>Other sites, mobile applications and services</h3>
+	<h2>Other sites, mobile applications and services</h2>
 
 	<p>Our website may contain links to other websites, mobile applications, and other online services operated by third parties. These links are not an endorsement of, or representation that we are affiliated with, any third party. In addition, our content may be included on web pages or in mobile applications or online services that are not associated with us. We do not control third party websites, mobile applications or online services, and we are not responsible for their actions.</p>
 
-	<h3>Security</h3>
+	<h2>Security</h2>
 
 	<p>We employ a number of technical, organizational, and physical safeguards designed to protect the personal information we collect. However, no security measures are failsafe and we cannot guarantee the security of your personal information.</p>
 
-	<h3>Retention</h3>
+	<h2>Retention</h2>
 
 	<p>We keep personal information for as long as reasonably necessary for the purposes described in this Privacy Policy, while we have a business need to do so, or as required by law (e.g. for tax, legal, accounting, or other purposes), whichever is longer.</p>
 
-	<h3>Children</h3>
+	<h2>Children</h2>
 
 	<p>Our website is not intended for use by children under 13 years of age. If we learn that we have collected personal information through the website from a child under 13 without the consent of the child's parent or guardian as required by law, we will delete it.</p>
 
-	<h3>Changes to this Privacy Policy</h3>
+	<h2>Changes to this Privacy Policy</h2>
 
 	<p>We reserve the right to modify this Privacy Policy at any time. If we make material changes to this Privacy Policy, we will notify you by updating the date of this Privacy Policy and posting it on the website.</p>
 
-	<h3>How to contact us</h3>
+	<h2>How to contact us</h2>
 
 	<p>Please direct any questions or comments about this Policy or our privacy practices to <a href="mailto:hello@hellofriday.ai">hello@hellofriday.ai</a> or by mail at the address below.</p>
 
@@ -122,13 +123,6 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 </LegalArticle>
 
 <style>
-	h3 {
-		font-size: var(--font-size-5);
-		font-weight: var(--font-weight-6);
-		line-height: var(--font-lineheight-1);
-		margin-block: var(--size-6) var(--size-2);
-	}
-
 	ul {
 		font-size: var(--font-size-4);
 		line-height: var(--font-lineheight-3);

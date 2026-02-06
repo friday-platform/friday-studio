@@ -51,7 +51,7 @@ let activeItems = $state<number[]>([]);
 					}}><Arrow />{question}</button
 				>
 
-				<p id="faq-answer-{index}" role="region">{answer}</p>
+				<p id="faq-answer-{index}" role="region" aria-hidden={!activeItems.includes(index)}>{answer}</p>
 			</li>
 		{/each}
 	</ul>

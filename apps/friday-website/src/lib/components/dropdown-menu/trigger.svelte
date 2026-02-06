@@ -34,7 +34,7 @@ const { trigger } = getContext();
     max-inline-size: 100%;
     transition: opacity 100ms ease;
 
-    &:focus {
+    &:focus:not(:focus-visible) {
       outline: none;
     }
 

@@ -155,7 +155,7 @@ function getElementType() {
 	}
 
 	.accent--destructive :global(svg) {
-		color: var(--color-red);
+		color: var(--color-red-1);
 	}
 
 </style>

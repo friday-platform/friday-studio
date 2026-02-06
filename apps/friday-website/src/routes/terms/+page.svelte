@@ -4,12 +4,13 @@ import LegalArticle from "$lib/components/legal-article.svelte";
 
 <svelte:head>
 	<title>Friday — Terms and Conditions</title>
-	<meta name="description" content="Terms and Conditions for Friday by Tempest Labs, Inc." />
+	<meta name="description" content="Review the terms and conditions governing your use of Friday, the AI-powered conversational automation platform by Tempest Labs, Inc. Covers access, data, and liability." />
+	<meta name="robots" content="noindex, follow" />
 	<meta property="og:type" content="website" />
 	<meta property="og:title" content="Friday — Terms and Conditions" />
-	<meta property="og:description" content="Terms and Conditions for Friday by Tempest Labs, Inc." />
+	<meta property="og:description" content="Review the terms and conditions governing your use of Friday, the AI-powered conversational automation platform by Tempest Labs, Inc. Covers access, data, and liability." />
 	<meta name="twitter:title" content="Friday — Terms and Conditions" />
-	<meta name="twitter:description" content="Terms and Conditions for Friday by Tempest Labs, Inc." />
+	<meta name="twitter:description" content="Review the terms and conditions governing your use of Friday, the AI-powered conversational automation platform by Tempest Labs, Inc. Covers access, data, and liability." />
 </svelte:head>
 
 <LegalArticle>

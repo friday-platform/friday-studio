@@ -1,13 +1,13 @@
 <svelte:head>
 	<title>Introducing Friday: Always-On AI, Zero Setup Required</title>
-	<meta name="description" content="We're excited to announce the open beta of Friday, our new conversational automation platform." />
+	<meta name="description" content="Announcing the open beta of Friday, the always-on AI that builds and runs automations through conversation. Describe what you want and Friday handles the rest." />
 	<meta property="og:type" content="article" />
 	<meta property="article:published_time" content="2026-02-05T00:00:00Z" />
 	<meta property="article:author" content="Tempest Labs" />
 	<meta property="og:title" content="Introducing Friday: Always-On AI, Zero Setup Required" />
-	<meta property="og:description" content="We're excited to announce the open beta of Friday, our new conversational automation platform." />
+	<meta property="og:description" content="Announcing the open beta of Friday, the always-on AI that builds and runs automations through conversation. Describe what you want and Friday handles the rest." />
 	<meta name="twitter:title" content="Introducing Friday: Always-On AI, Zero Setup Required" />
-	<meta name="twitter:description" content="We're excited to announce the open beta of Friday, our new conversational automation platform." />
+	<meta name="twitter:description" content="Announcing the open beta of Friday, the always-on AI that builds and runs automations through conversation. Describe what you want and Friday handles the rest." />
 </svelte:head>
 
 <article class="announcement">

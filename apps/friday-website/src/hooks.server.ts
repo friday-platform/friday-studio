@@ -18,14 +18,69 @@ const COMPRESSIBLE_TYPES = [
   "image/svg+xml",
 ];
 
+const CSP_HEADER = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+
+function setSecurityHeaders(headers: Headers): void {
+  // SvelteKit handles CSP for HTML via svelte.config.js (meta tags for prerendered,
+  // nonce-based headers for SSR). Only add CSP for non-HTML responses.
+  if (!headers.has("content-security-policy")) {
+    const ct = headers.get("content-type") ?? "";
+    if (!ct.includes("text/html")) {
+      headers.set("content-security-policy", CSP_HEADER);
+    }
+  }
+  if (!headers.has("cross-origin-opener-policy")) {
+    headers.set("cross-origin-opener-policy", "same-origin");
+  }
+  if (!headers.has("x-content-type-options")) {
+    headers.set("x-content-type-options", "nosniff");
+  }
+  if (!headers.has("x-frame-options")) {
+    headers.set("x-frame-options", "DENY");
+  }
+  if (!headers.has("referrer-policy")) {
+    headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  }
+  if (!headers.has("permissions-policy")) {
+    headers.set(
+      "permissions-policy",
+      "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+    );
+  }
+}
+
+function setCacheHeaders(response: Response): void {
+  if (response.headers.has("cache-control")) return;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("text/html")) {
+    response.headers.set("cache-control", "public, max-age=60, s-maxage=3600");
+  }
+}
+
+// Runtime compression for dynamic responses (metrics, errors, etc.).
+// Prerendered pages and static assets are served by sirv with pre-compressed
+// .br/.gz files and bypass this hook entirely.
 async function compress(request: Request, response: Response): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!COMPRESSIBLE_TYPES.some((t) => contentType.includes(t))) return response;
   if (response.headers.has("content-encoding")) return response;
 
   const acceptEncoding = request.headers.get("accept-encoding") ?? "";
-  const body = new Uint8Array(await response.arrayBuffer());
+  if (!acceptEncoding.includes("br") && !acceptEncoding.includes("gzip")) return response;
 
+  const body = new Uint8Array(await response.arrayBuffer());
   if (body.length < 256) return response;
 
   let encoding: string;
@@ -34,15 +89,9 @@ async function compress(request: Request, response: Response): Promise<Response>
   if (acceptEncoding.includes("br")) {
     compressed = Uint8Array.from(await brotliCompress(body));
     encoding = "br";
-  } else if (acceptEncoding.includes("gzip")) {
+  } else {
     compressed = Uint8Array.from(await gzipCompress(body));
     encoding = "gzip";
-  } else {
-    return new Response(body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
   }
 
   const headers = new Headers(response.headers);
@@ -102,13 +151,13 @@ export const handle: Handle = async ({ event, resolve }) => {
     });
   }
 
+  setSecurityHeaders(response.headers);
+  setCacheHeaders(response);
+
   return compress(event.request, response);
 };
 
 export const handleError: HandleServerError = ({ error, event, message }) => {
-  // Stash error details on locals so the handle hook can include them in its
-  // single structured log entry. handleError fires inside resolve(), before
-  // handle's post-resolve logging runs. This avoids duplicate log lines.
   event.locals.error = error instanceof Error ? error.message : String(error);
   event.locals.stack = error instanceof Error ? error.stack : undefined;
 
