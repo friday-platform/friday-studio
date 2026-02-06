@@ -2,6 +2,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 import zlib from "node:zlib";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
+import { directivesToHeaderString, makeDirectives, REPORT_ENDPOINT } from "$lib/csp-directives.js";
 import { httpRequestDuration } from "$lib/server/metrics";
 
 const brotliCompress = promisify(zlib.brotliCompress);
@@ -18,24 +19,82 @@ const COMPRESSIBLE_TYPES = [
   "image/svg+xml",
 ];
 
-const REPORT_ENDPOINT = "https://dm35suqd.uriports.com/reports";
+const dev = process.env.NODE_ENV !== "production";
+const CSP_HEADER = directivesToHeaderString(makeDirectives({ dev }));
 
-const CSP_HEADER = [
-  "default-src 'self'",
-  "script-src 'self' 'report-sample'",
-  "style-src 'self' 'unsafe-inline' 'report-sample'",
-  "img-src 'self' data:",
-  "frame-src 'self' https://www.youtube.com",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "upgrade-insecure-requests",
-  `report-uri ${REPORT_ENDPOINT}/report`,
-  "report-to default",
-].join("; ");
+const analyticsEnabled = process.env.ANALYTICS_ENABLED === "true";
+
+const ANALYTICS_TEMPLATE = `<!-- Default consent: deny all until user interacts with CookieYes banner -->
+<script nonce="__CSP_NONCE__">
+window.dataLayer = window.dataLayer || [];
+function gtag(...args){dataLayer.push(args);}
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'denied',
+  functionality_storage: 'denied',
+  personalization_storage: 'denied',
+  security_storage: 'granted',
+  wait_for_update: 2000,
+});
+</script>
+
+<!-- CookieYes consent banner -->
+<script id="cookieyes" nonce="__CSP_NONCE__" src="https://cdn-cookieyes.com/client_data/592f202dfae33fc044f781db9ab4bb3c/script.js"></script>
+
+<!-- Google Analytics (gtag.js) -->
+<script async nonce="__CSP_NONCE__" src="https://www.googletagmanager.com/gtag/js?id=G-NLLF9SE37C"></script>
+
+<!-- GA4 config — send_page_view disabled; afterNavigate handles it -->
+<script nonce="__CSP_NONCE__">
+gtag('js', new Date());
+gtag('config', 'G-NLLF9SE37C', { send_page_view: false });
+</script>
+
+<!-- Microsoft Clarity -->
+<script nonce="__CSP_NONCE__">
+((c, l, a, r, i) => {
+  c[a] = c[a] || ((...args) => {
+    if (!c[a].q) { c[a].q = []; }
+    c[a].q.push(args);
+  });
+  const t = l.createElement(r);
+  t.async = 1;
+  t.src = "https://www.clarity.ms/tag/" + i;
+  const y = l.getElementsByTagName(r)[0];
+  y.parentNode.insertBefore(t, y);
+})(window, document, "clarity", "script", "uxx0z9bzvb");
+</script>
+
+<!-- CookieYes → GCM v2 consent bridge -->
+<script nonce="__CSP_NONCE__">
+document.addEventListener('cookieyes_consent_update', (e) => {
+  const d = e.detail;
+  if (!d || !Array.isArray(d.accepted)) return;
+  gtag('consent', 'update', {
+    analytics_storage:        d.accepted.includes('analytics')        ? 'granted' : 'denied',
+    ad_storage:               d.accepted.includes('advertisement')    ? 'granted' : 'denied',
+    ad_user_data:             d.accepted.includes('advertisement')    ? 'granted' : 'denied',
+    ad_personalization:       d.accepted.includes('advertisement')    ? 'granted' : 'denied',
+    functionality_storage:    d.accepted.includes('functional')       ? 'granted' : 'denied',
+    personalization_storage:  d.accepted.includes('functional')       ? 'granted' : 'denied',
+  });
+});
+</script>`;
+
+function injectAnalytics(html: string): string {
+  // Extract the nonce SvelteKit already inserted into its own script tags
+  const nonceMatch = html.match(/nonce="([^"]+)"/);
+  if (!nonceMatch) {
+    log("error", "CSP nonce not found in rendered HTML — analytics injection skipped", {});
+    return html;
+  }
+
+  const nonce = nonceMatch[1];
+  const analyticsHtml = ANALYTICS_TEMPLATE.replaceAll("__CSP_NONCE__", nonce);
+  return html.replace("</head>", `${analyticsHtml}\n</head>`);
+}
 
 function setSecurityHeaders(headers: Headers): void {
   // Reporting API endpoints (URIports)
@@ -151,7 +210,9 @@ function log(level: "info" | "error", message: string, context: Record<string, u
 
 export const handle: Handle = async ({ event, resolve }) => {
   const start = performance.now();
-  const response = await resolve(event);
+  const response = await resolve(event, {
+    transformPageChunk: analyticsEnabled ? ({ html }) => injectAnalytics(html) : undefined,
+  });
   const durationMs = performance.now() - start;
   const durationSec = durationMs / 1000;
 

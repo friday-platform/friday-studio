@@ -1,5 +1,6 @@
 <script lang="ts">
 import "../app.css";
+import { afterNavigate } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
 import favicon from "$lib/assets/favicon.svg";
@@ -13,6 +14,12 @@ import X from "$lib/icons/x.svelte";
 let { children } = $props();
 
 const currentYear = new Date().getFullYear();
+
+afterNavigate(() => {
+  if (typeof gtag === "function") {
+    gtag("event", "page_view", { page_title: document.title, page_location: window.location.href });
+  }
+});
 </script>
 
 <svelte:head>
