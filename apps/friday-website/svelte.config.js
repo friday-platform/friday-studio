@@ -1,4 +1,7 @@
+import process from "node:process";
 import adapter from "@sveltejs/adapter-node";
+
+const dev = process.argv.includes("dev");
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -17,7 +20,7 @@ const config = {
         "frame-ancestors": ["none"],
         "base-uri": ["self"],
         "form-action": ["self"],
-        "upgrade-insecure-requests": true,
+        ...(dev ? {} : { "upgrade-insecure-requests": true }),
       },
     },
   },
