@@ -1,5 +1,6 @@
 <script lang="ts">
 import "../app.css";
+import { page } from "$app/state";
 import favicon from "$lib/assets/favicon.svg";
 import logo from "$lib/assets/logo.svg";
 import logoGrey from "$lib/assets/logo-grey.svg";
@@ -15,8 +16,13 @@ const currentYear = new Date().getFullYear();
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>The AI that works while you're away</title>
+	<title>Friday</title>
+	<meta property="og:site_name" content="Friday" />
+	<meta property="og:url" content="https://hellofriday.ai{page.url.pathname}" />
+	<meta name="twitter:card" content="summary" />
 </svelte:head>
+
+<a href="#main-content" class="skip-to-content">Skip to content</a>
 
 <header>
 	<a href="/">
@@ -33,46 +39,46 @@ const currentYear = new Date().getFullYear();
 
 				<DropdownMenu.Item href="/announcement">Announcement</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="#faq">FAQ</DropdownMenu.Item>
+				<DropdownMenu.Item href="/#faq">FAQ</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="https://medium.com/friday-ai" target="_blank"
+				<DropdownMenu.Item href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer"
 					>Blog</DropdownMenu.Item
 				>
 
-				<DropdownMenu.Item href="http://docs.hellofriday.ai" target="_blank">Docs</DropdownMenu.Item
+				<DropdownMenu.Item href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</DropdownMenu.Item
 				>
 
 				<DropdownMenu.Separator />
 
-				<DropdownMenu.Item href="https://auth.hellofriday.ai/signup" target="_blank">
+				<DropdownMenu.Item href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">
 					Join the Beta
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="https://auth.hellofriday.ai" target="_blank">
+				<DropdownMenu.Item href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">
 					Login
 				</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 	</div>
 
-	<nav>
+	<nav aria-label="Main navigation">
 		<ul>
 			<li><a href="/">Home</a></li>
 			<li><a href="/announcement">Announcement</a></li>
-			<li><a href="#faq">FAQ</a></li>
-			<li><a href="https://medium.com/friday-ai" target="_blank">Blog</a></li>
-			<li><a href="http://docs.hellofriday.ai" target="_blank">Docs</a></li>
+			<li><a href="/#faq">FAQ</a></li>
+			<li><a href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer">Blog</a></li>
+			<li><a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a></li>
 		</ul>
 	</nav>
 
 	<div class="ctas">
-		<a href="https://auth.hellofriday.ai/signup" target="_blank">Join the Beta</a>
+		<a href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">Join the Beta</a>
 
-		<a href="https://auth.hellofriday.ai" target="_blank">Login</a>
+		<a href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">Login</a>
 	</div>
 </header>
 
-<main>
+<main id="main-content">
 	{@render children()}
 </main>
 
@@ -86,25 +92,25 @@ const currentYear = new Date().getFullYear();
 	<ul>
 		<li><a href="/terms">Terms & Conditions</a></li>
 		<li><a href="/privacy">Privacy Policy</a></li>
-		<li><a href="https://docs.hellofriday.ai/security" target="_blank">Security</a></li>
+		<li><a href="https://docs.hellofriday.ai/security" target="_blank" rel="noopener noreferrer">Security</a></li>
 		<li><a href="mailto:hello@hellofriday.ai">Contact Us</a></li>
 	</ul>
 
 	<ul>
 		<li>
-			<a href="https://www.linkedin.com/company/hello-friday-ai/" target="_blank">
+			<a href="https://www.linkedin.com/company/hello-friday-ai/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
 				<Linkedin />
 			</a>
 		</li>
 
 		<li>
-			<a href="https://bsky.app/profile/fridayai.bsky.social" target="_blank">
+			<a href="https://bsky.app/profile/fridayai.bsky.social" target="_blank" rel="noopener noreferrer" aria-label="Bluesky">
 				<Bluesky />
 			</a>
 		</li>
 
 		<li>
-			<a href="https://x.com/HelloFridayAI" target="_blank">
+			<a href="https://x.com/HelloFridayAI" target="_blank" rel="noopener noreferrer" aria-label="X (formerly Twitter)">
 				<X />
 			</a>
 		</li>
@@ -308,6 +314,24 @@ const currentYear = new Date().getFullYear();
 					}
 				}
 			}
+		}
+	}
+
+	.skip-to-content {
+		position: absolute;
+		inset-inline-start: -9999px;
+		inset-block-start: auto;
+		z-index: 100;
+		padding: var(--size-2) var(--size-4);
+		background: var(--color-canvas-light);
+		color: var(--color-text);
+		font-weight: var(--font-weight-5);
+		border-radius: var(--radius-2);
+		box-shadow: var(--shadow-1);
+
+		&:focus-visible {
+			inset-inline-start: var(--size-2);
+			inset-block-start: var(--size-2);
 		}
 	}
 </style>

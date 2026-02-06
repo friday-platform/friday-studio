@@ -1,5 +1,5 @@
 <script lang="ts">
-import { hasContext, type Snippet } from "svelte";
+import { type Snippet } from "svelte";
 import type { HTMLAttributes } from "svelte/elements";
 import { get } from "svelte/store";
 import { getContext } from "./context";
@@ -10,6 +10,8 @@ type Props = {
   children: Snippet;
   accent?: "primary" | "destructive" | "information" | "inherit" | "none";
   href?: string;
+  target?: "_blank" | "_self" | "_parent" | "_top";
+  rel?: string;
   description?: Snippet;
   indeterminate?: boolean;
   closeOnClick?: boolean;

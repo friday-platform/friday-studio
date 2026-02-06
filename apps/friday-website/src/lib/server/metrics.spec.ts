@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { httpRequestDuration, registry } from "./metrics";
 
 describe("metrics", () => {
+  afterAll(() => {
+    registry.clear();
+  });
+
   beforeEach(() => {
     registry.resetMetrics();
   });

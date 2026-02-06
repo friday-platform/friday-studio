@@ -40,6 +40,7 @@ let activeItems = $state<number[]>([]);
 		{#each items as { question, answer }, index}
 			<li class:active={activeItems.includes(index)}>
 				<button
+					aria-expanded={activeItems.includes(index)}
 					onclick={() => {
 						if (activeItems.includes(index)) {
 							activeItems = activeItems.filter((a) => a !== index);

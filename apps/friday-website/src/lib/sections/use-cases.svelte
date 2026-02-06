@@ -245,7 +245,7 @@ const mainPrompts = useCases
 		{/each}
 	</div>
 
-	<a class="cta" href="https://auth.hellofriday.ai/signup" target="_blank">Join the Beta</a>
+	<a class="cta" href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">Join the Beta</a>
 </section>
 
 <section class="use-cases">

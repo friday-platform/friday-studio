@@ -16,15 +16,18 @@ function log(level: "info" | "error", message: string, context: Record<string, u
 export const handle: Handle = async ({ event, resolve }) => {
   const start = performance.now();
   const response = await resolve(event);
-  const durationSec = (performance.now() - start) / 1000;
-  const durationMs = Math.round(durationSec * 1000);
-
-  const route = event.route.id ?? "(unmatched)";
-  const method = event.request.method;
-  const status = String(response.status);
+  const durationMs = performance.now() - start;
+  const durationSec = durationMs / 1000;
 
   if (event.url.pathname !== "/metrics") {
-    httpRequestDuration.observe({ method, route, status }, durationSec);
+    httpRequestDuration.observe(
+      {
+        method: event.request.method,
+        route: event.route.id ?? "(unmatched)",
+        status: String(response.status),
+      },
+      durationSec,
+    );
 
     let ip: string | undefined;
     try {
@@ -34,10 +37,10 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
 
     log(response.status >= 500 ? "error" : "info", "request", {
-      method,
+      method: event.request.method,
       path: event.url.pathname,
       status: response.status,
-      duration: durationMs,
+      duration: Math.round(durationMs),
       userAgent: event.request.headers.get("user-agent"),
       ip,
       ...(event.locals.error ? { error: event.locals.error, stack: event.locals.stack } : {}),

@@ -8,6 +8,16 @@ import HowItWorks from "$lib/sections/how-it-works.svelte";
 import UseCases from "$lib/sections/use-cases.svelte";
 </script>
 
+<svelte:head>
+	<title>Friday — The AI that works while you're away</title>
+	<meta name="description" content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest." />
+	<meta property="og:type" content="website" />
+	<meta property="og:title" content="Friday — The AI that works while you're away" />
+	<meta property="og:description" content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest." />
+	<meta name="twitter:title" content="Friday — The AI that works while you're away" />
+	<meta name="twitter:description" content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest." />
+</svelte:head>
+
 <div class="background">
 	<BackgroundBlobs />
 </div>
