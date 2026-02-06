@@ -1,3 +1,7 @@
+<script lang="ts">
+import LegalArticle from "$lib/components/legal-article.svelte";
+</script>
+
 <svelte:head>
 	<title>Friday — Terms and Conditions</title>
 	<meta name="description" content="Terms and Conditions for Friday by Tempest Labs, Inc." />
@@ -8,7 +12,7 @@
 	<meta name="twitter:description" content="Terms and Conditions for Friday by Tempest Labs, Inc." />
 </svelte:head>
 
-<article class="legal">
+<LegalArticle>
 	<h1>Terms and Conditions</h1>
 	<p class="revised">Last Revised: January 7, 2026</p>
 
@@ -143,50 +147,12 @@
 	<h2>15. Contact</h2>
 
 	<p>Please contact the Company at <a href="mailto:hello@hellofriday.ai">hello@hellofriday.ai</a> to report any violations of this Agreement or to pose any questions regarding this Agreement or the Service.</p>
-</article>
+</LegalArticle>
 
 <style>
-	.legal {
-		margin-inline: auto;
-		max-inline-size: var(--size-224);
-		padding-block: var(--size-12) var(--size-24);
-		padding-inline: var(--size-6);
-
-		@media (min-width: 768px) {
-			padding-block: var(--size-16) var(--size-48);
-		}
-	}
-
-	h1 {
-		font-size: var(--font-size-7);
-		font-weight: var(--font-weight-6);
-		letter-spacing: calc(-1 * var(--font-letterspacing-1));
-		line-height: var(--font-lineheight-1);
-	}
-
 	.revised {
 		font-size: var(--font-size-4);
 		margin-block: var(--size-2) var(--size-8);
 		opacity: 0.6;
-	}
-
-	h2 {
-		font-size: var(--font-size-6);
-		font-weight: var(--font-weight-6);
-		line-height: var(--font-lineheight-1);
-		margin-block: var(--size-8) var(--size-3);
-	}
-
-	p {
-		font-size: var(--font-size-4);
-		line-height: var(--font-lineheight-3);
-		margin-block: var(--size-3) 0;
-		max-inline-size: 80ch;
-		opacity: 0.8;
-	}
-
-	a {
-		color: var(--color-blue-2);
-		text-decoration: underline;
 	}
 </style>

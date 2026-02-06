@@ -31,7 +31,6 @@ let { header, details }: Props = $props();
 
 		@media (min-width: 768px) {
 			display: grid;
-			grid-template-columns: 1fr;
 			grid-template-columns: 1fr 1fr 1fr;
 			grid-template-rows: auto auto;
 			padding-block: var(--size-24) 0;

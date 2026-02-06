@@ -158,12 +158,4 @@ function getElementType() {
 		color: var(--color-red);
 	}
 
-	.sr-only {
-		block-size: 1px;
-		clip: rect(0, 0, 0, 0);
-		inline-size: 1px;
-		overflow: hidden;
-		position: absolute;
-		white-space: nowrap;
-	}
 </style>

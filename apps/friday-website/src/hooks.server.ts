@@ -7,7 +7,16 @@ import { httpRequestDuration } from "$lib/server/metrics";
 const brotliCompress = promisify(zlib.brotliCompress);
 const gzipCompress = promisify(zlib.gzip);
 
-const COMPRESSIBLE_TYPES = ["text/html", "text/xml", "application/xml"];
+const COMPRESSIBLE_TYPES = [
+  "text/html",
+  "text/xml",
+  "application/xml",
+  "text/css",
+  "text/javascript",
+  "application/javascript",
+  "application/json",
+  "image/svg+xml",
+];
 
 async function compress(request: Request, response: Response): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";

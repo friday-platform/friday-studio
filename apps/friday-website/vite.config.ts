@@ -1,8 +1,9 @@
 import { sveltekit } from "@sveltejs/kit/vite";
+import { compression } from "vite-plugin-compression2";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [sveltekit(), compression({ algorithms: ["brotliCompress", "gzip"] })],
   server: { port: 2345 },
   test: {
     expect: { requireAssertions: true },

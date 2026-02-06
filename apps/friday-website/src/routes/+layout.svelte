@@ -21,6 +21,7 @@ const currentYear = new Date().getFullYear();
 	<meta property="og:site_name" content="Friday" />
 	<meta property="og:url" content="https://hellofriday.ai{page.url.pathname}" />
 	<meta name="twitter:card" content="summary" />
+	<meta property="og:locale" content="en_US" />
 </svelte:head>
 
 <a href="#main-content" class="skip-to-content">Skip to content</a>

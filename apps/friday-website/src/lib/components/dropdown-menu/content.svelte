@@ -98,12 +98,6 @@ const { open, menu, positioning, overlay } = getContext();
 		--dropdown-menu-content-size: auto;
 	}
 
-	.tab-index {
-		block-size: 0px;
-		inline-size: 0px;
-		position: absolute;
-	}
-
 	.overlay {
 		inset: 0;
 		position: fixed;

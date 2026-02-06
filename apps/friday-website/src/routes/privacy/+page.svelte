@@ -1,3 +1,7 @@
+<script lang="ts">
+import LegalArticle from "$lib/components/legal-article.svelte";
+</script>
+
 <svelte:head>
 	<title>Friday — Privacy Policy</title>
 	<meta name="description" content="Privacy Policy for Friday by Tempest Labs, Inc." />
@@ -8,7 +12,7 @@
 	<meta name="twitter:description" content="Privacy Policy for Friday by Tempest Labs, Inc." />
 </svelte:head>
 
-<article class="legal">
+<LegalArticle>
 	<h1>Privacy Policy</h1>
 
 	<p>This Privacy Policy describes how Tempest Labs, Inc. (<strong>Tempest</strong>, <strong>we</strong>, <strong>us</strong>, or <strong>our</strong>) handles personal information that we collect through our website or through any other websites that we own or control and that link to this Privacy Policy.</p>
@@ -115,47 +119,14 @@
 		95 3rd St, 2nd Floor<br />
 		San Francisco, CA 94103
 	</address>
-</article>
+</LegalArticle>
 
 <style>
-	.legal {
-		margin-inline: auto;
-		max-inline-size: var(--size-224);
-		padding-block: var(--size-12) var(--size-24);
-		padding-inline: var(--size-6);
-
-		@media (min-width: 768px) {
-			padding-block: var(--size-16) var(--size-48);
-		}
-	}
-
-	h1 {
-		font-size: var(--font-size-7);
-		font-weight: var(--font-weight-6);
-		letter-spacing: calc(-1 * var(--font-letterspacing-1));
-		line-height: var(--font-lineheight-1);
-	}
-
-	h2 {
-		font-size: var(--font-size-6);
-		font-weight: var(--font-weight-6);
-		line-height: var(--font-lineheight-1);
-		margin-block: var(--size-8) var(--size-3);
-	}
-
 	h3 {
 		font-size: var(--font-size-5);
 		font-weight: var(--font-weight-6);
 		line-height: var(--font-lineheight-1);
 		margin-block: var(--size-6) var(--size-2);
-	}
-
-	p {
-		font-size: var(--font-size-4);
-		line-height: var(--font-lineheight-3);
-		margin-block: var(--size-3) 0;
-		max-inline-size: 80ch;
-		opacity: 0.8;
 	}
 
 	ul {
@@ -170,11 +141,6 @@
 		li {
 			margin-block: var(--size-1) 0;
 		}
-	}
-
-	a {
-		color: var(--color-blue-2);
-		text-decoration: underline;
 	}
 
 	address {

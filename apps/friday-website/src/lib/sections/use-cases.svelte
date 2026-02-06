@@ -306,9 +306,6 @@ const mainPrompts = useCases
 		padding-inline: var(--size-6);
 		max-inline-size: var(--size-224);
 
-		@media (min-width: 768px) {
-		}
-
 		h1 {
 			color: var(--color-yellow-1);
 			font-size: var(--font-size-5);

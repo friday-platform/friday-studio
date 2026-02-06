@@ -11,7 +11,6 @@
 
 <style>
 	.blobs {
-		position: relative;
 		block-size: 100%;
 		inline-size: 100%;
 		position: absolute;
