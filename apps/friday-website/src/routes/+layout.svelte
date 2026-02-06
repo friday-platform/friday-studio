@@ -84,7 +84,7 @@ const currentYear = new Date().getFullYear();
 
 <footer>
 	<a href="/">
-		<img src={logoGrey} alt="Friday logo (alternate)" />
+		<img src={logoGrey} alt="Friday logo (alternate)" width="89" height="26" loading="lazy" />
 	</a>
 
 	<p>&copy; {currentYear} Tempest Labs, Inc.</p>

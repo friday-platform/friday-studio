@@ -1,6 +1,52 @@
 import process from "node:process";
+import { promisify } from "node:util";
+import zlib from "node:zlib";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
 import { httpRequestDuration } from "$lib/server/metrics";
+
+const brotliCompress = promisify(zlib.brotliCompress);
+const gzipCompress = promisify(zlib.gzip);
+
+const COMPRESSIBLE_TYPES = ["text/html", "text/xml", "application/xml"];
+
+async function compress(request: Request, response: Response): Promise<Response> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!COMPRESSIBLE_TYPES.some((t) => contentType.includes(t))) return response;
+  if (response.headers.has("content-encoding")) return response;
+
+  const acceptEncoding = request.headers.get("accept-encoding") ?? "";
+  const body = new Uint8Array(await response.arrayBuffer());
+
+  if (body.length < 256) return response;
+
+  let encoding: string;
+  let compressed: Uint8Array<ArrayBuffer>;
+
+  if (acceptEncoding.includes("br")) {
+    compressed = Uint8Array.from(await brotliCompress(body));
+    encoding = "br";
+  } else if (acceptEncoding.includes("gzip")) {
+    compressed = Uint8Array.from(await gzipCompress(body));
+    encoding = "gzip";
+  } else {
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("content-encoding", encoding);
+  headers.set("vary", "accept-encoding");
+  headers.delete("content-length");
+
+  return new Response(compressed, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 function log(level: "info" | "error", message: string, context: Record<string, unknown>) {
   const entry = JSON.stringify({
@@ -47,7 +93,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     });
   }
 
-  return response;
+  return compress(event.request, response);
 };
 
 export const handleError: HandleServerError = ({ error, event, message }) => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-import avatar from "$lib/assets/avatar.png";
+import avatar from "$lib/assets/avatar.webp";
 import Chat from "$lib/icons/chat.svelte";
 
 const DURATION_MS = 5000;
@@ -110,7 +110,7 @@ $effect(() => {
 					</p>
 
 					<div class="author">
-						<img src={avatar} alt="User avatar" />
+						<img src={avatar} alt="User avatar" width="40" height="40" loading="lazy" />
 						<time>Shay, Monday at 8:04am</time>
 					</div>
 				</div>
