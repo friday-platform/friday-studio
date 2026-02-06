@@ -1,5 +1,6 @@
 <script lang="ts">
 import "../app.css";
+import { resolve } from "$app/paths";
 import { page } from "$app/state";
 import favicon from "$lib/assets/favicon.svg";
 import logo from "$lib/assets/logo.svg";
@@ -28,7 +29,7 @@ const currentYear = new Date().getFullYear();
 <a href="#main-content" class="skip-to-content">Skip to content</a>
 
 <header>
-	<a href="/">
+	<a href={resolve('/')}>
 		<img src={logo} alt="Friday logo" />
 	</a>
 
@@ -38,26 +39,39 @@ const currentYear = new Date().getFullYear();
 				<span class="mobile-menu-trigger">Menu</span>
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content>
-				<DropdownMenu.Item href="/">Home</DropdownMenu.Item>
+				<DropdownMenu.Item href={resolve('/')}>Home</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="/announcement">Announcement</DropdownMenu.Item>
+				<DropdownMenu.Item href={resolve('/announcement')}>Announcement</DropdownMenu.Item>
 
 				<DropdownMenu.Item href="/#faq">FAQ</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer"
-					>Blog</DropdownMenu.Item
+				<DropdownMenu.Item
+					href="https://medium.com/friday-ai"
+					target="_blank"
+					rel="noopener noreferrer">Blog</DropdownMenu.Item
 				>
 
-				<DropdownMenu.Item href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</DropdownMenu.Item
+				<DropdownMenu.Item
+					href="https://docs.hellofriday.ai"
+					target="_blank"
+					rel="noopener noreferrer">Docs</DropdownMenu.Item
 				>
 
 				<DropdownMenu.Separator />
 
-				<DropdownMenu.Item href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">
+				<DropdownMenu.Item
+					href="https://auth.hellofriday.ai/signup"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
 					Join the Beta
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">
+				<DropdownMenu.Item
+					href="https://auth.hellofriday.ai"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
 					Login
 				</DropdownMenu.Item>
 			</DropdownMenu.Content>
@@ -66,16 +80,23 @@ const currentYear = new Date().getFullYear();
 
 	<nav aria-label="Main navigation">
 		<ul>
-			<li><a href="/">Home</a></li>
-			<li><a href="/announcement">Announcement</a></li>
+			<li><a href={resolve('/')}>Home</a></li>
+			<li><a href={resolve('/announcement')}>Announcement</a></li>
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 			<li><a href="/#faq">FAQ</a></li>
-			<li><a href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer">Blog</a></li>
-			<li><a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a></li>
+			<li>
+				<a href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer">Blog</a>
+			</li>
+			<li>
+				<a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a>
+			</li>
 		</ul>
 	</nav>
 
 	<div class="ctas">
-		<a href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">Join the Beta</a>
+		<a href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer"
+			>Join the Beta</a
+		>
 
 		<a href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">Login</a>
 	</div>
@@ -86,34 +107,53 @@ const currentYear = new Date().getFullYear();
 </main>
 
 <footer>
-	<a href="/">
+	<a href={resolve('/')}>
 		<img src={logoGrey} alt="Friday logo (alternate)" width="89" height="26" loading="lazy" />
 	</a>
 
 	<p>&copy; {currentYear} Tempest Labs, Inc.</p>
 
 	<ul>
-		<li><a href="/terms">Terms & Conditions</a></li>
-		<li><a href="/privacy">Privacy Policy</a></li>
-		<li><a href="https://docs.hellofriday.ai/security" target="_blank" rel="noopener noreferrer">Security</a></li>
+		<li><a href={resolve('/terms')}>Terms & Conditions</a></li>
+		<li><a href={resolve('/privacy')}>Privacy Policy</a></li>
+		<li>
+			<a href="https://docs.hellofriday.ai/security" target="_blank" rel="noopener noreferrer"
+				>Security</a
+			>
+		</li>
 		<li><a href="mailto:hello@hellofriday.ai">Contact Us</a></li>
 	</ul>
 
 	<ul>
 		<li>
-			<a href="https://www.linkedin.com/company/hello-friday-ai/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+			<a
+				href="https://www.linkedin.com/company/hello-friday-ai/"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="LinkedIn"
+			>
 				<Linkedin />
 			</a>
 		</li>
 
 		<li>
-			<a href="https://bsky.app/profile/fridayai.bsky.social" target="_blank" rel="noopener noreferrer" aria-label="Bluesky">
+			<a
+				href="https://bsky.app/profile/fridayai.bsky.social"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="Bluesky"
+			>
 				<Bluesky />
 			</a>
 		</li>
 
 		<li>
-			<a href="https://x.com/HelloFridayAI" target="_blank" rel="noopener noreferrer" aria-label="X (formerly Twitter)">
+			<a
+				href="https://x.com/HelloFridayAI"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="X (formerly Twitter)"
+			>
 				<X />
 			</a>
 		</li>

@@ -7,7 +7,8 @@ import { getServiceIcon } from "$lib/service-icons.svelte";
 
 gsap.registerPlugin(SplitText);
 
-let promptElements: HTMLParagraphElement[] = [];
+let promptElements: (HTMLParagraphElement | undefined)[] = $state([]);
+let promptContainer: HTMLParagraphElement | undefined = $state();
 
 onMount(() => {
   const splits: SplitText[] = [];
@@ -15,6 +16,8 @@ onMount(() => {
 
   // Create splits for all prompts
   promptElements.forEach((el) => {
+    if (!el) return;
+
     const split = SplitText.create(el, { type: "lines", mask: "lines" });
     splits.push(split);
     // Hide all initially except first
@@ -56,6 +59,10 @@ onMount(() => {
 
     // Animate in next
     await animateIn(currentIndex);
+  }
+
+  if (promptContainer) {
+    promptContainer.style.opacity = "1";
   }
 
   // Initial animation
@@ -239,13 +246,15 @@ const mainPrompts = useCases
 <section class="hero">
 	<h1>Conversation automation for everyone</h1>
 
-	<div class="prompts">
+	<div class="prompts" bind:this={promptContainer}>
 		{#each mainPrompts as item, i (item.title)}
 			<p bind:this={promptElements[i]}>“{item.prompt}”</p>
 		{/each}
 	</div>
 
-	<a class="cta" href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer">Join the Beta</a>
+	<a class="cta" href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer"
+		>Join the Beta</a
+	>
 </section>
 
 <section class="use-cases">
@@ -320,6 +329,7 @@ const mainPrompts = useCases
 			display: grid;
 			grid-template-columns: 1fr;
 			grid-template-rows: 1fr;
+			opacity: 0;
 
 			p {
 				font-size: var(--font-size-7);

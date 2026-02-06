@@ -14,6 +14,7 @@ const config = {
         "script-src": ["self"],
         "style-src": ["self", "unsafe-inline"],
         "img-src": ["self", "data:"],
+        "frame-src": ["self", "https://www.youtube.com"],
         "font-src": ["self"],
         "connect-src": ["self"],
         "object-src": ["none"],
