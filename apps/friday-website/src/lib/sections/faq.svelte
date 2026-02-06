@@ -41,6 +41,7 @@ let activeItems = $state<number[]>([]);
 			<li class:active={activeItems.includes(index)}>
 				<button
 					aria-expanded={activeItems.includes(index)}
+					aria-controls="faq-answer-{index}"
 					onclick={() => {
 						if (activeItems.includes(index)) {
 							activeItems = activeItems.filter((a) => a !== index);
@@ -50,7 +51,7 @@ let activeItems = $state<number[]>([]);
 					}}><Arrow />{question}</button
 				>
 
-				<p>{answer}</p>
+				<p id="faq-answer-{index}" role="region">{answer}</p>
 			</li>
 		{/each}
 	</ul>

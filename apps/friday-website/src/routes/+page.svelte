@@ -25,7 +25,7 @@ import UseCases from "$lib/sections/use-cases.svelte";
 <UseCases />
 
 <div class="separator">
-	<img src={circleDecal} alt="Concentric cirlces separator" aria-hidden="true" />
+	<img src={circleDecal} alt="" aria-hidden="true" />
 </div>
 
 <HowItWorks />
