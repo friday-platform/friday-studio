@@ -55,6 +55,7 @@ import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.t
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { userRoutes } from "../routes/user/index.ts";
+import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
@@ -576,6 +577,8 @@ export class AtlasDaemon {
 
     this.app.route("/health", healthRoutes);
     this.app.route("/api/workspaces", workspacesRoutes);
+    // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
+    this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);

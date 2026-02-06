@@ -58,3 +58,10 @@ export type {
 // Export workspace creation adapters
 export type { WorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
 export { FilesystemWorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
+export type {
+  StoreWorkspaceHistoryOptions,
+  WorkspaceConfigMetadata,
+  WorkspaceHistoryInput,
+} from "./src/cortex.ts";
+// Export cortex workspace history storage
+export { storeToCortex, storeWorkspaceHistory } from "./src/cortex.ts";

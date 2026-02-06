@@ -109,7 +109,8 @@ export function resolveArtifactRefs(
             error: `Field '${field}' requires a single artifact reference, but ${artifacts.length} artifacts are attached. Specify one of: ${artifactIds.join(", ")}`,
           };
         }
-        resolved[field] = artifacts[0]!.id;
+        const [artifact] = artifacts;
+        if (artifact) resolved[field] = artifact.id;
       }
       // Optional field omitted -- leave it alone
     }

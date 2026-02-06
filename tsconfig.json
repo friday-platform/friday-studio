@@ -28,5 +28,5 @@
     }
   },
   "include": ["src/**/*", "packages/**/*", "apps/**/*", "tools/**/*"],
-  "exclude": ["node_modules", "dist", "build", ".git"]
+  "exclude": ["node_modules", "dist", "build", ".git", "opensrc"]
 }

@@ -415,10 +415,8 @@ describe("AppInstallService", () => {
     it("persists credentials for all installations and returns them", async () => {
       const result = await service.reconnect("test-github-reconnect", "user-1");
 
-      expect(result).not.toBeNull();
       expect(result).toHaveLength(2);
-      expect(result![0]?.label).toEqual("org-one");
-      expect(result![1]?.label).toEqual("org-two");
+      expect(result).toMatchObject([{ label: "org-one" }, { label: "org-two" }]);
 
       // Verify routes created
       expect(routeStorage.getRoute("111")).toEqual("user-1");

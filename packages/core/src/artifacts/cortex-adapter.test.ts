@@ -37,11 +37,8 @@ afterEach(async () => {
  *   3. Metadata POST → "ok"
  */
 function mockCortexFetch(options?: { failBinaryUpload?: boolean }) {
-  let callIndex = 0;
-
   return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-    callIndex++;
 
     // Consume the body if it's a ReadableStream (simulates server reading the upload)
     if (init?.body instanceof ReadableStream) {

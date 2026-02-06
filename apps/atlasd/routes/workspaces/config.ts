@@ -1,0 +1,793 @@
+import {
+  type WorkspaceConfig,
+  type WorkspaceSignalConfig,
+  WorkspaceSignalConfigSchema,
+} from "@atlas/config";
+import {
+  applyMutation,
+  type CredentialUsage,
+  createSignal,
+  deleteSignal,
+  extractCredentials,
+  extractFSMAgents,
+  type FSMAgentResponse,
+  FSMAgentUpdateSchema,
+  type MutationError,
+  type MutationResult,
+  updateCredential,
+  updateFSMAgent,
+  updateSignal,
+} from "@atlas/config/mutations";
+import {
+  type Credential,
+  fetchLinkCredential,
+  LinkCredentialNotFoundError,
+} from "@atlas/core/mcp-registry/credential-resolver";
+import { createLogger } from "@atlas/logger";
+import { storeWorkspaceHistory } from "@atlas/storage";
+import { stringifyError } from "@atlas/utils";
+import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
+import { type AppVariables, daemonFactory } from "../../src/factory.ts";
+
+/**
+ * Extract a required route parameter from the Hono context.
+ * Throws HTTPException 400 if the parameter is missing.
+ *
+ * @param c - Hono context
+ * @param name - Parameter name to extract
+ * @returns The parameter value (guaranteed non-undefined)
+ * @throws HTTPException with status 400 if parameter is missing
+ */
+function requireParam(c: Context<AppVariables>, name: string): string {
+  const value = c.req.param(name);
+  if (!value) {
+    throw new HTTPException(400, { message: `Missing required parameter: ${name}` });
+  }
+  return value;
+}
+
+/**
+ * Workspace config mutation routes.
+ *
+ * Provides HTTP endpoints for partial updates to workspace configuration
+ * including signals and agents. These routes operate on the raw
+ * config (workspace.yml), not runtime state.
+ *
+ * @see docs/plans/2026-01-23-workspace-partial-updates-design.md
+ */
+
+/**
+ * Schema for creating a new signal.
+ * Requires signalId plus the full signal configuration.
+ */
+const CreateSignalInputSchema = z.object({
+  signalId: z.string().min(1, "Signal ID is required"),
+  signal: WorkspaceSignalConfigSchema,
+});
+
+/**
+ * Signal response format for API.
+ * Returns raw WorkspaceSignalConfig with id added.
+ *
+ * Why raw config instead of transformed:
+ * - GET and PUT use the same shape (no client-side transformation needed)
+ * - All fields (description, title, schema) are useful for UI display
+ * - Consistent with POST which also accepts WorkspaceSignalConfig
+ */
+type SignalResponse = WorkspaceSignalConfig & { id: string };
+
+// ==============================================================================
+// GET HANDLER FACTORY
+// ==============================================================================
+
+/**
+ * Configuration for GET handlers that list or fetch entities from workspace config.
+ *
+ * Why a factory instead of inline handlers:
+ * - 6 GET handlers (3 list + 3 single) share identical workspace lookup, config loading,
+ *   and error response logic. Inlining would duplicate ~20 lines per handler.
+ * - Consistency guarantee: all GET endpoints return identical error shapes (404 for
+ *   missing workspace/entity, 500 for config loading failures). A factory ensures
+ *   this can't drift between handlers.
+ * - Change amplification: if error response shape changes, update one place vs six.
+ * - The abstraction earns itself - it's not speculative (already serves 6 handlers)
+ *   and the config objects clearly show what varies (extractEntities, toResponse).
+ */
+interface GetHandlerConfig<TEntity, TResponse> {
+  /** Entity name for errors (singular: "signal", plural: "signals") */
+  entityName: string;
+  /** Extract entity map from workspace config */
+  extractEntities: (config: WorkspaceConfig) => Record<string, TEntity> | undefined;
+  /** Transform config entity to API response */
+  toResponse: (id: string, entity: TEntity) => TResponse;
+  /** Response key for list responses (e.g., "signals") */
+  responseKey: string;
+}
+
+/**
+ * Create a list GET handler. Returns all entities with total count.
+ * Handles workspace lookup (404) and config loading (500).
+ */
+function createGetListHandler<TEntity, TResponse>(cfg: GetHandlerConfig<TEntity, TResponse>) {
+  return async (c: Context<AppVariables>) => {
+    const workspaceId = c.req.param("workspaceId");
+    const ctx = c.get("app");
+    try {
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json(
+          { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+          404,
+        );
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json(
+          { success: false, error: "internal", message: "Failed to load workspace configuration" },
+          500,
+        );
+      }
+      const entities = cfg.extractEntities(config.workspace) ?? {};
+      const list = Object.entries(entities).map(([id, e]) => cfg.toResponse(id, e));
+      return c.json({ [cfg.responseKey]: list, total: list.length });
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: "internal",
+          message: `Failed to list ${cfg.entityName}: ${stringifyError(error)}`,
+        },
+        500,
+      );
+    }
+  };
+}
+
+/**
+ * Create a single GET handler. Returns one entity by ID.
+ * Handles workspace lookup (404), config loading (500), and entity lookup (404).
+ */
+function createGetSingleHandler<TEntity, TResponse>(
+  cfg: GetHandlerConfig<TEntity, TResponse> & {
+    extractEntityId: (c: Context<AppVariables>) => string;
+  },
+) {
+  return async (c: Context<AppVariables>) => {
+    const workspaceId = c.req.param("workspaceId");
+    const entityId = cfg.extractEntityId(c);
+    const ctx = c.get("app");
+    try {
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json(
+          { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+          404,
+        );
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json(
+          { success: false, error: "internal", message: "Failed to load workspace configuration" },
+          500,
+        );
+      }
+      const entities = cfg.extractEntities(config.workspace) ?? {};
+      const entity = entities[entityId];
+      if (!entity) {
+        // entityName is plural, remove trailing 's' for singular entity type
+        const entityType = cfg.entityName.endsWith("s")
+          ? cfg.entityName.slice(0, -1)
+          : cfg.entityName;
+        return c.json({ success: false, error: "not_found", entityType, entityId }, 404);
+      }
+      return c.json(cfg.toResponse(entityId, entity));
+    } catch (error) {
+      const entityType = cfg.entityName.endsWith("s")
+        ? cfg.entityName.slice(0, -1)
+        : cfg.entityName;
+      return c.json(
+        {
+          success: false,
+          error: "internal",
+          message: `Failed to get ${entityType}: ${stringifyError(error)}`,
+        },
+        500,
+      );
+    }
+  };
+}
+
+// GET handler configs for each entity type
+const signalGetConfig: GetHandlerConfig<WorkspaceSignalConfig, SignalResponse> = {
+  entityName: "signals",
+  extractEntities: (c) => c.signals,
+  toResponse: (id, signal) => ({ id, ...signal }),
+  responseKey: "signals",
+};
+
+const agentGetConfig: GetHandlerConfig<FSMAgentResponse, FSMAgentResponse> = {
+  entityName: "agents",
+  extractEntities: extractFSMAgents,
+  toResponse: (_, agent) => agent,
+  responseKey: "agents",
+};
+
+// GET handler instances
+const handleListSignals = createGetListHandler(signalGetConfig);
+const handleGetSignal = createGetSingleHandler({
+  ...signalGetConfig,
+  extractEntityId: (c) => requireParam(c, "signalId"),
+});
+const handleListAgents = createGetListHandler(agentGetConfig);
+const handleGetAgent = createGetSingleHandler({
+  ...agentGetConfig,
+  extractEntityId: (c) => requireParam(c, "agentId"),
+});
+
+/**
+ * GET /credentials - List all credential references in workspace config.
+ * Returns flat list of CredentialUsage objects (no single-item GET needed).
+ */
+async function handleListCredentials(c: Context<AppVariables>) {
+  const workspaceId = c.req.param("workspaceId");
+  const ctx = c.get("app");
+  try {
+    const manager = ctx.getWorkspaceManager();
+    const workspace = await manager.find({ id: workspaceId });
+    if (!workspace) {
+      return c.json(
+        { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+        404,
+      );
+    }
+    const config = await manager.getWorkspaceConfig(workspace.id);
+    if (!config) {
+      return c.json(
+        { success: false, error: "internal", message: "Failed to load workspace configuration" },
+        500,
+      );
+    }
+    const credentials: CredentialUsage[] = extractCredentials(config.workspace);
+    return c.json({ credentials, total: credentials.length });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: "internal",
+        message: `Failed to list credentials: ${stringifyError(error)}`,
+      },
+      500,
+    );
+  }
+}
+
+const credentialLogger = createLogger({ component: "config-credentials" });
+
+/**
+ * Schema for credential update request body.
+ */
+const UpdateCredentialInputSchema = z.object({
+  credentialId: z.string().min(1, "credentialId is required"),
+});
+
+/**
+ * PUT /credentials/:path - Update a credential reference with Link validation.
+ *
+ * Validates that the new credential exists in Link and matches the expected provider
+ * before applying the mutation.
+ *
+ * Custom handler (not using createMutationHandler) because:
+ * 1. Needs async Link validation before mutation
+ * 2. Provider lookup logic depends on current credential state
+ * 3. Different error response format (credential_not_found, provider_mismatch)
+ */
+async function handleUpdateCredential(c: Context<AppVariables>) {
+  const workspaceId = c.req.param("workspaceId");
+  const path = c.req.param("path");
+  const ctx = c.get("app");
+
+  try {
+    // 1. Workspace lookup
+    const manager = ctx.getWorkspaceManager();
+    const workspace = await manager.find({ id: workspaceId });
+    if (!workspace) {
+      return c.json(
+        { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+        404,
+      );
+    }
+
+    // 2. System workspace protection
+    if (workspace.metadata?.system) {
+      return c.json(
+        { success: false, error: "forbidden", message: "Cannot modify system workspace" },
+        403,
+      );
+    }
+
+    // 3. Parse and validate request body
+    const body = await c.req.json();
+    const parseResult = UpdateCredentialInputSchema.safeParse(body);
+    if (!parseResult.success) {
+      return c.json(
+        {
+          success: false,
+          error: "validation",
+          message: "Invalid input",
+          issues: parseResult.error.issues,
+        },
+        400,
+      );
+    }
+    const { credentialId: newCredentialId } = parseResult.data;
+
+    // 4. Load config and find current credential at path
+    const config = await manager.getWorkspaceConfig(workspace.id);
+    if (!config) {
+      return c.json(
+        { success: false, error: "internal", message: "Failed to load workspace configuration" },
+        500,
+      );
+    }
+
+    // Find the current credential to get expected provider
+    const credentials = extractCredentials(config.workspace);
+    const current = credentials.find((cred) => cred.path === path);
+    if (!current) {
+      return c.json(
+        { success: false, error: "not_found", entityType: "credential", entityId: path },
+        404,
+      );
+    }
+
+    // 5. Validate new credential exists in Link
+    let newCredential: Credential;
+    try {
+      newCredential = await fetchLinkCredential(newCredentialId, credentialLogger);
+    } catch (error) {
+      if (error instanceof LinkCredentialNotFoundError) {
+        return c.json({ error: "credential_not_found", credentialId: newCredentialId }, 400);
+      }
+      throw error;
+    }
+
+    // 6. Determine expected provider
+    // Use current.provider if present, else fetch current credential from Link
+    let expectedProvider: string | undefined;
+    if (current.provider) {
+      expectedProvider = current.provider;
+    } else if (current.credentialId) {
+      // Fetch current credential to get its provider
+      try {
+        const currentCredential = await fetchLinkCredential(current.credentialId, credentialLogger);
+        expectedProvider = currentCredential.provider;
+      } catch (error) {
+        if (error instanceof LinkCredentialNotFoundError) {
+          // If current credential no longer exists, skip provider validation
+          // This handles the case where the old credential was deleted
+          expectedProvider = undefined;
+        } else {
+          throw error;
+        }
+      }
+    }
+    // If neither provider nor credentialId on current, we can't validate provider
+
+    // 7. Validate provider match
+    if (expectedProvider && newCredential.provider !== expectedProvider) {
+      return c.json(
+        { error: "provider_mismatch", expected: expectedProvider, got: newCredential.provider },
+        400,
+      );
+    }
+
+    // 8. Apply mutation with onBeforeWrite callback for history storage
+    const mutationFn = (cfg: WorkspaceConfig) => updateCredential(cfg, path, newCredentialId);
+    const result = await applyMutation(workspace.path, mutationFn, {
+      onBeforeWrite: async () => {
+        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
+          throwOnError: true,
+        });
+      },
+    });
+
+    if (!result.ok) {
+      // Map mutation errors - updateCredential only returns not_found or validation errors
+      const error = result.error;
+      if (error.type === "not_found") {
+        return c.json(
+          {
+            success: false,
+            error: "not_found",
+            entityType: error.entityType,
+            entityId: error.entityId,
+          },
+          404,
+        );
+      }
+      if (error.type === "validation") {
+        return c.json(
+          { success: false, error: "validation", message: error.message, issues: error.issues },
+          400,
+        );
+      }
+      // Shouldn't happen, but handle gracefully
+      return c.json(
+        { success: false, error: "internal", message: `Mutation failed: ${error.type}` },
+        500,
+      );
+    }
+
+    // 9. Destroy runtime if active so it reloads config
+    const runtime = ctx.getWorkspaceRuntime(workspace.id);
+    if (runtime) {
+      await ctx.destroyWorkspaceRuntime(workspace.id);
+    }
+
+    // 10. Return success
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json(
+      { success: false, error: "internal", message: `Mutation failed: ${stringifyError(error)}` },
+      500,
+    );
+  }
+}
+
+// ==============================================================================
+// MUTATION HANDLER HELPER
+// ==============================================================================
+
+/**
+ * Base configuration shared by both with-schema and without-schema mutation handlers.
+ *
+ * @template TParams - Type of extracted route params
+ */
+interface MutationHandlerConfigBase<TParams> {
+  /** Extract route params (e.g., signalId, serverId) from Hono context */
+  extractParams: (c: Context<AppVariables>) => TParams;
+  /** HTTP status code for successful response (200 for PUT/DELETE, 201 for POST) */
+  successStatus: 200 | 201;
+  /** Entity name for conflict messages (e.g., "Signal", "Tool") */
+  entityName: string;
+}
+
+/**
+ * Configuration for mutation handlers that require request body validation.
+ *
+ * @template TSchema - Zod schema type for input validation
+ * @template TParams - Type of extracted route params
+ */
+interface MutationHandlerConfigWithSchema<TSchema extends z.ZodType, TParams>
+  extends MutationHandlerConfigBase<TParams> {
+  /** Zod schema to parse and validate request body */
+  schema: TSchema;
+  /** Build the mutation function from parsed input and params */
+  buildMutation: (
+    input: z.infer<TSchema>,
+    params: TParams,
+  ) => (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>;
+  /**
+   * Custom conflict message builder. If not provided, uses default "referenced by" message.
+   * Called with the parsed input and params when a conflict occurs.
+   */
+  conflictMessage?: (input: z.infer<TSchema>, params: TParams, referenceCount: number) => string;
+}
+
+/**
+ * Configuration for mutation handlers that don't need request body (e.g., DELETE).
+ *
+ * @template TParams - Type of extracted route params
+ */
+interface MutationHandlerConfigWithoutSchema<TParams> extends MutationHandlerConfigBase<TParams> {
+  /** Explicitly undefined to indicate no body parsing */
+  schema: undefined;
+  /** Build the mutation function from params only (input is always undefined) */
+  buildMutation: (
+    input: undefined,
+    params: TParams,
+  ) => (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>;
+  /**
+   * Custom conflict message builder. If not provided, uses default "referenced by" message.
+   * Called with undefined input and params when a conflict occurs.
+   */
+  conflictMessage?: (input: undefined, params: TParams, referenceCount: number) => string;
+}
+
+/**
+ * Map MutationError to HTTP response.
+ * Centralizes error response shaping per design doc.
+ *
+ * @param c - Hono context for response
+ * @param error - The mutation error to map
+ * @param conflictMessage - Message for conflict errors
+ * @returns HTTP response with appropriate status code
+ */
+function mapMutationError(c: Context, error: MutationError, conflictMessage: string) {
+  switch (error.type) {
+    case "not_found":
+      return c.json(
+        {
+          success: false,
+          error: "not_found",
+          entityType: error.entityType,
+          entityId: error.entityId,
+        },
+        404,
+      );
+    case "validation":
+      return c.json(
+        { success: false, error: "validation", message: error.message, issues: error.issues },
+        400,
+      );
+    case "conflict":
+      return c.json(
+        {
+          success: false,
+          error: "conflict",
+          willUnlinkFrom: error.willUnlinkFrom,
+          message: conflictMessage,
+        },
+        409,
+      );
+    case "invalid_operation":
+      return c.json({ success: false, error: "invalid_operation", message: error.message }, 422);
+    case "write":
+      return c.json({ success: false, error: "write", message: error.message }, 500);
+  }
+}
+
+/**
+ * Create a mutation handler with shared boilerplate.
+ *
+ * Handles the common pattern:
+ * 1. Get workspace from manager (404 if not found)
+ * 2. Check system workspace (403 if true)
+ * 3. Parse body with Zod schema (400 if invalid, skipped if no schema)
+ * 4. Apply mutation with onBeforeWrite callback for history storage
+ *    (history stored only after validation succeeds)
+ * 5. Destroy runtime if active
+ * 6. Return success response with configurable status code
+ *
+ * @param handlerConfig - Configuration for this mutation handler
+ * @returns Hono handler function
+ */
+function createMutationHandler<TSchema extends z.ZodType, TParams>(
+  handlerConfig: MutationHandlerConfigWithSchema<TSchema, TParams>,
+): (c: Context<AppVariables>) => Promise<Response>;
+function createMutationHandler<TParams>(
+  handlerConfig: MutationHandlerConfigWithoutSchema<TParams>,
+): (c: Context<AppVariables>) => Promise<Response>;
+function createMutationHandler<TSchema extends z.ZodType, TParams>(
+  handlerConfig:
+    | MutationHandlerConfigWithSchema<TSchema, TParams>
+    | MutationHandlerConfigWithoutSchema<TParams>,
+) {
+  return async (c: Context<AppVariables>) => {
+    const workspaceId = c.req.param("workspaceId");
+    const ctx = c.get("app");
+
+    try {
+      // 1. Workspace lookup
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json(
+          { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+          404,
+        );
+      }
+
+      // 2. System workspace protection
+      if (workspace.metadata?.system) {
+        return c.json(
+          { success: false, error: "forbidden", message: "Cannot modify system workspace" },
+          403,
+        );
+      }
+
+      // 3. Parse input (if schema provided)
+      let input: z.infer<TSchema> | undefined;
+      if (handlerConfig.schema) {
+        const body = await c.req.json();
+        const parseResult = handlerConfig.schema.safeParse(body);
+        if (!parseResult.success) {
+          return c.json(
+            {
+              success: false,
+              error: "validation",
+              message: "Invalid input",
+              issues: parseResult.error.issues,
+            },
+            400,
+          );
+        }
+        input = parseResult.data;
+      } else {
+        input = undefined;
+      }
+
+      // Extract route params
+      const params = handlerConfig.extractParams(c);
+
+      // 4. Load current config for history (before mutation modifies disk)
+      const currentConfig = await manager.getWorkspaceConfig(workspace.id);
+
+      // 5. Apply mutation with onBeforeWrite callback for history storage
+      // History is stored AFTER validation succeeds but BEFORE disk write
+      // Note: The implementation uses a union type internally, but callers see
+      // properly typed overloads. The cast here is safe because:
+      // - With schema: input is z.infer<TSchema> (from safeParse)
+      // - Without schema: input is undefined (set explicitly above)
+      const mutationFn = (
+        handlerConfig.buildMutation as (
+          input: z.infer<TSchema> | undefined,
+          params: TParams,
+        ) => (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>
+      )(input, params);
+      const result = await applyMutation(workspace.path, mutationFn, {
+        onBeforeWrite: async () => {
+          if (currentConfig) {
+            await storeWorkspaceHistory(workspace, currentConfig.workspace, "partial-update", {
+              throwOnError: true,
+            });
+          }
+        },
+      });
+
+      if (!result.ok) {
+        // Build conflict message - use custom builder or default
+        const referenceCount =
+          result.error.type === "conflict" ? result.error.willUnlinkFrom.length : 0;
+        const conflictMessage = handlerConfig.conflictMessage
+          ? (
+              handlerConfig.conflictMessage as (
+                input: z.infer<TSchema> | undefined,
+                params: TParams,
+                referenceCount: number,
+              ) => string
+            )(input, params, referenceCount)
+          : `${handlerConfig.entityName} is referenced by ${referenceCount} ${referenceCount === 1 ? "entity" : "entities"}. Use ?force=true to cascade delete.`;
+        return mapMutationError(c, result.error, conflictMessage);
+      }
+
+      // 6. Destroy runtime if active so it reloads config
+      if (ctx.getWorkspaceRuntime(workspace.id)) {
+        await ctx.destroyWorkspaceRuntime(workspace.id);
+      }
+
+      // 7. Return success
+      return c.json({ ok: true }, handlerConfig.successStatus);
+    } catch (error) {
+      return c.json(
+        { success: false, error: "internal", message: `Mutation failed: ${stringifyError(error)}` },
+        500,
+      );
+    }
+  };
+}
+
+// ==============================================================================
+// METHOD NOT ALLOWED HANDLERS
+// ==============================================================================
+
+/**
+ * Handler for unsupported agent creation.
+ * Agents are defined in workspace FSM states and cannot be created via API.
+ */
+const handleAgentMethodNotAllowed = (c: Context) => {
+  return c.json(
+    {
+      success: false,
+      error: "method_not_allowed",
+      message: "Agents cannot be created via API - they are defined in workspace FSM states",
+    },
+    405,
+  );
+};
+
+/**
+ * Handler for unsupported agent deletion.
+ * Agents are wired into FSM states and cannot be deleted via API.
+ */
+const handleAgentDeleteMethodNotAllowed = (c: Context) => {
+  return c.json(
+    {
+      success: false,
+      error: "method_not_allowed",
+      message: "Agents cannot be deleted via API - they are wired into workspace FSM states",
+    },
+    405,
+  );
+};
+
+// ==============================================================================
+// MUTATION HANDLER DEFINITIONS
+// ==============================================================================
+
+/** PUT /signals/:signalId - Update existing signal */
+const handleUpdateSignal = createMutationHandler({
+  schema: WorkspaceSignalConfigSchema,
+  extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
+  buildMutation:
+    (signal, { signalId }) =>
+    (config) =>
+      updateSignal(config, signalId, signal),
+  successStatus: 200,
+  entityName: "Signal",
+});
+
+/** DELETE /signals/:signalId - Delete signal */
+const handleDeleteSignal = createMutationHandler({
+  schema: undefined,
+  extractParams: (c) => ({
+    signalId: requireParam(c, "signalId"),
+    force: c.req.query("force") === "true",
+  }),
+  buildMutation:
+    (_, { signalId, force }) =>
+    (config) =>
+      deleteSignal(config, signalId, { force }),
+  successStatus: 200,
+  entityName: "Signal",
+  conflictMessage: (_, __, count) =>
+    `Signal is referenced by ${count} ${count === 1 ? "job" : "jobs"}. Use ?force=true to cascade delete.`,
+});
+
+/** POST /signals - Create new signal */
+const handleCreateSignal = createMutationHandler({
+  schema: CreateSignalInputSchema,
+  extractParams: () => ({}),
+  buildMutation:
+    ({ signalId, signal }) =>
+    (config) =>
+      createSignal(config, signalId, signal),
+  successStatus: 201,
+  entityName: "Signal",
+  conflictMessage: ({ signalId }) => `Signal '${signalId}' already exists`,
+});
+
+/** PUT /agents/:agentId - Update existing FSM-embedded agent */
+const handleUpdateAgent = createMutationHandler({
+  schema: FSMAgentUpdateSchema,
+  extractParams: (c) => ({ agentId: requireParam(c, "agentId") }),
+  buildMutation:
+    (update, { agentId }) =>
+    (config) =>
+      updateFSMAgent(config, agentId, update),
+  successStatus: 200,
+  entityName: "Agent",
+});
+
+// ==============================================================================
+// ROUTE DEFINITIONS
+// ==============================================================================
+
+/**
+ * Config routes for workspace partial updates.
+ *
+ * Mounted at `/api/workspaces/:workspaceId/config`
+ */
+const configRoutes = daemonFactory
+  .createApp()
+  // Signals - read + full CRUD
+  .get("/signals", handleListSignals)
+  .get("/signals/:signalId", handleGetSignal)
+  .put("/signals/:signalId", handleUpdateSignal)
+  .delete("/signals/:signalId", handleDeleteSignal)
+  .post("/signals", handleCreateSignal)
+  // Agents - read + UPDATE ONLY (no create/delete - wired into FSM states)
+  .get("/agents", handleListAgents)
+  .get("/agents/:agentId", handleGetAgent)
+  .put("/agents/:agentId", handleUpdateAgent)
+  .post("/agents", handleAgentMethodNotAllowed)
+  .delete("/agents/:agentId", handleAgentDeleteMethodNotAllowed)
+  // Credentials - read + update (with Link validation)
+  .get("/credentials", handleListCredentials)
+  .put("/credentials/:path", handleUpdateCredential);
+
+export { configRoutes };

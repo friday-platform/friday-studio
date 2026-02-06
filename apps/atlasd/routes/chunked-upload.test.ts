@@ -234,8 +234,7 @@ describe("Complete (POST /:uploadId/complete)", () => {
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("completed");
-    expect(result.result).toBeDefined();
-    expect("artifact" in result.result!).toBe(true);
+    expect(result.result).toHaveProperty("artifact");
   });
 
   it("creates database artifact for CSV file", async () => {
@@ -249,8 +248,7 @@ describe("Complete (POST /:uploadId/complete)", () => {
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("completed");
-    expect(result.result).toBeDefined();
-    expect("artifact" in result.result!).toBe(true);
+    expect(result.result).toHaveProperty("artifact");
   });
 
   it("returns intermediate 'completing' status before terminal state", async () => {
@@ -337,8 +335,7 @@ describe("End-to-end", () => {
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("completed");
-    expect(result.result).toBeDefined();
-    expect("artifact" in result.result!).toBe(true);
+    expect(result.result).toHaveProperty("artifact");
   });
 
   it("handles CSV multi-chunk upload producing database artifact", async () => {
@@ -352,8 +349,7 @@ describe("End-to-end", () => {
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("completed");
-    expect(result.result).toBeDefined();
-    expect("artifact" in result.result!).toBe(true);
+    expect(result.result).toHaveProperty("artifact");
   });
 });
 
@@ -460,8 +456,8 @@ describe("Completing rejection (409)", () => {
     // complete fires between chunk upload and chunk write. Triggering this state
     // via HTTP would require precise timing control that's fragile in tests.
     const session = _getSessionForTest(uploadId);
-    expect(session).toBeDefined();
-    session!.status = "completing";
+    if (!session) throw new Error("session should be defined");
+    session.status = "completing";
 
     // Chunk upload should be rejected with 409
     const res = await uploadChunk(uploadId, 0, new Blob(["c"]));
@@ -517,8 +513,7 @@ describe("Artifact creation failure (500)", () => {
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("failed");
-    expect(result.result).toBeDefined();
-    expect("error" in result.result!).toBe(true);
+    expect(result.result).toHaveProperty("error");
   });
 });
 
@@ -529,8 +524,8 @@ describe("TTL expiration", () => {
 
     // Backdate session to exceed TTL
     const session = _getSessionForTest(uploadId);
-    expect(session).toBeDefined();
-    session!.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
+    if (!session) throw new Error("session should be defined");
+    session.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
 
     await _cleanupExpiredSessionsForTest();
 
@@ -552,8 +547,8 @@ describe("TTL expiration", () => {
 
     // Backdate the completed session to exceed TTL
     const session = _getSessionForTest(uploadId);
-    expect(session).toBeDefined();
-    session!.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
+    if (!session) throw new Error("session should be defined");
+    session.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
 
     await _cleanupExpiredSessionsForTest();
 
@@ -573,8 +568,8 @@ describe("TTL expiration", () => {
 
     // Backdate the failed session to exceed TTL
     const session = _getSessionForTest(uploadId);
-    expect(session).toBeDefined();
-    session!.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
+    if (!session) throw new Error("session should be defined");
+    session.createdAt = Date.now() - CHUNKED_UPLOAD_TTL_MS - 1000;
 
     await _cleanupExpiredSessionsForTest();
 

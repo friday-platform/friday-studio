@@ -9,8 +9,7 @@ describe("injectArtifactRefFormat", () => {
       required: ["csv_file"],
     };
     const result = injectArtifactRefFormat(schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    expect(props["csv_file"]!.format).toBe("artifact-ref");
+    expect(result.properties).toHaveProperty("csv_file.format", "artifact-ref");
   });
 
   it("adds format: artifact-ref to fields with 'file' in the key name", () => {
@@ -19,8 +18,7 @@ describe("injectArtifactRefFormat", () => {
       properties: { input_file: { type: "string", description: "The data to process" } },
     };
     const result = injectArtifactRefFormat(schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    expect(props["input_file"]!.format).toBe("artifact-ref");
+    expect(result.properties).toHaveProperty("input_file.format", "artifact-ref");
   });
 
   it("does not add format to non-file string fields", () => {
@@ -29,8 +27,7 @@ describe("injectArtifactRefFormat", () => {
       properties: { user_input: { type: "string", description: "User text input or description" } },
     };
     const result = injectArtifactRefFormat(schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    expect(props["user_input"]!.format).toBeUndefined();
+    expect(result.properties).not.toHaveProperty("user_input.format");
   });
 
   it("skips fields that already have format: artifact-ref", () => {
@@ -56,9 +53,7 @@ describe("injectArtifactRefFormat", () => {
       },
     };
     const result = injectArtifactRefFormat(schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    const files = props["files"]!;
-    expect((files.items as Record<string, unknown>).format).toBe("artifact-ref");
+    expect(result.properties).toHaveProperty("files.items.format", "artifact-ref");
   });
 
   it("returns schema unchanged when no properties match", () => {
@@ -85,7 +80,6 @@ describe("injectArtifactRefFormat", () => {
       properties: { document: { type: "string", description: "File upload for processing" } },
     };
     const result = injectArtifactRefFormat(schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    expect(props["document"]!.format).toBe("artifact-ref");
+    expect(result.properties).toHaveProperty("document.format", "artifact-ref");
   });
 });

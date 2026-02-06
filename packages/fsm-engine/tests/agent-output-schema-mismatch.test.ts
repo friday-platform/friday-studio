@@ -241,10 +241,12 @@ describe.skipIf(isCI)("bundled agent output schema mismatch (regression)", () =>
   });
 
   it("LLM-generated FSM runs to completion with real agent output shapes", async () => {
-    const job = plan.jobs[0]!;
+    const [job] = plan.jobs;
+    if (!job) throw new Error("Expected at least one job in plan");
     const signal = plan.signals.find(
       (s: WorkspacePlan["signals"][number]) => s.id === job.triggerSignalId,
-    )!;
+    );
+    if (!signal) throw new Error(`Expected signal for job trigger ${job.triggerSignalId}`);
 
     // flattenAgent: on main → no outputSchema; on this branch → outputSchema populated
     const classified = classifyAgents(plan);

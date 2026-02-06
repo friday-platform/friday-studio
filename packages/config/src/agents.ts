@@ -101,7 +101,7 @@ const SystemAgentConfigObjectSchema = z
   })
   .describe("System agent configuration");
 
-const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
+export const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("system"),
   agent: z.string().describe("System agent identifier"),
   config: SystemAgentConfigObjectSchema.optional(),

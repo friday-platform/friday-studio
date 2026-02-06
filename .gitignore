@@ -99,3 +99,6 @@ atlas-otel-collector
 test-coverage-progress.txt
 scripts/ralph/progress.txt
 scripts/ralph/PRD.json
+
+# opensrc - source code for packages
+opensrc/

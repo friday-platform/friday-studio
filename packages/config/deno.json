@@ -1,1 +1,9 @@
-{ "name": "@atlas/config", "version": "1.0.0", "exports": { ".": "./mod.ts" } }
+{
+  "name": "@atlas/config",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./mutations": "./src/mutations/index.ts",
+    "./testing": "./src/mutations/test-fixtures.ts"
+  }
+}

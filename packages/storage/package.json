@@ -5,9 +5,12 @@
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
   "dependencies": {
+    "@atlas/config": "workspace:*",
+    "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10"
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
+    "zod": "^4.3.6"
   },
-  "devDependencies": {}
+  "devDependencies": { "vitest": "^4.0.18" }
 }
