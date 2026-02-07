@@ -53,7 +53,7 @@ import Page from "$lib/components/page.svelte";
 	<p>Friday is designed for everything that continues after you close the tab.</p>
 
 	<iframe
-		src="https://www.youtube.com/embed/N8Mqq92CFAU?si=B28nopfuaaz_XJFo&amp;controls=0"
+		src="https://www.youtube.com/embed/N8Mqq92CFAU?si=B28nopfuaaz_XJFo&amp;controls=0&amp;rel=0&amp;loop=1&amp;playlist=N8Mqq92CFAU"
 		title="YouTube video player"
 		frameborder="0"
 		allow="accelerometer; autoplay; clipboard-write; compute-pressure; encrypted-media; gyroscope; picture-in-picture; web-share"
