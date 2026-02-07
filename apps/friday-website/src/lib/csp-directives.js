@@ -16,7 +16,7 @@ export function makeDirectives({ dev }) {
       "https://www.googletagmanager.com",
       "https://*.clarity.ms",
     ],
-    "style-src": ["self", "unsafe-inline", "report-sample", "https://cdn-cookieyes.com"],
+    "style-src": ["self", "report-sample", "https://cdn-cookieyes.com"],
     "img-src": [
       "self",
       "data:",
@@ -41,7 +41,6 @@ export function makeDirectives({ dev }) {
     "frame-ancestors": ["none"],
     "base-uri": ["self"],
     "form-action": ["self"],
-    "report-uri": [`${REPORT_ENDPOINT}/report`],
     "report-to": ["default"],
     ...(dev ? {} : { "upgrade-insecure-requests": true }),
   };

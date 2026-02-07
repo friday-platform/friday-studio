@@ -24,6 +24,9 @@ afterNavigate(() => {
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
+	<link rel="preconnect" href="https://cdn-cookieyes.com" crossorigin="anonymous" />
+	<link rel="preconnect" href="https://www.googletagmanager.com" crossorigin="anonymous" />
+	<link rel="preconnect" href="https://www.clarity.ms" crossorigin="anonymous" />
 	<link rel="canonical" href="https://hellofriday.ai{page.url.pathname}" />
 	<title>Friday</title>
 	<meta property="og:site_name" content="Friday" />

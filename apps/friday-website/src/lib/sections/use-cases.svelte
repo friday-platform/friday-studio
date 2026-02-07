@@ -11,6 +11,19 @@ let promptElements: (HTMLParagraphElement | undefined)[] = $state([]);
 let promptContainer: HTMLParagraphElement | undefined = $state();
 
 onMount(() => {
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (prefersReducedMotion) {
+    // Show first prompt statically, skip all GSAP animations
+    promptElements.forEach((el, i) => {
+      if (!el) return;
+      el.style.visibility = i === 0 ? "visible" : "hidden";
+      el.style.opacity = i === 0 ? "1" : "0";
+    });
+    if (promptContainer) promptContainer.style.opacity = "1";
+    return;
+  }
+
   const splits: SplitText[] = [];
   let currentIndex = 0;
 

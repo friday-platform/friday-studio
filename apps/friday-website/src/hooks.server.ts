@@ -97,6 +97,9 @@ function injectAnalytics(html: string): string {
 }
 
 function setSecurityHeaders(headers: Headers): void {
+  // NOTE: Static assets served by sirv bypass this hook. Configure the reverse
+  // proxy (Nginx/Caddy/Cloud Run) to add these headers to all responses.
+
   // Reporting API endpoints (URIports)
   headers.set("reporting-endpoints", `default="${REPORT_ENDPOINT}"`);
   headers.set(
@@ -132,6 +135,12 @@ function setSecurityHeaders(headers: Headers): void {
   }
   if (!headers.has("x-frame-options")) {
     headers.set("x-frame-options", "DENY");
+  }
+  if (!headers.has("cross-origin-resource-policy")) {
+    headers.set("cross-origin-resource-policy", "same-origin");
+  }
+  if (!headers.has("x-xss-protection")) {
+    headers.set("x-xss-protection", "0");
   }
   if (!headers.has("referrer-policy")) {
     headers.set("referrer-policy", "strict-origin-when-cross-origin");
@@ -171,7 +180,17 @@ async function compress(request: Request, response: Response): Promise<Response>
   const acceptEncoding = request.headers.get("accept-encoding") ?? "";
   if (!acceptEncoding.includes("br") && !acceptEncoding.includes("gzip")) return response;
 
-  const body = new Uint8Array(await response.arrayBuffer());
+  if (response.bodyUsed || response.body?.locked) return response;
+
+  // Clone first so the original response survives if reading fails. SvelteKit
+  // may produce streaming responses (e.g. __data.json) whose body cannot be
+  // fully consumed via arrayBuffer().
+  let body: Uint8Array;
+  try {
+    body = new Uint8Array(await response.clone().arrayBuffer());
+  } catch {
+    return response;
+  }
   if (body.length < 256) return response;
 
   let encoding: string;
@@ -245,6 +264,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   setSecurityHeaders(response.headers);
+  response.headers.delete("x-sveltekit-page");
   setCacheHeaders(response);
 
   return compress(event.request, response);
