@@ -10,6 +10,22 @@ export const MAX_FILE_SIZE = 500 * 1024 * 1024;
 /** Maximum file size for PDF uploads (50MB) - lower than other types due to memory usage during extraction */
 export const MAX_PDF_SIZE = 50 * 1024 * 1024;
 
+/** Maximum file size for Office document uploads (50MB) - same limit as PDF for same reasons */
+export const MAX_OFFICE_SIZE = 50 * 1024 * 1024;
+
+/** Maximum cumulative decompressed content size for OOXML files (200MB) */
+export const MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024;
+
+/**
+ * Error messages for legacy Office formats that require conversion before upload.
+ * Used by both artifacts.ts and chunked-upload.ts routes.
+ * Map avoids `in` operator matching inherited Object.prototype properties.
+ */
+export const LEGACY_FORMAT_ERRORS = new Map([
+  [".doc", "Legacy .doc format not supported. Save as .docx and re-upload."],
+  [".ppt", "Legacy .ppt format not supported. Save as .pptx and re-upload."],
+]);
+
 /**
  * Extension to MIME type mapping for allowed file types.
  *
@@ -43,6 +59,8 @@ export const EXTENSION_TO_MIME = new Map([
   [".yml", "text/yaml"],
   [".yaml", "text/yaml"],
   [".pdf", "application/pdf"],
+  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
 ]);
 
 /**
@@ -63,6 +81,8 @@ export const ALLOWED_MIME_TYPES = new Set([
   "text/x-markdown",
   "text/yaml",
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +110,7 @@ export function isInvalidChatId(chatId: string): boolean {
 
 /** Error message for disallowed file types */
 export const FILE_TYPE_NOT_ALLOWED_ERROR =
-  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF";
+  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX";
 
 /** Extract and validate file extension against EXTENSION_TO_MIME. Returns MIME type or undefined. */
 export function getValidatedMimeType(fileName: string): string | undefined {

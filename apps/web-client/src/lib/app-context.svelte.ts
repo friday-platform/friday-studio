@@ -5,6 +5,8 @@ import {
   CHUNK_SIZE,
   CHUNKED_UPLOAD_THRESHOLD,
   MAX_FILE_SIZE,
+  MAX_OFFICE_SIZE,
+  MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { resolve } from "$app/paths";
@@ -163,20 +165,31 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
     return { valid: false, error: "File too large. Maximum size is 500MB." };
   }
 
+  // Binary-to-markdown formats have a lower size limit due to memory usage during extraction
+  const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
+  if (ext === ".pdf" && file.size > MAX_PDF_SIZE) {
+    const maxMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
+    return { valid: false, error: `PDF files must be under ${maxMB}MB.` };
+  }
+  if ((ext === ".docx" || ext === ".pptx") && file.size > MAX_OFFICE_SIZE) {
+    const maxMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
+    return { valid: false, error: `${ext.slice(1).toUpperCase()} files must be under ${maxMB}MB.` };
+  }
+
   // MIME type check (browser-provided, may be empty)
   if (file.type && ALLOWED_MIME_TYPES.has(file.type)) {
     return { valid: true };
   }
 
   // Extension fallback (handles empty/generic MIME types)
-  const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
   if (ALLOWED_EXTENSIONS.has(ext)) {
     return { valid: true };
   }
 
   return {
     valid: false,
-    error: "Unsupported file type. Only CSV, JSON, TXT, MD, and YML files are allowed.",
+    error:
+      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, and PPTX files are allowed.",
   };
 }
 

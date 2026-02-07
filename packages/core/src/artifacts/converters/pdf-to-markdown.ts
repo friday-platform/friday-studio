@@ -1,4 +1,5 @@
 import { PDF } from "@libpdf/core";
+import { ConverterError } from "./xml-utils.ts";
 
 /**
  * Converts a PDF buffer to markdown format.
@@ -6,8 +7,8 @@ import { PDF } from "@libpdf/core";
  * @param buffer - PDF file contents as a Uint8Array (or Buffer)
  * @param filename - Original filename (used as document title)
  * @returns Promise resolving to markdown string with page headers
- * @throws Error with "password-protected" for encrypted PDFs
- * @throws Error with "corrupted or invalid" for corrupt PDFs
+ * @throws ConverterError with PASSWORD_PROTECTED for encrypted PDFs
+ * @throws ConverterError with CORRUPTED for corrupt PDFs
  */
 export async function pdfToMarkdown(buffer: Uint8Array, filename: string): Promise<string> {
   let pdf: PDF;
@@ -19,12 +20,15 @@ export async function pdfToMarkdown(buffer: Uint8Array, filename: string): Promi
 
     // Authentication errors indicate encrypted/password-protected PDFs
     if (errorName === "AuthenticationError") {
-      throw new Error("This PDF is password-protected. Remove the password and re-upload.");
+      throw new ConverterError(
+        "PASSWORD_PROTECTED",
+        "This PDF is password-protected. Remove the password and re-upload.",
+      );
     }
 
     // Unrecoverable parse errors indicate corrupted PDFs
     if (errorName === "UnrecoverableParseError") {
-      throw new Error("This PDF appears to be corrupted or invalid.");
+      throw new ConverterError("CORRUPTED", "This PDF appears to be corrupted or invalid.");
     }
 
     throw error;
@@ -32,7 +36,10 @@ export async function pdfToMarkdown(buffer: Uint8Array, filename: string): Promi
 
   // Check for encrypted PDF that loaded but requires authentication
   if (pdf.isEncrypted && !pdf.isAuthenticated) {
-    throw new Error("This PDF is password-protected. Remove the password and re-upload.");
+    throw new ConverterError(
+      "PASSWORD_PROTECTED",
+      "This PDF is password-protected. Remove the password and re-upload.",
+    );
   }
 
   // Extract text from all pages

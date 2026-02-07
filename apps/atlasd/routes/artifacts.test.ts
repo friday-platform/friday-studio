@@ -1,8 +1,9 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import { MAX_FILE_SIZE, MAX_PDF_SIZE } from "@atlas/core/artifacts/file-upload";
+import { MAX_FILE_SIZE, MAX_OFFICE_SIZE, MAX_PDF_SIZE } from "@atlas/core/artifacts/file-upload";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { black, PDF } from "@libpdf/core";
+import JSZip from "jszip";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { artifactsApp } from "./artifacts.ts";
@@ -171,7 +172,10 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(415);
     const body = await response.json();
-    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
+    assertErrorResponse(
+      body,
+      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+    );
   });
 
   it("rejects corrupt PDFs with user-friendly error", async () => {
@@ -201,7 +205,10 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(500);
     const body = await response.json();
-    assertErrorResponse(body, "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
+    assertErrorResponse(
+      body,
+      "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+    );
   });
 
   it("uses extension fallback when MIME type empty", async () => {
@@ -781,6 +788,276 @@ describe("PDF upload integration", () => {
     const body = await response.json();
     const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
     assertErrorResponse(body, `PDF too large (max ${maxSizeMB}MB)`);
+  });
+});
+
+describe("DOCX upload integration", () => {
+  const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+  async function createValidDocx(bodyXml: string): Promise<ArrayBuffer> {
+    const zip = new JSZip();
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+    );
+    zip.file(
+      "word/document.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`,
+    );
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    return bytes.buffer.slice(0) as ArrayBuffer;
+  }
+
+  it("returns 201 with artifact for valid DOCX upload", async () => {
+    const docxBytes = await createValidDocx(
+      `<w:p><w:r><w:t>Integration test document content for DOCX upload.</w:t></w:r></w:p>`,
+    );
+    const file = new File([docxBytes], "report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("chatId", "test-chat-docx");
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact).toBeDefined();
+    expect(body.artifact.id).toBeDefined();
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.chatId).toEqual("test-chat-docx");
+  });
+
+  it("includes extracted text in artifact contents", async () => {
+    const docxBytes = await createValidDocx(
+      `<w:p><w:r><w:t>Unique DOCX searchable content in the document body.</w:t></w:r></w:p>`,
+    );
+    const file = new File([docxBytes], "searchable.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    const getResponse = await artifactsApp.request(`/${artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const body = ArtifactWithContentsSchema.parse(await getResponse.json());
+
+    expect(body.contents).toBeDefined();
+    expect(body.contents).toContain("# searchable.docx");
+    expect(body.contents).toContain("Unique DOCX searchable content in the document body.");
+  });
+
+  it("rejects DOCX over 50MB size limit with 413", { timeout: 30_000 }, async () => {
+    const largeContent = createLargeBuffer(MAX_OFFICE_SIZE + 1);
+    const largeDocx = new File([largeContent], "huge.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", largeDocx);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(413);
+    const body = await response.json();
+    const maxSizeMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
+    assertErrorResponse(body, `DOCX too large (max ${maxSizeMB}MB)`);
+  });
+});
+
+describe("PPTX upload integration", () => {
+  const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
+  const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+  async function createValidPptx(slideTexts: string[]): Promise<ArrayBuffer> {
+    const zip = new JSZip();
+
+    const overrides = slideTexts
+      .map(
+        (_, i) =>
+          `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+      )
+      .join("\n  ");
+
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  ${overrides}
+</Types>`,
+    );
+
+    const sldIdEntries = slideTexts
+      .map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`)
+      .join("\n    ");
+
+    zip.file(
+      "ppt/presentation.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="${P_NS}" xmlns:r="${R_NS}" xmlns:a="${A_NS}">
+  <p:sldIdLst>${sldIdEntries}</p:sldIdLst>
+</p:presentation>`,
+    );
+
+    const relEntries = slideTexts
+      .map(
+        (_, i) =>
+          `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
+      )
+      .join("\n  ");
+
+    zip.file(
+      "ppt/_rels/presentation.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${relEntries}
+</Relationships>`,
+    );
+
+    for (let i = 0; i < slideTexts.length; i++) {
+      zip.file(
+        `ppt/slides/slide${i + 1}.xml`,
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">
+  <p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${slideTexts[i]}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>
+</p:sld>`,
+      );
+    }
+
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    return bytes.buffer.slice(0) as ArrayBuffer;
+  }
+
+  it("returns 201 with artifact for valid PPTX upload", async () => {
+    const pptxBytes = await createValidPptx(["Slide one content", "Slide two content"]);
+    const file = new File([pptxBytes], "deck.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("chatId", "test-chat-pptx");
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact).toBeDefined();
+    expect(body.artifact.id).toBeDefined();
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.chatId).toEqual("test-chat-pptx");
+  });
+
+  it("includes extracted slide text in artifact contents", async () => {
+    const pptxBytes = await createValidPptx([
+      "Unique PPTX slide content here",
+      "Second slide for PPTX test",
+    ]);
+    const file = new File([pptxBytes], "searchable.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    const getResponse = await artifactsApp.request(`/${artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const body = ArtifactWithContentsSchema.parse(await getResponse.json());
+
+    expect(body.contents).toBeDefined();
+    expect(body.contents).toContain("# searchable.pptx");
+    expect(body.contents).toContain("## Slide 1");
+    expect(body.contents).toContain("Unique PPTX slide content here");
+    expect(body.contents).toContain("## Slide 2");
+  });
+
+  it("rejects PPTX over 50MB size limit with 413", { timeout: 30_000 }, async () => {
+    const largeContent = createLargeBuffer(MAX_OFFICE_SIZE + 1);
+    const largePptx = new File([largeContent], "huge.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    });
+    const formData = new FormData();
+    formData.set("file", largePptx);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(413);
+    const body = await response.json();
+    const maxSizeMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
+    assertErrorResponse(body, `PPTX too large (max ${maxSizeMB}MB)`);
+  });
+});
+
+describe("Legacy format rejection", () => {
+  it("rejects .doc upload with 415 and helpful message", async () => {
+    const file = createTestFile("fake doc content", "report.doc", "application/msword");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(415);
+    const body = await response.json();
+    assertErrorResponse(body, "Legacy .doc format not supported. Save as .docx and re-upload.");
+  });
+
+  it("rejects .ppt upload with 415 and helpful message", async () => {
+    const file = createTestFile("fake ppt content", "slides.ppt", "application/vnd.ms-powerpoint");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(415);
+    const body = await response.json();
+    assertErrorResponse(body, "Legacy .ppt format not supported. Save as .pptx and re-upload.");
+  });
+});
+
+describe("Mismatched extension rejection", () => {
+  it("rejects a ZIP file with .docx extension that is not a real DOCX", async () => {
+    // Build a valid ZIP that is NOT a DOCX (no word/document.xml)
+    const zip = new JSZip();
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`,
+    );
+    zip.file("random/data.txt", "this is not a DOCX");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = new File([bytes.buffer.slice(0) as ArrayBuffer], "fake.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    // Should get a user-facing error, not a 500 stacktrace
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    assertErrorResponse(body, "This DOCX file appears to be corrupted or invalid.");
   });
 });
 

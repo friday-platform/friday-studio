@@ -9,12 +9,21 @@ import {
   type DatabasePreview,
   UpdateArtifactSchema,
 } from "@atlas/core/artifacts";
-import { convertCsvToSqlite, pdfToMarkdown } from "@atlas/core/artifacts/converters";
+import {
+  ConverterError,
+  convertCsvToSqlite,
+  docxToMarkdown,
+  pdfToMarkdown,
+  pptxToMarkdown,
+  USER_FACING_ERROR_CODES,
+} from "@atlas/core/artifacts/converters";
 import {
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isInvalidChatId,
+  LEGACY_FORMAT_ERRORS,
   MAX_FILE_SIZE,
+  MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
@@ -33,6 +42,16 @@ import { getCurrentUserId } from "./me/adapter.ts";
 const logger = createLogger({ name: "artifacts-upload" });
 const analytics = createAnalyticsClient();
 
+/** Binary MIME types that are allowed through magic-byte detection (converted to markdown). */
+const CONVERTIBLE_BINARY_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+/** Office extensions that may be detected as application/zip by file-type. */
+const OFFICE_EXTENSIONS = new Set([".docx", ".pptx"]);
+
 type ValidationResult = { valid: true; mimeType: string } | { valid: false; error: string };
 
 /**
@@ -47,6 +66,26 @@ function isCsvFile(filename: string): boolean {
  */
 function isPdfFile(filename: string): boolean {
   return getValidatedMimeType(filename) === "application/pdf";
+}
+
+/**
+ * Check if uploaded file is a DOCX using the canonical extension-to-MIME mapping.
+ */
+function isDocxFile(filename: string): boolean {
+  return (
+    getValidatedMimeType(filename) ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
+}
+
+/**
+ * Check if uploaded file is a PPTX using the canonical extension-to-MIME mapping.
+ */
+function isPptxFile(filename: string): boolean {
+  return (
+    getValidatedMimeType(filename) ===
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  );
 }
 
 /**
@@ -134,6 +173,117 @@ async function emitArtifactCreatedEvent(artifactId: string, artifactType: string
 }
 
 /**
+ * Shared handler for binary-to-markdown conversion (PDF, DOCX, PPTX).
+ * Handles: size check, read, convert, persist, LLM summary, cleanup.
+ */
+async function convertBinaryToMarkdown(opts: {
+  filePath: string;
+  fileName: string;
+  chatId?: string;
+  artifactsDir: string;
+  usingCortex: boolean;
+  converter: (buffer: Uint8Array, filename: string) => Promise<string>;
+  formatLabel: string;
+  maxSize: number;
+  placeholderSummary: (markdown: string) => string;
+}) {
+  const {
+    filePath,
+    fileName,
+    chatId,
+    artifactsDir,
+    usingCortex,
+    converter,
+    formatLabel,
+    maxSize,
+    placeholderSummary,
+  } = opts;
+  const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
+  try {
+    const { size } = await stat(filePath);
+    if (size > maxSize) {
+      await rm(filePath, { force: true });
+      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
+      return { ok: false as const, error: `${formatLabel} too large (max ${maxSizeMB}MB)` };
+    }
+
+    const buffer = await readFile(filePath);
+    const markdown = await converter(buffer, fileName);
+    await writeFile(mdPath, markdown, "utf-8");
+
+    const summary = placeholderSummary(markdown);
+
+    const result = await ArtifactStorage.create({
+      title: fileName,
+      summary,
+      data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+      chatId,
+    });
+
+    if (!result.ok) {
+      logger.error(`ArtifactStorage.create failed for ${formatLabel}`, {
+        filename: fileName,
+        error: result.error,
+      });
+      await unlink(mdPath).catch(() => {});
+      return { ok: false as const, error: result.error };
+    }
+
+    if (usingCortex) {
+      await unlink(mdPath).catch((err) => {
+        logger.debug("Failed to cleanup temp markdown file", {
+          path: mdPath,
+          error: stringifyError(err),
+        });
+      });
+    }
+
+    await emitArtifactCreatedEvent(result.data.id, "file", chatId);
+
+    // Fire-and-forget: use small LLM to generate a content-aware summary
+    const artifactId = result.data.id;
+    const truncated = markdown.slice(0, 2000);
+    smallLLM({
+      system:
+        "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
+      prompt: truncated,
+      maxOutputTokens: 60,
+    })
+      .then(async (llmSummary) => {
+        const trimmed = llmSummary.trim().slice(0, 200);
+        if (trimmed) {
+          await ArtifactStorage.update({
+            id: artifactId,
+            summary: trimmed,
+            data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+          });
+        }
+      })
+      .catch((err) => {
+        logger.debug(`Failed to generate ${formatLabel} summary via LLM`, {
+          error: stringifyError(err),
+        });
+      });
+
+    return { ok: true as const, artifact: result.data };
+  } catch (error) {
+    await unlink(mdPath).catch(() => {});
+    const isUserFacing = error instanceof ConverterError && USER_FACING_ERROR_CODES.has(error.code);
+    const message = error instanceof Error ? error.message : "";
+    logger.error(`Failed to convert ${formatLabel} to markdown`, {
+      filename: fileName,
+      error: stringifyError(error),
+    });
+    return {
+      ok: false as const,
+      error: isUserFacing ? message : `${formatLabel} conversion failed`,
+    };
+  } finally {
+    await unlink(filePath).catch(() => {});
+  }
+}
+
+/**
  * Given a validated file already on disk, create an artifact.
  * - CSV files are converted to SQLite databases (source CSV is deleted).
  * - Other files become file artifacts (kept at filePath).
@@ -146,15 +296,28 @@ export async function createArtifactFromFile(opts: {
 }) {
   const { filePath, fileName, chatId } = opts;
 
-  // Reject binary files based on magic bytes (extension check may have passed)
-  // Exception: PDFs are allowed through - they get converted to markdown later
-  const detected = await fileTypeFromFile(filePath);
-  if (detected && detected.mime !== "application/pdf") {
+  // Legacy format check — reject .doc/.ppt with helpful message
+  const ext = extname(fileName).toLowerCase();
+  const legacyError = LEGACY_FORMAT_ERRORS.get(ext);
+  if (legacyError) {
     await rm(filePath, { force: true });
-    return {
-      ok: false as const,
-      error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF",
-    };
+    return { ok: false as const, error: legacyError };
+  }
+
+  // Reject binary files based on magic bytes (extension check may have passed)
+  // Exceptions: PDFs and OOXML files are allowed — they get converted to markdown later
+  const detected = await fileTypeFromFile(filePath);
+  if (detected) {
+    const isAllowed =
+      CONVERTIBLE_BINARY_MIMES.has(detected.mime) ||
+      (detected.mime === "application/zip" && OFFICE_EXTENSIONS.has(ext));
+    if (!isAllowed) {
+      await rm(filePath, { force: true });
+      return {
+        ok: false as const,
+        error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+      };
+    }
   }
 
   // Cortex adapter uploads to remote storage — local files are transient, use /tmp.
@@ -216,89 +379,51 @@ export async function createArtifactFromFile(opts: {
   }
 
   if (isPdfFile(fileName)) {
-    const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
-    try {
-      // Enforce PDF size limit before reading into memory (chunked uploads bypass route-level check)
-      const { size } = await stat(filePath);
-      if (size > MAX_PDF_SIZE) {
-        await rm(filePath, { force: true });
-        const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
-        return { ok: false as const, error: `PDF too large (max ${maxSizeMB}MB)` };
-      }
+    return convertBinaryToMarkdown({
+      filePath,
+      fileName,
+      chatId,
+      artifactsDir,
+      usingCortex,
+      converter: pdfToMarkdown,
+      formatLabel: "PDF",
+      maxSize: MAX_PDF_SIZE,
+      placeholderSummary: (md) => {
+        const pageCount = (md.match(/## Page \d+/g) ?? []).length;
+        return `PDF document, ${pageCount} page${pageCount !== 1 ? "s" : ""}`;
+      },
+    });
+  }
 
-      const buffer = await readFile(filePath);
-      const markdown = await pdfToMarkdown(buffer, fileName);
-      await writeFile(mdPath, markdown, "utf-8");
+  if (isDocxFile(fileName)) {
+    return convertBinaryToMarkdown({
+      filePath,
+      fileName,
+      chatId,
+      artifactsDir,
+      usingCortex,
+      converter: docxToMarkdown,
+      formatLabel: "DOCX",
+      maxSize: MAX_OFFICE_SIZE,
+      placeholderSummary: () => "DOCX document",
+    });
+  }
 
-      const pageCount = (markdown.match(/## Page \d+/g) ?? []).length;
-      const placeholderSummary = `PDF document, ${pageCount} page${pageCount !== 1 ? "s" : ""}`;
-
-      const result = await ArtifactStorage.create({
-        title: fileName,
-        summary: placeholderSummary,
-        data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
-        chatId,
-      });
-
-      if (!result.ok) {
-        logger.error("ArtifactStorage.create failed for PDF", {
-          filename: fileName,
-          error: result.error,
-        });
-        await unlink(mdPath).catch(() => {});
-        return { ok: false as const, error: result.error };
-      }
-
-      // Cortex uploaded the file — local copy is no longer needed
-      if (usingCortex) {
-        await unlink(mdPath).catch((err) => {
-          logger.debug("Failed to cleanup temp markdown file", {
-            path: mdPath,
-            error: stringifyError(err),
-          });
-        });
-      }
-
-      await emitArtifactCreatedEvent(result.data.id, "file", chatId);
-
-      // Fire-and-forget: use small LLM to generate a content-aware summary
-      const artifactId = result.data.id;
-      const truncated = markdown.slice(0, 2000);
-      smallLLM({
-        system:
-          "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
-        prompt: truncated,
-        maxOutputTokens: 60,
-      })
-        .then(async (llmSummary) => {
-          const trimmed = llmSummary.trim().slice(0, 200);
-          if (trimmed) {
-            await ArtifactStorage.update({
-              id: artifactId,
-              summary: trimmed,
-              data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
-            });
-          }
-        })
-        .catch((err) => {
-          logger.debug("Failed to generate PDF summary via LLM", { error: stringifyError(err) });
-        });
-
-      return { ok: true as const, artifact: result.data };
-    } catch (error) {
-      await unlink(mdPath).catch(() => {});
-      const message = error instanceof Error ? error.message : "";
-      const isUserFacing =
-        message.includes("password-protected") || message.includes("corrupted or invalid");
-      logger.error("Failed to convert PDF to markdown", {
-        filename: fileName,
-        error: stringifyError(error),
-      });
-      return { ok: false as const, error: isUserFacing ? message : "PDF conversion failed" };
-    } finally {
-      // Delete the original PDF regardless of success/failure
-      await unlink(filePath).catch(() => {});
-    }
+  if (isPptxFile(fileName)) {
+    return convertBinaryToMarkdown({
+      filePath,
+      fileName,
+      chatId,
+      artifactsDir,
+      usingCortex,
+      converter: pptxToMarkdown,
+      formatLabel: "PPTX",
+      maxSize: MAX_OFFICE_SIZE,
+      placeholderSummary: (md) => {
+        const slideCount = (md.match(/## Slide \d+/g) ?? []).length;
+        return `PPTX presentation, ${slideCount} slide${slideCount !== 1 ? "s" : ""}`;
+      },
+    });
   }
 
   // Non-CSV file artifact — copy to staging dir (persistent for local, /tmp for Cortex)
@@ -667,10 +792,24 @@ const artifactsApp = daemonFactory
       return c.json({ error: "Invalid chatId" }, 400);
     }
 
-    // Size validation - PDFs have a lower limit due to memory usage during extraction
+    // Legacy format check — reject .doc/.ppt with helpful message
+    const uploadExt = extname(file.name).toLowerCase();
+    const uploadLegacyError = LEGACY_FORMAT_ERRORS.get(uploadExt);
+    if (uploadLegacyError) {
+      return c.json({ error: uploadLegacyError }, 415);
+    }
+
+    // Size validation - PDFs and Office files have a lower limit due to memory usage during extraction
     if (isPdfFile(file.name) && file.size > MAX_PDF_SIZE) {
       const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
       return c.json({ error: `PDF too large (max ${maxSizeMB}MB)` }, 413);
+    }
+    if ((isDocxFile(file.name) || isPptxFile(file.name)) && file.size > MAX_OFFICE_SIZE) {
+      const maxSizeMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
+      return c.json(
+        { error: `${uploadExt.slice(1).toUpperCase()} too large (max ${maxSizeMB}MB)` },
+        413,
+      );
     }
     if (file.size > MAX_FILE_SIZE) {
       const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));

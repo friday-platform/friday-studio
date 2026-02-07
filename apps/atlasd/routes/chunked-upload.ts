@@ -8,7 +8,9 @@ import {
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isInvalidChatId,
+  LEGACY_FORMAT_ERRORS,
   MAX_FILE_SIZE,
+  MAX_OFFICE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -145,8 +147,21 @@ export const chunkedUploadApp = daemonFactory
   .post("/init", zValidator("json", InitUploadBody), async (c) => {
     const { fileName, fileSize, chatId } = c.req.valid("json");
 
+    // Legacy format check — reject .doc/.ppt with helpful message before MIME check
+    const ext = extname(fileName).toLowerCase();
+    const legacyError = LEGACY_FORMAT_ERRORS.get(ext);
+    if (legacyError) {
+      return c.json({ error: legacyError }, 415);
+    }
+
     if (!getValidatedMimeType(fileName)) {
       return c.json({ error: FILE_TYPE_NOT_ALLOWED_ERROR }, 415);
+    }
+
+    // Office size check — reject before chunks transfer
+    if ((ext === ".docx" || ext === ".pptx") && fileSize > MAX_OFFICE_SIZE) {
+      const maxSizeMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
+      return c.json({ error: `${ext.slice(1).toUpperCase()} too large (max ${maxSizeMB}MB)` }, 413);
     }
 
     const activeSessions = [...sessions.values()].filter(

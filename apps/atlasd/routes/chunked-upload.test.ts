@@ -129,7 +129,10 @@ describe("Init endpoint (POST /init)", () => {
     const res = await initUpload({ fileName: "malware.exe", fileSize: 1024 });
     expect(res.status).toEqual(415);
     const body = await res.json();
-    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF");
+    assertErrorResponse(
+      body,
+      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+    );
   });
 
   it("rejects oversized file with 400", async () => {
@@ -576,6 +579,22 @@ describe("TTL expiration", () => {
     // Failed session should be cleaned up
     const statusRes = await getStatus(uploadId);
     expect(statusRes.status).toEqual(404);
+  });
+});
+
+describe("Legacy format rejection", () => {
+  it("rejects .ppt init with 415 and helpful message", async () => {
+    const res = await initUpload({ fileName: "slides.ppt", fileSize: 1024 });
+    expect(res.status).toEqual(415);
+    const body = await res.json();
+    assertErrorResponse(body, "Legacy .ppt format not supported. Save as .pptx and re-upload.");
+  });
+
+  it("rejects .doc init with 415 and helpful message", async () => {
+    const res = await initUpload({ fileName: "report.doc", fileSize: 1024 });
+    expect(res.status).toEqual(415);
+    const body = await res.json();
+    assertErrorResponse(body, "Legacy .doc format not supported. Save as .docx and re-upload.");
   });
 });
 
