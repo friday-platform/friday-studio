@@ -26,6 +26,7 @@ onMount(() => {
 
   const splits: SplitText[] = [];
   let currentIndex = 0;
+  let destroyed = false;
 
   // Create splits for all prompts
   promptElements.forEach((el) => {
@@ -38,8 +39,10 @@ onMount(() => {
   });
 
   function animateIn(index: number) {
+    if (destroyed) return;
     const el = promptElements[index];
     const split = splits[index];
+    if (!el || !split) return;
 
     // Reset lines position
     gsap.set(split.lines, { y: "100%" });
@@ -49,8 +52,10 @@ onMount(() => {
   }
 
   function animateOut(index: number) {
+    if (destroyed) return;
     const el = promptElements[index];
     const split = splits[index];
+    if (!el || !split) return;
 
     return gsap.to(split.lines, {
       duration: 0.4,
@@ -58,14 +63,17 @@ onMount(() => {
       stagger: 0.05,
       ease: "power2.in",
       onComplete: () => {
-        gsap.set(el, { autoAlpha: 0 });
+        if (!destroyed) gsap.set(el, { autoAlpha: 0 });
       },
     });
   }
 
   async function cycle() {
+    if (destroyed) return;
+
     // Animate out current
     await animateOut(currentIndex);
+    if (destroyed) return;
 
     // Move to next
     currentIndex = (currentIndex + 1) % promptElements.length;
@@ -87,6 +95,7 @@ onMount(() => {
   let isAnimating = false;
 
   function tick(now: number) {
+    if (destroyed) return;
     if (!isAnimating && now - lastTime >= 5000) {
       isAnimating = true;
       cycle().then(() => {
@@ -100,7 +109,9 @@ onMount(() => {
   rafId = requestAnimationFrame(tick);
 
   return () => {
+    destroyed = true;
     cancelAnimationFrame(rafId);
+    gsap.killTweensOf(splits.flatMap((s) => s.lines));
     splits.forEach((split) => {
       split.revert();
     });

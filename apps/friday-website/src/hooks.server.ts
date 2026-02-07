@@ -39,7 +39,6 @@ const DENIED_FEATURES = [
   "microphone=()",
   "midi=()",
   "payment=()",
-  "picture-in-picture=()",
   "screen-wake-lock=()",
   "serial=()",
   "usb=()",
