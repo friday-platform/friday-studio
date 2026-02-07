@@ -246,6 +246,17 @@ let useCases: UseCase[] = [
   },
 ];
 
+function handleCarouselKeydown(e: KeyboardEvent) {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const container = e.currentTarget as HTMLElement;
+  const scrollAmount = container.clientWidth * 0.6;
+  container.scrollBy({
+    left: e.key === "ArrowLeft" ? -scrollAmount : scrollAmount,
+    behavior: "smooth",
+  });
+}
+
 // Filter main use cases and sort by prompt length (longest first)
 const mainPrompts = useCases
   .filter((uc) => uc.main)
@@ -270,7 +281,13 @@ const mainPrompts = useCases
 	>
 </section>
 
-<section class="use-cases">
+<section
+	class="use-cases"
+	tabindex="0"
+	role="region"
+	aria-label="Use cases"
+	onkeydown={handleCarouselKeydown}
+>
 	{#each useCases as item (item.title)}
 		<article>
 			<header>
@@ -389,6 +406,12 @@ const mainPrompts = useCases
 		scroll-snap-type: x mandatory;
 		scrollbar-width: none;
 		scroll-padding: var(--size-6);
+		outline-offset: -2px;
+
+		&:focus-visible {
+			outline: 2px solid var(--color-blue-2, #1171df);
+			border-radius: var(--radius-3);
+		}
 
 		@media (min-width: 768px) {
 			padding-block: var(--size-12) var(--size-24);

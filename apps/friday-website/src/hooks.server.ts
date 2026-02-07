@@ -28,7 +28,6 @@ const DENIED_FEATURES = [
   "browsing-topics=()",
   "camera=()",
   "display-capture=()",
-  "document-domain=()",
   "encrypted-media=()",
   "fullscreen=()",
   "geolocation=()",

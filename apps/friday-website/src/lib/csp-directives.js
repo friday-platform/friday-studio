@@ -16,7 +16,7 @@ export function makeDirectives({ dev }) {
       "https://www.googletagmanager.com",
       "https://*.clarity.ms",
     ],
-    "style-src": ["self", "report-sample", "https://cdn-cookieyes.com"],
+    "style-src": ["self", "report-sample", "unsafe-inline", "https://cdn-cookieyes.com"],
     "img-src": [
       "self",
       "data:",
