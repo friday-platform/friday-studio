@@ -37,6 +37,7 @@ export function makeDirectives({ dev }) {
       "https://*.clarity.ms",
       "https://c.bing.com",
     ],
+    "worker-src": ["self"],
     "object-src": ["none"],
     "frame-ancestors": ["none"],
     "base-uri": ["self"],

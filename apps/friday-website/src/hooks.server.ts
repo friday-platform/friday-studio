@@ -41,7 +41,7 @@ gtag('consent', 'default', {
 </script>
 
 <!-- CookieYes consent banner -->
-<script id="cookieyes" nonce="__CSP_NONCE__" src="https://cdn-cookieyes.com/client_data/592f202dfae33fc044f781db9ab4bb3c/script.js"></script>
+<script id="cookieyes" async nonce="__CSP_NONCE__" src="https://cdn-cookieyes.com/client_data/592f202dfae33fc044f781db9ab4bb3c/script.js"></script>
 
 <!-- Google Analytics (gtag.js) -->
 <script async nonce="__CSP_NONCE__" src="https://www.googletagmanager.com/gtag/js?id=G-NLLF9SE37C"></script>
@@ -165,7 +165,11 @@ function setCacheHeaders(response: Response): void {
   if (response.headers.has("cache-control")) return;
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("text/html")) {
-    response.headers.set("cache-control", "public, max-age=60, s-maxage=3600");
+    if (response.status >= 400) {
+      response.headers.set("cache-control", "no-store");
+    } else {
+      response.headers.set("cache-control", "public, max-age=60, s-maxage=3600");
+    }
   }
 }
 
@@ -174,8 +178,15 @@ function setCacheHeaders(response: Response): void {
 // .br/.gz files and bypass this hook entirely.
 async function compress(request: Request, response: Response): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";
-  if (!COMPRESSIBLE_TYPES.some((t) => contentType.includes(t))) return response;
+  const isCompressible = COMPRESSIBLE_TYPES.some((t) => contentType.includes(t));
+  if (!isCompressible) return response;
   if (response.headers.has("content-encoding")) return response;
+
+  // Always set Vary for compressible types so HEAD and GET are consistent
+  // for caching proxies, even when not actually compressing.
+  if (!response.headers.has("vary")) {
+    response.headers.set("vary", "accept-encoding");
+  }
 
   const acceptEncoding = request.headers.get("accept-encoding") ?? "";
   if (!acceptEncoding.includes("br") && !acceptEncoding.includes("gzip")) return response;
@@ -228,6 +239,12 @@ function log(level: "info" | "error", message: string, context: Record<string, u
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Restrict __data.json to GET/HEAD — SvelteKit normalises the pathname,
+  // so use event.isDataRequest to detect these requests.
+  if (event.isDataRequest && event.request.method !== "GET" && event.request.method !== "HEAD") {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+  }
+
   const start = performance.now();
   const response = await resolve(event, {
     transformPageChunk: analyticsEnabled ? ({ html }) => injectAnalytics(html) : undefined,
@@ -266,6 +283,18 @@ export const handle: Handle = async ({ event, resolve }) => {
   setSecurityHeaders(response.headers);
   response.headers.delete("x-sveltekit-page");
   setCacheHeaders(response);
+
+  // HTML-specific fixups
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("text/html")) {
+    // Add charset — prevents encoding-based attacks in older browsers.
+    if (!contentType.includes("charset")) {
+      response.headers.set("content-type", "text/html; charset=utf-8");
+    }
+    // Strip ETag — CSP nonce changes every response so the ETag is never
+    // reusable, and conditional requests always return 200 anyway.
+    response.headers.delete("etag");
+  }
 
   return compress(event.request, response);
 };
