@@ -10,6 +10,7 @@
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { connectMcpServerTool } from "./connect-mcp-server.ts";
 import { createSkillTool } from "./create-skill.ts";
 import { displayArtifact } from "./display-artifact.ts";
 import { takeNoteTool } from "./scratchpad-tools.ts";
@@ -21,5 +22,6 @@ import { takeNoteTool } from "./scratchpad-tools.ts";
 export const conversationTools: AtlasTools = {
   take_note: takeNoteTool,
   display_artifact: displayArtifact,
+  connect_mcp_server: connectMcpServerTool,
   create_skill: createSkillTool,
 };

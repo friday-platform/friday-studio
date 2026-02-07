@@ -53,7 +53,7 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
           const { provider, label, secret } = c.req.valid("json");
 
           // Validate provider exists in registry
-          const providerDef = registry.get(provider);
+          const providerDef = await registry.get(provider);
           if (!providerDef) {
             return c.json(
               { error: "unknown_provider", message: `Provider '${provider}' is not registered` },
@@ -217,7 +217,7 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
           if (existing.type === "oauth") {
             const secret = existing.secret as { access_token?: string; client_id?: string };
             if (secret.access_token) {
-              const provider = registry.get(existing.provider);
+              const provider = await registry.get(existing.provider);
               if (provider?.type === "oauth") {
                 let authServer: oauth.AuthorizationServer;
                 let clientAuth: oauth.ClientAuth;
@@ -301,8 +301,8 @@ export function createInternalCredentialsRoutes(
             return c.json({ credential, status: "ready" });
           }
 
-          // Try refresh - check provider type first
-          const provider = registry.get(credential.provider);
+          // Try refresh - check if this is an app_install provider
+          const provider = await registry.get(credential.provider);
           if (provider?.type === "app_install" && provider.refreshToken) {
             // App install provider with refresh support
             try {

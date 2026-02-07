@@ -49,6 +49,7 @@ import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
+import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
@@ -594,6 +595,7 @@ export class AtlasDaemon {
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
     this.app.route("/api/link", linkRoutes);
+    this.app.route("/api/mcp-registry", mcpRegistryRouter);
     this.app.route("/api/me", meRoutes);
     this.app.route("/api/skills", skillsRoutes);
 

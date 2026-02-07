@@ -27,11 +27,11 @@ type WorkspaceSignal = WorkspacePlan["signals"][0];
  * @param needs - Array of capability names (e.g., ["slack", "github"])
  * @returns Array of server IDs that match those capabilities
  */
-function mapCapabilitiesToServerIds(needs: string[]): string[] {
+async function mapCapabilitiesToServerIds(needs: string[]): Promise<string[]> {
   const serverIds = new Set<string>();
 
   for (const need of needs) {
-    const matches = mapNeedToMCPServers(need);
+    const matches = await mapNeedToMCPServers(need);
     for (const match of matches) {
       serverIds.add(match.serverId);
     }
@@ -72,37 +72,40 @@ export async function generateTaskFSM(
   }));
 
   // 2. Convert plan steps to SimplifiedAgent[] with raw descriptions
-  const rawAgents: SimplifiedAgent[] = plan.steps.map((step, index) => {
-    if (step.executionType === "agent") {
-      const agentId = step.agentId;
-      if (!agentId) {
-        throw new Error(`Step ${index} has executionType "agent" but no agentId`);
+  const rawAgents: SimplifiedAgent[] = await Promise.all(
+    plan.steps.map(async (step, index) => {
+      if (step.executionType === "agent") {
+        const agentId = step.agentId;
+        if (!agentId) {
+          throw new Error(`Step ${index} has executionType "agent" but no agentId`);
+        }
+        return {
+          id: agentId,
+          name: agentId,
+          description: step.description,
+          config: {},
+          executionType: "bundled" as const,
+          bundledAgentId: agentId,
+        };
       }
+      // Ad-hoc LLM agent with MCP tools
+      // Map capability names to server IDs using registry (async function)
+      const serverIds = await mapCapabilitiesToServerIds(step.needs);
+      logger.debug("Mapped capabilities to server IDs", {
+        stepIndex: index,
+        capabilities: step.needs,
+        serverIds,
+      });
       return {
-        id: agentId,
-        name: agentId,
+        id: `llm-step-${index}`,
+        name: step.description,
         description: step.description,
         config: {},
-        executionType: "bundled" as const,
-        bundledAgentId: agentId,
+        executionType: "llm" as const,
+        mcpTools: serverIds,
       };
-    }
-    // Ad-hoc LLM agent with MCP tools
-    const serverIds = mapCapabilitiesToServerIds(step.needs);
-    logger.debug("Mapped capabilities to server IDs", {
-      stepIndex: index,
-      capabilities: step.needs,
-      serverIds,
-    });
-    return {
-      id: `llm-step-${index}`,
-      name: step.description,
-      description: step.description,
-      config: {},
-      executionType: "llm" as const,
-      mcpTools: serverIds,
-    };
-  });
+    }),
+  );
 
   // 3. Enrich agents with downstream data requirements (fixes TEM-3625)
   const agents = await enrichAgentsWithPipelineContext(rawAgents, jobSteps, abortSignal);

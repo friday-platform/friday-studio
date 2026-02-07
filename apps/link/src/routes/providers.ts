@@ -1,6 +1,8 @@
+import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { factory } from "../factory.ts";
 import { registry } from "../providers/registry.ts";
+import { DynamicProviderInputSchema } from "../providers/types.ts";
 
 /**
  * Provider catalog router.
@@ -8,21 +10,20 @@ import { registry } from "../providers/registry.ts";
  */
 export const providersRouter = factory
   .createApp()
-  .get("/", (c) => {
-    const providers = registry
-      .list()
-      .map((p) => ({
-        id: p.id,
-        displayName: p.displayName,
-        description: p.description,
-        iconUrl: p.iconUrl ?? null,
-        docsUrl: p.docsUrl ?? null,
-      }));
+  .get("/", async (c) => {
+    const allProviders = await registry.list();
+    const providers = allProviders.map((p) => ({
+      id: p.id,
+      displayName: p.displayName,
+      description: p.description,
+      iconUrl: p.iconUrl ?? null,
+      docsUrl: p.docsUrl ?? null,
+    }));
     return c.json({ providers });
   })
-  .get("/:id", (c) => {
+  .get("/:id", async (c) => {
     const { id } = c.req.param();
-    const provider = registry.get(id);
+    const provider = await registry.get(id);
 
     if (!provider) {
       return c.json(
@@ -78,5 +79,33 @@ export const providersRouter = factory
               : false,
       },
       200,
+    );
+  })
+  .delete("/:id", async (c) => {
+    const { id } = c.req.param();
+    const deleted = await registry.deleteDynamicProvider(id);
+    if (!deleted) {
+      return c.json(
+        { ok: false, error: `Provider "${id}" not found or is a built-in provider` },
+        404,
+      );
+    }
+    return c.json({ ok: true }, 200);
+  })
+  .post("/", zValidator("json", z.object({ provider: DynamicProviderInputSchema })), async (c) => {
+    const { provider } = c.req.valid("json");
+
+    // Atomic store - handles both static and dynamic conflict detection
+    const stored = await registry.storeDynamicProvider(provider);
+    if (!stored) {
+      return c.json({ ok: false, error: `Provider "${provider.id}" already exists` }, 409);
+    }
+
+    return c.json(
+      {
+        ok: true,
+        provider: { id: provider.id, type: provider.type, displayName: provider.displayName },
+      },
+      201,
     );
   });

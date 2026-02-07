@@ -356,7 +356,7 @@ Output: {
         executionType: "llm" as const,
       }));
 
-    const mcpServersForValidation = generateMCPServers(agentsForMCP);
+    const mcpServersForValidation = await generateMCPServers(agentsForMCP);
 
     // Validate Link credentials for MCP servers BEFORE execution
     // Fail fast if credentials are missing or ambiguous
@@ -435,7 +435,7 @@ Output: {
     }
 
     // Regenerate MCP servers with the collected credential bindings
-    const mcpServers = generateMCPServers(agentsForMCP, credentialBindings);
+    const mcpServers = await generateMCPServers(agentsForMCP, credentialBindings);
 
     logger.info("Enhanced planning succeeded", {
       stepCount: validSteps.length,

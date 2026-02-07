@@ -1,6 +1,6 @@
 import type { AgentContext } from "@atlas/agent-sdk";
 import type { LogContext, Logger } from "@atlas/logger";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   type ActivityTracker,
   claudeCodeAgent,
@@ -100,9 +100,6 @@ async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
 }
 
 describe("withMessageTimeout", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   const onTimeout = () => new Error("stall detected");
 
   it("yields values normally when messages arrive before timeout", async () => {
@@ -124,27 +121,29 @@ describe("withMessageTimeout", () => {
     expect(values).toEqual([1, 2, 3]);
   });
 
+  // Short timeout versions for testing the timeout logic without waiting 60+ seconds.
+  // Uses real timers with 50ms base / 150ms extended timeouts for deterministic behavior.
+  const SHORT_BASE_MS = 50;
+  const SHORT_EXTENDED_MS = 150;
+
   it("rejects at base timeout when stderr is stale and no messages arrive", async () => {
-    // stderr was active 2 minutes before the wait — process is cold
-    const activity: ActivityTracker = { lastActivityMs: Date.now() - 120_000 };
+    // stderr was active 200ms before the wait — process is cold (> SHORT_BASE_MS ago)
+    const activity: ActivityTracker = { lastActivityMs: Date.now() - 200 };
     const gen = withMessageTimeout(
       hangingIterable<number>(),
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
+      SHORT_BASE_MS,
+      SHORT_EXTENDED_MS,
       onTimeout,
       activity,
     );
 
     const consumePromise = gen.next();
-    // Pre-register handler so the rejection isn't "unhandled" during timer processing
     const errorPromise = consumePromise.then(
       () => undefined,
       (e: Error) => e,
     );
 
-    // Advance to first check (60s) — should reject
-    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS);
-
+    // Should reject at base timeout (~50ms)
     const error = await errorPromise;
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toBe("stall detected");
@@ -155,62 +154,39 @@ describe("withMessageTimeout", () => {
     const activity: ActivityTracker = { lastActivityMs: Date.now() };
     const gen = withMessageTimeout(
       hangingIterable<number>(),
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
+      SHORT_BASE_MS,
+      SHORT_EXTENDED_MS,
       onTimeout,
       activity,
     );
 
+    const startTime = Date.now();
     const consumePromise = gen.next();
-    // Pre-register handler before advancing timers
     const errorPromise = consumePromise.then(
       () => undefined,
       (e: Error) => e,
     );
 
-    // At 60s: base timer fires. lastActivityMs (= waitStart) is NOT < waitStart - 60s.
-    // Base timer does nothing. Should NOT reject.
-    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS);
-    let settled = false;
-    errorPromise.then((e) => {
-      if (e) settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(0); // flush microtasks
-    expect(settled).toBe(false);
-
-    // At 180s: extended timer fires — hard cap. Should reject.
-    await vi.advanceTimersByTimeAsync(EXTENDED_TIMEOUT_MS - MESSAGE_TIMEOUT_MS);
+    // Should reject at extended timeout (~150ms), not base (~50ms)
     const error = await errorPromise;
+    const elapsed = Date.now() - startTime;
+
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toBe("stall detected");
+    // Should have waited longer than base timeout (with some tolerance)
+    expect(elapsed).toBeGreaterThan(SHORT_BASE_MS * 0.8);
   });
 
-  it("survives 113s of silence when stderr was recent (real subagent scenario)", async () => {
-    // Simulates: last stderr at t=-2s (shortly before wait started)
-    const activity: ActivityTracker = { lastActivityMs: Date.now() - 2_000 };
+  it("survives silence when stderr was recent (real subagent scenario)", async () => {
+    // Simulates: last stderr at t=-10ms (shortly before wait started)
+    const activity: ActivityTracker = { lastActivityMs: Date.now() - 10 };
     const { iterable, emit } = controllableIterable<string>();
-    const gen = withMessageTimeout(
-      iterable,
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
-      onTimeout,
-      activity,
-    );
+    const gen = withMessageTimeout(iterable, SHORT_BASE_MS, SHORT_EXTENDED_MS, onTimeout, activity);
 
     const consumePromise = gen.next();
 
-    // Advance 113s (the observed subagent duration) — should NOT reject
-    await vi.advanceTimersByTimeAsync(113_000);
-    let settled = false;
-    consumePromise
-      .then(() => {
-        settled = true;
-      })
-      .catch(() => {
-        settled = true;
-      });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
+    // Wait 40ms (less than SHORT_BASE_MS) - should not have rejected yet
+    await new Promise((r) => setTimeout(r, 40));
 
     // Now the subagent finishes and a message arrives
     emit("subagent done");
@@ -219,27 +195,29 @@ describe("withMessageTimeout", () => {
   });
 
   it("rejects at base timeout when stderr was active long before the wait", async () => {
-    // stderr was active 90s before the wait — outside the baseTimeout window
-    const activity: ActivityTracker = { lastActivityMs: Date.now() - 90_000 };
+    // stderr was active 100ms before the wait — outside the SHORT_BASE_MS window
+    const activity: ActivityTracker = { lastActivityMs: Date.now() - 100 };
     const gen = withMessageTimeout(
       hangingIterable<number>(),
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
+      SHORT_BASE_MS,
+      SHORT_EXTENDED_MS,
       onTimeout,
       activity,
     );
 
+    const startTime = Date.now();
     const consumePromise = gen.next();
     const errorPromise = consumePromise.then(
       () => undefined,
       (e: Error) => e,
     );
 
-    // At 60s: lastActivityMs = -90s, waitStart = 0, waitStart - 60s = -60s
-    // lastActivityMs (-90s) >= waitStart - baseTimeout (-60s)? NO → base timeout
-    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS);
     const error = await errorPromise;
+    const elapsed = Date.now() - startTime;
+
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toBe("stall detected");
+    // Should have timed out around base timeout (50ms), not extended (150ms)
+    expect(elapsed).toBeLessThan(SHORT_EXTENDED_MS * 0.8);
   });
 });

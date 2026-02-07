@@ -331,6 +331,16 @@ export const app = createApp(defaultStorage, defaultOAuthService, platformRouteR
 // Export app type for RPC client (hc<LinkRoutes>())
 export type LinkRoutes = typeof app;
 
+export type {
+  DynamicApiKeyProviderInput,
+  DynamicOAuthProviderInput,
+  DynamicProviderInput,
+} from "./providers/types.ts";
+export {
+  DynamicApiKeyProviderInputSchema,
+  DynamicOAuthProviderInputSchema,
+  DynamicProviderInputSchema,
+} from "./providers/types.ts";
 // Export types for external use
 export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts";
 

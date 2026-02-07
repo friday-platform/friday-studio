@@ -1,7 +1,11 @@
 import type { BundledAgentConfigField } from "@atlas/bundled-agents/registry";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
+import { createLogger } from "@atlas/logger";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
-import type { RequiredConfigField } from "./schemas.ts";
+import type { MCPServerMetadata, RequiredConfigField } from "./schemas.ts";
+import { getMCPRegistryAdapter } from "./storage/index.ts";
+
+const logger = createLogger({ component: "mcp-registry:deterministic-matching" });
 
 /**
  * Normalizes a need string for consistent matching.
@@ -147,6 +151,7 @@ const MIN_FUZZY_MATCH_LENGTH = 3;
 /**
  * Maps a single need to MCP servers using flexible matching on domains.
  * Returns all MCP servers whose domains match the need.
+ * Includes both static servers from the registry and dynamic servers from storage.
  *
  * Matching logic (in order of priority):
  * 1. Exact match: need="slack" matches domain="slack"
@@ -156,7 +161,7 @@ const MIN_FUZZY_MATCH_LENGTH = 3;
  * @param need - Single capability requirement
  * @returns Array of matched MCP servers (0, 1, or multiple matches)
  */
-export function mapNeedToMCPServers(need: string): MCPServerMatch[] {
+export async function mapNeedToMCPServers(need: string): Promise<MCPServerMatch[]> {
   if (!need || need.trim() === "") {
     return [];
   }
@@ -164,7 +169,28 @@ export function mapNeedToMCPServers(need: string): MCPServerMatch[] {
   const needNormalized = normalizeNeed(need);
   const matches: MCPServerMatch[] = [];
 
-  for (const server of Object.values(mcpServersRegistry.servers)) {
+  // Fetch dynamic servers from storage (gracefully fallback to static-only if unavailable)
+  let dynamicServers: MCPServerMetadata[] = [];
+  try {
+    const adapter = await getMCPRegistryAdapter();
+    dynamicServers = await adapter.list();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.warn("Failed to load dynamic MCP servers, using static registry only", {
+      error: errorMessage,
+      stack: errorStack,
+      need: needNormalized,
+    });
+  }
+
+  // Merge static and dynamic servers (static takes precedence if same ID)
+  const staticServers = Object.values(mcpServersRegistry.servers);
+  const staticIds = new Set(staticServers.map((s) => s.id));
+  const uniqueDynamicServers = dynamicServers.filter((d) => !staticIds.has(d.id));
+  const allServers: MCPServerMetadata[] = [...staticServers, ...uniqueDynamicServers];
+
+  for (const server of allServers) {
     const matchedDomains: string[] = [];
 
     for (const domain of server.domains) {
@@ -204,6 +230,15 @@ export function mapNeedToMCPServers(need: string): MCPServerMatch[] {
       });
     }
   }
+
+  logger.debug("MCP server matching complete", {
+    need: needNormalized,
+    staticCount: staticServers.length,
+    dynamicCount: uniqueDynamicServers.length,
+    totalServers: allServers.length,
+    matchCount: matches.length,
+    matchedServerIds: matches.map((m) => m.serverId),
+  });
 
   return matches;
 }

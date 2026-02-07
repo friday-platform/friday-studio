@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { generateMCPServers } from "./mcp-servers.ts";
 
 describe("generateMCPServers credential bindings", () => {
-  it("applies credential bindings by serverId", () => {
+  it("applies credential bindings by serverId", async () => {
     // Use "github" - matches MCP server domain but NOT bundled agent capability
     const agents: WorkspacePlan["agents"] = [
       {
@@ -25,7 +25,7 @@ describe("generateMCPServers credential bindings", () => {
       },
     ];
 
-    const servers = generateMCPServers(agents, credentials);
+    const servers = await generateMCPServers(agents, credentials);
 
     const githubServer = servers.find((s) => s.id === "github");
     expect(githubServer?.config.env?.GH_TOKEN).toEqual({
@@ -35,7 +35,7 @@ describe("generateMCPServers credential bindings", () => {
     });
   });
 
-  it("ignores bindings for servers not in result", () => {
+  it("ignores bindings for servers not in result", async () => {
     // Agent needs "linear" which maps to linear MCP server
     const agents: WorkspacePlan["agents"] = [
       { id: "linear-agent", name: "Linear Agent", description: "Tracks issues", needs: ["linear"] },
@@ -53,7 +53,7 @@ describe("generateMCPServers credential bindings", () => {
       },
     ];
 
-    const servers = generateMCPServers(agents, credentials);
+    const servers = await generateMCPServers(agents, credentials);
 
     // No github server in result, binding not applied
     const githubServer = servers.find((s) => s.id === "github");

@@ -429,12 +429,14 @@ describe("Batch-get endpoint", () => {
 
     expect(returnedFile).toBeDefined();
     expect(returnedSummary).toBeDefined();
+    if (!returnedFile) throw new Error("Expected returnedFile to be defined");
+    if (!returnedSummary) throw new Error("Expected returnedSummary to be defined");
 
     // File artifact should have contents
-    expect(returnedFile?.contents).toEqual(txtContent);
+    expect(returnedFile.contents).toEqual(txtContent);
 
     // Summary artifact should NOT have contents (not a file type)
-    expect(returnedSummary?.contents).toBeUndefined();
+    expect(returnedSummary.contents).toBeUndefined();
   });
 });
 

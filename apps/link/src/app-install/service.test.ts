@@ -213,10 +213,9 @@ describe("AppInstallService", () => {
       // First initiate to get valid state
       const { authorizationUrl } = await service.initiateInstall("test-slack");
       const state = new URL(authorizationUrl).searchParams.get("state");
-      expect(state).toBeDefined();
+      if (!state) throw new Error("state should be defined");
 
       // Complete install
-      if (!state) throw new Error("state should be defined");
       const result = await service.completeInstall(state, "test-code-123");
 
       expect(result.credential.provider).toEqual("test-slack");

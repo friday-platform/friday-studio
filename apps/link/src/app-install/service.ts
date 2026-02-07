@@ -18,7 +18,7 @@ import { type AppInstallState, decodeAppInstallState, encodeAppInstallState } fr
 import { AppInstallError } from "./errors.ts";
 
 /** Minimal registry interface - service only needs get() */
-type ProviderLookup = { get(id: string): ProviderDefinition | undefined };
+type ProviderLookup = { get(id: string): Promise<ProviderDefinition | undefined> };
 
 /**
  * AppInstallService orchestrates app installation flows end-to-end.
@@ -58,7 +58,7 @@ export class AppInstallService {
     redirectUri?: string,
     userId?: string,
   ): Promise<{ authorizationUrl: string }> {
-    const provider = this.requireAppInstallProvider(providerId);
+    const provider = await this.requireAppInstallProvider(providerId);
     // Provider-namespaced callback URL for readability (e.g., /v1/callback/slack)
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
 
@@ -108,7 +108,7 @@ export class AppInstallService {
     const { p: providerId, r: redirectUri, u: userId } = decoded;
 
     // 2. Get provider from registry
-    const provider = this.requireAppInstallProvider(providerId);
+    const provider = await this.requireAppInstallProvider(providerId);
 
     // 3. Get install result — either reinstall (no code) or normal OAuth exchange
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
@@ -147,7 +147,7 @@ export class AppInstallService {
    * Returns null when provider doesn't support reconnection or has no installations.
    */
   async reconnect(providerId: string, userId?: string): Promise<Credential[] | null> {
-    const provider = this.requireAppInstallProvider(providerId);
+    const provider = await this.requireAppInstallProvider(providerId);
 
     if (!provider.listInstallationIds || !provider.completeReinstallation) {
       return null;
@@ -238,7 +238,7 @@ export class AppInstallService {
    * ```
    */
   async reconcileRoute(providerId: string, credentialId: string, userId: string): Promise<void> {
-    const provider = this.requireAppInstallProvider(providerId);
+    const provider = await this.requireAppInstallProvider(providerId);
     const credential = await this.credentialStorage.get(credentialId, userId);
 
     if (!credential || credential.provider !== providerId) {
@@ -275,7 +275,7 @@ export class AppInstallService {
    * @throws {AppInstallError} If credential not found or provider mismatch
    */
   async uninstall(providerId: string, credentialId: string, userId: string): Promise<void> {
-    const provider = this.requireAppInstallProvider(providerId);
+    const provider = await this.requireAppInstallProvider(providerId);
     const credential = await this.credentialStorage.get(credentialId, userId);
 
     if (!credential) {
@@ -313,8 +313,8 @@ export class AppInstallService {
    * Get app install provider from registry and validate type.
    * @throws {AppInstallError} If provider not found or not app_install type
    */
-  private requireAppInstallProvider(providerId: string): AppInstallProvider {
-    const provider = this.registry.get(providerId);
+  private async requireAppInstallProvider(providerId: string): Promise<AppInstallProvider> {
+    const provider = await this.registry.get(providerId);
     if (!provider) {
       throw new AppInstallError("PROVIDER_NOT_FOUND", `Provider not found: ${providerId}`);
     }

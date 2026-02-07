@@ -1,6 +1,7 @@
 /**
  * MCP server enricher - maps agent needs to MCP server configurations
- * Uses existing deterministic matching from workspace-planner + blessed registry only
+ * Uses deterministic matching from workspace-planner, checking both static
+ * (blessed) registry and dynamic registry (KV storage) for server configs.
  */
 
 import type { MCPServerConfig } from "@atlas/config";
@@ -10,6 +11,7 @@ import {
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 
 /**
  * Result type for MCP server generation
@@ -33,10 +35,10 @@ export interface MCPServerResult {
  * @param credentials - Pre-resolved credential bindings from workspace-planner
  * @returns Array of MCP server configs ready for workspace.yml
  */
-export function generateMCPServers(
+export async function generateMCPServers(
   agents: WorkspacePlan["agents"],
   credentials?: CredentialBinding[],
-): MCPServerResult[] {
+): Promise<MCPServerResult[]> {
   // Collect needs from agents that DON'T have bundled agent matches
   const needsForMCP = new Set<string>();
 
@@ -60,7 +62,7 @@ export function generateMCPServers(
 
   for (const need of needsForMCP) {
     // Use deterministic matching from blessed registry (same as workspace-planner)
-    const mcpMatches = mapNeedToMCPServers(need);
+    const mcpMatches = await mapNeedToMCPServers(need);
 
     if (mcpMatches.length > 0) {
       const match = mcpMatches[0];
@@ -73,8 +75,15 @@ export function generateMCPServers(
         continue;
       }
 
-      // Get config from blessed registry
-      const serverMetadata = mcpServersRegistry.servers[serverId];
+      // Get config from static registry first, then fallback to dynamic
+      let serverMetadata = mcpServersRegistry.servers[serverId];
+
+      if (!serverMetadata) {
+        // Fallback to dynamic registry (KV storage)
+        const adapter = await getMCPRegistryAdapter();
+        serverMetadata = (await adapter.get(serverId)) ?? undefined;
+      }
+
       if (serverMetadata?.configTemplate) {
         const config = structuredClone(serverMetadata.configTemplate);
 

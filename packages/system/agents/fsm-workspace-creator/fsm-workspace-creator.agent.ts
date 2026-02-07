@@ -103,7 +103,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         data: { toolName: "FSM Creator", content: "Verifying credentials" },
       });
 
-      const mcpServersPrecheck = generateMCPServers(plan.agents, plan.credentials);
+      const mcpServersPrecheck = await generateMCPServers(plan.agents, plan.credentials);
       const preflightResult = validateCredentials(mcpServersPrecheck, plan.credentials);
 
       if (!preflightResult.valid) {
@@ -137,7 +137,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         data: { toolName: "FSM Creator", content: "Generating MCP server configurations" },
       });
 
-      const mcpServers = generateMCPServers(plan.agents, plan.credentials);
+      const mcpServers = await generateMCPServers(plan.agents, plan.credentials);
 
       logger.info("MCP generation complete", {
         count: mcpServers.length,

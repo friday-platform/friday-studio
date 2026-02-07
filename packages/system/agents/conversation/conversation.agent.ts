@@ -574,6 +574,8 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           "artifacts_get_by_chat",
           // System
           "system_version",
+          // MCP server registration
+          "connect_mcp_server",
         ]);
 
         // Wrap platform tools to inject session context (datetime for timezone-aware operations)

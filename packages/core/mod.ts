@@ -39,8 +39,7 @@ export {
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";
-// MCP Registry
-export { mcpServersRegistry } from "./src/mcp-registry/registry-consolidated.ts";
+// MCP Registry - use @atlas/core/mcp-registry/registry-consolidated subpath to avoid pulling in agent-loader
 export { validateRequiredFields } from "./src/mcp-registry/requirement-validator.ts";
 export type {
   MCPServerMetadata,

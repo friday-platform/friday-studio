@@ -10,40 +10,27 @@ const logger = createLogger({ name: "artifact-storage" });
 /**
  * Create artifact storage adapter based on environment configuration.
  *
+ * Auto-detects adapter from CORTEX_URL presence:
+ * - If CORTEX_URL is set: Uses Cortex adapter (ATLAS_KEY read at request time)
+ * - Otherwise: Uses local adapter
+ *
  * Environment Variables:
- * - ARTIFACT_STORAGE_ADAPTER: "local" (default) or "cortex"
- * - ARTIFACT_STORAGE_PATH: Override default KV path (local only)
- * - CORTEX_URL: Cortex service URL (required for cortex adapter)
+ * - CORTEX_URL: Cortex service URL (presence enables Cortex adapter)
  * - ATLAS_KEY: JWT token for Cortex authentication (read at request time, not startup)
+ * - ARTIFACT_STORAGE_PATH: Override default KV path (local only)
  */
 function createArtifactStorageAdapter(): ArtifactStorageAdapter {
-  const adapterType = process.env.ARTIFACT_STORAGE_ADAPTER || "local";
+  const cortexUrl = process.env.CORTEX_URL;
 
-  switch (adapterType) {
-    case "local": {
-      const kvPath = process.env.ARTIFACT_STORAGE_PATH;
-      logger.info("Using LocalStorageAdapter", { kvPath: kvPath || "default" });
-      return new LocalStorageAdapter(kvPath);
-    }
-
-    case "cortex": {
-      const cortexUrl = process.env.CORTEX_URL;
-      if (!cortexUrl) {
-        throw new Error(
-          "CORTEX_URL environment variable is required when ARTIFACT_STORAGE_ADAPTER=cortex",
-        );
-      }
-
-      // ATLAS_KEY is read from env at request time, not module load (same pattern as Link routes)
-      logger.info("Using CortexStorageAdapter", { cortexUrl });
-      return new CortexStorageAdapter(cortexUrl);
-    }
-
-    default:
-      throw new Error(
-        `Unknown artifact storage adapter type: ${adapterType}. Valid options: local, cortex`,
-      );
+  if (cortexUrl) {
+    // ATLAS_KEY is read from env at request time, not module load (same pattern as Link routes)
+    logger.info("Using CortexStorageAdapter", { cortexUrl });
+    return new CortexStorageAdapter(cortexUrl);
   }
+
+  const kvPath = process.env.ARTIFACT_STORAGE_PATH;
+  logger.info("Using LocalStorageAdapter", { kvPath: kvPath || "default" });
+  return new LocalStorageAdapter(kvPath);
 }
 
 // Create singleton adapter instance

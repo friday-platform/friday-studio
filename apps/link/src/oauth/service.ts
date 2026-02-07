@@ -77,7 +77,7 @@ export class OAuthService {
     userId?: string,
   ): Promise<{ authorizationUrl: string; state: string }> {
     // 1. Get provider from registry, verify OAuth type
-    const provider = this.registry.get(providerId);
+    const provider = await this.registry.get(providerId);
     if (!provider) {
       throw new OAuthServiceError("PROVIDER_NOT_FOUND", `Provider '${providerId}' not found`);
     }
@@ -196,7 +196,7 @@ export class OAuthService {
     } = decoded;
 
     // 2. Get provider from registry
-    const provider = this.registry.get(providerId);
+    const provider = await this.registry.get(providerId);
     if (!provider) {
       throw new OAuthServiceError("PROVIDER_NOT_FOUND", `Provider '${providerId}' not found`);
     }
@@ -358,7 +358,7 @@ export class OAuthService {
    */
   private async doRefresh(credential: OAuthCredential, userId: string): Promise<OAuthCredential> {
     // 1. Get provider, verify OAuth type
-    const provider = this.registry.get(credential.provider);
+    const provider = await this.registry.get(credential.provider);
     if (!provider) {
       throw new OAuthServiceError(
         "PROVIDER_NOT_FOUND",

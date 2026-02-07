@@ -45,7 +45,7 @@ export function createOAuthRoutes(
         const providerId = c.req.param("provider");
 
         // Validate provider exists and is OAuth type
-        const provider = registry.get(providerId);
+        const provider = await registry.get(providerId);
         if (!provider) {
           return c.json({ error: "provider_not_found" }, 404);
         }

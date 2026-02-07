@@ -596,10 +596,9 @@ describe("Static OAuth Integration", async () => {
 
     expect(initiateRes.status).toEqual(302);
     const authUrl = initiateRes.headers.get("Location");
-    expect(authUrl).toBeDefined();
+    if (!authUrl) throw new Error("Expected authUrl");
 
     // Verify URL components
-    if (!authUrl) throw new Error("authUrl should be defined");
     const authUrlObj = new URL(authUrl);
     expect(authUrlObj.origin + authUrlObj.pathname).toEqual(`${mockServer.issuer}/authorize`);
     expect(authUrlObj.searchParams.get("client_id")).toEqual("test-client-id");

@@ -158,8 +158,8 @@ describe("formatSessionDate", () => {
     expect(result.includes("October 28 at")).toEqual(true);
     // Should contain time with am/pm
     expect(/\d{1,2}:\d{2}(am|pm)/.test(result)).toEqual(true);
-    // Should contain timezone abbreviation
-    expect(/[A-Z]{2,4}$/.test(result)).toEqual(true);
+    // Should contain timezone info (varies by locale: PST, GMT, GMT+1, etc.)
+    expect(/[A-Z]{2,4}$|GMT[+-]\d{1,2}$/.test(result)).toEqual(true);
   });
 
   it("midnight as 12am", () => {

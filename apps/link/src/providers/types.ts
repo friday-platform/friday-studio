@@ -401,3 +401,54 @@ export function defineAppInstallProvider(
  * Use the type discriminator to narrow to specific provider type.
  */
 export type ProviderDefinition = ApiKeyProvider | OAuthProvider | AppInstallProvider;
+
+// === DYNAMIC PROVIDER INPUT SCHEMAS ===
+// Wire-safe types for API/storage. Hydrated to full ProviderDefinition at runtime.
+
+/**
+ * Dynamic OAuth provider input (discovery mode only).
+ * Static OAuth requires client credentials - use existing static providers.
+ */
+export const DynamicOAuthProviderInputSchema = z.object({
+  type: z.literal("oauth"),
+  id: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .max(64),
+  displayName: z.string().min(1).max(100),
+  description: z.string().min(1).max(200),
+  oauthConfig: z.object({
+    mode: z.literal("discovery"),
+    serverUrl: z.httpUrl(),
+    scopes: z.array(z.string()).optional(),
+  }),
+});
+
+export type DynamicOAuthProviderInput = z.infer<typeof DynamicOAuthProviderInputSchema>;
+
+/**
+ * Dynamic API key provider input.
+ */
+export const DynamicApiKeyProviderInputSchema = z.object({
+  type: z.literal("apikey"),
+  id: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .max(64),
+  displayName: z.string().min(1).max(100),
+  description: z.string().min(1).max(200),
+  secretSchema: z.record(z.string(), z.literal("string")).default({ api_key: "string" }),
+  setupInstructions: z.string().optional(),
+});
+
+export type DynamicApiKeyProviderInput = z.infer<typeof DynamicApiKeyProviderInputSchema>;
+
+/**
+ * Union of all dynamic provider inputs.
+ */
+export const DynamicProviderInputSchema = z.discriminatedUnion("type", [
+  DynamicOAuthProviderInputSchema,
+  DynamicApiKeyProviderInputSchema,
+]);
+
+export type DynamicProviderInput = z.infer<typeof DynamicProviderInputSchema>;

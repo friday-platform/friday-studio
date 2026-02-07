@@ -23,6 +23,7 @@ import {
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -431,13 +432,18 @@ ${integrationsXml}`,
         // STEP 2: No bundled match - try MCP servers (deterministic keyword mapping)
         const mcpMatchesByNeed = new Map<string, MCPServerMatch[]>();
         for (const need of agent.needs) {
-          const mcpMatches = mapNeedToMCPServers(need);
+          const mcpMatches: MCPServerMatch[] = await mapNeedToMCPServers(need);
           mcpMatchesByNeed.set(need, mcpMatches);
           if (mcpMatches.length === 1) {
             // Single MCP match - validate required fields with configTemplate
             const mcpMatch = mcpMatches.at(0);
             if (mcpMatch) {
-              const serverMeta = mcpServersRegistry.servers[mcpMatch.serverId];
+              let serverMeta = mcpServersRegistry.servers[mcpMatch.serverId];
+              if (!serverMeta) {
+                // Fallback to dynamic registry (KV storage)
+                const adapter = await getMCPRegistryAdapter();
+                serverMeta = (await adapter.get(mcpMatch.serverId)) ?? undefined;
+              }
               const validationResult = await validateRequiredFields(
                 mcpMatch.requiredConfig,
                 serverMeta?.configTemplate,

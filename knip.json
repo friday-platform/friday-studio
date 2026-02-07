@@ -52,8 +52,11 @@
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/system": {
+      "entry": ["**/*.test.ts", "agents/conversation/tools/connect-mcp-server.ts!"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/utils": { "entry": ["src/temp.server.ts!"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
@@ -99,8 +102,13 @@
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
     },
     "tools/evals-2": {
-      "entry": ["agents/**/*.eval.ts!", "lib/*.ts!", "evalite.config.ts!"],
-      "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!", "*.ts!"]
+      "entry": ["agents/**/*.eval.ts!", "tools/**/*.eval.ts!", "lib/*.ts!", "evalite.config.ts!"],
+      "project": [
+        "agents/**/*.{ts,tsx,js,jsx}!",
+        "tools/**/*.{ts,tsx,js,jsx}!",
+        "lib/**/*.{ts,tsx,js,jsx}!",
+        "*.ts!"
+      ]
     }
   },
   "ignore": [
@@ -114,7 +122,7 @@
     "apps/atlas-installer/**",
     "**/$lib/build-info"
   ],
-  "ignoreDependencies": ["@std/tar"],
+  "ignoreDependencies": ["@std/tar", "@std/assert"],
   "ignoreBinaries": ["svelte-kit"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {

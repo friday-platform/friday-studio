@@ -4,6 +4,7 @@ import type {
   ChatStorageRoutes,
   DaemonRoutes,
   HealthRoutes,
+  MCPRegistryRoutes,
   MeRoutes,
   SessionHistoryRoutes,
   SessionsRoutes,
@@ -36,6 +37,7 @@ export const client = {
   sessionHistory: hc<SessionHistoryRoutes>(`${baseUrl}/api/sessions-history`),
   sessions: hc<SessionsRoutes>(`${baseUrl}/api/sessions`),
   workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
+  mcpRegistry: hc<MCPRegistryRoutes>(`${baseUrl}/api/mcp-registry`),
 };
 
 /**

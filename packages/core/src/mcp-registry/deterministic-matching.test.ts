@@ -11,63 +11,62 @@ describe("matchBundledAgents", () => {
   it("matches slack capability case-insensitively", () => {
     const matches = matchBundledAgents(["slack"]);
 
-    expect(matches.length >= 1).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
     const slackMatch = matches.find((m) => m.agentId === "slack");
-    expect(slackMatch !== undefined).toEqual(true);
-    expect(slackMatch !== undefined && slackMatch.matchedCapabilities.length > 0).toEqual(true);
+    expect(slackMatch).toBeDefined();
+    expect(slackMatch?.matchedCapabilities.length).toBeGreaterThan(0);
   });
 
   it("matches email capability", () => {
     const matches = matchBundledAgents(["email"]);
 
-    expect(matches.length >= 1).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
     const emailMatch = matches.find((m) => m.agentId === "email");
-    expect(emailMatch !== undefined).toEqual(true);
+    expect(emailMatch).toBeDefined();
   });
 
   it("returns multiple matches for generic need", () => {
     const matches = matchBundledAgents(["notifications"]);
 
     // Both slack and email have "notifications" capability
-    expect(matches.length >= 2).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
   it("returns empty array for no matches", () => {
     const matches = matchBundledAgents(["nonexistent-capability"]);
 
-    expect(matches.length).toEqual(0);
+    expect(matches).toHaveLength(0);
   });
 
   it("matches case-insensitively", () => {
     const matches = matchBundledAgents(["SLACK"]);
 
-    expect(matches.length >= 1).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("returns empty for empty needs", () => {
     const matches = matchBundledAgents([]);
 
-    expect(matches.length).toEqual(0);
+    expect(matches).toHaveLength(0);
   });
 
   it("handles whitespace-only needs", () => {
     const matches = matchBundledAgents(["  ", "\t", "\n"]);
 
-    expect(matches.length).toEqual(0);
+    expect(matches).toHaveLength(0);
   });
 
   it("trims whitespace from needs", () => {
     const matches = matchBundledAgents(["  slack  "]);
 
-    expect(matches.length >= 1).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("gmail resolves to email agent", () => {
     const matches = matchBundledAgents(["gmail"]);
 
-    expect(matches.length).toEqual(1);
-    const match = matches[0];
-    expect(match !== undefined && match.agentId === "email").toEqual(true);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.agentId).toBe("email");
   });
 
   it("google-sheets does not match google-calendar agent", () => {
@@ -88,31 +87,31 @@ describe("matchBundledAgents", () => {
 });
 
 describe("mapNeedToMCPServers", () => {
-  it("matches github to github MCP server", () => {
-    const matches = mapNeedToMCPServers("github");
+  it("matches github to github MCP server", async () => {
+    const matches = await mapNeedToMCPServers("github");
 
-    expect(matches.length >= 1).toEqual(true);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
     const githubMatch = matches.find((m) => m.serverId.includes("github"));
-    expect(githubMatch !== undefined).toEqual(true);
+    expect(githubMatch).toBeDefined();
   });
 
-  it("returns empty for empty need", () => {
-    const matches = mapNeedToMCPServers("");
+  it("returns empty for empty need", async () => {
+    const matches = await mapNeedToMCPServers("");
 
-    expect(matches.length).toEqual(0);
+    expect(matches).toHaveLength(0);
   });
 
-  it("matches case-insensitively", () => {
-    const matchesLower = mapNeedToMCPServers("github");
-    const matchesUpper = mapNeedToMCPServers("GITHUB");
+  it("matches case-insensitively", async () => {
+    const matchesLower = await mapNeedToMCPServers("github");
+    const matchesUpper = await mapNeedToMCPServers("GITHUB");
 
-    expect(matchesLower.length).toEqual(matchesUpper.length);
+    expect(matchesLower).toHaveLength(matchesUpper.length);
   });
 
-  it("returns empty for nonexistent need", () => {
-    const matches = mapNeedToMCPServers("completely-fake-service-xyz");
+  it("returns empty for nonexistent need", async () => {
+    const matches = await mapNeedToMCPServers("completely-fake-service-xyz");
 
-    expect(matches.length).toEqual(0);
+    expect(matches).toHaveLength(0);
   });
 });
 
@@ -124,14 +123,14 @@ describe("findUnmatchedNeeds", () => {
 
     const unmatched = findUnmatchedNeeds(needs, bundledMatches, mcpMatches);
 
-    expect(unmatched.length).toEqual(0);
+    expect(unmatched).toHaveLength(0);
   });
 
-  it("returns needs with no MCP matches", () => {
+  it("returns needs with no MCP matches", async () => {
     const needs = ["github", "fake-service"];
     const bundledMatches: BundledAgentMatch[] = [];
-    const mcpMatches = new Map([
-      ["github", mapNeedToMCPServers("github")],
+    const mcpMatches = new Map<string, MCPServerMatch[]>([
+      ["github", await mapNeedToMCPServers("github")],
       ["fake-service", []],
     ]);
 
@@ -143,7 +142,7 @@ describe("findUnmatchedNeeds", () => {
   it("returns all needs if no matches at all", () => {
     const needs = ["fake1", "fake2"];
     const bundledMatches: BundledAgentMatch[] = [];
-    const mcpMatches = new Map([
+    const mcpMatches = new Map<string, MCPServerMatch[]>([
       ["fake1", []],
       ["fake2", []],
     ]);

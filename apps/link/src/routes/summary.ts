@@ -33,9 +33,12 @@ export function createSummaryRoutes(storage: StorageAdapter) {
 
         try {
           // Get all providers from registry
-          const providers = registry
-            .list()
-            .map((p) => ({ id: p.id, displayName: p.displayName, type: p.type }));
+          const allProviders = await registry.list();
+          const providers = allProviders.map((p) => ({
+            id: p.id,
+            displayName: p.displayName,
+            type: p.type,
+          }));
 
           // Get credentials from both types
           const oauthCredentials = await storage.list("oauth", userId);

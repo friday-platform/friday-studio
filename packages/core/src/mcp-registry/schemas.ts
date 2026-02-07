@@ -1,4 +1,4 @@
-import type { MCPServerConfig } from "@atlas/config";
+import { MCPServerConfigSchema } from "@atlas/agent-sdk";
 import { z } from "zod";
 
 /**
@@ -23,35 +23,38 @@ export type RequiredConfigField = z.infer<typeof RequiredConfigFieldSchema>;
 /**
  * MCP Source - where the server was discovered
  */
-export type MCPSource = "agents" | "static" | "web";
+export const MCPSourceSchema = z.enum(["agents", "static", "web"]);
+export type MCPSource = z.infer<typeof MCPSourceSchema>;
 
 /**
  * Enhanced MCP server metadata with domains and required config
- * Uses the official MCPServerConfig from @atlas/config for configTemplate
+ * Uses the official MCPServerConfigSchema from @atlas/agent-sdk for configTemplate
  */
-export type MCPServerMetadata = {
+export const MCPServerMetadataSchema = z.object({
   // Identity
-  id: string;
-  name: string;
+  id: z.string(),
+  name: z.string(),
   /** Semantic keywords for capability matching (e.g., "calendar", "gcal") */
-  domains: string[];
+  domains: z.array(z.string()),
   /** URL domains for URL-to-MCP mapping (e.g., "linear.app", "github.com") */
-  urlDomains?: string[];
+  urlDomains: z.array(z.string()).optional(),
 
   // Description & Constraints (for LLM prompt injection)
   /** What this server does - shown to LLMs for capability selection */
-  description?: string;
+  description: z.string().optional(),
   /** Limitations or usage guidance - helps LLMs choose between similar capabilities */
-  constraints?: string;
+  constraints: z.string().optional(),
 
   // Security & Quality
-  securityRating: SecurityRating;
-  source: MCPSource;
+  securityRating: SecurityRatingSchema,
+  source: MCPSourceSchema,
 
-  // Configuration - uses official type from @atlas/config
-  configTemplate: MCPServerConfig;
-  requiredConfig?: RequiredConfigField[];
-};
+  // Configuration - uses official schema from @atlas/agent-sdk
+  configTemplate: MCPServerConfigSchema,
+  requiredConfig: z.array(RequiredConfigFieldSchema).optional(),
+});
+
+export type MCPServerMetadata = z.infer<typeof MCPServerMetadataSchema>;
 
 /**
  * Registry metadata
