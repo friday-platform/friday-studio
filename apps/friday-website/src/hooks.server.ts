@@ -20,6 +20,36 @@ const COMPRESSIBLE_TYPES = [
 ];
 
 const dev = process.env.NODE_ENV !== "production";
+
+const DENIED_FEATURES = [
+  "accelerometer=()",
+  "autoplay=()",
+  "bluetooth=()",
+  "browsing-topics=()",
+  "camera=()",
+  "display-capture=()",
+  "document-domain=()",
+  "encrypted-media=()",
+  "fullscreen=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "hid=()",
+  "idle-detection=()",
+  "local-fonts=()",
+  "magnetometer=()",
+  "microphone=()",
+  "midi=()",
+  "payment=()",
+  "picture-in-picture=()",
+  "screen-wake-lock=()",
+  "serial=()",
+  "usb=()",
+  "xr-spatial-tracking=()",
+];
+const PERMISSIONS_POLICY = DENIED_FEATURES.join(", ");
+const PERMISSIONS_POLICY_REPORT_ONLY = DENIED_FEATURES.map((d) => `${d};report-to=default`).join(
+  ", ",
+);
 const CSP_HEADER = directivesToHeaderString(makeDirectives({ dev }));
 
 const analyticsEnabled = process.env.ANALYTICS_ENABLED === "true";
@@ -146,19 +176,13 @@ function setSecurityHeaders(headers: Headers): void {
     headers.set("referrer-policy", "strict-origin-when-cross-origin");
   }
   if (!headers.has("permissions-policy")) {
-    headers.set(
-      "permissions-policy",
-      "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
-    );
+    headers.set("permissions-policy", PERMISSIONS_POLICY);
   }
 
   // Report-only headers — monitor without enforcing
   headers.set("cross-origin-embedder-policy-report-only", 'require-corp; report-to="default"');
   headers.set("cross-origin-opener-policy-report-only", 'same-origin; report-to="default"');
-  headers.set(
-    "permissions-policy-report-only",
-    "camera=();report-to=default, microphone=();report-to=default, geolocation=();report-to=default, payment=();report-to=default, usb=();report-to=default",
-  );
+  headers.set("permissions-policy-report-only", PERMISSIONS_POLICY_REPORT_ONLY);
 }
 
 function setCacheHeaders(response: Response): void {
@@ -243,6 +267,15 @@ export const handle: Handle = async ({ event, resolve }) => {
   // so use event.isDataRequest to detect these requests.
   if (event.isDataRequest && event.request.method !== "GET" && event.request.method !== "HEAD") {
     return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+  }
+
+  // Normalize double+ slashes — prevents duplicate content and path-rule bypass.
+  const normalizedPath = event.url.pathname.replace(/\/{2,}/g, "/");
+  if (normalizedPath !== event.url.pathname) {
+    const location = normalizedPath + event.url.search;
+    const response = new Response(null, { status: 308, headers: { location } });
+    setSecurityHeaders(response.headers);
+    return response;
   }
 
   const start = performance.now();

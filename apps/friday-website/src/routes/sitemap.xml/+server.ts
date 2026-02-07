@@ -39,5 +39,7 @@ ${pages
   .join("\n")}
 </urlset>`;
 
-  return new Response(xml.trim(), { headers: { "content-type": "application/xml" } });
+  return new Response(xml.trim(), {
+    headers: { "content-type": "application/xml", "cache-control": "public, max-age=3600" },
+  });
 }
