@@ -6255,9 +6255,6 @@
       "packages/client": {
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/std__dotenv@~0.225.5",
-            "npm:@jsr/std__fs@^1.0.19",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:hono@^4.11.8",
             "npm:zod@^4.3.5"
           ]
@@ -6306,16 +6303,6 @@
         "packageJson": {
           "dependencies": [
             "npm:cron-parser@^5.5.0"
-          ]
-        }
-      },
-      "packages/diagnostics": {
-        "packageJson": {
-          "dependencies": [
-            "npm:@jsr/std__fs@^1.0.19",
-            "npm:@jsr/std__path@^1.1.2",
-            "npm:@jsr/std__yaml@^1.0.10",
-            "npm:zod@^4.3.5"
           ]
         }
       },

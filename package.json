@@ -16,7 +16,6 @@
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
-    "@atlas/diagnostics": "workspace:*",
     "@atlas/document-store": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
     "@atlas/hallucination": "workspace:*",

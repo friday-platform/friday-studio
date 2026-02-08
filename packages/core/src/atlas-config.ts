@@ -21,10 +21,3 @@ export function getAtlasBaseUrl(): string {
 export function getCredentialsApiUrl(): string {
   return process.env.ATLAS_CREDENTIALS_URL || `${getAtlasBaseUrl()}/api/credentials`;
 }
-
-/**
- * Gets the full diagnostics API endpoint URL
- */
-export function getDiagnosticsApiUrl(filename: string): string {
-  return `${getAtlasBaseUrl()}/api/diagnostics/${filename}`;
-}

@@ -4,7 +4,6 @@
   import { setAppContext } from "$lib/app-context.svelte";
   import appleTouchIcon from "$lib/assets/apple-touch-icon.png";
   import favicon from "$lib/assets/favicon.png";
-  import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
   import FindBar from "$lib/components/find-bar.svelte";
   import { initTauri, listen, Webview, Window } from "$lib/utils/tauri-loader";
   import { onMount } from "svelte";
@@ -12,7 +11,6 @@
   const { children } = $props();
   const ctx = setAppContext();
 
-  let showDiagnosticsDialog = $state(false);
   let showFindBar = $state(false);
 
   async function openSubWindow() {
@@ -57,7 +55,6 @@
   onMount(() => {
     // Setup Tauri event listeners for desktop builds
     let unlistenAbout: (() => void) | undefined;
-    let unlistenDiagnostics: (() => void) | undefined;
     let unlistenSettings: (() => void) | undefined;
     let unlistenFind: (() => void) | undefined;
 
@@ -70,9 +67,6 @@
         try {
           unlistenAbout = await listen("show-about-dialog", async () => {
             openSubWindow();
-          });
-          unlistenDiagnostics = await listen("show-diagnostics-dialog", () => {
-            showDiagnosticsDialog = true;
           });
           unlistenSettings = await listen("show-settings-dialog", () => {
             goto(ctx.routes.settings);
@@ -88,7 +82,6 @@
 
     return () => {
       unlistenAbout?.();
-      unlistenDiagnostics?.();
       unlistenSettings?.();
       unlistenFind?.();
     };
@@ -97,7 +90,6 @@
 
 {@render children?.()}
 
-<DiagnosticsDialog bind:open={showDiagnosticsDialog} />
 <FindBar bind:open={showFindBar} onClose={() => (showFindBar = false)} />
 
 <svelte:head>

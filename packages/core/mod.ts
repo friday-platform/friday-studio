@@ -25,7 +25,6 @@ export * from "./src/agent-server/mod.ts";
 export {
   getAtlasBaseUrl,
   getCredentialsApiUrl,
-  getDiagnosticsApiUrl,
 } from "./src/atlas-config.ts";
 // Conversation Storage
 export { conversationStorage } from "./src/chat-storage.ts";

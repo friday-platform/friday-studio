@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       component:
-        description: 'Component to build (binary, diagnostics, web-app)'
+        description: 'Component to build (binary, web-app)'
         required: true
         type: string
       version:
@@ -71,7 +71,7 @@ jobs:
             *) echo "Unsupported platform-arch combination" && exit 1 ;;
           esac
 
-      # Build binary or diagnostics
+      # Build binary
       - name: Build ${{ inputs.component }}
         if: inputs.component != 'web-app'
         id: build
@@ -156,14 +156,6 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.sha256
-          retention-days: ${{ inputs.retention-days }}
-
-      - name: Upload diagnostics artifacts
-        if: inputs.component == 'diagnostics'
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ inputs.component }}-${{ inputs.platform }}-${{ inputs.arch }}
-          path: ./dist/${{ steps.output.outputs.binary-name }}
           retention-days: ${{ inputs.retention-days }}
 
       - name: Upload web-app artifacts

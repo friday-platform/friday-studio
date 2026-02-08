@@ -6,13 +6,9 @@
   "exports": { ".": "./mod.ts", "./v2": "./v2/mod.ts" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
-    "@atlas/core": "workspace:*",
     "@atlas/link": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
-    "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "hono": "^4.11.8",
     "zod": "^4.3.5"
   }

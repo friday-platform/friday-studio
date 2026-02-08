@@ -20,15 +20,14 @@ the Atlas conversation interface.
 - `src/cli/modules/enable-multiline/tests/enable-multiline.test.ts` - Unit tests
 
 **Note**: The enable-multiline functionality is implemented as a standalone module under
-`src/cli/modules/enable-multiline/` and integrated via the app context pattern (similar to
-`/send-diagnostics`), not as a conversation command component.
+`src/cli/modules/enable-multiline/` and integrated via the app context pattern, not as a
+conversation command component.
 
 ### Integration Points:
 
 - Command registered in `src/cli/modules/conversation/registry.ts` as `enable-multiline`
 - Integrated in `src/cli/modules/conversation/component.tsx` to call `enableMultiline()`
-- Function implemented in `src/cli/contexts/app-context.tsx` following the same pattern as
-  `sendDiagnostics`
+- Function implemented in `src/cli/contexts/app-context.tsx` following the app context pattern
 - Status display added to `src/cli/components/command-input.tsx`
 - Uses Atlas config directory via `src/utils/paths.ts`
 

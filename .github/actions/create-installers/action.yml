@@ -20,12 +20,6 @@ inputs:
   binary-name:
     description: "Name of the binary file"
     required: true
-  diagnostics-binary-path:
-    description: "Path to the diagnostics binary to package"
-    required: false
-  diagnostics-binary-name:
-    description: "Name of the diagnostics binary file"
-    required: false
   web-app-binary-path:
     description: "Path to the web app binary to package"
     required: false

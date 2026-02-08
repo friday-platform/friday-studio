@@ -21,7 +21,7 @@
     "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/core": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/cron": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/diagnostics": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+
     "packages/discord": { "entry": ["mod.ts!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/fsm-engine": {

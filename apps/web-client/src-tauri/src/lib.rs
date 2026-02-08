@@ -40,100 +40,6 @@ fn show_about_dialog(app: AppHandle) {
 }
 
 #[tauri::command]
-async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
-    use std::io::{BufRead, BufReader};
-    use std::process::Stdio;
-
-    // Try to find atlas binary in multiple locations
-    let atlas_path = if cfg!(target_os = "windows") {
-        let home = std::env::var("USERPROFILE")
-            .map_err(|_| "Could not determine home directory".to_string())?;
-        format!("{}\\.atlas\\bin\\atlas.exe", home)
-    } else {
-        // Try system path first (for package installations)
-        let system_path = "/usr/bin/atlas";
-        if std::path::Path::new(system_path).exists() {
-            system_path.to_string()
-        } else {
-            // Fall back to user installation
-            let home = std::env::var("HOME")
-                .map_err(|_| "Could not determine home directory".to_string())?;
-            format!("{}/.atlas/bin/atlas", home)
-        }
-    };
-
-    // Emit initial progress update
-    app.emit("diagnostics-progress", "Starting diagnostics collection...")
-        .unwrap();
-
-    // Run atlas diagnostics send and capture stdout in real-time
-    #[cfg(target_os = "windows")]
-    let mut child = {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        Command::new(&atlas_path)
-            .args(["diagnostics", "send"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| {
-                format!(
-                    "Failed to run atlas diagnostics send at {}: {}",
-                    atlas_path, e
-                )
-            })?
-    };
-
-    #[cfg(not(target_os = "windows"))]
-    let mut child = Command::new(&atlas_path)
-        .args(["diagnostics", "send"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            format!(
-                "Failed to run atlas diagnostics send at {}: {}",
-                atlas_path, e
-            )
-        })?;
-
-    // Read stdout line by line and emit progress updates
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            // Try to parse JSON log format and extract the message field
-            if line.contains(r#""message":""#) {
-                // Simple JSON message extraction
-                let parts: Vec<&str> = line.split(r#""message":""#).collect();
-                if parts.len() > 1 {
-                    // Find the closing quote for the message value
-                    if let Some(end_pos) = parts[1].find('"') {
-                        let message = &parts[1][..end_pos];
-                        app.emit("diagnostics-progress", message).unwrap();
-                        continue;
-                    }
-                }
-            }
-            // Fallback to emitting the entire line if not JSON or parsing fails
-            app.emit("diagnostics-progress", &line).unwrap();
-        }
-    }
-
-    // Wait for the process to complete
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed to wait for diagnostics: {}", e))?;
-
-    if output.status.success() {
-        Ok("Diagnostics completed successfully".to_string())
-    } else {
-        let error = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Diagnostics failed: {}", error))
-    }
-}
-
-#[tauri::command]
 fn read_env_file() -> Result<HashMap<String, String>, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -490,7 +396,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             show_about_dialog,
-            run_diagnostics,
             read_env_file,
             write_env_file,
             restart_atlas_daemon,
@@ -508,15 +413,6 @@ pub fn run() {
                 app,
                 "discord_help",
                 "Get Help on Discord",
-                true,
-                None::<&str>,
-            )?;
-
-            // Create diagnostics menu item
-            let diagnostics_item = MenuItem::with_id(
-                app,
-                "run_diagnostics",
-                "Run Diagnostics",
                 true,
                 None::<&str>,
             )?;
@@ -587,13 +483,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             window_menu.append(&PredefinedMenuItem::maximize(app, None)?)?;
 
-            // Create help menu with Discord link and diagnostics
+            // Create help menu with Discord link
             let help_menu = Submenu::new(app, "Help", true)?;
             #[cfg(not(target_os = "macos"))]
             help_menu.append(&about_item)?;
             #[cfg(not(target_os = "macos"))]
             help_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            help_menu.append(&diagnostics_item)?;
             help_menu.append(&atlas_logs_item)?;
             help_menu.append(&PredefinedMenuItem::separator(app)?)?;
             help_menu.append(&discord_help)?;
@@ -634,9 +529,6 @@ pub fn run() {
                 } else if event.id() == &MenuId("about-custom".to_string()) {
                     // Emit event to show about dialog
                     let _ = app.emit("show-about-dialog", ());
-                } else if event.id() == &MenuId("run_diagnostics".to_string()) {
-                    // Emit event to show diagnostics dialog
-                    let _ = app.emit("show-diagnostics-dialog", ());
                 } else if event.id() == &MenuId("find".to_string()) {
                     // Trigger native macOS find panel via JavaScript
                     #[cfg(target_os = "macos")]

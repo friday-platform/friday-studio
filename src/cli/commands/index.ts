@@ -3,7 +3,6 @@ import * as agentCmd from "./agent.ts";
 import * as artifactsCmd from "./artifacts/index.ts";
 import * as chatCmd from "./chat.ts";
 import * as daemonCmd from "./daemon.ts";
-import * as diagnosticsCmd from "./diagnostics.ts";
 import * as libraryCmd from "./library/index.ts";
 import * as logsCmd from "./logs.ts";
 import * as promptCmd from "./prompt.ts";
@@ -30,7 +29,6 @@ export const commands: ReadonlyArray<CommandModule> = [
   artifactsCmd,
   daemonCmd,
   serviceCmd,
-  diagnosticsCmd,
   resetCmd,
   logsCmd,
   promptCmd,

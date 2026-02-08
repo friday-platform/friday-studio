@@ -264,7 +264,6 @@ These exist but are not architecturally significant:
 - `@atlas/cron` - Cron expression parsing (wraps cron-parser)
 - `@atlas/fs-watch` - File watching abstraction
 - `@atlas/utils` - Shared utilities
-- `@atlas/diagnostics` - Health checks and debugging
 - `@atlas/notifications` - Alert delivery (webhooks, etc.)
 - `@atlas/workspace` - Workspace type definitions
 

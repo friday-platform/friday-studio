@@ -3,7 +3,6 @@
 ## Current State
 
 - **Atlas CLI**: Built via Deno, packaged in Electron installer
-- **Atlas Diagnostics**: Secondary Deno binary, already bundled
 - **Atlas Web App**: Tauri app at `apps/web-client`, has build action but not bundled
 - **Problem**: Users want single download for both CLI and GUI
 
@@ -85,7 +84,7 @@ Add to `.github/workflows/edge-release.yml` in release job after downloading art
 ### In build job matrix
 
 ```yaml
-# After building diagnostics binary (line ~92)
+# After building binary
 - name: Build Tauri web app
   id: build-web-app
   uses: ./.github/actions/build-web-app

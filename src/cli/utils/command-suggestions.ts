@@ -16,7 +16,6 @@ export const COMMANDS: CommandInfo[] = [
   { command: "artifacts", aliases: ["artifact"], description: "Retrieve and manage artifacts" },
   { command: "daemon", aliases: ["d"], description: "Manage Atlas daemon" },
   { command: "service", aliases: ["svc"], description: "Manage Atlas service installation" },
-  { command: "diagnostics", aliases: ["diag"], description: "Diagnostic tools for Atlas" },
   { command: "logs", aliases: ["log"], description: "View session logs" },
   { command: "ps", description: "List active sessions (alias for 'session list')" },
   { command: "update", description: "Update Atlas to the latest version" },

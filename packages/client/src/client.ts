@@ -3,17 +3,9 @@
  * All CLI commands should use this to communicate with the Atlas daemon
  */
 
-import { readFile } from "node:fs/promises";
-import { env } from "node:process";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-import { getDiagnosticsApiUrl, validateAtlasJWT } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
-import { load } from "@std/dotenv";
-import { exists } from "@std/fs";
-import { basename, join } from "@std/path";
-import z from "zod";
 import { AtlasApiError } from "./errors.ts";
 import type {
   AgentInfo,
@@ -269,56 +261,6 @@ export class AtlasClient {
       throw new Error(stringifyError(response.error));
     }
     return response.data;
-  }
-
-  /**
-   * Send diagnostic information to Atlas developers
-   */
-  async sendDiagnostics(gzipPath: string): Promise<void> {
-    // Load .env from Atlas home directory first
-    const globalAtlasEnv = join(getAtlasHome(), ".env");
-    if (await exists(globalAtlasEnv)) {
-      await load({ export: true, envPath: globalAtlasEnv });
-    }
-
-    // Get ATLAS_KEY from environment (either from .env or env variable)
-    const atlasKey = env.ATLAS_KEY;
-    if (!atlasKey) {
-      throw new Error(
-        "ATLAS_KEY not found. Please set it in ~/.atlas/.env or as an environment variable.",
-      );
-    }
-
-    // Validate JWT token
-    validateAtlasJWT(atlasKey);
-
-    // Read the gzip file
-    const diagnosticData = await readFile(gzipPath);
-
-    // Get filename from path (handle both Unix and Windows paths)
-    const filename = basename(gzipPath);
-
-    // Send to diagnostic endpoint using centralized URL function
-    const response = await fetch(getDiagnosticsApiUrl(filename), {
-      method: "POST",
-      headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/gzip" },
-      body: new Uint8Array(diagnosticData),
-    });
-
-    if (!response.ok) {
-      let errorMessage = "Failed to upload diagnostics";
-      try {
-        const error = await response.json();
-        const errorDetails = z.object({ message: z.string() }).parse(error);
-        if (errorDetails.message) {
-          errorMessage = errorDetails.message;
-        }
-      } catch {
-        // If JSON parsing fails, use status text
-        errorMessage = `Failed to upload diagnostics: ${response.status} ${response.statusText}`;
-      }
-      throw new Error(errorMessage);
-    }
   }
 
   /**
