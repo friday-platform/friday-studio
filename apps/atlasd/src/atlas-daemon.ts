@@ -989,20 +989,33 @@ export class AtlasDaemon {
               },
             });
 
-            // If there are no active sessions left, destroy the runtime so status won't be overridden to "running"
+            // If there are no active sessions or agent executions left, destroy the runtime
+            // so status won't be overridden to "running".
+            // Must check BOTH session status AND orchestrator active executions to avoid
+            // killing MCP transports while callTool requests are still in flight.
             const currentRuntime = this.runtimes.get(workspaceId);
             if (currentRuntime) {
               const sessions = currentRuntime.getSessions();
-              const hasActive = sessions.some(
+              const hasActiveSessions = sessions.some(
                 (s) =>
                   s.session.status === WorkspaceSessionStatus.EXECUTING ||
                   s.session.status === WorkspaceSessionStatus.PENDING,
               );
 
-              if (!hasActive) {
+              // Check orchestrator for in-flight agent executions (matches checkAndDestroyIdleWorkspace)
+              let hasActiveExecutions = false;
+              if (
+                "getOrchestrator" in currentRuntime &&
+                typeof currentRuntime.getOrchestrator === "function"
+              ) {
+                const orchestrator = currentRuntime.getOrchestrator();
+                hasActiveExecutions = orchestrator.hasActiveExecutions();
+              }
+
+              if (!hasActiveSessions && !hasActiveExecutions) {
                 await this.destroyWorkspaceRuntime(workspaceId);
               } else {
-                // Still active sessions; keep idle timer fresh
+                // Still active sessions or agent executions; let idle timeout handle cleanup
                 this.resetIdleTimeout(workspaceId);
               }
             }
