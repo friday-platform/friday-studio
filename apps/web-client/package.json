@@ -39,7 +39,7 @@
     "@tauri-apps/plugin-fs": "~2.4.5",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@types/papaparse": "^5.5.2",
-    "ai": "^5.0.128",
+    "ai": "^5.0.129",
     "papaparse": "^5.5.3",
     "svelte": "^5.49.2",
     "vite": "^7.3.1",

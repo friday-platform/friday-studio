@@ -36,7 +36,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@types/react": "^19.2.13",
-    "ai": "^5.0.128",
+    "ai": "^5.0.129",
     "ink": "^6.6.0",
     "js-levenshtein": "^1.1.6",
     "lint-staged": "^16.2.7",
