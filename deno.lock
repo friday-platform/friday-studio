@@ -43,7 +43,7 @@
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@eslint/compat@^2.0.1": "2.0.2_eslint@9.39.2",
     "npm:@eslint/compat@^2.0.2": "2.0.2_eslint@9.39.2",
-    "npm:@eslint/js@^9.39.2": "9.39.2",
+    "npm:@eslint/js@^10.0.1": "10.0.1_eslint@9.39.2",
     "npm:@faker-js/faker@^10.1.0": "10.2.0",
     "npm:@faker-js/faker@^10.2.0": "10.2.0",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.11.8",
@@ -803,6 +803,15 @@
         "js-yaml",
         "minimatch@3.1.2",
         "strip-json-comments@3.1.1"
+      ]
+    },
+    "@eslint/js@10.0.1_eslint@9.39.2": {
+      "integrity": "sha512-zeR9k5pd4gxjZ0abRoIaxdc7I3nDktoXZk2qOv9gCNWx3mVwEn32VRhyLaRsDiJjTs0xq/T8mfPtyuXu7GWBcA==",
+      "dependencies": [
+        "eslint"
+      ],
+      "optionalPeers": [
+        "eslint"
       ]
     },
     "@eslint/js@9.39.2": {
@@ -3567,7 +3576,7 @@
         "@eslint/config-helpers",
         "@eslint/core@0.17.0",
         "@eslint/eslintrc",
-        "@eslint/js",
+        "@eslint/js@9.39.2",
         "@eslint/plugin-kit",
         "@humanfs/node",
         "@humanwhocodes/module-importer",
@@ -6052,7 +6061,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@eslint/compat@^2.0.2",
-            "npm:@eslint/js@^9.39.2",
+            "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sentry/sveltekit@^10.38.0",
@@ -6103,7 +6112,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@eslint/compat@^2.0.1",
-            "npm:@eslint/js@^9.39.2",
+            "npm:@eslint/js@^10.0.1",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sveltejs/adapter-node@^5.5.2",
             "npm:@sveltejs/kit@^2.50.1",
@@ -6170,7 +6179,7 @@
           "dependencies": [
             "npm:@ai-sdk/svelte@^3.0.128",
             "npm:@eslint/compat@^2.0.2",
-            "npm:@eslint/js@^9.39.2",
+            "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@lezer/common@^1.5.1",

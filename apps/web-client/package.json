@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
