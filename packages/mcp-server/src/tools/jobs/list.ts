@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_jobs_list",
+    "workspace_jobs_list",
     {
       description:
         "Discover all automated tasks (jobs) available within a specific workspace. Jobs represent reusable workflows that can be triggered to perform operations like builds, deployments, data processing, or custom automation. Only shows jobs marked as discoverable.",

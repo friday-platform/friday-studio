@@ -1,6 +1,6 @@
 /**
  * Workspace delete tool for MCP server
- * Removes Atlas workspaces through the daemon API
+ * Removes workspaces through the daemon API
  */
 
 import { client, parseResult } from "@atlas/client/v2";
@@ -11,10 +11,10 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_delete",
+    "workspace_delete",
     {
       description:
-        "Remove an Atlas workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
+        "Remove a workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
       inputSchema: {
         workspaceId: z
           .string()

@@ -1,6 +1,6 @@
 /**
  * Workspace list tool for MCP server
- * Discovers available Atlas workspaces through the daemon API
+ * Discovers available workspaces through the daemon API
  */
 
 import { client, parseResult } from "@atlas/client/v2";
@@ -10,10 +10,10 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_list",
+    "workspace_list",
     {
       description:
-        "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
+        "Discover available workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
       inputSchema: {},
     },
     async () => {

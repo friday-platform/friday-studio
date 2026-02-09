@@ -1,7 +1,7 @@
-# Atlas MCP Server Prompts
+# MCP Server Prompts
 
-This directory contains MCP (Model Context Protocol) prompts for the Atlas platform, organized by
-domain. Each prompt provides a structured interface for LLMs to interact with Atlas workspace
+This directory contains MCP (Model Context Protocol) prompts for the platform, organized by
+domain. Each prompt provides a structured interface for LLMs to interact with workspace
 components.
 
 ## Structure

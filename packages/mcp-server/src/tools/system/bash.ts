@@ -31,7 +31,7 @@ Before executing the command, please follow these steps:
 
 Usage notes:
   - If the output exceeds 30000 characters, output will be truncated before being returned to you.
-  - VERY IMPORTANT: You MUST avoid using search commands like \`find\` and \`grep\`. Instead use fs_grep, fs_glob, or other Atlas tools to search. You MUST avoid read tools like \`cat\`, \`head\`, \`tail\`, and \`ls\`, and use fs_read_file and fs_list_files to read files.
+  - VERY IMPORTANT: You MUST avoid using search commands like \`find\` and \`grep\`. Instead use fs_grep, fs_glob, or other platform tools to search. You MUST avoid read tools like \`cat\`, \`head\`, \`tail\`, and \`ls\`, and use fs_read_file and fs_list_files to read files.
   - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings).
   - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of \`cd\`. You may use \`cd\` if the User explicitly requests it`,
       inputSchema: {

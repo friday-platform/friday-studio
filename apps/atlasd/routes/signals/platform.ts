@@ -63,8 +63,8 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
         channelType: payload._slack.channel_type,
       });
 
-      // Route to atlas-conversation workspace
-      const workspaceId = "atlas-conversation";
+      // Route to friday-conversation workspace
+      const workspaceId = "friday-conversation";
       const signalId = "slack"; // Renamed from slack-dm
 
       // Queue async processing

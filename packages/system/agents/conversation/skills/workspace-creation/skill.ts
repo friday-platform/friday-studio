@@ -14,13 +14,13 @@ export const workspaceCreationSkill = {
 ## When NOT to Use
 - One-off queries ("what's the weather")
 - Questions about capabilities
-- Using existing workspaces (use atlas_workspace_signal_trigger instead)
+- Using existing workspaces (use workspace_signal_trigger instead)
 
 ## Required Tools
 - workspace-planner: generates plan artifact
 - fsm-workspace-creator: creates workspace from artifact
 - display_artifact: shows plan to user
-- atlas_workspace_describe: get workspace details after creation
+- workspace_describe: get workspace details after creation
 
 ## Workflow (follow exactly)
 
@@ -95,7 +95,7 @@ ALWAYS include specific values in workspace-planner intent:
 ## Environment Variables After Creation
 
 After workspace created:
-- Atlas services (email, web search) need NO user credentials
+- Platform services (email, web search) need NO user credentials
 - Only external services need credentials
 - Check \${VAR_NAME} patterns in workspace config
 

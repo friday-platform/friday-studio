@@ -21,7 +21,7 @@ export function registerSessionDescribePrompt(server: McpServer, ctx: PromptCont
       ctx.logger.info("MCP session_describe called", { sessionId });
 
       return createSuccessResponse(
-        `Use the \`atlas_session_describe\` tool to return detailed information about the session with ID ${sessionId}. Use markdown syntax to format the response.`,
+        `Use the \`session_describe\` tool to return detailed information about the session with ID ${sessionId}. Use markdown syntax to format the response.`,
       );
     },
   );

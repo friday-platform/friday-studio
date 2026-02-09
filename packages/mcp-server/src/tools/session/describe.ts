@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_session_describe",
+    "session_describe",
     {
       description:
         "Examine a specific execution session across all workspaces to understand its current state, progress, logs, and results. This is a global operation that searches for the session ID across all active workspaces in the system. Sessions track the complete lifecycle of job executions, including their inputs, outputs, and any errors encountered.",

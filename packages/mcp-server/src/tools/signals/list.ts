@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSignalsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_signals_list",
+    "workspace_signals_list",
     {
       description:
         "View all signal configurations within a workspace that can trigger automated job executions. Signals represent external events (webhooks, schedules, file changes) that initiate workspace operations.",

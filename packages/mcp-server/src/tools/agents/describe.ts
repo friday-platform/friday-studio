@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_agents_describe",
+    "workspace_agents_describe",
     {
       description: "Get detailed information about a specific agent through daemon API",
       inputSchema: {

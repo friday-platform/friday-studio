@@ -5,12 +5,12 @@ import { createSuccessResponse } from "../utils.ts";
 export function registerVersionTool(server: McpServer) {
   server.registerTool(
     "system_version",
-    { description: "Get the current version of Atlas.", inputSchema: {} },
+    { description: "Get the current platform version.", inputSchema: {} },
     () => {
       return createSuccessResponse({
         content: {
           command: "version",
-          description: "Get the current version of Atlas.",
+          description: "Get the current platform version.",
           exitCode: 0,
           stdout: getVersionInfo(),
           stderr: "",

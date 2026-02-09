@@ -20,7 +20,7 @@
   let {
     isDisabled,
     message = $bindable(""),
-    textareaAdditionalSize = $bindable(1),
+    textareaAdditionalSize = $bindable(1), // eslint-disable-line no-useless-assignment -- reactive $bindable prop
     status,
     chatId,
     onSubmit,

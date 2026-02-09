@@ -116,7 +116,7 @@ WorkspaceSignalTrigger
 
 **DiscordConversationHandler** (`discord-conversation-handler.ts`)
 
-- Handles streaming conversations for atlas-conversation workspace
+- Handles streaming conversations for friday-conversation workspace
 - Shows typing indicators during processing
 - Accumulates streaming responses and sends to Discord
 - Provides Discord-specific UX features
@@ -429,7 +429,7 @@ packages/discord/src/
 ├── event-router.ts                # Routes Gateway events to signals
 ├── command-registrar.ts           # Command registration
 ├── interaction-handler.ts         # HTTP request handler + button clicks
-├── conversation-handler.ts        # Streaming conversation handler (atlas-conversation)
+├── conversation-handler.ts        # Streaming conversation handler (friday-conversation)
 ├── registrar.ts                   # Signal tracking + event matching
 ├── schemas.ts                     # Zod schemas (interactions, messages, buttons)
 └── utils.ts                       # Shared utilities

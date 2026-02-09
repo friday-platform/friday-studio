@@ -10,7 +10,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
     "library_store",
     {
       description:
-        "Store a new item in the Atlas library for future reference and reuse across workspaces. Use this to save reports, templates, session results, artifacts, or any content that should be preserved and discoverable.",
+        "Store a new item in the library for future reference and reuse across workspaces. Use this to save reports, templates, session results, artifacts, or any content that should be preserved and discoverable.",
       inputSchema: {
         type: z
           .enum(["report", "session_archive", "template", "artifact", "user_upload"])

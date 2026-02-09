@@ -14,7 +14,7 @@ export function registerWorkspaceListPrompt(server: McpServer, ctx: PromptContex
     {
       title: "List Workspaces",
       description:
-        "View all available workspaces in the Atlas platform including their configurations, status, and metadata. Workspaces are isolated environments containing agents, jobs, signals, and other components that work together to automate tasks.",
+        "View all available workspaces including their configurations, status, and metadata. Workspaces are isolated environments containing agents, jobs, signals, and other components that work together to automate tasks.",
       argsSchema: {
         status: z
           .string()

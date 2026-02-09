@@ -24,7 +24,7 @@ export function registerSignalTriggerPrompt(server: McpServer, ctx: PromptContex
       ctx.logger.info("MCP workspace_signals_describe called", { workspaceId, signalId });
 
       return createSuccessResponse(
-        `Use the \`atlas_workspace_signals_trigger\` to trigger a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId} and the input is ${input}. Use markdown syntax to format the response.`,
+        `Use the \`workspace_signal_trigger\` to trigger a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId} and the input is ${input}. Use markdown syntax to format the response.`,
       );
     },
   );

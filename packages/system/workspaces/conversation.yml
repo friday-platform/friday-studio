@@ -1,7 +1,7 @@
 version: "1.0"
 workspace:
-  name: "atlas-conversation"
-  description: "Conversation management for Atlas"
+  name: "friday-conversation"
+  description: "Conversation management for Friday"
 signals:
   # Platform signals - triggered by gateway HTTP endpoints
   discord:
@@ -175,31 +175,31 @@ agents:
       model: "claude-sonnet-4-5"
       tools:
         # advanced workspace creation
-        - "atlas_update_workspace"
-        - "atlas_workspace_set_persistence"
+        - "update_workspace"
+        - "workspace_set_persistence"
         # workspace
-        - "atlas_workspace_describe"
-        - "atlas_workspace_delete"
+        - "workspace_describe"
+        - "workspace_delete"
         # library
         - "library_list"
         - "library_get"
         - "library_get_stream"
         - "library_stats"
         # signal tools
-        - "atlas_workspace_signals_list"
-        - "atlas_workspace_signals_trigger"
+        - "workspace_signals_list"
+        - "workspace_signal_trigger"
         # todo memory tools
-        - "atlas_todo_read"
-        - "atlas_todo_write"
+        - "todo_read"
+        - "todo_write"
         # environment variable management
-        - "atlas_save_env_var"
+        - "save_env_var"
         # agents
-        - "atlas_workspace_agents_list"
-        - "atlas_workspace_agents_describe"
+        - "workspace_agents_list"
+        - "workspace_agents_describe"
         # session tools
-        - "atlas_session_describe"
+        - "session_describe"
         # job tools
-        - "atlas_workspace_jobs_describe"
+        - "workspace_jobs_describe"
         # version
         - "system_version"
       prompt: ""

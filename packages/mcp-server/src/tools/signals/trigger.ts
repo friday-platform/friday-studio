@@ -13,7 +13,7 @@ import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-re
 
 export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_signal_trigger",
+    "workspace_signal_trigger",
     {
       description:
         "Trigger a signal on a workspace to initiate automated job execution. This directly invokes the signal without using shell commands, providing better error handling and integration.",
@@ -22,7 +22,7 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         signalId: z
           .string()
           .describe(
-            "Signal ID to trigger (obtain from atlas_workspace_describe or atlas_workspace_signals_list)",
+            "Signal ID to trigger (obtain from workspace_describe or workspace_signals_list)",
           ),
         payload: z
           .record(z.string(), z.unknown())

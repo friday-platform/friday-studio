@@ -1,6 +1,6 @@
 /**
  * Workspace describe tool for MCP server
- * Retrieves detailed information about Atlas workspaces through the daemon API
+ * Retrieves detailed information about workspaces through the daemon API
  */
 
 import { client, parseResult } from "@atlas/client/v2";
@@ -12,10 +12,10 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_describe",
+    "workspace_describe",
     {
       description:
-        "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
+        "Retrieve comprehensive details about a specific workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
       inputSchema: {
         workspaceId: z
           .string()

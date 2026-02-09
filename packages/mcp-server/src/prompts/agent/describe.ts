@@ -24,7 +24,7 @@ export function registerAgentDescribePrompt(server: McpServer, ctx: PromptContex
       ctx.logger.info("MCP workspace_agents_describe called", { workspaceId, agentId });
 
       return createSuccessResponse(
-        `Return detailed information about the agent with ID ${agentId} in workspace ${workspaceId} using the \`atlas_workspace_agents_describe\` tool. Use markdown syntax to format the response.`,
+        `Return detailed information about the agent with ID ${agentId} in workspace ${workspaceId} using the \`workspace_agents_describe\` tool. Use markdown syntax to format the response.`,
       );
     },
   );

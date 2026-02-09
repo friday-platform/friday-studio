@@ -1,5 +1,5 @@
 /**
- * Platform MCP Server for Atlas
+ * Platform MCP Server
  * Exposes platform-level capabilities through daemon HTTP API
  * Routes all operations through the daemon for consistency
  */
@@ -37,7 +37,7 @@ export class PlatformMCPServer {
 
     // Initialize MCP server
     this.server = new McpServer({
-      name: "atlas-platform",
+      name: "platform",
       version: "1.0.0",
       capabilities: { prompts: {}, tools: {}, resources: {}, logging: {}, notifications: {} },
     });
@@ -69,7 +69,7 @@ export class PlatformMCPServer {
 
     this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,
-      serverName: "atlas-platform",
+      serverName: "platform",
     });
   }
 
@@ -115,7 +115,7 @@ export class PlatformMCPServer {
     // For McpServer, logging is handled automatically when capability is declared
     // The server will accept logging/setLevel requests when logging capability is present
     this.logger.info("Logging capability enabled for MCP server", {
-      serverName: "atlas-platform",
+      serverName: "platform",
       defaultLevel: this.currentLoggingLevel,
     });
   }

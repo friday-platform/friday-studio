@@ -16,7 +16,7 @@ at build time and always available in every Atlas installation.
 3. **Protected**: Cannot be deleted without explicit force option
 4. **Identified by**:
    - `metadata.system = true` field
-   - `system://` path prefix (e.g., `system://atlas-conversation`)
+   - `system://` path prefix (e.g., `system://friday-conversation`)
    - Known IDs defined in `SystemWorkspaceId` type
 
 ### Implementation
@@ -37,9 +37,9 @@ System workspaces are defined as standard workspace YAML files:
 ```yaml
 version: "1.0"
 workspace:
-  id: "atlas-conversation"
-  name: "Atlas Conversation"
-  description: "System workspace for interactive Atlas conversations"
+  id: "friday-conversation"
+  name: "Friday Conversation"
+  description: "System workspace for interactive Friday conversations"
 signals:
   conversation-started:
     provider: "system"
@@ -57,7 +57,7 @@ import { parse } from "@std/yaml";
 import { WorkspaceConfigSchema } from "@atlas/config";
 
 export const SYSTEM_WORKSPACES = {
-  "atlas-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
+  "friday-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
 } as const;
 
 export type SystemWorkspaceId = keyof typeof SYSTEM_WORKSPACES;
@@ -85,7 +85,7 @@ System workspaces can be accessed like any other workspace:
 ```typescript
 // Find by ID
 const conversationWorkspace = await manager.find({
-  id: "atlas-conversation",
+  id: "friday-conversation",
 });
 
 // List all workspaces including system ones
@@ -99,7 +99,7 @@ const allWorkspaces = await manager.list({
 When loading configuration for a system workspace, the embedded config is returned directly:
 
 ```typescript
-const config = await manager.getWorkspaceConfig("atlas-conversation");
+const config = await manager.getWorkspaceConfig("friday-conversation");
 // Returns the embedded configuration object
 ```
 
@@ -140,7 +140,7 @@ Example:
 import monitoringYaml from "./monitoring.yml" with { type: "text" };
 
 export const SYSTEM_WORKSPACES = {
-  "atlas-conversation": /* ... */,
+  "friday-conversation": /* ... */,
   "atlas-monitoring": WorkspaceConfigSchema.parse(parse(monitoringYaml)),
 } as const;
 ```

@@ -8,5 +8,5 @@ export async function listSpaces(): Promise<WorkspacesListResponse> {
     console.error("Failed to load spaces:", res.error);
     throw new Error("Failed to load spaces");
   }
-  return res.data.filter((w) => w.name !== "atlas-conversation" && !w.path.includes("/examples/"));
+  return res.data.filter((w) => w.name !== "friday-conversation" && !w.path.includes("/examples/"));
 }

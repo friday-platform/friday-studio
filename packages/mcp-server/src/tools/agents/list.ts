@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_agents_list",
+    "workspace_agents_list",
     {
       description: "List all agents in a workspace through daemon API",
       inputSchema: { workspaceId: z.string().describe("Workspace ID to list agents for") },

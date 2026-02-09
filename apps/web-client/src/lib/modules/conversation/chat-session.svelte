@@ -506,7 +506,7 @@
                   // No attachments, send simple text message
                   chat.sendMessage({ text: message });
                 }
-                message = "";
+                message = ""; // eslint-disable-line no-useless-assignment -- clears reactive $state input
                 appCtx.stagedFiles.clear();
 
                 userHasScrolled = false;

@@ -24,7 +24,7 @@ export function registerSignalDescribePrompt(server: McpServer, ctx: PromptConte
       ctx.logger.info("MCP workspace_signals_describe called", { workspaceId, signalId });
 
       return createSuccessResponse(
-        `Use the \`atlas_workspace_signals_describe\` tool to describe a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId}. Use markdown syntax to format the response.`,
+        `Use the \`workspace_signals_describe\` tool to describe a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId}. Use markdown syntax to format the response.`,
       );
     },
   );

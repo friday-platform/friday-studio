@@ -12,7 +12,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_session_cancel",
+    "session_cancel",
     {
       description:
         "Terminate an active execution session gracefully across all workspaces. This is a global operation that searches for the session ID across all active workspaces and stops the running job while cleaning up associated resources. Use this when a session needs to be stopped due to errors, changed requirements, or resource constraints.",

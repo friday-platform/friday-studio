@@ -155,7 +155,7 @@ No workspaces currently available.
     section += "\n";
   }
 
-  section += `Use atlas_workspace_describe and atlas_workspace_jobs_describe for detailed information.
+  section += `Use workspace_describe and workspace_jobs_describe for detailed information.
 </available_workspaces>`;
   return section;
 }
@@ -551,22 +551,22 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // MVP: Tool allowlist - only expose specific workspace management and task execution tools
         const ALLOWED_TOOLS = new Set([
           // Workspace management
-          "atlas_workspace_list",
-          "atlas_workspace_create",
-          "atlas_workspace_describe",
-          "atlas_workspace_update",
-          "atlas_workspace_delete",
+          "workspace_list",
+          "workspace_create",
+          "workspace_describe",
+          "workspace_update",
+          "workspace_delete",
           // Session/job inspection
-          "atlas_session_describe",
-          "atlas_session_cancel",
-          "atlas_job_list",
-          "atlas_job_describe",
+          "session_describe",
+          "session_cancel",
+          "workspace_jobs_list",
+          "workspace_jobs_describe",
           // Signal triggering
-          "atlas_workspace_signal_trigger",
-          "atlas_signals_list",
+          "workspace_signal_trigger",
+          "workspace_signals_list",
           // Library
-          "atlas_library_list",
-          "atlas_library_get",
+          "library_list",
+          "library_get",
           // Artifacts
           "artifacts_create",
           "artifacts_update",
@@ -581,7 +581,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // Wrap platform tools to inject session context (datetime for timezone-aware operations)
         const filteredTools = wrapToolsWithSessionContext(tools, sessionContext, ALLOWED_TOOLS);
 
-        const workspaceId = session.workspaceId || "atlas-conversation";
+        const workspaceId = session.workspaceId || "friday-conversation";
 
         // Fetch workspace skills and combine with hardcoded skills
         const workspaceSkillsResult = await SkillStorage.list(workspaceId);

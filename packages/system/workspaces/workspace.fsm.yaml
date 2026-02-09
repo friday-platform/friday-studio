@@ -1,5 +1,5 @@
 fsm:
-  id: atlas-conversation
+  id: friday-conversation
   initial: idle
 
   documentTypes:

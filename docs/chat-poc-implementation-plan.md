@@ -316,7 +316,7 @@ chatRoutes.post("/", async (c) => {
   const ctx = c.get("app");
   const { id: chatId, message } = c.req.valid("json");
   const userId = c.req.header("X-User-Id") || "default-user";
-  const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
+  const workspaceId = c.req.header("X-Workspace-Id") || "friday-conversation";
 
   // Create or retrieve chat
   let resolvedChatId = chatId;

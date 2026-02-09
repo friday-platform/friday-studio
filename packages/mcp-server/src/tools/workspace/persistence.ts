@@ -1,6 +1,6 @@
 /**
  * Workspace persistence tool for MCP server
- * Toggles Atlas workspace persistence (ephemeral <-> persistent) via the daemon API
+ * Toggles workspace persistence (ephemeral <-> persistent) via the daemon API
  */
 import { client, parseResult } from "@atlas/client/v2";
 import { stringifyError } from "@atlas/utils";
@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspacePersistenceTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_workspace_set_persistence",
+    "workspace_set_persistence",
     {
       description:
         "Toggle workspace persistence. Set persistent=true to promote an ephemeral workspace to persistent; set persistent=false to convert a persistent workspace to ephemeral.",

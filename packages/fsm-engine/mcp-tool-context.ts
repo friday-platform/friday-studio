@@ -120,7 +120,7 @@ export class GlobalMCPToolProvider implements MCPToolProvider {
       // Filter: platform tools must be in allowlist, others pass through
       const filteredTools = Object.fromEntries(
         Object.entries(tools).filter(([name]) => {
-          const isPlatformTool = PLATFORM_TOOL_NAMES.has(name) || name.startsWith("atlas_");
+          const isPlatformTool = PLATFORM_TOOL_NAMES.has(name);
           return !isPlatformTool || PLATFORM_TOOL_ALLOWLIST.has(name);
         }),
       );

@@ -46,7 +46,7 @@ interface SessionDigestResponse {
 }
 
 /** System workspaces that should be excluded from session history listings */
-const SYSTEM_WORKSPACE_IDS = ["atlas-conversation"];
+const SYSTEM_WORKSPACE_IDS = ["friday-conversation"];
 
 const ListSessionHistoryQuery = z.object({ workspaceId: z.string().optional() });
 

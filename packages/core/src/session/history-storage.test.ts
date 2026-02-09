@@ -403,15 +403,15 @@ describe("SessionHistoryStorage", () => {
       await SessionHistoryStorage.createSessionRecord(createMetadataInput(session1));
       await SessionHistoryStorage.createSessionRecord({
         ...createMetadataInput(session2),
-        workspaceId: "atlas-conversation",
+        workspaceId: "friday-conversation",
       });
 
       const result = await SessionHistoryStorage.listSessions({
-        excludeWorkspaceIds: ["atlas-conversation"],
+        excludeWorkspaceIds: ["friday-conversation"],
       });
 
       assert(result.ok);
-      expect(result.data.sessions.every((s) => s.workspaceId !== "atlas-conversation")).toBe(true);
+      expect(result.data.sessions.every((s) => s.workspaceId !== "friday-conversation")).toBe(true);
     });
   });
 });
