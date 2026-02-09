@@ -54,7 +54,7 @@ interface LibrarySearchResult {
   took_ms: number;
 }
 
-export class DaemonClient {
+class DaemonClient {
   /**
    * Get detailed workspace information
    */

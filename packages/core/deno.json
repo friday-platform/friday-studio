@@ -23,7 +23,6 @@
     "./mcp-registry/requirement-validator": "./src/mcp-registry/requirement-validator.ts",
     "./mcp-registry/clarification": "./src/mcp-registry/clarification.ts",
     "./mcp-registry/credential-resolver": "./src/mcp-registry/credential-resolver.ts",
-    "./mcp-registry/storage": "./src/mcp-registry/storage/index.ts",
-    "./bundled-agents/registry": "./src/bundled-agents/registry.ts"
+    "./mcp-registry/storage": "./src/mcp-registry/storage/index.ts"
   }
 }

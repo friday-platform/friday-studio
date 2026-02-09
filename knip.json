@@ -56,7 +56,7 @@
       "entry": ["**/*.test.ts", "agents/conversation/tools/connect-mcp-server.ts!"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
     },
-    "packages/utils": { "entry": ["src/temp.server.ts!"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
@@ -122,7 +122,7 @@
     "apps/atlas-installer/**",
     "**/$lib/build-info"
   ],
-  "ignoreDependencies": ["@std/tar", "@std/assert"],
+  "ignoreDependencies": [],
   "ignoreBinaries": ["svelte-kit"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
