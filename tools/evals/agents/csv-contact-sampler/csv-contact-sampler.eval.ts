@@ -139,7 +139,8 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     assert(result.data.response, "Should return response");
     const artifactRefs = result.artifactRefs ?? [];
     assert(artifactRefs.length > 0, "Should return artifactRefs");
-    const artifactRef = artifactRefs[0]!;
+    const artifactRef = artifactRefs[0];
+    assert(artifactRef, "First artifactRef should exist");
     assertEquals(artifactRef.type, "file", "ArtifactRef should be type 'file'");
 
     // Load and verify artifact content
@@ -240,7 +241,9 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
       const runArtifactRefs = result.artifactRefs ?? [];
       assert(runArtifactRefs.length > 0, `Run ${i + 1} should return artifactRefs`);
 
-      const artifactResult = await ArtifactStorage.get({ id: runArtifactRefs[0]!.id });
+      const runArtifactRef = runArtifactRefs[0];
+      assert(runArtifactRef, `Run ${i + 1} first artifactRef should exist`);
+      const artifactResult = await ArtifactStorage.get({ id: runArtifactRef.id });
       assert(artifactResult.ok, "Should load artifact");
       assert(artifactResult.data, "Artifact data should exist");
       assert(artifactResult.data.data.type === "file", "Artifact should be file type");
@@ -305,7 +308,9 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     assert(emptyArtifactRefs.length > 0, "Should return artifactRefs even with empty results");
 
     // Load artifact
-    const artifactResult = await ArtifactStorage.get({ id: emptyArtifactRefs[0]!.id });
+    const emptyArtifactRef = emptyArtifactRefs[0];
+    assert(emptyArtifactRef, "First artifactRef should exist");
+    const artifactResult = await ArtifactStorage.get({ id: emptyArtifactRef.id });
     assert(artifactResult.ok, "Should load artifact");
     assert(artifactResult.data, "Artifact data should exist");
     assert(artifactResult.data.data.type === "file", "Artifact should be file type");

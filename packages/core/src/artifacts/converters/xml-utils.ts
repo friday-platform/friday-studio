@@ -7,7 +7,6 @@
  * xmldom's TS types for ChildNode don't include localName/namespaceURI,
  * but nodeType === 1 guarantees the node is an Element at runtime.
  */
-// biome-ignore lint/suspicious/noExplicitAny: xmldom ChildNode types lack Element properties; nodeType === 1 guard ensures safety
 export function elementAt(nodes: NodeListOf<ChildNode>, index: number): Element | null {
   const node = nodes.item(index);
   if (!node || node.nodeType !== 1) return null;

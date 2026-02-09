@@ -257,7 +257,7 @@ function log(level: "info" | "error", message: string, context: Record<string, u
     service: "friday-website",
     context,
   });
-  process.stdout.write(entry + "\n");
+  process.stdout.write(`${entry}\n`);
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

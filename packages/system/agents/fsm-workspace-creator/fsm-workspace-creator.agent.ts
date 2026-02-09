@@ -111,7 +111,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         const errorWithCredentials = [
           formatMissingCredentialsError(preflightResult.missingCredentials),
           "",
-          "missingCredentials: " + JSON.stringify(preflightResult.missingCredentials),
+          `missingCredentials: ${JSON.stringify(preflightResult.missingCredentials)}`,
           "suggestedAction: connect_service",
         ].join("\n");
         return err(errorWithCredentials);
