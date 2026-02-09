@@ -6,5 +6,5 @@
   "exports": { ".": "./mod.ts" },
   "scripts": { "generate": "deno run -A scripts/build.ts" },
   "dependencies": { "openapi-fetch": "^0.15.0" },
-  "devDependencies": { "hono-openapi": "^1.2.0", "openapi-typescript": "^7.10.1" }
+  "devDependencies": { "hono-openapi": "^1.2.0", "openapi-typescript": "^7.12.0" }
 }
