@@ -7,7 +7,7 @@ import { generateObject, generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { Parallel } from "parallel-web";
 import { z } from "zod";
-import { executeSearch } from "./search-tool.ts";
+import { executeSearch, resolveDefaultRecencyDays } from "./search-tool.ts";
 import { type QueryAnalysis, QueryAnalysisSchema, type SearchResult } from "./types.ts";
 
 export const ResearchOutputSchema = z.object({
@@ -78,19 +78,31 @@ QUERY LIMITS:
 - If researching many items (e.g., 12 companies), combine related ones or prioritize the most important
 - Use broader queries that cover multiple items when possible
 
+RECENCY (recencyDays):
+- Breaking news, alerts, urgent monitoring → 2
+- Scheduled news monitoring, daily checks → 7
+- "Latest" or "recent" developments → 14-30
+- Quarterly trends, market analysis → 90
+- Annual reviews, yearly roundups → 365
+- Timeless topics (how does X work, who is X) → omit recencyDays
+- ALWAYS set recencyDays for news/monitoring/alert queries
+
 EXAMPLES:
 
 "Who is Parker Conrad?"
 → analyzeQuery: {"complexity":"simple","searchQueries":["Parker Conrad","Parker Conrad CEO","Parker Conrad Rippling founder"]}
 
 "Compare IBM and Google quantum computing 2024"
-→ analyzeQuery: {"complexity":"complex","searchQueries":["IBM quantum 2024","Google quantum AI 2024","IBM vs Google quantum","quantum error correction"]}
+→ analyzeQuery: {"complexity":"complex","searchQueries":["IBM quantum 2024","Google quantum AI 2024","IBM vs Google quantum","quantum error correction"],"recencyDays":365}
 
 "OpenAI news from TechCrunch"
-→ analyzeQuery: {"complexity":"simple","searchQueries":["OpenAI TechCrunch"],"includeDomains":["techcrunch.com"]}
+→ analyzeQuery: {"complexity":"simple","searchQueries":["OpenAI TechCrunch"],"includeDomains":["techcrunch.com"],"recencyDays":30}
 
 "Monitor news for 15 portfolio companies"
-→ analyzeQuery: {"complexity":"complex","searchQueries":["company1 company2 company3 news","company4 company5 company6 news",...]} (combine into ≤10 queries)
+→ analyzeQuery: {"complexity":"complex","searchQueries":["company1 company2 company3 news","company4 company5 company6 news",...], "recencyDays":2} (combine into ≤10 queries)
+
+"Latest AI funding rounds"
+→ analyzeQuery: {"complexity":"complex","searchQueries":["AI startup funding 2026","AI series A B funding","AI venture capital deals"],"recencyDays":14}
 
 "What should I have for dinner?"
 → failQuery: {"reason":"Personal preference questions cannot be answered through web research"}
@@ -189,7 +201,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     ],
   },
 
-  handler: async (prompt, { logger, stream, abortSignal, session }) => {
+  handler: async (prompt, { logger, stream, abortSignal, session, config }) => {
     logger.info("Starting web search agent", { prompt });
 
     const gatewayUrl = process.env.FRIDAY_GATEWAY_URL;
@@ -279,7 +291,20 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       return err("Failed to analyze query");
     }
 
-    const { analysis } = analysisState;
+    let { analysis } = analysisState;
+
+    // Apply defaultRecencyDays from workspace config when the LLM didn't set one
+    if (!analysis.recencyDays) {
+      const defaultRecencyDays = resolveDefaultRecencyDays(config);
+      if (defaultRecencyDays) {
+        analysis = { ...analysis, recencyDays: defaultRecencyDays };
+        logger.info("Applied defaultRecencyDays from config", { recencyDays: defaultRecencyDays });
+      } else if (config?.defaultRecencyDays !== undefined) {
+        logger.warn("Ignoring invalid defaultRecencyDays from config", {
+          value: config.defaultRecencyDays,
+        });
+      }
+    }
 
     const [progressMessage, reportDescription] = await Promise.all([
       generateResponseProgress(prompt, abortSignal),

@@ -24,6 +24,15 @@ export const QueryAnalysisSchema = z.object({
     .array(z.string())
     .optional()
     .describe("Specific domains to exclude - only if user explicitly mentions sites"),
+  recencyDays: z
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .optional()
+    .describe(
+      "Filter results to this many days back. Use for news/monitoring (7), recent trends (30-90), or annual reviews (365). Omit for timeless or historical queries.",
+    ),
 });
 
 export type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;

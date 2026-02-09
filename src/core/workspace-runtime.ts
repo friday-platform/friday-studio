@@ -50,6 +50,7 @@ import { MessageUser } from "../types/core.ts";
 import {
   buildAgentPrompt,
   buildFinalAgentPrompt,
+  extractAgentConfig,
   extractAgentConfigPrompt,
   validateAgentOutput,
 } from "./agent-helpers.ts";
@@ -742,8 +743,9 @@ export class WorkspaceRuntime {
     // Look up agent config to get the configured prompt (fallback)
     const agentConfig = this.config.workspace.agents?.[agentId];
 
-    // Extract agent prompt from config (uses type-safe extraction)
+    // Extract agent prompt and config from workspace agent config (uses type-safe extraction)
     const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
+    const agentCustomConfig = extractAgentConfig(agentConfig);
 
     // Build document context (facts, documents, signal data) with expanded artifacts
     const context = await buildAgentPrompt(
@@ -799,6 +801,7 @@ export class WorkspaceRuntime {
           }
         : undefined,
       additionalContext: { documents: fsmContext.documents },
+      config: agentCustomConfig,
     });
     // Map "atlas" config type to "sdk" for consistency with function parameter
     const agentType = agentConfig?.type === "atlas" ? "sdk" : agentConfig?.type;

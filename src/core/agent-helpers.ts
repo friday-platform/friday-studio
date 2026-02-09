@@ -39,6 +39,21 @@ function isAtlasAgent(agent: WorkspaceAgentConfig): agent is AtlasAgentConfig {
 }
 
 /**
+ * Extract agent-specific config from workspace agent config.
+ *
+ * @internal Exported for testing
+ */
+export function extractAgentConfig(
+  agentConfig: WorkspaceAgentConfig | undefined,
+): Record<string, unknown> | undefined {
+  if (!agentConfig) return undefined;
+  if (isAtlasAgent(agentConfig)) {
+    return agentConfig.config;
+  }
+  return undefined;
+}
+
+/**
  * Extract agent prompt from config based on agent type.
  *
  * @internal Exported for testing

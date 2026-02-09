@@ -318,11 +318,10 @@ export const AtlasAgentConfigSchema = z.object({
   description: z.string().describe("Agent description"),
   prompt: z.string().describe("Agent prompt"),
   // version: z.string().optional().describe("Agent version (defaults to latest)"),
-  // config: z
-  //   .record(z.string(), z.unknown())
-  //   .optional()
-  //   .describe("Agent-specific configuration passed to the agent"),
-  //
+  config: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Agent-specific configuration passed to the agent"),
   env: z
     .record(z.string(), z.union([z.string(), LinkCredentialRefSchema]))
     .optional()

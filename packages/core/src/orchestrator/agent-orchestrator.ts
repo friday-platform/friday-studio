@@ -66,6 +66,8 @@ export interface AgentExecutionContext {
   /** Stream events callback - requires streamId to be set */
   onStreamEvent?: (event: AtlasUIMessageChunk) => void;
   abortSignal?: AbortSignal;
+  /** Agent-specific configuration from workspace.yml */
+  config?: Record<string, unknown>;
 }
 
 export interface AgentOrchestratorConfig {
@@ -539,6 +541,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             {
               stream: streamEmitter, // Override with our stream emitter
               abortSignal: context.abortSignal, // Pass abort signal
+              config: context.config,
             },
           );
 
@@ -567,6 +570,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             },
             stream: streamEmitter,
             env: {},
+            config: context.config,
             abortSignal: context.abortSignal,
           };
         }
@@ -594,6 +598,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           },
           stream: streamEmitter,
           env: {},
+          config: context.config,
           abortSignal: context.abortSignal,
         };
       }
