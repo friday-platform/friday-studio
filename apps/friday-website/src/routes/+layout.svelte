@@ -8,6 +8,7 @@ import logo from "$lib/assets/logo.svg";
 import logoGrey from "$lib/assets/logo-grey.svg";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import Bluesky from "$lib/icons/bluesky.svelte";
+import Discord from "$lib/icons/discord.svelte";
 import Linkedin from "$lib/icons/linkedin.svelte";
 import X from "$lib/icons/x.svelte";
 
@@ -66,6 +67,10 @@ afterNavigate(() => {
 					rel="noopener noreferrer">Docs</DropdownMenu.Item
 				>
 
+				<DropdownMenu.Item href="mailto:hello@hellofriday.ai" rel="noopener noreferrer"
+					>Contact Us</DropdownMenu.Item
+				>
+
 				<DropdownMenu.Separator />
 
 				<DropdownMenu.Item
@@ -90,7 +95,7 @@ afterNavigate(() => {
 	<nav aria-label="Main navigation">
 		<ul>
 			<li><a href={resolve('/')}>Home</a></li>
-			<li><a href={resolve('/announcement')}>Announcement</a></li>
+			<!-- <li><a href={resolve('/announcement')}>Announcement</a></li> -->
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 			<li><a href="/#faq">FAQ</a></li>
 			<li>
@@ -99,6 +104,8 @@ afterNavigate(() => {
 			<li>
 				<a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a>
 			</li>
+
+			<li><a href="mailto:hello@hellofriday.ai">Contact Us</a></li>
 		</ul>
 	</nav>
 
@@ -122,7 +129,7 @@ afterNavigate(() => {
 
 	<p>&copy; {currentYear} Tempest Labs, Inc.</p>
 
-	<ul>
+	<ul class="nav">
 		<li><a href={resolve('/terms')}>Terms & Conditions</a></li>
 		<li><a href={resolve('/privacy')}>Privacy Policy</a></li>
 		<li>
@@ -130,10 +137,9 @@ afterNavigate(() => {
 				>Security</a
 			>
 		</li>
-		<li><a href="mailto:hello@hellofriday.ai">Contact Us</a></li>
 	</ul>
 
-	<ul>
+	<ul class="social">
 		<li>
 			<a
 				href="https://www.linkedin.com/company/hello-friday-ai/"
@@ -164,6 +170,17 @@ afterNavigate(() => {
 				aria-label="X (formerly Twitter)"
 			>
 				<X />
+			</a>
+		</li>
+
+		<li>
+			<a
+				href="https://discord.gg/uczJyp5FMH"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="Discord"
+			>
+				<Discord />
 			</a>
 		</li>
 	</ul>
@@ -328,7 +345,7 @@ afterNavigate(() => {
 			}
 		}
 
-		ul {
+		.nav {
 			align-items: center;
 			display: flex;
 			gap: var(--size-3);
@@ -352,6 +369,50 @@ afterNavigate(() => {
 					border-radius: var(--radius-2);
 					content: '';
 					inset-block: calc(-1 * var(--size-0-5));
+					inset-inline: calc(-1 * var(--size-1));
+					opacity: 0;
+					position: absolute;
+					transition: all 200ms ease;
+				}
+
+				&:hover {
+					opacity: 1;
+
+					&:before {
+						opacity: 1;
+					}
+				}
+			}
+		}
+
+		.social {
+			align-items: center;
+			display: flex;
+			gap: var(--size-3);
+
+			li {
+				flex: none;
+			}
+
+			@media (min-width: 768px) {
+				gap: var(--size-4);
+			}
+
+			a {
+				block-size: var(--size-4);
+				display: block;
+				inline-size: var(--size-4);
+				position: relative;
+
+				& :global(svg) {
+					transform: translate3d(0, 0, 0);
+				}
+
+				&:before {
+					background-color: hsl(0 0 0 / 0.08);
+					border-radius: var(--radius-2);
+					content: '';
+					inset-block: calc(-1 * var(--size-1));
 					inset-inline: calc(-1 * var(--size-1));
 					opacity: 0;
 					position: absolute;

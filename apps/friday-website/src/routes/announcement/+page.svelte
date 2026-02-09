@@ -183,6 +183,7 @@ import Page from "$lib/components/page.svelte";
 		aspect-ratio: 4 / 3;
 		box-shadow: var(--shadow-1);
 		border-radius: var(--radius-4);
+		inline-size: 100%;
 		overflow: hidden;
 	}
 

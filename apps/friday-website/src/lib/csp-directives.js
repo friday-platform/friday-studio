@@ -27,7 +27,7 @@ export function makeDirectives({ dev }) {
       "https://c.bing.com",
       "https://i.ytimg.com",
     ],
-    "frame-src": ["self", "https://www.youtube.com"],
+    "frame-src": ["self", "https://www.youtube.com", "https://www.googletagmanager.com"],
     "font-src": ["self"],
     "connect-src": [
       "self",

@@ -268,7 +268,7 @@ const mainPrompts = useCases
 	<div class="pinwheel-shade"></div>
 </div>
 <section class="hero">
-	<h1>Conversation automation for everyone</h1>
+	<h1>Conversational automation for everyone</h1>
 
 	<div class="prompts" bind:this={promptContainer}>
 		{#each mainPrompts as item, i (item.title)}
@@ -285,17 +285,20 @@ const mainPrompts = useCases
 	{#each useCases as item (item.title)}
 		<article>
 			<header>
-				{#each item.integrations as integration (integration)}
-					{@const icon = getServiceIcon(integration)}
-					{#if icon}
-						{#if icon.type === 'component'}
-							{@const Component = icon.src}
-							<Component />
-						{:else}
-							<img src={icon.src} alt={`${integration} logo`} />
+				<span>{item.category}</span>
+				<div>
+					{#each item.integrations as integration (integration)}
+						{@const icon = getServiceIcon(integration)}
+						{#if icon}
+							{#if icon.type === 'component'}
+								{@const Component = icon.src}
+								<Component />
+							{:else}
+								<img src={icon.src} alt={`${integration} logo`} />
+							{/if}
 						{/if}
-					{/if}
-				{/each}
+					{/each}
+				</div>
 			</header>
 
 			<h2>
@@ -303,10 +306,6 @@ const mainPrompts = useCases
 			</h2>
 
 			<p>{item.summary}</p>
-
-			<span>Prompt</span>
-
-			<p class="prompt">”{item.prompt}”</p>
 		</article>
 	{/each}
 </section>
@@ -344,7 +343,7 @@ const mainPrompts = useCases
 			font-size: var(--font-size-5);
 			font-weight: var(--font-weight-5);
 			line-height: var(--font-lineheight-0);
-			margin-block: calc(-1 * var(--size-6)) var(--size-3);
+			margin-block: calc(-1 * var(--size-4)) var(--size-4);
 			position: relative;
 			z-index: var(--layer-1);
 		}
@@ -362,7 +361,7 @@ const mainPrompts = useCases
 				grid-row: 1 / -1;
 				letter-spacing: calc(-1 * var(--font-letterspacing-1));
 				line-height: var(--font-lineheight-1);
-				max-inline-size: var(--size-150);
+				max-inline-size: var(--size-216);
 				text-wrap-style: pretty;
 				text-align: center;
 			}
@@ -441,15 +440,35 @@ const mainPrompts = useCases
 			}
 
 			header {
-				display: flex;
-				gap: var(--size-2);
 				margin-block: 0 var(--size-3);
 
-				& :global(svg),
-				img {
-					aspect-ratio: 1 / 1;
-					object-fit: contain;
-					inline-size: var(--size-4);
+				span {
+					display: block;
+					font-size: var(--font-size-2);
+					font-weight: var(--font-weight-5);
+					line-height: var(--font-lineheight-2);
+					opacity: 0.6;
+					text-transform: capitalize;
+
+					/* span {
+				margin-block: var(--size-3) var(--size-1);
+				font-size: var(--font-size-1);
+				font-weight: var(--font-weight-4-5);
+				opacity: 0.6;
+			} */
+				}
+
+				div {
+					display: flex;
+					gap: var(--size-2);
+					margin-block: var(--size-2) 0;
+
+					& :global(svg),
+					img {
+						aspect-ratio: 1 / 1;
+						object-fit: contain;
+						inline-size: var(--size-4);
+					}
 				}
 			}
 
@@ -466,18 +485,6 @@ const mainPrompts = useCases
 				font-weight: var(--font-weight-4-5);
 				line-height: var(--font-lineheight-2);
 				opacity: 0.8;
-
-				&.prompt {
-					font-size: var(--font-size-2);
-				}
-			}
-
-			span {
-				margin-block: var(--size-3) var(--size-1);
-				font-size: var(--font-size-1);
-				font-weight: var(--font-weight-4-5);
-				opacity: 0.6;
-				text-transform: capitalize;
 			}
 		}
 	}

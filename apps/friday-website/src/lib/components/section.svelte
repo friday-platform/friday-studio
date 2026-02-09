@@ -13,10 +13,7 @@ let { header, details }: Props = $props();
 
 	{#each details as detail, index (index)}
 		<div>
-			<h3>{detail.title}</h3>
-			<p>
-				{detail.description}
-			</p>
+			<p>{detail.title}</p>
 		</div>
 	{/each}
 </section>
@@ -63,18 +60,12 @@ let { header, details }: Props = $props();
 		margin-block: var(--size-6) 0;
 		grid-row: 2;
 
-		h3 {
-			font-size: var(--font-size-6);
-			font-weight: var(--font-weight-6);
-			line-height: var(--font-lineheight-1);
-		}
-
 		p {
-			font-size: var(--font-size-5);
-			margin-block: var(--size-2) 0;
-			line-height: var(--font-lineheight-2);
-			opacity: 0.7;
-			text-wrap-style: pretty;
+			font-size: var(--font-size-6);
+			font-weight: var(--font-weight-5);
+			line-height: var(--font-lineheight-1);
+			opacity: 0.8;
+			text-wrap-style: balance;
 		}
 	}
 </style>

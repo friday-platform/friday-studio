@@ -52,63 +52,13 @@ const CSP_HEADER = directivesToHeaderString(makeDirectives({ dev }));
 
 const analyticsEnabled = process.env.ANALYTICS_ENABLED === "true";
 
-const ANALYTICS_TEMPLATE = `<!-- Default consent: deny all until user interacts with CookieYes banner -->
+const ANALYTICS_TEMPLATE = `<!-- Google Tag Manager -->
 <script nonce="__CSP_NONCE__">
-window.dataLayer = window.dataLayer || [];
-function gtag(...args){dataLayer.push(args);}
-gtag('consent', 'default', {
-  ad_storage: 'denied',
-  ad_user_data: 'denied',
-  ad_personalization: 'denied',
-  analytics_storage: 'denied',
-  functionality_storage: 'denied',
-  personalization_storage: 'denied',
-  security_storage: 'granted',
-  wait_for_update: 2000,
-});
-</script>
-
-<!-- CookieYes consent banner -->
-<script id="cookieyes" async nonce="__CSP_NONCE__" src="https://cdn-cookieyes.com/client_data/592f202dfae33fc044f781db9ab4bb3c/script.js"></script>
-
-<!-- Google Analytics (gtag.js) -->
-<script async nonce="__CSP_NONCE__" src="https://www.googletagmanager.com/gtag/js?id=G-NLLF9SE37C"></script>
-
-<!-- GA4 config — send_page_view disabled; afterNavigate handles it -->
-<script nonce="__CSP_NONCE__">
-gtag('js', new Date());
-gtag('config', 'G-NLLF9SE37C', { send_page_view: false });
-</script>
-
-<!-- Microsoft Clarity -->
-<script nonce="__CSP_NONCE__">
-((c, l, a, r, i) => {
-  c[a] = c[a] || ((...args) => {
-    if (!c[a].q) { c[a].q = []; }
-    c[a].q.push(args);
-  });
-  const t = l.createElement(r);
-  t.async = 1;
-  t.src = "https://www.clarity.ms/tag/" + i;
-  const y = l.getElementsByTagName(r)[0];
-  y.parentNode.insertBefore(t, y);
-})(window, document, "clarity", "script", "uxx0z9bzvb");
-</script>
-
-<!-- CookieYes → GCM v2 consent bridge -->
-<script nonce="__CSP_NONCE__">
-document.addEventListener('cookieyes_consent_update', (e) => {
-  const d = e.detail;
-  if (!d || !Array.isArray(d.accepted)) return;
-  gtag('consent', 'update', {
-    analytics_storage:        d.accepted.includes('analytics')        ? 'granted' : 'denied',
-    ad_storage:               d.accepted.includes('advertisement')    ? 'granted' : 'denied',
-    ad_user_data:             d.accepted.includes('advertisement')    ? 'granted' : 'denied',
-    ad_personalization:       d.accepted.includes('advertisement')    ? 'granted' : 'denied',
-    functionality_storage:    d.accepted.includes('functional')       ? 'granted' : 'denied',
-    personalization_storage:  d.accepted.includes('functional')       ? 'granted' : 'denied',
-  });
-});
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-WKFQFCTM');
 </script>`;
 
 function injectAnalytics(html: string): string {
@@ -121,7 +71,10 @@ function injectAnalytics(html: string): string {
 
   const nonce = nonceMatch[1];
   const analyticsHtml = ANALYTICS_TEMPLATE.replaceAll("__CSP_NONCE__", nonce);
-  return html.replace("</head>", `${analyticsHtml}\n</head>`);
+  const gtmNoscript = `\n<!-- Google Tag Manager (noscript) -->\n<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WKFQFCTM" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>`;
+  return html
+    .replace("</head>", `${analyticsHtml}\n</head>`)
+    .replace(/<body([^>]*)>/, `<body$1>${gtmNoscript}`);
 }
 
 function setSecurityHeaders(headers: Headers): void {
