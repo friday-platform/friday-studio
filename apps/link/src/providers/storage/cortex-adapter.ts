@@ -25,11 +25,15 @@ const logger = createLogger({ component: "provider-storage:cortex-adapter" });
 export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
   constructor(
     private baseUrl: string,
-    private authToken: string,
+    private getAuthToken: () => string,
   ) {}
 
   private headers(): HeadersInit {
-    return { Authorization: `Bearer ${this.authToken}`, "Content-Type": "application/json" };
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error("CortexProviderStorageAdapter: missing auth token");
+    }
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   }
 
   /**
@@ -47,7 +51,7 @@ export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
   }
 
   async add(provider: DynamicProviderInput): Promise<void> {
-    if ((await this.get(provider.id)) !== null) {
+    if ((await this.findObjectByProviderId(provider.id)) !== null) {
       throw new Error(`Provider already exists: ${provider.id}`);
     }
 
@@ -94,7 +98,12 @@ export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
       signal: AbortSignal.timeout(10_000),
     });
     if (!contentRes.ok) return null;
-    return DynamicProviderInputSchema.parse(await contentRes.json());
+    const parsed = DynamicProviderInputSchema.safeParse(await contentRes.json());
+    if (!parsed.success) {
+      logger.warn("Corrupt provider object in Cortex", { objectId, error: parsed.error });
+      return null;
+    }
+    return parsed.data;
   }
 
   async list(): Promise<DynamicProviderInput[]> {
@@ -116,15 +125,23 @@ export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
         if (!contentRes.ok) {
           throw new Error(`Failed to fetch object ${obj.id}: ${contentRes.status}`);
         }
-        return DynamicProviderInputSchema.parse(await contentRes.json());
+        const parsed = DynamicProviderInputSchema.safeParse(await contentRes.json());
+        if (!parsed.success) {
+          logger.warn("Corrupt provider object in Cortex", {
+            objectId: obj.id,
+            error: parsed.error,
+          });
+          return null;
+        }
+        return parsed.data;
       }),
     );
 
     const providers: DynamicProviderInput[] = [];
     for (const result of results) {
-      if (result.status === "fulfilled") {
+      if (result.status === "fulfilled" && result.value !== null) {
         providers.push(result.value);
-      } else {
+      } else if (result.status === "rejected") {
         logger.warn("Failed to fetch provider entry", { error: result.reason });
       }
     }

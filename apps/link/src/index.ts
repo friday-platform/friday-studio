@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import process from "node:process";
 import { logger } from "@atlas/logger";
@@ -17,6 +16,7 @@ import {
   PostgresPlatformRouteRepository,
 } from "./adapters/platform-route-repository.ts";
 import { AppInstallService } from "./app-install/service.ts";
+import { getAuthToken, runWithAuthToken } from "./auth-context.ts";
 import { config, readConfig } from "./config.ts";
 import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
@@ -30,19 +30,6 @@ import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
 import { createSummaryRoutes } from "./routes/summary.ts";
 import type { StorageAdapter } from "./types.ts";
-
-/**
- * AsyncLocalStorage for per-request auth token.
- * Used by CypherHttpClient to get the token for the current request.
- */
-const authTokenStorage = new AsyncLocalStorage<string>();
-
-/**
- * Get the auth token for the current request from AsyncLocalStorage.
- */
-function getAuthToken(): string {
-  return authTokenStorage.getStore() ?? "";
-}
 
 /**
  * Create Link application with dependency-injected storage adapter and OAuth service.
@@ -68,7 +55,7 @@ export function createApp(
   const authTokenMiddleware = factory.createMiddleware((c, next) => {
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    return authTokenStorage.run(token, () => next());
+    return runWithAuthToken(token, () => next());
   });
 
   /**

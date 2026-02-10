@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import process from "node:process";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getAuthToken } from "../../auth-context.ts";
 import type { ProviderStorageAdapter } from "./adapter.ts";
 import { CortexProviderStorageAdapter } from "./cortex-adapter.ts";
 import { LocalProviderStorageAdapter } from "./local-adapter.ts";
@@ -14,8 +15,8 @@ let cachedKv: Deno.Kv | null = null;
  * Get or create provider storage adapter.
  *
  * Auto-detects adapter from CORTEX_URL presence:
- * - If CORTEX_URL is set: Uses Cortex adapter (requires ATLAS_KEY)
- * - Otherwise: Uses local Deno KV adapter
+ * - If CORTEX_URL is set: Uses Cortex adapter with per-request auth from AsyncLocalStorage
+ * - Otherwise: Uses local Deno KV adapter (local dev only)
  *
  * The adapter is cached as a singleton for the process lifetime.
  *
@@ -31,18 +32,14 @@ export async function getProviderStorageAdapter(): Promise<ProviderStorageAdapte
   const cortexUrl = process.env.CORTEX_URL;
 
   if (cortexUrl) {
-    const atlasKey = process.env.ATLAS_KEY;
-    if (!atlasKey) {
-      throw new Error(
-        "ATLAS_KEY required when CORTEX_URL is set. Cannot persist provider definitions without credentials.",
-      );
-    }
-    cachedAdapter = new CortexProviderStorageAdapter(cortexUrl, atlasKey);
-  } else {
+    cachedAdapter = new CortexProviderStorageAdapter(cortexUrl, getAuthToken);
+  } else if (process.env.LINK_DEV_MODE === "true") {
     if (!cachedKv) {
       cachedKv = await Deno.openKv(join(getAtlasHome(), "link-providers.db"));
     }
     cachedAdapter = new LocalProviderStorageAdapter(cachedKv);
+  } else {
+    throw new Error("CORTEX_URL is required in non-dev environments");
   }
 
   return cachedAdapter;
