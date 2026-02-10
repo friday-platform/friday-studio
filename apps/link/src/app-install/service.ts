@@ -6,7 +6,10 @@
  */
 
 import { logger } from "@atlas/logger";
-import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
+import {
+  type PlatformRouteRepository,
+  RouteOwnershipError,
+} from "../adapters/platform-route-repository.ts";
 import {
   AppInstallCredentialSecretSchema,
   type AppInstallProvider,
@@ -112,10 +115,19 @@ export class AppInstallService {
 
     // 3. Get install result — either reinstall (no code) or normal OAuth exchange
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
+    const uid = userId ?? "dev";
     let result: AppInstallResult;
     if (!code) {
-      const installationId = Number(callbackParams?.get("installation_id"));
-      if (provider.completeReinstallation && installationId > 0) {
+      const installationId = callbackParams?.get("installation_id") ?? "";
+      if (provider.completeReinstallation && installationId) {
+        // Verify installation is unowned or owned by this user
+        const claimable = await this.routeStorage.isClaimable(installationId, uid);
+        if (!claimable) {
+          throw new AppInstallError(
+            "INSTALLATION_OWNED",
+            `Installation ${installationId} belongs to another user`,
+          );
+        }
         result = await provider.completeReinstallation(installationId);
       } else {
         // No reinstall path — let provider handle (throws approval_pending, missing_code, etc.)
@@ -126,7 +138,11 @@ export class AppInstallService {
     }
 
     // 4. Persist credential and route
-    const { credential, updated } = await this.persistInstallResult(result, userId);
+    const { credential, updated } = await this.persistInstallResult(
+      result,
+      userId,
+      provider.platform,
+    );
 
     this.log.info("app_install_completed", {
       provider: providerId,
@@ -142,39 +158,57 @@ export class AppInstallService {
   }
 
   /**
-   * Attempt server-side reconnection for providers with existing installations.
-   * Lists installation IDs via app-level auth, then completes reinstallation for each.
-   * Returns null when provider doesn't support reconnection or has no installations.
+   * Attempt server-side reconnection for installations the user already owns.
+   * Looks up owned routes (not app-level global list) and refreshes tokens.
+   * Returns null when provider doesn't support reconnection or user has no owned installations.
    */
   async reconnect(providerId: string, userId?: string): Promise<Credential[] | null> {
     const provider = await this.requireAppInstallProvider(providerId);
 
-    if (!provider.listInstallationIds || !provider.completeReinstallation) {
+    if (!provider.completeReinstallation) {
       return null;
     }
 
-    const ids = await provider.listInstallationIds();
-    if (ids.length === 0) {
+    const uid = userId ?? "dev";
+    const ownedInstallationIds = await this.routeStorage.listByUser(uid, provider.platform);
+    if (ownedInstallationIds.length === 0) {
       return null;
     }
 
     const credentials: Credential[] = [];
-    for (const id of ids) {
-      const result = await provider.completeReinstallation(id);
-      const { credential } = await this.persistInstallResult(result, userId);
-      credentials.push(credential);
+    for (const id of ownedInstallationIds) {
+      try {
+        const result = await provider.completeReinstallation(id);
+        const { credential } = await this.persistInstallResult(result, userId, provider.platform);
+        credentials.push(credential);
 
-      this.log.info("app_install_reconnected", {
-        provider: providerId,
-        platform: provider.platform,
-        externalId: result.externalId,
-        externalName: result.externalName,
-        credentialId: credential.id,
-        userId,
-      });
+        this.log.info("app_install_reconnected", {
+          provider: providerId,
+          platform: provider.platform,
+          externalId: result.externalId,
+          externalName: result.externalName,
+          credentialId: credential.id,
+          userId,
+        });
+      } catch (e) {
+        if (e instanceof AppInstallError && e.code === "INSTALLATION_OWNED") {
+          this.log.error("app_install_reconnect_ownership_conflict", {
+            provider: providerId,
+            installationId: id,
+            userId,
+            error: e,
+          });
+        } else {
+          this.log.warn("app_install_reconnect_failed", {
+            provider: providerId,
+            installationId: id,
+            error: e,
+          });
+        }
+      }
     }
 
-    return credentials;
+    return credentials.length > 0 ? credentials : null;
   }
 
   /** Decode and verify JWT state, throwing STATE_INVALID on failure. */
@@ -190,8 +224,18 @@ export class AppInstallService {
   private async persistInstallResult(
     result: AppInstallResult,
     userId: string | undefined,
+    platform: string,
   ): Promise<{ credential: Credential; updated: boolean }> {
     const uid = userId ?? "dev";
+
+    // Check ownership before saving credential to avoid orphaned tokens
+    const claimable = await this.routeStorage.isClaimable(result.externalId, uid);
+    if (!claimable) {
+      throw new AppInstallError(
+        "INSTALLATION_OWNED",
+        `Route ${result.externalId} is owned by another user`,
+      );
+    }
 
     const existingCredential = await this.credentialStorage.findByProviderAndExternalId(
       result.credential.provider,
@@ -211,7 +255,14 @@ export class AppInstallService {
       credentialId = id;
     }
 
-    await this.routeStorage.upsert(result.externalId, uid);
+    try {
+      await this.routeStorage.upsert(result.externalId, uid, platform);
+    } catch (e) {
+      if (e instanceof RouteOwnershipError) {
+        throw new AppInstallError("INSTALLATION_OWNED", e.message);
+      }
+      throw e;
+    }
 
     const credential = await this.credentialStorage.get(credentialId, uid);
     if (!credential) {
@@ -259,7 +310,14 @@ export class AppInstallService {
     const secret = secretResult.data;
 
     // Upsert route (team_id → user_id)
-    await this.routeStorage.upsert(secret.externalId, userId);
+    try {
+      await this.routeStorage.upsert(secret.externalId, userId, provider.platform);
+    } catch (e) {
+      if (e instanceof RouteOwnershipError) {
+        throw new AppInstallError("INSTALLATION_OWNED", e.message);
+      }
+      throw e;
+    }
 
     this.log.info("app_install_route_reconciled", {
       provider: providerId,

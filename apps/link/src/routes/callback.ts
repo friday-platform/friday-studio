@@ -14,6 +14,7 @@ import { factory } from "../factory.ts";
 import { STATE_JWT_SECRET } from "../oauth/jwt-secret.ts";
 import { renderErrorResponse, renderSuccessResponse } from "../oauth/responses.ts";
 import type { OAuthService } from "../oauth/service.ts";
+import { mapAppInstallErrorToResponse } from "./app-install.ts";
 
 /**
  * Minimal state schema to detect flow type and extract redirect URI.
@@ -116,10 +117,10 @@ export function createCallbackRoutes(
 
       return renderSuccessResponse(c, credential.provider, credential.id);
     } catch (e) {
-      // Surface specific AppInstallError codes (e.g., APPROVAL_PENDING)
+      // Surface specific AppInstallError codes with proper HTTP status
       if (e instanceof AppInstallError) {
         logger.info("app_install_error", { code: e.code, message: e.message });
-        return renderErrorResponse(c, e.code.toLowerCase(), e.message);
+        return mapAppInstallErrorToResponse(c, e);
       }
 
       const isAppInstall = flowType.k === "app_install";

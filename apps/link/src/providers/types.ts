@@ -348,13 +348,6 @@ export type AppInstallProvider = BaseProviderDefinition & {
   ): Promise<{ access_token: string; expires_at: number; refresh_token?: string }>;
 
   /**
-   * Optional: list existing installation IDs using app-level auth.
-   * Used by reconnect flow to skip OAuth redirect when app is already installed.
-   * Returns empty array or undefined when no installations exist.
-   */
-  listInstallationIds?(): Promise<number[]>;
-
-  /**
    * Optional reinstallation handler for app-level recovery flows.
    * Called when app is already installed but credential is missing (e.g., user
    * deleted credential but app still installed on GitHub org). Uses app-level
@@ -362,10 +355,10 @@ export type AppInstallProvider = BaseProviderDefinition & {
    *
    * Currently only applicable to GitHub App installations.
    *
-   * @param installationId - Installation ID from callback params
+   * @param installationId - Installation ID from callback params (string from URL/DB)
    * @returns Same result as completeInstallation
    */
-  completeReinstallation?(installationId: number): Promise<AppInstallResult>;
+  completeReinstallation?(installationId: string): Promise<AppInstallResult>;
 };
 
 /**

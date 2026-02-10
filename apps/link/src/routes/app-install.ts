@@ -152,18 +152,24 @@ export function createAppInstallRoutes(service: AppInstallService) {
 /**
  * Map AppInstallError codes to appropriate HTTP responses.
  */
-function mapAppInstallErrorToResponse(c: Context, e: AppInstallError) {
+export function mapAppInstallErrorToResponse(c: Context, e: AppInstallError) {
   switch (e.code) {
     case "STATE_INVALID":
+    case "INVALID_PROVIDER_TYPE":
+    case "MISSING_CODE":
+    case "APPROVAL_PENDING":
+    case "NOT_REFRESHABLE":
       return c.json({ error: e.code, message: e.message }, 400);
     case "PROVIDER_NOT_FOUND":
       return c.json({ error: e.code, message: e.message }, 404);
-    case "INVALID_PROVIDER_TYPE":
-      return c.json({ error: e.code, message: e.message }, 400);
+    case "INSTALLATION_OWNED":
+      return c.json({ error: e.code, message: e.message }, 403);
     case "SLACK_NETWORK_ERROR":
     case "SLACK_HTTP_ERROR":
     case "SLACK_PARSE_ERROR":
     case "SLACK_OAUTH_ERROR":
+    case "SLACK_REFRESH_ERROR":
+    case "REFRESH_ERROR":
       return c.json({ error: e.code, message: e.message }, 502);
     case "CREDENTIAL_NOT_FOUND":
     case "INVALID_CREDENTIAL":

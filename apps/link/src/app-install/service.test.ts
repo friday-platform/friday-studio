@@ -4,126 +4,16 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
+import { TestPlatformRouteRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
 import { ProviderRegistry } from "../providers/registry.ts";
 import { defineAppInstallProvider } from "../providers/types.ts";
-import type {
-  Credential,
-  CredentialInput,
-  Metadata,
-  SaveResult,
-  StorageAdapter,
-} from "../types.ts";
 import { AppInstallError } from "./errors.ts";
 import { AppInstallService } from "./service.ts";
 
-/**
- * Mock implementations for external boundaries (storage, routes)
- */
-
-class MockStorageAdapter implements StorageAdapter {
-  private credentials = new Map<string, Credential>();
-  private idCounter = 0;
-
-  save(input: CredentialInput, _userId: string): Promise<SaveResult> {
-    const id = `cred-${++this.idCounter}`;
-    const credential: Credential = {
-      id,
-      ...input,
-      metadata: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    };
-    this.credentials.set(id, credential);
-    return Promise.resolve({ id, metadata: credential.metadata });
-  }
-
-  update(id: string, input: CredentialInput, _userId: string) {
-    const existing = this.credentials.get(id);
-    if (!existing) return Promise.reject(new Error("Credential not found"));
-    const updated: Credential = {
-      ...existing,
-      ...input,
-      id,
-      metadata: { ...existing.metadata, updatedAt: new Date().toISOString() },
-    };
-    this.credentials.set(id, updated);
-    return Promise.resolve(updated.metadata);
-  }
-
-  get(id: string, _userId: string): Promise<Credential | null> {
-    return Promise.resolve(this.credentials.get(id) ?? null);
-  }
-
-  list(_type: string, _userId: string) {
-    return Promise.resolve(
-      Array.from(this.credentials.values()).map((c) => ({
-        id: c.id,
-        type: c.type,
-        provider: c.provider,
-        label: c.label,
-        metadata: c.metadata,
-      })),
-    );
-  }
-
-  delete(id: string, _userId: string) {
-    this.credentials.delete(id);
-    return Promise.resolve();
-  }
-
-  findByProviderAndExternalId(
-    provider: string,
-    externalId: string,
-    _userId: string,
-  ): Promise<Credential | null> {
-    for (const cred of this.credentials.values()) {
-      if (cred.provider === provider) {
-        const secret = cred.secret as { externalId?: string };
-        if (secret.externalId === externalId) {
-          return Promise.resolve(cred);
-        }
-      }
-    }
-    return Promise.resolve(null);
-  }
-
-  // Not used by service - stub to satisfy interface
-  upsert(): Promise<SaveResult> {
-    throw new Error("MockStorageAdapter.upsert() should not be called");
-  }
-  updateMetadata(): Promise<Metadata> {
-    throw new Error("MockStorageAdapter.updateMetadata() should not be called");
-  }
-
-  // Test helper
-  reset() {
-    this.credentials.clear();
-    this.idCounter = 0;
-  }
-}
-
-class MockPlatformRouteRepository implements PlatformRouteRepository {
-  private routes = new Map<string, string>();
-
-  upsert(teamId: string, userId: string): Promise<void> {
-    this.routes.set(teamId, userId);
-    return Promise.resolve();
-  }
-
-  delete(teamId: string): Promise<void> {
-    this.routes.delete(teamId);
-    return Promise.resolve();
-  }
-
-  /** Test helper - get route for assertions */
-  getRoute(teamId: string): string | undefined {
-    return this.routes.get(teamId);
-  }
-}
-
 describe("AppInstallService", () => {
   let registry: ProviderRegistry;
-  let storage: MockStorageAdapter;
-  let routeStorage: MockPlatformRouteRepository;
+  let storage: TestStorageAdapter;
+  let routeStorage: TestPlatformRouteRepository;
   let service: AppInstallService;
 
   const mockProvider = defineAppInstallProvider({
@@ -158,8 +48,8 @@ describe("AppInstallService", () => {
 
   beforeEach(() => {
     registry = new ProviderRegistry();
-    storage = new MockStorageAdapter();
-    routeStorage = new MockPlatformRouteRepository();
+    storage = new TestStorageAdapter();
+    routeStorage = new TestPlatformRouteRepository();
     service = new AppInstallService(registry, storage, routeStorage, "https://link.example.com");
 
     // Register mock provider
@@ -176,13 +66,11 @@ describe("AppInstallService", () => {
       expect(result.authorizationUrl.startsWith("https://slack.com/oauth/v2/authorize")).toEqual(
         true,
       );
-      expect(result.authorizationUrl.includes("state=")).toEqual(true);
+      expect(result.authorizationUrl).toContain("state=");
       // Callback URL should include provider name for readability (e.g., /v1/callback/test-slack)
-      expect(
-        result.authorizationUrl.includes(
-          "redirect_uri=https%3A%2F%2Flink.example.com%2Fv1%2Fcallback%2Ftest-slack",
-        ),
-      ).toEqual(true);
+      expect(result.authorizationUrl).toContain(
+        "redirect_uri=https%3A%2F%2Flink.example.com%2Fv1%2Fcallback%2Ftest-slack",
+      );
     });
 
     it("throws PROVIDER_NOT_FOUND for unknown provider", async () => {
@@ -348,9 +236,9 @@ describe("AppInstallService", () => {
   });
 
   describe("reconnect", () => {
-    function githubResult(installationId: number, orgName: string) {
+    function githubResult(installationId: string, orgName: string) {
       return {
-        externalId: String(installationId),
+        externalId: installationId,
         externalName: orgName,
         credential: {
           type: "oauth" as const,
@@ -358,10 +246,14 @@ describe("AppInstallService", () => {
           label: orgName,
           secret: {
             platform: "github" as const,
-            externalId: String(installationId),
+            externalId: installationId,
             access_token: `ghs_${installationId}`,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
-            github: { installationId, organizationName: orgName, organizationId: installationId },
+            github: {
+              installationId: Number(installationId),
+              organizationName: orgName,
+              organizationId: Number(installationId),
+            },
           },
         },
       };
@@ -371,63 +263,64 @@ describe("AppInstallService", () => {
       id: "test-github-reconnect",
       platform: "github",
       displayName: "Test GitHub Reconnect",
-      description: "Test GitHub provider with listInstallationIds",
+      description: "Test GitHub provider with completeReinstallation",
       buildAuthorizationUrl(_callbackUrl, state) {
         return `https://github.com/apps/test/installations/new?state=${state}`;
       },
       completeInstallation() {
         return Promise.reject(new Error("Should not be called"));
-      },
-      listInstallationIds() {
-        return Promise.resolve([111, 222]);
       },
       completeReinstallation(installationId) {
-        const names: Record<number, string> = { 111: "org-one", 222: "org-two" };
+        const names: Record<string, string> = { "111": "org-one", "222": "org-two" };
         return Promise.resolve(githubResult(installationId, names[installationId] ?? "unknown"));
-      },
-    });
-
-    const noInstallsProvider = defineAppInstallProvider({
-      id: "test-github-empty",
-      platform: "github",
-      displayName: "Test GitHub Empty",
-      description: "No installations",
-      buildAuthorizationUrl(_callbackUrl, state) {
-        return `https://github.com/apps/test/installations/new?state=${state}`;
-      },
-      completeInstallation() {
-        return Promise.reject(new Error("Should not be called"));
-      },
-      listInstallationIds() {
-        return Promise.resolve([]);
-      },
-      completeReinstallation() {
-        return Promise.reject(new Error("Should not be called"));
       },
     });
 
     beforeEach(() => {
       registry.register(mockGitHubReconnectProvider);
-      registry.register(noInstallsProvider);
     });
 
-    it("persists credentials for all installations and returns them", async () => {
+    it("refreshes credentials for user-owned installations only", async () => {
+      // Seed routes owned by user-1
+      routeStorage.seedRoute("111", "user-1", "github");
+      routeStorage.seedRoute("222", "user-1", "github");
+
       const result = await service.reconnect("test-github-reconnect", "user-1");
 
       expect(result).toHaveLength(2);
       expect(result).toMatchObject([{ label: "org-one" }, { label: "org-two" }]);
 
-      // Verify routes created
+      // Verify routes still belong to user-1
       expect(routeStorage.getRoute("111")).toEqual("user-1");
       expect(routeStorage.getRoute("222")).toEqual("user-1");
     });
 
-    it("returns null when listInstallationIds returns empty", async () => {
-      const result = await service.reconnect("test-github-empty");
+    it("returns null when user has no owned routes", async () => {
+      const result = await service.reconnect("test-github-reconnect", "user-with-nothing");
       expect(result).toBeNull();
     });
 
-    it("returns null when provider has no listInstallationIds", async () => {
+    it("does not reconnect installations owned by other users", async () => {
+      // Route owned by someone else
+      routeStorage.seedRoute("111", "other-user", "github");
+
+      const result = await service.reconnect("test-github-reconnect", "user-1");
+      expect(result).toBeNull();
+    });
+
+    it("only returns routes matching the provider platform", async () => {
+      // User owns both Slack and GitHub routes
+      routeStorage.seedRoute("T01234ABC", "user-1", "slack");
+      routeStorage.seedRoute("111", "user-1", "github");
+
+      const result = await service.reconnect("test-github-reconnect", "user-1");
+
+      // Only the GitHub route should be reconnected
+      expect(result).toHaveLength(1);
+      expect(result).toMatchObject([{ label: "org-one" }]);
+    });
+
+    it("returns null when provider has no completeReinstallation", async () => {
       const result = await service.reconnect("test-slack");
       expect(result).toBeNull();
     });
@@ -436,6 +329,35 @@ describe("AppInstallService", () => {
       const error = await service.reconnect("unknown").catch((e: unknown) => e);
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("PROVIDER_NOT_FOUND");
+    });
+
+    it("skips failing installations and returns successful ones", async () => {
+      routeStorage.seedRoute("111", "user-1", "github");
+      routeStorage.seedRoute("999", "user-1", "github"); // Will fail — unknown id
+
+      const failingProvider = defineAppInstallProvider({
+        id: "test-github-partial",
+        platform: "github",
+        displayName: "Test GitHub Partial",
+        description: "Fails on unknown installations",
+        buildAuthorizationUrl(_callbackUrl, state) {
+          return `https://github.com/apps/test/installations/new?state=${state}`;
+        },
+        completeInstallation() {
+          return Promise.reject(new Error("Should not be called"));
+        },
+        completeReinstallation(installationId) {
+          if (installationId === "999") {
+            return Promise.reject(new Error("Installation not found"));
+          }
+          return Promise.resolve(githubResult(installationId, "org-one"));
+        },
+      });
+      registry.register(failingProvider);
+
+      const result = await service.reconnect("test-github-partial", "user-1");
+      expect(result).toHaveLength(1);
+      expect(result).toMatchObject([{ label: "org-one" }]);
     });
   });
 
@@ -453,7 +375,7 @@ describe("AppInstallService", () => {
       },
       completeReinstallation(installationId) {
         return Promise.resolve({
-          externalId: String(installationId),
+          externalId: installationId,
           externalName: "test-org",
           credential: {
             type: "oauth",
@@ -461,10 +383,14 @@ describe("AppInstallService", () => {
             label: "test-org",
             secret: {
               platform: "github",
-              externalId: String(installationId),
+              externalId: installationId,
               access_token: "ghs_test_token",
               expires_at: Math.floor(Date.now() / 1000) + 3600,
-              github: { installationId, organizationName: "test-org", organizationId: 12345 },
+              github: {
+                installationId: Number(installationId),
+                organizationName: "test-org",
+                organizationId: 12345,
+              },
             },
           },
         });
@@ -526,6 +452,31 @@ describe("AppInstallService", () => {
       expect(allCreds.length).toEqual(1);
     });
 
+    it("rejects no-code reinstall when installation belongs to another user", async () => {
+      // Route owned by a different user
+      routeStorage.seedRoute("98765", "other-user", "github");
+
+      const { authorizationUrl } = await service.initiateInstall("test-github");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      const params = new URLSearchParams({ installation_id: "98765" });
+      await expect(service.completeInstall(state, undefined, params)).rejects.toMatchObject({
+        code: "INSTALLATION_OWNED",
+      });
+    });
+
+    it("allows no-code reinstall when installation is unowned", async () => {
+      // No route exists — installation is unclaimed
+      const { authorizationUrl } = await service.initiateInstall("test-github");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      const params = new URLSearchParams({ installation_id: "98765" });
+      const result = await service.completeInstall(state, undefined, params);
+      expect(result.credential.provider).toEqual("test-github");
+    });
+
     it("falls through to provider when no code and no completeReinstallation", async () => {
       // test-slack provider doesn't have completeReinstallation — provider throws MISSING_CODE
       const { authorizationUrl } = await service.initiateInstall("test-slack");
@@ -537,6 +488,80 @@ describe("AppInstallService", () => {
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("MISSING_CODE");
+    });
+
+    it("rejects full OAuth flow when route is owned by another user", async () => {
+      // Route owned by user-a
+      routeStorage.seedRoute("team-takeover-code", "user-a", "slack");
+
+      // user-b goes through full OAuth flow with a valid code
+      const { authorizationUrl } = await service.initiateInstall("test-slack", undefined, "user-b");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+
+      // persistInstallResult calls routeStorage.upsert which throws on ownership conflict
+      await expect(service.completeInstall(state, "takeover-code")).rejects.toMatchObject({
+        code: "INSTALLATION_OWNED",
+      });
+    });
+  });
+
+  describe("uninstall", () => {
+    it("deletes route and credential", async () => {
+      const { authorizationUrl } = await service.initiateInstall("test-slack");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+      const result = await service.completeInstall(state, "uninstall-team");
+
+      // Verify route exists
+      expect(routeStorage.getRoute("team-uninstall-team")).toEqual("dev");
+
+      await service.uninstall("test-slack", result.credential.id, "dev");
+
+      // Route deleted
+      expect(routeStorage.getRoute("team-uninstall-team")).toBeUndefined();
+      // Credential deleted
+      const stored = await storage.get(result.credential.id, "dev");
+      expect(stored).toBeNull();
+    });
+
+    it("is idempotent when credential already deleted", async () => {
+      await expect(service.uninstall("test-slack", "non-existent", "dev")).resolves.toBeUndefined();
+    });
+
+    it("throws INVALID_PROVIDER_TYPE for provider mismatch", async () => {
+      // Register a second provider
+      registry.register(
+        defineAppInstallProvider({
+          id: "other-provider",
+          platform: "slack",
+          displayName: "Other",
+          description: "Other",
+          buildAuthorizationUrl(_cb, state) {
+            return `https://example.com?state=${state}`;
+          },
+          completeInstallation() {
+            return Promise.reject(new Error("unused"));
+          },
+        }),
+      );
+
+      // Create credential under test-slack
+      const { authorizationUrl } = await service.initiateInstall("test-slack");
+      const state = new URL(authorizationUrl).searchParams.get("state");
+      if (!state) throw new Error("state should be defined");
+      const result = await service.completeInstall(state, "mismatch-team");
+
+      // Try to uninstall with wrong provider — credential.provider is test-slack
+      await expect(
+        service.uninstall("other-provider", result.credential.id, "dev"),
+      ).rejects.toMatchObject({ code: "INVALID_PROVIDER_TYPE" });
+    });
+
+    it("throws PROVIDER_NOT_FOUND for unknown provider", async () => {
+      await expect(service.uninstall("unknown-provider", "cred-1", "dev")).rejects.toMatchObject({
+        code: "PROVIDER_NOT_FOUND",
+      });
     });
   });
 });
