@@ -69,7 +69,7 @@ go build                # Build
 
 ## Test Quality
 
-Use the `testing-anti-patterns` and `vitest` skills for guidance.
+Use the `testing` skill for guidance.
 
 ## Communication
 

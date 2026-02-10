@@ -1,6 +1,6 @@
 ---
 name: ralph
-description: Focused task executor - implements one task, commits, exits
+description: Executes a single focused task as a teammate agent — implements the assigned work, commits, and exits. Spawned by implementing-tasks and polishing skills for parallel task execution.
 context: fork
 user-invocable: false
 ---
@@ -30,12 +30,12 @@ Read the acceptance criteria. Decide what verification approach fits:
 
 | AC Pattern | Skills to Load |
 |------------|----------------|
-| Pure function with clear inputs/outputs | `test-driven-development`, `vitest` |
-| HTTP endpoint behavior | `vitest` (route tests) |
+| Pure function with clear inputs/outputs | `testing` |
+| HTTP endpoint behavior | `testing` |
 | UI behavior (clicks, renders, displays) | `agent-browser` |
 | Wiring/config changes | Manual verification (curl, CLI) |
 
-Load skills before implementing: "Load the test-driven-development skill"
+Load the `testing` skill before implementing.
 
 ## Workflow
 
@@ -49,21 +49,9 @@ Load skills before implementing: "Load the test-driven-development skill"
 6. **Complete** - `TaskUpdate` with `status: "completed"`
 7. **Return** - Report success or blocker
 
-## Commit Message Format
+## Commits
 
-```
-<type>(<scope>): <subject>
-
-<body - what and why>
-
-## Progress
-- Task: <task ID and subject>
-- Decisions: <key decisions and reasoning>
-- Key Learnings: <what did you find that woul be helpful to future Ralphs>
-- Files: <files changed>
-```
-
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
+Load the `committing` skill before committing.
 
 ## If Blocked
 

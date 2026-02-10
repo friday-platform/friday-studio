@@ -1,306 +1,379 @@
-# Atlas Architecture
+# Architecture
 
-This document describes the high-level architecture of Atlas. Use it to orient
-yourself in the codebase and understand how components connect.
+This document describes the high-level architecture of Friday. It's a map, not
+a manual — if you want to understand where things are and why they're shaped the
+way they are, read this first. For how to work with the code, see
+[`CLAUDE.md`](../CLAUDE.md).
 
-See also: CLAUDE.md for commands and conventions.
+Maintained for both human contributors and AI agents learning the codebase.
+Updated a few times per year — details change, but the pipeline doesn't.
 
 ## Bird's Eye View
 
-Atlas is an AI agent orchestration platform. Workspaces define agents and jobs;
-signals trigger job execution; agents run with MCP tool access.
+Friday is an AI agent orchestration platform. You give it a workspace definition
+(agents, signals, workflows) and it runs autonomous agents in response to
+triggers.
+
+The mental model is a pipeline:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Daemon (atlasd)                         │
-│  HTTP API · SSE Streaming · Workspace Lifecycle · Cron Manager  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    ▼                   ▼
-           ┌──────────────┐    ┌──────────────┐
-           │  Workspace   │    │  Workspace   │  (lazy-loaded on signal)
-           │   Runtime    │    │   Runtime    │
-           └──────────────┘    └──────────────┘
-                    │
-        ┌───────────┴───────────┐
-        ▼                       ▼
-┌───────────────┐      ┌───────────────┐
-│    Session    │      │    Session    │  (1 signal = 1 session)
-│  Supervisor   │      │  Supervisor   │
-└───────────────┘      └───────────────┘
-        │
-        ▼
-┌───────────────────────────────────────┐
-│           Agent Orchestrator          │
-│   (routes to LLM or bundled agents)   │
-└───────────────────────────────────────┘
-        │
-   ┌────┴────┐
-   ▼         ▼
-┌──────┐  ┌──────────────┐
-│ LLM  │  │   Bundled    │
-│Agent │  │ Agent (MCP)  │
-└──────┘  └──────────────┘
-             │
-             ▼
-      ┌───────────────┐
-      │  MCP Servers  │
-      └───────────────┘
+Signal (HTTP, cron, Slack, …)
+  → Daemon routes to workspace
+    → Workspace spawns session
+      → FSM engine executes workflow
+        → Agents run with MCP tool access
+          → Results stream back via SSE
 ```
 
-## Data Flow
+The core abstraction is the **workspace**. A workspace is a `workspace.yml` that
+declares what agents exist, what signals they respond to, and what tools they can
+access. The daemon manages workspace lifecycles — creating runtimes on demand
+when signals arrive, destroying them after idle timeout.
 
-1. Signal arrives (HTTP request, cron tick, file change)
-2. Daemon routes to workspace runtime, creating it if needed (lazy)
-3. Runtime spawns a session supervisor for this signal
-4. Supervisor extracts execution plan from job definition in workspace.yml
-5. Supervisor executes agents in phases (sequential or parallel per plan)
-6. For each agent, orchestrator routes to either:
-   - In-memory LLM agent (config-defined in workspace.yml)
-   - Bundled/system agent (served via MCP from agent server)
-7. Agents invoke LLM with MCP tools available
-8. Hallucination detector validates LLM agent output (confidence scoring)
-9. SSE events emitted throughout; session completes
+Everything is lazy. No workspace runtime exists until a signal needs it. No MCP
+connection opens until an agent needs a tool. This keeps the daemon lightweight
+even with many registered workspaces.
 
-## Code Map
+## Entry Points
 
-### apps/atlasd - The Daemon
+Where to start reading depends on what you're doing:
 
-Entry point for all Atlas operations. Owns HTTP API, workspace lifecycle, and
-resource pools.
+- **Understanding the daemon**: Start at `AtlasDaemon` in
+  `apps/atlasd/src/atlas-daemon.ts`. This is the process entry point — it boots
+  the HTTP server, workspace manager, and signal registrars.
+- **Understanding workflows**: Read `packages/fsm-engine/fsm-engine.ts`. FSM
+  definitions are YAML files (`.fsm.yaml`) that declare states, transitions, and
+  actions.
+- **Understanding agent execution**:
+  `packages/core/src/orchestrator/agent-orchestrator.ts` is where agents get
+  dispatched — either via MCP (distributed) or as wrapped LLM calls (in-process).
+- **Understanding config**: `packages/config/src/workspace.ts` has the Zod
+  schemas for `workspace.yml`. This is the contract.
+- **Working on the web client**: `apps/web-client/` is a SvelteKit 2 app. Routes
+  are file-based under `src/routes/`.
+- **Working on Go services**: Each lives in its own `apps/` subdirectory with
+  standard Go project layout.
 
-Key files:
-- `src/atlas-daemon.ts` - AtlasDaemon class, initialization sequence, shutdown
-- `src/factory.ts` - Hono app setup, route mounting, middleware
-- `src/routes/` - HTTP handlers organized by resource
+## Directory Overview
 
-Responsibilities:
-- HTTP REST API on configurable port (default 8080)
-- SSE client management with heartbeats and cleanup
-- Workspace runtime creation/destruction with idle timeouts
-- Shared resource pools (MCP servers, library storage, embedding provider)
-- Signal registrars for cron and file-watch triggers
+```
+apps/
+  atlasd/              Daemon — HTTP API, workspace lifecycle
+  web-client/          Svelte web UI (primary deployment target)
+  bounce/              Auth service (Go)
+  gist/                File service (Go)
+  atlas-operator/      K8s operator for multi-tenant deployment (Go)
+  signal-gateway/      External signal ingestion — Slack, Discord (Go)
+  gateway/             API gateway (Go)
+  cortex/              Storage backend service (Go)
+  atlas-auth-ui/       Auth flow UI (Svelte)
 
-Invariant: Workspace runtimes are lazy. Created on first signal, destroyed after
-idle timeout (default 5 min). Max 10 concurrent workspaces with LRU eviction.
+packages/
+  @atlas/config        YAML config loading + Zod schemas
+  @atlas/core          Core types, agent registry, orchestration
+  @atlas/fsm-engine    FSM execution engine (YAML → state machines)
+  @atlas/mcp           MCP client management
+  @atlas/signals       Signal types and routing
+  @atlas/storage       Persistence layer
+  @atlas/workspace     Workspace lifecycle management
+  @atlas/agent-sdk     SDK for building agents
+  @atlas/llm           LLM provider abstraction
+  @atlas/logger        Structured logging
+  …and ~18 more
 
-### StreamRegistry (Stream Resumption)
+src/                   atlasd daemon internals (not a separate app)
+  core/                Workspace runtime, FSM events, agent helpers
+  cli/                 CLI commands (prompt, chat, daemon, workspace)
+  services/            Daemon background services
+```
 
-StreamRegistry enables chat stream resumption after page refresh or navigation. It's a daemon-level service that buffers events for active chat streams.
+The `apps/` directory contains deployable services. The `packages/` directory
+contains internal TypeScript packages used across apps. `src/` is special — it
+contains the daemon's internal implementation, colocated at the repo root because
+`atlasd` is the primary application.
 
-**Key Behavior:**
-- Events buffered in memory (max 1000 per stream)
-- Client reconnect replays buffered events + continues live
-- Finished streams kept 5 min (for late reconnect)
-- Stale streams cleaned after 30 min
-- NOT persisted across daemon restarts
+## The Pipeline
 
-**Endpoints:**
-- `POST /api/chat` - Creates stream, buffers all events
-- `GET /api/chat/:chatId/stream` - Reconnect (200 with SSE or 204 if inactive)
-- `DELETE /api/chat/:chatId/stream` - Mark finished (cosmetic stop)
+This section walks through the system as a signal travels through it, from
+ingestion to response.
 
-**Client Pattern:**
-- Chat instances are page-local (not shared via context)
-- `chat.resumeStream()` called on mount for existing chats
-- URL updates via replaceState after first message
-- Stop is cosmetic - agent continues server-side
+### Signals
 
-**Location:** `apps/atlasd/src/stream-registry.ts`
+A signal is an external event that triggers agent execution. Friday supports
+several signal providers:
 
-### src/core - Workspace Runtime & Session Supervision
+- **HTTP** — REST endpoints defined in `workspace.yml`. The daemon registers
+  routes on startup.
+- **Cron** — Scheduled triggers managed by `CronManager`.
+- **File system** — Watches managed by `FsWatchSignalRegistrar`.
+- **Slack / Discord** — External events routed through the `signal-gateway` Go
+  service.
+- **System** — Internal platform signals (health checks, lifecycle events).
 
-XState 5 state machine managing workspace lifecycle and session spawning.
+Signal definitions live in `packages/signals/`. Each provider implements a
+standard interface for registration and teardown.
 
-Key files:
-- `workspace-runtime-machine.ts` - State machine definition, signal processing
-- `workspace-runtime.ts` - Public API wrapper around the machine
-- `session.ts` - Session wrapper, lifecycle callbacks
-- `actors/session-supervisor-actor.ts` - Execution planning, agent orchestration,
-  hallucination detection, validation retry logic
+**Architecture Invariant**: Signals are the only way to trigger agent execution.
+There is no "run agent directly" path — everything flows through the signal →
+workspace → session pipeline. This ensures consistent logging, streaming, and
+lifecycle management.
 
-States: uninitialized → initializing → initializingStreams → ready → shuttingDown → terminated
+### Daemon Routing
 
-The ready state processes PROCESS_SIGNAL events by spawning child actors.
-Each signal creates exactly one session. Sessions own their execution promise.
+When a signal arrives, the daemon resolves which workspace should handle it and
+ensures a runtime exists.
 
-Session Supervisor responsibilities:
-- Extracts execution plan from job definition (workspace.yml)
-- Executes agents in sequential or parallel phases
-- Runs hallucination detection on LLM agent outputs
-- Retries once on validation failure, terminates on repeated failure
-- Emits SSE events (session-start, agent-start, agent-finish, session-finish)
+The daemon (`AtlasDaemon` in `apps/atlasd/`) bootstraps these components on
+startup:
 
-Invariant: Sessions are never reused. Signal arrives, session created, session
-completes or fails, session discarded.
+- **Hono HTTP server** — Routes for signals, chat, workspace management
+  (default port 8080).
+- **WorkspaceManager** — Registry of known workspaces, creates runtimes on
+  demand.
+- **GlobalMCPServerPool** — Shared MCP server connections, pooled across
+  workspaces.
+- **CronManager** — Registers and fires cron-based signals.
+- **StreamRegistry** — Tracks active SSE connections for real-time updates.
+- **AgentRegistry** — Discovers bundled system agents and workspace-defined
+  agents.
 
-### packages/core - Agent Orchestration & Execution
+Signal routing: HTTP request hits the daemon's signal route
+(`apps/atlasd/routes/signals/`) → daemon calls
+`triggerWorkspaceSignal(workspaceId, signalId, payload)` → workspace manager
+finds or creates a runtime.
 
-Agent orchestrator, LLM providers, MCP server pool, agent server.
+**Architecture Invariant**: The daemon itself is stateless. Workspace state lives
+in storage adapters (see Cross-Cutting Concerns). The daemon can restart without
+losing workspace definitions — it re-discovers them from storage on boot.
 
-Key files:
-- `src/orchestrator/agent-orchestrator.ts` - Routes execution to agent types
-- `src/mcp-server-pool.ts` - Connection pooling with reference counting
-- `src/agent-server/` - MCP server hosting bundled agents
-- `src/llm/` - Provider abstractions (Anthropic, Google, OpenAI)
-- `src/streaming/` - Callback, HTTP, MCP stream emitters
+### Workspace Runtime
 
-Agent Orchestrator routes between two agent types:
-1. LLM agents: In-memory execution, config defined in workspace.yml, validated
-   by hallucination detector
-2. Bundled/system agents: Served via MCP from agent server, pre-validated by
-   evaluation tests (skip hallucination detection)
+The workspace runtime (`src/core/workspace-runtime.ts`) is the execution
+environment for a single workspace. It manages:
 
-MCP Server Pool: Reference-counted connection pooling. Keyed by server config
-combination. 5-minute cleanup timer when refCount hits zero. Registration
-failures logged but don't fail the pool (continues with other servers).
+- **FSM engines** — One per workflow defined in the workspace.
+- **Active sessions** — Concurrent signal executions, each isolated.
+- **Session lifecycle** — Pending → executing → completed/failed.
+- **SSE event emission** — Forwards FSM events to connected clients.
 
-Invariant: MCP failures fast-fail to agents. No reconnection logic or circuit
-breakers.
+When a signal arrives, the runtime creates a new session and hands it to the
+appropriate FSM engine.
 
-### src/core/services - Hallucination Detection
+**Architecture Invariant**: Workspace runtimes are created lazily on first signal
+and destroyed after an idle timeout (default 5 minutes with no active sessions).
+This means the system's memory footprint scales with active workspaces, not
+registered workspaces.
 
-Validates LLM agent outputs using source attribution rules.
+### FSM Engine
 
-Key files:
-- `services/hallucination-detector.ts` - LLM-based validation with retry logic
+The FSM engine (`packages/fsm-engine/`) is where business logic lives. Workflows
+are finite state machines defined in YAML, not code.
 
-Detection method: Sends agent output to Claude Haiku for source attribution
-compliance checking. Validates that claims are properly tagged with [tool:X],
-[input], [inference:input], [generated], or [undefined].
+A `.fsm.yaml` file declares:
 
-Thresholds and behavior:
-- Confidence < 0.3 OR severe patterns detected → validation fails
-- On first failure: single retry with validation feedback injected into prompt
-- On second failure: session terminates with hallucination error
-- Severe patterns: fabricated claims, tool tags without matching tool calls,
-  external data claims without tool evidence
+- **States** — Named states with entry actions and event handlers.
+- **Transitions** — Events that move between states, with optional guard
+  conditions.
+- **Actions** — Work performed on entry or transition.
+- **Document types** — Typed JSON schemas for data passed between states.
 
-Supervision levels (from job config):
-- minimal: threshold 0.3
-- standard: threshold 0.5
-- paranoid (detailed): threshold 0.7
+Action types:
 
-### packages/config - Configuration & Validation
+- `agent` — Dispatch an agent via the orchestrator.
+- `code` — Execute a TypeScript function.
+- `emit` — Fire an event to trigger a transition.
+- `document` — Read/write the session's document store.
+- `llm` — Direct LLM call (deprecated — use `agent`).
 
-Zod schemas for all configuration. YAML files (atlas.yml, workspace.yml) parsed
-and validated here. See `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` for all available options.
+The document store is the FSM's working memory. Each session gets an isolated
+store where states can write typed JSON documents. Downstream states read these
+documents — this is how data flows through a workflow without passing it as
+function arguments.
 
-Key files:
-- `mod.ts` - Main exports
-- `src/schemas/` - Zod schema definitions per entity type
-- `src/config-loader.ts` - YAML loading and merging
+**Architecture Invariant**: FSM definitions are declarative. The YAML is parsed
+and validated by Zod schemas (`packages/fsm-engine/schema.ts`) at load time.
+If a workflow definition is invalid, it fails fast before any execution begins.
 
-Invariant: All external input must pass through Zod schemas. No `any`, no `as`
-assertions on config data.
+**Boundary**: The FSM engine knows nothing about HTTP, SSE, or the daemon. It
+receives events and produces actions. The workspace runtime is the adapter
+between the daemon's HTTP world and the FSM's event-driven world.
 
-### packages/mcp - MCP Client
+### Agent Orchestrator
 
-Model Context Protocol client using Vercel AI SDK.
+The agent orchestrator (`packages/core/src/orchestrator/agent-orchestrator.ts`)
+dispatches agent execution. There are two paths:
 
-Key files:
-- `src/manager.ts` - MCPManager, server lifecycle, tool invocation
-- `src/registry.ts` - Configuration resolution (platform → workspace → agent)
+**MCP Agents (distributed)**: The orchestrator calls an MCP server that hosts
+the agent. The agent runs in an isolated session with its own MCP transport.
+Results stream back via SSE. This is the standard path for complex agents that
+need tool access.
 
-Supports stdio and HTTP transports. Shared server pool across workspaces.
+```
+FSM action (type: agent)
+  → AgentOrchestrator
+    → atlas-agents MCP server (StreamableHTTP)
+      → Agent executes with tool access
+        → SSE stream back to orchestrator
+```
 
-### packages/mcp-server - Platform & Workspace MCP Servers
+**Wrapped Agents (in-process)**: Lightweight LLM agents defined directly in
+`workspace.yml`. These bypass MCP overhead — the orchestrator makes a direct LLM
+call with tool schemas injected. Good for simple agents that don't need
+isolation.
 
-MCP servers that expose Atlas capabilities to external clients.
+```
+FSM action (type: agent)
+  → AgentOrchestrator
+    → Direct LLM call with MCP tool schemas
+      → Synchronous result
+```
 
-Key files:
-- `src/platform-server.ts` - Daemon-wide MCP server on /mcp endpoint
-- `src/workspace-server.ts` - Per-workspace MCP with security controls
-- `src/tools/` - Tool implementations (fs, library, workspace ops)
-- `src/resources/` - Static resources (workspace config reference)
+The agent registry (`packages/core/src/agent-loader/`) discovers agents from
+two sources: bundled system agents (in `packages/bundled-agents/`) and
+workspace-level agents (from `workspace.yml`).
 
-Two servers with different scopes:
-1. Platform MCP Server: Exposes workspace management, job execution, library
-   operations. Mounted at /mcp on daemon.
-2. Workspace MCP Server: Exposes only discoverable jobs with rate limiting.
-   Security controls: capability filtering, requests/hour limits, concurrent
-   session limits, job access control.
+**Boundary**: The orchestrator is the boundary between "what to execute" (FSM)
+and "how to execute" (LLM providers, MCP servers). Nothing above this layer
+knows about specific LLM providers or MCP transport details.
 
-Tool naming: `atlas_*` prefix, snake_case, action-oriented (atlas_list,
-atlas_workspace_create). All tools use Zod v4 input schemas.
+### MCP Tools
 
-### packages/storage - Persistence
+Agents access external capabilities through the Model Context Protocol. MCP is
+Friday's standard integration pattern — file systems, APIs, databases, and
+custom tools all surface as MCP servers.
 
-Storage adapters for various backends.
+The `GlobalMCPServerPool` (`packages/core/src/mcp-server-pool.ts`) manages
+shared MCP server connections across workspaces:
 
-Key files:
-- `src/adapters/filesystem-config.ts` - YAML config loading
+- Lazy initialization — connections open when first requested.
+- Connection pooling — multiple agents can share a server.
+- Lifecycle management — cleanup on workspace teardown.
 
-Invariant: FileWriteCoordinator prevents concurrent write corruption.
+Tool access is configured per-workspace in `workspace.yml` under `tools.mcp`.
+Each MCP server declaration specifies transport (stdio, SSE, or StreamableHTTP),
+allowed tools, and environment.
 
-### packages/signals - Signal Providers
+Friday also exposes its own platform capabilities as MCP servers:
 
-Signal sources and routing.
+- **Platform MCP server** (`packages/mcp-server/`) — Workspace operations
+  (create conversations, list sessions) available as tools.
+- **Atlas agents MCP server** (`packages/core/src/agent-server/`) — Bundled
+  agents available as callable tools, with per-session isolation.
 
-Key files:
-- `src/providers/` - HTTP, cron, file-watch providers
-- `src/registry.ts` - Dynamic provider registration
+**Architecture Invariant**: MCP is the only way agents access external tools.
+There is no "call this API directly" escape hatch. This ensures tool access is
+auditable, configurable per-workspace, and consistently sandboxed.
 
-Note: Stream signals (k8s-events) exist in initializingStreams state but are
-not fully implemented. Likely intended for accepting HTTP streams rather than
-unary webhook requests.
+### SSE Response
 
-### packages/logger - Structured Logging
+Results flow back to clients via Server-Sent Events. The `StreamRegistry`
+(`apps/atlasd/`) tracks active SSE connections, and the workspace runtime
+forwards events as they occur:
 
-Dual-format logger: JSON for files, pretty-printed for TTY.
+- FSM state transitions
+- Agent execution progress
+- Tool call results
+- Final outputs
 
-Invariant: Use `@atlas/logger`, never `console.*`.
-
-### apps/web-client - Svelte UI
-
-Browser-based workspace management and session monitoring. Consumes daemon HTTP
-API and SSE streams. Not architecturally central; daemon is the source of truth.
-
-### Other Packages (Utilities)
-
-These exist but are not architecturally significant:
-- `@atlas/client` - TypeScript client for daemon API
-- `@atlas/cron` - Cron expression parsing (wraps cron-parser)
-- `@atlas/fs-watch` - File watching abstraction
-- `@atlas/utils` - Shared utilities
-- `@atlas/notifications` - Alert delivery (webhooks, etc.)
-- `@atlas/workspace` - Workspace type definitions
+The web client connects via SSE and renders updates in real-time. The CLI polls
+for completion. Both consume the same event stream — the transport differs, but
+the data is identical.
 
 ## Cross-Cutting Concerns
 
-Actor Model: The runtime is built on actors, not threads. XState machines spawn
-child actors for signal processing. SessionSupervisorActor owns execution.
-Actors communicate via events and promises, not shared state.
+### Configuration
 
-Lazy Loading: Expensive resources load on-demand. Workspace runtimes on first
-signal. MCP servers on first tool call. Embedding provider pre-warmed but
-non-blocking.
+`workspace.yml` is the primary configuration surface. It's where workspaces
+declare their agents, signals, tools, and workflow behavior. The Zod schemas in
+`packages/config/src/workspace.ts` define the contract — if it parses, it's
+valid.
 
-Configuration Merge: Platform config (atlas.yml) merges with workspace config
-(workspace.yml). Workspace overrides platform. Zod validates at every boundary.
+An `atlas.yml` exists for platform-wide settings but is rarely used in practice.
+When both files exist, they merge with workspace values taking precedence
+(`MergedConfig`).
 
-Observability: All components emit structured logs. Trace headers propagate
-through signal → session → agent. SSE streams carry agent-start, agent-result,
-session-finish events.
+**Architecture Invariant**: All external configuration is validated through Zod
+schemas at load time. The system trusts types internally — validation happens at
+the boundary, not throughout.
 
-Idle Management: Every workspace has an idle timeout. Signal triggers reset it.
-On timeout, check for active sessions before destroying. Agent sessions also
-have LRU eviction (max 100).
+### Storage Adapters
 
-## Architectural Invariants
+Storage follows an adapter pattern. The interface is consistent; the backend
+varies by environment:
 
-1. Signals are immutable. Once a signal arrives, its payload never changes.
+- **Local development** — Flat files on disk. Simple, inspectable, no
+  dependencies.
+- **Remote / production** — Cortex (Go service) or PostgreSQL, accessed through
+  the same adapter interface.
 
-2. Sessions are ephemeral. No session state persists beyond completion.
-   Memory consolidation runs but sessions themselves are discarded.
+You can see this pattern in `apps/link/src/providers/storage/` — an `adapter.ts`
+interface with `local-adapter.ts` and `cortex-adapter.ts` implementations. This
+pattern is being made consistent across all services.
 
-3. LLM agents are validated. Bundled agents are not (pre-validated by evals).
+Current storage concerns:
 
-4. MCP servers are pooled with reference counting. Failures fast-fail.
+- **Workspace registry** — Metadata about known workspaces (path, status,
+  timestamps).
+- **Session history** — Timeline events for completed sessions.
+- **Library / artifacts** — Files produced by agent execution, organized by date.
 
-5. Config hot-reload destroys runtime. No incremental config updates.
-   Change config → destroy runtime → recreate on next signal.
+**Architecture Invariant**: Storage adapters are the boundary between business
+logic and persistence. No service directly reads or writes to a specific
+backend — it goes through the adapter interface.
 
-6. Execution plans come from job definitions in workspace.yml. LLM-generated
-   planning exists but is not used (workspace generation handles planning).
+### Deno → Bun Migration
+
+Friday is gradually migrating from Deno to Bun as its TypeScript runtime. The
+migration is incremental:
+
+- **What's changed**: Dependencies go in `package.json`, not `deno.json`. Use
+  `process.env` from `node:process`, not `Deno.env`. Static imports only.
+- **What's stable**: The package structure, the pipeline architecture, the
+  YAML-based config, and the MCP integration pattern are all runtime-agnostic.
+- **What to watch for**: Deno-specific APIs (`Deno.KV`, `Deno.env`,
+  `Deno.readFile`) are being replaced with Node-compatible equivalents. When
+  working in a module, prefer Node/standard APIs over Deno APIs.
+
+The migration doesn't affect the architecture — it's a runtime swap, not a
+redesign.
+
+### Deployment
+
+Friday deploys primarily as a **web application**. The daemon (`atlasd`) runs as
+a service, the web client (`web-client`) serves the UI, and Go services handle
+auth, storage, and signal ingestion.
+
+- **Multi-tenant**: The `atlas-operator` (Go, K8s operator) watches for user
+  additions and creates per-user ArgoCD Applications. Each user gets an isolated
+  deployment.
+- **Local development**: The daemon runs on `localhost:8080` with file-based
+  storage. No K8s required.
+- **Tauri / native builds**: A desktop app exists via Tauri integration in the
+  web client. This is legacy and not the primary deployment target.
+
+## Go Services
+
+Friday's Go services handle concerns that benefit from Go's deployment model
+(single binary, low memory, strong concurrency):
+
+- **bounce** (`apps/bounce/`) — Authentication service. OAuth provider
+  integration (Google, GitHub), JWT token generation and validation, user session
+  management.
+- **gist** (`apps/gist/`) — File service. Upload/download, presigned URL
+  generation for S3/GCS, artifact storage.
+- **atlas-operator** (`apps/atlas-operator/`) — Kubernetes operator. Watches
+  PostgreSQL for user changes, creates/destroys ArgoCD Applications per user.
+  Supports multi-organization tenancy.
+- **signal-gateway** (`apps/signal-gateway/`) — External signal ingestion.
+  Receives events from Slack, Discord, and other platforms, routes them to the
+  appropriate workspace via the daemon API.
+- **gateway** (`apps/gateway/`) — API gateway. Request routing and middleware.
+- **cortex** (`apps/cortex/`) — Storage backend service. Provides the remote
+  storage adapter that production deployments use instead of local flat files.
+
+These services share common Go packages under `pkg/` for TLS, metrics,
+analytics, and profiling.
+
+**Architecture Invariant**: Go services communicate with the daemon over HTTP.
+They don't import TypeScript packages or share code with the TS side — the HTTP
+API is the boundary.

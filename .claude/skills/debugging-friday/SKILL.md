@@ -1,6 +1,6 @@
 ---
 name: debugging-friday
-description: Use when debugging Friday agent behavior with a user - covers local debugging with atlas CLI and remote debugging via GCS logs.
+description: Covers debugging Friday agent behavior — local debugging with atlas CLI and remote debugging via GCS logs. Provides log access tooling; pairs with the `debugging` skill for investigation methodology.
 compatibility: Requires gcloud CLI configured for GCS queries
 ---
 
