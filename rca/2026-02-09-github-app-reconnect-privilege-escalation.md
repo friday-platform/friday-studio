@@ -32,10 +32,15 @@ minutes later.
 
 | Timestamp (UTC) | Event | User | Installation |
 |-----------------|-------|------|--------------|
-| 2026-01-27 09:52:23 | `app_install_completed` | Łukasz `84y9jdw5zy9e90m` (internal) | LissaGreense (106314575) |
-| 2026-01-27 10:09:16 | `app_install_completed` | Łukasz `84y9jdw5zy9e90m` (internal) | yenatempest (106466395) — friday-dogfooding |
-| 2026-01-27 10:09:57 | `app_install_completed` | Łukasz `84y9jdw5zy9e90m` (internal) | tempestteam (106467834) — friday-dogfooding |
-| 2026-01-28 07:37:18 | `app_install_completed` | Łukasz `84y9jdw5zy9e90m` (internal) | LissaGreense (106314575) — update |
+| 2026-01-27 00:35:48 | `app_install_completed` | Sara `d401m99q1relnrg` (internal) | LissaGreense (106314575) |
+| 2026-01-27 19:18:57 | `app_install_completed` | Tempest Team! `nngmqp710z680le` (friday-dogfooding) | yenatempest (106466395) |
+| 2026-01-27 19:28:25 | `app_install_completed` | Tempest Team! `nngmqp710z680le` (friday-dogfooding) | tempestteam (106467834) |
+
+**Note:** Earlier log events at 09:52/10:09 on 2026-01-27 attributed to Łukasz
+(`84y9jdw5zy9e90m`) were actually an earlier instance of the same cross-user
+reconnect bug — his reconnect claimed all installations via
+`listInstallationIds()`, logged `app_install_completed` under his user context,
+but the installations belonged to Sara and Tempest Team!.
 
 ### Incident (Production)
 
@@ -44,7 +49,7 @@ minutes later.
 | 2026-02-04 03:53:29 | `app_install_reconnected` | External user `l6kg6jk2w5wrddr` triggers reconnect. Installation 106314575 (LissaGreense) claimed |
 | 2026-02-04 03:53:29 | `app_install_reconnected` | Installation 106466395 (yenatempest/friday-dogfooding) claimed by `l6kg6jk2w5wrddr` |
 | 2026-02-04 03:53:30 | `app_install_reconnected` | Installation 106467834 (tempestteam/friday-dogfooding) claimed by `l6kg6jk2w5wrddr` |
-| 2026-02-04 03:53:29-30 | `platform_route` upsert x3 | Routes for all 3 installations overwritten: owner changed to `l6kg6jk2w5wrddr` |
+| 2026-02-04 03:53:29-30 | `platform_route` upsert x3 | Routes for all 3 installations overwritten: owners (Sara, Tempest Team!) changed to `l6kg6jk2w5wrddr` |
 | 2026-02-04 ~03:54-04:07 | Credential used x3 | Misassigned credential `r138n48rnl1eelz` (tempestteam) fetched 3 times via `GET /internal/v1/credentials/r138n48rnl1eelz` |
 | 2026-02-04 ~03:54-04:07 | Agent sessions x3 | All 3 sessions failed: "Credit balance is too low" — no GitHub API calls made |
 | 2026-02-04 04:07 UTC | Self-cleanup | External user `l6kg6jk2w5wrddr` soft-deleted all 3 misassigned credentials |
@@ -174,8 +179,8 @@ owned that installation.
 | User | User ID | Type | Impact |
 |------|---------|------|--------|
 | — | `l6kg6jk2w5wrddr` | External | **Triggered bug** — 3 credentials incorrectly assigned to their account, routes for 3 installations overwritten |
-| Łukasz | `84y9jdw5zy9e90m` | Internal | **Affected** — LissaGreense installation route hijacked, credential duplicated under wrong user |
-| Łukasz | `84y9jdw5zy9e90m` | Internal | **Affected** — yenatempest + tempestteam routes hijacked (friday-dogfooding) |
+| Sara | `d401m99q1relnrg` | Internal | **Affected** — LissaGreense (106314575) route hijacked, credential duplicated under wrong user |
+| Tempest Team! | `nngmqp710z680le` | Internal (friday-dogfooding) | **Affected** — yenatempest (106466395) + tempestteam (106467834) routes hijacked |
 
 ### Sandbox (`tempest-sandbox`)
 
@@ -210,9 +215,13 @@ External user `l6kg6jk2w5wrddr` soft-deleted all 3 misassigned credentials at
 Routes restored to rightful owners:
 
 ```sql
-UPDATE platform_route SET user_id = '84y9jdw5zy9e90m'
-WHERE team_id IN ('106314575', '106466395', '106467834');
--- 3 rows updated
+-- LissaGreense → Sara
+UPDATE platform_route SET user_id = 'd401m99q1relnrg'
+WHERE team_id = '106314575';
+
+-- yenatempest + tempestteam → Tempest Team! (friday-dogfooding)
+UPDATE platform_route SET user_id = 'nngmqp710z680le'
+WHERE team_id IN ('106466395', '106467834');
 ```
 
 Misassigned credentials were already soft-deleted by external user on 2026-02-04.
@@ -399,6 +408,6 @@ All route handlers extract `userId` from JWT middleware and pass to storage:
    isolation during reconnect
 4. **Consider rate limiting** — on `/v1/app-install/:provider/authorize` to
    limit reconnaissance potential
-5. **Notify affected users** — Łukasz (`84y9jdw5zy9e90m`) should be informed his
-   GitHub installation credentials were briefly assigned to another user's
-   account
+5. **Notify affected users** — Sara (`d401m99q1relnrg`) and Tempest Team!
+   (`nngmqp710z680le`) should be informed their GitHub installation credentials
+   were briefly assigned to an external user's account
