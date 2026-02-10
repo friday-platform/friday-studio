@@ -3,9 +3,7 @@ import { z } from "zod";
 import { type MCPServerMetadata, MCPServerMetadataSchema } from "../schemas.ts";
 import type { MCPRegistryStorageAdapter } from "./adapter.ts";
 
-const CortexListResponseSchema = z.object({
-  objects: z.array(z.object({ id: z.string() })).optional(),
-});
+const CortexListResponseSchema = z.array(z.object({ id: z.string() }));
 const CortexCreateResponseSchema = z.object({ id: z.string() });
 
 const logger = createLogger({ component: "mcp-registry:cortex-adapter" });
@@ -40,7 +38,7 @@ export class CortexMCPRegistryAdapter implements MCPRegistryStorageAdapter {
     if (!listRes.ok) return null;
 
     const listData = CortexListResponseSchema.parse(await listRes.json());
-    return listData.objects?.[0]?.id ?? null;
+    return listData[0]?.id ?? null;
   }
 
   async add(entry: MCPServerMetadata): Promise<void> {
@@ -91,7 +89,12 @@ export class CortexMCPRegistryAdapter implements MCPRegistryStorageAdapter {
       signal: AbortSignal.timeout(10_000),
     });
     if (!contentRes.ok) return null;
-    return MCPServerMetadataSchema.parse(await contentRes.json());
+    const parsed = MCPServerMetadataSchema.safeParse(await contentRes.json());
+    if (!parsed.success) {
+      logger.warn("Corrupt MCP registry object in Cortex", { objectId, error: parsed.error });
+      return null;
+    }
+    return parsed.data;
   }
 
   async list(): Promise<MCPServerMetadata[]> {
@@ -102,10 +105,10 @@ export class CortexMCPRegistryAdapter implements MCPRegistryStorageAdapter {
     if (!listRes.ok) return [];
 
     const listData = CortexListResponseSchema.parse(await listRes.json());
-    if (!listData.objects?.length) return [];
+    if (!listData.length) return [];
 
     const results = await Promise.allSettled(
-      listData.objects.map(async (obj) => {
+      listData.map(async (obj) => {
         const contentRes = await fetch(`${this.baseUrl}/objects/${obj.id}`, {
           headers: this.headers(),
           signal: AbortSignal.timeout(10_000),
@@ -113,15 +116,23 @@ export class CortexMCPRegistryAdapter implements MCPRegistryStorageAdapter {
         if (!contentRes.ok) {
           throw new Error(`Failed to fetch object ${obj.id}: ${contentRes.status}`);
         }
-        return MCPServerMetadataSchema.parse(await contentRes.json());
+        const parsed = MCPServerMetadataSchema.safeParse(await contentRes.json());
+        if (!parsed.success) {
+          logger.warn("Corrupt MCP registry object in Cortex", {
+            objectId: obj.id,
+            error: parsed.error,
+          });
+          return null;
+        }
+        return parsed.data;
       }),
     );
 
     const entries: MCPServerMetadata[] = [];
     for (const result of results) {
-      if (result.status === "fulfilled") {
+      if (result.status === "fulfilled" && result.value !== null) {
         entries.push(result.value);
-      } else {
+      } else if (result.status === "rejected") {
         logger.warn("Failed to fetch MCP registry entry", { error: result.reason });
       }
     }

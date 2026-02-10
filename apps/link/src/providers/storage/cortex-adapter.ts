@@ -3,9 +3,7 @@ import { z } from "zod";
 import { type DynamicProviderInput, DynamicProviderInputSchema } from "../types.ts";
 import type { ProviderStorageAdapter } from "./adapter.ts";
 
-const CortexListResponseSchema = z.object({
-  objects: z.array(z.object({ id: z.string() })).optional(),
-});
+const CortexListResponseSchema = z.array(z.object({ id: z.string() }));
 const CortexCreateResponseSchema = z.object({ id: z.string() });
 
 const logger = createLogger({ component: "provider-storage:cortex-adapter" });
@@ -47,7 +45,7 @@ export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
     if (!listRes.ok) return null;
 
     const listData = CortexListResponseSchema.parse(await listRes.json());
-    return listData.objects?.[0]?.id ?? null;
+    return listData[0]?.id ?? null;
   }
 
   async add(provider: DynamicProviderInput): Promise<void> {
@@ -114,10 +112,10 @@ export class CortexProviderStorageAdapter implements ProviderStorageAdapter {
     if (!listRes.ok) return [];
 
     const listData = CortexListResponseSchema.parse(await listRes.json());
-    if (!listData.objects?.length) return [];
+    if (!listData.length) return [];
 
     const results = await Promise.allSettled(
-      listData.objects.map(async (obj) => {
+      listData.map(async (obj) => {
         const contentRes = await fetch(`${this.baseUrl}/objects/${obj.id}`, {
           headers: this.headers(),
           signal: AbortSignal.timeout(10_000),

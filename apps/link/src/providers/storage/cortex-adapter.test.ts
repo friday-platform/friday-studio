@@ -45,7 +45,7 @@ describe("CortexProviderStorageAdapter", () => {
     let callCount = 0;
     const getAuthToken = vi.fn(() => tokens[callCount++] ?? "fallback");
 
-    stubFetch([{ body: { objects: [] } }, { body: { objects: [] } }]);
+    stubFetch([{ body: [] }, { body: [] }]);
 
     const adapter = new CortexProviderStorageAdapter("https://cortex.test", getAuthToken);
 
@@ -70,7 +70,7 @@ describe("CortexProviderStorageAdapter", () => {
     it("creates object and sets metadata", async () => {
       stubFetch([
         // findObjectByProviderId: no existing provider
-        { body: { objects: [] } },
+        { body: [] },
         // POST /objects: create
         { body: { id: "obj-123" } },
         // POST /objects/obj-123/metadata: set metadata
@@ -100,7 +100,7 @@ describe("CortexProviderStorageAdapter", () => {
     it("throws on duplicate provider", async () => {
       stubFetch([
         // findObjectByProviderId: existing provider found
-        { body: { objects: [{ id: "existing-obj" }] } },
+        { body: [{ id: "existing-obj" }] },
       ]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
@@ -115,7 +115,7 @@ describe("CortexProviderStorageAdapter", () => {
     it("cleans up object when metadata POST fails", async () => {
       stubFetch([
         // findObjectByProviderId: no existing provider
-        { body: { objects: [] } },
+        { body: [] },
         // POST /objects: create succeeds
         { body: { id: "obj-456" } },
         // POST metadata: fails
@@ -153,7 +153,7 @@ describe("CortexProviderStorageAdapter", () => {
     it("throws when create POST fails", async () => {
       stubFetch([
         // findObjectByProviderId: no existing provider
-        { body: { objects: [] } },
+        { body: [] },
         // POST /objects: fails
         { body: {}, status: 503 },
       ]);
@@ -165,14 +165,14 @@ describe("CortexProviderStorageAdapter", () => {
 
   describe("get()", () => {
     it("returns null when provider not found", async () => {
-      stubFetch([{ body: { objects: [] } }]);
+      stubFetch([{ body: [] }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.get("nonexistent")).toBeNull();
     });
 
     it("returns parsed provider when found", async () => {
-      stubFetch([{ body: { objects: [{ id: "obj-1" }] } }, { body: testProvider }]);
+      stubFetch([{ body: [{ id: "obj-1" }] }, { body: testProvider }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       const result = await adapter.get("test-provider");
@@ -180,14 +180,14 @@ describe("CortexProviderStorageAdapter", () => {
     });
 
     it("returns null when content is corrupt", async () => {
-      stubFetch([{ body: { objects: [{ id: "obj-1" }] } }, { body: { garbage: true } }]);
+      stubFetch([{ body: [{ id: "obj-1" }] }, { body: { garbage: true } }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.get("test-provider")).toBeNull();
     });
 
     it("returns null when content fetch fails", async () => {
-      stubFetch([{ body: { objects: [{ id: "obj-1" }] } }, { body: {}, status: 500 }]);
+      stubFetch([{ body: [{ id: "obj-1" }] }, { body: {}, status: 500 }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.get("test-provider")).toBeNull();
@@ -196,21 +196,21 @@ describe("CortexProviderStorageAdapter", () => {
 
   describe("delete()", () => {
     it("returns false when provider not found", async () => {
-      stubFetch([{ body: { objects: [] } }]);
+      stubFetch([{ body: [] }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.delete("nonexistent")).toBe(false);
     });
 
     it("returns false when DELETE request fails", async () => {
-      stubFetch([{ body: { objects: [{ id: "obj-1" }] } }, { body: {}, status: 500 }]);
+      stubFetch([{ body: [{ id: "obj-1" }] }, { body: {}, status: 500 }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.delete("test-provider")).toBe(false);
     });
 
     it("returns true after successful deletion", async () => {
-      stubFetch([{ body: { objects: [{ id: "obj-1" }] } }, { body: {} }]);
+      stubFetch([{ body: [{ id: "obj-1" }] }, { body: {} }]);
 
       const adapter = new CortexProviderStorageAdapter("https://cortex.test", () => "test-token");
       expect(await adapter.delete("test-provider")).toBe(true);
@@ -225,7 +225,7 @@ describe("CortexProviderStorageAdapter", () => {
     it("returns all providers", async () => {
       const provider2 = { ...testProvider, id: "test-provider-2" };
       stubFetch([
-        { body: { objects: [{ id: "obj-1" }, { id: "obj-2" }] } },
+        { body: [{ id: "obj-1" }, { id: "obj-2" }] },
         { body: testProvider },
         { body: provider2 },
       ]);
@@ -237,7 +237,7 @@ describe("CortexProviderStorageAdapter", () => {
 
     it("skips entries when fetch fails", async () => {
       stubFetch([
-        { body: { objects: [{ id: "obj-1" }, { id: "obj-2" }] } },
+        { body: [{ id: "obj-1" }, { id: "obj-2" }] },
         { body: testProvider },
         { body: {}, status: 500 },
       ]);
@@ -249,7 +249,7 @@ describe("CortexProviderStorageAdapter", () => {
 
     it("skips corrupt entries", async () => {
       stubFetch([
-        { body: { objects: [{ id: "obj-1" }, { id: "obj-2" }] } },
+        { body: [{ id: "obj-1" }, { id: "obj-2" }] },
         { body: testProvider },
         { body: { garbage: true } },
       ]);
