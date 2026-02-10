@@ -51,7 +51,9 @@ but the installations belonged to Sara and Tempest Team!.
 | 2026-02-04 03:53:30 | `app_install_reconnected` | Installation 106467834 (tempestteam/friday-dogfooding) claimed by `l6kg6jk2w5wrddr` |
 | 2026-02-04 03:53:29-30 | `platform_route` upsert x3 | Routes for all 3 installations overwritten: owners (Sara, Tempest Team!) changed to `l6kg6jk2w5wrddr` |
 | 2026-02-04 ~03:54-04:07 | Credential used x3 | Misassigned credential `r138n48rnl1eelz` (tempestteam) fetched 3 times via `GET /internal/v1/credentials/r138n48rnl1eelz` |
-| 2026-02-04 ~03:54-04:07 | Agent sessions x3 | All 3 sessions failed: "Credit balance is too low" — no GitHub API calls made |
+| 2026-02-04 03:54:02 | Agent session 1 | `claude-code` agent returned `{"ok":false,"error":{"reason":"Credit balance is too low"}}` after 9.5s (session `59663220-...-task-f6b89412`) |
+| 2026-02-04 03:59:20 | Agent session 2 | Same error after 9.2s (session `5f30a419-...-task-0a1d105b`) |
+| 2026-02-04 04:04:58 | Agent session 3 | Same error after 8.6s, workspace `juicy_mint` (session `f6c6a041-...`) |
 | 2026-02-04 04:07 UTC | Self-cleanup | External user `l6kg6jk2w5wrddr` soft-deleted all 3 misassigned credentials |
 | 2026-02-09 | Route cleanup | Routes restored to rightful owners via SQL |
 | 2026-02-09 | Code fix | Security fix implemented (this report) |
@@ -196,7 +198,13 @@ affected with cross-user installation claiming via reconnect.
 - Fetched 3 times via `GET /internal/v1/credentials/r138n48rnl1eelz`
 - External user was building a translation memory scraper — legitimate use case,
   wrong credential
-- All 3 agent sessions failed: **"Credit balance is too low"**
+- All 3 `claude-code` agent sessions failed with:
+  `{"ok":false,"error":{"reason":"Credit balance is too low"}}`
+- **This error came from the `claude-code` agent binary (Anthropic's runtime),
+  not from LiteLLM or Friday** — the user's own Anthropic account had insufficient
+  credits. This is distinct from Friday's LiteLLM `budget_exceeded` error path
+  (`packages/core/src/utils/error-helpers.ts`). No workspace budget alerts were
+  triggered because the limit was on the user's external account.
 - **No GitHub API calls were made with the misassigned tokens**
 - Other 2 credentials (LissaGreense, yenatempest) were never fetched
 
