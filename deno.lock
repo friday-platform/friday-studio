@@ -113,7 +113,7 @@
     "npm:cron-parser@^5.5.0": "5.5.0",
     "npm:dotenv@17.2.4": "17.2.4",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.0.0",
-    "npm:eslint-plugin-svelte@^3.14.0": "3.14.0_eslint@10.0.0_svelte@5.50.1__acorn@8.15.0_postcss@8.5.6",
+    "npm:eslint-plugin-svelte@^3.15.0": "3.15.0_eslint@10.0.0_svelte@5.50.1__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@10": "10.0.0",
     "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.129__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6",
     "npm:fast-glob@^3.3.3": "3.3.3",
@@ -3493,8 +3493,8 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.14.0_eslint@10.0.0_svelte@5.50.1__acorn@8.15.0_postcss@8.5.6": {
-      "integrity": "sha512-Isw0GvaMm0yHxAj71edAdGFh28ufYs+6rk2KlbbZphnqZAzrH3Se3t12IFh2H9+1F/jlDhBBL4oiOJmLqmYX0g==",
+    "eslint-plugin-svelte@3.15.0_eslint@10.0.0_svelte@5.50.1__acorn@8.15.0_postcss@8.5.6": {
+      "integrity": "sha512-QKB7zqfuB8aChOfBTComgDptMf2yxiJx7FE04nneCmtQzgTHvY8UJkuh8J2Rz7KB9FFV9aTHX6r7rdYGvG8T9Q==",
       "dependencies": [
         "@eslint-community/eslint-utils",
         "@jridgewell/sourcemap-codec",
@@ -6033,7 +6033,7 @@
             "npm:@sveltejs/kit@^2.50.2",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.14.0",
+            "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@10",
             "npm:globals@^17.3.0",
             "npm:nanoid@^5.1.6",
@@ -6083,7 +6083,7 @@
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.14.0",
+            "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@10",
             "npm:globals@^17.1.0",
             "npm:gsap@^3.14.2",
@@ -6162,7 +6162,7 @@
             "npm:@types/papaparse@^5.5.2",
             "npm:ai@^5.0.129",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.14.0",
+            "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@10",
             "npm:globals@^17.3.0",
             "npm:papaparse@^5.5.3",
