@@ -27,18 +27,20 @@ func TestGenerateAndVerifyToken(t *testing.T) {
 	key := "test-hmac-secret-key"
 	email := "user@example.com"
 	workspaceID := "ws-123"
+	userID := "usr-456"
 
-	token := generateUnsubscribeToken(key, email, workspaceID)
+	token := generateUnsubscribeToken(key, email, workspaceID, userID)
 
 	payload, err := verifyUnsubscribeToken(key, token)
 	require.NoError(t, err)
 	assert.Equal(t, email, payload.Email)
 	assert.Equal(t, workspaceID, payload.WorkspaceID)
+	assert.Equal(t, userID, payload.UserID)
 	assert.WithinDuration(t, time.Now(), time.Unix(payload.Timestamp, 0), 5*time.Second)
 }
 
 func TestVerifyToken_WrongKey(t *testing.T) {
-	token := generateUnsubscribeToken("key-a", "user@example.com", "ws-1")
+	token := generateUnsubscribeToken("key-a", "user@example.com", "ws-1", "usr-1")
 
 	_, err := verifyUnsubscribeToken("key-b", token)
 	require.Error(t, err)
@@ -46,7 +48,7 @@ func TestVerifyToken_WrongKey(t *testing.T) {
 }
 
 func TestVerifyToken_Tampered(t *testing.T) {
-	token := generateUnsubscribeToken("secret", "user@example.com", "ws-1")
+	token := generateUnsubscribeToken("secret", "user@example.com", "ws-1", "usr-1")
 
 	parts := strings.SplitN(token, ".", 2)
 	require.Len(t, parts, 2)
@@ -63,7 +65,7 @@ func TestVerifyToken_Expired(t *testing.T) {
 	workspaceID := "ws-1"
 	oldTS := time.Now().Add(-31 * 24 * time.Hour).Unix()
 
-	payload := fmt.Sprintf("%s|%s|%d", email, workspaceID, oldTS)
+	payload := fmt.Sprintf("%s|%s|%s|%d", email, workspaceID, "usr-1", oldTS)
 	sig := testHMACSHA256(key, payload)
 	token := sig + "." + payload
 
@@ -79,8 +81,8 @@ func TestVerifyToken_Malformed(t *testing.T) {
 	}{
 		{"empty", ""},
 		{"no dot", "abcdef1234"},
-		{"bad hex sig", "zzzz.user@example.com|ws-1|12345"},
-		{"missing fields", "abcd.user@example.com"},
+		{"bad hex sig", "zzzz.user@example.com|ws-1|usr-1|12345"},
+		{"missing fields", "abcd.user@example.com|ws-1"},
 	}
 
 	for _, tt := range tests {
@@ -119,13 +121,17 @@ func TestHandleUnsubscribe_MissingToken(t *testing.T) {
 
 func TestHandleUnsubscribe_StoresAndChecksSuppression(t *testing.T) {
 	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-int")
 
 	email := "user@test.com"
 	workspaceID := "ws-integration"
-	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID)
+	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID, "usr-int")
 
 	// Not suppressed yet
 	assert.False(t, svc.isEmailSuppressed(context.Background(), email, workspaceID))
+	t.Cleanup(func() {
+		_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", email)
+	})
 
 	// POST unsubscribe
 	form := url.Values{}
@@ -144,17 +150,15 @@ func TestHandleUnsubscribe_StoresAndChecksSuppression(t *testing.T) {
 
 	// Different workspace is NOT suppressed
 	assert.False(t, svc.isEmailSuppressed(context.Background(), email, "ws-other"))
-
-	// Cleanup
-	_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", email)
 }
 
 func TestHandleUnsubscribePage_RendersConfirmation(t *testing.T) {
 	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-page")
 
 	email := "page-user@test.com"
 	workspaceID := "ws-page"
-	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID)
+	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID, "usr-page")
 
 	req := httptest.NewRequest(http.MethodGet, "/unsubscribe?token="+url.QueryEscape(token), nil)
 	rec := httptest.NewRecorder()
@@ -174,10 +178,15 @@ func TestHandleUnsubscribePage_RendersConfirmation(t *testing.T) {
 
 func TestHandleUnsubscribe_Idempotent(t *testing.T) {
 	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-idem")
 
 	email := "idempotent@test.com"
 	workspaceID := "ws-idem"
-	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID)
+	token := generateUnsubscribeToken(svc.cfg.UnsubscribeHMACKey, email, workspaceID, "usr-idem")
+
+	t.Cleanup(func() {
+		_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", email)
+	})
 
 	// Unsubscribe twice — second should not error
 	for i := 0; i < 2; i++ {
@@ -189,9 +198,109 @@ func TestHandleUnsubscribe_Idempotent(t *testing.T) {
 		svc.HandleUnsubscribe(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
 	}
+}
 
-	// Cleanup
-	_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", email)
+func TestWithUserContext_SetsSessionVariable(t *testing.T) {
+	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-rls")
+
+	// Insert via withUserContext — user_id column DEFAULT reads from request.user_id session var.
+	// If set_config didn't work, the DEFAULT would be empty and the FK would reject the insert.
+	err := withUserContext(context.Background(), svc.db, "usr-rls", func(q *repo.Queries) error {
+		return q.StoreSuppression(context.Background(), repo.StoreSuppressionParams{
+			Email:       "session-test@test.com",
+			WorkspaceID: "ws-session",
+			RemoteIp:    "1.2.3.4",
+		})
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", "session-test@test.com")
+	})
+
+	// Verify user_id was populated from the session variable
+	var storedUserID string
+	err = svc.db.QueryRow(context.Background(),
+		"SELECT user_id FROM gateway.email_suppressions WHERE email = 'session-test@test.com'").Scan(&storedUserID)
+	require.NoError(t, err)
+	assert.Equal(t, "usr-rls", storedUserID)
+}
+
+func TestWithUserContext_RollsBackOnError(t *testing.T) {
+	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-rollback")
+
+	err := withUserContext(context.Background(), svc.db, "usr-rollback", func(q *repo.Queries) error {
+		// Insert a row, then return an error — should be rolled back
+		_ = q.StoreSuppression(context.Background(), repo.StoreSuppressionParams{
+			Email:       "rollback@test.com",
+			WorkspaceID: "ws-rollback",
+			RemoteIp:    "1.2.3.4",
+		})
+		return fmt.Errorf("simulated error")
+	})
+	require.Error(t, err)
+
+	// Row should NOT exist (transaction rolled back)
+	assert.False(t, svc.isEmailSuppressed(context.Background(), "rollback@test.com", "ws-rollback"))
+}
+
+func TestWithUserContext_RLSIsolation(t *testing.T) {
+	svc := newTestServiceWithDB(t)
+	ensureTestUser(t, svc, "usr-rls-a")
+	ensureTestUser(t, svc, "usr-rls-b")
+
+	// Insert as user A
+	err := withUserContext(context.Background(), svc.db, "usr-rls-a", func(q *repo.Queries) error {
+		return q.StoreSuppression(context.Background(), repo.StoreSuppressionParams{
+			Email:       "rls-test@test.com",
+			WorkspaceID: "ws-rls",
+			RemoteIp:    "1.2.3.4",
+		})
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = svc.db.Exec(context.Background(), "DELETE FROM gateway.email_suppressions WHERE email = $1", "rls-test@test.com")
+	})
+
+	// User B should NOT see user A's row via RLS
+	// Query through a manual tx with user B's context to verify isolation
+	var count int
+	tx, err := svc.db.Begin(context.Background())
+	require.NoError(t, err)
+	_, err = tx.Exec(context.Background(), "SET LOCAL ROLE authenticated")
+	require.NoError(t, err)
+	_, err = tx.Exec(context.Background(), "SELECT set_config('request.user_id', $1, true)", "usr-rls-b")
+	require.NoError(t, err)
+	err = tx.QueryRow(context.Background(),
+		"SELECT count(*) FROM gateway.email_suppressions WHERE email = 'rls-test@test.com'").Scan(&count)
+	_ = tx.Rollback(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// Superuser (bare query, no RLS context) CAN see the row — isEmailSuppressed uses this path
+	assert.True(t, svc.isEmailSuppressed(context.Background(), "rls-test@test.com", "ws-rls"))
+}
+
+func TestStripPort(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"192.168.1.1:54321", "192.168.1.1"},
+		{"10.0.0.1:80", "10.0.0.1"},
+		{"192.168.1.1", "192.168.1.1"},       // bare IPv4 (middleware.RealIP)
+		{"[::1]:8080", "::1"},                // IPv6 with port
+		{"::1", "::1"},                       // bare IPv6
+		{"2001:db8::1", "2001:db8::1"},       // bare IPv6 full
+		{"[2001:db8::1]:443", "2001:db8::1"}, // IPv6 with port
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripPort(tt.input))
+		})
+	}
 }
 
 func TestIsEmailSuppressed_NilQueries_FailsOpen(t *testing.T) {
@@ -245,6 +354,18 @@ func newTestServiceWithDB(t *testing.T) *Service {
 		db:      pool,
 		queries: repo.New(pool),
 	}
+}
+
+// ensureTestUser creates a test user in public.user if it doesn't exist (FK target).
+func ensureTestUser(t *testing.T, svc *Service, userID string) {
+	t.Helper()
+	_, err := svc.db.Exec(context.Background(),
+		`INSERT INTO public."user" (id, full_name, email) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
+		userID, "Test User "+userID, userID+"@test.local")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = svc.db.Exec(context.Background(), `DELETE FROM public."user" WHERE id = $1`, userID)
+	})
 }
 
 func testHMACSHA256(key, payload string) string {

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,19 +19,20 @@ import (
 // tokenTTL is how long an unsubscribe token remains valid.
 const tokenTTL = 30 * 24 * time.Hour // 30 days
 
-// unsubscribeTokenPayload is the cleartext portion of a token: email|workspace_id|unix_ts.
+// unsubscribeTokenPayload is the cleartext portion of a token: email|workspace_id|user_id|unix_ts.
 type unsubscribeTokenPayload struct {
 	Email       string
 	WorkspaceID string
+	UserID      string
 	Timestamp   int64
 }
 
-// generateUnsubscribeToken creates an HMAC-SHA256 signed token encoding email, workspace, and timestamp.
-// Format: hex(hmac) + "." + email + "|" + workspaceID + "|" + unix_timestamp.
-func generateUnsubscribeToken(hmacKey, email, workspaceID string) string {
+// generateUnsubscribeToken creates an HMAC-SHA256 signed token encoding email, workspace, user ID, and timestamp.
+// Format: hex(hmac) + "." + email + "|" + workspaceID + "|" + userID + "|" + unix_timestamp.
+func generateUnsubscribeToken(hmacKey, email, workspaceID, userID string) string {
 	email = strings.ToLower(email)
 	ts := time.Now().Unix()
-	payload := fmt.Sprintf("%s|%s|%d", email, workspaceID, ts)
+	payload := fmt.Sprintf("%s|%s|%s|%d", email, workspaceID, userID, ts)
 
 	mac := hmac.New(sha256.New, []byte(hmacKey))
 	mac.Write([]byte(payload))
@@ -61,13 +63,13 @@ func verifyUnsubscribeToken(hmacKey, token string) (*unsubscribeTokenPayload, er
 		return nil, fmt.Errorf("invalid signature")
 	}
 
-	fields := strings.SplitN(payload, "|", 3)
-	if len(fields) != 3 {
+	fields := strings.SplitN(payload, "|", 4)
+	if len(fields) != 4 {
 		return nil, fmt.Errorf("malformed payload")
 	}
 
 	var ts int64
-	if _, err := fmt.Sscanf(fields[2], "%d", &ts); err != nil {
+	if _, err := fmt.Sscanf(fields[3], "%d", &ts); err != nil {
 		return nil, fmt.Errorf("malformed timestamp")
 	}
 
@@ -78,6 +80,7 @@ func verifyUnsubscribeToken(hmacKey, token string) (*unsubscribeTokenPayload, er
 	return &unsubscribeTokenPayload{
 		Email:       fields[0],
 		WorkspaceID: fields[1],
+		UserID:      fields[2],
 		Timestamp:   ts,
 	}, nil
 }
@@ -100,11 +103,15 @@ func (s *Service) isEmailSuppressed(ctx context.Context, email, workspaceID stri
 	return exists
 }
 
-// storeSuppression inserts an email suppression (idempotent via ON CONFLICT).
-func (s *Service) storeSuppression(ctx context.Context, email, workspaceID string) error {
-	return s.queries.StoreSuppression(ctx, repo.StoreSuppressionParams{
-		Email:       strings.ToLower(email),
-		WorkspaceID: workspaceID,
+// storeSuppression inserts an email suppression inside a transaction with RLS context.
+// The user_id column is populated via its DEFAULT (current_setting('request.user_id')).
+func (s *Service) storeSuppression(ctx context.Context, email, workspaceID, userID, remoteIP string) error {
+	return withUserContext(ctx, s.db, userID, func(q *repo.Queries) error {
+		return q.StoreSuppression(ctx, repo.StoreSuppressionParams{
+			Email:       strings.ToLower(email),
+			WorkspaceID: workspaceID,
+			RemoteIp:    remoteIP,
+		})
 	})
 }
 
@@ -125,14 +132,19 @@ func (s *Service) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.storeSuppression(r.Context(), payload.Email, payload.WorkspaceID); err != nil {
+	remoteIP := stripPort(r.RemoteAddr)
+	if err := s.storeSuppression(r.Context(), payload.Email, payload.WorkspaceID, payload.UserID, remoteIP); err != nil {
 		log.Error("failed to store suppression", "error", err)
 		unsubscribeRequestsTotal.WithLabelValues("POST", "error").Inc()
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	log.Info("email unsubscribed", "email", payload.Email, "workspaceID", payload.WorkspaceID)
+	log.Info("email unsubscribed",
+		"email", payload.Email,
+		"workspaceID", payload.WorkspaceID,
+		"userID", payload.UserID,
+		"remoteIP", remoteIP)
 	unsubscribeRequestsTotal.WithLabelValues("POST", "ok").Inc()
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, "You have been unsubscribed.")
@@ -163,6 +175,16 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 	unsubscribeRequestsTotal.WithLabelValues("GET", "rendered").Inc()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(token))
+}
+
+// stripPort returns just the IP from a host:port address.
+// If there's no port (e.g. middleware.RealIP already stripped it), returns as-is.
+func stripPort(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr // already bare IP
+	}
+	return host
 }
 
 const unsubscribeConfirmPage = `<!DOCTYPE html>

@@ -31,17 +31,20 @@ func (q *Queries) IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedPa
 }
 
 const storeSuppression = `-- name: StoreSuppression :exec
-INSERT INTO gateway.email_suppressions (email, workspace_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING
+INSERT INTO gateway.email_suppressions (email, workspace_id, remote_ip)
+VALUES ($1, $2, $3)
+ON CONFLICT (email, workspace_id) DO UPDATE
+    SET user_id   = current_setting('request.user_id', true),
+        remote_ip = EXCLUDED.remote_ip
 `
 
 type StoreSuppressionParams struct {
 	Email       string
 	WorkspaceID string
+	RemoteIp    string
 }
 
 func (q *Queries) StoreSuppression(ctx context.Context, arg StoreSuppressionParams) error {
-	_, err := q.db.Exec(ctx, storeSuppression, arg.Email, arg.WorkspaceID)
+	_, err := q.db.Exec(ctx, storeSuppression, arg.Email, arg.WorkspaceID, arg.RemoteIp)
 	return err
 }

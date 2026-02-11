@@ -51,7 +51,6 @@ func TestAllowedProxyHeaders(t *testing.T) {
 func TestAllowedCustomEmailHeaders(t *testing.T) {
 	// Headers that should be allowed for email
 	allowed := []string{
-		"X-Atlas-User",
 		"X-Atlas-Session",
 		"X-Friday-Workspace",
 		"X-Atlas-Agent",

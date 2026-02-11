@@ -391,7 +391,7 @@ func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
 		client: &http.Client{},
 	}
 
-	t.Run("headers present when workspace ID provided", func(t *testing.T) {
+	t.Run("headers present when workspace and user ID provided", func(t *testing.T) {
 		req := &SendEmailRequest{
 			To:      "user@example.com",
 			From:    "sender@example.com",
@@ -399,7 +399,7 @@ func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
 			Content: "<html><body>Hello</body></html>",
 		}
 
-		msg := svc.buildSendGridMessage(req, "ws-123")
+		msg := svc.buildSendGridMessage(req, "ws-123", "usr123")
 
 		// Check List-Unsubscribe header
 		listUnsub := msg.Headers["List-Unsubscribe"]
@@ -411,6 +411,20 @@ func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
 		assert.Equal(t, "List-Unsubscribe=One-Click", msg.Headers["List-Unsubscribe-Post"])
 	})
 
+	t.Run("headers absent when no user ID", func(t *testing.T) {
+		req := &SendEmailRequest{
+			To:      "user@example.com",
+			From:    "sender@example.com",
+			Subject: "Test",
+			Content: "Hello",
+		}
+
+		msg := svc.buildSendGridMessage(req, "ws-123", "")
+
+		assert.Empty(t, msg.Headers["List-Unsubscribe"])
+		assert.Empty(t, msg.Headers["List-Unsubscribe-Post"])
+	})
+
 	t.Run("headers absent when no workspace ID", func(t *testing.T) {
 		req := &SendEmailRequest{
 			To:      "user@example.com",
@@ -419,7 +433,7 @@ func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
 			Content: "Hello",
 		}
 
-		msg := svc.buildSendGridMessage(req, "")
+		msg := svc.buildSendGridMessage(req, "", "usr123")
 
 		assert.Empty(t, msg.Headers["List-Unsubscribe"])
 		assert.Empty(t, msg.Headers["List-Unsubscribe-Post"])
@@ -439,7 +453,7 @@ func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
 			Content: "Hello",
 		}
 
-		msg := noKeySvc.buildSendGridMessage(req, "ws-123")
+		msg := noKeySvc.buildSendGridMessage(req, "ws-123", "usr123")
 
 		assert.Empty(t, msg.Headers["List-Unsubscribe"])
 		assert.Empty(t, msg.Headers["List-Unsubscribe-Post"])

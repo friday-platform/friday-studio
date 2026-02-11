@@ -110,7 +110,7 @@ func TestHandleSendGridEmail(t *testing.T) {
 				Subject: "Test Subject",
 				Content: "Hello",
 				CustomHeaders: map[string]string{
-					"X-Atlas-User": "user@example.com",
+					"X-Atlas-Session": "sess123",
 				},
 			},
 			upstreamStatus: http.StatusAccepted,
@@ -480,9 +480,34 @@ func TestJWTAuthMiddleware(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rec.Code)
 		})
 	}
+
+	t.Run("user ID propagated to context", func(t *testing.T) {
+		wantUserID := "abc123def456"
+		token := createTestJWTWithUserID(t, privateKey, "tempest-atlas", []string{"atlas"}, time.Now().Add(time.Hour), wantUserID)
+
+		var gotUserID string
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotUserID = userIDFromContext(r.Context())
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, wantUserID, gotUserID)
+	})
 }
 
 func createTestJWT(t *testing.T, privateKey *rsa.PrivateKey, issuer string, audience []string, expiresAt time.Time) string {
+	t.Helper()
+	return createTestJWTWithUserID(t, privateKey, issuer, audience, expiresAt, "test-user-id")
+}
+
+func createTestJWTWithUserID(t *testing.T, privateKey *rsa.PrivateKey, issuer string, audience []string, expiresAt time.Time, userID string) string {
 	t.Helper()
 	claims := jwt.MapClaims{
 		"iss": issuer,
@@ -490,6 +515,9 @@ func createTestJWT(t *testing.T, privateKey *rsa.PrivateKey, issuer string, audi
 		"sub": "test-user",
 		"exp": expiresAt.Unix(),
 		"iat": time.Now().Unix(),
+		"user_metadata": map[string]string{
+			"tempest_user_id": userID,
+		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	signed, err := token.SignedString(privateKey)

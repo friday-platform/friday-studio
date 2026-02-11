@@ -24,6 +24,18 @@ type Service struct {
 	queries *repo.Queries // nil when unsubscribe is disabled
 }
 
+type contextKey string
+
+const userIDContextKey contextKey = "userID"
+
+// userIDFromContext returns the authenticated user ID set by jwtAuthMiddleware.
+func userIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(userIDContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // atlasClaims defines the JWT claims structure for Atlas tokens.
 type atlasClaims struct {
 	Email        string `json:"email,omitempty"`
@@ -119,7 +131,8 @@ func jwtAuthMiddleware(publicKeyPEM string) func(http.Handler) http.Handler {
 			}
 			httplog.LogEntrySetFields(r.Context(), fields)
 
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), userIDContextKey, claims.UserMetadata.TempestUserID)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

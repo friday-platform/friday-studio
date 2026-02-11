@@ -7,6 +7,8 @@ SELECT EXISTS(
 );
 
 -- name: StoreSuppression :exec
-INSERT INTO gateway.email_suppressions (email, workspace_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING;
+INSERT INTO gateway.email_suppressions (email, workspace_id, remote_ip)
+VALUES ($1, $2, $3)
+ON CONFLICT (email, workspace_id) DO UPDATE
+    SET user_id   = current_setting('request.user_id', true),
+        remote_ip = EXCLUDED.remote_ip;

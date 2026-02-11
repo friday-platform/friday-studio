@@ -44,7 +44,6 @@ var templateIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
 // Whitelist of allowed custom email headers.
 var allowedCustomHeaders = map[string]bool{
-	"X-Atlas-User":       true,
 	"X-Atlas-Session":    true,
 	"X-Friday-Workspace": true,
 	"X-Atlas-Agent":      true,
@@ -135,6 +134,7 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, invalidWorkspaceMsg, http.StatusBadRequest)
 		return
 	}
+	userID := userIDFromContext(r.Context())
 	if workspaceID == "" {
 		workspaceID = uuid.NewString()
 		s.Logger.Warn("email sent without workspace ID, using fallback", "fallbackID", workspaceID)
@@ -156,7 +156,7 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message := s.buildSendGridMessage(&req, workspaceID)
+	message := s.buildSendGridMessage(&req, workspaceID, userID)
 
 	var lastErr error
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
@@ -196,7 +196,7 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, fmt.Sprintf("failed to send email after %d attempts", maxRetryAttempts), http.StatusBadGateway)
 }
 
-func (s *Service) buildSendGridMessage(req *SendEmailRequest, workspaceID string) *sgmail.SGMailV3 {
+func (s *Service) buildSendGridMessage(req *SendEmailRequest, workspaceID, userID string) *sgmail.SGMailV3 {
 	from := sgmail.NewEmail(req.FromName, req.From)
 	to := sgmail.NewEmail("", req.To)
 
@@ -207,7 +207,7 @@ func (s *Service) buildSendGridMessage(req *SendEmailRequest, workspaceID string
 	p := sgmail.NewPersonalization()
 	p.AddTos(to)
 
-	unsubURL := s.unsubscribeURL(req.To, workspaceID)
+	unsubURL := s.unsubscribeURL(req.To, workspaceID, userID)
 
 	if req.TemplateID != "" {
 		message.SetTemplateID(req.TemplateID)
@@ -265,11 +265,13 @@ func resolveWorkspaceID(req *SendEmailRequest) string {
 }
 
 // unsubscribeURL generates a signed unsubscribe URL if the feature is configured.
-func (s *Service) unsubscribeURL(email, workspaceID string) string {
-	if workspaceID == "" || s.cfg.UnsubscribeBaseURL == "" || s.cfg.UnsubscribeHMACKey == "" {
+// Returns "" when userID is empty — we can't generate a valid unsubscribe token
+// without a user (FK constraint on email_suppressions.user_id).
+func (s *Service) unsubscribeURL(email, workspaceID, userID string) string {
+	if workspaceID == "" || userID == "" || s.cfg.UnsubscribeBaseURL == "" || s.cfg.UnsubscribeHMACKey == "" {
 		return ""
 	}
-	token := generateUnsubscribeToken(s.cfg.UnsubscribeHMACKey, email, workspaceID)
+	token := generateUnsubscribeToken(s.cfg.UnsubscribeHMACKey, email, workspaceID, userID)
 	return s.cfg.UnsubscribeBaseURL + "/unsubscribe?token=" + url.QueryEscape(token)
 }
 
