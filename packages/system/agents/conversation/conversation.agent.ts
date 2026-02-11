@@ -335,11 +335,27 @@ export const conversationAgent = createAgent<string, ConversationResult>({
     }
     // Load and validate chat history
     let messages: AtlasUIMessage[] = [];
+    let contentFilteredMessageIds: string[] = [];
     const res = await parseResult(
       client.chat[":chatId"].$get({ param: { chatId: session.streamId } }),
     );
     if (res.ok) {
       messages = await validateAtlasUIMessages(res.data.messages);
+
+      // Exclude content-filtered messages from LLM context (auto-recovery).
+      // Field exists on StoredChatSchema but Hono client type inference doesn't propagate it.
+      const filteredIds = z
+        .object({ contentFilteredMessageIds: z.array(z.string()).optional() })
+        .safeParse(res.data.chat).data?.contentFilteredMessageIds;
+      if (filteredIds && filteredIds.length > 0) {
+        contentFilteredMessageIds = filteredIds;
+        const filteredSet = new Set(filteredIds);
+        messages = messages.filter((m) => !filteredSet.has(m.id));
+        logger.info("Excluded content-filtered messages from context", {
+          excludedCount: filteredIds.length,
+          remainingCount: messages.length,
+        });
+      }
     } else {
       logger.error("Failed to load chat history", { error: res.error });
     }
@@ -357,6 +373,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
     let originalStreamError: unknown = null;
     let interceptedApiError: unknown = null;
     let finalText: string | undefined;
+    let finalFinishReason: string | undefined;
 
     const persistStreamMessage = createUIMessageStream<AtlasUIMessage>({
       originalMessages: messages,
@@ -387,22 +404,37 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // Get the last message which should be the assistant's response
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
-          const appendResult = await parseResult(
-            client.chat[":chatId"].message.$post({
-              param: { chatId: session.streamId },
-              json: { message: lastMessage },
-            }),
+          // Don't persist empty messages from content-filter responses.
+          // Storing these corrupts the conversation: step-start-only messages
+          // produce zero model messages during conversion, creating consecutive
+          // user messages that violate the API's alternating role requirement.
+          const hasText = lastMessage.parts.some(
+            (p) => p.type === "text" && p.text.trim().length > 0,
           );
-          if (!appendResult.ok) {
-            logger.error("Failed to append assistant message to chat storage", {
-              streamId: session.streamId,
-              error: appendResult.error,
-            });
-          } else {
-            logger.debug("Assistant message persisted to chat storage", {
+          if (finalFinishReason === "content-filter" && !hasText) {
+            logger.warn("Skipping storage of empty content-filtered message", {
               streamId: session.streamId,
               messageId: lastMessage.id,
+              finishReason: finalFinishReason,
             });
+          } else {
+            const appendResult = await parseResult(
+              client.chat[":chatId"].message.$post({
+                param: { chatId: session.streamId },
+                json: { message: lastMessage },
+              }),
+            );
+            if (!appendResult.ok) {
+              logger.error("Failed to append assistant message to chat storage", {
+                streamId: session.streamId,
+                error: appendResult.error,
+              });
+            } else {
+              logger.debug("Assistant message persisted to chat storage", {
+                streamId: session.streamId,
+                messageId: lastMessage.id,
+              });
+            }
           }
         }
       },
@@ -796,6 +828,16 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                 },
                 // Add scratchpad context as third system message if it exists
                 ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
+                // Notify model about excluded content-filtered messages
+                ...(contentFilteredMessageIds.length > 0
+                  ? [
+                      {
+                        role: ROLE_SYSTEM,
+                        content:
+                          "Note: One or more earlier messages were excluded from this conversation because they triggered a content safety filter. If the user asks about missing context, explain that some messages were filtered and suggest they rephrase or re-share the information.",
+                      },
+                    ]
+                  : []),
                 ...prunedModelMessages,
               ],
               tools: allTools,
@@ -846,8 +888,42 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                   }
                 }
               },
-              onFinish: ({ text }) => {
+              onFinish: ({ text, finishReason }) => {
                 finalText = text;
+                finalFinishReason = finishReason;
+
+                if (finishReason === "content-filter") {
+                  logger.warn("Content filter triggered", {
+                    streamId: session.streamId,
+                    finishReason,
+                  });
+
+                  writer.write({
+                    id: crypto.randomUUID(),
+                    type: "data-error",
+                    data: {
+                      error:
+                        "The response was blocked by a content safety filter. This can happen when processing certain document content. Try rephrasing your request or starting a new conversation.",
+                      errorCause: "content-filter",
+                    },
+                  });
+
+                  // Mark the last user message as content-filtered for auto-recovery.
+                  // On subsequent turns, this message will be excluded from LLM context,
+                  // breaking the loop where problematic content gets resent every turn.
+                  const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+                  if (lastUserMsg && session.streamId) {
+                    ChatStorage.addContentFilteredMessageIds(session.streamId, [
+                      lastUserMsg.id,
+                    ]).catch((err: unknown) =>
+                      logger.warn("Failed to mark content-filtered message", { error: err }),
+                    );
+                    logger.info("Marked message as content-filtered", {
+                      messageId: lastUserMsg.id,
+                      streamId: session.streamId,
+                    });
+                  }
+                }
               },
               onError: ({ error }) => {
                 if (!error) {

@@ -8,7 +8,7 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { pruneMessages } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { convertToModelMessages, type ModelMessage } from "ai";
+import { convertToModelMessages, type ModelMessage, type UserModelMessage } from "ai";
 
 interface MessageWindowConfig {
   /** Maximum token budget for message history (excluding system prompts) */
@@ -172,9 +172,61 @@ export function processMessageHistory(
     emptyMessages: "remove",
   });
 
-  // 3. Truncate based on the pruned size (Phase 2)
+  // 3. Merge consecutive user messages (Phase 2)
+  // Empty assistant messages (e.g. from content-filter) produce zero model messages
+  // after conversion and pruning, creating consecutive user messages that violate
+  // the API's alternating role requirement. Merge them to prevent API errors.
+  const mergedMessages = mergeConsecutiveUserMessages(prunedMessages, logger);
+
+  // 4. Truncate based on the pruned size (Phase 3)
   // Now that messages are smaller, we can keep more of them.
-  const finalMessages = truncateMessageHistory(prunedMessages, config, logger);
+  const finalMessages = truncateMessageHistory(mergedMessages, config, logger);
 
   return finalMessages;
+}
+
+/**
+ * Merge consecutive user messages into a single message.
+ * This handles corruption from empty assistant messages (e.g. content-filter)
+ * that produce zero model messages, leaving consecutive user messages
+ * that violate the API's alternating role requirement.
+ */
+function mergeConsecutiveUserMessages(messages: ModelMessage[], logger: Logger): ModelMessage[] {
+  if (messages.length <= 1) return messages;
+
+  const result: ModelMessage[] = [];
+  let mergeCount = 0;
+
+  for (const msg of messages) {
+    const prev = result[result.length - 1];
+
+    if (prev && prev.role === "user" && msg.role === "user") {
+      // Normalize content to array form for both messages
+      const prevUser = prev as UserModelMessage;
+      const currUser = msg as UserModelMessage;
+      const prevParts =
+        typeof prevUser.content === "string"
+          ? [{ type: "text" as const, text: prevUser.content }]
+          : prevUser.content;
+      const currParts =
+        typeof currUser.content === "string"
+          ? [{ type: "text" as const, text: currUser.content }]
+          : currUser.content;
+
+      result[result.length - 1] = { role: "user", content: [...prevParts, ...currParts] };
+      mergeCount++;
+    } else {
+      result.push(msg);
+    }
+  }
+
+  if (mergeCount > 0) {
+    logger.warn("Merged consecutive user messages", {
+      originalCount: messages.length,
+      mergedCount: result.length,
+      mergesPerformed: mergeCount,
+    });
+  }
+
+  return result;
 }

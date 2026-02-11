@@ -2,7 +2,11 @@ import { pruneMessages } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { estimateTokens, truncateMessageHistory } from "./message-windowing.ts";
+import {
+  estimateTokens,
+  processMessageHistory,
+  truncateMessageHistory,
+} from "./message-windowing.ts";
 
 // Helper to create long strings for token weight
 const makeString = (length: number) => "a".repeat(length);
@@ -124,6 +128,118 @@ describe("message-windowing", () => {
     expect(result.at(0)?.role).toEqual("system");
     expect(result.at(1)?.role).toEqual("user");
     expect(result.at(1)?.content).toEqual("pad 1");
+  });
+
+  /**
+   * Regression test for chat_kBcv9mRgs2mXSRtW "swallowed messages" bug.
+   *
+   * Scenario: Anthropic API returns finishReason="content-filter" after tool
+   * calls, producing an assistant message with only step-start parts (no text).
+   * This message is stored to chat history. On subsequent user messages:
+   *
+   * 1. convertToModelMessages: step-start-only assistant → 0 model messages
+   * 2. pruneMessages(emptyMessages:"remove"): removes truly empty messages
+   * 3. Result: consecutive user messages (violates alternating role requirement)
+   *
+   * The Anthropic API rejects or produces empty responses for consecutive
+   * user messages, causing every subsequent message to also fail (cascade).
+   *
+   * The fix merges consecutive user messages after pruning so the API always
+   * sees properly alternating user/assistant roles.
+   */
+  it("regression: content-filter step-start-only assistant must not create consecutive user messages", () => {
+    // Reproduce the exact message structure from the production bug.
+    // Messages 0-3: normal conversation
+    // Message 4 (user): attaches PDFs, asks to fill SOW
+    // Message 5 (assistant): tool calls succeed, but step 2 returns content-filter → only step-start parts stored
+    // Message 6 (user): "?" retry
+    // Message 7 (assistant): another content-filter → step-start only
+    // Message 8 (user): "hello?" retry
+    const messages = [
+      {
+        id: "msg-0",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "Help me draft a SOW" }],
+        createdAt: new Date(),
+      },
+      {
+        id: "msg-1",
+        role: "assistant" as const,
+        parts: [
+          { type: "step-start" as const },
+          { type: "text" as const, text: "Here's what a SOW typically includes..." },
+        ],
+        createdAt: new Date(),
+      },
+      {
+        id: "msg-2",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "Here are the contracts, fill it in" }],
+        createdAt: new Date(),
+      },
+      {
+        // content-filter: tool calls completed (step 1) but text generation blocked (step 2)
+        // Only step-start parts remain — no text, no tool parts in UI message
+        id: "msg-3",
+        role: "assistant" as const,
+        parts: [{ type: "step-start" as const }],
+        createdAt: new Date(),
+      },
+      {
+        id: "msg-4",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "?" }],
+        createdAt: new Date(),
+      },
+      {
+        // second content-filter: step-start only again
+        id: "msg-5",
+        role: "assistant" as const,
+        parts: [{ type: "step-start" as const }],
+        createdAt: new Date(),
+      },
+      {
+        id: "msg-6",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "hello?" }],
+        createdAt: new Date(),
+      },
+    ];
+
+    const config = { maxTokens: 100000 };
+    const result = processMessageHistory(messages, config, logger);
+
+    // CRITICAL ASSERTION: no consecutive user messages in the output.
+    // Without the fix, msg-3 and msg-5 (step-start-only assistants) produce
+    // zero model messages, leaving msg-2/msg-4/msg-6 as three consecutive
+    // user messages → API rejection → empty responses → "swallowed" messages.
+    for (let i = 1; i < result.length; i++) {
+      const curr = result[i];
+      const prev = result[i - 1];
+      if (curr && prev && curr.role === "user" && prev.role === "user") {
+        throw new Error(
+          `Consecutive user messages at indices ${i - 1} and ${i}: ` +
+            `"${JSON.stringify(prev.content).slice(0, 60)}" → "${JSON.stringify(curr.content).slice(0, 60)}"`,
+        );
+      }
+    }
+
+    // The three user messages (msg-2, msg-4, msg-6) that were separated by
+    // empty assistants should now be merged into a single user message.
+    const userMessages = result.filter((m) => m.role === "user");
+    expect(userMessages).toHaveLength(2); // msg-0 stays separate, msg-2+4+6 merged
+
+    // Verify merged message contains all three user texts
+    const mergedUser = userMessages[1];
+    expect(mergedUser).toBeDefined();
+    if (Array.isArray(mergedUser?.content)) {
+      const texts = mergedUser.content
+        .filter((p): p is { type: "text"; text: string } => p.type === "text")
+        .map((p) => p.text);
+      expect(texts).toContain("Here are the contracts, fill it in");
+      expect(texts).toContain("?");
+      expect(texts).toContain("hello?");
+    }
   });
 
   it("processMessageHistory (pipeline) - preserves recent tool calls", () => {

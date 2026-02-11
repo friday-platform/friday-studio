@@ -422,6 +422,58 @@ describe("ChatStorage", () => {
     });
   });
 
+  describe("addContentFilteredMessageIds", () => {
+    it("adds message IDs and persists them", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const msgId = crypto.randomUUID();
+      const result = await ChatStorage.addContentFilteredMessageIds(chatId, [msgId]);
+      expect.assert(result.ok);
+
+      const chat = await ChatStorage.getChat(chatId);
+      expect.assert(chat.ok && chat.data);
+      expect(chat.data.contentFilteredMessageIds).toEqual([msgId]);
+    });
+
+    it("deduplicates message IDs across calls", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const msgId1 = crypto.randomUUID();
+      const msgId2 = crypto.randomUUID();
+
+      await ChatStorage.addContentFilteredMessageIds(chatId, [msgId1]);
+      await ChatStorage.addContentFilteredMessageIds(chatId, [msgId1, msgId2]);
+
+      const chat = await ChatStorage.getChat(chatId);
+      expect.assert(chat.ok && chat.data);
+      expect(chat.data.contentFilteredMessageIds).toHaveLength(2);
+      expect(new Set(chat.data.contentFilteredMessageIds)).toEqual(new Set([msgId1, msgId2]));
+    });
+
+    it("returns error for non-existent chat", async () => {
+      const result = await ChatStorage.addContentFilteredMessageIds("nonexistent", ["msg-1"]);
+      expect(result.ok).toBe(false);
+    });
+
+    it("does not affect existing chat data", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const msg = createMessage("Important message");
+      await ChatStorage.appendMessage(chatId, msg);
+
+      await ChatStorage.addContentFilteredMessageIds(chatId, [crypto.randomUUID()]);
+
+      const chat = await ChatStorage.getChat(chatId);
+      expect.assert(chat.ok && chat.data);
+      expect(chat.data.messages).toHaveLength(1);
+      expect(chat.data.messages[0]?.id).toEqual(msg.id);
+      expect(chat.data.userId).toEqual("test-user");
+    });
+  });
+
   describe("listChats", () => {
     it("returns most recently updated first", async () => {
       const chat1 = crypto.randomUUID();

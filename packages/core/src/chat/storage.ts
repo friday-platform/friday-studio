@@ -37,6 +37,7 @@ const StoredChatSchema = z.object({
   updatedAt: z.iso.datetime(),
   messages: z.array(z.unknown()),
   systemPromptContext: SystemPromptContextSchema.optional(),
+  contentFilteredMessageIds: z.array(z.string()).optional(),
 });
 
 type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
@@ -337,6 +338,39 @@ async function setSystemPromptContext(
   }
 }
 
+/**
+ * Mark messages as content-filtered. Appends to existing set, deduplicates.
+ * Uses exclusive lock (same pattern as appendMessage).
+ */
+async function addContentFilteredMessageIds(
+  chatId: string,
+  messageIds: string[],
+): Promise<Result<void, string>> {
+  try {
+    await ensureChatDir();
+    const chatFile = getChatFile(chatId);
+
+    using file = await Deno.open(chatFile, { read: true, write: true });
+    await file.lock(true);
+
+    const chat = await readAndValidateChat(chatFile);
+    const existing = new Set(chat.contentFilteredMessageIds ?? []);
+    for (const id of messageIds) {
+      existing.add(id);
+    }
+    chat.contentFilteredMessageIds = [...existing];
+    chat.updatedAt = new Date().toISOString();
+
+    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    return success(undefined);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return fail("Chat not found");
+    }
+    return fail(stringifyError(error));
+  }
+}
+
 export const ChatStorage = {
   createChat,
   getChat,
@@ -345,4 +379,5 @@ export const ChatStorage = {
   updateChatTitle,
   deleteChat,
   setSystemPromptContext,
+  addContentFilteredMessageIds,
 };
