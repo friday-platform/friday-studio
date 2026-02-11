@@ -171,6 +171,7 @@ func TestHandleUnsubscribePage_RendersConfirmation(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "Confirm Unsubscribe")
 	assert.Contains(t, body, `method="POST"`)
+	assert.Contains(t, body, "Unsubscribe from ws-page?")
 
 	// GET must NOT store a suppression
 	assert.False(t, svc.isEmailSuppressed(context.Background(), email, workspaceID))
@@ -280,6 +281,23 @@ func TestWithUserContext_RLSIsolation(t *testing.T) {
 
 	// Superuser (bare query, no RLS context) CAN see the row — isEmailSuppressed uses this path
 	assert.True(t, svc.isEmailSuppressed(context.Background(), "rls-test@test.com", "ws-rls"))
+}
+
+func TestWorkspaceDisplayName(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"friday-conversation", "chat"},
+		{"my-workspace", "my-workspace"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			assert.Equal(t, tt.want, workspaceDisplayName(tt.id))
+		})
+	}
 }
 
 func TestStripPort(t *testing.T) {

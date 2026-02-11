@@ -163,7 +163,8 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := verifyUnsubscribeToken(s.cfg.UnsubscribeHMACKey, token); err != nil {
+	payload, err := verifyUnsubscribeToken(s.cfg.UnsubscribeHMACKey, token)
+	if err != nil {
 		log.Warn("invalid unsubscribe token", "error", err)
 		unsubscribeRequestsTotal.WithLabelValues("GET", "invalid").Inc()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -172,9 +173,18 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	displayName := workspaceDisplayName(payload.WorkspaceID)
 	unsubscribeRequestsTotal.WithLabelValues("GET", "rendered").Inc()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(token))
+	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(displayName), html.EscapeString(token))
+}
+
+// workspaceDisplayName returns a human-readable name for a workspace ID.
+func workspaceDisplayName(workspaceID string) string {
+	if workspaceID == "friday-conversation" {
+		return "chat"
+	}
+	return workspaceID
 }
 
 // stripPort returns just the IP from a host:port address.
@@ -195,7 +205,7 @@ const unsubscribeConfirmPage = `<!DOCTYPE html>
 .card{text-align:center;padding:48px;max-width:400px}h1{font-size:24px;margin-bottom:8px}p{color:#6b7280;line-height:1.5}
 button{margin-top:24px;padding:12px 32px;font-size:16px;background:#181c2f;color:#fff;border:none;border-radius:6px;cursor:pointer}button:hover{background:#2d3348}</style>
 </head>
-<body><div class="card"><h1>Unsubscribe from this workspace?</h1><p>You will no longer receive emails from this workspace. Other Friday notifications are unaffected.</p>
+<body><div class="card"><h1>Unsubscribe from %s?</h1><p>You will no longer receive emails from this workspace. Other Friday notifications are unaffected.</p>
 <form method="POST" action="/unsubscribe"><input type="hidden" name="token" value="%s"><button type="submit">Confirm Unsubscribe</button></form></div></body>
 </html>`
 
