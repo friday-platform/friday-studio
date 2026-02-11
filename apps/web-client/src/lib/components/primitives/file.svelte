@@ -67,34 +67,32 @@
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content>
-          <DropdownMenu.List>
-            <DropdownMenu.Item
-              onclick={() => {
-                if (!fileContents) return;
+          <DropdownMenu.Item
+            onclick={() => {
+              if (!fileContents) return;
 
-                handleDownload(fileContents);
-              }}
-            >
-              Download File
-            </DropdownMenu.Item>
-            <DropdownMenu.Separator />
-            <DropdownMenu.Label>Copy</DropdownMenu.Label>
-            <DropdownMenu.Item
-              onclick={() => {
-                if (!fileContents) return;
-                copyToClipboard(fileContents);
-              }}
-            >
-              Text
-            </DropdownMenu.Item>
-            <DropdownMenu.Item
-              onclick={() => {
-                copyToClipboard(fileName);
-              }}
-            >
-              File Name
-            </DropdownMenu.Item>
-          </DropdownMenu.List>
+              handleDownload(fileContents);
+            }}
+          >
+            Download File
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+          <DropdownMenu.Label>Copy</DropdownMenu.Label>
+          <DropdownMenu.Item
+            onclick={() => {
+              if (!fileContents) return;
+              copyToClipboard(fileContents);
+            }}
+          >
+            Text
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onclick={() => {
+              copyToClipboard(fileName);
+            }}
+          >
+            File Name
+          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     </header>

@@ -12,6 +12,7 @@ import Plus from "./plus.svelte";
 import Progress from "./progress.svelte";
 import Stop from "./stop.svelte";
 import ToolCall from "./tool-call.svelte";
+import TriangleDown from "./triangle-down.svelte";
 import Workspace from "./workspace.svelte";
 
 export const IconSmall = {
@@ -29,5 +30,6 @@ export const IconSmall = {
   Progress,
   Stop,
   ToolCall,
+  TriangleDown,
   Workspace,
 };

@@ -10,6 +10,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { getAppContext } from "$lib/app-context.svelte";
+  import { Collapsible } from "$lib/components/collapsible";
   import { Dialog } from "$lib/components/dialog";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
@@ -21,6 +22,7 @@
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
   import NavigationControls from "./navigation-controls.svelte";
+  import Usage from "./usage.svelte";
 
   const ctx = getAppContext();
   const queryClient = useQueryClient();
@@ -71,30 +73,14 @@
       </div>
     {/if}
 
-    <ul class="section-list">
-      <li>
-        <a
-          href={ctx.routes.main}
-          class:active={getActivePage(["chat", "chat/[chatId]"])}
-          class="sidebar-item"
-          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "chat" })}
-        >
-          <Icons.Chat />
-
-          <span class="text">Chat</span>
-        </a>
-      </li>
-
+    <ul class="main-links">
       <li>
         <a
           href={ctx.routes.library.list}
           class:active={getActivePage(["library", "library/[id]"])}
-          class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "library" })}
         >
-          <Icons.Folder />
-
-          <span class="text">Library</span>
+          Library
         </a>
       </li>
 
@@ -102,12 +88,9 @@
         <a
           href={ctx.routes.sessions.list}
           class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
-          class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
         >
-          <Icons.Workspace />
-
-          <span class="text">Sessions</span>
+          Sessions
         </a>
       </li>
 
@@ -115,188 +98,219 @@
         <a
           href={ctx.routes.settings}
           class:active={getActivePage(["settings"])}
-          class="sidebar-item"
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "settings" })}
         >
-          <Icons.Settings />
-
-          <span class="text">Settings</span>
+          Settings
         </a>
       </li>
     </ul>
 
-    <span class="section-header">
-      Spaces
+    <Collapsible.Root defaultOpen>
+      <Collapsible.Trigger>
+        <span class="section-trigger">
+          Spaces <IconSmall.TriangleDown />
+        </span>
+      </Collapsible.Trigger>
 
-      <AddWorkspaceDialog>
-        {#snippet triggerContents()}
-          <span class="section__add-new" aria-label="New Space"><IconSmall.Plus /></span>
-        {/snippet}
-      </AddWorkspaceDialog>
-    </span>
+      <Collapsible.Content animate>
+        <ul>
+          {#if query.isSuccess}
+            {#each query.data as space (space.id)}
+              <li>
+                <a
+                  href={ctx.routes.spaces.item(space.id)}
+                  class:active={getActiveParam("spaceId", space.id)}
+                  onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
+                >
+                  <span
+                    class="dot"
+                    style:color={space.metadata?.color
+                      ? `var(--${space.metadata?.color}-2)`
+                      : "var(--color-text)"}
+                  >
+                    <span></span>
+                  </span>
+                  <span class="text">{space.name}</span>
+                </a>
+              </li>
+            {/each}
+          {/if}
 
-    <div>
-      {#if query.isSuccess}
-        <ul class="section-list">
-          {#each query.data as space (space.id)}
-            <li>
-              <a
-                href={ctx.routes.spaces.item(space.id)}
-                class="sidebar-item"
-                class:active={getActiveParam("spaceId", space.id)}
-                onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
-              >
-                <span class="text">{space.name}</span>
-              </a>
-            </li>
-          {/each}
+          <AddWorkspaceDialog>
+            {#snippet triggerContents()}
+              <li>
+                <button aria-label="New Conversation">
+                  <IconSmall.Workspace />
+                  Add Space
+                </button>
+              </li>
+            {/snippet}
+          </AddWorkspaceDialog>
         </ul>
-      {/if}
-    </div>
+      </Collapsible.Content>
+    </Collapsible.Root>
 
-    <span class="section-header">
-      Recent Chats
+    <ScrollListener
+      requestLoadItems={() => chatsQuery.fetchNextPage()}
+      hasMoreItems={chatsQuery.hasNextPage}
+      cursor={chatsQuery.data?.cursor}
+      isFetching={chatsQuery.isFetching}
+    >
+      <Collapsible.Root defaultOpen>
+        <Collapsible.Trigger>
+          <span class="section-trigger">
+            Conversations <IconSmall.TriangleDown />
+          </span>
+        </Collapsible.Trigger>
 
-      <button
-        class="section__add-new"
-        onclick={() => {
-          trackEvent(GA4.NEW_CHAT_CLICK, { source: "sidebar" });
-          goto("/chat");
-        }}
-        aria-label="New Conversation"
-      >
-        <IconSmall.Plus />
-      </button>
-    </span>
-
-    {#if chatsQuery.isSuccess}
-      <ScrollListener
-        requestLoadItems={() => chatsQuery.fetchNextPage()}
-        hasMoreItems={chatsQuery.hasNextPage}
-        cursor={chatsQuery.data?.cursor}
-        isFetching={chatsQuery.isFetching}
-      >
-        <ul class="section-list">
-          {#each chatsQuery.data.chats as chat (chat.id)}
-            <li class="chat-row">
-              <a
-                class="sidebar-item"
-                class:active={currentChatId === chat.id}
-                href="/chat/{chat.id}"
-                onclick={(e) => {
-                  if (currentChatId === chat.id) {
-                    e.preventDefault();
-                  } else {
-                    trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id });
-                  }
+        <Collapsible.Content animate>
+          <ul class="section-list">
+            <li>
+              <button
+                class:active={getActivePage(["chat/[[chatId]]"]) && !("chatId" in page.params)}
+                onclick={() => {
+                  trackEvent(GA4.NEW_CHAT_CLICK, { source: "sidebar" });
+                  goto("/chat");
                 }}
+                aria-label="New Conversation"
               >
-                <span class="text">{chat.title || "Untitled"}</span>
-              </a>
+                <IconSmall.Chat />
+                New Conversation
+              </button>
+            </li>
 
-              <div class="chat-options">
-                <DropdownMenu.Root positioning={{ placement: "bottom" }}>
-                  <DropdownMenu.Trigger aria-label="Chat options">
-                    <div class="chat-trigger">
-                      <Icons.TripleDots />
-                    </div>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content>
-                    <DropdownMenu.Item
-                      onclick={async () => {
-                        trackEvent(GA4.SHARE_CHAT_CLICK, { chat_id: chat.id, source: "sidebar" });
-                        const res = await parseResult(
-                          client.chat[":chatId"].$get({ param: { chatId: chat.id } }),
-                        );
+            {#if chatsQuery.isSuccess}
+              {#each chatsQuery.data.chats as chat (chat.id)}
+                <li class="chat-row">
+                  <a
+                    class="sidebar-item"
+                    class:active={currentChatId === chat.id}
+                    href="/chat/{chat.id}"
+                    onclick={(e) => {
+                      if (currentChatId === chat.id) {
+                        e.preventDefault();
+                      } else {
+                        trackEvent(GA4.RECENT_CHAT_CLICK, { chat_id: chat.id });
+                      }
+                    }}
+                  >
+                    <span class="text">{chat.title || "Untitled"}</span>
+                  </a>
 
-                        if (res.ok) {
-                          // @ts-expect-error the type is correct
-                          await shareChat(res.data.messages, chat.title ?? "Untitled");
-                        }
-                      }}
-                    >
-                      <Icons.Share />
-
-                      Share
-                    </DropdownMenu.Item>
-
-                    <Dialog.Root>
-                      {#snippet children(open)}
+                  <div class="chat-options">
+                    <DropdownMenu.Root positioning={{ placement: "bottom" }}>
+                      <DropdownMenu.Trigger aria-label="Chat options">
+                        <div class="chat-trigger">
+                          <Icons.TripleDots />
+                        </div>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Content>
                         <DropdownMenu.Item
-                          accent="destructive"
-                          onclick={() => {
-                            trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
-                            open.set(true);
+                          onclick={async () => {
+                            trackEvent(GA4.SHARE_CHAT_CLICK, {
+                              chat_id: chat.id,
+                              source: "sidebar",
+                            });
+                            const res = await parseResult(
+                              client.chat[":chatId"].$get({ param: { chatId: chat.id } }),
+                            );
+
+                            if (res.ok) {
+                              // @ts-expect-error the type is correct
+                              await shareChat(res.data.messages, chat.title ?? "Untitled");
+                            }
                           }}
                         >
-                          <Icons.Trash />
-                          Delete
+                          <Icons.Share />
+
+                          Share
                         </DropdownMenu.Item>
 
-                        <Dialog.Content>
-                          <Dialog.Close />
-
-                          {#snippet icon()}
-                            <span style:color="var(--color-red)">
-                              <Icons.DeleteSpace />
-                            </span>
-                          {/snippet}
-
-                          {#snippet header()}
-                            <Dialog.Title>Delete Conversation</Dialog.Title>
-                            <Dialog.Description>
-                              <p>
-                                Shared conversations may be available for up to 90 days after being
-                                deleted.
-                              </p>
-                            </Dialog.Description>
-                          {/snippet}
-
-                          {#snippet footer()}
-                            <Dialog.Button
-                              onclick={async () => {
-                                trackEvent(GA4.DELETE_CHAT_CONFIRM, { chat_id: chat.id });
-                                const res = await parseResult(
-                                  client.chat[":chatId"].$delete({ param: { chatId: chat.id } }),
-                                );
-                                if (res.ok) {
-                                  await queryClient.invalidateQueries({
-                                    queryKey: ["chats"],
-                                    refetchType: "all",
-                                  });
-                                  if (currentChatId === chat.id) {
-                                    goto("/chat");
-                                  }
-                                }
+                        <Dialog.Root>
+                          {#snippet children(open)}
+                            <DropdownMenu.Item
+                              accent="destructive"
+                              onclick={() => {
+                                trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
+                                open.set(true);
                               }}
                             >
-                              Confirm
-                            </Dialog.Button>
+                              <Icons.Trash />
+                              Delete
+                            </DropdownMenu.Item>
 
-                            <Dialog.Cancel>Cancel</Dialog.Cancel>
+                            <Dialog.Content>
+                              <Dialog.Close />
+
+                              {#snippet icon()}
+                                <span style:color="var(--color-red)">
+                                  <Icons.DeleteSpace />
+                                </span>
+                              {/snippet}
+
+                              {#snippet header()}
+                                <Dialog.Title>Delete Conversation</Dialog.Title>
+                                <Dialog.Description>
+                                  <p>
+                                    Shared conversations may be available for up to 90 days after
+                                    being deleted.
+                                  </p>
+                                </Dialog.Description>
+                              {/snippet}
+
+                              {#snippet footer()}
+                                <Dialog.Button
+                                  onclick={async () => {
+                                    trackEvent(GA4.DELETE_CHAT_CONFIRM, { chat_id: chat.id });
+                                    const res = await parseResult(
+                                      client.chat[":chatId"].$delete({
+                                        param: { chatId: chat.id },
+                                      }),
+                                    );
+                                    if (res.ok) {
+                                      await queryClient.invalidateQueries({
+                                        queryKey: ["chats"],
+                                        refetchType: "all",
+                                      });
+                                      if (currentChatId === chat.id) {
+                                        goto("/chat");
+                                      }
+                                    }
+                                  }}
+                                >
+                                  Confirm
+                                </Dialog.Button>
+
+                                <Dialog.Cancel>Cancel</Dialog.Cancel>
+                              {/snippet}
+                            </Dialog.Content>
                           {/snippet}
-                        </Dialog.Content>
-                      {/snippet}
-                    </Dialog.Root>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      </ScrollListener>
-    {/if}
+                        </Dialog.Root>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Root>
+                  </div>
+                </li>
+              {/each}
+            {/if}
+          </ul>
+        </Collapsible.Content>
+      </Collapsible.Root>
+    </ScrollListener>
   </nav>
 
-  <a
-    href="https://docs.hellofriday.ai"
-    target="_blank"
-    class="help"
-    aria-label="Get Help"
-    onclick={() => trackEvent(GA4.HELP_CLICK)}
-  >
-    ?
-  </a>
+  <div class="footer">
+    <Usage />
+
+    <a
+      href="https://docs.hellofriday.ai"
+      target="_blank"
+      class="help"
+      aria-label="Get Help"
+      onclick={() => trackEvent(GA4.HELP_CLICK)}
+    >
+      ?
+    </a>
+  </div>
 </header>
 
 <style>
@@ -306,7 +320,7 @@
     flex-direction: column;
     justify-content: space-between;
     gap: var(--size-4);
-    padding-block: var(--size-5);
+    padding-block: var(--size-5) 0;
     padding-inline: var(--size-3);
     position: relative;
     overflow-y: auto;
@@ -325,7 +339,7 @@
 
   .user {
     padding-inline: var(--size-2-5);
-    margin-block: var(--size-1) var(--size-6);
+    margin-block: var(--size-1) 0;
 
     .user-name {
       align-items: center;
@@ -336,55 +350,93 @@
     }
   }
 
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-6);
+  }
+
   ul {
     display: flex;
     flex-direction: column;
+    gap: var(--size-1);
+    padding-inline: var(--size-1);
+
+    &.main-links {
+      gap: 0;
+    }
 
     li {
       inline-size: 100%;
     }
+
+    a,
+    button {
+      align-items: center;
+      block-size: var(--size-6);
+      border-radius: var(--radius-2);
+      color: color-mix(in srgb, var(--color-text), transparent 20%);
+      display: flex;
+      font-size: var(--font-size-2);
+      font-weight: var(--font-weight-5);
+      gap: var(--size-1);
+      inline-size: 100%;
+      outline: none;
+      padding-inline: var(--size-2);
+      position: relative;
+
+      .dot {
+        align-items: center;
+        block-size: var(--size-4);
+        aspect-ratio: 1;
+        display: flex;
+        justify-content: center;
+
+        span {
+          background-color: currentColor;
+          border: var(--size-0-5) solid var(--color-white);
+          block-size: 11px;
+          border-radius: var(--radius-round);
+          box-shadow: var(--shadow-1);
+          inline-size: 11px;
+        }
+      }
+
+      & :global(svg) {
+        opacity: 0.5;
+      }
+
+      &.active,
+      &:focus-visible {
+        background-color: hsl(0 0 0% / 0.05);
+
+        & :global(svg) {
+          color: var(--blue-2);
+          opacity: 1;
+        }
+
+        @media (prefers-color-scheme: dark) {
+          background-color: hsl(0 0 100% / 0.05);
+        }
+      }
+    }
   }
 
-  .sidebar-item {
-    align-items: center;
-    block-size: var(--size-7);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
+  .section-trigger {
+    block-size: var(--size-4);
     display: flex;
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-4-5);
-    gap: var(--size-2);
-    outline: none;
-    position: relative;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    opacity: 0.6;
+    padding-inline: var(--size-3);
+    margin-block-end: var(--size-1);
 
-    & :global(svg) {
-      color: var(--color-text);
-      flex: none;
-      opacity: 0.5;
+    :global(svg) {
+      transform: rotate(-90deg);
+      transition: transform 150ms ease;
     }
 
-    .text {
-      opacity: 0.8;
-    }
-
-    &.active,
-    &:focus-visible {
-      background-color: color-mix(in srgb, var(--color-text), transparent 92%);
-    }
-  }
-
-  .section-header {
-    border-block-start: var(--size-px) solid var(--color-border-1);
-    block-size: var(--size-9);
-    display: flex;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-4-5);
-    justify-content: space-between;
-    padding-block: var(--size-3) var(--size-1-5);
-    padding-inline: var(--size-2-5);
-
-    .section__add-new {
+    /* .section__add-new {
       align-items: center;
       background-color: var(--color-surface-1);
       border-radius: var(--radius-round);
@@ -413,7 +465,11 @@
       &:matches(button):focus-visible {
         outline: var(--size-px) solid color-mix(in srgb, var(--color-text), transparent 50%);
       }
-    }
+    } */
+  }
+
+  :global([data-melt-collapsible-trigger][data-state="open"]) .section-trigger :global(svg) {
+    transform: rotate(0deg);
   }
 
   .section-list {
@@ -468,7 +524,7 @@
 
   .chat-row:hover .chat-trigger,
   :global(:focus-visible) .chat-trigger,
-  :global([data-state="open"]) .chat-trigger {
+  :global([data-melt-dropdown-menu-trigger][data-state="open"]) .chat-trigger {
     opacity: 1;
     visibility: visible;
   }
@@ -480,6 +536,15 @@
 
   .sidebar-item.active + .chat-options .chat-trigger:hover {
     background-color: transparent;
+  }
+
+  .footer {
+    background-color: var(--accent-1);
+    inset-block-end: 0;
+    margin-inline: var(--size-2) 0;
+    margin-block: auto 0;
+    padding-block: 0 var(--size-5);
+    position: sticky;
   }
 
   .help {
@@ -494,11 +559,7 @@
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-7);
     inline-size: var(--size-7);
-    inset-block-end: 0;
     justify-content: center;
-    margin-block: auto 0;
-    margin-inline: var(--size-2) 0;
-    position: sticky;
     transition: all 150ms ease;
   }
 </style>

@@ -20,7 +20,7 @@
   let {
     isDisabled,
     message = $bindable(""),
-    textareaAdditionalSize = $bindable(1), // eslint-disable-line no-useless-assignment -- reactive $bindable prop
+    textareaAdditionalSize = $bindable(1),
     status,
     chatId,
     onSubmit,
@@ -103,25 +103,34 @@
     }}
   />
 
-  <div class="commands">
-    <label class="upload-files">
-      <input
-        type="file"
-        class="sr-only"
-        multiple
-        onchange={(e) => {
-          const files = e.currentTarget.files;
-          if (files?.length) {
-            trackEvent(GA4.FILE_ATTACH, { file_count: files.length });
-            handleFileDrop(appCtx, Array.from(files), chatId);
-          }
-        }}
-      />
+  <div class="footer">
+    <div class="commands">
+      <label class="upload-files">
+        <input
+          type="file"
+          class="sr-only"
+          multiple
+          onchange={(e) => {
+            const files = e.currentTarget.files;
+            if (files?.length) {
+              trackEvent(GA4.FILE_ATTACH, { file_count: files.length });
+              handleFileDrop(appCtx, Array.from(files), chatId);
+            }
+          }}
+        />
 
-      <Icons.Paperclip />
+        <Icons.Paperclip />
 
-      Add Files
-    </label>
+        Add Files
+      </label>
+
+      {#if appCtx.usage.showInputWarning}
+        <span class="usage-inline-warning">
+          <IconSmall.InfoCircled />
+          {appCtx.usage.percent}% of limit used
+        </span>
+      {/if}
+    </div>
 
     <div class="form-action">
       {#if status === "streaming" || status === "submitted"}
@@ -187,10 +196,55 @@
       }
     }
 
+    .footer {
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
+      gap: var(--size-1);
+    }
+
     .commands {
       align-items: center;
       display: flex;
       justify-content: space-between;
+      gap: var(--size-1);
+      margin-inline-start: calc(-1 * var(--size-1));
+      margin-block-end: var(--size-1-5);
+    }
+
+    /* file upload */
+    .upload-files {
+      align-items: center;
+      block-size: var(--size-6);
+      border-radius: var(--radius-3);
+      display: flex;
+      font-size: var(--font-size-2);
+      font-weight: var(--font-weight-5);
+      gap: var(--size-1);
+      opacity: 0.8;
+      padding-inline: var(--size-1) var(--size-2);
+
+      &:hover,
+      &:focus-within {
+        background-color: var(--color-highlight-1);
+      }
+    }
+
+    .sr-only {
+      block-size: 1px;
+      clip: rect(0, 0, 0, 0);
+      inline-size: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+    }
+
+    .usage-inline-warning {
+      align-items: center;
+      color: var(--color-error);
+      display: flex;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-5);
       gap: var(--size-1);
     }
   }
@@ -288,34 +342,5 @@
         background-color: var(--color-surface-2);
       }
     }
-  }
-
-  /* file upload */
-  .upload-files {
-    align-items: center;
-    block-size: var(--size-6);
-    border-radius: var(--radius-3);
-    display: flex;
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    gap: var(--size-1);
-    margin-inline-start: calc(-1 * var(--size-1));
-    margin-block-end: var(--size-1-5);
-    opacity: 0.8;
-    padding-inline: var(--size-1) var(--size-2);
-
-    &:hover,
-    &:focus-within {
-      background-color: var(--color-highlight-1);
-    }
-  }
-
-  .sr-only {
-    block-size: 1px;
-    clip: rect(0, 0, 0, 0);
-    inline-size: 1px;
-    overflow: hidden;
-    position: absolute;
-    white-space: nowrap;
   }
 </style>

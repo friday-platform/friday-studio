@@ -24,9 +24,7 @@
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content>
-          <DropdownMenu.List>
-            {@render actions()}
-          </DropdownMenu.List>
+          {@render actions()}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     {:else}

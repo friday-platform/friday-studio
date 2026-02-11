@@ -267,6 +267,8 @@ svg {
   /* Colors */
 
   /* Backwards compatibility */
+  --color-white: hsl(0 0% 100% / 1);
+  --color-error: hsl(10 100% 38% / 1);
   --color-text: hsl(230 32% 14% / 1);
   --color-blue: hsl(226 74% 52% / 1);
   --color-green: hsl(109 77% 24% / 1);
@@ -286,10 +288,6 @@ svg {
   /* Borders */
   --color-border-1: hsl(220 24% 90%);
   --color-border-2: hsl(240 3 94% / 1);
-
-  /* Text */
-  --color-text: hsl(230 32% 14% / 1);
-  --color-white: hsl(0 0% 100% / 1);
 
   /* Shadows */
   --shadow-canvas: 0 4px 16px -8px hsl(0 0 0 / 0.05), 0 0 0 1px hsl(0 0 0 / 0.05);
@@ -311,6 +309,7 @@ svg {
 
     --color-border-1: color(display-p3 0.8784 0.8941 0.9255);
 
+    --color-error: color(display-p3 0.7673 0.1279 0);
     --color-text: color(display-p3 0.0941 0.1098 0.1843);
 
     /* Yellow - display-p3 */
@@ -360,7 +359,9 @@ svg {
 
     --color-highlight-1: hsl(223 28% 90% / 0.06);
     --color-border-1: hsl(230 10% 24%);
+    --color-error: hsl(10 100% 65% / 1);
     --color-text: hsl(40 12% 95% / 1);
+    --color-white: hsl(0 0 0% / 1);
 
     /* Yellow */
     --yellow-1: hsl(30 9% 9%);
@@ -405,6 +406,7 @@ svg {
     --color-highlight-1: color(display-p3 0.8745 0.8902 0.9294 / 0.06);
     --color-border-1: color(display-p3 0.2118 0.2196 0.2588);
 
+    --color-error: color(display-p3 1 0.4154 0.2985);
     --color-text: color(display-p3 0.9569 0.9529 0.9451);
 
     /* Yellow - display-p3 */

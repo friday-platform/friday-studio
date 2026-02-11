@@ -20,6 +20,7 @@ export const load: LayoutLoad = async ({ params }) => {
     const spaceRes = await parseResult(
       client.workspace[":workspaceId"].$get({ param: { workspaceId: params.spaceId } }),
     );
+
     if (spaceRes.ok) {
       color = ColorSchema.parse(spaceRes.data.metadata?.color);
     }

@@ -43,6 +43,11 @@ export default ts.config(
   },
   {
     files: ["**/*.svelte", "**/*.svelte.ts"],
+    rules: {
+      // Core ESLint rule doesn't understand Svelte's reactive assignment model —
+      // assignments to $bindable/$state vars are side-effectful, not useless.
+      "no-useless-assignment": "off",
+    },
     languageOptions: {
       parser: svelteParser,
       parserOptions: {

@@ -136,6 +136,7 @@
 </script>
 
 <section>
+  <h2>Use Cases</h2>
   <div>
     {#each useCases as item (item.title)}
       <button
@@ -174,23 +175,30 @@
 
 <style>
   section {
-    overflow: visible;
+    margin-inline: auto;
+    max-inline-size: var(--size-216);
+
+    > h2 {
+      font-size: var(--font-size-4);
+      font-weight: var(--font-weight-5);
+      opacity: 0.6;
+      padding-inline: var(--size-3);
+    }
   }
 
   div {
-    break-inside: avoid;
-    column-count: 1;
-    column-gap: 0;
-    margin-inline: auto;
-    max-inline-size: var(--size-216);
-    overflow: visible;
+    display: grid;
+    column-gap: var(--size-5);
+    row-gap: var(--size-3);
+    grid-template-columns: 1fr;
+    margin-block: var(--size-1) 0;
 
     @media (min-width: 640px) {
-      column-count: 2;
+      grid-template-columns: 1fr 1fr;
     }
 
     @media (min-width: 768px) {
-      column-count: 3;
+      grid-template-columns: 1fr 1fr 1fr;
     }
   }
 
@@ -200,12 +208,10 @@
   }
 
   article {
-    background-color: var(--color-highlight-1);
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    margin: var(--size-2-5);
-    padding: var(--size-4);
+    padding: var(--size-3);
     transition: all 200ms ease;
     text-align: left;
 

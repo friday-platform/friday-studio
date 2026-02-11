@@ -128,13 +128,9 @@
 
       {#snippet actions()}
         {#if artifact && artifact.type === "file"}
-          <DropdownMenu.List>
-            <DropdownMenu.Item onclick={handleFileDownload}>Download File</DropdownMenu.Item>
-          </DropdownMenu.List>
+          <DropdownMenu.Item onclick={handleFileDownload}>Download File</DropdownMenu.Item>
         {:else if artifact && artifact.type === "database"}
-          <DropdownMenu.List>
-            <DropdownMenu.Item onclick={handleDatabaseDownload}>Download as CSV</DropdownMenu.Item>
-          </DropdownMenu.List>
+          <DropdownMenu.Item onclick={handleDatabaseDownload}>Download as CSV</DropdownMenu.Item>
         {/if}
       {/snippet}
     </Breadcrumbs.Title>

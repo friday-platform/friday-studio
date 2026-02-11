@@ -351,7 +351,6 @@
 
 <div class="chat" class:visible={showContents} class:has-messages={chat.messages.length > 0}>
   <div class="main">
-    <!-- class:has-messages={chat.messages.length > 0} -->
     <div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
       {#if chat.messages.length > 0}
         <Breadcrumbs {title} />
@@ -506,7 +505,7 @@
                   // No attachments, send simple text message
                   chat.sendMessage({ text: message });
                 }
-                message = ""; // eslint-disable-line no-useless-assignment -- clears reactive $state input
+                message = "";
                 appCtx.stagedFiles.clear();
 
                 userHasScrolled = false;
@@ -518,6 +517,8 @@
               await handleStop();
             }}
           />
+
+          <span class="disclaimer">Friday can make mistakes. Please double-check responses</span>
         </div>
       </div>
 
@@ -567,7 +568,7 @@
   .first-message {
     p {
       font-size: var(--font-size-7);
-      font-weight: var(--font-weight-5);
+      font-weight: var(--font-weight-6);
       padding-block: var(--size-16) 0;
       text-align: center;
     }
@@ -654,7 +655,7 @@
       --local__translate-y: var(--size-4);
 
       inline-size: unset;
-      inset-block-end: var(--size-16);
+      inset-block-end: var(--size-5);
       inset-inline-end: var(--size-1-5);
       inset-inline-start: calc(var(--size-56) + var(--size-1-5));
       margin-inline: unset;
@@ -671,6 +672,16 @@
       margin-inline: auto;
       max-inline-size: var(--size-160);
       padding-inline: var(--size-8);
+    }
+
+    .disclaimer {
+      display: block;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-4-5);
+      margin-block: var(--size-3) 0;
+      opacity: 0.6;
+      text-align: center;
+      text-wrap-style: balance;
     }
   }
 

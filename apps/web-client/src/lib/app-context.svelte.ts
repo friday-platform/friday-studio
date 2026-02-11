@@ -134,6 +134,17 @@ class AppContext {
 
   addWorkspaceDialogOpen = $state(false);
   user = $state<UserIdentity | null>(null);
+
+  usage = $derived.by(() => {
+    const raw = this.user?.usage ?? 0;
+    return {
+      fraction: raw,
+      percent: Math.round(raw * 100),
+      remaining: Math.round((1 - raw) * 100),
+      showSidebarWarning: raw >= 0.5,
+      showInputWarning: raw >= 0.75,
+    };
+  });
 }
 
 export function setAppContext() {
