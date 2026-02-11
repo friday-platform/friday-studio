@@ -14,6 +14,16 @@ type Config struct {
 	ParallelAPIKey string `env:"PARALLEL_API_KEY,required"`
 	JWTPublicKey   string `env:"JWT_PUBLIC_KEY_FILE,file,required"`
 
+	// Unsubscribe support (all optional — feature disabled if any are missing)
+	PostgresConnection string `env:"POSTGRES_CONNECTION"`
+	UnsubscribeHMACKey string `env:"UNSUBSCRIBE_HMAC_KEY"`
+	UnsubscribeBaseURL string `env:"UNSUBSCRIBE_BASE_URL"`
+
 	TLSConfig *server.TLSConfig
 	Profiler  profiler.Config
+}
+
+// UnsubscribeEnabled returns true when all unsubscribe config values are set.
+func (c Config) UnsubscribeEnabled() bool {
+	return c.PostgresConnection != "" && c.UnsubscribeHMACKey != "" && c.UnsubscribeBaseURL != ""
 }

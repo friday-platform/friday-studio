@@ -1,18 +1,8 @@
-/**
- * SendGrid email sending functionality
- *
- * Simplified SendGrid integration extracted from @atlas/notifications
- * with only the functionality needed for the email agent.
- */
-
 import { hostname } from "node:os";
 import process from "node:process";
 import type { EmailParams } from "@atlas/config";
 import { z } from "zod";
 
-/**
- * Atlas JWT payload schema for extracting user email
- */
 const AtlasJWTPayloadSchema = z.object({
   email: z.email().optional(),
   iss: z.literal("tempest-atlas").optional(),
@@ -21,10 +11,10 @@ const AtlasJWTPayloadSchema = z.object({
   iat: z.number(),
 });
 
-/**
- * Send email via Gateway
- */
-export async function sendEmail(params: EmailParams, options?: { sandboxMode?: boolean }) {
+export async function sendEmail(
+  params: EmailParams,
+  options?: { sandboxMode?: boolean; workspaceId?: string },
+) {
   const gatewayUrl = process.env.FRIDAY_GATEWAY_URL;
   if (!gatewayUrl) {
     throw new Error("FRIDAY_GATEWAY_URL not set");
@@ -35,10 +25,8 @@ export async function sendEmail(params: EmailParams, options?: { sandboxMode?: b
     throw new Error("ATLAS_KEY not set");
   }
 
-  // Build custom headers
-  const customHeaders = buildCustomHeaders();
+  const customHeaders = buildCustomHeaders(options?.workspaceId);
 
-  // Get client hostname for tracking
   let clientHostname: string | undefined;
   try {
     clientHostname = hostname().toLowerCase();
@@ -61,6 +49,7 @@ export async function sendEmail(params: EmailParams, options?: { sandboxMode?: b
       sandbox_mode: options?.sandboxMode ?? false,
       client_hostname: clientHostname,
       custom_headers: customHeaders,
+      workspace_id: options?.workspaceId,
     }),
   });
 
@@ -72,24 +61,21 @@ export async function sendEmail(params: EmailParams, options?: { sandboxMode?: b
   return response;
 }
 
-/**
- * Build custom headers for Atlas tracking
- */
-function buildCustomHeaders(): Record<string, string> {
+function buildCustomHeaders(workspaceId?: string): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  // Add user email header if available
   const userEmail = process.env.ATLAS_KEY ? extractUserFromJWT(process.env.ATLAS_KEY) : null;
   if (userEmail) {
     headers["X-Atlas-User"] = userEmail;
   }
 
+  if (workspaceId) {
+    headers["X-Friday-Workspace"] = workspaceId;
+  }
+
   return headers;
 }
 
-/**
- * Extract user email from JWT token
- */
 export function extractUserFromJWT(token: string): string | null {
   try {
     const payload = JSON.parse(

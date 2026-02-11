@@ -23,6 +23,21 @@ var (
 		},
 		[]string{"status"},
 	)
+
+	emailSuppressionsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "gateway_email_suppressions_total",
+			Help: "Total emails suppressed (recipient unsubscribed)",
+		},
+	)
+
+	unsubscribeRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gateway_unsubscribe_requests_total",
+			Help: "Total unsubscribe requests",
+		},
+		[]string{"method", "status"},
+	)
 )
 
 func recordSendGridRequest(status int) {

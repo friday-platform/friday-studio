@@ -3,14 +3,17 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"math"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-chi/httplog/v2"
+	"github.com/google/uuid"
 	"github.com/k3a/html2text"
 	"github.com/sendgrid/rest"
 	"github.com/sendgrid/sendgrid-go"
@@ -29,9 +32,11 @@ var (
 
 // Validation limits.
 var (
-	maxSubjectLength = 998     // RFC 2822 maximum
-	maxContentLength = 5242880 // 5MB
-	maxTemplateIDLen = 100     // Reasonable limit for template IDs
+	maxSubjectLength    = 998     // RFC 2822 maximum
+	maxContentLength    = 5242880 // 5MB
+	maxTemplateIDLen    = 100     // Reasonable limit for template IDs
+	maxWorkspaceIDLen   = 100
+	invalidWorkspaceMsg = "invalid workspace_id: must not contain '|' and be <= 100 chars"
 )
 
 // templateIDRegex validates SendGrid template IDs (alphanumeric with hyphens).
@@ -39,13 +44,13 @@ var templateIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
 // Whitelist of allowed custom email headers.
 var allowedCustomHeaders = map[string]bool{
-	"X-Atlas-User":      true,
-	"X-Atlas-Session":   true,
-	"X-Atlas-Workspace": true,
-	"X-Atlas-Agent":     true,
-	"X-Priority":        true,
-	"X-MSMail-Priority": true,
-	"Importance":        true,
+	"X-Atlas-User":       true,
+	"X-Atlas-Session":    true,
+	"X-Friday-Workspace": true,
+	"X-Atlas-Agent":      true,
+	"X-Priority":         true,
+	"X-MSMail-Priority":  true,
+	"Importance":         true,
 }
 
 // Attachment represents an email attachment from the client request.
@@ -69,6 +74,7 @@ type SendEmailRequest struct {
 	SandboxMode    bool                   `json:"sandbox_mode,omitempty"`
 	ClientHostname string                 `json:"client_hostname,omitempty"`
 	CustomHeaders  map[string]string      `json:"custom_headers,omitempty"`
+	WorkspaceID    string                 `json:"workspace_id,omitempty"`
 }
 
 // validateSendEmailRequest validates email request fields.
@@ -124,16 +130,34 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add email context to logs
-	httplog.LogEntrySetFields(r.Context(), map[string]any{
+	workspaceID := resolveWorkspaceID(&req)
+	if workspaceID != "" && (strings.Contains(workspaceID, "|") || len(workspaceID) > maxWorkspaceIDLen) {
+		http.Error(w, invalidWorkspaceMsg, http.StatusBadRequest)
+		return
+	}
+	if workspaceID == "" {
+		workspaceID = uuid.NewString()
+		s.Logger.Warn("email sent without workspace ID, using fallback", "fallbackID", workspaceID)
+	}
+
+	logFields := map[string]any{
 		"emailTo":      req.To,
 		"emailFrom":    req.From,
 		"emailSubject": req.Subject,
-	})
+		"workspaceID":  workspaceID,
+	}
+	httplog.LogEntrySetFields(r.Context(), logFields)
 
-	message := s.buildSendGridMessage(&req)
+	if s.isEmailSuppressed(r.Context(), req.To, workspaceID) {
+		s.Logger.Info("email suppressed (recipient unsubscribed)", "to", req.To, "workspaceID", workspaceID)
+		emailSuppressionsTotal.Inc()
+		recordSendGridRequest(http.StatusOK)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
-	// Retry with exponential backoff
+	message := s.buildSendGridMessage(&req, workspaceID)
+
 	var lastErr error
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
 		resp, err := s.sendToSendGrid(r, message)
@@ -172,7 +196,7 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, fmt.Sprintf("failed to send email after %d attempts", maxRetryAttempts), http.StatusBadGateway)
 }
 
-func (s *Service) buildSendGridMessage(req *SendEmailRequest) *sgmail.SGMailV3 {
+func (s *Service) buildSendGridMessage(req *SendEmailRequest, workspaceID string) *sgmail.SGMailV3 {
 	from := sgmail.NewEmail(req.FromName, req.From)
 	to := sgmail.NewEmail("", req.To)
 
@@ -180,31 +204,38 @@ func (s *Service) buildSendGridMessage(req *SendEmailRequest) *sgmail.SGMailV3 {
 	message.SetFrom(from)
 	message.Subject = req.Subject
 
-	// Add personalization
 	p := sgmail.NewPersonalization()
 	p.AddTos(to)
 
-	// Template support
+	unsubURL := s.unsubscribeURL(req.To, workspaceID)
+
 	if req.TemplateID != "" {
 		message.SetTemplateID(req.TemplateID)
 		for k, v := range req.TemplateData {
 			p.SetDynamicTemplateData(k, v)
 		}
 	} else {
-		addEmailContent(message, req.Content)
+		content := req.Content
+		if unsubURL != "" && detectContentType(content) == "text/html" {
+			content = injectUnsubscribeLink(content, unsubURL)
+		}
+		addEmailContent(message, content)
 	}
 
 	message.AddPersonalizations(p)
 
-	// IP Pool
 	message.SetIPPoolID(defaultIPPoolName)
 
-	// Custom headers
 	for k, v := range s.buildCustomHeaders(req) {
 		message.SetHeader(k, v)
 	}
 
-	// Attachments
+	// List-Unsubscribe headers (RFC 8058)
+	if unsubURL != "" {
+		message.SetHeader("List-Unsubscribe", "<"+unsubURL+">")
+		message.SetHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+	}
+
 	for _, att := range req.Attachments {
 		a := sgmail.NewAttachment()
 		a.SetContent(att.Content)
@@ -216,7 +247,6 @@ func (s *Service) buildSendGridMessage(req *SendEmailRequest) *sgmail.SGMailV3 {
 		message.AddAttachment(a)
 	}
 
-	// Sandbox mode
 	if req.SandboxMode {
 		mailSettings := sgmail.NewMailSettings()
 		mailSettings.SetSandboxMode(sgmail.NewSetting(true))
@@ -224,6 +254,36 @@ func (s *Service) buildSendGridMessage(req *SendEmailRequest) *sgmail.SGMailV3 {
 	}
 
 	return message
+}
+
+// resolveWorkspaceID returns workspace ID from the request body field or X-Friday-Workspace header.
+func resolveWorkspaceID(req *SendEmailRequest) string {
+	if req.WorkspaceID != "" {
+		return req.WorkspaceID
+	}
+	return req.CustomHeaders["X-Friday-Workspace"]
+}
+
+// unsubscribeURL generates a signed unsubscribe URL if the feature is configured.
+func (s *Service) unsubscribeURL(email, workspaceID string) string {
+	if workspaceID == "" || s.cfg.UnsubscribeBaseURL == "" || s.cfg.UnsubscribeHMACKey == "" {
+		return ""
+	}
+	token := generateUnsubscribeToken(s.cfg.UnsubscribeHMACKey, email, workspaceID)
+	return s.cfg.UnsubscribeBaseURL + "/unsubscribe?token=" + url.QueryEscape(token)
+}
+
+// injectUnsubscribeLink appends an unsubscribe link before the closing </body> or </html> tag.
+func injectUnsubscribeLink(content, unsubURL string) string {
+	link := `<p style="font-size: 11px; margin-top: 4px; text-align: center;"><a href="` + html.EscapeString(unsubURL) + `" style="color: #888; text-decoration: underline;">Unsubscribe from this workspace</a></p>`
+
+	for _, tag := range []string{"</body>", "</html>"} {
+		if idx := strings.LastIndex(strings.ToLower(content), tag); idx != -1 {
+			return content[:idx] + link + content[idx:]
+		}
+	}
+
+	return content + link
 }
 
 // sendGridHost allows overriding the SendGrid API host for testing.
@@ -285,7 +345,6 @@ func detectContentType(content string) string {
 // Plain text must come first per RFC 2046 for proper email client rendering.
 func addEmailContent(message *sgmail.SGMailV3, content string) {
 	if detectContentType(content) == "text/html" {
-		// Generate plain text fallback from HTML
 		plainText := html2text.HTML2TextWithOptions(content,
 			html2text.WithLinksInnerText(), // "Click here <url>" preserves link text
 			html2text.WithUnixLineBreaks(), // Consistent \n line breaks

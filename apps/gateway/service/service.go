@@ -11,13 +11,17 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httplog/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tempestteam/atlas/apps/gateway/repo"
 	"github.com/tempestteam/atlas/pkg/server"
 )
 
 type Service struct {
-	Logger *httplog.Logger
-	cfg    Config
-	client *http.Client
+	Logger  *httplog.Logger
+	cfg     Config
+	client  *http.Client
+	db      *pgxpool.Pool // nil when unsubscribe is disabled
+	queries *repo.Queries // nil when unsubscribe is disabled
 }
 
 // atlasClaims defines the JWT claims structure for Atlas tokens.
@@ -33,13 +37,26 @@ func New(cfg Config) *Service {
 	logger := Logger(cfg)
 	logger.Debug("Creating service")
 
-	return &Service{
+	svc := &Service{
 		cfg:    cfg,
 		Logger: logger,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+
+	if cfg.UnsubscribeEnabled() {
+		pool, err := repo.NewPool(context.Background(), cfg.PostgresConnection)
+		if err != nil {
+			logger.Error("Failed to initialize unsubscribe DB — feature disabled", "error", err)
+		} else {
+			svc.db = pool
+			svc.queries = repo.New(pool)
+			logger.Info("Unsubscribe support enabled")
+		}
+	}
+
+	return svc
 }
 
 // maxBytesMiddleware limits request body size to prevent DoS attacks.
@@ -94,7 +111,6 @@ func jwtAuthMiddleware(publicKeyPEM string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Add user identity to log context
 			fields := map[string]any{
 				"userID": claims.UserMetadata.TempestUserID,
 			}
@@ -115,6 +131,12 @@ func (s *Service) Router() *chi.Mux {
 	r.Use(httplog.RequestLogger(s.Logger, []string{"/healthz"}))
 	r.Use(middleware.Heartbeat("/healthz"))
 
+	// Public unsubscribe routes (no auth — clicked from email)
+	if s.queries != nil {
+		r.Post("/unsubscribe", s.HandleUnsubscribe)
+		r.Get("/unsubscribe", s.HandleUnsubscribePage)
+	}
+
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(jwtAuthMiddleware(s.cfg.JWTPublicKey))
 
@@ -126,6 +148,13 @@ func (s *Service) Router() *chi.Mux {
 	})
 
 	return r
+}
+
+// Close cleans up resources (DB connections).
+func (s *Service) Close() {
+	if s.db != nil {
+		s.db.Close()
+	}
 }
 
 func (s *Service) Serve() (*server.Config, <-chan error) {

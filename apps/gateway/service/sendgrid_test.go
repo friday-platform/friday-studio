@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -336,4 +337,134 @@ func TestAddEmailContentWithTable(t *testing.T) {
 	// Table cell text is extracted (formatting is basic but content preserved)
 	assert.Contains(t, plainText, "Name")
 	assert.Contains(t, plainText, "Item")
+}
+
+func TestResolveWorkspaceID(t *testing.T) {
+	tests := []struct {
+		name   string
+		req    SendEmailRequest
+		wantID string
+	}{
+		{
+			name:   "from body field",
+			req:    SendEmailRequest{WorkspaceID: "ws-body"},
+			wantID: "ws-body",
+		},
+		{
+			name: "from custom header",
+			req: SendEmailRequest{
+				CustomHeaders: map[string]string{"X-Friday-Workspace": "ws-header"},
+			},
+			wantID: "ws-header",
+		},
+		{
+			name: "body takes precedence over header",
+			req: SendEmailRequest{
+				WorkspaceID:   "ws-body",
+				CustomHeaders: map[string]string{"X-Friday-Workspace": "ws-header"},
+			},
+			wantID: "ws-body",
+		},
+		{
+			name:   "empty when neither set",
+			req:    SendEmailRequest{},
+			wantID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveWorkspaceID(&tt.req)
+			assert.Equal(t, tt.wantID, got)
+		})
+	}
+}
+
+func TestBuildSendGridMessage_ListUnsubscribeHeaders(t *testing.T) {
+	svc := &Service{
+		Logger: testLogger(),
+		cfg: Config{
+			SendGridAPIKey:     "test-key",
+			UnsubscribeHMACKey: "test-hmac-key",
+			UnsubscribeBaseURL: "https://gateway.test",
+		},
+		client: &http.Client{},
+	}
+
+	t.Run("headers present when workspace ID provided", func(t *testing.T) {
+		req := &SendEmailRequest{
+			To:      "user@example.com",
+			From:    "sender@example.com",
+			Subject: "Test",
+			Content: "<html><body>Hello</body></html>",
+		}
+
+		msg := svc.buildSendGridMessage(req, "ws-123")
+
+		// Check List-Unsubscribe header
+		listUnsub := msg.Headers["List-Unsubscribe"]
+		assert.NotEmpty(t, listUnsub)
+		assert.Contains(t, listUnsub, "https://gateway.test/unsubscribe?token=")
+		assert.True(t, listUnsub[0] == '<', "should be wrapped in angle brackets")
+
+		// Check List-Unsubscribe-Post header
+		assert.Equal(t, "List-Unsubscribe=One-Click", msg.Headers["List-Unsubscribe-Post"])
+	})
+
+	t.Run("headers absent when no workspace ID", func(t *testing.T) {
+		req := &SendEmailRequest{
+			To:      "user@example.com",
+			From:    "sender@example.com",
+			Subject: "Test",
+			Content: "Hello",
+		}
+
+		msg := svc.buildSendGridMessage(req, "")
+
+		assert.Empty(t, msg.Headers["List-Unsubscribe"])
+		assert.Empty(t, msg.Headers["List-Unsubscribe-Post"])
+	})
+
+	t.Run("headers absent when HMAC key not configured", func(t *testing.T) {
+		noKeySvc := &Service{
+			Logger: testLogger(),
+			cfg:    Config{SendGridAPIKey: "test-key"},
+			client: &http.Client{},
+		}
+
+		req := &SendEmailRequest{
+			To:      "user@example.com",
+			From:    "sender@example.com",
+			Subject: "Test",
+			Content: "Hello",
+		}
+
+		msg := noKeySvc.buildSendGridMessage(req, "ws-123")
+
+		assert.Empty(t, msg.Headers["List-Unsubscribe"])
+		assert.Empty(t, msg.Headers["List-Unsubscribe-Post"])
+	})
+}
+
+func TestInjectUnsubscribeLink(t *testing.T) {
+	unsubURL := "https://gateway.test/unsubscribe?token=abc123"
+
+	t.Run("injects before closing body tag", func(t *testing.T) {
+		content := `<html><body><p>Hello</p></body></html>`
+		result := injectUnsubscribeLink(content, unsubURL)
+
+		assert.Contains(t, result, unsubURL)
+		// Link should appear before </body>
+		linkIdx := strings.Index(result, "Unsubscribe from this workspace")
+		bodyIdx := strings.Index(result, "</body>")
+		assert.Less(t, linkIdx, bodyIdx)
+	})
+
+	t.Run("appends when no body tag", func(t *testing.T) {
+		content := `<div>Hello</div>`
+		result := injectUnsubscribeLink(content, unsubURL)
+
+		assert.Contains(t, result, unsubURL)
+		assert.True(t, strings.HasSuffix(result, "</a></p>"))
+	})
 }

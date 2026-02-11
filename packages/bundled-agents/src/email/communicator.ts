@@ -16,12 +16,6 @@ import { validateRecipient } from "./recipient-validation.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
 
-/**
- * Email Agent
- *
- * Generates and sends email notifications via SendGrid.
- * Takes natural language prompts with data/context and composes appropriate email content.
- */
 export const EmailOutputSchema = z.object({
   response: z.string().describe("Confirmation message"),
   message_id: z.string().describe("SendGrid message ID").optional(),
@@ -73,7 +67,7 @@ export const emailAgent = createAgent<string, EmailOutput>({
     ],
   },
 
-  handler: async (prompt, { logger, abortSignal, stream }) => {
+  handler: async (prompt, { session, logger, abortSignal, stream }) => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
       return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
@@ -278,7 +272,6 @@ CONTENT GUIDELINES (for composeEmail):
       });
 
       const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
-      // atlasUserEmail is already validated above - it's required for sending
       const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
 
       const emailParams: EmailParams = {
@@ -315,7 +308,10 @@ CONTENT GUIDELINES (for composeEmail):
         sandboxMode,
       });
 
-      const result = await sendEmail(emailParams, { sandboxMode });
+      const result = await sendEmail(emailParams, {
+        sandboxMode,
+        workspaceId: session.workspaceId,
+      });
       const message_id = result.headers.get("x-message-id") ?? undefined;
 
       logger.info("Email sent successfully", { to: emailParams.to, message_id });

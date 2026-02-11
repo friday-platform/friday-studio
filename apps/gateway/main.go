@@ -86,6 +86,8 @@ func main() {
 			svc.Logger.Error("Error shutting down metrics server", "error", err)
 		}
 
+		svc.Close()
+
 		cancel()
 		os.Exit(0)
 	}

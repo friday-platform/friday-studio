@@ -53,7 +53,7 @@ func TestAllowedCustomEmailHeaders(t *testing.T) {
 	allowed := []string{
 		"X-Atlas-User",
 		"X-Atlas-Session",
-		"X-Atlas-Workspace",
+		"X-Friday-Workspace",
 		"X-Atlas-Agent",
 		"X-Priority",
 		"X-MSMail-Priority",

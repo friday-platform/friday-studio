@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -16,8 +17,11 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tempestteam/atlas/apps/gateway/repo"
 )
 
 func TestHandleSendGridEmail(t *testing.T) {
@@ -509,4 +513,138 @@ func testLogger() *httplog.Logger {
 		LogLevel: slog.LevelError, // Suppress logs during tests
 		JSON:     false,
 	})
+}
+
+// --- Mock DBTX for suppression tests ---
+
+// mockRow implements pgx.Row, returning a pre-set value on Scan.
+type mockRow struct {
+	val any
+}
+
+func (r mockRow) Scan(dest ...any) error {
+	if len(dest) > 0 {
+		if d, ok := dest[0].(*bool); ok {
+			*d = r.val.(bool)
+		}
+	}
+	return nil
+}
+
+// mockDBTX implements repo.DBTX with a configurable QueryRow result.
+type mockDBTX struct {
+	suppressed bool
+}
+
+func (m *mockDBTX) Exec(_ context.Context, _ string, _ ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (m *mockDBTX) Query(_ context.Context, _ string, _ ...interface{}) (pgx.Rows, error) {
+	return nil, nil
+}
+
+func (m *mockDBTX) QueryRow(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+	return mockRow{val: m.suppressed}
+}
+
+func TestHandleSendGridEmail_SuppressedRecipient(t *testing.T) {
+	mock := &mockDBTX{suppressed: true}
+
+	svc := &Service{
+		Logger:  testLogger(),
+		cfg:     Config{SendGridAPIKey: "test-key"},
+		client:  &http.Client{},
+		queries: repo.New(mock),
+	}
+
+	body, _ := json.Marshal(SendEmailRequest{
+		To:          "suppressed@example.com",
+		From:        "sender@example.com",
+		Subject:     "Test",
+		Content:     "Hello",
+		WorkspaceID: "ws-suppressed",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	// Suppressed emails return 200 without calling SendGrid.
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Body.String(), "suppressed emails should return empty body")
+}
+
+func TestHandleSendGridEmail_NotSuppressed(t *testing.T) {
+	mock := &mockDBTX{suppressed: false}
+
+	mockSendGrid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message": "success"}`))
+	}))
+	defer mockSendGrid.Close()
+
+	origHost := sendGridHost
+	sendGridHost = mockSendGrid.URL
+	defer func() { sendGridHost = origHost }()
+
+	svc := &Service{
+		Logger:  testLogger(),
+		cfg:     Config{SendGridAPIKey: "test-key"},
+		client:  &http.Client{},
+		queries: repo.New(mock),
+	}
+
+	body, _ := json.Marshal(SendEmailRequest{
+		To:          "active@example.com",
+		From:        "sender@example.com",
+		Subject:     "Test",
+		Content:     "Hello",
+		WorkspaceID: "ws-active",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	// Non-suppressed emails should be forwarded to SendGrid.
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+func TestHandleSendGridEmail_InvalidWorkspaceID(t *testing.T) {
+	svc := &Service{
+		Logger: testLogger(),
+		cfg:    Config{SendGridAPIKey: "test-key"},
+		client: &http.Client{},
+	}
+
+	tests := []struct {
+		name        string
+		workspaceID string
+	}{
+		{"contains pipe", "ws|evil"},
+		{"too long", string(make([]byte, 101))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(SendEmailRequest{
+				To:          "test@example.com",
+				From:        "sender@example.com",
+				Subject:     "Test",
+				Content:     "Hello",
+				WorkspaceID: tt.workspaceID,
+			})
+			req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			svc.HandleSendGridEmail(rec, req)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, rec.Body.String(), "invalid workspace_id")
+		})
+	}
 }
