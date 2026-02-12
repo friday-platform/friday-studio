@@ -9,7 +9,7 @@ const conversationYaml = readFileSync(
 );
 
 export const SYSTEM_WORKSPACES: Record<string, WorkspaceConfig> = {
-  "friday-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
+  "atlas-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
 } as const;
 
 export type SystemWorkspaceId = keyof typeof SYSTEM_WORKSPACES;

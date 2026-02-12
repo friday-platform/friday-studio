@@ -43,7 +43,7 @@ needed.
 
 **Conversation Workspace Integration**
 
-- Automatic routing to `friday-conversation` workspace
+- Automatic routing to `atlas-conversation` workspace
 - Persistent conversation IDs based on channel/thread
 - Streaming responses via existing conversation agent
 - Slack MCP server integration for sending messages
@@ -174,10 +174,10 @@ When a Slack signal triggers, your agents receive this payload:
 
 ### Conversation Workspace
 
-The `friday-conversation` workspace automatically handles Slack DMs and mentions:
+The `atlas-conversation` workspace automatically handles Slack DMs and mentions:
 
 ```yaml
-# Configured automatically in friday-conversation workspace
+# Configured automatically in atlas-conversation workspace
 signals:
   slack-dm:
     provider: slack

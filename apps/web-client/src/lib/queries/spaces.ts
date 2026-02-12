@@ -11,7 +11,6 @@ export async function listSpaces(): Promise<WorkspacesListResponse> {
   }
   return res.data.filter(
     (w) =>
-      w.name !== "friday-conversation" &&
       w.name !== "atlas-conversation" &&
       !w.path.includes("/examples/"),
   );

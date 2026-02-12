@@ -66,7 +66,7 @@ const chatRoutes = daemonFactory
     const ctx = c.get("app");
     const { id: chatId, message, datetime } = c.req.valid("json");
     const userId = getUserId();
-    const workspaceId = c.req.header("X-Workspace-Id") || "friday-conversation";
+    const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
     const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
     if (!result.ok) {

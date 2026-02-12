@@ -1,6 +1,6 @@
 version: "1.0"
 workspace:
-  name: "friday-conversation"
+  name: "atlas-conversation"
   description: "Conversation management for Friday"
 signals:
   # Platform signals - triggered by gateway HTTP endpoints

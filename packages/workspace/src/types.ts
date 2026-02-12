@@ -35,7 +35,7 @@ export const WorkspaceMetadataSchema = z.object({
 export const WorkspaceEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
-  path: z.string(), // For system workspaces: "system://friday-conversation"
+  path: z.string(), // For system workspaces: "system://atlas-conversation"
   configPath: z.string(),
   configHash: z.string().optional(),
   status: WorkspaceStatusSchema,

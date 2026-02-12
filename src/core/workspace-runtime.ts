@@ -964,7 +964,7 @@ export class WorkspaceRuntime {
     const scope = { workspaceId: this.workspace.id };
     // Use the engine's FSM definition ID
     const fsmId =
-      job.engine.toYAML().match(/^id:\s*(.+)$/m)?.[1] || job.name || "friday-conversation";
+      job.engine.toYAML().match(/^id:\s*(.+)$/m)?.[1] || job.name || "atlas-conversation";
 
     // Clear persisted state file
     await job.documentStore.saveState(scope, fsmId, null);

@@ -613,7 +613,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // Wrap platform tools to inject session context (datetime for timezone-aware operations)
         const filteredTools = wrapToolsWithSessionContext(tools, sessionContext, ALLOWED_TOOLS);
 
-        const workspaceId = session.workspaceId || "friday-conversation";
+        const workspaceId = session.workspaceId || "atlas-conversation";
 
         // Fetch workspace skills and combine with hardcoded skills
         const workspaceSkillsResult = await SkillStorage.list(workspaceId);
