@@ -166,7 +166,7 @@
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.2.1_picomatch@4.0.3",
     "npm:vitest@^4.0.17": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.2.1_vite@7.3.1__@types+node@25.2.1__picomatch@4.0.3",
     "npm:vitest@^4.0.18": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.2.1_vite@7.3.1__@types+node@25.2.1__picomatch@4.0.3",
-    "npm:xstate@^5.26.0": "5.26.0",
+    "npm:xstate@^5.27.0": "5.27.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod-form-data@^3.0.1": "3.0.1_zod@4.3.6",
     "npm:zod-from-json-schema@~0.5.2": "0.5.2",
@@ -5957,8 +5957,8 @@
     "ws@8.19.0": {
       "integrity": "sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg=="
     },
-    "xstate@5.26.0": {
-      "integrity": "sha512-Fvi9VBoqHgsGYLU2NTag8xDTWtKqUC0+ue7EAhBNBb06wf620QEy05upBaEI1VLMzIn63zugLV8nHb69ZUWYAA=="
+    "xstate@5.27.0": {
+      "integrity": "sha512-ILzEhrLTbTyh3kP19IgLBX/sOSfejnDXrxcftuXS9QaY6mc8QuHXcl3GqUIAaAXM/09/ozHFn0nGFlQj+r9tCg=="
     },
     "xtend@4.0.2": {
       "integrity": "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="
@@ -6329,7 +6329,7 @@
             "npm:papaparse@^5.5.3",
             "npm:proper-lockfile@^4.1.2",
             "npm:vitest@^4.0.18",
-            "npm:xstate@^5.26.0",
+            "npm:xstate@^5.27.0",
             "npm:zod@^4.3.5"
           ]
         }
