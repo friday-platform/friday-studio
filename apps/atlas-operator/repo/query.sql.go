@@ -109,6 +109,43 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (*GetUserByIDRow, 
 	return &i, err
 }
 
+const getUserIDsMissingVirtualKeys = `-- name: GetUserIDsMissingVirtualKeys :many
+SELECT u.id
+FROM public."user" u
+LEFT JOIN public.llm_virtualkey v ON u.id = v.user_id
+WHERE v.user_id IS NULL
+ORDER BY u.id
+LIMIT $1
+`
+
+// Returns user IDs that don't have a virtual key yet.
+//
+//	SELECT u.id
+//	FROM public."user" u
+//	LEFT JOIN public.llm_virtualkey v ON u.id = v.user_id
+//	WHERE v.user_id IS NULL
+//	ORDER BY u.id
+//	LIMIT $1
+func (q *Queries) GetUserIDsMissingVirtualKeys(ctx context.Context, limit int32) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUserIDsMissingVirtualKeys, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUsersAfterCursor = `-- name: GetUsersAfterCursor :many
 SELECT
     id,
@@ -254,18 +291,31 @@ func (q *Queries) GetUsersFirstPage(ctx context.Context, limit int32) ([]*GetUse
 	return items, nil
 }
 
-const hasVirtualKey = `-- name: HasVirtualKey :one
-SELECT EXISTS(SELECT 1 FROM public.llm_virtualkey WHERE user_id = $1)
+const getVirtualKeyUserIDs = `-- name: GetVirtualKeyUserIDs :many
+SELECT user_id FROM public.llm_virtualkey WHERE user_id = ANY($1::text[])
 `
 
-// HasVirtualKey
+// Returns which of the given user IDs have a virtual key stored.
 //
-//	SELECT EXISTS(SELECT 1 FROM public.llm_virtualkey WHERE user_id = $1)
-func (q *Queries) HasVirtualKey(ctx context.Context, userID string) (bool, error) {
-	row := q.db.QueryRow(ctx, hasVirtualKey, userID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+//	SELECT user_id FROM public.llm_virtualkey WHERE user_id = ANY($1::text[])
+func (q *Queries) GetVirtualKeyUserIDs(ctx context.Context, dollar_1 []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, getVirtualKeyUserIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var user_id string
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertVirtualKey = `-- name: UpsertVirtualKey :exec

@@ -1062,6 +1062,150 @@ func TestReconcile_VerificationEvery10Cycles(t *testing.T) {
 	}
 }
 
+func TestReconcile_GetUserIDsMissingVirtualKeysError_SkipsKeyCreation(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+		GetUserIDsMissingVirtualKeysErr: fmt.Errorf("query failed"),
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("expected reconciliation to succeed despite missing-keys query error, got: %v", err)
+	}
+
+	if len(mockLiteLLM.CreatedKeys) != 0 {
+		t.Errorf("expected 0 keys created when missing-keys query fails, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+}
+
+func TestReconcile_MissingKeysBatchSize_CapsKeysPerCycle(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	// Create 150 users — more than missingKeysBatchSize (100)
+	users := make([]database.User, 150)
+	for i := range users {
+		users[i] = database.User{ID: fmt.Sprintf("user-%03d", i)}
+	}
+
+	mockDB := &MockDatabaseClient{Users: users}
+	mockArgoCD := &MockArgoCDManager{Applications: []*unstructured.Unstructured{}}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Mock now respects limit — only missingKeysBatchSize (100) keys should be created
+	if len(mockLiteLLM.CreatedKeys) != 100 {
+		t.Errorf("expected 100 keys created (missingKeysBatchSize), got %d", len(mockLiteLLM.CreatedKeys))
+	}
+
+	// Verify the reconciler passed missingKeysBatchSize (100) as the limit argument
+	if mockDB.GetUserIDsMissingVirtualKeysLimit != 100 {
+		t.Errorf("expected limit=100 (missingKeysBatchSize) passed to GetUserIDsMissingVirtualKeys, got %d", mockDB.GetUserIDsMissingVirtualKeysLimit)
+	}
+}
+
+func TestReconcile_PhantomUser_SkippedByDbUserMapFilter(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	// DB has user-1 only, but GetUserIDsMissingVirtualKeys returns user-1 AND user-phantom
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+		GetUserIDsMissingVirtualKeysOverride: []string{"user-1", "user-phantom"},
+	}
+	mockArgoCD := &MockArgoCDManager{Applications: []*unstructured.Unstructured{}}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only user-1 should get a key — user-phantom should be filtered out
+	if len(mockLiteLLM.CreatedKeys) != 1 {
+		t.Errorf("expected 1 key created, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-1"]; !ok {
+		t.Error("expected key for user-1")
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-phantom"]; ok {
+		t.Error("should NOT create key for phantom user not in dbUserMap")
+	}
+}
+
+func TestReconcile_GetVirtualKeyUserIDsError_SkipsVerification(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+		VirtualKeys: map[string][]byte{
+			"user-1": []byte("key"), // DB has key
+		},
+		GetVirtualKeyUserIDsErr: fmt.Errorf("batch query failed"),
+	}
+	mockArgoCD := &MockArgoCDManager{Applications: []*unstructured.Unstructured{}}
+	mockLiteLLM := &MockLiteLLMClient{
+		LiteLLMKeys: map[string]bool{}, // no keys in litellm — would be orphan if verification ran
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+	r.reconcileCount = 9 // Force verification on next Reconcile
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("expected reconciliation to succeed despite verification query error, got: %v", err)
+	}
+
+	// GetVirtualKeyUserIDs error should cause early return — no DB keys deleted
+	if len(mockDB.DeletedVirtualKeys) != 0 {
+		t.Errorf("expected no DB keys deleted when GetVirtualKeyUserIDs fails, got: %v", mockDB.DeletedVirtualKeys)
+	}
+}
+
 func TestEnsureVirtualKey_HasKeyError_ProceedsWithCreate(t *testing.T) {
 	// HasKey returns error → should log warning and proceed to create normally
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))

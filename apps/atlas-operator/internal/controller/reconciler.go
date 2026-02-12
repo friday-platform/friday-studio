@@ -22,6 +22,10 @@ const (
 	// verifyBatchSize is the max number of users to verify per verification cycle.
 	// At 10-cycle intervals (30s each = 5min), 1000 users are fully audited in ~100min.
 	verifyBatchSize = 50
+
+	// missingKeysBatchSize caps how many keys are created per reconciliation cycle.
+	// Remaining users are picked up on subsequent cycles.
+	missingKeysBatchSize = 100
 )
 
 // Metrics holds Prometheus metrics for the reconciler.
@@ -66,7 +70,6 @@ func (r *Reconciler) Start(ctx context.Context) error {
 		"interval", r.Config.ReconciliationInterval,
 	)
 
-	// Run initial reconciliation
 	start := time.Now()
 	if err := r.Reconcile(ctx); err != nil {
 		r.Logger.Error("Initial reconciliation failed", "error", err, "duration", time.Since(start))
@@ -76,7 +79,6 @@ func (r *Reconciler) Start(ctx context.Context) error {
 		r.recordReconciliationDuration(start, "success")
 	}
 
-	// Start the periodic reconciliation
 	ticker := time.NewTicker(r.Config.ReconciliationInterval)
 	defer ticker.Stop()
 
@@ -115,7 +117,6 @@ func (r *Reconciler) Stop() {
 func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.Logger.Debug("Starting reconciliation")
 
-	// Get current users from database using cursor-based pagination
 	var dbUsers []database.User
 	afterID := ""
 	for {
@@ -130,16 +131,13 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		afterID = page[len(page)-1].ID
 	}
 
-	// Update users total metric
 	r.setUsersTotal(len(dbUsers))
 
-	// Get existing ArgoCD Applications
 	apps, err := r.ArgoCD.ListApplications(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list applications: %w", err)
 	}
 
-	// Create maps for efficient lookup
 	dbUserMap := make(map[string]*database.User)
 	for i := range dbUsers {
 		dbUserMap[dbUsers[i].ID] = &dbUsers[i]
@@ -158,9 +156,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		appUserMap[userID] = app
 	}
 
-	// Create applications for new users
 	created := 0
-	keysCreated := 0
 	for userID := range dbUserMap {
 		if _, exists := appUserMap[userID]; !exists {
 			r.Logger.Info("Creating application for new user",
@@ -171,29 +167,36 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 					"error", err,
 					"user_id", userID,
 				)
-				// Continue with other users
 			} else {
 				created++
 				r.incApplicationsCreated()
 			}
 		}
+	}
 
-		// Create LiteLLM virtual key if enabled and user doesn't have one
-		if r.LiteLLM != nil && r.Cypher != nil {
-			keyCreated, err := r.ensureVirtualKey(ctx, userID)
-			if err != nil {
-				r.Logger.Error("Failed to ensure virtual key",
-					"error", err,
-					"user_id", userID,
-				)
-				// Continue with other users - key can be created in next reconciliation
-			} else if keyCreated {
-				keysCreated++
+	// Uses a single LEFT JOIN query instead of per-user HasVirtualKey checks.
+	keysCreated := 0
+	if r.LiteLLM != nil && r.Cypher != nil {
+		missingKeyUserIDs, err := r.DB.GetUserIDsMissingVirtualKeys(ctx, missingKeysBatchSize)
+		if err != nil {
+			r.Logger.Error("Failed to get users missing virtual keys", "error", err)
+		} else {
+			for _, userID := range missingKeyUserIDs {
+				if _, ok := dbUserMap[userID]; !ok {
+					continue
+				}
+				if err := r.createVirtualKey(ctx, userID); err != nil {
+					r.Logger.Error("Failed to create virtual key",
+						"error", err,
+						"user_id", userID,
+					)
+				} else {
+					keysCreated++
+				}
 			}
 		}
 	}
 
-	// Delete applications and revoke keys for removed users
 	deleted := 0
 	keysDeleted := 0
 	for userID := range appUserMap {
@@ -202,7 +205,6 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				"user_id", userID,
 			)
 
-			// Revoke LiteLLM virtual key first (if LiteLLM is enabled)
 			if r.LiteLLM != nil {
 				if err := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); err != nil {
 					r.Logger.Error("Failed to revoke virtual key",
@@ -215,7 +217,6 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				}
 			}
 
-			// Delete ArgoCD application
 			if err := r.ArgoCD.DeleteApplication(ctx, userID); err != nil {
 				r.Logger.Error("Failed to delete application",
 					"error", err,
@@ -244,7 +245,6 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		"keys_deleted", keysDeleted,
 	)
 
-	// Replenish pool if enabled
 	if r.Pool != nil {
 		if _, err := r.Pool.Replenish(ctx); err != nil {
 			r.Logger.Error("Failed to replenish pool", "error", err)
@@ -255,20 +255,9 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// ensureVirtualKey creates a LiteLLM virtual key for a user if they don't already have one.
-// Returns (true, nil) if a new key was created, (false, nil) if user already has a key,
-// or (false, error) if key creation failed.
-func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool, error) {
-	// Check if user already has a virtual key in our DB
-	hasKey, err := r.DB.HasVirtualKey(ctx, userID)
-	if err != nil {
-		return false, fmt.Errorf("check virtual key: %w", err)
-	}
-	if hasKey {
-		return false, nil // Already has a key, nothing to do
-	}
-
-	// DB says no key — check if litellm has an orphaned key and clean it up
+// createVirtualKey creates a LiteLLM virtual key for a user.
+// The caller is responsible for determining that the user needs a key (via GetUserIDsMissingVirtualKeys).
+func (r *Reconciler) createVirtualKey(ctx context.Context, userID string) error {
 	litellmHasKey, err := r.LiteLLM.HasKey(ctx, userID)
 	if err != nil {
 		r.Logger.Warn("Failed to check LiteLLM for existing key, proceeding with create",
@@ -280,11 +269,10 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 			"user_id", userID,
 		)
 		if delErr := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); delErr != nil {
-			return false, fmt.Errorf("delete orphaned litellm key: %w", delErr)
+			return fmt.Errorf("delete orphaned litellm key: %w", delErr)
 		}
 	}
 
-	// Create virtual key via LiteLLM
 	req := litellm.CreateVirtualKeyRequest{
 		UserID:         userID,
 		KeyAlias:       litellm.KeyAliasForUser(userID),
@@ -293,22 +281,21 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 	}
 
 	resp, err := r.LiteLLM.CreateVirtualKey(ctx, req)
-	// Handle orphaned key: exists in LiteLLM but not in our database (checked above).
+	// Handle orphaned key: exists in LiteLLM but not in our database.
 	// This happens when a previous reconciliation created the key but failed to store it.
 	if err != nil && strings.Contains(err.Error(), "already exists") {
 		r.Logger.Warn("Found orphaned virtual key in LiteLLM, deleting and recreating",
 			"user_id", userID,
 		)
 		if delErr := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); delErr != nil {
-			return false, fmt.Errorf("delete orphaned virtual key: %w", delErr)
+			return fmt.Errorf("delete orphaned virtual key: %w", delErr)
 		}
 		resp, err = r.LiteLLM.CreateVirtualKey(ctx, req)
 	}
 	if err != nil {
-		return false, fmt.Errorf("create virtual key: %w", err)
+		return fmt.Errorf("create virtual key: %w", err)
 	}
 
-	// Encrypt the key via Cypher
 	ciphertexts, err := r.Cypher.Encrypt(ctx, userID, []string{resp.Key})
 	if err != nil {
 		// Rollback: delete the key from LiteLLM since we can't store it
@@ -318,7 +305,7 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 				"error", delErr,
 			)
 		}
-		return false, fmt.Errorf("encrypt virtual key: %w", err)
+		return fmt.Errorf("encrypt virtual key: %w", err)
 	}
 
 	if len(ciphertexts) != 1 {
@@ -329,10 +316,9 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 				"error", delErr,
 			)
 		}
-		return false, fmt.Errorf("unexpected ciphertext count: got %d, want 1", len(ciphertexts))
+		return fmt.Errorf("unexpected ciphertext count: got %d, want 1", len(ciphertexts))
 	}
 
-	// Store encrypted key in database
 	if err := r.DB.InsertVirtualKey(ctx, userID, ciphertexts[0]); err != nil {
 		// Rollback: delete the key from LiteLLM since we can't store it
 		if delErr := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); delErr != nil {
@@ -341,14 +327,14 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 				"error", delErr,
 			)
 		}
-		return false, fmt.Errorf("store virtual key: %w", err)
+		return fmt.Errorf("store virtual key: %w", err)
 	}
 
 	r.Logger.Info("Created and stored virtual key for user",
 		"user_id", userID,
 	)
 
-	return true, nil
+	return nil
 }
 
 // verifyVirtualKeys checks a batch of users for orphaned DB rows (DB says key exists but litellm
@@ -369,35 +355,35 @@ func (r *Reconciler) verifyVirtualKeys(ctx context.Context, users []database.Use
 	batch := users[start:end]
 	r.verifyCursor = end % len(users)
 
-	cleaned := 0
-	for _, user := range batch {
-		hasDBKey, err := r.DB.HasVirtualKey(ctx, user.ID)
-		if err != nil {
-			r.Logger.Warn("Failed to check DB virtual key during verification",
-				"user_id", user.ID,
-				"error", err.Error(),
-			)
-			continue
-		}
-		if !hasDBKey {
-			continue
-		}
+	// Single batch query to find which users in this batch have DB keys
+	batchUserIDs := make([]string, len(batch))
+	for i, user := range batch {
+		batchUserIDs[i] = user.ID
+	}
 
-		hasLiteLLMKey, err := r.LiteLLM.HasKey(ctx, user.ID)
+	dbKeyUserIDs, err := r.DB.GetVirtualKeyUserIDs(ctx, batchUserIDs)
+	if err != nil {
+		r.Logger.Error("Failed to batch-check virtual keys during verification", "error", err)
+		return
+	}
+
+	cleaned := 0
+	for _, userID := range dbKeyUserIDs {
+		hasLiteLLMKey, err := r.LiteLLM.HasKey(ctx, userID)
 		if err != nil {
 			r.Logger.Warn("Failed to check LiteLLM key during verification",
-				"user_id", user.ID,
+				"user_id", userID,
 				"error", err.Error(),
 			)
 			continue
 		}
 		if !hasLiteLLMKey {
 			r.Logger.Warn("Orphaned DB virtual key detected (not in LiteLLM), deleting DB row",
-				"user_id", user.ID,
+				"user_id", userID,
 			)
-			if err := r.DB.DeleteVirtualKey(ctx, user.ID); err != nil {
+			if err := r.DB.DeleteVirtualKey(ctx, userID); err != nil {
 				r.Logger.Error("Failed to delete orphaned DB virtual key",
-					"user_id", user.ID,
+					"user_id", userID,
 					"error", err.Error(),
 				)
 				continue
@@ -416,7 +402,6 @@ func (r *Reconciler) verifyVirtualKeys(ctx context.Context, users []database.Use
 
 // Health checks the health of the reconciler components.
 func (r *Reconciler) Health() error {
-	// Check database connection
 	if r.DB == nil {
 		return fmt.Errorf("database client not initialized")
 	}
@@ -424,7 +409,6 @@ func (r *Reconciler) Health() error {
 		return fmt.Errorf("database unhealthy: %w", err)
 	}
 
-	// Check ArgoCD connectivity
 	if r.ArgoCD == nil {
 		return fmt.Errorf("argocd manager not initialized")
 	}

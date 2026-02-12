@@ -21,11 +21,14 @@ type MockDatabaseClient struct {
 	CreatePoolErr    error
 	CreatedPoolUsers []string
 	// Virtual key mocks
-	VirtualKeys         map[string][]byte
-	HasVirtualKeyErr    error
-	InsertKeyErr        error
-	DeleteVirtualKeyErr error
-	DeletedVirtualKeys  []string
+	VirtualKeys                          map[string][]byte
+	InsertKeyErr                         error
+	DeleteVirtualKeyErr                  error
+	DeletedVirtualKeys                   []string
+	GetUserIDsMissingVirtualKeysErr      error
+	GetUserIDsMissingVirtualKeysOverride []string // if set, returned directly (bypasses Users/VirtualKeys computation)
+	GetUserIDsMissingVirtualKeysLimit    int      // records the limit arg passed by the caller
+	GetVirtualKeyUserIDsErr              error
 }
 
 func (m *MockDatabaseClient) GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error) {
@@ -77,15 +80,47 @@ func (m *MockDatabaseClient) Close() error {
 	return nil
 }
 
-func (m *MockDatabaseClient) HasVirtualKey(ctx context.Context, userID string) (bool, error) {
-	if m.HasVirtualKeyErr != nil {
-		return false, m.HasVirtualKeyErr
+func (m *MockDatabaseClient) GetUserIDsMissingVirtualKeys(ctx context.Context, limit int) ([]string, error) {
+	m.GetUserIDsMissingVirtualKeysLimit = limit
+	if m.GetUserIDsMissingVirtualKeysErr != nil {
+		return nil, m.GetUserIDsMissingVirtualKeysErr
 	}
-	if m.VirtualKeys == nil {
-		return false, nil
+	if m.GetUserIDsMissingVirtualKeysOverride != nil {
+		out := m.GetUserIDsMissingVirtualKeysOverride
+		if limit > 0 && len(out) > limit {
+			out = out[:limit]
+		}
+		return out, nil
 	}
-	_, exists := m.VirtualKeys[userID]
-	return exists, nil
+	var missing []string
+	for _, u := range m.Users {
+		if m.VirtualKeys == nil {
+			missing = append(missing, u.ID)
+			continue
+		}
+		if _, exists := m.VirtualKeys[u.ID]; !exists {
+			missing = append(missing, u.ID)
+		}
+	}
+	if limit > 0 && len(missing) > limit {
+		missing = missing[:limit]
+	}
+	return missing, nil
+}
+
+func (m *MockDatabaseClient) GetVirtualKeyUserIDs(ctx context.Context, userIDs []string) ([]string, error) {
+	if m.GetVirtualKeyUserIDsErr != nil {
+		return nil, m.GetVirtualKeyUserIDsErr
+	}
+	var result []string
+	for _, id := range userIDs {
+		if m.VirtualKeys != nil {
+			if _, exists := m.VirtualKeys[id]; exists {
+				result = append(result, id)
+			}
+		}
+	}
+	return result, nil
 }
 
 func (m *MockDatabaseClient) InsertVirtualKey(ctx context.Context, userID string, ciphertext []byte) error {
@@ -128,10 +163,8 @@ func (m *MockArgoCDManager) CreateApplication(ctx context.Context, userID string
 		return m.CreateErr
 	}
 
-	// Track the creation
 	m.CreatedApps = append(m.CreatedApps, userID)
 
-	// Add to applications list
 	app := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "argoproj.io/v1alpha1",
@@ -159,10 +192,8 @@ func (m *MockArgoCDManager) DeleteApplication(ctx context.Context, userID string
 		return m.DeleteErr
 	}
 
-	// Track the deletion
 	m.DeletedApps = append(m.DeletedApps, userID)
 
-	// Remove from applications list
 	for i, app := range m.Applications {
 		labels := app.GetLabels()
 		if labels["user-id"] == userID {
@@ -242,11 +273,9 @@ func (m *MockLiteLLMClient) DeleteVirtualKeyByUserID(ctx context.Context, userID
 		return m.DeleteKeyErr
 	}
 	m.DeletedUserIDs = append(m.DeletedUserIDs, userID)
-	// Clear the orphaned key status when deleted
 	if m.OrphanedKeyUserIDs != nil {
 		delete(m.OrphanedKeyUserIDs, userID)
 	}
-	// Clear from LiteLLMKeys tracking
 	if m.LiteLLMKeys != nil {
 		delete(m.LiteLLMKeys, userID)
 	}
@@ -280,7 +309,6 @@ func (m *MockCypherClient) Encrypt(ctx context.Context, userID string, plaintext
 	if m.EncryptedData == nil {
 		m.EncryptedData = make(map[string][][]byte)
 	}
-	// Generate fake ciphertexts
 	ciphertexts := make([][]byte, len(plaintext))
 	for i, pt := range plaintext {
 		ciphertexts[i] = []byte("encrypted-" + pt)

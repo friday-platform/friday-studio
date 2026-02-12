@@ -13,7 +13,8 @@ type DatabaseClient interface {
 	GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error)
 	CountPoolUsers(ctx context.Context) (int, error)
 	CreatePoolUser(ctx context.Context) (string, error)
-	HasVirtualKey(ctx context.Context, userID string) (bool, error)
+	GetUserIDsMissingVirtualKeys(ctx context.Context, limit int) ([]string, error)
+	GetVirtualKeyUserIDs(ctx context.Context, userIDs []string) ([]string, error)
 	InsertVirtualKey(ctx context.Context, userID string, ciphertext []byte) error
 	DeleteVirtualKey(ctx context.Context, userID string) error
 	Health() error
