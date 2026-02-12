@@ -48,5 +48,6 @@ Don't force it. Stop before making things worse.
 - No `any` types - use `unknown` or proper types
 - No `console.*` - use `@atlas/logger`
 - Static imports only at top of file
+- All user-scoped database queries MUST use `withUserContext()` — never bare `this.sql`
 - This codebase will outlive you. Fight entropy.
 ```

@@ -138,7 +138,8 @@ When a teammate messages "Task X complete":
    - **testing**: Do tests verify behavior or mock internals? Any
      test-only methods added to production code?
    - **CLAUDE.md hard rules**: No `as`, no `any`, no `console.*`, static
-     imports, Zod at boundaries
+     imports, Zod at boundaries, `withUserContext()` for all user-scoped
+     database queries
    - **Patterns**: Does it match the style of recent commits?
 4. **Approve** → Confirm to teammate. Check their task count against their
    weight cap (see Teammate Rotation):

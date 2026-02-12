@@ -42,6 +42,12 @@ go build                # Build
 - Use `process.env` from `node:process`, not `Deno.env` (migrating away from
   Deno APIs)
 - Dependencies go in `package.json`, not `deno.json` (use `deno add npm:pkg`)
+- All database queries acting on behalf of a user MUST use `withUserContext()`
+  — never construct raw SQL outside an RLS-enforced transaction. This sets
+  `SET LOCAL ROLE authenticated` and `request.user_id`, so RLS policies enforce
+  row-level isolation even if app code has a bug. Cross-user lookups (e.g.
+  ownership checks) use SECURITY DEFINER functions, not superuser queries.
+  See `apps/link/src/adapters/rls.ts` for the implementation.
 
 ## Code Philosophy
 

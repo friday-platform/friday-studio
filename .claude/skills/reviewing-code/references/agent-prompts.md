@@ -49,6 +49,11 @@ If the approach is fundamentally sound, say so. Don't manufacture concerns.
 - Injection, auth bypass, data exposure
 - Missing input validation at system boundaries
 - Will-break-in-prod issues
+- **Database queries without `withUserContext()`** — any SQL that touches
+  user-scoped data MUST run inside `withUserContext(sql, userId, ...)` to
+  enforce RLS. Bare `this.sql` queries on user-facing tables are a
+  privilege-escalation vector. Cross-user lookups use SECURITY DEFINER
+  functions only.
 
 ### Assumptions
 - What must be true for this to work?
