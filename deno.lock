@@ -143,7 +143,7 @@
     "npm:oauth4webapi@^3.8.3": "3.8.4",
     "npm:openapi-fetch@0.15": "0.15.0",
     "npm:openapi-fetch@0.17": "0.17.0",
-    "npm:openapi-typescript@^7.12.0": "7.12.0_typescript@5.9.3",
+    "npm:openapi-typescript@^7.13.0": "7.13.0_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:parallel-web@*": "0.3.1",
     "npm:parallel-web@0.3.1": "0.3.1",
@@ -4705,8 +4705,8 @@
     "openapi-typescript-helpers@0.1.0": {
       "integrity": "sha512-OKTGPthhivLw/fHz6c3OPtg72vi86qaMlqbJuVJ23qOvQ+53uw1n7HdmkJFibloF7QEjDrDkzJiOJuockM/ljw=="
     },
-    "openapi-typescript@7.12.0_typescript@5.9.3": {
-      "integrity": "sha512-dtk3h5rbILWfDEUCNgMeBHSpvVsslM0ik1psDxxlrIAJk34SDqZIbhF+qKZy6MytW7Fp+wxynq9y5S3wgJcn0g==",
+    "openapi-typescript@7.13.0_typescript@5.9.3": {
+      "integrity": "sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==",
       "dependencies": [
         "@redocly/openapi-core",
         "ansi-colors",
@@ -6436,7 +6436,7 @@
           "dependencies": [
             "npm:hono-openapi@^1.2.0",
             "npm:openapi-fetch@0.17",
-            "npm:openapi-typescript@^7.12.0"
+            "npm:openapi-typescript@^7.13.0"
           ]
         }
       },
