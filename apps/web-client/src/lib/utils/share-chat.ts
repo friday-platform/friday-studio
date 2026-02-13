@@ -140,7 +140,7 @@ ${getEmbeddedStyles()}
       ad_personalization: 'granted'
     });
     gtag('js', new Date());
-    gtag('config', 'G-NLLF9SE37C');
+    gtag('config', 'G-NLLF9SE37C', { page_title: 'Friday Shared Chat' });
   </script>
 </head>
 <body>
