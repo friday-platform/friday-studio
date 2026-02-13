@@ -93,6 +93,8 @@ tweaked, revised, or amended to make the system:
 - What's the hardest part to implement correctly?
 - Where will bugs likely hide?
 - What will confuse future maintainers?
+- If the plan involves database tables with user-scoped data: are RLS policies
+  specified? Load the `database-rls` skill to verify the policy design.
 
 ### API/Interface Design
 

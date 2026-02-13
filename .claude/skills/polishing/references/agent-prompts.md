@@ -159,9 +159,9 @@ Load the karpathy-guidelines skill.
 - Race conditions, resource leaks, crash paths
 - Error handling at system boundaries
 - Security: injection, auth bypass, data exposure
-- **Database isolation**: any SQL on user-scoped tables MUST use
-  `withUserContext()` — bare `this.sql` queries bypass RLS and are a
-  privilege-escalation vector
+- **Database isolation**: user-scoped SQL MUST use `withUserContext()`. If the
+  diff touches SQL, adapters, or repositories, load the `database-rls` skill
+  for the full checklist.
 
 ### Design
 - Does the implementation match the plan's intent? (if plan exists)

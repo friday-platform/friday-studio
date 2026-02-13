@@ -140,6 +140,8 @@ When a teammate messages "Task X complete":
    - **CLAUDE.md hard rules**: No `as`, no `any`, no `console.*`, static
      imports, Zod at boundaries, `withUserContext()` for all user-scoped
      database queries
+   - **Database isolation** (if diff touches SQL, adapters, or repositories):
+     load `database-rls` skill and verify compliance
    - **Patterns**: Does it match the style of recent commits?
 4. **Approve** → Confirm to teammate. Check their task count against their
    weight cap (see Teammate Rotation):

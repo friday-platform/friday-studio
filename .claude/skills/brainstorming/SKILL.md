@@ -84,6 +84,11 @@ A list of implementation decisions that were made. This can include:
 - API contracts
 - Specific interactions
 
+### Data Isolation (if applicable)
+
+If the feature involves user-scoped database tables, note which tables need
+RLS policies and any cross-user operations. See the `database-rls` skill.
+
 Do NOT include specific file paths or code snippets. They may end up being
 outdated very quickly.
 

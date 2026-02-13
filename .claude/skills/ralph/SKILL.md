@@ -30,6 +30,7 @@ Read the acceptance criteria. Decide what verification approach fits:
 
 | AC Pattern | Skills to Load |
 |------------|----------------|
+| Database adapters, repositories, or SQL migrations | `database-rls`, `testing` |
 | Pure function with clear inputs/outputs | `testing` |
 | HTTP endpoint behavior | `testing` |
 | UI behavior (clicks, renders, displays) | `agent-browser` |
