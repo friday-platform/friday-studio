@@ -34,7 +34,7 @@
     "npm:@ai-sdk/anthropic@^2.0.62": "2.0.62_zod@4.3.6",
     "npm:@ai-sdk/google@^2.0.53": "2.0.53_zod@4.3.6",
     "npm:@ai-sdk/groq@^2.0.35": "2.0.35_zod@4.3.6",
-    "npm:@ai-sdk/mcp@^0.0.13": "0.0.13_zod@4.3.6",
+    "npm:@ai-sdk/mcp@^0.0.14": "0.0.14_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.90": "2.0.90_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
     "npm:@ai-sdk/svelte@^3.0.131": "3.0.131_svelte@5.50.2__acorn@8.15.0_zod@4.3.6",
@@ -301,11 +301,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/mcp@0.0.13_zod@4.3.6": {
-      "integrity": "sha512-MdxlUvbCty9GZUrmtK8aFdfxWw0KPhMNC2L4skkFYftsIRZLs8RnrEIynZ2aP20TVODcsnKvJhcjPFIsCHImYQ==",
+    "@ai-sdk/mcp@0.0.14_zod@4.3.6": {
+      "integrity": "sha512-h0N+kaKyir4q7VERirjAbU2I7OJ3FbJUOqi89L11n+41dhYHnHkFuFadQNtP6bn4BKbu1q+/cU25ds8QF74TMQ==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
         "pkce-challenge",
         "zod"
       ]
@@ -6430,7 +6430,7 @@
       "packages/mcp": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/mcp@^0.0.13",
+            "npm:@ai-sdk/mcp@^0.0.14",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",

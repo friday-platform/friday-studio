@@ -5,7 +5,7 @@
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
   "dependencies": {
-    "@ai-sdk/mcp": "^0.0.13",
+    "@ai-sdk/mcp": "^0.0.14",
     "@atlas/atlasd": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
