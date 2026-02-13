@@ -10,6 +10,7 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import Bluesky from "$lib/icons/bluesky.svelte";
 import Discord from "$lib/icons/discord.svelte";
 import Linkedin from "$lib/icons/linkedin.svelte";
+import Soc from "$lib/icons/soc.svelte";
 import X from "$lib/icons/x.svelte";
 
 let { children } = $props();
@@ -128,6 +129,12 @@ afterNavigate(() => {
 	</a>
 
 	<p>&copy; {currentYear} Tempest Labs, Inc.</p>
+
+	<div class="soc">
+		<Soc />
+
+		<p>SOC 2 Type II Compliant</p>
+	</div>
 
 	<ul class="nav">
 		<li><a href={resolve('/terms')}>Terms & Conditions</a></li>
@@ -326,7 +333,7 @@ afterNavigate(() => {
 		padding-inline: var(--size-6);
 		text-align: center;
 
-		@media (min-width: 768px) {
+		@media (min-width: 1060px) {
 			block-size: var(--size-18);
 			flex-direction: row;
 			gap: var(--size-8);
@@ -339,8 +346,14 @@ afterNavigate(() => {
 			font-size: var(--font-size-2);
 			font-weight: var(--font-weight-5);
 			opacity: 0.6;
+		}
 
-			@media (min-width: 768px) {
+		.soc {
+			align-items: center;
+			display: flex;
+			gap: var(--size-2);
+
+			@media (min-width: 1060px) {
 				margin-inline: 0 auto;
 			}
 		}

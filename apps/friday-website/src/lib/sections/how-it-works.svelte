@@ -49,9 +49,9 @@ $effect(() => {
 	<header>
 		<h2>
 			<Chat />
-			The AI that works while you’re away
+			How it works
 		</h2>
-		<h3>Do complex work using natural language</h3>
+		<h3>From idea to done in minutes</h3>
 	</header>
 
 	<div class="interactive">
@@ -66,17 +66,14 @@ $effect(() => {
 						{/if}
 					</p>
 
-					<p>
-						Tell Friday what you want to accomplish in plain language. This can be a one-off task or
-						something more complex that runs over time.
-					</p>
+					<p>Ask Friday to run any task or something more complex that runs over time.</p>
 				</button>
 			</li>
 
 			<li>
 				<button onclick={() => resetTimer(2)} class:active={activeItem === 2}>
 					<p>
-						2. Friday plans the work
+						2. Approve the plan
 
 						{#if activeItem === 2}
 							<progress max="100" value={progress}>{progress}%</progress>
@@ -84,8 +81,8 @@ $effect(() => {
 					</p>
 
 					<p>
-						Friday breaks the job into steps and spins up agents to do the work. Agents coordinate,
-						pull in context, and take action across tools.
+						Friday spins up specialized agents that coordinate, pull in context, and take action
+						across your tools.
 					</p>
 				</button>
 			</li>
@@ -100,10 +97,7 @@ $effect(() => {
 						{/if}
 					</p>
 
-					<p>
-						Friday produces concrete outputs like drafts, summaries, updates, or notifications. You
-						can use the results as-is or adjust the job and run it again.
-					</p>
+					<p>Friday delivers concrete results that you can use as is or adjust and run again.</p>
 				</button>
 			</li>
 		</ul>

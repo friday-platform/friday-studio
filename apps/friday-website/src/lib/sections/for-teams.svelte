@@ -6,19 +6,13 @@ import Teams from "$lib/icons/teams.svelte";
 <Section
 	details={[
 		{
-			title: 'Draft summaries, updates, or messages for review',
-			description:
-				'"Research a topic using links and documents I provide, then write a one-page brief with sources."'
+			title: 'Run complex, cross-team work like analysis, research, and orchestration.'
 		},
 		{
-			title: 'Track follow-ups and remind you when action is needed',
-			description:
-				'"Review the transcript from my meeting and draft an email with a summary and clear next steps."'
+			title: 'Bring company knowledge together and act on it instantly.'
 		},
 		{
-			title: 'Run recurring jobs that stay up to date over time',
-			description:
-				'"Monitor the weather forecast over the next 7 days and notify me when it\'s a good window to work on my yard."'
+			title: 'Make ongoing team work run itself.'
 		}
 	]}
 >
@@ -28,6 +22,6 @@ import Teams from "$lib/icons/teams.svelte";
 			For Teams
 		</h2>
 
-		<h3>Use Friday to coordinate work across people, tools, and shared processes.</h3>
+		<h3>Put AI to work across teams</h3>
 	{/snippet}
 </Section>

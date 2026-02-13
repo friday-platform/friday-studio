@@ -6,22 +6,22 @@ const items = [
   {
     question: "What is Friday?",
     answer:
-      "Friday is an AI assistant that builds and runs automations through conversation. Instead of configuring workflows in visual builders, you describe what you want to accomplish, and Friday creates the automation for you. It monitors websites, processes data, sends notifications, analyzes documents, and connects to your tools.",
+      "Friday is an AI-powered assistant that lets you get real work done across your tools. Describe what you want to accomplish, and Friday delivers the automation for you. It monitors websites, processes data, sends notifications, analyzes documents, and more.",
   },
   {
     question: "Do I need to know how to code?",
     answer:
-      "No. You don't need to write code, craft prompts, understand APIs, or architect workflows like Zapier. Friday works through conversation: you describe what you want, and it handles the technical details including building the automation, writing agent prompts, configuring integrations, and setting up error handling. If you're technical, it can handle more advanced use cases, but it's designed to work without any technical knowledge.",
+      "No, Friday works through conversation: you describe what you want, and it handles the details. If you are technical and prefer to write code, you can also work with configuration files in yaml.",
   },
   {
     question: "How long does it take to setup?",
     answer:
-      "Most automations are ready in minutes. You describe what you want, Friday asks a few clarifying questions, shows you a plan, and builds it after you approve. If the automation needs credentials for external services (like Slack or Google Calendar), you'll do a one-time setup for those. After that, it runs automatically.",
+      "Automations are ready in minutes. Either choose from a preexisting template, or describe what you want in conversation, and Friday will build the workspace for your use case. ",
   },
   {
-    question: "How much does it cost?",
+    question: "How do I get started?",
     answer:
-      "Friday is completely free right now while we're in beta. We're focused on making sure Friday delivers real value before we introduce pricing.",
+      "Just try a prompt in chat, or choose one from an existing template. Friday will ask you a few questions and connect the relevant apps to get you started.",
   },
 ];
 
@@ -37,7 +37,7 @@ let activeItems = $state<number[]>([]);
 	</header>
 
 	<ul>
-		{#each items as { question, answer }, index}
+		{#each items as { question, answer }, index (index)}
 			<li class:active={activeItems.includes(index)}>
 				<button
 					aria-expanded={activeItems.includes(index)}
@@ -51,7 +51,9 @@ let activeItems = $state<number[]>([]);
 					}}><Arrow />{question}</button
 				>
 
-				<p id="faq-answer-{index}" role="region" aria-hidden={!activeItems.includes(index)}>{answer}</p>
+				<p id="faq-answer-{index}" role="region" aria-hidden={!activeItems.includes(index)}>
+					{answer}
+				</p>
 			</li>
 		{/each}
 	</ul>

@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
 
-type Props = { header: Snippet; details: { title: string; description: string }[] };
+type Props = { header: Snippet; details: { title: string }[] };
 
 let { header, details }: Props = $props();
 </script>

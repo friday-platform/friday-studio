@@ -25,7 +25,7 @@ let { children }: { children: Snippet } = $props();
 			letter-spacing: calc(-1 * var(--font-letterspacing-1));
 			line-height: var(--font-lineheight-1);
 			margin-block: 0 var(--size-6);
-			text-wrap-style: balance;
+			text-wrap-style: pretty;
 		}
 
 		& :global(iframe) {

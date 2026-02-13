@@ -257,10 +257,16 @@ let useCases: UseCase[] = [
   },
 ];
 
-// Filter main use cases and sort by prompt length (longest first)
-const mainPrompts = useCases
-  .filter((uc) => uc.main)
-  .sort((a, b) => b.prompt.length - a.prompt.length);
+let prompts = [
+  "Look at GitHub PRs merged this week and generate release notes in Notion.",
+  "Research the attendees in my meetings and send me a daily morning briefing.",
+  "Create a Slack notification with the last 24 hours of unread emails. Highlight anything urgent.",
+  "Send a weekly email that summarizes the most frequent errors and trends from Sentry.",
+  "Track the stocks in my portfolio and send me a daily email update on how they’re performing.",
+  "Turn my Notion meeting notes into Jira tickets, including a title, description, owner, and priority.",
+  "Summarize my meeting transcripts, outline the next steps, and post the summary in a Slack channel.",
+  "Keep track of my competitors and send me a short summary of important updates every weekday morning.",
+];
 </script>
 
 <div class="pinwheel">
@@ -268,17 +274,22 @@ const mainPrompts = useCases
 	<div class="pinwheel-shade"></div>
 </div>
 <section class="hero">
-	<h1>Conversational automation for everyone</h1>
+	<h1>AI that works while you’re away</h1>
 
 	<div class="prompts" bind:this={promptContainer}>
-		{#each mainPrompts as item, i (item.title)}
-			<p bind:this={promptElements[i]}>“{item.prompt}”</p>
+		{#each prompts as item, i (item)}
+			<p bind:this={promptElements[i]}>“{item}”</p>
 		{/each}
 	</div>
 
-	<a class="cta" href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer"
-		>Join the Beta</a
+	<a
+		class="cta"
+		href="https://auth.hellofriday.ai/signup"
+		target="_blank"
+		rel="noopener noreferrer"
 	>
+		Start Building
+	</a>
 </section>
 
 <section class="use-cases" aria-label="Use cases">
@@ -362,7 +373,7 @@ const mainPrompts = useCases
 				letter-spacing: calc(-1 * var(--font-letterspacing-1));
 				line-height: var(--font-lineheight-1);
 				max-inline-size: var(--size-216);
-				text-wrap-style: pretty;
+				text-wrap-style: balance;
 				text-align: center;
 			}
 		}
