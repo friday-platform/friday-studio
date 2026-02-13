@@ -32,7 +32,7 @@
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.38.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "@sveltejs/kit": "^2.50.2",
+    "@sveltejs/kit": "^2.51.0",
     "@tanstack/svelte-query": "^6.0.18",
     "@tanstack/svelte-table": "9.0.0-alpha.10",
     "@tauri-apps/api": "2.10.1",
