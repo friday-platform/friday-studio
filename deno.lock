@@ -37,7 +37,7 @@
     "npm:@ai-sdk/mcp@^0.0.13": "0.0.13_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.90": "2.0.90_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.129": "3.0.129_svelte@5.50.2__acorn@8.15.0_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.131": "3.0.131_svelte@5.50.2__acorn@8.15.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.39": "0.2.39_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.3.14",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -105,8 +105,8 @@
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__@types+node@25.2.1__vite@7.3.1___@types+node@25.2.1___picomatch@4.0.3_@opentelemetry+api@1.9.0_@types+node@25.2.1",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.8.11": "0.8.11",
-    "npm:ai@^5.0.129": "5.0.129_zod@4.3.6",
-    "npm:ai@^5.0.93": "5.0.129_zod@4.3.6",
+    "npm:ai@^5.0.129": "5.0.131_zod@4.3.6",
+    "npm:ai@^5.0.93": "5.0.131_zod@4.3.6",
     "npm:better-sqlite3@^12.6.2": "12.6.2",
     "npm:concurrently@*": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
@@ -115,7 +115,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.0.0",
     "npm:eslint-plugin-svelte@^3.15.0": "3.15.0_eslint@10.0.0_svelte@5.50.2__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@10": "10.0.0",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.129__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.131__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.0": "21.3.0",
     "npm:globals@^17.1.0": "17.3.0",
@@ -276,11 +276,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.35_zod@4.3.6": {
-      "integrity": "sha512-fMzhC9artgY2s2GgXEWB+cECRJEHHoFJKzDpzsuneguNQ656vydPHhvDdoMjbWW+UtLc4nGf3VwlqG0t4FeQ/w==",
+    "@ai-sdk/gateway@2.0.37_zod@4.3.6": {
+      "integrity": "sha512-9ZxIFZS6f1zjYO5vMkUKkhgT9c1H6agZnPEePz87KHlFCmdV21F5Vnh5kz6Dq/9A4Z1OFwM1pQf7GdxBrbiZHg==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
         "@vercel/oidc",
         "zod"
       ]
@@ -342,10 +342,10 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.129_svelte@5.50.2__acorn@8.15.0_zod@4.3.6": {
-      "integrity": "sha512-T6WronTZb7OgIO3Uu1vbbQwrdciCbAsecW99KZQSELAL0HHqe6HKfeWSM+1R5K1kfCZE6pItYuquWWWqjvpIGQ==",
+    "@ai-sdk/svelte@3.0.131_svelte@5.50.2__acorn@8.15.0_zod@4.3.6": {
+      "integrity": "sha512-4SCJ+7bqJymJsaOWPpYFgvq0YF5Sirz6Ue2UDjtarUj82x1KjHPozHAF6w5ee3lRwpIJ5hTIdQYH3cd7HDsZzQ==",
       "dependencies": [
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
         "ai",
         "svelte",
         "zod"
@@ -2967,12 +2967,12 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai@5.0.129_zod@4.3.6": {
-      "integrity": "sha512-IARdFetNTedDfqpByNMm9p0oHj7JS+SpOrbgLdQdyCiDe70Xk07wnKP4Lub1ckCrxkhAxY3yxOHllGEjbpXgpQ==",
+    "ai@5.0.131_zod@4.3.6": {
+      "integrity": "sha512-KYuhcpiigvPCpFbNzNKcoZ7AWKnTeE++HRqnWqX0MgSbk1xVi0Q5wvfMmnF71n7l5JjytefLV3NkJwbU+7AR/g==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
         "@opentelemetry/api",
         "zod"
       ]
@@ -3685,7 +3685,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.129__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6": {
+    "evalite@1.0.0-beta.15_ai@5.0.131__zod@4.3.6_better-sqlite3@12.6.2_zod@4.3.6": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -6230,7 +6230,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.129",
+            "npm:@ai-sdk/svelte@^3.0.131",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
