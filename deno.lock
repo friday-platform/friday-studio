@@ -32,7 +32,7 @@
     "jsr:@std/text@1": "1.0.17",
     "jsr:@std/yaml@1": "1.0.11",
     "npm:@ai-sdk/anthropic@^2.0.62": "2.0.62_zod@4.3.6",
-    "npm:@ai-sdk/google@^2.0.52": "2.0.52_zod@4.3.6",
+    "npm:@ai-sdk/google@^2.0.53": "2.0.53_zod@4.3.6",
     "npm:@ai-sdk/groq@^2.0.35": "2.0.35_zod@4.3.6",
     "npm:@ai-sdk/mcp@^0.0.13": "0.0.13_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.90": "2.0.90_zod@4.3.6",
@@ -285,11 +285,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/google@2.0.52_zod@4.3.6": {
-      "integrity": "sha512-2XUnGi3f7TV4ujoAhA+Fg3idUoG/+Y2xjCRg70a1/m0DH1KSQqYaCboJ1C19y6ZHGdf5KNT20eJdswP6TvrY2g==",
+    "@ai-sdk/google@2.0.53_zod@4.3.6": {
+      "integrity": "sha512-ccCxr5mrd3AC2CjLq4e1ST7+UiN5T2Pdmgi0XdWM3QohmNBwUQ/RBG7BvL+cB/ex/j6y64tkMmpYz9zBw/SEFQ==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
         "zod"
       ]
     },
@@ -6408,7 +6408,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/anthropic@^2.0.62",
-            "npm:@ai-sdk/google@^2.0.52",
+            "npm:@ai-sdk/google@^2.0.53",
             "npm:@ai-sdk/groq@^2.0.35",
             "npm:@ai-sdk/openai@^2.0.90",
             "npm:@ai-sdk/provider@^2.0.1",
