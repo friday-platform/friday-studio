@@ -5,13 +5,21 @@
   import { Dialog } from "$lib/components/dialog";
   import { Icons } from "$lib/components/icons";
   import { toStore } from "svelte/store";
-  import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
+  import MissingCredentialsDialog from "./missing-credentials-dialog.svelte";
+  import {
+    addWorkspace,
+    CredentialRetryState,
+    handleWorkspaceFile,
+    MissingCredentialsError,
+  } from "./utils.svelte";
 
   const appCtx = getAppContext();
 
   let queryClient = useQueryClient();
   let workspaceConfig = $state<WorkspaceConfig | null>(null);
   let showDialog = $state(false);
+
+  const credRetry = new CredentialRetryState();
 
   function handleDragOver(e: DragEvent) {
     // Must preventDefault to allow drop
@@ -74,11 +82,16 @@
                 queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
               getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id),
             });
-          } catch (error) {
-            console.error("Failed to add workspace:", error);
-          } finally {
             workspaceConfig = null;
             showDialog = false;
+          } catch (error) {
+            if (error instanceof MissingCredentialsError) {
+              credRetry.handleError(workspaceConfig, error);
+              showDialog = false;
+            } else {
+              console.error("Failed to add workspace:", error);
+            }
+            workspaceConfig = null;
           }
         }}
       >
@@ -88,3 +101,17 @@
     {/snippet}
   </Dialog.Content>
 </Dialog.Root>
+
+<MissingCredentialsDialog
+  missingProviders={credRetry.missingProviders}
+  providerKeys={credRetry.providerKeys}
+  continueDisabled={credRetry.retrying}
+  open={credRetry.openStore}
+  onComplete={async () => {
+    await credRetry.retry({
+      refreshWorkspaces: () =>
+        queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
+      getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id),
+    });
+  }}
+/>

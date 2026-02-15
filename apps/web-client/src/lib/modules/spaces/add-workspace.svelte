@@ -6,7 +6,13 @@
   import { Dialog } from "$lib/components/dialog";
   import { Icons } from "$lib/components/icons";
   import type { Snippet } from "svelte";
-  import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
+  import MissingCredentialsDialog from "./missing-credentials-dialog.svelte";
+  import {
+    addWorkspace,
+    CredentialRetryState,
+    handleWorkspaceFile,
+    MissingCredentialsError,
+  } from "./utils.svelte";
 
   let { triggerContents }: { triggerContents: Snippet } = $props();
 
@@ -14,11 +20,17 @@
   const appCtx = getAppContext();
 
   let workspaceConfig = $state<WorkspaceConfig | null>(null);
-  let fileInput: HTMLInputElement;
+  let fileInputEl: HTMLInputElement | null = null;
 
-  async function handleFileSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
+  function captureFileInput(node: HTMLInputElement) {
+    fileInputEl = node;
+  }
+
+  const credRetry = new CredentialRetryState();
+
+  async function handleFileSelected() {
+    if (!fileInputEl) return;
+    const file = fileInputEl.files?.[0];
 
     if (!file) return;
 
@@ -29,7 +41,7 @@
     }
 
     // Reset input so the same file can be selected again
-    input.value = "";
+    fileInputEl.value = "";
   }
 
   function handleDragOver(e: DragEvent) {
@@ -65,7 +77,7 @@
   });
 </script>
 
-<input type="file" accept=".yml,.yaml" bind:this={fileInput} onchange={handleFileSelected} hidden />
+<input type="file" accept=".yml,.yaml" use:captureFileInput onchange={handleFileSelected} hidden />
 
 <Dialog.Root
   onOpenChange={({ next }) => {
@@ -125,7 +137,12 @@
 
                 open.set(false);
               } catch (error) {
-                console.error("Failed to add workspace:", error);
+                if (error instanceof MissingCredentialsError) {
+                  credRetry.handleError(workspaceConfig, error);
+                  open.set(false);
+                } else {
+                  console.error("Failed to add workspace:", error);
+                }
               }
             }}
           >
@@ -136,7 +153,7 @@
             closeOnClick={false}
             onclick={() => {
               trackEvent(GA4.WORKSPACE_FILE_PICKER_CLICK);
-              fileInput.click();
+              fileInputEl?.click();
             }}
           >
             Select File
@@ -147,3 +164,17 @@
     </Dialog.Content>
   {/snippet}
 </Dialog.Root>
+
+<MissingCredentialsDialog
+  missingProviders={credRetry.missingProviders}
+  providerKeys={credRetry.providerKeys}
+  continueDisabled={credRetry.retrying}
+  open={credRetry.openStore}
+  onComplete={async () => {
+    await credRetry.retry({
+      refreshWorkspaces: () =>
+        queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
+      getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id),
+    });
+  }}
+/>

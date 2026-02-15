@@ -181,10 +181,12 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 
 // workspaceDisplayName returns a human-readable name for a workspace ID.
 func workspaceDisplayName(workspaceID string) string {
-	if workspaceID == "friday-conversation" {
+	switch workspaceID {
+	case "atlas-conversation", "friday-conversation":
 		return "chat"
+	default:
+		return workspaceID
 	}
-	return workspaceID
 }
 
 // stripPort returns just the IP from a host:port address.

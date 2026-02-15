@@ -71,8 +71,8 @@ export const LinkCredentialRefSchema = z
     provider: z.string().min(1).optional().describe("Provider name (e.g., 'github', 'slack')"),
     key: z.string().describe("Key within credential.secret object (e.g., 'token')"),
   })
-  .refine((data) => Boolean(data.id) !== Boolean(data.provider), {
-    message: "Exactly one of 'id' or 'provider' must be specified",
+  .refine((data) => Boolean(data.id) || Boolean(data.provider), {
+    message: "At least one of 'id' or 'provider' must be specified",
   });
 export type LinkCredentialRef = z.infer<typeof LinkCredentialRefSchema>;
 

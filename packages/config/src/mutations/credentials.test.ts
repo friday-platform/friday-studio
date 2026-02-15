@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { extractCredentials, updateCredential } from "./credentials.ts";
+import { extractCredentials, toIdRefs, toProviderRefs, updateCredential } from "./credentials.ts";
 import { atlasAgent, createTestConfig, expectError } from "./test-fixtures.ts";
 
 describe("extractCredentials", () => {
@@ -53,7 +53,9 @@ describe("extractCredentials", () => {
 
     const result = extractCredentials(config);
 
-    expect(result).toEqual([{ path: "mcp:linear:LINEAR_ACCESS_TOKEN", provider: "linear" }]);
+    expect(result).toEqual([
+      { path: "mcp:linear:LINEAR_ACCESS_TOKEN", provider: "linear", key: "access_token" },
+    ]);
   });
 
   test("extracts credentials with id-based ref", () => {
@@ -72,7 +74,9 @@ describe("extractCredentials", () => {
 
     const result = extractCredentials(config);
 
-    expect(result).toEqual([{ path: "mcp:github:GITHUB_TOKEN", credentialId: "cred_abc123" }]);
+    expect(result).toEqual([
+      { path: "mcp:github:GITHUB_TOKEN", credentialId: "cred_abc123", key: "token" },
+    ]);
   });
 
   test("extracts credentials from Atlas agent env", () => {
@@ -86,7 +90,9 @@ describe("extractCredentials", () => {
 
     const result = extractCredentials(config);
 
-    expect(result).toEqual([{ path: "agent:slack-agent:SLACK_TOKEN", provider: "slack" }]);
+    expect(result).toEqual([
+      { path: "agent:slack-agent:SLACK_TOKEN", provider: "slack", key: "bot_token" },
+    ]);
   });
 
   test("skips non-atlas agents", () => {
@@ -143,9 +149,21 @@ describe("extractCredentials", () => {
     const result = extractCredentials(config);
 
     expect(result).toHaveLength(3);
-    expect(result).toContainEqual({ path: "mcp:linear:LINEAR_TOKEN", provider: "linear" });
-    expect(result).toContainEqual({ path: "mcp:github:GITHUB_TOKEN", credentialId: "cred_github" });
-    expect(result).toContainEqual({ path: "agent:slack-agent:SLACK_TOKEN", provider: "slack" });
+    expect(result).toContainEqual({
+      path: "mcp:linear:LINEAR_TOKEN",
+      provider: "linear",
+      key: "access_token",
+    });
+    expect(result).toContainEqual({
+      path: "mcp:github:GITHUB_TOKEN",
+      credentialId: "cred_github",
+      key: "token",
+    });
+    expect(result).toContainEqual({
+      path: "agent:slack-agent:SLACK_TOKEN",
+      provider: "slack",
+      key: "token",
+    });
   });
 });
 
@@ -339,6 +357,62 @@ describe("updateCredential", () => {
     });
   });
 
+  test("stores provider when provided", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { LINEAR_TOKEN: { from: "link", provider: "linear", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = updateCredential(config, "mcp:linear:LINEAR_TOKEN", "cred_new123", "linear");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+        from: "link",
+        id: "cred_new123",
+        provider: "linear",
+        key: "access_token",
+      });
+    }
+  });
+
+  test("omits provider from ref when not provided", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_old", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = updateCredential(config, "mcp:github:GITHUB_TOKEN", "cred_new");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toMatchObject({
+        from: "link",
+        id: "cred_new",
+        key: "token",
+      });
+      expect(result.value.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).not.toHaveProperty(
+        "provider",
+      );
+    }
+  });
+
   test("does not mutate original config", () => {
     const config = createTestConfig({
       tools: {
@@ -359,6 +433,358 @@ describe("updateCredential", () => {
     expect(result.ok).toBe(true);
     // Original should be unchanged
     expect(config.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toBe(originalEnv);
-    expect((originalEnv as { provider?: string }).provider).toBe("linear");
+    expect(originalEnv).toMatchObject({ provider: "linear" });
+  });
+});
+
+describe("toProviderRefs", () => {
+  test("drops id from ref with both id and provider", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: {
+                LINEAR_TOKEN: {
+                  from: "link",
+                  id: "cred_abc",
+                  provider: "linear",
+                  key: "access_token",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toProviderRefs(config, {});
+
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      provider: "linear",
+      key: "access_token",
+    });
+  });
+
+  test("leaves provider-only ref untouched", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { LINEAR_TOKEN: { from: "link", provider: "linear", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toProviderRefs(config, {});
+
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      provider: "linear",
+      key: "access_token",
+    });
+  });
+
+  test("resolves legacy id-only ref using providerMap", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_legacy", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toProviderRefs(config, { cred_legacy: "github" });
+
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
+      from: "link",
+      provider: "github",
+      key: "token",
+    });
+  });
+
+  test("throws for legacy id-only ref missing from providerMap", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_unknown", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(() => toProviderRefs(config, {})).toThrow("cred_unknown");
+  });
+
+  test("returns unchanged config when no credentials exist", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { PLAIN_VAR: "just-a-string" },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toProviderRefs(config, {});
+
+    expect(result).toEqual(config);
+  });
+
+  test("handles credentials in agent env", () => {
+    const config = createTestConfig({
+      agents: {
+        "slack-agent": atlasAgent({
+          env: {
+            SLACK_TOKEN: { from: "link", id: "cred_slack", provider: "slack", key: "bot_token" },
+          },
+        }),
+      },
+    });
+
+    const result = toProviderRefs(config, {});
+
+    expect(result.agents?.["slack-agent"]).toHaveProperty("env.SLACK_TOKEN", {
+      from: "link",
+      provider: "slack",
+      key: "bot_token",
+    });
+  });
+
+  test("handles mixed refs across MCP servers and agents", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: {
+                LINEAR_TOKEN: {
+                  from: "link",
+                  id: "cred_lin",
+                  provider: "linear",
+                  key: "access_token",
+                },
+                PLAIN_VAR: "not-a-credential",
+              },
+            },
+          },
+        },
+      },
+      agents: {
+        "my-agent": atlasAgent({
+          env: { AGENT_TOKEN: { from: "link", id: "cred_legacy_agent", key: "token" } },
+        }),
+      },
+    });
+
+    const result = toProviderRefs(config, { cred_legacy_agent: "custom-provider" });
+
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      provider: "linear",
+      key: "access_token",
+    });
+    expect(result.tools?.mcp?.servers?.linear?.env?.PLAIN_VAR).toBe("not-a-credential");
+    expect(result.agents?.["my-agent"]).toHaveProperty("env.AGENT_TOKEN", {
+      from: "link",
+      provider: "custom-provider",
+      key: "token",
+    });
+  });
+});
+
+describe("toIdRefs", () => {
+  test("adds id to provider-only ref from credentialMap", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { LINEAR_TOKEN: { from: "link", provider: "linear", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toIdRefs(config, { linear: "cred_user_123" });
+
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      id: "cred_user_123",
+      provider: "linear",
+      key: "access_token",
+    });
+  });
+
+  test("leaves ref with both id and provider untouched", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: {
+                GITHUB_TOKEN: {
+                  from: "link",
+                  id: "cred_existing",
+                  provider: "github",
+                  key: "token",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toIdRefs(config, {});
+
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
+      from: "link",
+      id: "cred_existing",
+      provider: "github",
+      key: "token",
+    });
+  });
+
+  test("leaves ref with only id untouched", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_legacy", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toIdRefs(config, {});
+
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
+      from: "link",
+      id: "cred_legacy",
+      key: "token",
+    });
+  });
+
+  test("returns unchanged config when no credentials exist", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { PLAIN_VAR: "just-a-string" },
+            },
+          },
+        },
+      },
+    });
+
+    const result = toIdRefs(config, {});
+
+    expect(result).toEqual(config);
+  });
+
+  test("handles credentials in agent env", () => {
+    const config = createTestConfig({
+      agents: {
+        "slack-agent": atlasAgent({
+          env: { SLACK_TOKEN: { from: "link", provider: "slack", key: "bot_token" } },
+        }),
+      },
+    });
+
+    const result = toIdRefs(config, { slack: "cred_slack_456" });
+
+    expect(result.agents?.["slack-agent"]).toHaveProperty("env.SLACK_TOKEN", {
+      from: "link",
+      id: "cred_slack_456",
+      provider: "slack",
+      key: "bot_token",
+    });
+  });
+
+  test("throws for provider-only ref missing from credentialMap", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: { LINEAR_TOKEN: { from: "link", provider: "linear", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(() => toIdRefs(config, {})).toThrow("linear");
+  });
+
+  test("handles mixed refs across MCP servers and agents", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            linear: {
+              transport: { type: "stdio", command: "linear-mcp" },
+              env: {
+                LINEAR_TOKEN: { from: "link", provider: "linear", key: "access_token" },
+                PLAIN_VAR: "not-a-credential",
+              },
+            },
+          },
+        },
+      },
+      agents: {
+        "my-agent": atlasAgent({
+          env: {
+            AGENT_TOKEN: { from: "link", id: "cred_bound", provider: "custom", key: "token" },
+          },
+        }),
+      },
+    });
+
+    const result = toIdRefs(config, { linear: "cred_lin_new" });
+
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      id: "cred_lin_new",
+      provider: "linear",
+      key: "access_token",
+    });
+    expect(result.tools?.mcp?.servers?.linear?.env?.PLAIN_VAR).toBe("not-a-credential");
+    expect(result.agents?.["my-agent"]).toHaveProperty("env.AGENT_TOKEN", {
+      from: "link",
+      id: "cred_bound",
+      provider: "custom",
+      key: "token",
+    });
   });
 });

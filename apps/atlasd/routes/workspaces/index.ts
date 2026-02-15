@@ -1,7 +1,19 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { WorkspaceConfigSchema } from "@atlas/config";
-import { logger } from "@atlas/logger";
+import {
+  type CredentialUsage,
+  extractCredentials,
+  toIdRefs,
+  toProviderRefs,
+} from "@atlas/config/mutations";
+import {
+  CredentialNotFoundError,
+  fetchLinkCredential,
+  LinkCredentialNotFoundError,
+  resolveCredentialsByProvider,
+} from "@atlas/core/mcp-registry/credential-resolver";
+import { createLogger, logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -15,7 +27,6 @@ import { createWorkspaceFromConfigSchema } from "./schemas.ts";
 
 const analytics = createAnalyticsClient();
 
-// Export shared schemas and types
 export * from "./schemas.ts";
 
 // Create and mount routes
@@ -58,12 +69,149 @@ const workspacesRoutes = daemonFactory
         );
       }
 
-      const validatedConfig = validationResult.data;
+      let validatedConfig = validationResult.data;
 
-      // Convert config to YAML
+      const credentials = extractCredentials(validatedConfig);
+      const providerOnlyRefs = credentials.filter(
+        (cred): cred is CredentialUsage & { provider: string } =>
+          !!cred.provider && !cred.credentialId,
+      );
+      const uniqueProviders = [...new Set(providerOnlyRefs.map((ref) => ref.provider))];
+
+      type ResolvedCredentialInfo = {
+        path: string;
+        provider: string;
+        credentialId: string;
+        label: string;
+      };
+      let resolvedCredentials: ResolvedCredentialInfo[] | undefined;
+
+      if (uniqueProviders.length > 0) {
+        const results = await Promise.allSettled(
+          uniqueProviders.map((provider) => resolveCredentialsByProvider(provider)),
+        );
+
+        const missingProviders: string[] = [];
+        const credentialMap: Record<string, string> = {};
+        const labelMap: Record<string, string> = {};
+
+        for (const [i, result] of results.entries()) {
+          const provider = uniqueProviders[i] ?? "";
+          if (result.status === "rejected") {
+            if (result.reason instanceof CredentialNotFoundError) {
+              missingProviders.push(provider);
+            } else {
+              throw result.reason;
+            }
+          } else {
+            const first = result.value[0];
+            if (first) {
+              credentialMap[provider] = first.id;
+              labelMap[provider] = first.label;
+            }
+          }
+        }
+
+        if (missingProviders.length > 0) {
+          const providerKeys: Record<string, string[]> = {};
+          for (const ref of providerOnlyRefs) {
+            if (missingProviders.includes(ref.provider)) {
+              if (!providerKeys[ref.provider]) {
+                providerKeys[ref.provider] = [];
+              }
+              const keys = providerKeys[ref.provider] ?? [];
+              if (!keys.includes(ref.key)) {
+                keys.push(ref.key);
+              }
+            }
+          }
+
+          return c.json(
+            {
+              error: "missing_credentials",
+              message: "Connect these integrations first",
+              missingProviders,
+              providerKeys,
+            },
+            400,
+          );
+        }
+
+        validatedConfig = toIdRefs(validatedConfig, credentialMap);
+
+        resolvedCredentials = providerOnlyRefs.map((ref) => ({
+          path: ref.path,
+          provider: ref.provider,
+          credentialId: credentialMap[ref.provider] ?? "",
+          label: labelMap[ref.provider] ?? "",
+        }));
+
+        const importLogger = createLogger({ component: "workspace-import" });
+        const uniqueCredentialIds = [...new Set(Object.values(credentialMap))];
+        const credentialSecrets = new Map<string, Record<string, unknown>>();
+
+        const secretResults = await Promise.allSettled(
+          uniqueCredentialIds.map(async (credId) => {
+            const credential = await fetchLinkCredential(credId, importLogger);
+            return { credId, secret: credential.secret };
+          }),
+        );
+
+        const failedCredentials: string[] = [];
+        for (const result of secretResults) {
+          if (result.status === "fulfilled") {
+            credentialSecrets.set(result.value.credId, result.value.secret);
+          } else {
+            failedCredentials.push(String(result.reason));
+          }
+        }
+
+        if (failedCredentials.length > 0) {
+          return c.json(
+            {
+              error: "credential_fetch_failed",
+              message: "Failed to fetch resolved credentials for key validation",
+              details: failedCredentials,
+            },
+            500,
+          );
+        }
+
+        const invalidKeys: Array<{
+          path: string;
+          provider: string;
+          key: string;
+          availableKeys: string[];
+        }> = [];
+
+        for (const ref of providerOnlyRefs) {
+          const credId = credentialMap[ref.provider];
+          if (!credId) continue;
+          const secret = credentialSecrets.get(credId);
+          if (secret && !(ref.key in secret)) {
+            invalidKeys.push({
+              path: ref.path,
+              provider: ref.provider,
+              key: ref.key,
+              availableKeys: Object.keys(secret),
+            });
+          }
+        }
+
+        if (invalidKeys.length > 0) {
+          return c.json(
+            {
+              error: "invalid_credential_keys",
+              message: "Resolved credentials are missing expected keys",
+              invalidKeys,
+            },
+            400,
+          );
+        }
+      }
+
       const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
 
-      // Create workspace files
       const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
       const finalWorkspaceName = workspaceName || validatedConfig.workspace.name;
       const basePath = join(getAtlasHome(), "workspaces");
@@ -104,6 +252,7 @@ const workspacesRoutes = daemonFactory
           created,
           workspacePath,
           filesCreated: [ephemeral ? "eph_workspace.yml" : "workspace.yml", ".env"],
+          ...(resolvedCredentials && resolvedCredentials.length > 0 ? { resolvedCredentials } : {}),
         });
       } catch (creationError) {
         return c.json(
@@ -262,6 +411,7 @@ const workspacesRoutes = daemonFactory
   // Export workspace configuration as YAML
   .get("/:workspaceId/export", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    const exportLogger = createLogger({ component: "workspace-export" });
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
@@ -274,9 +424,50 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
 
+      const credentials = extractCredentials(config.workspace);
+      const legacyRefs = credentials.filter(
+        (cred): cred is CredentialUsage & { credentialId: string } =>
+          !cred.provider && !!cred.credentialId,
+      );
+
+      const providerMap: Record<string, string> = {};
+      const unresolvedPaths: string[] = [];
+
+      const legacyResults = await Promise.allSettled(
+        legacyRefs.map(async (ref) => {
+          const credential = await fetchLinkCredential(ref.credentialId, exportLogger);
+          return { credentialId: ref.credentialId, provider: credential.provider, path: ref.path };
+        }),
+      );
+
+      for (const [i, result] of legacyResults.entries()) {
+        const ref = legacyRefs[i];
+        if (!ref) continue;
+        if (result.status === "fulfilled") {
+          providerMap[result.value.credentialId] = result.value.provider;
+        } else if (result.reason instanceof LinkCredentialNotFoundError) {
+          unresolvedPaths.push(ref.path);
+        } else {
+          throw result.reason;
+        }
+      }
+
+      if (unresolvedPaths.length > 0) {
+        return c.json(
+          {
+            error: "unresolvable_credentials",
+            message: "Cannot resolve credentials for export",
+            unresolvedPaths,
+          },
+          422,
+        );
+      }
+
+      const portableConfig = toProviderRefs(config.workspace, providerMap);
+
       // Strip workspace.id - it will be regenerated on import
-      const { id: _id, ...workspaceIdentity } = config.workspace.workspace;
-      const exportConfig = { ...config.workspace, workspace: workspaceIdentity };
+      const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
+      const exportConfig = { ...portableConfig, workspace: workspaceIdentity };
 
       const yamlContent = stringify(exportConfig, { indent: 2, lineWidth: 100 });
 

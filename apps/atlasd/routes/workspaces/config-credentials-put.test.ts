@@ -7,9 +7,9 @@
  * - Successful update flow
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { stringify } from "@std/yaml";
+import { parse, stringify } from "@std/yaml";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createMergedConfig,
@@ -24,9 +24,9 @@ import {
 vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
 
 // Mock fetchLinkCredential to control Link responses
-const mockFetchLinkCredential = vi.fn();
+const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
-  fetchLinkCredential: (...args: unknown[]) => mockFetchLinkCredential(...args),
+  fetchLinkCredential: mockFetchLinkCredential,
   LinkCredentialNotFoundError: class extends Error {
     override name = "LinkCredentialNotFoundError";
     constructor(public readonly credentialId: string) {
@@ -300,6 +300,63 @@ describe("PUT /config/credentials/:path", () => {
       // Verify runtime was destroyed
       expect(getWorkspaceRuntime).toHaveBeenCalled();
       expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+    });
+
+    test("stores both id and provider in the written credential ref", async () => {
+      const testDir = getTestDir();
+      const workspace = createMockWorkspace({ path: testDir });
+      const config = createMergedConfig(
+        createTestConfig({
+          tools: {
+            mcp: {
+              servers: {
+                github: {
+                  transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+                  env: { GITHUB_TOKEN: { from: "link", id: "old-cred", key: "access_token" } },
+                },
+              },
+            },
+          },
+        }),
+      );
+      await writeFile(join(testDir, "workspace.yml"), stringify(config.workspace));
+      const { app } = createTestApp({ workspace, config });
+
+      mockFetchLinkCredential.mockResolvedValue({
+        id: "new-cred-id",
+        provider: "github",
+        type: "oauth",
+        secret: {},
+      });
+
+      const response = await app.request("/ws-test-id/config/credentials/mcp:github:GITHUB_TOKEN", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentialId: "new-cred-id" }),
+      });
+
+      expect(response.status).toBe(200);
+
+      // Read back the written YAML and verify the ref has both id and provider
+      const saved = parse(await readFile(join(testDir, "workspace.yml"), "utf8"));
+      expect(saved).toMatchObject({
+        tools: {
+          mcp: {
+            servers: {
+              github: {
+                env: {
+                  GITHUB_TOKEN: {
+                    from: "link",
+                    id: "new-cred-id",
+                    provider: "github",
+                    key: "access_token",
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
     });
 
     test("updates agent credential successfully", async () => {

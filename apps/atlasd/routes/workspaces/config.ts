@@ -291,7 +291,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
   const ctx = c.get("app");
 
   try {
-    // 1. Workspace lookup
     const manager = ctx.getWorkspaceManager();
     const workspace = await manager.find({ id: workspaceId });
     if (!workspace) {
@@ -301,7 +300,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
-    // 2. System workspace protection
     if (workspace.metadata?.system) {
       return c.json(
         { success: false, error: "forbidden", message: "Cannot modify system workspace" },
@@ -309,7 +307,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
-    // 3. Parse and validate request body
     const body = await c.req.json();
     const parseResult = UpdateCredentialInputSchema.safeParse(body);
     if (!parseResult.success) {
@@ -325,7 +322,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
     }
     const { credentialId: newCredentialId } = parseResult.data;
 
-    // 4. Load config and find current credential at path
     const config = await manager.getWorkspaceConfig(workspace.id);
     if (!config) {
       return c.json(
@@ -334,7 +330,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
-    // Find the current credential to get expected provider
     const credentials = extractCredentials(config.workspace);
     const current = credentials.find((cred) => cred.path === path);
     if (!current) {
@@ -344,7 +339,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
-    // 5. Validate new credential exists in Link
     let newCredential: Credential;
     try {
       newCredential = await fetchLinkCredential(newCredentialId, credentialLogger);
@@ -355,29 +349,24 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       throw error;
     }
 
-    // 6. Determine expected provider
-    // Use current.provider if present, else fetch current credential from Link
+    // Determine expected provider: use current.provider if present, else fetch from Link
     let expectedProvider: string | undefined;
     if (current.provider) {
       expectedProvider = current.provider;
     } else if (current.credentialId) {
-      // Fetch current credential to get its provider
       try {
         const currentCredential = await fetchLinkCredential(current.credentialId, credentialLogger);
         expectedProvider = currentCredential.provider;
       } catch (error) {
         if (error instanceof LinkCredentialNotFoundError) {
-          // If current credential no longer exists, skip provider validation
-          // This handles the case where the old credential was deleted
+          // Old credential deleted — skip provider validation
           expectedProvider = undefined;
         } else {
           throw error;
         }
       }
     }
-    // If neither provider nor credentialId on current, we can't validate provider
 
-    // 7. Validate provider match
     if (expectedProvider && newCredential.provider !== expectedProvider) {
       return c.json(
         { error: "provider_mismatch", expected: expectedProvider, got: newCredential.provider },
@@ -385,8 +374,8 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
-    // 8. Apply mutation with onBeforeWrite callback for history storage
-    const mutationFn = (cfg: WorkspaceConfig) => updateCredential(cfg, path, newCredentialId);
+    const mutationFn = (cfg: WorkspaceConfig) =>
+      updateCredential(cfg, path, newCredentialId, newCredential.provider);
     const result = await applyMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
@@ -396,7 +385,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
     });
 
     if (!result.ok) {
-      // Map mutation errors - updateCredential only returns not_found or validation errors
       const error = result.error;
       if (error.type === "not_found") {
         return c.json(
@@ -415,20 +403,17 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
           400,
         );
       }
-      // Shouldn't happen, but handle gracefully
       return c.json(
         { success: false, error: "internal", message: `Mutation failed: ${error.type}` },
         500,
       );
     }
 
-    // 9. Destroy runtime if active so it reloads config
     const runtime = ctx.getWorkspaceRuntime(workspace.id);
     if (runtime) {
       await ctx.destroyWorkspaceRuntime(workspace.id);
     }
 
-    // 10. Return success
     return c.json({ ok: true });
   } catch (error) {
     return c.json(

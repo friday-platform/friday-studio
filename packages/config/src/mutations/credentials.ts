@@ -1,28 +1,17 @@
-/**
- * Credential extraction and mutation functions for workspace configuration
- *
- * Pure functions that extract and update Link credential references from workspace config.
- * Used by the frontend to display and update credentials.
- */
-
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { produce } from "immer";
 import type { WorkspaceConfig } from "../workspace.ts";
 import { type MutationResult, notFoundError, validationError } from "./types.ts";
 
-/**
- * Represents a credential usage location in the config.
- * Path format: "mcp:{serverId}:{envVar}" or "agent:{agentId}:{envVar}"
- */
+/** Path format: "mcp:{serverId}:{envVar}" or "agent:{agentId}:{envVar}" */
 export interface CredentialUsage {
   path: string;
   credentialId?: string;
   provider?: string;
+  key: string;
 }
 
-/**
- * Type guard to check if an env value is a LinkCredentialRef.
- */
+/** Type guard for LinkCredentialRef env values. */
 function isLinkCredentialRef(value: unknown): value is LinkCredentialRef {
   return (
     typeof value === "object" &&
@@ -32,25 +21,16 @@ function isLinkCredentialRef(value: unknown): value is LinkCredentialRef {
   );
 }
 
-/**
- * Extracts all credential references from a workspace configuration.
- *
- * Walks through MCP server env vars and Atlas agent env vars,
- * returning credential usages with their paths.
- *
- * @param config - Workspace configuration to extract from
- * @returns Array of credential usages found in the config
- */
+/** Extracts all credential references from MCP server and Atlas agent env vars. */
 export function extractCredentials(config: WorkspaceConfig): CredentialUsage[] {
   const usages: CredentialUsage[] = [];
 
-  // Extract from MCP servers
   const servers = config.tools?.mcp?.servers ?? {};
   for (const [serverId, server] of Object.entries(servers)) {
     const env = server.env ?? {};
     for (const [envVar, value] of Object.entries(env)) {
       if (isLinkCredentialRef(value)) {
-        const usage: CredentialUsage = { path: `mcp:${serverId}:${envVar}` };
+        const usage: CredentialUsage = { path: `mcp:${serverId}:${envVar}`, key: value.key };
         if (value.id) {
           usage.credentialId = value.id;
         }
@@ -62,16 +42,14 @@ export function extractCredentials(config: WorkspaceConfig): CredentialUsage[] {
     }
   }
 
-  // Extract from Atlas agents
   const agents = config.agents ?? {};
   for (const [agentId, agent] of Object.entries(agents)) {
-    // Only Atlas agents have env with credentials
     if (agent.type !== "atlas") continue;
 
     const env = agent.env ?? {};
     for (const [envVar, value] of Object.entries(env)) {
       if (isLinkCredentialRef(value)) {
-        const usage: CredentialUsage = { path: `agent:${agentId}:${envVar}` };
+        const usage: CredentialUsage = { path: `agent:${agentId}:${envVar}`, key: value.key };
         if (value.id) {
           usage.credentialId = value.id;
         }
@@ -94,17 +72,7 @@ interface ParsedCredentialPath {
   envVar: string;
 }
 
-/**
- * Parse a credential path into its components.
- *
- * Path format: "{type}:{entityId}:{envVar}"
- * - type: "mcp" or "agent"
- * - entityId: server ID or agent ID
- * - envVar: environment variable name
- *
- * @param path - Credential path string
- * @returns Parsed path or null if invalid format
- */
+/** Parses "{type}:{entityId}:{envVar}" into components, or null if invalid. */
 function parseCredentialPath(path: string): ParsedCredentialPath | null {
   const parts = path.split(":");
   if (parts.length !== 3) return null;
@@ -117,23 +85,13 @@ function parseCredentialPath(path: string): ParsedCredentialPath | null {
   return { type, entityId, envVar };
 }
 
-/**
- * Updates a credential reference at the specified path.
- *
- * Swaps the credential ID while preserving the `key` field from the original ref.
- * Converts provider-based refs to id-based refs.
- *
- * @param config - Current workspace configuration
- * @param path - Credential path in format "{type}:{entityId}:{envVar}"
- * @param credentialId - New credential ID to set
- * @returns MutationResult with updated config or error
- */
+/** Swaps the credential ID at `path`, preserving the existing `key`. */
 export function updateCredential(
   config: WorkspaceConfig,
   path: string,
   credentialId: string,
+  provider?: string,
 ): MutationResult<WorkspaceConfig> {
-  // Parse and validate path format
   const parsed = parseCredentialPath(path);
   if (!parsed) {
     return {
@@ -173,7 +131,12 @@ export function updateCredential(
     return { ok: false, error: notFoundError(path, "credential") };
   }
 
-  const newRef: LinkCredentialRef = { from: "link", id: credentialId, key: existingRef.key };
+  const newRef: LinkCredentialRef = {
+    from: "link",
+    id: credentialId,
+    ...(provider ? { provider } : {}),
+    key: existingRef.key,
+  };
 
   const value = produce(config, (draft) => {
     if (type === "mcp") {
@@ -190,4 +153,104 @@ export function updateCredential(
   });
 
   return { ok: true, value };
+}
+
+/**
+ * Strips user-scoped `id` fields from credential refs, keeping only `provider` and `key`.
+ * Legacy id-only refs are resolved via providerMap.
+ */
+export function toProviderRefs(
+  config: WorkspaceConfig,
+  providerMap: Record<string, string>,
+): WorkspaceConfig {
+  return produce(config, (draft) => {
+    const servers = draft.tools?.mcp?.servers ?? {};
+    for (const server of Object.values(servers)) {
+      if (!server.env) continue;
+      for (const [envVar, value] of Object.entries(server.env)) {
+        if (isLinkCredentialRef(value)) {
+          server.env[envVar] = toProviderRef(value, providerMap);
+        }
+      }
+    }
+
+    const agents = draft.agents ?? {};
+    for (const agent of Object.values(agents)) {
+      if (agent.type !== "atlas") continue;
+      if (!agent.env) continue;
+      for (const [envVar, value] of Object.entries(agent.env)) {
+        if (isLinkCredentialRef(value)) {
+          agent.env[envVar] = toProviderRef(value, providerMap);
+        }
+      }
+    }
+  });
+}
+
+/** Converts a single ref to provider-based form, resolving legacy id-only refs via providerMap. */
+function toProviderRef(
+  ref: LinkCredentialRef,
+  providerMap: Record<string, string>,
+): LinkCredentialRef {
+  if (ref.provider) {
+    return { from: "link", provider: ref.provider, key: ref.key };
+  }
+
+  // Legacy id-only ref — must resolve via providerMap (refine guarantees id exists when no provider)
+  const provider = providerMap[ref.id ?? ""];
+  if (!provider) {
+    throw new Error(
+      `Cannot export credential: no provider found for credential ID "${ref.id}". ` +
+        `Provide a providerMap entry or re-assign the credential.`,
+    );
+  }
+
+  return { from: "link", provider, key: ref.key };
+}
+
+/** Adds concrete credential IDs to provider-only refs. Refs with existing `id` pass through. */
+export function toIdRefs(
+  config: WorkspaceConfig,
+  credentialMap: Record<string, string>,
+): WorkspaceConfig {
+  return produce(config, (draft) => {
+    const servers = draft.tools?.mcp?.servers ?? {};
+    for (const server of Object.values(servers)) {
+      if (!server.env) continue;
+      for (const [envVar, value] of Object.entries(server.env)) {
+        if (isLinkCredentialRef(value)) {
+          server.env[envVar] = toIdRef(value, credentialMap);
+        }
+      }
+    }
+
+    const agents = draft.agents ?? {};
+    for (const agent of Object.values(agents)) {
+      if (agent.type !== "atlas") continue;
+      if (!agent.env) continue;
+      for (const [envVar, value] of Object.entries(agent.env)) {
+        if (isLinkCredentialRef(value)) {
+          agent.env[envVar] = toIdRef(value, credentialMap);
+        }
+      }
+    }
+  });
+}
+
+/** Adds `id` from credentialMap to provider-only refs. Refs with existing `id` pass through. */
+function toIdRef(ref: LinkCredentialRef, credentialMap: Record<string, string>): LinkCredentialRef {
+  if (ref.id) {
+    return ref;
+  }
+
+  // Refine guarantees provider exists when no id
+  const id = credentialMap[ref.provider ?? ""];
+  if (!id) {
+    throw new Error(
+      `Cannot import credential: no credential ID found for provider "${ref.provider}". ` +
+        `Provide a credentialMap entry or connect the integration first.`,
+    );
+  }
+
+  return { from: "link", id, provider: ref.provider, key: ref.key };
 }
