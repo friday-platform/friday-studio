@@ -19,7 +19,7 @@
   "dependencies": {
     "@atlas/analytics": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
-    "@sentry/sveltekit": "^10.38.0",
+    "@sentry/sveltekit": "^10.39.0",
     "@sveltejs/kit": "^2.51.0",
     "nanoid": "^5.1.6",
     "svelte": "^5.51.2",

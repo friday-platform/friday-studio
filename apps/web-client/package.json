@@ -30,7 +30,7 @@
     "@lezer/common": "^1.5.1",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
-    "@sentry/sveltekit": "^10.38.0",
+    "@sentry/sveltekit": "^10.39.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@sveltejs/kit": "^2.51.0",
     "@tanstack/svelte-query": "^6.0.18",
