@@ -292,6 +292,8 @@ export class WorkspaceManager {
   private async registerSystemWorkspaces(): Promise<void> {
     logger.info("Registering system workspaces...");
 
+    const systemIds = new Set(Object.keys(SYSTEM_WORKSPACES));
+
     for (const [id, config] of Object.entries(SYSTEM_WORKSPACES)) {
       const entry: WorkspaceEntry = {
         id,
@@ -314,6 +316,17 @@ export class WorkspaceManager {
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
+      } else if (existing.name !== entry.name || !existing.metadata?.system) {
+        // Reconcile stale name or missing system flag from previous versions
+        await this.registry.updateWorkspaceStatus(id, existing.status, {
+          name: entry.name,
+          metadata: {
+            ...existing.metadata,
+            system: true,
+            description: entry.metadata?.description,
+          },
+        });
+        logger.info(`System workspace reconciled: ${existing.name} → ${entry.name}`);
       }
 
       // Register with signal registrars (system workspaces can have signals!)
@@ -324,6 +337,15 @@ export class WorkspaceManager {
         }
       } catch (error) {
         logger.warn("Failed to register system workspace signals", { workspaceId: id, error });
+      }
+    }
+
+    // Clean up orphaned system workspace entries from previous versions
+    const allWorkspaces = await this.registry.listWorkspaces();
+    for (const ws of allWorkspaces) {
+      if (ws.metadata?.system && !systemIds.has(ws.id)) {
+        logger.info(`Removing orphaned system workspace: ${ws.id} (${ws.name})`);
+        await this.registry.unregisterWorkspace(ws.id);
       }
     }
   }
