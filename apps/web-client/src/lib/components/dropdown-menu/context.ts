@@ -8,12 +8,13 @@ export function createContext(args: CreateDropdownMenuProps = { forceVisible: tr
     elements: { trigger, menu, item, overlay, separator },
     states: { open },
     options: { positioning },
+    builders: { createCheckboxItem },
   } = createDropdownMenu({
     ...args,
     positioning: { ...(args.positioning ?? {}), fitViewport: true },
   });
 
-  const ctx = { trigger, menu, item, overlay, separator, open, positioning };
+  const ctx = { createCheckboxItem, trigger, menu, item, overlay, separator, open, positioning };
   setContext(CONTEXT, ctx);
   return ctx;
 }

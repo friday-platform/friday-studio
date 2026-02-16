@@ -37,10 +37,5 @@
     &:focus {
       outline: none;
     }
-
-    :global(body:has([role="dialog"][data-state="open"])) & {
-      opacity: 0;
-      visibility: hidden;
-    }
   }
 </style>

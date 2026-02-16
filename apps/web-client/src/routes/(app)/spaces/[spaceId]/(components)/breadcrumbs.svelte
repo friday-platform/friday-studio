@@ -1,6 +1,6 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import { client, parseResult } from "@atlas/client/v2";
+  import { client, parseResult, type InferResponseType } from "@atlas/client/v2";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { getAppContext } from "$lib/app-context.svelte";
@@ -14,10 +14,7 @@
   import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
 
-  interface Workspace {
-    id: string;
-    name: string;
-  }
+  type Workspace = InferResponseType<(typeof client.workspace)[":workspaceId"]["$get"], 200>;
 
   let { workspace }: { workspace: Workspace } = $props();
 
@@ -135,15 +132,31 @@
               </DropdownMenu.Item>
 
               <DropdownMenu.Item
-                accent="destructive"
                 onclick={() => {
                   trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
                   open.set(true);
                 }}
               >
-                <Icons.DeleteSpace />
+                <Icons.Trash />
                 Remove
               </DropdownMenu.Item>
+
+              <DropdownMenu.Separator />
+              <DropdownMenu.Label>Color</DropdownMenu.Label>
+
+              {#each COLORS as color (color)}
+                <DropdownMenu.Item
+                  accent="inherit"
+                  checked={workspace.metadata?.color === color}
+                  onclick={() => handleUpdateColor(color)}
+                >
+                  <span style:color="var(--{color}-2)">
+                    <Icons.DotFilled />
+                  </span>
+
+                  <span class="color-label">{color}</span>
+                </DropdownMenu.Item>
+              {/each}
 
               <Dialog.Content>
                 <Dialog.Close />
@@ -185,7 +198,7 @@
           active={getActivePage([`spaces/[spaceId]/sessions`])}
           href={appCtx.routes.spaces.item(workspace.id, "sessions")}
         >
-          Sessions
+          Activity
         </SegmentedControl.Item>
       </SegmentedControl.Root>
     </Breadcrumbs.Root>
@@ -198,5 +211,9 @@
     position: sticky;
     inset-block-start: 0;
     z-index: var(--layer-2);
+  }
+
+  .color-label {
+    text-transform: capitalize;
   }
 </style>

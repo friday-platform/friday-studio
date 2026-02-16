@@ -1,236 +1,429 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import type { SessionStatus } from "@atlas/core/session/session-events";
-  import {
-    createColumnHelper,
-    createTable,
-    getCoreRowModel,
-    renderComponent,
-  } from "@tanstack/svelte-table";
-  import { getAppContext } from "$lib/app-context.svelte";
-  import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
-  import { Table } from "$lib/components/table";
-  import { artifactColumns } from "$lib/modules/library/columns";
-  import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
+  import { client, parseResult } from "@atlas/client/v2";
+  import type { Color } from "@atlas/utils";
+  import { useQueryClient } from "@tanstack/svelte-query";
+  import { invalidateAll } from "$app/navigation";
+  import { resolve } from "$app/paths";
+  import Button from "$lib/components/button.svelte";
+  import Dot from "$lib/components/dot.svelte";
+  import { DropdownMenu } from "$lib/components/dropdown-menu";
+  import { Icons } from "$lib/components/icons";
+  import { IconSmall } from "$lib/components/icons/small";
+  import { formatChatDate } from "$lib/utils/date";
   import { onMount } from "svelte";
-  import Breadcrumbs from "./(components)/breadcrumbs.svelte";
+  import RunJobDialog from "./(components)/run-job-dialog.svelte";
+  import ShareActions from "./(components)/share-actions.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
 
-  const appCtx = getAppContext();
+  let queryClient = useQueryClient();
+
+  const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
+
   const workspace = $derived(data.workspace);
   const recentSessions = $derived(data.sessions.slice(0, 3));
   const recentArtifacts = $derived(data.artifacts.slice(0, 5));
-
-  // Sessions table
-  const sessionColumnHelper = createColumnHelper<{
-    sessionId: string;
-    workspaceId: string;
-    jobName: string;
-    task: string;
-    status: SessionStatus;
-    startedAt: string;
-    completedAt?: string;
-    durationMs?: number;
-    stepCount: number;
-    agentNames: string[];
-  }>();
-
-  const sessionColumns = [
-    sessionColumnHelper.display({
-      id: "deployment",
-      header: "Deployment",
-      cell: (info) => {
-        return renderComponent(DetailsColumn, {
-          job: info.row.original.jobName,
-          summary: info.row.original.task,
-          status: info.row.original.status,
-        });
-      },
-      meta: { minWidth: "0" },
-    }),
-    sessionColumnHelper.accessor("startedAt", {
-      id: "startedAt",
-      header: "Date",
-      cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
-      meta: { align: "center", faded: true, shrink: true, size: "small" },
-    }),
-    sessionColumnHelper.accessor("status", {
-      id: "status",
-      cell: (info) => renderComponent(StatusColumn, { status: info.getValue() }),
-      meta: { align: "center", faded: true, shrink: true, size: "small" },
-      enableSorting: false,
-    }),
-  ];
-
-  const sessionsTable = createTable({
-    get data() {
-      return recentSessions;
-    },
-    columns: sessionColumns,
-    getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => row.sessionId,
-  });
-
-  const artifactsTable = createTable({
-    get data() {
-      return recentArtifacts;
-    },
-    columns: artifactColumns,
-    getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => row.id,
-  });
+  const runnableJobs = $derived(
+    Object.entries(workspace.config?.jobs ?? {}).filter(
+      ([_, job]) => job.triggers && job.triggers.length > 0,
+    ),
+  );
 
   onMount(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
   });
+
+  async function handleUpdateColor(color: Color) {
+    const res = await parseResult(
+      client.workspace[":workspaceId"].metadata.$patch({
+        param: { workspaceId: workspace.id },
+        json: { color },
+      }),
+    );
+
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
+      await invalidateAll();
+    }
+  }
 </script>
 
-<Breadcrumbs {workspace} />
+<div class="wrapper">
+  <div class="page">
+    <article class="content">
+      <header>
+        <div class="title">
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              <span class="change-color">
+                <Dot color={workspace.metadata?.color} />
+              </span>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content>
+              {#each COLORS as color (color)}
+                <DropdownMenu.Item
+                  accent="inherit"
+                  checked={workspace.metadata?.color === color}
+                  onclick={() => handleUpdateColor(color)}
+                >
+                  <span style:color="var(--{color}-2)">
+                    <Icons.DotFilled />
+                  </span>
 
-<div class="page">
-  <div class="content">
-    <h1>{workspace.name}</h1>
+                  <span class="color-label">{color}</span>
+                </DropdownMenu.Item>
+              {/each}
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
 
-    <MarkdownContent>
-      {#if workspace.description}
-        <p>{workspace.description}</p>
-      {/if}
-
-      {#if recentArtifacts.length > 0}
-        <h2>Artifacts</h2>
-        <div data-tempest class="artifacts">
-          <Table.Root
-            table={artifactsTable}
-            rowSize="large"
-            rowPath={(item) => `/library/${item.id}`}
-            onRowClick={(item) =>
-              trackEvent(GA4.SPACE_ARTIFACT_CLICK, {
-                space_id: workspace.id,
-                artifact_id: item.id,
-              })}
-            hideHeader
-          />
+          <h1>{workspace.name}</h1>
         </div>
-      {/if}
 
-      {#if recentSessions.length > 0}
-        <h2>Sessions</h2>
-        <div data-tempest class="sessions">
-          <Table.Root
-            table={sessionsTable}
-            rowSize="large"
-            rowPath={(item) =>
-              appCtx.routes.spaces.item(workspace.id, `sessions/${item.sessionId}`)}
-            hideHeader
-          />
-        </div>
-      {/if}
-    </MarkdownContent>
+        {#if workspace.description}
+          <p>{workspace.description}</p>
+        {/if}
+      </header>
+    </article>
   </div>
 
   <aside class="sidebar">
-    {#if workspace.config?.jobs}
-      <div class="sidebar-section">
-        <h2 class="sidebar-label">Jobs</h2>
-        <ul class="sidebar-list">
-          {#each Object.keys(workspace.config.jobs) as jobId (jobId)}
-            <li class="sidebar-item">
-              {workspace.config.jobs[jobId].title ||
-                workspace.config.jobs[jobId].description ||
-                workspace.config.jobs[jobId].name ||
-                jobId}
-            </li>
-          {/each}
-        </ul>
-      </div>
+    <div class="actions">
+      <a href={resolve("/spaces/[spaceId]/edit", { spaceId: workspace.id })}>
+        <Icons.Settings />
+        Edit Space
+      </a>
+
+      <ShareActions {workspace} />
+    </div>
+    {#if runnableJobs.length > 0}
+      {#each runnableJobs as [jobId, job] (jobId)}
+        <div class="section">
+          <div class="section-header">
+            <h2>{job.title || job.name || jobId}</h2>
+          </div>
+
+          {#if job.description}
+            <p>{job.description}</p>
+          {/if}
+
+          <div class="job-action">
+            <RunJobDialog
+              {jobId}
+              {job}
+              signals={workspace.config?.signals ?? {}}
+              workspaceId={workspace.id}
+            >
+              {#snippet triggerContents()}
+                <Button size="small">Run Now</Button>
+              {/snippet}
+            </RunJobDialog>
+          </div>
+        </div>
+      {/each}
     {/if}
 
-    {#if workspace.config?.signals}
-      <div class="sidebar-section">
-        <h2 class="sidebar-label">Signals</h2>
-        <ul class="sidebar-list">
-          {#each Object.keys(workspace.config.signals) as signalId (signalId)}
-            <li class="sidebar-item">
-              {workspace.config.signals[signalId].title ||
-                workspace.config.signals[signalId].description ||
-                signalId}
+    <div class="section">
+      <h2>Resources</h2>
+
+      {#if recentArtifacts.length > 0}
+        <ul class="resources">
+          {#each recentArtifacts as artifact (artifact.id)}
+            <li>
+              <a href={resolve("/library/[libraryId]", { libraryId: artifact.id })}>
+                <span>
+                  {artifact.title}
+                </span>
+
+                <IconSmall.CaretRight />
+              </a>
             </li>
           {/each}
         </ul>
-      </div>
-    {/if}
+      {/if}
+    </div>
+
+    <div class="section">
+      <h2>Recent Activity</h2>
+
+      {#if recentSessions.length > 0}
+        <div class="sessions">
+          <ul>
+            {#each recentSessions as session (session.sessionId)}
+              <li>
+                <a href={resolve("/sessions/[sessionId]", { sessionId: session.sessionId })}>
+                  <span>{session.task || session.jobName || session.sessionId}</span>
+
+                  <span class="session-meta">
+                    {#if session.status === "active"}
+                      <span class="session-status active">
+                        <IconSmall.Progress />
+                        Running
+                      </span>
+                    {:else if session.status === "failed"}
+                      <span class="session-status failed">
+                        <IconSmall.Close />
+                        Failed
+                      </span>
+                    {:else}
+                      <time>{formatChatDate(session.startedAt)}</time>
+                    {/if}
+                  </span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    </div>
   </aside>
 </div>
 
 <style>
-  .page {
+  .wrapper {
+    block-size: 100%;
     display: grid;
-    grid-template-columns: 1fr var(--size-56);
+    grid-template-columns: 2fr minmax(var(--size-80), 1fr);
     inline-size: 100%;
-    gap: var(--size-6);
+
+    @media (min-width: 1920px) {
+      grid-template-columns: 1fr var(--size-112);
+    }
+  }
+
+  .page {
     overflow: auto;
+    padding-inline: 0 var(--size-14);
+    scrollbar-width: thin;
+  }
+
+  .change-color {
+    display: block;
+    position: relative;
+    z-index: 1;
+
+    &:before {
+      background-color: var(--accent-1);
+      border-radius: var(--radius-2);
+      content: "";
+      inset: calc(-1 * var(--size-1));
+      opacity: 0;
+      position: absolute;
+      transition: all 200ms ease;
+      z-index: -1;
+    }
+  }
+
+  .change-color:hover:before,
+  :global(:focus-visible) .change-color:before,
+  :global([data-melt-dropdown-menu-trigger][data-state="open"]) .change-color:before {
+    opacity: 1;
+    visibility: visible;
   }
 
   .content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-10);
     flex: 1;
     padding-block: var(--size-12);
     padding-inline: var(--size-14);
-  }
 
-  h1 {
-    font-size: var(--font-size-8);
-    font-weight: var(--font-weight-7);
-    margin-bottom: var(--size-4);
+    header {
+      .title {
+        align-items: center;
+        display: flex;
+        gap: var(--size-3);
+      }
+
+      h1 {
+        font-size: var(--font-size-7);
+        font-weight: var(--font-weight-6);
+      }
+
+      p {
+        font-size: var(--font-size-5);
+        font-weight: var(--font-weight-5);
+        line-height: var(--font-lineheight-3);
+        margin-block: var(--size-1-5) 0;
+        max-inline-size: 80ch;
+        opacity: 0.6;
+        text-wrap-style: balance;
+      }
+    }
   }
 
   .sidebar {
+    border-inline-start: var(--size-px) solid var(--accent-1);
     display: flex;
     flex-direction: column;
-    gap: var(--size-7);
-    inline-size: 228px;
-    padding-block: var(--size-12);
-    padding-inline: 0 var(--size-14);
-    position: sticky;
+    gap: var(--size-10);
+    inline-size: 100%;
+    min-inline-size: var(--size-80);
+    padding: var(--size-10);
+
+    .actions {
+      align-items: center;
+      display: flex;
+      margin: calc(-1 * var(--size-5));
+      margin-block-end: 0;
+      justify-content: space-between;
+
+      & :global(svg) {
+        opacity: 0.5;
+      }
+
+      a {
+        display: flex;
+        color: color-mix(in srgb, var(--color-text), transparent 20%);
+        font-size: var(--font-size-2);
+        font-weight: var(--font-weight-5);
+        gap: var(--size-1-5);
+      }
+    }
+
+    .section {
+      h2 {
+        font-size: var(--font-size-5);
+        font-weight: var(--font-weight-6);
+      }
+
+      p {
+        font-size: var(--font-size-4);
+        line-height: var(--font-lineheight-3);
+        margin-block: var(--size-1-5) 0;
+        opacity: 0.8;
+        text-wrap-style: balance;
+      }
+    }
+
+    .job-action {
+      margin-block: var(--size-3) 0;
+    }
   }
 
-  .sidebar-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
+  .resources {
+    margin-block: var(--size-2) 0;
 
-  .sidebar-label {
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    line-height: var(--font-lineheight-0);
-    margin: 0;
-    opacity: 0.6;
-  }
+    a {
+      align-items: center;
+      color: color-mix(in srgb, var(--color-text), transparent 20%);
+      display: flex;
+      font-size: var(--font-size-3);
+      font-weight: var(--font-weight-5);
+      gap: var(--size-1);
+      inline-size: max-content;
+      max-inline-size: 100%;
+      line-height: var(--font-lineheight-5);
 
-  .sidebar-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
+      position: relative;
+      z-index: 1;
 
-  .sidebar-item {
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-4-5);
-    line-height: var(--font-lineheight-1);
-    text-wrap-style: balance;
-    word-break: break-word;
-  }
+      span {
+        flex: 1;
+        overflow: hidden;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+      }
 
-  .artifacts {
-    margin-block-end: var(--size-8);
+      & :global(svg) {
+        flex: none;
+        opacity: 0.5;
+      }
+
+      &:before {
+        background-color: var(--accent-1);
+        border-radius: var(--radius-2);
+        content: "";
+        inset-block: calc(-1 * var(--size-px));
+        inset-inline: calc(-1 * var(--size-1-5));
+        opacity: 0;
+        position: absolute;
+        transition:
+          opacity 200ms ease,
+          visibility 200ms ease;
+        visibility: hidden;
+        z-index: -1;
+      }
+
+      &:focus {
+        outline: none;
+      }
+
+      &:hover:before,
+      &:focus:before {
+        opacity: 1;
+        visibility: visible;
+      }
+    }
   }
 
   .sessions {
-    margin-block-start: var(--size-3);
+    a {
+      border-block-end: var(--size-px) solid var(--accent-1);
+      block-size: var(--size-16);
+      display: flex;
+      flex-direction: column;
+      gap: var(--size-0-5);
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+
+      span {
+        font-size: var(--font-size-3);
+        font-weight: var(--font-weight-5);
+      }
+
+      time {
+        font-size: var(--font-size-2);
+        opacity: 0.6;
+      }
+
+      .session-meta {
+        font-size: var(--font-size-2);
+      }
+
+      .session-status {
+        align-items: center;
+        display: inline-flex;
+        font-size: var(--font-size-2);
+        font-weight: var(--font-weight-5);
+        gap: var(--size-1);
+
+        :global(svg) {
+          block-size: var(--size-3);
+          inline-size: var(--size-3);
+        }
+
+        &.active {
+          color: var(--color-yellow-2);
+        }
+
+        &.failed {
+          color: var(--color-red);
+        }
+      }
+
+      &:before {
+        background-color: var(--accent-1);
+        border-radius: var(--radius-4);
+        content: "";
+        inset-block: 0;
+        inset-inline: calc(-1 * var(--size-3));
+        opacity: 0;
+        position: absolute;
+        transition:
+          opacity 200ms ease,
+          visibility 200ms ease;
+        visibility: hidden;
+        z-index: -1;
+      }
+
+      &:hover:before {
+        opacity: 1;
+        visibility: visible;
+      }
+    }
   }
 </style>

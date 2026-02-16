@@ -15,7 +15,7 @@ import {
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger, logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { isErrnoException, stringifyError } from "@atlas/utils";
+import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
@@ -629,6 +629,34 @@ const workspacesRoutes = daemonFactory
         });
       } catch (error) {
         return c.json({ error: `Failed to update persistence: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Update workspace metadata
+  .patch(
+    "/:workspaceId/metadata",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator("json", z.object({ color: ColorSchema.optional() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const updates = c.req.valid("json");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        const newMetadata = { ...workspace.metadata, ...updates };
+        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
+          metadata: newMetadata,
+        });
+
+        return c.json({ ...workspace, metadata: newMetadata }, 200);
+      } catch (error) {
+        return c.json({ error: `Failed to update metadata: ${stringifyError(error)}` }, 500);
       }
     },
   )

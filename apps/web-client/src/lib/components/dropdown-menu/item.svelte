@@ -3,12 +3,13 @@
     KEY as DIALOG_KEY,
     getContext as getDialogContext,
   } from "$lib/components/dialog/context";
+  import { Icons } from "$lib/components/icons";
   import { hasContext, type Snippet } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
-  import { get } from "svelte/store";
+  import { get, writable } from "svelte/store";
   import { getContext } from "./context";
 
-  const { item } = getContext();
+  const { item, createCheckboxItem } = getContext();
   const dialogContext = getDialogContext();
 
   type Props = {
@@ -16,44 +17,38 @@
     accent?: "primary" | "destructive" | "information" | "inherit" | "none";
     href?: string;
     description?: Snippet;
+    checked?: boolean;
     indeterminate?: boolean;
     closeOnClick?: boolean;
     noninteractive?: boolean;
     disabled?: boolean;
     size?: "default" | "large";
     faded?: boolean;
-    fileInput?: { onchange: (files: File[]) => void; accept?: string; multiple?: boolean };
   };
 
   let {
     children,
     accent = "none",
     description,
-    indeterminate: _indeterminate = false,
+    checked,
+    indeterminate = false,
     closeOnClick = true,
     noninteractive = false,
     size = "default",
     faded = false,
     // important: disabled should not have a default value, as any value is considered true
     disabled,
-    fileInput,
     ...rest
   }: Props & HTMLAttributes<HTMLElement> = $props();
 
-  const fileInputId = $derived(fileInput ? crypto.randomUUID() : undefined);
+  let localChecked = writable(Boolean(checked));
 
-  function handleFileChange(e: Event & { currentTarget: HTMLInputElement }) {
-    const files = e.currentTarget.files;
-    if (files?.length) {
-      fileInput?.onchange(Array.from(files));
-      e.currentTarget.value = ""; // reset for re-select same file
-    }
-  }
+  const {
+    elements: { checkboxItem },
+  } = createCheckboxItem({ checked: localChecked });
 
   function getElementType() {
-    if (fileInput) {
-      return "label";
-    } else if (rest?.href) {
+    if (rest?.href) {
       return "a";
     } else if (noninteractive) {
       return "div";
@@ -66,6 +61,16 @@
 {#snippet contents()}
   <span class="label">
     {@render children()}
+
+    <div class="status">
+      {#if checked}
+        <div class="checked">
+          <Icons.Checkmark />
+        </div>
+      {:else if indeterminate}
+        <div class="indeterminate">-</div>
+      {/if}
+    </div>
   </span>
 
   {#if description}
@@ -95,22 +100,9 @@
     {@render contents()}
   </button>
 {:else}
-  {#if fileInput}
-    <!-- IMPORTANT: Files cannot use mixed event handlers (onchange/on:m-click is invalid, so this has to be on:change) -->
-    <!-- svelte-ignore event_directive_deprecated -->
-    <input
-      type="file"
-      id={fileInputId}
-      class="sr-only"
-      accept={fileInput.accept}
-      multiple={fileInput.multiple}
-      on:change={handleFileChange}
-    />
-  {/if}
   <!-- svelte-ignore event_directive_deprecated -->
   <svelte:element
     this={getElementType()}
-    for={fileInputId}
     {disabled}
     use:item
     {...$item}
@@ -189,6 +181,12 @@
 
     .faded & :global(svg) {
       opacity: 0.5;
+    }
+
+    .status {
+      margin-inline-start: auto;
+      padding-inline-start: var(--size-2);
+      opacity: 0.6;
     }
   }
 

@@ -228,8 +228,8 @@ svg {
   --font-size-3: calc(0.8125rem * var(--text-scale));
   --font-size-4: calc(0.875rem * var(--text-scale));
   --font-size-5: calc(0.9375rem * var(--text-scale));
-  --font-size-6: calc(1.125rem * var(--text-scale));
-  --font-size-7: calc(1.375rem * var(--text-scale));
+  --font-size-6: calc(1rem * var(--text-scale));
+  --font-size-7: calc(1.3125rem * var(--text-scale));
   --font-size-8: calc(1.625rem * var(--text-scale));
 
   /* Font weight */

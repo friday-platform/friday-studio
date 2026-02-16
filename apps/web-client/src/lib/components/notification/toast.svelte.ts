@@ -5,7 +5,7 @@ export type ToastData = {
   description?: string;
   error?: boolean;
   viewLabel?: string;
-  viewAction: () => unknown;
+  viewAction?: () => unknown;
 };
 
 export const toaster = createToaster<ToastData>({ closeDelay: 4000 });

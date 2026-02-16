@@ -12,6 +12,7 @@
   import { getAppContext } from "$lib/app-context.svelte";
   import { Collapsible } from "$lib/components/collapsible";
   import { Dialog } from "$lib/components/dialog";
+  import Dot from "$lib/components/dot.svelte";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
@@ -62,6 +63,16 @@
           </DropdownMenu.Trigger>
           <DropdownMenu.Content>
             <DropdownMenu.Item
+              href={ctx.routes.settings}
+              data-sveltekit-reload
+              onclick={() => trackEvent(GA4.NAV_CLICK, { section: "settings" })}
+            >
+              Settings
+            </DropdownMenu.Item>
+
+            <DropdownMenu.Separator />
+
+            <DropdownMenu.Item
               href="/logout"
               data-sveltekit-reload
               onclick={() => trackEvent(GA4.LOGOUT_CLICK)}
@@ -80,6 +91,7 @@
           class:active={getActivePage(["library", "library/[id]"])}
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "library" })}
         >
+          <IconSmall.Library />
           Library
         </a>
       </li>
@@ -90,17 +102,8 @@
           class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
           onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
         >
-          Sessions
-        </a>
-      </li>
-
-      <li>
-        <a
-          href={ctx.routes.settings}
-          class:active={getActivePage(["settings"])}
-          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "settings" })}
-        >
-          Settings
+          <IconSmall.Activity />
+          Activity
         </a>
       </li>
     </ul>
@@ -122,14 +125,7 @@
                   class:active={getActiveParam("spaceId", space.id)}
                   onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
                 >
-                  <span
-                    class="dot"
-                    style:color={space.metadata?.color
-                      ? `var(--${space.metadata?.color}-2)`
-                      : "var(--color-text)"}
-                  >
-                    <span></span>
-                  </span>
+                  <Dot color={space.metadata?.color} />
                   <span class="text">{space.name}</span>
                 </a>
               </li>
@@ -229,7 +225,6 @@
                         <Dialog.Root>
                           {#snippet children(open)}
                             <DropdownMenu.Item
-                              accent="destructive"
                               onclick={() => {
                                 trackEvent(GA4.DELETE_CHAT_CLICK, { chat_id: chat.id });
                                 open.set(true);
@@ -384,23 +379,6 @@
       outline: none;
       padding-inline: var(--size-2);
       position: relative;
-
-      .dot {
-        align-items: center;
-        block-size: var(--size-4);
-        aspect-ratio: 1;
-        display: flex;
-        justify-content: center;
-
-        span {
-          background-color: currentColor;
-          border: var(--size-0-5) solid var(--color-white);
-          block-size: 11px;
-          border-radius: var(--radius-round);
-          box-shadow: var(--shadow-1);
-          inline-size: 11px;
-        }
-      }
 
       & :global(svg) {
         opacity: 0.5;

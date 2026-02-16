@@ -92,7 +92,7 @@
     font-family: var(--font-family-sans);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
-    gap: var(--size-2);
+    gap: var(--size-1);
     inline-size: max-content;
     line-height: var(--font-lineheight-0);
     justify-content: center;

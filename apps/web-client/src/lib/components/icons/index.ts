@@ -3,6 +3,7 @@ import ArrowLeft from "./arrow-left.svelte";
 import ArrowRight from "./arrow-right.svelte";
 import ArrowUp from "./arrow-up.svelte";
 import Chat from "./chat.svelte";
+import Checkmark from "./checkmark.svelte";
 import Close from "./close.svelte";
 import Dashboard from "./dashboard.svelte";
 import DeleteSpace from "./delete-space.svelte";
@@ -36,6 +37,7 @@ export const Icons = {
   ArrowRight,
   ArrowUp,
   Chat,
+  Checkmark,
   Close,
   Dashboard,
   DeleteSpace,
