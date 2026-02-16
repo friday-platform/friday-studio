@@ -6,52 +6,22 @@
  */
 
 import type { AtlasTool } from "@atlas/agent-sdk";
+import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
 import type { MCPServerConfig } from "@atlas/config";
 import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import type { MCPManager } from "@atlas/mcp";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 
 /**
  * Platform tools exposed to FSM LLM steps.
- * Minimal set - runs without per-invocation user consent.
+ * Minimal set — runs without per-invocation user consent.
  */
 const PLATFORM_TOOL_ALLOWLIST = new Set([
   "webfetch",
   "artifacts_create",
   "artifacts_get",
   "artifacts_update",
-]);
-
-/** All platform tool names (superset, for filtering) */
-const PLATFORM_TOOL_NAMES = new Set([
-  // Filesystem tools (require explicit MCP config)
-  "fs_glob",
-  "fs_grep",
-  "fs_list_files",
-  "fs_read_file",
-  "fs_write_file",
-  // System tools (require explicit config)
-  "bash",
-  "csv",
-  // Artifact tools
-  "artifacts_create",
-  "artifacts_get",
-  "artifacts_update",
-  "artifacts_get_by_chat",
-  // Library tools (require explicit config)
-  "library_list",
-  "library_get",
-  "library_get_stream",
-  "library_store",
-  "library_stats",
-  "library_templates",
-  // System info
-  "system_version",
-  // Web fetch (allowed)
-  "webfetch",
-  // Workspace conversion (allowed - needed for do_task workflow)
-  "convert_task_to_workspace",
 ]);
 
 /**
@@ -81,12 +51,9 @@ export class GlobalMCPToolProvider implements MCPToolProvider {
 
   async getToolsForServers(serverIds: string[]): Promise<Record<string, AtlasTool>> {
     // Always include atlas-platform for ambient capabilities
-    const daemonUrl = getAtlasDaemonUrl();
-    const platformConfig: MCPServerConfig = {
-      transport: { type: "http", url: `${daemonUrl}/mcp` },
+    const effectiveConfigs: Record<string, MCPServerConfig> = {
+      "atlas-platform": getAtlasPlatformServerConfig(),
     };
-
-    const effectiveConfigs: Record<string, MCPServerConfig> = { "atlas-platform": platformConfig };
 
     // Add explicitly requested servers (skip atlas-platform if re-requested)
     for (const [id, config] of Object.entries(this.mcpServerConfigs)) {
@@ -108,7 +75,6 @@ export class GlobalMCPToolProvider implements MCPToolProvider {
     } catch (error) {
       this.logger.error("Failed to acquire MCP manager for platform tools", {
         workspaceId: this.workspaceId,
-        daemonUrl,
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;

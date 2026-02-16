@@ -53,3 +53,10 @@ export function getAtlasDaemonUrl(): string {
 
   return daemonUrl || "http://127.0.0.1:8080";
 }
+
+/**
+ * Get the atlas-platform MCP server config pointing at the daemon's /mcp endpoint.
+ */
+export function getAtlasPlatformServerConfig() {
+  return { transport: { type: "http" as const, url: `${getAtlasDaemonUrl()}/mcp` } };
+}

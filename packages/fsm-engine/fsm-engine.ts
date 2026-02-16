@@ -217,26 +217,30 @@ export class FSMEngine {
       throw new Error("FSMEngine already initialized");
     }
 
-    // Load saved state
-    const storedState = await this.options.documentStore.loadState(
+    // Load saved state with schema validation
+    // Corrupted state (invalid shape) returns error; missing state returns null
+    const stateResult = await this.options.documentStore.loadState(
       this.options.scope,
       this.definition.id,
+      FSMStateSchema,
     );
 
+    if (!stateResult.ok) {
+      throw new Error(`Failed to load FSM state: ${stateResult.error}`);
+    }
+
+    const storedState = stateResult.data;
     let stateRestored = false;
 
     if (storedState) {
-      const result = FSMStateSchema.safeParse(storedState);
-      if (result.success) {
-        if (this.definition.states[result.data.state]) {
-          this._currentState = result.data.state;
-          stateRestored = true;
-          logger.debug(`Restored state: ${this._currentState}`);
-        } else {
-          logger.warn(
-            `Stored state "${result.data.state}" not found in definition. Resetting to initial.`,
-          );
-        }
+      if (this.definition.states[storedState.state]) {
+        this._currentState = storedState.state;
+        stateRestored = true;
+        logger.debug(`Restored state: ${this._currentState}`);
+      } else {
+        logger.warn(
+          `Stored state "${storedState.state}" not found in definition. Resetting to initial.`,
+        );
       }
     }
 
@@ -285,12 +289,17 @@ export class FSMEngine {
       // FSM has been run before - restore from persistent storage
       logger.debug(`Restoring ${stored.length} documents from storage`);
       for (const id of stored) {
-        const doc = await this.options.documentStore.read(
+        const readResult = await this.options.documentStore.read(
           this.options.scope,
           this.definition.id,
           id,
           FSMDocumentDataSchema,
         );
+        if (!readResult.ok) {
+          logger.warn(`Failed to read document ${id}: ${readResult.error}`);
+          continue;
+        }
+        const doc = readResult.data;
         if (doc) {
           const docType = doc.data.type;
           const docData = doc.data.data;
@@ -940,18 +949,9 @@ export class FSMEngine {
             documents: Array.from(documents.values()),
             state: currentState,
             emit: context.emit,
-            updateDoc: (id: string, data: Record<string, unknown>) => {
-              const doc = documents.get(id);
-              if (doc) {
-                doc.data = { ...doc.data, ...data };
-              }
-            },
-            createDoc: (doc: Document) => {
-              documents.set(doc.id, doc);
-            },
-            deleteDoc: (id: string) => {
-              documents.delete(id);
-            },
+            updateDoc: this.makeUpdateDocFn(documents),
+            createDoc: this.makeCreateDocFn(documents, currentState),
+            deleteDoc: this.makeDeleteDocFn(documents, currentState),
           };
 
           // Execute agent via callback, passing full action object for prompt access
@@ -1326,20 +1326,29 @@ export class FSMEngine {
   }
 
   private async persistExecutionState(): Promise<void> {
-    await this.options.documentStore.saveState(this.options.scope, this.definition.id, {
-      state: this._currentState,
-    });
+    const result = await this.options.documentStore.saveState(
+      this.options.scope,
+      this.definition.id,
+      { state: this._currentState },
+      FSMStateSchema,
+    );
+    if (!result.ok) {
+      throw new Error(`Failed to persist FSM state: ${result.error}`);
+    }
   }
 
   private async persistDocuments(): Promise<void> {
     for (const doc of this._documents.values()) {
-      await this.options.documentStore.write(
+      const result = await this.options.documentStore.write(
         this.options.scope,
         this.definition.id,
         doc.id,
         { type: doc.type, data: doc.data },
         FSMDocumentDataSchema,
       );
+      if (!result.ok) {
+        throw new Error(`Failed to persist document ${doc.id}: ${result.error}`);
+      }
     }
   }
 

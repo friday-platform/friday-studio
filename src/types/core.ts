@@ -1,7 +1,7 @@
 // Core Atlas interfaces based on technical design document
 
 import type { WorkspaceSignalConfig } from "@atlas/config";
-import type { AgentOrchestrator } from "@atlas/core";
+import type { WorkspaceSessionStatusType } from "@atlas/core";
 import type { MaybePromise } from "@atlas/utils";
 
 /**
@@ -18,7 +18,7 @@ import type { MaybePromise } from "@atlas/utils";
 export interface SessionSummary {
   sessionId: string;
   workspaceId: string;
-  status: string;
+  status: WorkspaceSessionStatusType;
   totalPhases: number;
   completedPhases: number;
   duration: number;
@@ -63,29 +63,6 @@ export interface IAtlasGate extends IAtlasDecisionGraph {
   reject(reason: string): void;
 }
 
-export interface IWorkspace extends IAtlasScope {
-  members: IWorkspaceMember;
-  messages: ITempestMessageManager;
-  signals: Record<string, IWorkspaceSignal>;
-  agents: Record<string, IWorkspaceAgent>;
-  workflows: Record<string, IWorkspaceWorkflow>;
-  sources: Record<string, IWorkspaceSource>;
-  actions: Record<string, IWorkspaceAction>;
-  // Private properties handled in implementation
-  addSignal(signal: IWorkspaceSignal): Error | null;
-  addAgent(agent: IWorkspaceAgent): Error | null;
-  removeAgent(agentId: string): Error | null;
-  addWorkflow(workflow: IWorkspaceWorkflow): Error | null;
-  addSource(source: IWorkspaceSource): Error | null;
-  addAction(action: IWorkspaceAction): Error | null;
-  // Note: Runtime concerns removed - these belong in WorkspaceRuntime:
-  // currentActiveSessions() - moved to runtime
-  // getAllArtifacts() - moved to runtime
-  snapshot(): object;
-  // Agent orchestrator access (implemented in WorkspaceRuntime)
-  getAgentOrchestrator?(): AgentOrchestrator | undefined;
-}
-
 export interface IWorkspaceArtifact {
   id: string;
   type: string;
@@ -122,7 +99,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   agents?: IWorkspaceAgent[];
   workflows?: IWorkspaceWorkflow[];
   sources?: IWorkspaceSource[];
-  status: string; // 'pending' | 'running' | 'completed' | 'cancelled'
+  status: WorkspaceSessionStatusType;
   start(): MaybePromise<void>;
   cancel(): void;
   cleanup(): void;
@@ -156,18 +133,6 @@ export interface IWorkspaceAgent extends IAtlasAgent {
   invokeStream(message: string): AsyncIterableIterator<string>;
 }
 
-export interface IWorkspaceMember {
-  id: string;
-  name: string;
-  role: WorkspaceMemberRole;
-  /** User ID who created this workspace, used for analytics */
-  userId?: string;
-}
-
-export enum WorkspaceMemberRole {
-  OWNER = "owner",
-}
-
 export interface IWorkspaceWorkflow {
   id: string;
   name: string;
@@ -179,12 +144,6 @@ export interface IWorkspaceSource {
   id: string;
   type: string;
   data: unknown;
-}
-
-export interface IWorkspaceAction {
-  id: string;
-  name: string;
-  execute(): Promise<unknown>;
 }
 
 // Context and Memory Management

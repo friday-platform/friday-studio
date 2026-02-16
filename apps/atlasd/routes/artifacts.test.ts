@@ -415,7 +415,7 @@ describe("Batch-get endpoint", () => {
         data: { type: "summary", version: 1, data: "Summary content here" },
       }),
     });
-    expect(createResponse.status).toEqual(200);
+    expect(createResponse.status).toEqual(201);
     const { artifact: summaryArtifact } = ArtifactResponseSchema.parse(await createResponse.json());
 
     // Batch-get both with includeContents: true

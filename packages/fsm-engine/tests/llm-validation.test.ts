@@ -275,9 +275,11 @@ describe("LLM Action Validation Hook", () => {
     expect(engine.state).toEqual("done");
 
     // Observable outcome: document persisted with LLM response
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("validated response");
-    expect(doc?.data.data.extra).toEqual("info");
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("validated response");
+    expect(docResult.data?.data.data.extra).toEqual("info");
   });
 
   it("retry success → final output persisted with retry response", async () => {
@@ -301,9 +303,11 @@ describe("LLM Action Validation Hook", () => {
     expect(engine.state).toEqual("done");
 
     // Observable outcome: document has retry response (not original bad response)
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("good retry response");
-    expect(doc?.data.data.retried).toEqual(true);
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("good retry response");
+    expect(docResult.data?.data.data.retried).toEqual(true);
   });
 
   it("double failure → throws, state unchanged at pending", async () => {
@@ -339,8 +343,10 @@ describe("LLM Action Validation Hook", () => {
     expect(engine.state).toEqual("done");
 
     // Observable outcome: document persisted
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("direct response");
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("direct response");
 
     // LLM called exactly once (no retry without validator)
     expect(getLLMCallCount()).toEqual(1);
@@ -373,9 +379,11 @@ describe("LLM Action Validation Hook", () => {
     expect(engine.state).toEqual("done");
 
     // Observable outcome: empty string persisted (not undefined/null)
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("");
-    expect(doc?.data.data.hasTools).toEqual(false);
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("");
+    expect(docResult.data?.data.data.hasTools).toEqual(false);
   });
 
   it("failStep on retry → throws error, state unchanged", async () => {

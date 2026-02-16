@@ -502,7 +502,7 @@ const artifactsApp = daemonFactory
       });
     }
 
-    return c.json({ artifact: result.data }, 200);
+    return c.json({ artifact: result.data }, 201);
   })
   /** Update artifact (creates new revision) */
   .put(

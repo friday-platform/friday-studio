@@ -294,7 +294,7 @@ export const connectMcpServerTool = tool({
         }
       }
 
-      // Handle 409 collision - daemon returns { ok: false, error, suggestion }
+      // Handle 409 collision - daemon returns { error, suggestion }
       const errorParsed = z
         .object({ error: z.string().optional(), suggestion: z.string().optional() })
         .safeParse(registryResult.error);

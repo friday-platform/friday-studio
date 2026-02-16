@@ -20,18 +20,20 @@ export async function createTestEngine(
   const scope = { workspaceId: "test", sessionId: "test-session" };
 
   if (options.initialState) {
-    await store.saveState(scope, fsm.id, { state: options.initialState });
+    const stateResult = await store.saveState(scope, fsm.id, { state: options.initialState });
+    if (!stateResult.ok) throw new Error(`Test setup: ${stateResult.error}`);
   }
 
   if (options.documents) {
     for (const doc of options.documents) {
-      await store.write(
+      const writeResult = await store.write(
         scope,
         fsm.id,
         doc.id,
         { type: doc.type, data: doc.data },
         FSMDocumentDataSchema,
       );
+      if (!writeResult.ok) throw new Error(`Test setup: ${writeResult.error}`);
     }
   }
 

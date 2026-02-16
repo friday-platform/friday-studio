@@ -17,7 +17,7 @@ export type ExecutionStrategy = z.infer<typeof ExecutionStrategy>;
 export const SupervisionLevel = z.enum(["minimal", "standard", "detailed"]);
 export type SupervisionLevel = z.infer<typeof SupervisionLevel>;
 
-export const SignalProvider = z.enum(["http", "schedule", "system"]);
+export const SignalProvider = z.enum(["http", "schedule", "system", "fs-watch"]);
 export type SignalProvider = z.infer<typeof SignalProvider>;
 
 // ==============================================================================

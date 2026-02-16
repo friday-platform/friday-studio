@@ -25,6 +25,8 @@ export {
   MessageMetadataSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
+// Platform tool constants
+export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export type {
   AgentExtras,
   AgentPayload,

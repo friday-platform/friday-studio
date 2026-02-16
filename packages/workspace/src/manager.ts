@@ -106,7 +106,7 @@ export function validateMCPEnvironmentForWorkspace(
       : `workspace .env (create ${workspaceEnvPath})`;
 
     throw new Error(
-      `Cannot add workspace: missing required environment variables:\n${formatted}\n\n` +
+      `Missing required environment variables for workspace:\n${formatted}\n\n` +
         `Set these in:\n` +
         `  - ${workspaceEnvHint}\n` +
         `  - ~/.atlas/.env\n` +
@@ -736,6 +736,11 @@ export class WorkspaceManager {
 
   /**
    * React to workspace config change.
+   *
+   * INTENTIONAL HOT-RELOAD: The file watcher detects workspace.yml changes and
+   * destroys the active runtime so it re-creates from the updated config on the
+   * next signal/request. This is a deliberate design choice, not a bug. API route
+   * handlers in config.ts do the same via destroyWorkspaceRuntime.
    *
    * If config is missing, delete the workspace entry. If invalid, mark inactive and
    * record error metadata. Otherwise, stop runtime, restart signals, and mark inactive

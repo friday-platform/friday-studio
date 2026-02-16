@@ -1,4 +1,5 @@
 import type { MergedConfig } from "@atlas/config";
+import { WorkspaceSessionStatusSchema } from "@atlas/core";
 import { ColorSchema } from "@atlas/utils";
 import { z } from "zod";
 
@@ -24,8 +25,7 @@ export const WorkspaceMetadataSchema = z.object({
   lastFinishedSession: z
     .object({
       id: z.string(),
-      // "skipped" = user config error (OAuth not connected, missing env vars)
-      status: z.enum(["completed", "failed", "skipped"]),
+      status: WorkspaceSessionStatusSchema,
       finishedAt: z.iso.datetime(),
       summary: z.string().optional(),
     })

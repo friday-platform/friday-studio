@@ -162,22 +162,6 @@ export function validateFSMStructure(fsm: FSMDefinition): ValidationResult {
     }
   }
 
-  // Warnings for error handling
-  const hasAgentActions = Object.values(fsm.states).some(
-    (state) =>
-      state.on &&
-      Object.values(state.on).some((t) => {
-        const transitions = Array.isArray(t) ? t : [t];
-        return transitions.some((tr) => tr.actions?.some((a) => a.type === "agent"));
-      }),
-  );
-
-  if (hasAgentActions) {
-    warnings.push(
-      "Agent actions detected but no AGENT_FAILED event handling found. Consider adding error handling transitions.",
-    );
-  }
-
   return { valid: errors.length === 0, errors, warnings };
 }
 

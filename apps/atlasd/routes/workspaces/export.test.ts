@@ -112,6 +112,7 @@ function createExportTestApp(options: {
     getLibraryStorage: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    getAgentRegistry: vi.fn(),
   };
 
   const app = new Hono<AppVariables>();

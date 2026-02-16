@@ -4,5 +4,4 @@
 export * from "./src/core/context.ts";
 export * from "./src/core/messages.ts";
 export * from "./src/core/scope.ts";
-export * from "./src/core/workspace.ts";
 export * from "./src/types/core.ts";

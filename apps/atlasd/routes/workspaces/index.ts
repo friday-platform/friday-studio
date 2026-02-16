@@ -23,7 +23,12 @@ import { stringify } from "@std/yaml";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { getCurrentUser } from "../me/adapter.ts";
-import { createWorkspaceFromConfigSchema } from "./schemas.ts";
+import {
+  addWorkspaceBatchSchema,
+  addWorkspaceSchema,
+  createWorkspaceFromConfigSchema,
+  updateWorkspaceConfigSchema,
+} from "./schemas.ts";
 
 const analytics = createAnalyticsClient();
 
@@ -246,14 +251,19 @@ const workspacesRoutes = daemonFactory
           });
         }
 
-        return c.json({
-          success: true,
-          workspace,
-          created,
-          workspacePath,
-          filesCreated: [ephemeral ? "eph_workspace.yml" : "workspace.yml", ".env"],
-          ...(resolvedCredentials && resolvedCredentials.length > 0 ? { resolvedCredentials } : {}),
-        });
+        return c.json(
+          {
+            success: true,
+            workspace,
+            created,
+            workspacePath,
+            filesCreated: [ephemeral ? "eph_workspace.yml" : "workspace.yml", ".env"],
+            ...(resolvedCredentials && resolvedCredentials.length > 0
+              ? { resolvedCredentials }
+              : {}),
+          },
+          201,
+        );
       } catch (creationError) {
         return c.json(
           {
@@ -270,15 +280,10 @@ const workspacesRoutes = daemonFactory
     }
   })
   // Add a single workspace by path
-  .post("/add", async (c) => {
+  .post("/add", zValidator("json", addWorkspaceSchema), async (c) => {
     const ctx = c.get("app");
     try {
-      const body = await c.req.json();
-      const { path, name, description } = body;
-
-      if (!path) {
-        return c.json({ error: "Path is required" }, 400);
-      }
+      const { path, name, description } = c.req.valid("json");
 
       // Get current user for analytics and metadata
       const userResult = await getCurrentUser();
@@ -319,15 +324,10 @@ const workspacesRoutes = daemonFactory
     }
   })
   // Add multiple workspaces by paths (batch operation)
-  .post("/add-batch", async (c) => {
+  .post("/add-batch", zValidator("json", addWorkspaceBatchSchema), async (c) => {
     const ctx = c.get("app");
     try {
-      const body = await c.req.json();
-      const paths = Array.isArray(body?.paths) ? (body.paths as string[]) : [];
-
-      if (!paths || !Array.isArray(paths) || paths.length === 0) {
-        return c.json({ error: "Paths array is required" }, 400);
-      }
+      const { paths } = c.req.valid("json");
 
       const manager = ctx.daemon.getWorkspaceManager();
       const results: {
@@ -520,11 +520,11 @@ const workspacesRoutes = daemonFactory
   .post(
     "/:workspaceId/update",
     zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator("json", z.any()),
+    zValidator("json", updateWorkspaceConfigSchema),
     async (c) => {
       try {
         const { workspaceId } = c.req.valid("param");
-        const { config, backup } = await c.req.valid("json");
+        const { config, backup } = c.req.valid("json");
 
         const ctx = c.get("app");
         const manager = ctx.getWorkspaceManager();

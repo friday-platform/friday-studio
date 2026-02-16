@@ -1,35 +1,26 @@
 /**
- * Routes agent execution to either MCP services (distributed) or wrapped agents (in-process).
- *
- * MCP agents: Separate services, isolated per-session via StreamableHTTP transport.
- * Wrapped agents: In-process LLM agents that bypass MCP for lightweight tasks.
+ * Routes agent execution to MCP services (distributed).
  *
  * Session lifecycle: Each user session gets its own MCP client with SSE streaming.
  * Sessions auto-cleanup after 30min inactivity.
  */
 
 import {
-  type AgentContext,
   type AgentExecutionError,
   type AgentMetadata,
   type AgentResult,
   AgentResultSchema,
-  type AtlasAgent,
   type AtlasUIMessageChunk,
-  type StreamEmitter,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { retry } from "@std/async";
 import { z } from "zod";
-import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import {
-  CallbackStreamEmitter,
   type CancellationNotification,
   StreamContentNotificationSchema,
 } from "../streaming/stream-emitters.ts";
@@ -61,8 +52,6 @@ export interface AgentExecutionContext {
   previousResults?: AgentResult[];
   additionalContext?: unknown;
   reasoning?: string;
-  /** Filter workspace tools to only these names */
-  agentTools?: string[];
   /** Stream events callback - requires streamId to be set */
   onStreamEvent?: (event: AtlasUIMessageChunk) => void;
   abortSignal?: AbortSignal;
@@ -113,10 +102,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
   private logger: Logger;
   private sessionCleanupInterval?: number;
-  private wrappedAgents = new Map<string, AtlasAgent<string, unknown>>();
   /** Keyed by `${sessionId}:${agentId}` - handles multi-workspace scenarios */
   private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
-  private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
   private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
   /** Prevents premature workspace shutdown while agents are running */
   private activeAgentExecutions = new Map<
@@ -134,36 +121,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       mcpServerPool: config.mcpServerPool,
       daemonUrl: config.daemonUrl,
     };
-
-    // Initialize context builder if we have the required dependencies
-    if (config.mcpServerPool && config.daemonUrl) {
-      this.buildAgentContext = createAgentContextBuilder({
-        mcpServerPool: config.mcpServerPool,
-        logger: this.logger,
-        // No server needed for wrapped agents (no MCP notification support)
-        hasActiveSSE: () => false,
-      });
-
-      this.logger.info("Initialized agent context builder for wrapped agents", {
-        component: "AgentOrchestrator",
-        hasMcpServerPool: true,
-        daemonUrl: config.daemonUrl,
-      });
-    } else {
-      this.logger.warn(
-        "No MCP server pool or daemon URL provided - wrapped agents will have no tool access",
-        {
-          component: "AgentOrchestrator",
-          hasMcpServerPool: !!config.mcpServerPool,
-          hasDaemonUrl: !!config.daemonUrl,
-          mcpServerPoolType: config.mcpServerPool ? typeof config.mcpServerPool : "undefined",
-          daemonUrlValue: config.daemonUrl || "undefined",
-        },
-      );
-    }
   }
 
-  /** Queries MCP server for agent:// resources. Falls back to wrapped agents if MCP fails. */
+  /** Queries MCP server for agent:// resources. */
   async discoverAgents(): Promise<AgentMetadata[]> {
     const discoverySessionId = `discovery-${Date.now()}`;
 
@@ -185,11 +145,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             | undefined;
           const expertise = meta?.expertise
             ? {
-                domains: meta.expertise.domains ?? [],
-                capabilities: meta.expertise.capabilities ?? [],
+                domains: meta.expertise.domains?.length ? meta.expertise.domains : ["general"],
                 examples: meta.expertise.examples ?? [],
               }
-            : { domains: [], capabilities: [], examples: [] };
+            : { domains: ["general"], examples: [] };
           const agentMetadata: AgentMetadata = {
             id: agentId,
             version: "0.0.0",
@@ -212,28 +171,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const errorCause = createErrorCause(error);
       this.logger.error("Failed to discover agents", { error: error, errorCause });
 
-      // If MCP discovery fails, check for wrapped agents
-      const wrappedAgents: AgentMetadata[] = [];
-      for (const [agentId, agent] of this.wrappedAgents.entries()) {
-        wrappedAgents.push({
-          id: agentId,
-          version: agent.metadata.version,
-          description: agent.metadata.description,
-          expertise: {
-            domains: agent.metadata.expertise.domains,
-            examples: agent.metadata.expertise.examples || [],
-          },
-          displayName: agent.metadata.displayName,
-        });
-      }
-
-      if (wrappedAgents.length > 0) {
-        this.logger.debug("Returning wrapped agents as fallback", {
-          wrappedAgentCount: wrappedAgents.length,
-        });
-        return wrappedAgents;
-      }
-
       // Return empty array if no agents can be discovered
       return [];
     } finally {
@@ -252,16 +189,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         }
       }
     }
-  }
-
-  /** Register an in-process agent that bypasses MCP. */
-  registerWrappedAgent(agentId: string, agent: AtlasAgent<string, unknown>): void {
-    this.wrappedAgents.set(agentId, agent);
-    this.logger.debug("Registered wrapped agent for direct execution", {
-      agentId,
-      agentName: agent.metadata.displayName,
-      expertise: agent.metadata.expertise.domains,
-    });
   }
 
   /** Used by daemon to prevent workspace shutdown while agents are running. */
@@ -388,17 +315,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
 
     try {
-      const wrappedAgent = this.wrappedAgents.get(agentId);
-      if (wrappedAgent) {
-        return await this.executeWrappedAgent(
-          wrappedAgent,
+      if (!context.workspaceId) {
+        logger.error("Missing workspaceId in agent execution context", { agentId });
+        return {
+          ok: false as const,
           agentId,
-          prompt,
-          context,
-          startTime,
-          logger,
-        );
+          timestamp: new Date().toISOString(),
+          input: prompt,
+          error: { reason: "Missing workspaceId in agent execution context" },
+          durationMs: Date.now() - startTime,
+        };
       }
+
       const mcpSetup = await this.getOrCreateSessionClient(context.sessionId, context.workspaceId);
 
       logger.debug("Executing agent via MCP", {
@@ -502,147 +430,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           duration: Date.now() - startTime,
         });
       }
-    }
-  }
-
-  private async executeWrappedAgent(
-    agent: AtlasAgent<string, unknown>,
-    agentId: string,
-    prompt: string,
-    context: AgentExecutionContext,
-    startTime: number,
-    logger: Logger,
-  ): Promise<AgentResult> {
-    try {
-      let streamEmitter: StreamEmitter | undefined;
-      if (context.onStreamEvent && context.streamId) {
-        streamEmitter = new CallbackStreamEmitter(
-          context.onStreamEvent,
-          () => {},
-          (error) => logger.error("Agent stream error", { agentId, error }),
-        );
-      }
-
-      let agentContext: AgentContext;
-      let finalPrompt = prompt;
-
-      if (this.buildAgentContext) {
-        // Use the context builder to get proper tools and enriched prompt
-        try {
-          const { context: builtContext, enrichedPrompt } = await this.buildAgentContext(
-            agent,
-            {
-              sessionId: context.sessionId,
-              workspaceId: context.workspaceId,
-              userId: context.userId,
-              streamId: context.streamId,
-            },
-            prompt,
-            {
-              stream: streamEmitter, // Override with our stream emitter
-              abortSignal: context.abortSignal, // Pass abort signal
-              config: context.config,
-            },
-          );
-
-          agentContext = builtContext;
-          finalPrompt = enrichedPrompt;
-
-          logger.info("Built context for wrapped agent with MCP tools", {
-            agentId,
-            toolCount: Object.keys(agentContext.tools).length,
-            toolNames: Object.keys(agentContext.tools),
-            hasEnrichedPrompt: enrichedPrompt !== prompt,
-          });
-        } catch (error) {
-          logger.error("Failed to build context for wrapped agent, falling back to empty tools", {
-            agentId,
-            error: error,
-          });
-
-          agentContext = {
-            logger: logger.child({ agentId, sessionId: context.sessionId }),
-            tools: {}, // No tools on fallback
-            session: {
-              sessionId: context.sessionId,
-              workspaceId: context.workspaceId,
-              userId: context.userId,
-            },
-            stream: streamEmitter,
-            env: {},
-            config: context.config,
-            abortSignal: context.abortSignal,
-          };
-        }
-      } else {
-        logger.warn(
-          "No context builder available for wrapped agent - agent will run without tool access",
-          {
-            component: "AgentOrchestrator",
-            workspaceId: context.workspaceId,
-            agentId,
-            sessionId: context.sessionId,
-            hasContextBuilder: false,
-            hasMcpServerPool: !!this.config.mcpServerPool,
-            hasDaemonUrl: !!this.config.daemonUrl,
-          },
-        );
-
-        agentContext = {
-          logger: logger.child({ agentId, sessionId: context.sessionId }),
-          tools: {},
-          session: {
-            sessionId: context.sessionId,
-            workspaceId: context.workspaceId,
-            userId: context.userId,
-          },
-          stream: streamEmitter,
-          env: {},
-          config: context.config,
-          abortSignal: context.abortSignal,
-        };
-      }
-
-      try {
-        const payload = await retry(() => agent.execute(finalPrompt, agentContext), {
-          maxAttempts: 11,
-          minTimeout: 1000,
-          maxTimeout: 30000,
-          multiplier: 2,
-          jitter: 1,
-        });
-
-        const result: AgentResult = {
-          agentId,
-          timestamp: new Date().toISOString(),
-          input: prompt,
-          durationMs: Date.now() - startTime,
-          ...payload,
-        };
-
-        logger.info("Wrapped agent execution completed", {
-          agentId,
-          ok: result.ok,
-          durationMs: result.durationMs,
-        });
-
-        return result;
-      } catch (error) {
-        // @std/async RetryError wraps the original - unwrap it
-        if (error && typeof error === "object" && "cause" in error) throw error.cause;
-        throw error;
-      }
-    } catch (error) {
-      this.logger.error("Wrapped agent execution failed", { error });
-
-      return {
-        agentId,
-        timestamp: new Date().toISOString(),
-        input: prompt,
-        ok: false,
-        error: { reason: stringifyError(error) },
-        durationMs: Date.now() - startTime,
-      } satisfies AgentExecutionError<string>;
     }
   }
 

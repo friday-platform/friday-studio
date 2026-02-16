@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
@@ -182,8 +182,8 @@ const SessionHistoryEventSchema: z.ZodType<SessionHistoryEvent> = z.discriminate
   }),
 ]);
 
-// Combined session structure (metadata + events)
-const StoredSessionSchema = z.object({
+// Metadata-only schema (new format: no events field)
+const StoredMetadataSchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
   createdAt: z.string(),
@@ -205,14 +205,12 @@ const StoredSessionSchema = z.object({
   output: z.unknown().optional(),
   /** Job description from workspace config - human-readable explanation of what the job does */
   jobDescription: z.string().optional(),
-  events: z.array(z.unknown()),
 });
 
-type StoredSession = Omit<z.infer<typeof StoredSessionSchema>, "events"> & {
-  events: SessionHistoryEvent[];
-};
+// Legacy format schema (metadata + embedded events)
+const LegacyStoredSessionSchema = StoredMetadataSchema.extend({ events: z.array(z.unknown()) });
 
-export type SessionHistoryMetadata = Omit<StoredSession, "events">;
+export type SessionHistoryMetadata = z.infer<typeof StoredMetadataSchema>;
 
 export interface SessionHistoryListItem {
   sessionId: string;
@@ -277,20 +275,73 @@ function getSessionDir(): string {
   return join(getAtlasHome(), "sessions");
 }
 
-function getSessionFile(sessionId: string): string {
+function getMetadataFile(sessionId: string): string {
   return join(getSessionDir(), `${sessionId}.json`);
+}
+
+function getEventsFile(sessionId: string): string {
+  return join(getSessionDir(), `${sessionId}.jsonl`);
 }
 
 async function ensureSessionDir(): Promise<void> {
   await mkdir(getSessionDir(), { recursive: true });
 }
 
-async function readAndValidateSession(filePath: string): Promise<StoredSession> {
+/**
+ * Read and validate session metadata from the .json file.
+ * Handles both new format (metadata only) and legacy format (metadata + events).
+ */
+async function readMetadata(filePath: string): Promise<SessionHistoryMetadata> {
   const content = await readFile(filePath, "utf-8");
-  const json = JSON.parse(content);
-  const parsedSession = StoredSessionSchema.parse(json);
-  const events = parsedSession.events.map((e) => SessionHistoryEventSchema.parse(e));
-  return { ...parsedSession, events };
+  // Use passthrough() so legacy files with extra `events` field are not silently stripped
+  const raw = StoredMetadataSchema.passthrough().parse(JSON.parse(content));
+  // Strip the legacy `events` key if present — callers read events from JSONL
+  const { events: _, ...metadata } = raw;
+  return StoredMetadataSchema.parse(metadata);
+}
+
+/**
+ * Read events from JSONL file if it exists, otherwise from legacy JSON file.
+ */
+async function readEvents(sessionId: string): Promise<SessionHistoryEvent[]> {
+  const eventsFile = getEventsFile(sessionId);
+
+  // Try JSONL file first (new format)
+  try {
+    const content = await readFile(eventsFile, "utf-8");
+    if (!content.trim()) return [];
+
+    const events: SessionHistoryEvent[] = [];
+    for (const line of content.trimEnd().split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        events.push(SessionHistoryEventSchema.parse(JSON.parse(line)));
+      } catch {
+        logger.warn("Skipping malformed event line in session JSONL", { sessionId });
+      }
+    }
+    return events;
+  } catch (error) {
+    if (!(isErrnoException(error) && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+
+  // Fall back to legacy format (events embedded in .json)
+  const metadataFile = getMetadataFile(sessionId);
+  try {
+    const content = await readFile(metadataFile, "utf-8");
+    const parsed = LegacyStoredSessionSchema.safeParse(JSON.parse(content));
+    if (parsed.success && Array.isArray(parsed.data.events)) {
+      return parsed.data.events.map((e) => SessionHistoryEventSchema.parse(e));
+    }
+  } catch (error) {
+    if (!(isErrnoException(error) && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -318,18 +369,19 @@ function extractSignalData(signal: SessionHistorySignal | IWorkspaceSignal): Ses
 
 export async function createSessionRecord(
   input: CreateSessionMetadataInput,
-): Promise<Result<StoredSession, string>> {
+): Promise<Result<{ events: SessionHistoryEvent[] } & SessionHistoryMetadata, string>> {
   try {
     await ensureSessionDir();
-    const sessionFile = getSessionFile(input.sessionId);
+    const metadataFile = getMetadataFile(input.sessionId);
 
     try {
-      const existing = await readAndValidateSession(sessionFile);
+      const existing = await readMetadata(metadataFile);
+      const events = await readEvents(input.sessionId);
       logger.debug("Session already exists, returning existing", {
         sessionId: input.sessionId,
-        eventCount: existing.events.length,
+        eventCount: events.length,
       });
-      return success(existing);
+      return success({ ...existing, events });
     } catch (error) {
       if (!(isErrnoException(error) && error.code === "ENOENT")) {
         logger.warn("Error reading existing session, creating new", {
@@ -342,7 +394,7 @@ export async function createSessionRecord(
     const now = new Date().toISOString();
     const signal = extractSignalData(input.signal);
 
-    const session: StoredSession = {
+    const metadata: SessionHistoryMetadata = {
       sessionId: input.sessionId,
       workspaceId: input.workspaceId,
       createdAt: now,
@@ -360,13 +412,12 @@ export async function createSessionRecord(
       parentTitle: input.parentTitle,
       sessionType: input.sessionType,
       jobDescription: input.jobDescription,
-      events: [],
     };
 
-    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+    await writeFile(metadataFile, JSON.stringify(metadata, null, 2), "utf-8");
     logger.debug("Created new session", { sessionId: input.sessionId });
 
-    return success(session);
+    return success({ ...metadata, events: [] });
   } catch (error) {
     return fail(stringifyError(error));
   }
@@ -377,7 +428,8 @@ export async function appendSessionEvent(
 ): Promise<Result<SessionHistoryEvent, string>> {
   try {
     await ensureSessionDir();
-    const sessionFile = getSessionFile(input.sessionId);
+    const metadataFile = getMetadataFile(input.sessionId);
+    const eventsFile = getEventsFile(input.sessionId);
 
     const timestamp = input.emittedAt || new Date().toISOString();
     const eventId = crypto.randomUUID();
@@ -389,11 +441,17 @@ export async function appendSessionEvent(
       emittedBy: input.emittedBy,
     });
 
-    await withExclusiveLock(sessionFile, async () => {
-      const session = await readAndValidateSession(sessionFile);
-      session.events.push(event);
-      session.updatedAt = timestamp;
-      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+    // Migrate legacy embedded events to JSONL on first append if needed
+    await withExclusiveLock(metadataFile, async () => {
+      await migrateLegacyEventsIfNeeded(input.sessionId);
+
+      // Append event as a single JSONL line
+      await appendFile(eventsFile, JSON.stringify(event) + "\n", "utf-8");
+
+      // Update metadata timestamp
+      const metadata = await readMetadata(metadataFile);
+      metadata.updatedAt = timestamp;
+      await writeFile(metadataFile, JSON.stringify(metadata, null, 2), "utf-8");
     });
 
     return success(event);
@@ -416,21 +474,19 @@ export async function markSessionComplete(
 ): Promise<Result<SessionHistoryMetadata, string>> {
   try {
     await ensureSessionDir();
-    const sessionFile = getSessionFile(sessionId);
+    const metadataFile = getMetadataFile(sessionId);
 
-    const metadata = await withExclusiveLock(sessionFile, async () => {
-      const session = await readAndValidateSession(sessionFile);
+    const metadata = await withExclusiveLock(metadataFile, async () => {
+      const meta = await readMetadata(metadataFile);
 
-      session.status = status;
-      session.updatedAt = finishedAt;
-      if (details?.durationMs !== undefined) session.durationMs = details.durationMs;
-      if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
-      if (details?.summary !== undefined) session.summary = details.summary;
-      if (details?.output !== undefined) session.output = details.output;
+      meta.status = status;
+      meta.updatedAt = finishedAt;
+      if (details?.durationMs !== undefined) meta.durationMs = details.durationMs;
+      if (details?.failureReason !== undefined) meta.failureReason = details.failureReason;
+      if (details?.summary !== undefined) meta.summary = details.summary;
+      if (details?.output !== undefined) meta.output = details.output;
 
-      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
-
-      const { events: _, ...meta } = session;
+      await writeFile(metadataFile, JSON.stringify(meta, null, 2), "utf-8");
       return meta;
     });
 
@@ -456,17 +512,15 @@ export async function updateSessionTitle(
 ): Promise<Result<SessionHistoryMetadata, string>> {
   try {
     await ensureSessionDir();
-    const sessionFile = getSessionFile(sessionId);
+    const metadataFile = getMetadataFile(sessionId);
 
-    const metadata = await withExclusiveLock(sessionFile, async () => {
-      const session = await readAndValidateSession(sessionFile);
+    const metadata = await withExclusiveLock(metadataFile, async () => {
+      const meta = await readMetadata(metadataFile);
 
-      session.title = title;
+      meta.title = title;
       // Note: Not modifying updatedAt - title is cosmetic metadata, not content change
 
-      await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
-
-      const { events: _, ...meta } = session;
+      await writeFile(metadataFile, JSON.stringify(meta, null, 2), "utf-8");
       return meta;
     });
 
@@ -490,8 +544,7 @@ export async function getSessionMetadata(
   sessionId: string,
 ): Promise<Result<SessionHistoryMetadata | null, string>> {
   try {
-    const session = await readAndValidateSession(getSessionFile(sessionId));
-    const { events: _, ...metadata } = session;
+    const metadata = await readMetadata(getMetadataFile(sessionId));
     return success(metadata);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -536,20 +589,20 @@ export async function listSessions(
     const sessions: SessionHistoryListItem[] = [];
     for (const { path } of fileInfos) {
       try {
-        const session = await readAndValidateSession(path);
-        if (options.excludeWorkspaceIds?.includes(session.workspaceId)) continue;
-        if (!options.workspaceId || session.workspaceId === options.workspaceId) {
+        const metadata = await readMetadata(path);
+        if (options.excludeWorkspaceIds?.includes(metadata.workspaceId)) continue;
+        if (!options.workspaceId || metadata.workspaceId === options.workspaceId) {
           sessions.push({
-            sessionId: session.sessionId,
-            workspaceId: session.workspaceId,
-            status: session.status,
-            createdAt: session.createdAt,
-            updatedAt: session.updatedAt,
-            summary: session.summary,
-            title: session.title,
-            parentStreamId: session.parentStreamId,
-            parentTitle: session.parentTitle,
-            sessionType: session.sessionType,
+            sessionId: metadata.sessionId,
+            workspaceId: metadata.workspaceId,
+            status: metadata.status,
+            createdAt: metadata.createdAt,
+            updatedAt: metadata.updatedAt,
+            summary: metadata.summary,
+            title: metadata.title,
+            parentStreamId: metadata.parentStreamId,
+            parentTitle: metadata.parentTitle,
+            sessionType: metadata.sessionType,
           });
         }
       } catch (error) {
@@ -570,8 +623,8 @@ export async function loadSessionTimeline(
   sessionId: string,
 ): Promise<Result<SessionHistoryTimeline | null, string>> {
   try {
-    const session = await readAndValidateSession(getSessionFile(sessionId));
-    const { events, ...metadata } = session;
+    const metadata = await readMetadata(getMetadataFile(sessionId));
+    const events = await readEvents(sessionId);
     return success({ metadata, events });
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -582,6 +635,58 @@ export async function loadSessionTimeline(
     }
     return fail(stringifyError(error));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Migration helper
+// ---------------------------------------------------------------------------
+
+/**
+ * If a legacy session file has embedded events and no .jsonl file exists,
+ * migrate the events to JSONL and rewrite the metadata file without events.
+ */
+async function migrateLegacyEventsIfNeeded(sessionId: string): Promise<void> {
+  const eventsFile = getEventsFile(sessionId);
+  const metadataFile = getMetadataFile(sessionId);
+
+  // If JSONL file already exists, no migration needed
+  try {
+    await stat(eventsFile);
+    return;
+  } catch (error) {
+    if (!(isErrnoException(error) && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+
+  // Read legacy file to check for embedded events
+  const content = await readFile(metadataFile, "utf-8");
+  const parsed = LegacyStoredSessionSchema.safeParse(JSON.parse(content));
+
+  if (!parsed.success || parsed.data.events.length === 0) {
+    // No events to migrate or not legacy format - just create empty JSONL
+    await writeFile(eventsFile, "", "utf-8");
+    // Rewrite metadata without events field if it was legacy format
+    if (parsed.success) {
+      const { events: _, ...metaOnly } = parsed.data;
+      await writeFile(metadataFile, JSON.stringify(metaOnly, null, 2), "utf-8");
+    }
+    return;
+  }
+
+  // Migrate events to JSONL
+  const legacyEvents = parsed.data.events;
+  const lines = legacyEvents.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  await writeFile(eventsFile, lines, "utf-8");
+
+  // Rewrite metadata without events
+  const { events: _, ...metaOnly } = parsed.data;
+  await writeFile(metadataFile, JSON.stringify(metaOnly, null, 2), "utf-8");
+
+  logger.debug("Migrated legacy session events to JSONL", {
+    sessionId,
+    eventCount: legacyEvents.length,
+  });
 }
 
 export const SessionHistoryStorage = {

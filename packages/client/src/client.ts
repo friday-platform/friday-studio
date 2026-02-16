@@ -113,8 +113,15 @@ export class AtlasClient {
   /**
    * List all sessions across workspaces
    */
-  async listSessions(): Promise<SessionInfo[]> {
-    const response = await parseResult(v2Client.sessions.index.$get());
+  async listSessions(options?: {
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: SessionInfo[]; nextCursor?: string; total: number }> {
+    const response = await parseResult(
+      v2Client.sessions.index.$get({
+        query: { limit: options?.limit?.toString(), cursor: options?.cursor },
+      }),
+    );
     if (!response.ok) {
       throw new Error(`Failed to get session: ${stringifyError(response.error)}`);
     }
@@ -136,7 +143,9 @@ export class AtlasClient {
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<CancelSessionResponse> {
-    const response = await parseResult(v2Client.sessions[":id"].$delete({ param: { sessionId } }));
+    const response = await parseResult(
+      v2Client.sessions[":id"].$delete({ param: { id: sessionId } }),
+    );
     if (!response.ok) {
       throw new Error(`Failed to cancel session: ${stringifyError(response.error)}`);
     }

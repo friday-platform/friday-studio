@@ -4,7 +4,7 @@ import type { LayoutLoad } from "./$types";
 
 export const load: LayoutLoad = async ({ params }) => {
   const res = await parseResult(client.me.index.$get());
-  const user = res.ok && res.data.success ? res.data.user : null;
+  const user = res.ok ? res.data.user : null;
 
   // Fetch color based on route params
   let color: Color | undefined;

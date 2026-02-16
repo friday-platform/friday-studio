@@ -1,4 +1,3 @@
-import { AgentRegistry } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
@@ -33,17 +32,13 @@ getAgentExpertise.get(
     try {
       const { id } = c.req.valid("param");
 
-      const registry = new AgentRegistry();
-      await registry.initialize();
-
+      const registry = c.get("app").getAgentRegistry();
       const agent = await registry.getAgent(id);
       if (!agent || !agent.metadata.expertise) {
         return c.json({ error: "Agent expertise not found" }, 404);
       }
 
-      const response = { agentId: id, ...agent.metadata.expertise };
-
-      return c.json(response);
+      return c.json({ agentId: id, ...agent.metadata.expertise });
     } catch (error) {
       return c.json({ error: `Failed to get agent expertise: ${stringifyError(error)}` }, 500);
     }

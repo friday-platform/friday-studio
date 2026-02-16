@@ -15,7 +15,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { OutlineRefsResultSchema } from "@atlas/core";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
-import { registry, smallLLM } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
@@ -580,13 +580,18 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           userIdentity: userIdentitySection ? "available" : "unavailable",
         });
 
-        // MVP: Tool allowlist - only expose specific workspace management and task execution tools
+        // Platform tool allowlist for the conversation agent.
+        // Only these platform tools are exposed; non-platform tools (conversationTools,
+        // connectService, systemAgents, do_task, load_skill) are added separately below.
+        //
+        // Keep in sync with:
+        // - packages/mcp-server/src/tools/index.ts (canonical tool registration)
+        // - packages/core/src/agent-conversion/agent-tool-filters.ts (LLM agent allowlist)
+        // - packages/fsm-engine/mcp-tool-context.ts (FSM engine allowlist)
         const ALLOWED_TOOLS = new Set([
           // Workspace management
           "workspace_list",
-          "workspace_create",
           "workspace_describe",
-          "workspace_update",
           "workspace_delete",
           // Session/job inspection
           "session_describe",
@@ -606,8 +611,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           "artifacts_get_by_chat",
           // System
           "system_version",
-          // MCP server registration
-          "connect_mcp_server",
+          // connect_mcp_server is a conversationTool, not a platform tool — added via ...conversationTools below
         ]);
 
         // Wrap platform tools to inject session context (datetime for timezone-aware operations)
@@ -855,7 +859,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               experimental_transform: smoothStream({ chunking: "word" }),
               maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
               abortSignal, // Pass the abort signal for cancellation
-              providerOptions: { groq: { reasoningFormat: "parsed", reasoningEffort: "medium" } },
+              providerOptions: getDefaultProviderOpts("anthropic"),
               experimental_context: { conversationSessionId: session.sessionId },
               // Pass telemetry config if provided in context
               experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,

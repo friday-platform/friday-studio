@@ -1,4 +1,3 @@
-import { AgentRegistry } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
@@ -32,9 +31,7 @@ getAgent.get(
     try {
       const { id } = c.req.valid("param");
 
-      const registry = new AgentRegistry();
-      await registry.initialize();
-
+      const registry = c.get("app").getAgentRegistry();
       const agent = await registry.getAgent(id);
       if (!agent) {
         return c.json({ error: "Agent not found" }, 404);

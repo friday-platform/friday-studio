@@ -119,7 +119,7 @@ beforeEach(() => {
 describe("Init endpoint (POST /init)", () => {
   it("returns uploadId, totalChunks, chunkSize for valid input", async () => {
     const res = await initUpload({ fileName: "data.txt", fileSize: CHUNK_SIZE * 2 + 100 });
-    expect(res.status).toEqual(200);
+    expect(res.status).toEqual(201);
     const body = InitResponseSchema.parse(await res.json());
     expect(body.chunkSize).toEqual(CHUNK_SIZE);
     expect(body.totalChunks).toEqual(3);
@@ -229,7 +229,7 @@ describe("Complete (POST /:uploadId/complete)", () => {
     const fileSize = new Blob([content]).size;
 
     const initRes = await initUpload({ fileName: "hello.txt", fileSize });
-    expect(initRes.status).toEqual(200);
+    expect(initRes.status).toEqual(201);
     const { uploadId } = InitResponseSchema.parse(await initRes.json());
 
     const chunkRes = await uploadChunk(uploadId, 0, new Blob([content]));
@@ -326,7 +326,7 @@ describe("End-to-end", () => {
     const fileSize = new Blob([fullContent]).size;
 
     const initRes = await initUpload({ fileName: "multi.txt", fileSize, chatId: "e2e-chat" });
-    expect(initRes.status).toEqual(200);
+    expect(initRes.status).toEqual(201);
     const { uploadId, totalChunks } = InitResponseSchema.parse(await initRes.json());
     expect(totalChunks).toEqual(2);
 
@@ -359,7 +359,7 @@ describe("End-to-end", () => {
 describe("Edge cases", () => {
   it("handles single-byte file (1 chunk)", async () => {
     const initRes = await initUpload({ fileName: "tiny.txt", fileSize: 1 });
-    expect(initRes.status).toEqual(200);
+    expect(initRes.status).toEqual(201);
     const { uploadId, totalChunks } = InitResponseSchema.parse(await initRes.json());
     expect(totalChunks).toEqual(1);
 
@@ -418,7 +418,7 @@ describe("Rate limiting", () => {
     // Fill all session slots
     for (let i = 0; i < MAX_CONCURRENT_SESSIONS; i++) {
       const res = await initUpload({ fileName: `file${i}.txt`, fileSize: 100 });
-      expect(res.status).toEqual(200);
+      expect(res.status).toEqual(201);
     }
 
     // Next one should be rejected

@@ -253,5 +253,7 @@ export interface LLMProvider {
     toolChoice?: "auto" | "required" | "none";
     /** Tool names that should trigger early stop when called successfully */
     stopOnToolCall?: string[];
+    /** Provider-specific options (e.g., Anthropic thinking config) */
+    providerOptions?: Record<string, unknown>;
   }): Promise<AgentResult<string, FSMLLMOutput>>;
 }

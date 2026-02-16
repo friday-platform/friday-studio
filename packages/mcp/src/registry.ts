@@ -4,9 +4,9 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
+import { getAtlasPlatformServerConfig } from "@atlas/atlasd";
 import { logger } from "@atlas/logger";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { MCPServerConfig } from "./manager.ts";
 
@@ -19,16 +19,6 @@ export interface AtlasConfig {
 export interface WorkspaceConfig {
   tools?: { mcp?: { servers?: Record<string, Partial<MCPServerConfig>> } };
   [key: string]: unknown;
-}
-
-export interface AgentConfig {
-  mcp_server_overrides?: Record<string, MCPServerOverrides>;
-  [key: string]: unknown;
-}
-
-export interface MCPServerOverrides {
-  tools?: { allow?: string[]; deny?: string[] };
-  timeout_ms?: number;
 }
 
 export interface SessionContext {
@@ -453,45 +443,27 @@ export class MCPServerRegistry {
    * Get all available platform tools from the MCP server
    */
   private static async getAllPlatformTools(timeoutMs = 3000): Promise<string[]> {
+    const { transport: transportConfig } = getAtlasPlatformServerConfig();
+    logger.debug("Fetching platform tools from MCP server", {
+      endpoint: transportConfig.url,
+      timeoutMs,
+    });
+
+    const abort = new AbortController();
+    const timeout = setTimeout(
+      () => abort.abort(new Error("Platform tools MCP client connection timeout")),
+      timeoutMs,
+    );
+
+    const transport = new StreamableHTTPClientTransport(new URL(transportConfig.url), {
+      requestInit: { signal: abort.signal },
+    });
+
+    let mcpClient: Awaited<ReturnType<typeof createMCPClient>> | undefined;
     try {
-      const daemonUrl = getAtlasDaemonUrl();
-      logger.debug("Fetching platform tools from MCP server", {
-        daemonUrl,
-        endpoint: `${daemonUrl}/mcp`,
-        timeoutMs,
-      });
-
-      // Create MCP client with HTTP transport WITH TIMEOUT
-      const transport = new StreamableHTTPClientTransport(new URL(`${daemonUrl}/mcp`), {
-        requestInit: {
-          // Add timeout to prevent hanging when daemon is busy
-          signal: AbortSignal.timeout(timeoutMs),
-        },
-      });
-
-      // Initialize client and connect with timeout
-      const mcpClient = new Client(
-        { name: "atlas-platform-tools", version: "1.0.0" },
-        { capabilities: {} },
-      );
-      await Promise.race([
-        mcpClient.connect(transport),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Platform tools MCP client connection timeout")),
-            timeoutMs,
-          ),
-        ),
-      ]);
-
-      // Get tools from the MCP client with timeout
-      const result = await Promise.race([
-        mcpClient.listTools(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Platform tools fetch timeout")), timeoutMs),
-        ),
-      ]);
-      const toolNames = result.tools.map((tool) => tool.name);
+      mcpClient = await createMCPClient({ transport, name: "atlas-platform-tools" });
+      const tools = await mcpClient.tools();
+      const toolNames = Object.keys(tools);
 
       if (toolNames.length === 0) {
         throw new Error("No tools returned from MCP server");
@@ -499,25 +471,12 @@ export class MCPServerRegistry {
 
       logger.info(`Successfully fetched ${toolNames.length} platform tools from MCP server`);
 
-      // Close the client after use
-      await mcpClient.close();
-
       return toolNames;
-    } catch (error) {
-      logger.error("Failed to get platform tools dynamically", {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
-      // Don't throw - getAllPlatformToolsWithRetry will handle this
-      // The retry logic already handles this gracefully
-      logger.debug("Platform tools fetch failed, returning empty array", {
-        operation: "mcp_platform_tools",
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      // Return empty array - getAllPlatformToolsWithRetry will handle retry logic
-      return [];
+    } finally {
+      clearTimeout(timeout);
+      if (mcpClient) {
+        await mcpClient.close();
+      }
     }
   }
 
@@ -530,9 +489,7 @@ export class MCPServerRegistry {
   ): AtlasConfig {
     // Create the platform MCP server configuration
     // Even if we don't have the tools list yet, we still register the server
-    const platformMCPServer: Partial<MCPServerConfig> = {
-      transport: { type: "http" as const, url: `${getAtlasDaemonUrl()}/mcp` },
-    };
+    const platformMCPServer: Partial<MCPServerConfig> = getAtlasPlatformServerConfig();
 
     // Only add tool filtering if we have the list
     if (platformTools.length > 0) {

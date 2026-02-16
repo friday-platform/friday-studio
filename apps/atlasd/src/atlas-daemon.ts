@@ -15,7 +15,7 @@ import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { flush as flushSentry } from "@atlas/sentry";
-import { WorkspaceManager } from "@atlas/workspace";
+import { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "@atlas/workspace";
 import type {
   WorkspaceSignalRegistrar,
   WorkspaceSignalTriggerCallback,
@@ -31,9 +31,7 @@ import {
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasMetrics } from "../../../src/utils/metrics.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
@@ -170,6 +168,7 @@ export class AtlasDaemon {
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getLibraryStorage: this.getLibraryStorage.bind(this),
+      getAgentRegistry: this.getAgentRegistry.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
@@ -543,6 +542,16 @@ export class AtlasDaemon {
   }
 
   /**
+   * Get shared agent registry instance
+   */
+  public getAgentRegistry(): AgentRegistryType {
+    if (!this.agentRegistry) {
+      throw new Error("Agent registry not initialized");
+    }
+    return this.agentRegistry;
+  }
+
+  /**
    * Get the configured Hono app instance
    * Used for OpenAPI spec generation
    */
@@ -879,6 +888,11 @@ export class AtlasDaemon {
         agents: Object.keys(mergedConfig.workspace?.agents || {}).length,
       });
 
+      // Re-validate MCP environment at runtime creation (env vars may have changed since registration)
+      if (!workspace.metadata?.system) {
+        validateMCPEnvironmentForWorkspace(mergedConfig, workspace.path);
+      }
+
       // Register workspace-level LLM agents with agent registry
       const workspaceAgents = mergedConfig.workspace?.agents || {};
       for (const [agentId, agentConfig] of Object.entries(workspaceAgents)) {
@@ -936,27 +950,10 @@ export class AtlasDaemon {
         }
       }
 
-      logger.debug("Creating Workspace object from config");
-      logger.debug("Workspace signals", {
+      logger.debug("Creating WorkspaceRuntime", {
         workspaceId: workspace.id,
         signals: mergedConfig.workspace?.signals ? Object.keys(mergedConfig.workspace.signals) : [],
       });
-
-      const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
-        id: workspace.id,
-        name: workspace.name,
-        role: WorkspaceMemberRole.OWNER,
-        userId: workspace.metadata?.createdBy,
-      });
-
-      logger.debug("Workspace object created", {
-        workspaceId: workspace.id,
-        signalsCount: Object.keys(workspaceObj.signals).length,
-      });
-
-      // Status will be updated to "running" when registerRuntime is called
-
-      logger.debug("Creating WorkspaceRuntime", { workspaceId: workspace.id });
 
       // Determine workspace path
       let workspacePath: string | undefined;
@@ -967,67 +964,69 @@ export class AtlasDaemon {
         workspacePath = workspace.path;
       }
 
-      runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
-        lazy: true, // Always use lazy loading in daemon mode
-        workspacePath, // Pass workspace path for daemon mode
-        mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
-        daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
-        onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
-          // Record session completion metric
-          // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
-          AtlasMetrics.recordSession(status);
+      runtime = new WorkspaceRuntime(
+        { id: workspace.id, members: { userId: workspace.metadata?.createdBy } },
+        mergedConfig,
+        {
+          lazy: true, // Always use lazy loading in daemon mode
+          workspacePath, // Pass workspace path for daemon mode
+          mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
+          daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
+          onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
+            // Record session completion metric
+            // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
+            AtlasMetrics.recordSession(status);
 
-          try {
-            const mgr = this.getWorkspaceManager();
-            const ws = await mgr.find({ id: workspaceId });
+            try {
+              const mgr = this.getWorkspaceManager();
+              const ws = await mgr.find({ id: workspaceId });
 
-            // Mark workspace as stopped when a session finishes normally
-            await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
-              metadata: {
-                ...ws?.metadata,
-                lastFinishedSession: { id: sessionId, status, finishedAt, summary },
-              },
-            });
+              // Mark workspace as stopped when a session finishes normally
+              await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
+                metadata: {
+                  ...ws?.metadata,
+                  lastFinishedSession: { id: sessionId, status, finishedAt, summary },
+                },
+              });
 
-            // If there are no active sessions or agent executions left, destroy the runtime
-            // so status won't be overridden to "running".
-            // Must check BOTH session status AND orchestrator active executions to avoid
-            // killing MCP transports while callTool requests are still in flight.
-            const currentRuntime = this.runtimes.get(workspaceId);
-            if (currentRuntime) {
-              const sessions = currentRuntime.getSessions();
-              const hasActiveSessions = sessions.some(
-                (s) =>
-                  s.session.status === WorkspaceSessionStatus.EXECUTING ||
-                  s.session.status === WorkspaceSessionStatus.PENDING,
-              );
+              // If there are no active sessions or agent executions left, destroy the runtime
+              // so status won't be overridden to "running".
+              // Must check BOTH session status AND orchestrator active executions to avoid
+              // killing MCP transports while callTool requests are still in flight.
+              const currentRuntime = this.runtimes.get(workspaceId);
+              if (currentRuntime) {
+                const sessions = currentRuntime.getSessions();
+                const hasActiveSessions = sessions.some(
+                  (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
+                );
 
-              // Check orchestrator for in-flight agent executions (matches checkAndDestroyIdleWorkspace)
-              let hasActiveExecutions = false;
-              if (
-                "getOrchestrator" in currentRuntime &&
-                typeof currentRuntime.getOrchestrator === "function"
-              ) {
-                const orchestrator = currentRuntime.getOrchestrator();
-                hasActiveExecutions = orchestrator.hasActiveExecutions();
+                // Check orchestrator for in-flight agent executions (matches checkAndDestroyIdleWorkspace)
+                let hasActiveExecutions = false;
+                if (
+                  "getOrchestrator" in currentRuntime &&
+                  typeof currentRuntime.getOrchestrator === "function"
+                ) {
+                  const orchestrator = currentRuntime.getOrchestrator();
+                  hasActiveExecutions = orchestrator.hasActiveExecutions();
+                }
+
+                if (!hasActiveSessions && !hasActiveExecutions) {
+                  await this.destroyWorkspaceRuntime(workspaceId);
+                } else {
+                  // Still active sessions or agent executions; let idle timeout handle cleanup
+                  this.resetIdleTimeout(workspaceId);
+                }
               }
-
-              if (!hasActiveSessions && !hasActiveExecutions) {
-                await this.destroyWorkspaceRuntime(workspaceId);
-              } else {
-                // Still active sessions or agent executions; let idle timeout handle cleanup
-                this.resetIdleTimeout(workspaceId);
-              }
+            } catch (error) {
+              logger.warn("Failed to persist lastFinishedSession or update status", {
+                workspaceId,
+                sessionId,
+                error,
+              });
             }
-          } catch (error) {
-            logger.warn("Failed to persist lastFinishedSession or update status", {
-              workspaceId,
-              sessionId,
-              error,
-            });
-          }
+          },
         },
-      });
+      );
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
       this.runtimes.set(workspace.id, runtime);
@@ -1200,9 +1199,7 @@ export class AtlasDaemon {
     for (const [workspaceId, runtime] of this.runtimes) {
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
-        (s) =>
-          s.session.status === WorkspaceSessionStatus.EXECUTING ||
-          s.session.status === WorkspaceSessionStatus.PENDING,
+        (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
       );
 
       if (!hasActiveSessions) {
@@ -1264,9 +1261,7 @@ export class AtlasDaemon {
 
     const sessions = runtime.getSessions();
     const hasActiveSessions = sessions.some(
-      (s) =>
-        s.session.status === WorkspaceSessionStatus.EXECUTING ||
-        s.session.status === WorkspaceSessionStatus.PENDING,
+      (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
     );
 
     // Check for active agent executions in the orchestrator

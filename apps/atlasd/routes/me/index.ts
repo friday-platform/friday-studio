@@ -14,14 +14,14 @@ const meRoutes = daemonFactory.createApp().get("/", async (c) => {
   const result = await getCurrentUser();
 
   if (!result.ok) {
-    return c.json({ success: false as const, error: result.error }, 503);
+    return c.json({ error: result.error }, 503);
   }
 
   if (!result.data) {
-    return c.json({ success: false as const, error: "User identity unavailable" }, 503);
+    return c.json({ error: "User identity unavailable" }, 503);
   }
 
-  return c.json({ success: true as const, user: result.data });
+  return c.json({ user: result.data });
 });
 
 export { meRoutes };

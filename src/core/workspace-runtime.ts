@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
-import type { MergedConfig } from "@atlas/config";
+import { type MergedConfig, validateSignalPayload } from "@atlas/config";
 import {
   AgentOrchestrator,
   type GlobalMCPServerPool,
@@ -17,6 +17,8 @@ import {
   ReasoningResultStatus,
   SessionHistoryStorage,
   UserConfigurationError,
+  WorkspaceSessionStatus,
+  type WorkspaceSessionStatusType,
 } from "@atlas/core";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
@@ -65,8 +67,10 @@ export type { SessionHistoryEventPayload } from "@atlas/core";
  *
  * @internal Exported for testing
  */
-export function classifySessionError(error: unknown): "skipped" | "failed" {
-  return error instanceof UserConfigurationError ? "skipped" : "failed";
+export function classifySessionError(error: unknown): WorkspaceSessionStatusType {
+  return error instanceof UserConfigurationError
+    ? WorkspaceSessionStatus.SKIPPED
+    : WorkspaceSessionStatus.FAILED;
 }
 
 // WorkspaceRuntime signal type - plain payload without full IAtlasScope implementation
@@ -156,13 +160,7 @@ interface WorkspaceRuntimeOptions {
   onSessionFinished?: (data: {
     workspaceId: string;
     sessionId: string;
-    /**
-     * Session status:
-     * - "completed": Finished successfully
-     * - "failed": Platform/system error
-     * - "skipped": User configuration issue (OAuth not connected, missing env vars)
-     */
-    status: "completed" | "failed" | "skipped";
+    status: WorkspaceSessionStatusType;
     finishedAt: string;
     summary?: string;
   }) => void | Promise<void>;
@@ -177,6 +175,8 @@ interface FSMJob {
   fsmDefinition?: unknown; // Inline FSM definition from workspace.yml
   /** Human-readable description from workspace config */
   description?: string;
+  /** Max LLM tool-calling steps for FSM actions */
+  maxSteps?: number;
 }
 
 interface ActiveSession {
@@ -191,14 +191,7 @@ interface ActiveSession {
 interface SessionResult {
   id: string;
   workspaceId: string;
-  /**
-   * Session status:
-   * - "active": Currently running
-   * - "completed": Finished successfully
-   * - "failed": Platform/system error
-   * - "skipped": User configuration issue (OAuth not connected, missing env vars)
-   */
-  status: "active" | "completed" | "failed" | "skipped";
+  status: WorkspaceSessionStatusType;
   startedAt: Date;
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
@@ -316,6 +309,7 @@ export class WorkspaceRuntime {
         signals,
         fsmDefinition: jobSpec.fsm,
         description: jobSpec.description,
+        maxSteps: jobSpec.config?.max_steps,
       });
 
       this.emitJobDefined(jobName);
@@ -440,7 +434,12 @@ export class WorkspaceRuntime {
     const engineOptions = {
       documentStore: job.documentStore,
       scope,
-      llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
+      llmProvider: new AtlasLLMProviderAdapter(
+        "claude-sonnet-4-5",
+        "anthropic",
+        undefined,
+        job.maxSteps,
+      ),
       agentExecutor,
       mcpToolProvider,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
@@ -514,43 +513,22 @@ export class WorkspaceRuntime {
 
     logger.debug("Found matching job for signal", { signalId: signal.id, jobName: job.name });
 
+    // Validate signal payload against schema if defined
+    const signalConfig = this.config.workspace.signals?.[signal.id];
+    if (signalConfig) {
+      const validation = validateSignalPayload(signalConfig, signal.data);
+      if (!validation.success) {
+        throw new Error(`Signal payload validation failed for '${signal.id}': ${validation.error}`);
+      }
+    }
+
     // Initialize job engine if not already created
     await this.initializeJobEngine(job);
 
     // Process signal through job's FSM engine
     const sessionResult = await this.processSignalForJob(job, signal, onStreamEvent, abortSignal);
 
-    // Store session result for completion tracking
-    this.sessionResults.set(sessionResult.id, sessionResult);
-
-    // Create workspace session with waitForCompletion
-    const workspaceSession = this.toWorkspaceSession(sessionResult, job);
-
-    // Track session
-    const activeSession: ActiveSession = {
-      id: sessionResult.id,
-      jobName: job.name,
-      signalId: signal.id,
-      session: workspaceSession,
-      startedAt: new Date(),
-      waitForCompletion: () => workspaceSession.waitForCompletion(),
-    };
-    this.sessions.set(sessionResult.id, activeSession);
-
-    // Persist session to history storage BEFORE cleanup
-    if (sessionResult.status !== "active") {
-      await this.persistSessionToHistory(sessionResult, job, signal);
-    }
-
-    // Emit completion event for waitForCompletion() listeners
-    if (sessionResult.status !== "active") {
-      this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
-    }
-
-    // Call onSessionFinished callback and cleanup
-    await this.handleSessionCompletion(sessionResult);
-
-    return activeSession.session;
+    return this.finalizeSession(sessionResult, job, signal);
   }
 
   /**
@@ -601,7 +579,7 @@ export class WorkspaceRuntime {
     const session: SessionResult = {
       id: sessionId,
       workspaceId: this.workspace.id,
-      status: "active",
+      status: WorkspaceSessionStatus.ACTIVE,
       startedAt: new Date(),
       artifacts: [],
       userId,
@@ -668,7 +646,7 @@ export class WorkspaceRuntime {
 
       // Extract artifacts from FSM documents
       session.artifacts = this.extractArtifacts(job.engine.documents);
-      session.status = "completed";
+      session.status = WorkspaceSessionStatus.COMPLETED;
       session.completedAt = new Date();
 
       logger.info("Signal processed successfully", {
@@ -683,7 +661,7 @@ export class WorkspaceRuntime {
       session.status = classifySessionError(error);
 
       // Log appropriately based on error type
-      if (session.status === "skipped") {
+      if (session.status === WorkspaceSessionStatus.SKIPPED) {
         logger.warn("Session skipped: user configuration issue", {
           sessionId: session.id,
           error: session.error.message,
@@ -715,6 +693,48 @@ export class WorkspaceRuntime {
     }
 
     return session;
+  }
+
+  /**
+   * Track session result, persist to history, emit completion, and clean up.
+   * Shared finalization path for both processSignal and executeJobDirectly.
+   */
+  private async finalizeSession(
+    sessionResult: SessionResult,
+    job: FSMJob,
+    signal: WorkspaceRuntimeSignal,
+  ): Promise<IWorkspaceSession> {
+    // Store session result for completion tracking
+    this.sessionResults.set(sessionResult.id, sessionResult);
+
+    // Create workspace session with waitForCompletion
+    const workspaceSession = this.toWorkspaceSession(sessionResult, job);
+
+    // Track session
+    const activeSession: ActiveSession = {
+      id: sessionResult.id,
+      jobName: job.name,
+      signalId: signal.id,
+      session: workspaceSession,
+      startedAt: new Date(),
+      waitForCompletion: () => workspaceSession.waitForCompletion(),
+    };
+    this.sessions.set(sessionResult.id, activeSession);
+
+    // Persist session to history storage BEFORE cleanup
+    if (sessionResult.status !== WorkspaceSessionStatus.ACTIVE) {
+      await this.persistSessionToHistory(sessionResult, job, signal);
+    }
+
+    // Emit completion event for waitForCompletion() listeners
+    if (sessionResult.status !== WorkspaceSessionStatus.ACTIVE) {
+      this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
+    }
+
+    // Call onSessionFinished callback and cleanup
+    await this.handleSessionCompletion(sessionResult);
+
+    return activeSession.session;
   }
 
   /**
@@ -804,10 +824,11 @@ export class WorkspaceRuntime {
       config: agentCustomConfig,
     });
     // Map "atlas" config type to "sdk" for consistency with function parameter
-    const agentType = agentConfig?.type === "atlas" ? "sdk" : agentConfig?.type;
+    // Default to "sdk" when agent has no workspace config (code-based agents)
+    const agentType = agentConfig?.type === "atlas" ? "sdk" : (agentConfig?.type ?? "sdk");
 
     // Validate agent output (hallucination detection only runs for LLM agents)
-    await validateAgentOutput(result, fsmContext, undefined, SupervisionLevel.STANDARD, agentType);
+    await validateAgentOutput(result, fsmContext, agentType);
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
 
@@ -858,7 +879,9 @@ export class WorkspaceRuntime {
 
     const totalPhases = stateTransitions.length || 1;
     const completedPhases =
-      sessionResult.status === "completed" ? totalPhases : Math.max(0, totalPhases - 1);
+      sessionResult.status === WorkspaceSessionStatus.COMPLETED
+        ? totalPhases
+        : Math.max(0, totalPhases - 1);
 
     return {
       sessionId: sessionResult.id,
@@ -895,8 +918,8 @@ export class WorkspaceRuntime {
       cancel: () => {},
       cleanup: () => {},
       progress: () => {
-        if (session.status === "completed") return 100;
-        if (session.status === "failed") return 0;
+        if (session.status === WorkspaceSessionStatus.COMPLETED) return 100;
+        if (session.status === WorkspaceSessionStatus.FAILED) return 0;
         return 50; // Active sessions are 50% by default
       },
       summarize: () => `Session ${session.id}: ${session.status}`,
@@ -904,7 +927,7 @@ export class WorkspaceRuntime {
       waitForCompletion: (): Promise<SessionSummary> => {
         // If already completed, return immediately
         const currentResult = this.sessionResults.get(session.id);
-        if (currentResult && currentResult.status !== "active") {
+        if (currentResult && currentResult.status !== WorkspaceSessionStatus.ACTIVE) {
           return Promise.resolve(this.createSessionSummary(currentResult, job));
         }
 
@@ -966,8 +989,11 @@ export class WorkspaceRuntime {
     const fsmId =
       job.engine.toYAML().match(/^id:\s*(.+)$/m)?.[1] || job.name || "atlas-conversation";
 
-    // Clear persisted state file
-    await job.documentStore.saveState(scope, fsmId, null);
+    // Clear persisted state file (no schema, null value — cannot fail validation)
+    const clearResult = await job.documentStore.saveState(scope, fsmId, null);
+    if (!clearResult.ok) {
+      logger.warn("Failed to clear persisted state", { error: clearResult.error });
+    }
 
     // Clear any persisted document files
     const existingDocIds = await job.documentStore.list(scope, fsmId);
@@ -1058,35 +1084,7 @@ export class WorkspaceRuntime {
     // without an active stream callback context
     const sessionResult = await this.processSignalForJob(job, signal, undefined);
 
-    // Store session result for completion tracking
-    this.sessionResults.set(sessionResult.id, sessionResult);
-
-    // Create workspace session with waitForCompletion
-    const workspaceSession = this.toWorkspaceSession(sessionResult, job);
-
-    // Track session
-    const activeSession: ActiveSession = {
-      id: sessionResult.id,
-      jobName: job.name,
-      signalId: signal.id,
-      session: workspaceSession,
-      startedAt: new Date(),
-      waitForCompletion: () => workspaceSession.waitForCompletion(),
-    };
-    this.sessions.set(sessionResult.id, activeSession);
-
-    // Persist session to history storage BEFORE cleanup
-    if (sessionResult.status !== "active") {
-      await this.persistSessionToHistory(sessionResult, job, signal);
-    }
-
-    // Emit completion event for waitForCompletion() listeners
-    if (sessionResult.status !== "active") {
-      this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
-    }
-
-    // Call onSessionFinished callback and cleanup
-    await this.handleSessionCompletion(sessionResult);
+    const session = await this.finalizeSession(sessionResult, job, signal);
 
     logger.info("Job execution completed", {
       workspaceId: this.workspace.id,
@@ -1095,7 +1093,7 @@ export class WorkspaceRuntime {
       status: sessionResult.status,
     });
 
-    return activeSession.session;
+    return session;
   }
 
   /**
@@ -1249,19 +1247,27 @@ export class WorkspaceRuntime {
    */
   private async handleSessionCompletion(sessionResult: SessionResult): Promise<void> {
     const { status, userId } = sessionResult;
-    if (status === "active") return;
+    if (status === WorkspaceSessionStatus.ACTIVE) return;
 
     logger.debug("handleSessionCompletion", {
       sessionId: sessionResult.id,
       status,
       userId: userId ?? "NOT_SET",
-      willEmitAnalytics: Boolean(userId && (status === "completed" || status === "failed")),
+      willEmitAnalytics: Boolean(
+        userId &&
+          (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED),
+      ),
     });
 
     // Emit analytics event for session completion (skip "skipped" status - it's a user config issue)
-    if (userId && (status === "completed" || status === "failed")) {
+    if (
+      userId &&
+      (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED)
+    ) {
       const eventName =
-        status === "completed" ? EventNames.SESSION_COMPLETED : EventNames.SESSION_FAILED;
+        status === WorkspaceSessionStatus.COMPLETED
+          ? EventNames.SESSION_COMPLETED
+          : EventNames.SESSION_FAILED;
       const jobName = this.sessions.get(sessionResult.id)?.jobName;
 
       logger.debug("Emitting session analytics", {
@@ -1387,7 +1393,7 @@ export class WorkspaceRuntime {
 
       // Map WorkspaceRuntime status to ReasoningResultStatus
       const historyStatus =
-        sessionResult.status === "completed"
+        sessionResult.status === WorkspaceSessionStatus.COMPLETED
           ? ReasoningResultStatus.COMPLETED
           : ReasoningResultStatus.FAILED;
 
@@ -1416,7 +1422,7 @@ export class WorkspaceRuntime {
 
       // Generate title before other writes to avoid race condition
       const { status } = sessionResult;
-      if (status !== "active") {
+      if (status !== WorkspaceSessionStatus.ACTIVE) {
         await this.generateAndStoreTitle(sessionResult.id, {
           signal: { type: signal.type, id: signal.id, data: signal.data },
           output: sessionResult.artifacts[0]?.data,
@@ -1497,6 +1503,10 @@ export class WorkspaceRuntime {
       // without collectedFsmEvents will simply have no step events
 
       // Extract output from FSM result documents
+      // DUAL-WRITE: output is written to both the session-finish event (appendSessionEvent)
+      // and the session metadata (markSessionComplete). These are independent file writes,
+      // so if one fails mid-persist the two sources can diverge. Readers should prefer
+      // the session-finish event as the authoritative source; metadata is a convenience copy.
       const output = job.engine?.documents
         .filter((doc) => doc.type === "result" || doc.id.endsWith("_result"))
         .map((doc) => ({ id: doc.id, data: doc.data }));

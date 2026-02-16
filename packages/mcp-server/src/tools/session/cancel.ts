@@ -27,7 +27,9 @@ export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
     async ({ sessionId }) => {
       ctx.logger.info("MCP session_cancel called", { sessionId });
 
-      const response = await parseResult(client.sessions[":id"].$delete({ param: { sessionId } }));
+      const response = await parseResult(
+        client.sessions[":id"].$delete({ param: { id: sessionId } }),
+      );
 
       if (!response.ok) {
         ctx.logger.error("Failed to cancel session", { sessionId, error: response.error });

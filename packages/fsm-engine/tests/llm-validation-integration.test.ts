@@ -154,8 +154,9 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
       expect(engine.state).toEqual("pending");
 
       // No document should be persisted
-      const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-      expect(doc).toEqual(null);
+      const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+      expect(docResult.ok).toBe(true);
+      if (docResult.ok) expect(docResult.data).toEqual(null);
     },
   );
 
@@ -203,8 +204,10 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
     expect(engine.state).toEqual("done");
 
     // Document should be persisted with response
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual(
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual(
       "Found 42 users in the system. The primary contact is Alice Smith at TechCorp.",
     );
   });
@@ -256,8 +259,12 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
       expect(engine.state).toEqual("done");
 
       // Document should have retry response, not fabricated response
-      const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-      expect(doc?.data.data.response).toEqual("The query returned 127 records from the database.");
+      const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+      expect(docResult.ok).toBe(true);
+      if (!docResult.ok) throw new Error(docResult.error);
+      expect(docResult.data?.data.data.response).toEqual(
+        "The query returned 127 records from the database.",
+      );
     },
   );
 
@@ -295,8 +302,12 @@ describe.skipIf(!CAN_RUN_INTEGRATION)("LLM Validation Integration (Real Haiku)",
 
     expect(engine.state).toEqual("done");
 
-    const doc = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("No matching records were found in the search.");
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual(
+      "No matching records were found in the search.",
+    );
   });
 });
 

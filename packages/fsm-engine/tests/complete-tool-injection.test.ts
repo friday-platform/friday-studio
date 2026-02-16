@@ -193,11 +193,13 @@ describe("complete tool injection for LLM actions", () => {
     await engine.signal({ type: "RUN" });
 
     // Verify structured data was stored (not raw LLM response)
-    const doc = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(doc?.data.data.ticket_id).toEqual("PROJ-123");
-    expect(doc?.data.data.priority).toEqual("high");
+    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.ticket_id).toEqual("PROJ-123");
+    expect(docResult.data?.data.data.priority).toEqual("high");
     // Should NOT have toolCalls/toolResults from raw response
-    expect(doc?.data.data.toolCalls).toBeUndefined();
+    expect(docResult.data?.data.data.toolCalls).toBeUndefined();
   });
 
   it("does NOT inject complete tool when document type has no properties", async () => {
@@ -286,8 +288,10 @@ describe("complete tool injection for LLM actions", () => {
     await engine.signal({ type: "RUN" });
 
     // Verify raw response was stored (fallback behavior) - now uses { response: string }
-    const doc = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(doc?.data.data.response).toEqual("I found ticket PROJ-456");
+    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("I found ticket PROJ-456");
   });
 
   it("augments prompt with complete tool instruction", async () => {
@@ -426,14 +430,16 @@ describe("complete tool injection for LLM actions", () => {
     expect(toolsProvided).toContain("failStep");
 
     // Verify structured data was stored
-    const doc = await store.read(
+    const docResult = await store.read(
       scope,
       fsm.id,
       "linear_ticket_reader_result",
       FSMDocumentDataSchema,
     );
-    expect(doc?.data.data.ticket_id).toEqual("PROJ-123");
-    expect(doc?.data.data.title).toEqual("Fix bug");
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.ticket_id).toEqual("PROJ-123");
+    expect(docResult.data?.data.data.title).toEqual("Fix bug");
   });
 
   it("prefers outputType over document.type when both exist", async () => {
@@ -598,11 +604,13 @@ describe("complete tool injection for LLM actions", () => {
     expect(engine.state).toEqual("done");
 
     // Verify the retry's complete tool output was captured and stored
-    const doc = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(doc?.data.data.ticket_id).toEqual("RETRY-456");
-    expect(doc?.data.data.priority).toEqual("medium");
+    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.ticket_id).toEqual("RETRY-456");
+    expect(docResult.data?.data.data.priority).toEqual("medium");
     // Should NOT have raw response content (structured data took precedence)
-    expect(doc?.data.data.content).toBeUndefined();
+    expect(docResult.data?.data.data.content).toBeUndefined();
   });
 
   it("captures complete tool output when LLM calls other tools first (multi-step)", async () => {
@@ -681,11 +689,13 @@ describe("complete tool injection for LLM actions", () => {
     await engine.signal({ type: "RUN" });
 
     // Verify structured data was captured from the complete tool call
-    const doc = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(doc?.data.data.ticket_id).toEqual("PROJ-123");
-    expect(doc?.data.data.priority).toEqual("high");
+    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.ticket_id).toEqual("PROJ-123");
+    expect(docResult.data?.data.data.priority).toEqual("high");
     // Should NOT have raw toolCalls array stored as data
-    expect(doc?.data.data.toolCalls).toBeUndefined();
+    expect(docResult.data?.data.data.toolCalls).toBeUndefined();
   });
 
   it("detects failStep when it is the only tool called", async () => {

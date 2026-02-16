@@ -27,8 +27,9 @@ import type { Tool } from "ai";
 import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
-// Retry configuration for HTTP MCP connections (matches credential-fetcher.ts pattern)
-const HTTP_RETRY_OPTIONS: RetryOptions = {
+// Retry configuration for MCP connections
+// Shared across both HTTP and stdio transports for consistency
+const RETRY_OPTIONS: RetryOptions = {
   maxAttempts: 3,
   multiplier: 2, // Exponential backoff
   minTimeout: 1000,
@@ -63,15 +64,7 @@ interface MCPClientWrapper {
  * Handles connection management, tool filtering, and lifecycle management
  */
 export class MCPManager {
-  private static instance: MCPManager = new MCPManager();
   private clients: Map<string, MCPClientWrapper> = new Map();
-
-  /**
-   * Get the singleton instance of MCPManager
-   */
-  static getInstance(): MCPManager {
-    return MCPManager.instance;
-  }
 
   /**
    * Registers an MCP server using AI SDK's MCP client
@@ -254,12 +247,13 @@ export class MCPManager {
         }
       }
 
-      // Verify the connection is actually working before marking as connected
-      const isConnected = await this.verifyConnection(
-        mcpClient,
-        config.id,
-        validatedConfig.transport.type,
-      );
+      // Verify the connection is actually working before marking as connected.
+      // HTTP connections are already verified by connectHttpWithRetry (which retries
+      // the full connection + handshake), so only stdio needs post-creation verification.
+      const isConnected =
+        validatedConfig.transport.type === "http"
+          ? true
+          : await this.verifyConnection(mcpClient, config.id, validatedConfig.transport.type);
 
       this.clients.set(config.id, {
         client: mcpClient,
@@ -568,7 +562,7 @@ export class MCPManager {
           ),
         ),
       ]);
-    }, HTTP_RETRY_OPTIONS);
+    }, RETRY_OPTIONS);
   }
 
   /**
@@ -685,116 +679,50 @@ export class MCPManager {
   }
 
   /**
-   * Verify that an MCP client is actually connected and can communicate
+   * Verify that an MCP client is actually connected and can communicate.
+   * Uses exponential backoff retry for both stdio and HTTP transports.
    */
   private async verifyConnection(
     client: MCPClient,
     serverId: string,
     transportType: string,
   ): Promise<boolean> {
+    const verificationTimeout = transportType === "stdio" ? 2000 : 3000;
+
     try {
-      // For stdio transports, give the process time to start up
-      if (transportType === "stdio") {
-        logger.debug(`Waiting for stdio MCP server to initialize: ${serverId}`, {
-          operation: "mcp_connection_verification",
-          serverId,
-          transportType,
-        });
+      await retry(async () => {
+        await Promise.race([
+          client.tools(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Connection verification timeout")),
+              verificationTimeout,
+            ),
+          ),
+        ]);
+      }, RETRY_OPTIONS);
 
-        // Wait up to 5 seconds for stdio process to be ready
-        const maxRetries = 10;
-        const retryDelay = 500; // 500ms between retries
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            // Try to get tools as a connection test
-            await Promise.race([
-              client.tools(),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection verification timeout")), 2000),
-              ),
-            ]);
-
-            logger.info(`MCP server connection verified: ${serverId}`, {
-              operation: "mcp_connection_verification",
-              serverId,
-              transportType,
-              attempt,
-              success: true,
-            });
-
-            return true;
-          } catch (error) {
-            logger.debug(
-              `MCP server connection attempt ${attempt}/${maxRetries} failed: ${serverId}`,
-              {
-                operation: "mcp_connection_verification",
-                serverId,
-                transportType,
-                attempt,
-                error: error instanceof Error ? error.message : String(error),
-              },
-            );
-
-            if (attempt < maxRetries) {
-              await new Promise((resolve) => setTimeout(resolve, retryDelay));
-            }
-          }
-        }
-
-        logger.warn(
-          `MCP server connection verification failed after ${maxRetries} attempts: ${serverId}`,
-          { operation: "mcp_connection_verification", serverId, transportType, success: false },
-        );
-
-        return false;
-      } else {
-        // For HTTP transport, retry verification with exponential backoff
-        try {
-          await retry(async () => {
-            await Promise.race([
-              client.tools(),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection verification timeout")), 3000),
-              ),
-            ]);
-          }, HTTP_RETRY_OPTIONS);
-
-          logger.info(`MCP server connection verified: ${serverId}`, {
-            operation: "mcp_connection_verification",
-            serverId,
-            transportType,
-            success: true,
-          });
-
-          return true;
-        } catch (error) {
-          logger.error(
-            `Failed to verify MCP server after ${HTTP_RETRY_OPTIONS.maxAttempts} attempts: ${serverId}`,
-            {
-              operation: "mcp_connection_verification",
-              serverId,
-              transportType,
-              success: false,
-              error,
-            },
-          );
-
-          return false;
-        }
-      }
-    } catch (error) {
-      logger.error(`MCP server connection verification error: ${serverId}`, {
+      logger.info(`MCP server connection verified: ${serverId}`, {
         operation: "mcp_connection_verification",
         serverId,
         transportType,
-        error: error instanceof Error ? error.message : String(error),
-        success: false,
+        success: true,
       });
+
+      return true;
+    } catch (error) {
+      logger.error(
+        `Failed to verify MCP server after ${RETRY_OPTIONS.maxAttempts} attempts: ${serverId}`,
+        {
+          operation: "mcp_connection_verification",
+          serverId,
+          transportType,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
 
       return false;
     }
   }
 }
-
-export const mcpManager = new MCPManager();

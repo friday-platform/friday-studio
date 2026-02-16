@@ -90,6 +90,12 @@ export type JobExecution = z.infer<typeof JobExecutionSchema>;
 
 export const JobConfigSchema = z.strictObject({
   timeout: DurationSchema.optional(),
+  max_steps: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Max LLM tool-calling steps for FSM actions (default: 10)"),
   supervision: z
     .strictObject({
       level: SupervisionLevel.optional(),

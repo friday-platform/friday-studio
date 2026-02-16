@@ -4,13 +4,7 @@
 
 import { z } from "zod";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
-import {
-  AtlasServerConfigSchema,
-  PlanningConfigSchema,
-  RuntimeConfigSchema,
-  ServerConfigSchema,
-  SupervisorsConfigSchema,
-} from "./atlas.ts";
+import { AtlasServerConfigSchema, ServerConfigSchema } from "./atlas.ts";
 import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
@@ -56,11 +50,6 @@ export const AtlasConfigSchema = WorkspaceConfigSchema.extend({
   // Override with extended versions
   server: AtlasServerConfigSchema.optional(),
   tools: AtlasToolsConfigSchema.optional(),
-
-  // Atlas-specific additions
-  supervisors: SupervisorsConfigSchema.optional(),
-  planning: PlanningConfigSchema.optional(),
-  runtime: RuntimeConfigSchema.optional(),
 });
 
 export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;

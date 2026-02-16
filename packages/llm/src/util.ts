@@ -1,18 +1,29 @@
 import { logger } from "@atlas/logger";
+import type { RequestInit as UndiciRequestInit } from "undici";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 
 /**
- * Creates a fetch function that uses an HTTP proxy
+ * Creates a fetch function that uses an HTTP proxy.
+ *
+ * undici and globalThis define structurally identical but nominally distinct
+ * Request/Response types. We bridge the gap by casting through `unknown` at
+ * both the input (RequestInit) and output (Response) boundaries.
+ *
  * @param proxyUrl The proxy URL to use
  * @returns A fetch function configured to use the proxy
  */
 export function createProxyFetch(proxyUrl: string): typeof fetch {
-  const httpClient = Deno.createHttpClient({ proxy: { url: proxyUrl } });
+  const dispatcher = new ProxyAgent(proxyUrl);
   logger.info("Proxy configured", { proxyUrl });
 
-  return async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
-    return await fetch(url, { ...options, client: httpClient });
+  const proxyFetch: typeof fetch = async (url, options) => {
+    const urlString = String(url instanceof Request ? url.url : url);
+    const undiciOptions = { ...options, dispatcher } as unknown as UndiciRequestInit;
+    const response = await undiciFetch(urlString, undiciOptions);
+    return response as unknown as Response;
   };
+  return proxyFetch;
 }
 
 /**

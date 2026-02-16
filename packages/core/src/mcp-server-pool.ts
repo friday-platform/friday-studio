@@ -6,6 +6,7 @@
  * Manages lifecycle with reference counting and automatic cleanup.
  */
 
+import { createHash } from "node:crypto";
 import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
@@ -217,12 +218,13 @@ export class GlobalMCPServerPool {
     });
   }
 
-  private generateConfigKey(serverConfigsMap: Record<string, MCPServerConfig>): string {
-    // Simple approach: just use the sorted server IDs as the key
-    // This means we'll create separate pools for different server combinations,
-    // but it's much easier to understand and debug
-    const serverIds = Object.keys(serverConfigsMap).sort();
-    return serverIds.join(",");
+  generateConfigKey(serverConfigsMap: Record<string, MCPServerConfig>): string {
+    // Hash sorted server IDs + full config to distinguish pools with
+    // the same servers but different transport/auth/env settings.
+    const sorted = Object.keys(serverConfigsMap)
+      .sort()
+      .map((id) => [id, serverConfigsMap[id]]);
+    return createHash("sha256").update(JSON.stringify(sorted)).digest("hex");
   }
 
   private async cleanupPooledManager(configKey: string): Promise<void> {

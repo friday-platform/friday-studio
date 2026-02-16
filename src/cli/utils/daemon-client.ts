@@ -103,11 +103,11 @@ class DaemonClient {
       progress: number;
     }>
   > {
-    const response = await parseResult(v2Client.sessions.index.$get());
+    const response = await parseResult(v2Client.sessions.index.$get({ query: {} }));
     if (!response.ok) {
       throw new Error(`Failed to list sessions: ${stringifyError(response.error)}`);
     }
-    return response.data;
+    return response.data.items;
   }
 
   /**
@@ -136,7 +136,9 @@ class DaemonClient {
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
-    const response = await parseResult(v2Client.sessions[":id"].$delete({ param: { sessionId } }));
+    const response = await parseResult(
+      v2Client.sessions[":id"].$delete({ param: { id: sessionId } }),
+    );
     if (!response.ok) {
       throw new Error(`Failed to cancel session: ${stringifyError(response.error)}`);
     }

@@ -133,13 +133,13 @@ export class FileSystemDocumentStore extends DocumentStore {
     });
   }
 
-  async saveState(scope: DocumentScope, key: string, state: unknown): Promise<void> {
+  protected async saveStateRaw(scope: DocumentScope, key: string, state: unknown): Promise<void> {
     const path = this.buildStatePath(scope, key);
     await ensureDir(join(path, ".."));
     await writeFile(path, JSON.stringify(state, null, 2), "utf-8");
   }
 
-  async loadState(scope: DocumentScope, key: string): Promise<unknown | null> {
+  protected async loadStateRaw(scope: DocumentScope, key: string): Promise<unknown | null> {
     const path = this.buildStatePath(scope, key);
     try {
       const content = await readFile(path, "utf-8");

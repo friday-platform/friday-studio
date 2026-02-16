@@ -35,7 +35,7 @@ export const mcpRegistryRouter = daemonFactory
     // Check blessed first - these are static and can't be overwritten
     if (mcpServersRegistry.servers[entry.id]) {
       return c.json(
-        { ok: false, error: `Server "${entry.id}" exists in blessed registry. Use it instead.` },
+        { error: `Server "${entry.id}" exists in blessed registry. Use it instead.` },
         409,
       );
     }
@@ -43,13 +43,10 @@ export const mcpRegistryRouter = daemonFactory
     // Atomic add - throws if entry already exists
     try {
       await adapter.add(entry);
-      return c.json({ ok: true, server: entry }, 201);
+      return c.json({ server: entry }, 201);
     } catch {
       const suggested = `${entry.id}-${Date.now().toString(36).slice(-4)}`;
-      return c.json(
-        { ok: false, error: `Server ID "${entry.id}" already used.`, suggestion: suggested },
-        409,
-      );
+      return c.json({ error: `Server ID "${entry.id}" already used.`, suggestion: suggested }, 409);
     }
   })
   .get("/", async (c) => {

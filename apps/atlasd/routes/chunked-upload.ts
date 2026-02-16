@@ -194,7 +194,7 @@ export const chunkedUploadApp = daemonFactory
     });
 
     logger.info("Chunked upload initiated", { uploadId, fileName, fileSize, totalChunks });
-    return c.json({ uploadId, chunkSize: CHUNK_SIZE, totalChunks });
+    return c.json({ uploadId, chunkSize: CHUNK_SIZE, totalChunks }, 201);
   })
 
   /** Upload a single chunk */

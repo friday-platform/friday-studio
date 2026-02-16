@@ -69,13 +69,13 @@ export class InMemoryDocumentStore extends DocumentStore {
     this.stateStore.clear();
   }
 
-  saveState(scope: DocumentScope, key: string, state: unknown): Promise<void> {
+  protected saveStateRaw(scope: DocumentScope, key: string, state: unknown): Promise<void> {
     const storeKey = this.buildStateKey(scope, key);
     this.stateStore.set(storeKey, structuredClone(state));
     return Promise.resolve();
   }
 
-  loadState(scope: DocumentScope, key: string): Promise<unknown | null> {
+  protected loadStateRaw(scope: DocumentScope, key: string): Promise<unknown | null> {
     const storeKey = this.buildStateKey(scope, key);
     const state = this.stateStore.get(storeKey);
     if (state === undefined) return Promise.resolve(null);

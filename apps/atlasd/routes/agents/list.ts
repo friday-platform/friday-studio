@@ -1,6 +1,6 @@
-import { AgentRegistry } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
-import { describeRoute, resolver } from "hono-openapi";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { agentListResponseSchema, errorResponseSchema } from "./schemas.ts";
 
@@ -24,18 +24,18 @@ listAgents.get(
       },
     },
   }),
+  validator(
+    "query",
+    z.object({ limit: z.coerce.number().int().min(1).max(500).optional().default(100) }),
+  ),
   async (c) => {
     try {
-      // Get registry instance
-      const registry = new AgentRegistry();
-      await registry.initialize();
-
-      // List all agents
+      const { limit } = c.req.valid("query");
+      const registry = c.get("app").getAgentRegistry();
       const agents = await registry.listAgents();
 
-      const response = { agents, total: agents.length };
-
-      return c.json(response);
+      const limited = agents.slice(0, limit);
+      return c.json({ agents: limited, total: agents.length });
     } catch (error) {
       return c.json({ error: `Failed to list agents: ${stringifyError(error)}` }, 500);
     }

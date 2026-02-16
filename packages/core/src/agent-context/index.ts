@@ -9,7 +9,7 @@ import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atl
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -210,11 +210,7 @@ function mergeServerConfigs(
   const merged = { ...workspaceServers };
 
   // Add Atlas platform server (takes priority over workspace servers)
-  const platformServerConfig: MCPServerConfig = {
-    transport: { type: "http", url: `${getAtlasDaemonUrl()}/mcp` },
-  };
-
-  merged["atlas-platform"] = platformServerConfig;
+  merged["atlas-platform"] = getAtlasPlatformServerConfig();
 
   // Agent servers take highest precedence over everything
   for (const [id, agentConfig] of Object.entries(agentServers)) {

@@ -1,0 +1,584 @@
+// =============================================================================
+// @atlas/fsm-engine — Behavioral Specification
+//
+// A finite state machine execution engine. FSM definitions declare states,
+// transitions, guards, actions, documents, and tools. The engine processes
+// signals against the current state, evaluates guards, executes actions
+// (code, LLM, agent, emit), manages documents, and persists state.
+// =============================================================================
+
+
+// ---------------------------------------------------------------------------
+// 1. Core Entities
+// ---------------------------------------------------------------------------
+
+entity FSMDefinition {
+  id: String,
+  initial: String,                                  // must reference a key in states
+  states: Map<String, StateDefinition>,
+  functions: Map<String, FunctionDefinition>?,       // guards and code actions
+  tools: Map<String, ToolFunctionDefinition>?,       // tools available to LLM actions
+  document_types: Map<String, JSONSchema>?           // schemas for document validation
+}
+
+entity StateDefinition {
+  documents: List<Document>?,                        // documents initialized on state entry
+  entry: List<Action>?,                              // actions executed when state is entered
+  on: Map<String, Transition | List<Transition>>?,   // signal_type -> transition(s)
+  type: normal | final                               // final states have no outgoing transitions
+}
+
+entity Document {
+  id: String,
+  type: String,                                      // references a key in document_types
+  data: Record<String, Unknown>
+}
+
+entity Transition {
+  target: String,                                    // must reference a key in states
+  guards: List<String>?,                             // function names, all must pass
+  actions: List<Action>?                             // executed before state change
+}
+
+entity FunctionDefinition {
+  type: guard | action,
+  code: String                                       // TypeScript, executed in sandboxed worker
+}
+
+entity ToolFunctionDefinition {
+  description: String,
+  input_schema: JSONSchema,
+  code: String                                       // TypeScript, executed in sandboxed worker
+}
+
+entity Signal {
+  type: String,
+  data: Record<String, Unknown>?
+}
+
+// Context is the read/write surface exposed to guards and actions
+entity Context {
+  state: String,
+  results: Record<String, Record<String, Unknown>>,  // accumulates action outputs
+  documents: List<Document>,                         // deprecated, backward compat
+  input: PrepareResult?,                             // set by preceding code action
+  emit: Function?,                                   // signal emission
+  update_doc: Function?,                             // deprecated
+  create_doc: Function?,                             // deprecated
+  delete_doc: Function?,                             // deprecated
+  set_result: Function?
+}
+
+value PrepareResult {
+  task: String?,                                     // natural-language task description
+  config: Record<String, Unknown>?                   // structured configuration
+}
+
+
+// ---------------------------------------------------------------------------
+// 2. Action Types (discriminated union on `type`)
+// ---------------------------------------------------------------------------
+
+variant CodeAction : Action {
+  type: "code",
+  function: String                                   // references FunctionDefinition of type "action"
+}
+
+variant LLMAction : Action {
+  type: "llm",
+  provider: String,
+  model: String,
+  prompt: String,
+  tools: List<String>?,                              // tool names (FSM tools or MCP server IDs)
+  output_to: String?,                                // document ID to store result
+  output_type: String?                               // explicit document type for schema lookup
+}
+
+variant AgentAction : Action {
+  type: "agent",
+  agent_id: String,
+  output_to: String?,
+  output_type: String?,                              // explicit type for schema validation
+  prompt: String?                                    // task instructions, overrides agent config
+}
+
+variant EmitAction : Action {
+  type: "emit",
+  event: String,
+  data: Record<String, Unknown>?
+}
+
+
+// ---------------------------------------------------------------------------
+// 3. Engine Runtime State
+// ---------------------------------------------------------------------------
+
+entity FSMEngine {
+  current_state: String,
+  documents: Map<String, Document>,
+  results: Map<String, Record<String, Unknown>>,
+  signal_queue: List<Signal>,
+  processing: Boolean,
+  initialized: Boolean,
+  recursion_depth: Integer,
+  processed_signals_count: Integer,
+  compiled_schemas: Map<String, ZodType>,
+  guard_functions: Map<String, String>,              // name -> validated code
+  action_functions: Map<String, String>,             // name -> validated code
+  emitted_events: List<EmittedEvent>
+}
+
+value EmittedEvent {
+  event: String,
+  data: Record<String, Unknown>?
+}
+
+config {
+  MAX_RECURSION_DEPTH: Integer = 10,
+  MAX_PROCESSED_SIGNALS: Integer = 100,
+  GUARD_TIMEOUT_MS: Integer = 1000,
+  ACTION_TIMEOUT_MS: Integer = 10000,
+  TOOL_TIMEOUT_MS: Integer = 180000
+}
+
+
+// ---------------------------------------------------------------------------
+// 4. Worker Execution Sandbox
+// ---------------------------------------------------------------------------
+
+// Guards and code actions run in Deno Web Workers with zero permissions.
+// Tools run in workers with net, read, and env permissions.
+// Workers cannot import modules. All context mutations are captured as
+// a mutation log and replayed on the host after execution completes.
+
+value WorkerMutation {
+  op: "updateDoc" | "createDoc" | "deleteDoc" | "emit" | "setResult",
+  args: List<Unknown>
+}
+
+
+// ---------------------------------------------------------------------------
+// 5. Lifecycle Rules
+// ---------------------------------------------------------------------------
+
+rule Initialize {
+  when: engine.Initialize(),
+  requires:
+    engine.initialized == false,
+  ensures:
+    // 1. Load persisted state (if valid and state exists in definition)
+    // 2. Compile document type JSON schemas to Zod validators
+    // 3. Validate and store guard/action function code (syntax check + auto-fix)
+    // 4. Load documents: from storage if previously run, else from initial state definition
+    // 5. Execute entry actions for initial state (on first run only)
+    // 6. Persist initial documents and state
+    engine.initialized == true
+}
+
+rule DoubleInitializeRejected {
+  when: engine.Initialize(),
+  requires:
+    engine.initialized == true,
+  ensures:
+    error("FSMEngine already initialized")
+}
+
+rule Reset {
+  when: engine.Reset(),
+  ensures:
+    // Returns to initial state, clears results, re-runs entry actions
+    // Does NOT clear documents -- entry actions decide what to clean
+    engine.current_state == engine.definition.initial
+    and engine.results is empty
+    and engine.signal_queue is empty
+}
+
+
+// ---------------------------------------------------------------------------
+// 6. Signal Processing Rules
+// ---------------------------------------------------------------------------
+
+rule SignalQueued {
+  when: Signal(sig),
+  ensures:
+    sig is appended to engine.signal_queue
+    and if engine.processing == false then ProcessQueue()
+}
+
+rule ProcessQueue {
+  when: ProcessQueue(),
+  requires:
+    engine.signal_queue is not empty,
+  ensures:
+    // Processes signals sequentially until queue is drained.
+    // Signals emitted during processing are appended to queue (cascade).
+    for each signal: ProcessSingleSignal(signal)
+}
+
+rule SignalCascadeLimit {
+  when: ProcessQueue(),
+  requires:
+    engine.processed_signals_count > MAX_PROCESSED_SIGNALS,
+  ensures:
+    error("Maximum signal cascade depth exceeded")
+}
+
+
+// ---------------------------------------------------------------------------
+// 7. Transition Rules
+// ---------------------------------------------------------------------------
+
+rule ProcessSingleSignal {
+  when: ProcessSingleSignal(sig),
+  requires:
+    engine.current_state is valid,
+  ensures:
+    // 1. Look up transitions for sig.type in current state
+    // 2. If no transition defined, silently ignore signal
+    // 3. Evaluate guards for each candidate transition (first-match wins)
+    // 4. If no guards pass, silently ignore signal
+    // 5. Execute transition in transaction (see TransactionalTransition)
+}
+
+rule TransactionalTransition {
+  when: transition selected for sig,
+  ensures:
+    // Deep-clone documents into pending copies (isolation)
+    // Execute transition actions against pending state
+    // Transition to target state
+    // Initialize new state's documents (if not already present)
+    // Execute new state's entry actions
+    // COMMIT: documents, results, state, events, cascaded signals
+    // Persist documents and state to DocumentStore
+    // Emit state transition event
+    //
+    // On any error: pending state is discarded, original state preserved
+}
+
+rule GuardEvaluation {
+  when: transition has guards,
+  ensures:
+    // All guards must pass (AND semantics)
+    // Guards execute in sandboxed worker with 1s timeout
+    // Guard returns truthy/falsy value
+    // Guard error is fatal (throws, aborts transition)
+    // First transition whose guards all pass is selected
+}
+
+rule ResultsClearedOnReturnToInitial {
+  when: transition target == definition.initial,
+  ensures:
+    engine.results is cleared
+}
+
+
+// ---------------------------------------------------------------------------
+// 8. Action Execution Rules
+// ---------------------------------------------------------------------------
+
+rule ActionRecursionLimit {
+  when: executeActions(),
+  requires:
+    engine.recursion_depth > MAX_RECURSION_DEPTH,
+  ensures:
+    error("Maximum recursion depth exceeded")
+}
+
+rule ActionSequencing {
+  when: action sequence [a1, a2, ..., aN],
+  ensures:
+    // Actions execute sequentially in order
+    // A code action's PrepareResult is forwarded to the NEXT action as context
+    // PrepareResult is used by LLM and agent actions for inputSnapshot
+}
+
+// --- Code Action ---
+
+rule CodeActionExecution {
+  when: action.type == "code",
+  requires:
+    action.function exists in engine.action_functions,
+  ensures:
+    // Execute function code in sandboxed worker (10s timeout)
+    // Parse return value as PrepareResult (task/config)
+    // PrepareResult flows to next action in sequence
+}
+
+// --- LLM Action ---
+
+rule LLMActionExecution {
+  when: action.type == "llm",
+  requires:
+    engine.llm_provider is configured,
+  ensures:
+    // 1. Fetch workspace skills
+    // 2. Build tools: FSM tools + MCP tools + failStep + (optionally) complete
+    // 3. Inject complete tool when outputTo doc type has defined schema properties
+    // 4. Build prompt: base prompt + prepare result input + skills
+    // 5. Call LLM with tools, auto tool choice
+    // 6. stopOnToolCall: [complete, failStep] when complete injected, else [failStep]
+    // 7. Check for failStep call -> throw error
+    // 8. Check for complete call -> capture structured output
+    // 9. If output validator provided: validate, retry once on failure
+    // 10. Store result: dual-write to results map AND documents map
+}
+
+rule LLMOutputValidation {
+  when: LLM result received and output_validator configured,
+  ensures:
+    // Validate LLM output trace (content, tool calls, model, prompt)
+    // If invalid: retry with feedback injected into prompt
+    // If retry also invalid: throw error (fail-closed)
+    // Maximum 1 retry
+}
+
+rule LLMOutputStorage {
+  when: action.output_to is set,
+  ensures:
+    // Dual-write pattern:
+    //   1. results.set(output_to, data)     -- replace semantics
+    //   2. documents.set(output_to, data)   -- merge semantics (backward compat)
+    // complete tool output takes precedence over raw LLM response
+    // Document type defaults to "LLMResult" when no outputType specified
+}
+
+// --- Agent Action ---
+
+rule AgentActionExecution {
+  when: action.type == "agent",
+  requires:
+    engine.agent_executor is configured,
+  ensures:
+    // 1. Build agent context with documents, results, prepare result
+    // 2. Delegate to external agent executor callback
+    // 3. If result.ok == false: throw error
+    // 4. If outputType specified: validate result against compiled schema
+    // 5. Append artifactRefs to data (post-validation, metadata not contract)
+    // 6. Store result: dual-write to results AND documents
+}
+
+rule AgentOutputStorage {
+  when: action.output_to is set and result.data exists,
+  ensures:
+    // Dual-write pattern:
+    //   1. results.set(output_to, data)     -- replace semantics
+    //   2. documents.set(output_to, data)   -- merge semantics (backward compat)
+    // Document type defaults to "AgentResult" when creating new document
+}
+
+// --- Emit Action ---
+
+rule EmitActionExecution {
+  when: action.type == "emit",
+  ensures:
+    // 1. Append event to emitted events list
+    // 2. Emit as signal (triggers transitions in current processing cycle)
+}
+
+
+// ---------------------------------------------------------------------------
+// 9. Document Management Rules
+// ---------------------------------------------------------------------------
+
+rule DocumentValidation {
+  when: document data is set or updated,
+  requires:
+    document.type is not in ["AgentResult", "LLMResult"],  // system types skip validation
+  ensures:
+    // If documentTypes defined and type not found: error
+    // If documentTypes not defined at all: allow any data (backward compat)
+    // If schema found: validate data against compiled Zod schema
+}
+
+rule CreateDocPrecondition {
+  when: createDoc(doc),
+  requires:
+    documents does not contain doc.id,
+  ensures:
+    doc is validated and added to documents
+    // Throws if doc.id already exists
+}
+
+rule UpdateDocPrecondition {
+  when: updateDoc(id, data),
+  requires:
+    documents contains id,
+  ensures:
+    existing.data is merged with data (shallow merge)
+    and merged data is validated against schema
+    // Throws if id does not exist
+}
+
+rule DeleteDocIdempotent {
+  when: deleteDoc(id),
+  ensures:
+    document removed if exists, no-op if absent
+}
+
+rule DocumentPersistence {
+  when: transition commits,
+  ensures:
+    all documents persisted to DocumentStore with FSMDocumentDataSchema envelope
+    // Storage format: { type: String, data: Record<String, Unknown> }
+}
+
+
+// ---------------------------------------------------------------------------
+// 10. Validation Rules (Structural, Pre-Execution)
+// ---------------------------------------------------------------------------
+
+rule InitialStateExists {
+  when: validateFSMStructure(),
+  ensures:
+    definition.initial references an existing state
+}
+
+rule FinalStateRequired {
+  when: validateFSMStructure(),
+  ensures:
+    at least one state has type == "final"
+}
+
+rule AllStatesReachable {
+  when: validateFSMStructure(),
+  ensures:
+    BFS from initial state reaches all defined states
+}
+
+rule TransitionTargetsExist {
+  when: validateFSMStructure(),
+  ensures:
+    every transition.target references an existing state
+}
+
+rule GuardReferencesValid {
+  when: validateFSMStructure(),
+  ensures:
+    every guard name references a function with type == "guard"
+}
+
+rule ActionFunctionReferencesValid {
+  when: validateFSMStructure(),
+  ensures:
+    every code action.function references a function with type == "action"
+}
+
+rule NoStuckStates {
+  when: validateFSMStructure(),
+  ensures:
+    non-final states must have at least one outgoing transition
+}
+
+rule FunctionCodeNotEmpty {
+  when: validateFSMStructure(),
+  ensures:
+    every function and tool has non-empty code
+}
+
+rule DocumentTypesReferenced {
+  when: validateFSMStructure(),
+  ensures:
+    document types used in state documents are defined in documentTypes
+    // Warning (not error) when documentTypes section is omitted entirely
+}
+
+
+// ---------------------------------------------------------------------------
+// 11. Event Emission Rules (Observability)
+// ---------------------------------------------------------------------------
+
+// The engine emits structured events for UI/monitoring via onEvent callback
+
+rule StateTransitionEvent {
+  when: state changes from A to B,
+  ensures:
+    emit FSMStateTransitionEvent { from: A, to: B, signal, timestamp }
+}
+
+rule ActionExecutionEvents {
+  when: action starts, completes, or fails,
+  ensures:
+    emit FSMActionExecutionEvent { action_type, action_id, state, status, duration, input_snapshot }
+}
+
+rule ToolCallEvents {
+  when: LLM action produces tool calls,
+  ensures:
+    emit FSMToolCallEvent for each tool call
+    and FSMToolResultEvent for each tool result
+}
+
+
+// ---------------------------------------------------------------------------
+// 12. Code Syntax Auto-Fix
+// ---------------------------------------------------------------------------
+
+rule SyntaxValidationAndFix {
+  when: function code is compiled during initialization,
+  ensures:
+    // 1. Try parsing code as-is
+    // 2. If SyntaxError: attempt auto-fix for apostrophes in single-quoted strings
+    // 3. If fix works: use fixed code, log info
+    // 4. If neither works: throw with code snippet for debugging
+}
+
+
+// ---------------------------------------------------------------------------
+// 13. Open Questions / Inconsistencies
+// ---------------------------------------------------------------------------
+
+open_question "Agent action builds its own Context with inline updateDoc/createDoc/deleteDoc
+  that bypass validation and schema checks. The main engine uses makeUpdateDocFn/makeCreateDocFn/
+  makeDeleteDocFn which enforce validation. Agent-emitted document mutations are unvalidated."
+
+open_question "LLM action output storage uses merge semantics for existing documents
+  (existingDoc.data = { ...existingDoc.data, ...dataToStore }) but replace semantics for the
+  results accumulator (results.set(outputTo, data)). Agent action does the same. This dual-write
+  with different semantics could lead to divergence between documents and results."
+
+open_question "EmitAction both appends to the emitted events list AND calls context.emit()
+  which pushes a cascading signal. Other action types do not emit signals implicitly. The
+  emitted events list and the signal queue serve different purposes but are conflated in
+  the emit action handler."
+
+open_question "The `complete` tool is only injected for LLM actions when the output document
+  type has a schema with defined properties (hasDefinedSchema check). Agent actions validate
+  output against schema post-hoc. There is no `complete` tool equivalent for agents -- the
+  structured output enforcement mechanism differs by action type."
+
+open_question "LLM action has a retry-on-validation-failure path (max 1 retry with feedback
+  injection). Agent actions have no retry mechanism -- a schema validation failure is immediately
+  fatal. Code actions have no output validation at all."
+
+open_question "Guard errors are always fatal (throw, abort transition). But the behavior for
+  a guard function that returns a non-boolean value is implicit coercion via Boolean(result).
+  A guard returning undefined, 0, or empty string is treated as 'did not pass' rather than
+  as an error."
+
+open_question "The AgentAction schema in schema.ts defines `prompt` as optional, and
+  AgentAction type has prompt as optional. But AgentAction does NOT have `outputType`
+  in the Zod schema (AgentActionSchema) even though the type definition and runtime
+  code use it. The schema validation would strip outputType during fromYAML parsing."
+
+open_question "Context.documents is deprecated in favor of Context.results, but the engine
+  still dual-writes to both. The document-based storage path uses merge semantics while
+  results uses replace semantics. The migration path is unclear -- when can documents
+  be removed from Context?"
+
+open_question "The validator warns about missing AGENT_FAILED event handling when agent
+  actions are present, but the engine does not emit an AGENT_FAILED signal on agent failure.
+  Agent failures throw errors which abort the entire transition. The warning suggests a
+  pattern (error recovery via signal) that the engine does not actually implement."
+
+open_question "Tool timeout for FSM-defined tools is 180s (3 minutes) but guard timeout is
+  1s and action timeout is 10s. The tool executor also gets net/read/env permissions while
+  guards and actions get none. These permission differences are not surfaced in the FSM
+  definition schema -- they are hardcoded engine constants."
+
+open_question "LLM actions use a hardcoded step limit of 10 (stepCountIs(10) in the adapter).
+  This is not configurable via the FSM definition and not documented in the schema. An LLM
+  that needs more than 10 tool-call rounds silently stops."
+
+open_question "The simple-counter test scenario has no final state. The validator would reject
+  this definition (FinalStateRequired rule), yet it exists as a test fixture. Either the
+  validator is not always applied, or test scenarios bypass validation."

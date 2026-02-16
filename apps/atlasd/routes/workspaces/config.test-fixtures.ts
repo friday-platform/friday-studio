@@ -96,6 +96,7 @@ export function createTestApp(options: {
     getWorkspaceRuntime,
     destroyWorkspaceRuntime,
     getLibraryStorage: vi.fn(),
+    getAgentRegistry: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
   };

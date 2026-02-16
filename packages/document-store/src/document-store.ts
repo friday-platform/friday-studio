@@ -1,8 +1,12 @@
 /**
  * Abstract DocumentStore class
+ *
+ * All public methods return Result<T, string> for consistent error handling.
+ * Validation failures are returned as Result errors, not thrown.
  */
 
 import { logger } from "@atlas/logger";
+import { fail, type Result, success } from "@atlas/utils";
 import { z } from "zod";
 import type { DocumentScope, StoredDocument } from "./types.ts";
 import { StoredDocumentSchema } from "./types.ts";
@@ -11,29 +15,31 @@ export abstract class DocumentStore {
   protected logger = logger.child({ component: "document-store" });
 
   /** Create or update a document with schema validation */
-  async write<TSchema extends z.ZodType>(
+  async write<T>(
     scope: DocumentScope,
     type: string,
     id: string,
     data: unknown,
-    schema: TSchema,
-  ): Promise<StoredDocument<z.infer<TSchema>>> {
+    schema: z.ZodType<T>,
+  ): Promise<Result<StoredDocument<T>, string>> {
     // Validate data against schema
-    let validatedData: z.infer<TSchema>;
-    try {
-      validatedData = schema.parse(data);
-    } catch (error: unknown) {
-      if (error instanceof z.ZodError) {
-        this.logger.error("Document validation failed", {
-          type,
-          id,
-          workspaceId: scope.workspaceId,
-          sessionId: scope.sessionId,
-          error: z.prettifyError(error),
-        });
-      }
-      throw error;
+    const parseResult = schema.safeParse(data);
+    if (!parseResult.success) {
+      const msg =
+        parseResult.error instanceof z.ZodError
+          ? z.prettifyError(parseResult.error)
+          : String(parseResult.error);
+      this.logger.error("Document validation failed", {
+        type,
+        id,
+        workspaceId: scope.workspaceId,
+        sessionId: scope.sessionId,
+        error: msg,
+      });
+      return fail(`Document validation failed for ${type}/${id}: ${msg}`);
     }
+
+    const validatedData: T = parseResult.data;
 
     // Check if document exists to preserve creation time
     const rawExisting = await this.readRaw(scope, type, id);
@@ -41,20 +47,15 @@ export abstract class DocumentStore {
 
     if (rawExisting) {
       // Best effort to extract createdAt if it exists and is valid
-      const result = StoredDocumentSchema.safeParse(rawExisting);
-      if (result.success) {
-        createdAt = result.data.createdAt;
+      const envelopeResult = StoredDocumentSchema.safeParse(rawExisting);
+      if (envelopeResult.success) {
+        createdAt = envelopeResult.data.createdAt;
       }
     }
 
     const now = new Date().toISOString();
 
-    const doc: StoredDocument<z.infer<TSchema>> = {
-      id,
-      data: validatedData,
-      createdAt,
-      updatedAt: now,
-    };
+    const doc: StoredDocument<T> = { id, data: validatedData, createdAt, updatedAt: now };
 
     await this.writeRaw(scope, type, id, doc);
 
@@ -65,20 +66,20 @@ export abstract class DocumentStore {
       sessionId: scope.sessionId,
     });
 
-    return doc;
+    return success(doc);
   }
 
   /** Read a document with schema validation */
-  async read<TSchema extends z.ZodType>(
+  async read<T>(
     scope: DocumentScope,
     type: string,
     id: string,
-    schema: TSchema,
-  ): Promise<StoredDocument<z.infer<TSchema>> | null> {
+    schema: z.ZodType<T>,
+  ): Promise<Result<StoredDocument<T> | null, string>> {
     const rawDoc = await this.readRaw(scope, type, id);
 
     if (!rawDoc) {
-      return null;
+      return success(null);
     }
 
     // Validate envelope structure
@@ -91,30 +92,29 @@ export abstract class DocumentStore {
         sessionId: scope.sessionId,
         error: envelopeResult.error,
       });
-      // Treat invalid envelope as corrupted/missing or throw?
-      // Original behavior would throw if validation failed.
-      // But here we are validating the storage format.
-      throw new Error(`Invalid document structure in storage for ${type}/${id}`);
+      return fail(`Invalid document structure in storage for ${type}/${id}`);
     }
 
     const doc = envelopeResult.data;
 
     // Validate document data against schema
-    try {
-      const validatedData = schema.parse(doc.data);
-      return { ...doc, data: validatedData };
-    } catch (error: unknown) {
-      if (error instanceof z.ZodError) {
-        this.logger.error("Document validation failed on read", {
-          type,
-          id,
-          workspaceId: scope.workspaceId,
-          sessionId: scope.sessionId,
-          error: z.prettifyError(error),
-        });
-      }
-      throw error;
+    const dataResult = schema.safeParse(doc.data);
+    if (!dataResult.success) {
+      const msg =
+        dataResult.error instanceof z.ZodError
+          ? z.prettifyError(dataResult.error)
+          : String(dataResult.error);
+      this.logger.error("Document validation failed on read", {
+        type,
+        id,
+        workspaceId: scope.workspaceId,
+        sessionId: scope.sessionId,
+        error: msg,
+      });
+      return fail(`Document data validation failed for ${type}/${id}: ${msg}`);
     }
+
+    return success({ ...doc, data: dataResult.data });
   }
 
   /** Delete a document */
@@ -141,9 +141,75 @@ export abstract class DocumentStore {
     doc: StoredDocument,
   ): Promise<void>;
 
-  /** Save execution state/metadata */
-  abstract saveState(scope: DocumentScope, key: string, state: unknown): Promise<void>;
+  /** Save execution state/metadata with optional schema validation */
+  async saveState(
+    scope: DocumentScope,
+    key: string,
+    state: unknown,
+    schema?: z.ZodType,
+  ): Promise<Result<void, string>> {
+    if (schema) {
+      const parseResult = schema.safeParse(state);
+      if (!parseResult.success) {
+        const msg =
+          parseResult.error instanceof z.ZodError
+            ? z.prettifyError(parseResult.error)
+            : String(parseResult.error);
+        this.logger.error("State validation failed on save", {
+          key,
+          workspaceId: scope.workspaceId,
+          sessionId: scope.sessionId,
+          error: msg,
+        });
+        return fail(`State validation failed for ${key}: ${msg}`);
+      }
+    }
+    await this.saveStateRaw(scope, key, state);
+    return success(undefined);
+  }
 
-  /** Load execution state/metadata */
-  abstract loadState(scope: DocumentScope, key: string): Promise<unknown | null>;
+  /** Load execution state/metadata with schema validation */
+  async loadState<T>(
+    scope: DocumentScope,
+    key: string,
+    schema: z.ZodType<T>,
+  ): Promise<Result<T | null, string>>;
+  /** Load execution state/metadata without validation */
+  async loadState(scope: DocumentScope, key: string): Promise<Result<unknown | null, string>>;
+  async loadState(
+    scope: DocumentScope,
+    key: string,
+    schema?: z.ZodType,
+  ): Promise<Result<unknown | null, string>> {
+    const raw = await this.loadStateRaw(scope, key);
+    if (raw === null || raw === undefined) {
+      return success(null);
+    }
+
+    if (schema) {
+      const parseResult = schema.safeParse(raw);
+      if (!parseResult.success) {
+        const msg =
+          parseResult.error instanceof z.ZodError
+            ? z.prettifyError(parseResult.error)
+            : String(parseResult.error);
+        this.logger.error("State validation failed on load", {
+          key,
+          workspaceId: scope.workspaceId,
+          sessionId: scope.sessionId,
+          error: msg,
+        });
+        return fail(`State validation failed for ${key}: ${msg}`);
+      }
+      return success(parseResult.data);
+    }
+
+    return success(raw);
+  }
+
+  /** Raw state save implementation */
+  protected abstract saveStateRaw(scope: DocumentScope, key: string, state: unknown): Promise<void>;
+
+  /** Raw state load implementation */
+  protected abstract loadStateRaw(scope: DocumentScope, key: string): Promise<unknown | null>;
 }

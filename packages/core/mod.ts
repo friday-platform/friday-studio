@@ -74,8 +74,6 @@ export {
   CancellationNotificationSchema,
   MCPStreamEmitter,
 } from "./src/streaming/stream-emitters.ts";
-// Actor Types
-export * from "./src/types/actors.ts";
 // Export error types explicitly
 export type {
   APIErrorCause,

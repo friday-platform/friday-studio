@@ -409,6 +409,11 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
       );
     }
 
+    // Destroy runtime if active so it reloads config on next request.
+    // INTENTIONAL HOT-RELOAD: destroying the runtime forces the next signal/request
+    // to re-create it from the updated workspace.yml on disk. This is a deliberate
+    // design choice — not a bug. See also: WorkspaceManager.handleWorkspaceConfigChange
+    // for the file-watcher equivalent.
     const runtime = ctx.getWorkspaceRuntime(workspace.id);
     if (runtime) {
       await ctx.destroyWorkspaceRuntime(workspace.id);
@@ -640,7 +645,8 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         return mapMutationError(c, result.error, conflictMessage);
       }
 
-      // 6. Destroy runtime if active so it reloads config
+      // 6. Destroy runtime if active so it reloads config on next request.
+      // INTENTIONAL HOT-RELOAD: see step 9 comment in handleConfigMutation above.
       if (ctx.getWorkspaceRuntime(workspace.id)) {
         await ctx.destroyWorkspaceRuntime(workspace.id);
       }

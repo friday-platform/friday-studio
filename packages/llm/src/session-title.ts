@@ -1,3 +1,4 @@
+import type { WorkspaceSessionStatusType } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { smallLLM } from "./small.ts";
 
@@ -7,13 +8,7 @@ const MIN_TITLE_LENGTH = 3;
 export interface GenerateSessionTitleInput {
   signal: { type: string; id: string; data?: Record<string, unknown> };
   output: unknown;
-  /**
-   * Session status:
-   * - "completed": Finished successfully
-   * - "failed": Platform/system error
-   * - "skipped": User configuration issue (OAuth not connected, missing env vars)
-   */
-  status: "completed" | "failed" | "skipped";
+  status: WorkspaceSessionStatusType;
   jobName?: string;
   /** @internal Test-only: override LLM function */
   _llm?: typeof smallLLM;

@@ -65,7 +65,7 @@ export function convertLLMToAgent(
             {
               role: "system",
               content: systemPrompt,
-              providerOptions: getDefaultProviderOpts("anthropic"),
+              providerOptions: getDefaultProviderOpts(provider),
             },
             { role: "system", content: `Today's date: ${getTodaysDate()}` },
             { role: "user", content: prompt },

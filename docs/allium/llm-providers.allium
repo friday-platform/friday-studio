@@ -1,0 +1,467 @@
+// LLM Provider Abstraction Layer
+// Behavioral specification for model selection, provider routing, and message management.
+//
+// Source: packages/llm/, packages/config/src/agents.ts,
+//         packages/core/src/agent-conversion/from-llm.ts,
+//         packages/fsm-engine/llm-provider-adapter.ts
+
+// =============================================================================
+// ENTITIES
+// =============================================================================
+
+entity Provider {
+  id: anthropic | google | groq | openai,
+  env_var: string,
+  proxy_env_var: string,
+  supports_base_url: bool,
+  has_default_provider_options: bool
+}
+
+entity Registry {
+  mode: direct | litellm,
+  providers: set<Provider>,
+  initialized: bool
+}
+
+entity LanguageModel {
+  qualified_id: string,          // "provider:model-name"
+  provider: Provider,
+  model_name: string
+}
+
+value ProviderOptions {
+  // Provider-specific SDK options passed to AI SDK calls.
+  // Only Anthropic has defaults; others start empty.
+  provider_key: string,
+  options: record<string, unknown>
+}
+
+value CacheControl {
+  type: ephemeral,
+  ttl: string                    // "1h"
+}
+
+value PruneConfig {
+  reasoning: all | before_last_message | none,
+  tool_calls: all | before_last_message | before_last_n_messages | none | selective,
+  empty_messages: keep | remove
+}
+
+// LLM agent as defined in workspace.yml
+entity LLMAgentConfig {
+  provider: string,
+  model: string,
+  prompt: string,
+  temperature: number,           // 0-2, default 0.3
+  max_tokens: number?,
+  max_steps: number?,
+  tool_choice: auto | required | none,
+  provider_options: record<string, unknown>?,
+  max_retries: number?
+}
+
+// System agent config (conversation, supervisor, etc.)
+entity SystemAgentConfig {
+  agent: string,
+  model: string?,
+  temperature: number,           // 0-1.0, default 0.3
+  max_tokens: number?,
+  use_reasoning: bool?,
+  prompt: string?
+}
+
+entity SessionTitle {
+  max_length: 60,
+  min_length: 3,
+  status: completed | failed | skipped
+}
+
+// =============================================================================
+// PROVIDER DEFINITIONS
+// =============================================================================
+
+config Providers {
+  anthropic: Provider = {
+    id: anthropic,
+    env_var: "ANTHROPIC_API_KEY",
+    proxy_env_var: "ANTHROPIC_PROXY_URL",
+    supports_base_url: true,
+    has_default_provider_options: true       // cacheControl ephemeral 1h
+  },
+  google: Provider = {
+    id: google,
+    env_var: "GEMINI_API_KEY",
+    proxy_env_var: "GOOGLE_PROXY_URL",
+    supports_base_url: true,
+    has_default_provider_options: false
+  },
+  groq: Provider = {
+    id: groq,
+    env_var: "GROQ_API_KEY",
+    proxy_env_var: "GROQ_PROXY_URL",
+    supports_base_url: true,
+    has_default_provider_options: false
+  },
+  openai: Provider = {
+    id: openai,
+    env_var: "OPENAI_API_KEY",
+    proxy_env_var: "OPENAI_PROXY_URL",
+    supports_base_url: false,               // OpenAI adapter lacks baseURL option
+    has_default_provider_options: false
+  }
+}
+
+// =============================================================================
+// RULES — REGISTRY
+// =============================================================================
+
+// Registry is a lazy singleton: first call to languageModel() or
+// textEmbeddingModel() triggers creation.
+rule LazyRegistryInit {
+  when: ModelResolution(qualified_id)
+  requires: registry.initialized == false
+  ensures: {
+    registry := createRegistry(),
+    registry.initialized == true
+  }
+}
+
+// When LITELLM_API_KEY is set, all providers route through the LiteLLM proxy.
+// Routing strategies differ per provider.
+rule LiteLLMRouting {
+  when: RegistryCreation
+  requires: env.LITELLM_API_KEY is set
+  ensures: {
+    registry.mode == litellm,
+
+    // Anthropic: native SDK with /v1 base URL (passthrough to avoid tool
+    // message translation bugs in LiteLLM).
+    anthropic.routing == native_via_litellm,
+
+    // Groq: native SDK to preserve provider-specific options
+    // (e.g. reasoningFormat).
+    groq.routing == native_via_litellm,
+
+    // Google and OpenAI: forced to Chat Completions API via wrapper.
+    // LiteLLM Responses API returns null for text fields in tool calls.
+    google.routing == chat_completions_via_litellm,
+    openai.routing == chat_completions_via_litellm
+  }
+}
+
+rule DirectRouting {
+  when: RegistryCreation
+  requires: env.LITELLM_API_KEY is not set
+  ensures: {
+    registry.mode == direct,
+    // Each provider uses its native SDK with direct API keys.
+    all_providers.routing == direct
+  }
+}
+
+// =============================================================================
+// RULES — MODEL RESOLUTION
+// =============================================================================
+
+// Model identifiers follow "provider:model-name" format.
+// The provider prefix is validated against the enum [anthropic, google, groq, openai].
+rule ModelResolution {
+  when: ResolveModel(qualified_id)
+  requires: {
+    qualified_id matches "{provider}:{model}",
+    provider in [anthropic, google, groq, openai]
+  }
+  ensures: {
+    model := registry.languageModel(qualified_id)
+  }
+}
+
+// Workspace LLM agents store provider and model separately in config.
+// They are joined at runtime: `${provider}:${model}`.
+rule LLMAgentModelResolution {
+  when: ConvertLLMToAgent(config)
+  requires: {
+    validateProvider(config.provider) succeeds
+  }
+  ensures: {
+    qualified_id == config.provider + ":" + config.model,
+    model := registry.languageModel(qualified_id)
+  }
+}
+
+// FSM engine adapter also joins provider and model, but constrains provider
+// to a hardcoded union type (anthropic | openai | google). Groq is excluded.
+rule FSMAdapterModelResolution {
+  when: FSMLLMCall(params)
+  requires: {
+    adapter.provider in [anthropic, openai, google]    // groq excluded
+  }
+  ensures: {
+    qualified_id == adapter.provider + ":" + (params.model or adapter.defaultModel)
+  }
+}
+
+// =============================================================================
+// RULES — PROVIDER OPTIONS
+// =============================================================================
+
+// Anthropic is the only provider with built-in default options.
+// getDefaultProviderOpts("anthropic") returns cacheControl config.
+// Other providers return empty object.
+rule AnthropicDefaults {
+  when: GetDefaultProviderOpts(provider)
+  requires: provider == anthropic
+  ensures: {
+    result.anthropic.cacheControl == { type: "ephemeral", ttl: "1h" }
+  }
+}
+
+rule NonAnthropicDefaults {
+  when: GetDefaultProviderOpts(provider)
+  requires: provider != anthropic
+  ensures: {
+    result == {}
+  }
+}
+
+// Provider options can be overridden via deep merge.
+// Overrides add to or replace nested keys, not entire objects.
+rule ProviderOptionsDeepMerge {
+  when: GetDefaultProviderOpts(provider, overrides)
+  requires: overrides is provided
+  ensures: {
+    result == deepMerge(defaults, overrides)
+  }
+}
+
+// Workspace-level provider_options from config are spread directly onto
+// the streamText call, bypassing getDefaultProviderOpts entirely.
+rule WorkspaceProviderOptionsSpread {
+  when: ConvertLLMToAgent(config)
+  requires: config.provider_options is set
+  ensures: {
+    // provider_options are spread into streamText call as top-level keys
+    streamText_options := { ...base_options, ...config.provider_options }
+  }
+}
+
+// =============================================================================
+// RULES — MESSAGE PRUNING
+// =============================================================================
+
+// Pruning is a vendored fork of the AI SDK's pruneMessages function.
+// The fork fixes an inverted condition in the message mapping loop
+// for keepLastMessagesCount window calculation.
+rule MessagePruning {
+  when: PruneMessages(messages, config)
+  ensures: {
+    // Reasoning parts can be stripped from assistant messages.
+    // reasoning: "all" strips from all; "before-last-message" keeps last msg.
+    reasoning_stripped per config.reasoning,
+
+    // Tool call/result parts can be removed.
+    // Supports per-tool selective pruning and windowed preservation.
+    tool_calls_pruned per config.tool_calls,
+
+    // Empty messages after pruning can be removed or kept.
+    empty_handling per config.empty_messages,
+
+    // Messages in the kept window are returned as-is (never pruned).
+    kept_window_messages == messages.slice(-keepLastMessagesCount),
+
+    // Tool call IDs referenced in the kept window are preserved
+    // even in messages outside the window.
+    cross_referenced_tool_calls preserved
+  }
+}
+
+// The conversation agent applies a specific pruning pipeline:
+// 1. Expand special UI parts to text (credentials, artifacts)
+// 2. Convert to ModelMessages
+// 3. Prune tool calls before last 4 messages
+// 4. Truncate to fit token budget
+rule ConversationMessageProcessing {
+  when: ProcessMessageHistory(messages, budget)
+  ensures: {
+    expanded := expandCredentialLinkedParts(expandArtifactAttachedParts(messages)),
+    model_messages := convertToModelMessages(expanded),
+    pruned := pruneMessages(model_messages, {
+      toolCalls: "before-last-4-messages",
+      emptyMessages: "remove"
+    }),
+    final := truncateMessageHistory(pruned, budget)
+  }
+}
+
+// Token budget is calculated dynamically from model context limit.
+rule DynamicTokenBudget {
+  when: ConversationStart
+  ensures: {
+    model_context_limit == 131072,
+    output_reserve == 20000,
+    safety_buffer == 10000,
+    message_budget == model_context_limit - system_tokens - output_reserve - safety_buffer
+  }
+}
+
+// Token estimation uses a simple heuristic: JSON.stringify length / 4.
+rule TokenEstimation {
+  when: EstimateTokens(input)
+  ensures: {
+    tokens == ceil(JSON.stringify(input).length / 4)
+  }
+}
+
+// =============================================================================
+// RULES — SESSION TITLE GENERATION
+// =============================================================================
+
+// Session titles are generated by smallLLM (Groq llama model).
+// Never throws -- returns deterministic fallback on any failure.
+rule SessionTitleGeneration {
+  when: GenerateSessionTitle(input)
+  ensures: {
+    title := smallLLM(system_prompt, buildPrompt(input)),
+    title.length >= 3,                     // otherwise fallback
+    title.length <= 60,                    // truncated with "..."
+    title does not contain status words,   // status shown via UI badge
+    title does not contain generic prefixes
+  }
+}
+
+rule SessionTitleFallback {
+  when: GenerateSessionTitle(input)
+  requires: smallLLM fails or returns < 3 chars
+  ensures: {
+    // Priority: signal.data.intent > signal.data.task > signal.data.prompt
+    //         > jobName > signal.type
+    title := deterministic_fallback(input),
+    title formatted as sentence case from kebab/snake/camelCase
+  }
+}
+
+// =============================================================================
+// RULES — SMALL LLM
+// =============================================================================
+
+// A dedicated fast/small LLM for ancillary tasks (titles, progress, summaries).
+rule SmallLLM {
+  when: SmallLLMCall(params)
+  ensures: {
+    model == "groq:meta-llama/llama-4-maverick-17b-128e-instruct",
+    temperature == 0.4,
+    maxOutputTokens == params.maxOutputTokens or 100
+  }
+}
+
+// =============================================================================
+// RULES — ERROR HANDLING
+// =============================================================================
+
+// Workspace LLM agents: 529 Overloaded errors are re-thrown for SDK retry.
+// Other errors return err() payloads. Abort signal cancellation returns err().
+rule LLMAgentErrorHandling {
+  when: LLMAgentExecution fails with error
+  ensures: {
+    if error.statusCode == 529: throw for SDK retry (up to maxRetries, default 3),
+    if abortSignal.aborted: return err("cancelled"),
+    otherwise: return err(error.message)
+  }
+}
+
+// FSM adapter: all errors caught and returned as AgentExecutionError.
+// No retry logic -- errors are never re-thrown.
+rule FSMAdapterErrorHandling {
+  when: FSMLLMCall fails with error
+  ensures: {
+    return { ok: false, error: { reason: stringifyError(error) } }
+  }
+}
+
+// Hallucination detector: custom retry with exponential backoff.
+// Classifies errors by type and applies per-type retry strategy.
+rule HallucinationDetectorRetry {
+  when: LLMValidation fails
+  ensures: {
+    classification := classify(error),
+    if classification.isRetryable:
+      retry with exponential_backoff(baseDelayMs * 2^attempt),
+    else:
+      return fallback { confidence: 0.3 }
+  }
+}
+
+// =============================================================================
+// INCONSISTENCIES AND OPEN QUESTIONS
+// =============================================================================
+
+// INCONSISTENCY 1: Hardcoded Anthropic provider options in from-llm.ts
+// The convertLLMToAgent function hardcodes getDefaultProviderOpts("anthropic")
+// even though the provider is configurable via workspace.yml.
+// If a workspace sets provider: "openai", the system message still gets
+// Anthropic cache control options applied.
+open_question "from-llm.ts hardcodes getDefaultProviderOpts('anthropic') on system messages
+regardless of the configured provider. Should this use the agent's actual provider?"
+
+// INCONSISTENCY 2: provider_options spread vs providerOptions merge
+// Workspace config provider_options are spread as top-level streamText keys
+// via `...(config.config.provider_options || {})`. This is a different mechanism
+// than getDefaultProviderOpts which targets the providerOptions parameter.
+// These two approaches can conflict if both set the same keys.
+open_question "Workspace provider_options are spread at top level while
+getDefaultProviderOpts targets providerOptions. Is the spread intentional
+to allow overriding any streamText parameter, or should it merge into
+providerOptions?"
+
+// INCONSISTENCY 3: Conversation agent sends Groq provider options to Anthropic model
+// conversation.agent.ts calls registry.languageModel('anthropic:claude-sonnet-4-5')
+// but passes providerOptions: { groq: { reasoningFormat: 'parsed', reasoningEffort: 'medium' } }.
+// The Groq options are silently ignored by the Anthropic provider.
+open_question "Conversation agent sends Groq-specific providerOptions while using
+an Anthropic model. Are these vestigial from a model switch, or intended for
+LiteLLM routing where the backend might be Groq?"
+
+// INCONSISTENCY 4: FSM adapter excludes Groq from provider type union
+// The AtlasLLMProviderAdapter restricts its provider to 'anthropic' | 'openai' | 'google'.
+// Groq is a valid provider in the registry but cannot be used via the FSM engine.
+open_question "FSM engine adapter excludes Groq from its provider type union.
+Is this intentional (FSM only uses large models) or an oversight?"
+
+// INCONSISTENCY 5: No provider options at all in FSM adapter
+// AtlasLLMProviderAdapter.call() passes no providerOptions, no temperature,
+// no maxOutputTokens to generateText. It also does not apply Anthropic
+// cache control defaults that every other call site uses.
+open_question "FSM adapter omits providerOptions (including Anthropic cache control),
+temperature, and maxOutputTokens. Should it apply getDefaultProviderOpts?"
+
+// RESOLVED: Temperature range now consistent across agent types (0-2)
+// LLMAgentConfig: temperature 0-2 (validated by Zod)
+// SystemAgentConfig: temperature 0-2 (validated by Zod)
+// AgentLLMConfig (agent-sdk): temperature 0-2 (validated by Zod)
+// smallLLM: hardcoded 0.4
+// Hallucination detector: hardcoded 0.05
+
+// INCONSISTENCY 7: All hardcoded call sites use Anthropic
+// Every system agent, bundled agent, planner, and detector hardcodes
+// 'anthropic:claude-sonnet-4-5' or 'anthropic:claude-haiku-4-5'.
+// The multi-provider registry exists but only workspace-configured LLM agents
+// and smallLLM (Groq) use non-Anthropic providers.
+open_question "All system and bundled agents hardcode Anthropic models. Is the
+multi-provider registry intended only for workspace-configured agents, or
+should system agents eventually be provider-configurable?"
+
+// INCONSISTENCY 8: Proxy fetch uses Deno API
+// createProxyFetch() calls Deno.createHttpClient() which is a Deno-specific API.
+// The CLAUDE.md states 'use process.env from node:process, not Deno.env
+// (migrating away from Deno APIs)'. This proxy function would break after migration.
+open_question "createProxyFetch uses Deno.createHttpClient which contradicts the
+migration-away-from-Deno-APIs guideline. Should this use a Node.js HTTP proxy?"
+
+// INCONSISTENCY 9: Message pruning only applied in conversation agent
+// pruneMessages is only imported and used in the conversation agent's
+// message-windowing.ts. No other LLM call site applies pruning.
+// The FSM adapter, workspace LLM agents, session supervisor, hallucination
+// detector, and all bundled agents send unpruned message histories.
+open_question "Message pruning is only applied in the conversation agent.
+Is this because other call sites always have short message lists, or should
+pruning be applied more broadly?"

@@ -42,18 +42,13 @@ function createTestEntry(
 
 /** Schema for successful create response */
 const CreateResponseSchema = z.object({
-  ok: z.literal(true),
   server: z
     .object({ id: z.string(), name: z.string(), domains: z.array(z.string()), source: z.string() })
     .passthrough(),
 });
 
 /** Schema for error response */
-const ErrorResponseSchema = z.object({
-  ok: z.literal(false),
-  error: z.string(),
-  suggestion: z.string().optional(),
-});
+const ErrorResponseSchema = z.object({ error: z.string(), suggestion: z.string().optional() });
 
 /** Schema for list response */
 const ListResponseSchema = z.object({
@@ -88,7 +83,6 @@ describe("MCP Registry Routes", () => {
 
     expect(res.status).toEqual(201);
     const body = CreateResponseSchema.parse(await res.json());
-    expect(body.ok).toEqual(true);
     expect(body.server.id).toEqual(entry.id);
     expect(body.server.name).toEqual(entry.name);
   });
@@ -108,7 +102,6 @@ describe("MCP Registry Routes", () => {
 
     expect(res.status).toEqual(409);
     const body = ErrorResponseSchema.parse(await res.json());
-    expect(body.ok).toEqual(false);
     expect(body.error).toContain("blessed registry");
   });
 
@@ -132,7 +125,6 @@ describe("MCP Registry Routes", () => {
 
     expect(res.status).toEqual(409);
     const body = ErrorResponseSchema.parse(await res.json());
-    expect(body.ok).toEqual(false);
     expect(body.error).toContain("already used");
     expect(body.suggestion).toBeDefined();
   });
@@ -322,7 +314,6 @@ describe("MCP Registry Routes", () => {
 
     // Verify the configTemplate structure is preserved correctly
     expect(linkBody).toMatchObject({
-      ok: true,
       server: {
         configTemplate: {
           transport: { type: "http", url: "https://api.example.com/mcp" },

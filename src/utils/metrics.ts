@@ -8,6 +8,7 @@
  */
 
 import { env } from "node:process";
+import type { WorkspaceSessionStatusType } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import type { Counter, Meter } from "@opentelemetry/api";
 
@@ -144,13 +145,8 @@ export const AtlasMetrics = {
 
   /**
    * Record a session execution.
-   * @param status - Session status:
-   *   - "completed": Session finished successfully
-   *   - "failed": Platform/system error
-   *   - "cancelled": User or system cancelled
-   *   - "skipped": User configuration issue (OAuth not connected, missing env vars)
    */
-  recordSession(status: "completed" | "failed" | "cancelled" | "skipped"): void {
+  recordSession(status: WorkspaceSessionStatusType): void {
     if (!isEnabled || !sessionsCounter) return;
     sessionsCounter.add(1, { status });
   },

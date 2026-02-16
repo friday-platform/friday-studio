@@ -1,3 +1,4 @@
+import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
@@ -32,6 +33,9 @@ export interface AppContext {
 
   // Library storage methods
   getLibraryStorage(): LibraryStorageAdapter;
+
+  // Agent registry
+  getAgentRegistry(): AgentRegistry;
 
   // Core daemon access
   daemon: AtlasDaemon;

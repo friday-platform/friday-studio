@@ -312,7 +312,7 @@ export interface AgentRegistry {
 }
 
 /** workspace.yml agent configuration */
-export const AtlasAgentConfigSchema = z.object({
+export const AtlasAgentConfigSchema = z.strictObject({
   type: z.literal("atlas"),
   agent: z.string().describe("Atlas Agent ID from registry"),
   description: z.string().describe("Agent description"),

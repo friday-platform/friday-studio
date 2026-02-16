@@ -24,26 +24,58 @@ interface SessionInfo {
 const sessionsRoutes = daemonFactory
   .createApp()
   // List sessions across all workspaces
-  .get("/", (c) => {
-    const ctx = c.get("app");
-    const allSessions: SessionInfo[] = [];
+  .get(
+    "/",
+    zValidator(
+      "query",
+      z.object({
+        limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+        cursor: z.string().optional(),
+      }),
+    ),
+    (c) => {
+      const { limit, cursor } = c.req.valid("query");
+      const ctx = c.get("app");
+      const allSessions: SessionInfo[] = [];
 
-    for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      const sessions = runtime.getSessions().map((activeSession) => ({
-        id: activeSession.id,
-        workspaceId,
-        status: activeSession.session.status,
-        summary: activeSession.session.summarize(),
-        signal: activeSession.signalId,
-        startTime: activeSession.startedAt.toISOString(),
-        endTime: undefined, // Not tracked in current implementation
-        progress: activeSession.session.progress(),
-      }));
-      allSessions.push(...sessions);
-    }
+      for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
+        const sessions = runtime.getSessions().map((activeSession) => ({
+          id: activeSession.id,
+          workspaceId,
+          status: activeSession.session.status,
+          summary: activeSession.session.summarize(),
+          signal: activeSession.signalId,
+          startTime: activeSession.startedAt.toISOString(),
+          endTime: undefined, // Not tracked in current implementation
+          progress: activeSession.session.progress(),
+        }));
+        allSessions.push(...sessions);
+      }
 
-    return c.json(allSessions, 200);
-  })
+      // Sort by startTime desc (newest first)
+      allSessions.sort((a, b) => {
+        const ta = a.startTime ?? "";
+        const tb = b.startTime ?? "";
+        return tb.localeCompare(ta);
+      });
+
+      // Apply cursor: skip everything up to and including the cursor session
+      let startIndex = 0;
+      if (cursor) {
+        const cursorIndex = allSessions.findIndex((s) => s.id === cursor);
+        if (cursorIndex !== -1) {
+          startIndex = cursorIndex + 1;
+        }
+      }
+
+      const page = allSessions.slice(startIndex, startIndex + limit + 1);
+      const hasMore = page.length > limit;
+      const items = hasMore ? page.slice(0, limit) : page;
+      const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
+
+      return c.json({ items, nextCursor, total: allSessions.length }, 200);
+    },
+  )
   // Get specific session from any workspace
   .get("/:id", async (c) => {
     const ctx = c.get("app");
@@ -99,27 +131,26 @@ const sessionsRoutes = daemonFactory
 
     return c.json({ error: `Session not found: ${sessionId}` }, 404);
   })
-  // DELETE /api/sessions/:sessionId - Cancel a session
-  .delete("/:id", zValidator("param", z.object({ sessionId: z.string() })), async (c) => {
-    const { sessionId } = c.req.valid("param");
+  // DELETE /api/sessions/:id - Cancel a session
+  .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
+    const { id } = c.req.valid("param");
     const ctx = c.get("app");
-    const { runtimes } = ctx;
 
     // Find session across all runtimes
-    for (const [workspaceId, runtime] of runtimes) {
-      const activeSession = runtime.getSessions().find((s) => s.id === sessionId);
+    for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
+      const activeSession = runtime.getSessions().find((s) => s.id === id);
       if (activeSession) {
         try {
-          await runtime.cancelSession(sessionId);
-          return c.json({ message: `Session ${sessionId} cancelled`, workspaceId }, 200);
+          await runtime.cancelSession(id);
+          return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);
         } catch (error) {
-          logger.error("Failed to cancel session", { error, sessionId, workspaceId });
+          logger.error("Failed to cancel session", { error, sessionId: id, workspaceId });
           return c.json({ error: stringifyError(error) }, 500);
         }
       }
     }
 
-    return c.json({ error: `Session not found: ${sessionId}` }, 404);
+    return c.json({ error: `Session not found: ${id}` }, 404);
   });
 
 export { sessionsRoutes };

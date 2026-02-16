@@ -92,6 +92,7 @@ function createImportTestApp() {
     getLibraryStorage: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    getAgentRegistry: vi.fn(),
   };
 
   const app = new Hono<AppVariables>();
@@ -131,7 +132,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config: makeConfig() }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
     // No resolveCredentialsByProvider calls needed
@@ -161,7 +162,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
     // No provider resolution needed — refs already have IDs
@@ -201,7 +202,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
@@ -313,7 +314,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
@@ -394,7 +395,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
@@ -586,7 +587,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
     expect(body.resolvedCredentials).toEqual([
@@ -642,7 +643,7 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     // Only one fetchLinkCredential call despite two refs using the same credential
     expect(mockFetchLinkCredential).toHaveBeenCalledTimes(1);
     expect(mockFetchLinkCredential).toHaveBeenCalledWith("cred_gh", expect.anything());

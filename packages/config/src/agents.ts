@@ -34,10 +34,10 @@ export const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     temperature: z.coerce
       .number()
       .min(0)
-      .max(0.7)
+      .max(2)
       .optional()
       .default(0.3)
-      .describe("Temperature (0-0.7 range)"),
+      .describe("LLM temperature"),
     max_tokens: z.coerce.number().int().positive().optional(),
     max_steps: z.coerce
       .number()
@@ -78,7 +78,7 @@ const SystemAgentConfigObjectSchema = z
     temperature: z.coerce
       .number()
       .min(0)
-      .max(1)
+      .max(2)
       .optional()
       .default(0.3)
       .describe("LLM temperature"),

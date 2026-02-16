@@ -109,9 +109,10 @@ describe("FSM Engine - Storage & Persistence", () => {
 
       // 3. Check store state - it should be 0 (persistence skipped due to error)
       // The store is safe for now because persistence happens at the end
-      const storedDoc = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
-      if (!storedDoc) throw new Error("Expected storedDoc to be defined");
-      const storedData = storedDoc.data.data;
+      const storedDocResult = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
+      if (!storedDocResult.ok) throw new Error(`Read failed: ${storedDocResult.error}`);
+      if (!storedDocResult.data) throw new Error("Expected storedDoc to be defined");
+      const storedData = storedDocResult.data.data.data;
       expect(storedData.val).toEqual(0);
 
       // 4. Trigger successful transition
@@ -120,9 +121,10 @@ describe("FSM Engine - Storage & Persistence", () => {
 
       // 5. Verify bad state is now persisted
       // If the in-memory state wasn't rolled back, val: 1 is now in the store
-      const storedDoc2 = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
-      if (!storedDoc2) throw new Error("Expected storedDoc2 to be defined");
-      const storedData2 = storedDoc2.data.data;
+      const storedDoc2Result = await store.read(scope, fsm.id, "doc", FSMDocumentDataSchema);
+      if (!storedDoc2Result.ok) throw new Error(`Read failed: ${storedDoc2Result.error}`);
+      if (!storedDoc2Result.data) throw new Error("Expected storedDoc2 to be defined");
+      const storedData2 = storedDoc2Result.data.data.data;
       expect(storedData2.val).toEqual(0);
     });
 

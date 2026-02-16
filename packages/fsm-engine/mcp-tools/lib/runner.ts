@@ -130,19 +130,27 @@ export class TestRunner {
       // Override initial state if setup specifies different state
       if (test.setup.state !== test.fsm.initial) {
         // Write state to store to be picked up by initialize()
-        await this.documentStore.saveState(this.scope, test.fsm.id, { state: test.setup.state });
+        const stateResult = await this.documentStore.saveState(this.scope, test.fsm.id, {
+          state: test.setup.state,
+        });
+        if (!stateResult.ok) {
+          throw new Error(`Failed to save test state: ${stateResult.error}`);
+        }
       }
 
       // Set up initial documents by writing them to the store first
       if (test.setup.documents) {
         for (const doc of test.setup.documents) {
-          await this.documentStore.write(
+          const writeResult = await this.documentStore.write(
             this.scope,
             test.fsm.id,
             doc.id,
             { type: doc.type, data: doc.data },
             FSMDocumentDataSchema,
           );
+          if (!writeResult.ok) {
+            throw new Error(`Failed to write test document ${doc.id}: ${writeResult.error}`);
+          }
         }
       }
 

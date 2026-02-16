@@ -101,7 +101,7 @@ beforeEach(() => {
 
   process.env.ATLAS_USER_ID = "test-user";
   process.env.LINK_DEV_MODE = "true"; // Use dev mode to skip JWT in most tests
-  manager = MCPManager.getInstance();
+  manager = new MCPManager();
 });
 
 afterEach(async () => {

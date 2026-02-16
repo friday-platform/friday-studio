@@ -210,9 +210,9 @@ function buildFactsSection(datetime?: DatetimeContext): string {
 export async function validateAgentOutput(
   result: AgentResult,
   context: Context,
+  agentType: "llm" | "system" | "sdk",
   expectedSchema?: JSONSchema,
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
-  agentType?: "llm" | "system" | "sdk",
 ): Promise<void> {
   // Skip validation for error results
   if (!result.ok) {

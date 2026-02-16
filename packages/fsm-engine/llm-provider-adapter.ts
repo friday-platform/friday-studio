@@ -7,17 +7,23 @@ import {
   repairToolCall,
 } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
-import { registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import type { StopCondition, Tool } from "ai";
 import { generateText, hasToolCall, stepCountIs } from "ai";
 import type { FSMLLMOutput, LLMProvider } from "./types.ts";
 
 export class AtlasLLMProviderAdapter implements LLMProvider {
+  private maxSteps: number;
+
   constructor(
     private defaultModel: string,
-    private provider: "anthropic" | "openai" | "google" = "anthropic",
-  ) {}
+    private provider: "anthropic" | "openai" | "google" | "groq" = "anthropic",
+    private providerOptions?: Record<string, unknown>,
+    maxSteps?: number,
+  ) {
+    this.maxSteps = maxSteps ?? 10;
+  }
 
   async call(params: {
     agentId: string;
@@ -26,16 +32,16 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     tools?: Record<string, Tool>;
     toolChoice?: "auto" | "required" | "none";
     stopOnToolCall?: string[];
+    providerOptions?: Record<string, unknown>;
   }): Promise<AgentResult<string, FSMLLMOutput>> {
     const startMs = Date.now();
     const modelId = `${this.provider}:${params.model || this.defaultModel}` as
       | `anthropic:${string}`
       | `openai:${string}`
-      | `google:${string}`;
+      | `google:${string}`
+      | `groq:${string}`;
 
-    const stopConditions: StopCondition<Record<string, Tool>>[] = [
-      stepCountIs(10), // Max steps before forcing completion
-    ];
+    const stopConditions: StopCondition<Record<string, Tool>>[] = [stepCountIs(this.maxSteps)];
     if (params.stopOnToolCall) {
       for (const toolName of params.stopOnToolCall) {
         stopConditions.push(hasToolCall(toolName));
@@ -45,11 +51,19 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     try {
       const response = await generateText({
         model: registry.languageModel(modelId),
-        prompt: params.prompt,
+        messages: [
+          {
+            role: "user",
+            content: params.prompt,
+            providerOptions: getDefaultProviderOpts(this.provider),
+          },
+        ],
         tools: params.tools,
         toolChoice: params.toolChoice,
         experimental_repairToolCall: repairToolCall,
         stopWhen: stopConditions,
+        ...(this.providerOptions || {}),
+        ...(params.providerOptions || {}),
       });
 
       // Flatten tool calls across all steps (response.toolCalls only has last step)

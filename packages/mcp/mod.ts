@@ -8,12 +8,6 @@
 
 // Re-export types that consumers might need
 export type { MCPServerConfig } from "./src/manager.ts";
-export { MCPManager, MCPServerConfigSchema, mcpManager } from "./src/manager.ts";
-export type {
-  AgentConfig,
-  AtlasConfig,
-  MCPServerOverrides,
-  SessionContext,
-  WorkspaceConfig,
-} from "./src/registry.ts";
+export { MCPManager, MCPServerConfigSchema } from "./src/manager.ts";
+export type { AtlasConfig, SessionContext, WorkspaceConfig } from "./src/registry.ts";
 export { MCPServerRegistry } from "./src/registry.ts";

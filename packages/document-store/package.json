@@ -4,5 +4,5 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": { "zod": "^4.3.5" }
+  "dependencies": { "@atlas/utils": "workspace:*", "zod": "^4.3.5" }
 }

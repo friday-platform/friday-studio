@@ -6,6 +6,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CortexStorageAdapter } from "./cortex-adapter.ts";
 import { createFileArtifactInput } from "./test-utils/shared-fixtures.ts";
 
+/** Mirrors the private CortexObject interface from cortex-adapter.ts for testing. */
+interface CortexObject {
+  id: string;
+  user_id: string;
+  content_size: number | null;
+  metadata: {
+    artifact_id: string;
+    revision: number;
+    artifact_type: string;
+    title: string;
+    summary: string;
+    workspace_id?: string;
+    chat_id?: string;
+    is_latest: boolean;
+    created_at: string;
+    revision_message?: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
 let tempDir: string;
 let originalAtlasKey: string | undefined;
 
@@ -63,6 +84,238 @@ function mockCortexFetch(options?: { failBinaryUpload?: boolean }) {
     return Response.json({ id: "artifact-data-id" });
   });
 }
+
+/**
+ * Build a CortexObject for use in list/get test mocks.
+ */
+function makeCortexObject(overrides: {
+  id?: string;
+  artifactId: string;
+  revision?: number;
+  isLatest?: boolean;
+  workspaceId?: string;
+  chatId?: string;
+  artifactType?: string;
+}): CortexObject {
+  return {
+    id: overrides.id ?? `cortex-${overrides.artifactId}`,
+    user_id: "user-1",
+    content_size: 100,
+    metadata: {
+      artifact_id: overrides.artifactId,
+      revision: overrides.revision ?? 1,
+      artifact_type: overrides.artifactType ?? "summary",
+      title: `Artifact ${overrides.artifactId}`,
+      summary: "Test artifact",
+      workspace_id: overrides.workspaceId,
+      chat_id: overrides.chatId,
+      is_latest: overrides.isLatest ?? true,
+      created_at: new Date().toISOString(),
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+/** JSON blob content that parses as a valid summary artifact */
+const SUMMARY_BLOB = JSON.stringify({ type: "summary", version: 1, data: "Test summary content" });
+
+describe("CortexStorageAdapter: list race condition fallback", () => {
+  it("listByWorkspace returns artifacts when is_latest=true query is empty during update window", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+    const workspaceId = "ws-1";
+
+    // Artifact mid-update: both old and new revisions have is_latest=false
+    const oldRevision = makeCortexObject({
+      id: "cortex-old",
+      artifactId: "art-1",
+      revision: 1,
+      isLatest: false,
+      workspaceId,
+    });
+    const newRevision = makeCortexObject({
+      id: "cortex-new",
+      artifactId: "art-1",
+      revision: 2,
+      isLatest: false,
+      workspaceId,
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      // First call: is_latest=true query returns empty
+      if (urlStr.includes("is_latest=true")) {
+        return Response.json([]);
+      }
+
+      // Fallback call: query without is_latest returns both revisions
+      if (urlStr.includes("workspace_id=") && !urlStr.includes("is_latest")) {
+        return Response.json([oldRevision, newRevision]);
+      }
+
+      // Blob download for the winning revision
+      if (urlStr.includes("/objects/cortex-new")) {
+        return new Response(SUMMARY_BLOB);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByWorkspace({ workspaceId });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("art-1");
+      expect(result.data[0]?.revision).toBe(2);
+    }
+  });
+
+  it("listByChat returns artifacts when is_latest=true query is empty during update window", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+    const chatId = "chat-1";
+
+    const obj = makeCortexObject({
+      id: "cortex-obj",
+      artifactId: "art-2",
+      revision: 3,
+      isLatest: false,
+      chatId,
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("is_latest=true")) {
+        return Response.json([]);
+      }
+      if (urlStr.includes("chat_id=") && !urlStr.includes("is_latest")) {
+        return Response.json([obj]);
+      }
+      if (urlStr.includes("/objects/cortex-obj")) {
+        return new Response(SUMMARY_BLOB);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByChat({ chatId });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("art-2");
+      expect(result.data[0]?.revision).toBe(3);
+    }
+  });
+
+  it("listAll returns artifacts when is_latest=true query is empty during update window", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const obj = makeCortexObject({
+      id: "cortex-all",
+      artifactId: "art-3",
+      revision: 1,
+      isLatest: false,
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("is_latest=true")) {
+        return Response.json([]);
+      }
+      if (urlStr.includes("/objects?") && !urlStr.includes("is_latest")) {
+        return Response.json([obj]);
+      }
+      if (urlStr.includes("/objects/cortex-all")) {
+        return new Response(SUMMARY_BLOB);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listAll({});
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("art-3");
+    }
+  });
+
+  it("skips fallback when primary query returns results", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+    const workspaceId = "ws-1";
+
+    const stableArtifact = makeCortexObject({
+      id: "cortex-stable",
+      artifactId: "art-stable",
+      revision: 1,
+      isLatest: true,
+      workspaceId,
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("is_latest=true")) {
+        return Response.json([stableArtifact]);
+      }
+      if (urlStr.includes("/objects/cortex-stable")) {
+        return new Response(SUMMARY_BLOB);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByWorkspace({ workspaceId });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("art-stable");
+    }
+
+    // Only 2 fetch calls: primary list + blob download. No fallback query.
+    const listCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes("/objects?"));
+    expect(listCalls).toHaveLength(1);
+  });
+
+  it("fallback gracefully degrades on error", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+    const workspaceId = "ws-1";
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      // Primary query returns empty
+      if (urlStr.includes("is_latest=true")) {
+        return Response.json([]);
+      }
+      // Fallback query throws
+      if (urlStr.includes("workspace_id=") && !urlStr.includes("is_latest")) {
+        throw new Error("network error");
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByWorkspace({ workspaceId });
+
+    // Should return empty rather than throwing
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(0);
+    }
+  });
+});
 
 describe("CortexStorageAdapter: streaming upload", () => {
   it("succeeds without Bad resource ID after stream consumption", async () => {

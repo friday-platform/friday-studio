@@ -430,7 +430,9 @@ async function persistTaskSession(params: {
       });
     }
 
-    // Emit session-finish event with output
+    // DUAL-WRITE: output goes to both session-finish event and session metadata.
+    // These are independent file writes; partial failure can cause divergence.
+    // See workspace-runtime.ts persistSessionToHistory for the same pattern.
     await SessionHistoryStorage.appendSessionEvent({
       sessionId: taskSessionId,
       emittedBy: "do-task",

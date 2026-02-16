@@ -10,7 +10,7 @@ import { decodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
 import { basename, extname, join } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
-import { ArtifactDataSchema } from "./model.ts";
+import { ArtifactDataSchema, ArtifactTypeSchema } from "./model.ts";
 import type { DatabaseSchema } from "./primitives.ts";
 import type {
   ArtifactStorageAdapter,
@@ -825,7 +825,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       const artifact: Artifact = {
         id: input.id,
-        type: cortexObject.metadata.artifact_type as Artifact["type"],
+        type: ArtifactTypeSchema.parse(cortexObject.metadata.artifact_type),
         revision: cortexObject.metadata.revision,
         data: artifactData,
         title: cortexObject.metadata.title,
@@ -934,11 +934,10 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   /**
    * Generic list implementation with metadata filtering.
    *
-   * Note: During artifact updates (steps 4-5 of update flow), artifacts temporarily
-   * have is_latest=false on both old and new revisions. During this window (~50-200ms),
-   * artifacts being updated will not appear in list results that filter on is_latest=true.
-   * This is acceptable for list operations (which are for browsing/discovery).
-   * For direct access, use get() which has fallback logic to handle this race condition.
+   * Handles the update race window (steps 4-5 of update flow) where both old and new
+   * revisions temporarily have is_latest=false. When the is_latest=true query misses
+   * artifacts, a fallback query without is_latest finds them. Results are deduplicated
+   * by artifact_id, keeping the highest revision per artifact.
    */
   private async listFiltered(
     filters: Record<string, string>,
@@ -954,11 +953,64 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       }
 
       const queryUrl = `/objects?${params.toString()}`;
-      const objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
+      let objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
         parseJson: true,
       });
 
-      if (!objects || objects.length === 0) {
+      if (!objects) {
+        objects = [];
+      }
+
+      // Race condition fallback: During update steps 4-5, both old and new revisions
+      // have is_latest=false. Query without is_latest to find artifacts invisible
+      // to the primary query. Only runs when the primary query returned nothing —
+      // a non-empty primary result means the race window hasn't hidden anything.
+      const hasIsLatestFilter = "is_latest" in filters;
+      if (hasIsLatestFilter && objects.length === 0) {
+        try {
+          const fallbackParams = new URLSearchParams();
+          for (const [key, value] of Object.entries(filters)) {
+            if (key !== "is_latest") {
+              fallbackParams.set(`metadata.${key}`, value);
+            }
+          }
+          if (limit) {
+            fallbackParams.set("limit", String(limit));
+          }
+
+          const fallbackUrl = `/objects?${fallbackParams.toString()}`;
+          const fallbackObjects = await this.request<CortexObject[]>(
+            "GET",
+            fallbackUrl,
+            undefined,
+            { parseJson: true },
+          );
+
+          if (fallbackObjects && fallbackObjects.length > 0) {
+            // Pick highest revision per artifact
+            const byArtifact = new Map<string, CortexObject>();
+            for (const obj of fallbackObjects) {
+              const aid = obj.metadata.artifact_id;
+              const existing = byArtifact.get(aid);
+              if (!existing || obj.metadata.revision > existing.metadata.revision) {
+                byArtifact.set(aid, obj);
+              }
+            }
+
+            logger.debug("List fallback found artifacts during race window", {
+              fallbackCount: byArtifact.size,
+            });
+            objects = [...byArtifact.values()];
+          }
+        } catch (fallbackError) {
+          // Fallback is best-effort — return empty rather than failing the whole list
+          logger.warn("List race-condition fallback failed, returning empty results", {
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+        }
+      }
+
+      if (objects.length === 0) {
         return success([]);
       }
 
@@ -997,7 +1049,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
             const artifact: Artifact = {
               id: obj.metadata.artifact_id,
-              type: obj.metadata.artifact_type as Artifact["type"],
+              type: ArtifactTypeSchema.parse(obj.metadata.artifact_type),
               revision: obj.metadata.revision,
               data: artifactData,
               title: obj.metadata.title,

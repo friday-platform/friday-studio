@@ -42,8 +42,8 @@ const loader = new ConfigLoader(adapter, workspaceDir);
 const config = await loader.load();
 
 // Access typed configuration
-const atlas: AtlasConfig = config.atlas;
 const workspace: WorkspaceConfig = config.workspace;
+const atlas: AtlasConfig | null = config.atlas;
 ```
 
 ## Schema Types

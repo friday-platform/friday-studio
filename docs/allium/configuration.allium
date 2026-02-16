@@ -1,0 +1,750 @@
+// =============================================================================
+// Atlas Configuration System - Behavioral Specification
+// =============================================================================
+//
+// Describes the configuration loading, validation, and mutation system.
+// Two config files: workspace.yml (required) and atlas.yml (optional superset).
+// All validation uses Zod v4 with strictObject schemas.
+
+// =============================================================================
+// BASE VALUE TYPES
+// =============================================================================
+
+value Duration {
+  // Format: digits + unit suffix. Examples: "30s", "5m", "2h"
+  raw: String,  // regex: /^\d+[smh]$/
+  milliseconds: Int  // derived via parseDuration()
+}
+
+value MCPToolName {
+  // Letters, numbers, underscores, hyphens only
+  raw: String  // regex: /^[a-zA-Z0-9_-]+$/
+}
+
+value SchemaObject {
+  // Opaque JSON Schema stored as Record<string, unknown>
+  // Converted to Zod at runtime via zod-from-json-schema for payload validation
+  fields: Map<String, Unknown>
+}
+
+value Condition {
+  // Tagged union: exactly one of jsonlogic or prompt
+  variant: jsonlogic { expression: Unknown }
+         | prompt { text: String }
+}
+
+value AllowDenyFilter {
+  allow: List<String>?,
+  deny: List<String>?
+}
+
+rule AllowDenyMutualExclusion {
+  when: filter: AllowDenyFilter.created,
+  requires: not (filter.allow present and filter.deny present),
+  ensures: "Cannot specify both allow and deny lists"
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+config AgentType { values: "llm" | "system" | "atlas" }
+config ExecutionStrategy { values: "sequential" | "parallel" }
+config SupervisionLevel { values: "minimal" | "standard" | "detailed" }
+config LogLevel { values: "debug" | "info" | "warn" | "error" }
+config LogFormat { values: "json" | "pretty" }
+config PersistenceType { values: "local" | "memory" | "s3" | "gcs" | "azure" }
+
+// NOTE: SignalProvider enum in base.ts declares ["http", "schedule", "system"]
+// but the discriminated union in signals.ts also includes "fs-watch".
+// See open_question below.
+
+// =============================================================================
+// WORKSPACE IDENTITY
+// =============================================================================
+
+entity WorkspaceIdentity {
+  id: String?,           // optional in schema, but required for platform workspace
+  name: String,          // min length 1
+  version: String?,
+  description: String?,
+  timeout: WorkspaceTimeoutConfig?
+}
+
+value WorkspaceTimeoutConfig {
+  progressTimeout: Duration = "2m",
+  maxTotalTimeout: Duration = "30m"
+}
+
+// =============================================================================
+// SIGNALS (discriminated union on "provider")
+// =============================================================================
+
+entity Signal {
+  description: String,
+  title: String?,
+  schema: SchemaObject?,    // JSON Schema for payload validation at runtime
+  provider: "http" | "schedule" | "system" | "fs-watch"
+}
+
+variant HTTPSignal : Signal {
+  provider: "http",
+  config: { path: String, timeout: Duration? }
+}
+
+variant ScheduleSignal : Signal {
+  provider: "schedule",
+  config: {
+    schedule: String,      // validated via CronExpressionParser.parse()
+    timezone: String = "UTC"
+  }
+}
+
+variant SystemSignal : Signal {
+  provider: "system"
+  // No config block
+}
+
+variant FileWatchSignal : Signal {
+  provider: "fs-watch",
+  config: {
+    path: String,
+    recursive: Bool = true
+  }
+}
+
+rule SystemSignalRestriction {
+  when: signal: SystemSignal.created,
+  requires: workspace is system workspace,
+  ensures: "System signal can only be used in system workspaces"
+  // Checked in ConfigLoader.validateMergedConfig(), NOT in Zod schema.
+  // System workspace = path contains "@atlas/system" OR workspace.id == "atlas-platform"
+}
+
+// =============================================================================
+// AGENTS (discriminated union on "type")
+// =============================================================================
+
+entity Agent {
+  description: String,
+  type: "llm" | "system" | "atlas"
+}
+
+variant LLMAgent : Agent {
+  type: "llm",
+  config: {
+    provider: String,
+    model: String,
+    prompt: String,
+    temperature: Number = 0.3,   // range: 0..0.7, coerced
+    max_tokens: Int?,             // positive, coerced
+    max_steps: Int?,              // positive, coerced
+    tool_choice: "auto" | "required" | "none"?,
+    tools: List<String>?,
+    provider_options: Map<String, Unknown>?,
+    success: SuccessConfig?,
+    error: ErrorConfig?,
+    max_retries: Int?,            // min 0, coerced
+    timeout: Duration?
+  }
+}
+
+variant SystemAgent : Agent {
+  type: "system",
+  agent: String,                 // system agent identifier
+  config: {                      // optional block
+    model: String?,
+    temperature: Number = 0.3,   // range: 0..1.0 (different from LLM's 0..0.7!)
+    max_tokens: Int?,            // min 1, coerced
+    tools: List<String>?,
+    use_reasoning: Bool?,
+    max_reasoning_steps: Int?,   // range: 1..20, coerced
+    prompt: String?
+  }?
+}
+
+variant AtlasAgent : Agent {
+  type: "atlas",
+  agent: String,                 // Atlas Agent registry ID
+  description: String,
+  prompt: String,
+  config: Map<String, Unknown>?,
+  env: Map<String, String | LinkCredentialRef>?
+}
+
+value SuccessConfig {
+  condition: Condition,
+  schema: SchemaObject?
+}
+
+value ErrorConfig {
+  condition: Condition
+}
+
+value LinkCredentialRef {
+  from: "link",                  // literal discriminant
+  id: String?,                   // min 1
+  provider: String?,             // min 1
+  key: String
+}
+
+rule LinkCredentialRefExclusivity {
+  when: ref: LinkCredentialRef.created,
+  requires: exactly one of (ref.id, ref.provider) is present,
+  ensures: "Exactly one of 'id' or 'provider' must be specified"
+}
+
+// =============================================================================
+// MCP CONFIGURATION
+// =============================================================================
+// "MCP" means two things:
+// 1. Protocol MCP: agents calling external MCP servers (tools.mcp)
+// 2. Platform MCP: Atlas exposing itself as an MCP server (server.mcp)
+
+// --- Protocol MCP (agents calling out) ---
+
+entity MCPServerConfig {
+  transport: MCPTransport,
+  client_config: { timeout: WorkspaceTimeoutConfig? }?,
+  auth: MCPAuth?,
+  tools: AllowDenyFilter?,
+  env: Map<String, String | LinkCredentialRef>?
+}
+
+value MCPTransport {
+  // discriminated union on "type"
+  variant: stdio { command: String, args: List<String>? }
+         | http { url: URL }
+}
+
+value MCPAuth {
+  type: "bearer",
+  token_env: String?
+}
+
+entity MCPClientConfig {
+  client_config: {
+    timeout: WorkspaceTimeoutConfig = { progressTimeout: "2m", maxTotalTimeout: "30m" }
+  },
+  servers: Map<String, MCPServerConfig>?
+}
+
+// --- Platform MCP (Atlas exposing itself) ---
+
+entity PlatformMCPConfig {
+  enabled: Bool = false,
+  discoverable: {
+    capabilities: List<String>?,
+    jobs: List<String>?
+  }?
+}
+
+variant AtlasPlatformMCPConfig : PlatformMCPConfig {
+  // atlas.yml only - extends with transport, auth, rate limits
+  transport: MCPTransport?,
+  auth: { required: Bool = false, providers: List<String>? }?,
+  rate_limits: {
+    requests_per_hour: Int?,
+    concurrent_sessions: Int?
+  }?
+}
+
+// --- Tools Configuration ---
+
+entity ToolsConfig {
+  mcp: MCPClientConfig?
+}
+
+variant AtlasToolsConfig : ToolsConfig {
+  // atlas.yml only - extends MCP client with tool policy
+  mcp: MCPClientConfig & {
+    tool_policy: {
+      type: "allowlist" | "denylist" = "allowlist",
+      allow: List<String>?,
+      deny: List<String>?
+    }?
+  }?
+}
+
+// =============================================================================
+// NOTIFICATIONS (discriminated union on "provider")
+// =============================================================================
+
+entity NotificationProvider {
+  enabled: Bool = true,
+  description: String?,
+  provider: "sendgrid" | "slack" | "teams" | "discord"
+}
+
+variant SendGridProvider : NotificationProvider {
+  provider: "sendgrid",
+  config: {
+    api_key_env: String,
+    from_email: Email,
+    from_name: String?,
+    template_id: String?,
+    timeout: Duration = "30s",
+    sandbox_mode: Bool = false
+  }
+}
+
+variant SlackProvider : NotificationProvider {
+  provider: "slack",
+  config: {
+    webhook_url_env: String,
+    channel: String?,
+    username: String?,
+    icon_emoji: String?,
+    timeout: Duration = "30s"
+  }
+}
+
+variant TeamsProvider : NotificationProvider {
+  provider: "teams",
+  config: {
+    webhook_url_env: String,
+    timeout: Duration = "30s"
+  }
+}
+
+variant DiscordProvider : NotificationProvider {
+  provider: "discord",
+  config: {
+    webhook_url_env: String,
+    username: String?,
+    avatar_url: URL?,
+    timeout: Duration = "30s"
+  }
+}
+
+value NotificationDefaults {
+  enabled: Bool = true,
+  provider: String?,
+  retry_attempts: Int = 3,    // range: 0..10
+  retry_delay: Duration = "5s",
+  retry_backoff: Number = 2,  // range: 1..10
+  timeout: Duration = "30s"
+}
+
+entity NotificationConfig {
+  providers: Map<String, NotificationProvider>?,
+  defaults: NotificationDefaults?
+}
+
+// =============================================================================
+// JOBS
+// =============================================================================
+
+value TriggerSpecification {
+  signal: String,
+  condition: Condition?
+}
+
+value FileContext {
+  patterns: List<String>,      // glob patterns, supports ! exclusions
+  base_path: String?,
+  max_file_size: Int?,         // positive
+  include_content: Bool = true
+}
+
+value AgentContext {
+  signal: Bool?,
+  steps: "previous" | "all"?,
+  agents: List<String>?,
+  files: Bool?,
+  task: String?
+}
+
+value JobExecutionAgent {
+  // Union: simple string OR detailed object
+  variant: simple { id: String }
+         | detailed {
+             id: String,
+             nickname: String?,
+             context: AgentContext?,
+             dependencies: List<String>?,
+             tools: AllowDenyFilter?
+           }
+}
+
+value JobExecution {
+  strategy: ExecutionStrategy = "sequential",
+  agents: List<JobExecutionAgent>,   // min 1
+  context: { files: FileContext? }?
+}
+
+value JobConfig {
+  timeout: Duration?,
+  supervision: {
+    level: SupervisionLevel?,
+    skip_planning: Bool?
+  }?
+}
+
+entity JobSpecification {
+  name: MCPToolName?,
+  description: String?,
+  title: String?,
+  triggers: List<TriggerSpecification>?,
+  context: { files: FileContext? }?,
+  prompt: String?,
+  execution: JobExecution?,       // agent-based
+  fsm: Unknown?,                  // FSM-based (uses @atlas/fsm-engine schema)
+  success: { condition: Condition, schema: SchemaObject? }?,
+  error: { condition: Condition }?,
+  config: JobConfig?
+}
+
+rule JobExecutionExclusivity {
+  when: job: JobSpecification.created,
+  requires: exactly one of (job.execution, job.fsm) is present,
+  ensures: "Job must specify exactly one of: execution (agent-based) or fsm (FSM-based)"
+}
+
+// =============================================================================
+// SERVER CONFIGURATION
+// =============================================================================
+
+entity ServerConfig {
+  mcp: PlatformMCPConfig?
+}
+
+variant AtlasServerConfig : ServerConfig {
+  mcp: AtlasPlatformMCPConfig?,
+  rest: {
+    enabled: Bool = false,
+    prefix: String = "/api/v1",
+    swagger: Bool = false
+  }?
+}
+
+// =============================================================================
+// SUPERVISOR CONFIGURATION (atlas.yml only)
+// =============================================================================
+
+value SupervisorPrompts {
+  system: String?,
+  analysis: String?,
+  planning: String?
+}
+
+entity SupervisorConfig {
+  model: String,
+  supervision: {
+    level: SupervisionLevel,
+    cache_enabled: Bool,
+    cache_adapter: String?,
+    cache_ttl_hours: Number?,   // positive
+    parallel_llm_calls: Bool?,
+    timeouts: {
+      analysis: Duration,
+      validation: Duration,
+      execution: Duration?
+    }?
+  },
+  prompts: SupervisorPrompts
+}
+
+entity SupervisorsConfig {
+  workspace: SupervisorConfig,
+  session: SupervisorConfig,
+  agent: SupervisorConfig
+}
+
+// =============================================================================
+// PLANNING CONFIGURATION (atlas.yml only)
+// =============================================================================
+
+entity PlanningConfig {
+  execution: {
+    cache_enabled: Bool,
+    cache_ttl_hours: Number,       // positive
+    invalidate_on_job_change: Bool,
+    strategy_selection: {
+      simple_jobs: String,
+      complex_jobs: String,
+      optimization_jobs: String,
+      planning_jobs: String
+    },
+    strategy_thresholds: {
+      complexity: Number,          // 0..1
+      uncertainty: Number,         // 0..1
+      optimization: Number         // 0..1
+    }
+  },
+  validation: {
+    functional_validators: Bool,
+    smoke_tests: Bool,
+    content_safety: Bool,
+    llm_threshold: Number,         // 0..1
+    llm_fallback: Bool,
+    cache_enabled: Bool,
+    cache_ttl_hours: Number,       // positive
+    fail_fast: Bool,
+    external_services: {
+      openai_moderation: Bool,
+      perspective_api: Bool,
+      deepeval_service: String?    // nullable, not optional
+    }?
+  }
+}
+
+// =============================================================================
+// RUNTIME CONFIGURATION (atlas.yml only)
+// =============================================================================
+
+entity RuntimeConfig {
+  server: { port: Int, host: String }?,       // port: 1..65535
+  logging: { level: LogLevel, format: LogFormat }?,
+  persistence: { type: PersistenceType, path: String }?,
+  security: { cors: String }?,
+  sessions: {
+    timeout: Int = 3600000                    // range: 60000..86400000 (1min..24hr)
+    // NOTE: this is raw milliseconds, not Duration format
+  }?
+}
+
+// =============================================================================
+// FEDERATION
+// =============================================================================
+
+value Scope {
+  // Union: single string OR array of strings
+  raw: String | List<String>
+}
+
+value FederationGrant {
+  workspace: String,
+  scopes: Scope
+}
+
+value FederationSharingEntry {
+  workspaces: String | List<String>?,
+  scopes: Scope?,
+  grants: List<FederationGrant>?
+}
+
+entity FederationConfig {
+  sharing: Map<String, FederationSharingEntry>?,
+  scope_sets: Map<String, List<String>>?
+}
+
+// =============================================================================
+// TOP-LEVEL CONFIGURATION FILES
+// =============================================================================
+
+entity WorkspaceConfig {
+  // Required
+  version: "1.0",
+  workspace: WorkspaceIdentity,
+  // Optional sections
+  server: ServerConfig?,
+  tools: ToolsConfig?,
+  signals: Map<String, Signal>?,
+  jobs: Map<MCPToolName, JobSpecification>?,
+  agents: Map<String, Agent>?,
+  notifications: NotificationConfig?,
+  federation: FederationConfig?
+}
+
+entity AtlasConfig : WorkspaceConfig {
+  // Overrides with extended versions
+  server: AtlasServerConfig?,
+  tools: AtlasToolsConfig?,
+  // Atlas-specific additions
+  supervisors: SupervisorsConfig?,
+  planning: PlanningConfig?,
+  runtime: RuntimeConfig?
+}
+
+entity MergedConfig {
+  workspace: WorkspaceConfig,          // always present
+  atlas: AtlasConfig?                  // null if no atlas.yml
+}
+
+// =============================================================================
+// CONFIG LOADING
+// =============================================================================
+
+rule ConfigFileDiscovery {
+  when: LoadWorkspaceConfig(workspacePath),
+  requires: one of (workspace.yml, eph_workspace.yml) exists at workspacePath,
+  ensures: persistent (workspace.yml) is preferred over ephemeral (eph_workspace.yml)
+}
+
+rule ConfigFileNotFound {
+  when: LoadWorkspaceConfig(workspacePath),
+  requires: neither workspace.yml nor eph_workspace.yml exists,
+  ensures: ConfigNotFoundError thrown with workspacePath
+}
+
+rule AtlasConfigOptional {
+  when: LoadAtlasConfig(workspacePath),
+  requires: true,
+  ensures: returns null if atlas.yml missing or empty
+}
+
+rule ConfigValidation {
+  when: rawConfig: Unknown.loaded,
+  requires: rawConfig passes Zod safeParse against appropriate schema,
+  ensures: ConfigValidationError thrown on failure (includes z.prettifyError output)
+}
+
+rule MergedConfigValidation {
+  when: merged: MergedConfig.created,
+  requires: all system signals are in system workspaces,
+  ensures: error if non-system workspace uses system signals
+}
+
+rule SignalLookupOrder {
+  when: GetSignal(config, name),
+  requires: true,
+  ensures: workspace.signals checked first, then atlas.signals
+}
+
+rule AgentLookupOrder {
+  when: GetAgent(config, id),
+  requires: true,
+  ensures: workspace.agents checked first, then atlas.agents
+}
+
+// =============================================================================
+// SIGNAL PAYLOAD VALIDATION (runtime)
+// =============================================================================
+
+rule SignalPayloadValidation {
+  when: ValidatePayload(signal, payload),
+  requires: true,
+  ensures: if signal.schema is absent then payload passes through unchanged,
+           if signal.schema is present then JSON Schema is converted to Zod
+           via zod-from-json-schema and payload is parsed
+}
+
+// =============================================================================
+// CONFIG MUTATIONS
+// =============================================================================
+// Pure functions: config in -> MutationResult out
+// Orchestrated by applyMutation: load -> mutate -> validate -> write
+
+entity MutationResult {
+  variant: ok { value: WorkspaceConfig }
+         | error { error: MutationError }
+}
+
+entity MutationError {
+  variant: not_found { entityId: String, entityType: String }
+         | validation { message: String, issues: List<ZodIssue> }
+         | conflict { willUnlinkFrom: List<CascadeTarget> }
+         | invalid_operation { message: String }
+         | write { message: String }
+}
+
+value CascadeTarget {
+  // Currently only jobs
+  type: "job",
+  jobId: String,
+  remainingTriggers: Int
+}
+
+rule ApplyMutationLifecycle {
+  when: ApplyMutation(workspacePath, mutationFn),
+  requires: true,
+  ensures: 1. resolve config path (prefer persistent over ephemeral),
+           2. load current config via ConfigLoader,
+           3. apply mutation function (pure),
+           4. validate result against WorkspaceConfigSchema,
+           5. call onBeforeWrite callback if provided,
+           6. atomic write (temp file + rename) to source file
+}
+
+rule CreateSignalIdempotency {
+  when: CreateSignal(config, signalId, signal),
+  requires: signalId not in config.signals,
+  ensures: conflict error if signal already exists
+}
+
+rule UpdateSignalProviderImmutability {
+  when: UpdateSignal(config, signalId, signal),
+  requires: signal.provider == existing.provider,
+  ensures: invalid_operation error on provider type change
+}
+
+rule DeleteSignalCascade {
+  when: DeleteSignal(config, signalId, options),
+  requires: if jobs reference signal AND force is not true then conflict error,
+  ensures: with force=true, signal removed AND trigger references
+           removed from affected jobs
+}
+
+rule UpdateFSMAgentTypeImmutability {
+  when: UpdateFSMAgent(config, pathId, update),
+  requires: update.type == existing action type,
+  ensures: invalid_operation error on type change (agent -> llm or vice versa)
+}
+
+rule CredentialPathFormat {
+  when: UpdateCredential(config, path, credentialId),
+  requires: path matches format "{type}:{entityId}:{envVar}" where type is "mcp" | "agent",
+  ensures: validation error on invalid format
+}
+
+// =============================================================================
+// SUPERVISOR DEFAULTS
+// =============================================================================
+
+rule SupervisorDefaultsValidation {
+  when: module loaded,
+  requires: true,
+  ensures: compiled-in supervisor defaults are validated against
+           SupervisorsConfigSchema at module load time (fail-fast)
+}
+
+config SupervisorDefaultValues {
+  workspace_model: "claude-sonnet-4-5",
+  workspace_level: "standard",
+  session_model: "claude-sonnet-4-5",
+  session_level: "detailed",
+  agent_model: "claude-sonnet-4-5",
+  agent_level: "minimal"
+}
+
+// =============================================================================
+// WORKSPACE BLUEPRINT (planner output, separate from config system)
+// =============================================================================
+// Lives in @atlas/schemas, consumed by the compiler.
+// Duplicates some signal/agent concepts with different shapes.
+
+entity WorkspaceBlueprint {
+  workspace: { name: String, purpose: String },
+  signals: List<BlueprintSignal>,
+  agents: List<BlueprintAgent>,
+  jobs: List<BlueprintJob>,
+  credentialBindings: List<CredentialBinding>?
+}
+
+// Note: Blueprint schemas use z.object() not z.strictObject()
+// and have different field sets than the workspace.yml schemas.
+
+// =============================================================================
+// OPEN QUESTIONS
+// =============================================================================
+
+open_question "SignalProvider enum in base.ts declares ['http', 'schedule', 'system'] but the actual discriminated union in signals.ts adds 'fs-watch'. The enum is not used as a constraint on the union -- is the enum stale/dead code?"
+
+// RESOLVED: Temperature range aligned to 0-2 across all agent types.
+
+// RESOLVED: AtlasAgentConfigSchema now uses z.strictObject() to match LLM/system agent schemas.
+
+open_question "RuntimeConfig.sessions.timeout uses raw milliseconds (Int, 60000..86400000) while every other timeout in the system uses the Duration string format ('30s', '5m', '2h'). Should this be migrated to Duration?"
+
+open_question "The workspace blueprint schemas in @atlas/schemas duplicate signal/agent concepts with different shapes and field names (e.g. 'signalType' vs 'provider', 'needs' vs 'tools'). There is no shared base between the config schemas and the blueprint schemas -- is this deliberate separation of concerns or accidental drift?"
+
+open_question "Library item schemas in @atlas/schemas use z.object() (lenient) while all workspace config schemas use z.strictObject() (strict). Is this a conscious choice (library items are more permissive) or inconsistency?"
+
+open_question "PlanningConfig.validation.external_services.deepeval_service uses z.string().nullable() -- the only nullable field in the entire config system. Everything else uses optional(). Is this intentional (null has semantic meaning distinct from absent)?"
+
+open_question "Signal payload schema validation happens at runtime via JSON Schema -> Zod conversion (zod-from-json-schema). If the JSON Schema is malformed, the error is caught and returned as a string. Should malformed schemas be caught at config load time instead?"
+
+open_question "Config merging keeps workspace and atlas configs as separate objects in MergedConfig rather than deep-merging them. Signal/agent lookup checks workspace first, then atlas. But tools, server, and other sections are NOT merged -- atlas simply overrides workspace via schema extension. Is this asymmetry intentional?"
+
+open_question "Mutation system only operates on WorkspaceConfig, never AtlasConfig. Mutations are not available for atlas.yml-specific fields (supervisors, planning, runtime). Is atlas.yml considered immutable at runtime?"
