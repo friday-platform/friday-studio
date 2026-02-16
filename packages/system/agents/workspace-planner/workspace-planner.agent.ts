@@ -161,7 +161,7 @@ export const workspacePlannerAgent = createAgent<
           artifactId: response.data.artifact.id,
           revision: response.data.artifact.revision,
           nextStep:
-            "Show plan to user. On approval, call fsm-workspace-creator with this artifactId. Do NOT call workspace-planner again.",
+            "Plan is auto-displayed to user. Present planSummary and wait for approval. On approval, call fsm-workspace-creator with this artifactId. Do NOT call display_artifact or workspace-planner again.",
         });
       }
 
@@ -191,7 +191,7 @@ export const workspacePlannerAgent = createAgent<
         artifactId: response.data.artifact.id,
         revision: 1,
         nextStep:
-          "Show plan to user. On approval, call fsm-workspace-creator with this artifactId. Do NOT call workspace-planner again.",
+          "Plan is auto-displayed to user. Present planSummary and wait for approval. On approval, call fsm-workspace-creator with this artifactId. Do NOT call display_artifact or workspace-planner again.",
       });
     } catch (error) {
       if (error instanceof PipelineError) {

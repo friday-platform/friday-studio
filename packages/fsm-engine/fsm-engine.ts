@@ -1106,13 +1106,18 @@ export class FSMEngine {
 
           // Capture LLM result for session history side-channel
           if (result.ok) {
+            const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+              toolName: tc.toolName,
+              args: tc.input,
+            }));
+            // Structured output = args from the "complete" tool call (the actual
+            // result the agent declared). Falls back to result.data (LLM text)
+            // when no complete tool call exists. Mirrors workspace-runtime logic.
+            const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
             llmResultData = {
-              toolCalls: (result.toolCalls ?? []).map((tc) => ({
-                toolName: tc.toolName,
-                args: tc.input,
-              })),
+              toolCalls,
               reasoning: result.reasoning,
-              output: result.data,
+              output: completeCall?.args ?? result.data,
             };
           }
 
@@ -1607,8 +1612,7 @@ export class FSMEngine {
   async reset(): Promise<void> {
     this._currentState = this._definition.initial;
     this._results.clear();
-
-    // DON'T clear documents - let idle state entry actions decide what to clean
+    this._documents.clear();
     this._signalQueue = [];
     this._emittedEvents = [];
     this._recursionDepth = 0;

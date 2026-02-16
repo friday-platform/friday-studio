@@ -79,6 +79,9 @@ export function formatMessage(
     }
 
     if (part.type === "tool-display_artifact") {
+      if (part?.output?.displayed?.type === "workspace-plan") {
+        return undefined;
+      }
       return {
         type: "display_artifact",
         id: crypto.randomUUID(),

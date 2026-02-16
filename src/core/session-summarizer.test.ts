@@ -109,14 +109,18 @@ describe("generateSessionSummary", () => {
     expect(prompt).toContain("failed");
   });
 
-  it("includes last block output detail in the prompt", async () => {
+  it("includes final step output as the deliverable in the prompt", async () => {
     mockGenerate.mockResolvedValueOnce({ object: summaryResult });
     const view = makeView();
 
     await generateSessionSummary(view, { generateObject: mockGenerate });
 
     const prompt = getPromptFromMock(mockGenerate);
+    // Only the last block's output is included as the result
     expect(prompt).toContain("notion.so/digest-123");
+    // Intermediate outputs are NOT included
+    expect(prompt).not.toContain("Fix auth");
+    expect(prompt).not.toContain("Weekly Digest");
   });
 
   it("returns structured summary on success", async () => {

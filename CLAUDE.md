@@ -34,6 +34,10 @@ go build                # Build
 
 ## Hard Rules
 
+- When fixing lint errors, remove dead code entirely — don't just prefix unused
+  variables with `_` to silence the linter. Trace the dependency chain and
+  delete everything that's only reachable from the unused symbol.
+
 - Use `@atlas/logger`, never `console.*` (`proto/` dev CLI tools are exempt)
 - No `any` types - use `unknown` or proper types
 - No `as` assertions - use Zod schemas for parsing. `as const` on string

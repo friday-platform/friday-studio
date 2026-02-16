@@ -17,9 +17,8 @@ export const workspaceCreationSkill = {
 - Using existing workspaces (use workspace_signal_trigger instead)
 
 ## Required Tools
-- workspace-planner: generates plan artifact
+- workspace-planner: generates plan artifact (auto-displayed to user)
 - fsm-workspace-creator: creates workspace from artifact
-- display_artifact: shows plan to user
 - workspace_describe: get workspace details after creation
 
 ## Workflow (follow exactly)
@@ -34,30 +33,28 @@ Ask about (use numbered list):
 ### Step 2: Generate Plan
 Call workspace-planner with complete user intent.
 Returns: {planSummary, artifactId, revision}
+The plan is automatically displayed to the user — do NOT call display_artifact.
+Present planSummary to user and wait for approval.
 
-### Step 3: Show Plan
-Call display_artifact with artifactId.
-Present planSummary to user.
-
-### Step 4: Get Approval
+### Step 3: Get Approval
 NEVER create without explicit approval.
 Wait for: "yes", "proceed", "go ahead", "create it"
 
 **On approval (user says yes):**
 - The artifactId is in workspace-planner's response
-- Go directly to Step 5
+- Go directly to Step 4
 - DO NOT call workspace-planner again
 
 **On change request (user asks for modifications):**
 - Call workspace-planner with SAME artifactId + user's changes
 - This creates a revision, not a new plan
-- Return to Step 3 to show updated plan
+- Return to Step 2 to show updated plan
 
-### Step 5: Create Workspace
+### Step 4: Create Workspace
 IMMEDIATELY after approval, call fsm-workspace-creator with {artifactId}.
 Do NOT re-plan. The plan was already approved.
 
-### Step 6: Handle Creation Errors
+### Step 5: Handle Creation Errors
 
 If fsm-workspace-creator fails:
 

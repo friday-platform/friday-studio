@@ -7,12 +7,9 @@
   import { resolve } from "$app/paths";
   import Button from "$lib/components/button.svelte";
   import { Dialog } from "$lib/components/dialog";
-  import Dot from "$lib/components/dot.svelte";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
-  import ArrowLeft from "$lib/components/icons/arrow-left.svelte";
   import { IconSmall } from "$lib/components/icons/small";
-  import { formatChatDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import type { PageData } from "./$types";
 

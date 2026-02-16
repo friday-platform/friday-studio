@@ -67,14 +67,11 @@ export async function* sessionEventStream(
         signal: controller.signal,
       });
 
-      if (response.status === 404) {
-        // Session not in stream registry — fall back to JSON endpoint
+      if (response.status === 404 || response.status === 410) {
+        // Session not in stream registry (404) or old format (410) — fall back to JSON endpoint.
+        // The JSON endpoint has v2 data even when the stream returns 410 (v1 file exists alongside v2).
         yield* fetchJsonFallback(jsonUrl);
         return;
-      }
-
-      if (response.status === 410) {
-        throw new Error("Session uses an outdated format and cannot be displayed");
       }
 
       if (!response.ok) {

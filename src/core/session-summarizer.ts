@@ -58,7 +58,9 @@ export async function generateSessionSummary(
 
 /**
  * Build the LLM prompt from session view data.
- * Keeps context minimal: job intent, condensed step list, last block detail.
+ * Structure: condensed step list for context + final step output as the
+ * deliverable. The last step's output is what the job produced — earlier
+ * steps are implementation details.
  */
 function buildPrompt(view: SessionView, jobDescription?: string): string {
   const job = jobDescription ?? view.task;
@@ -70,14 +72,16 @@ function buildPrompt(view: SessionView, jobDescription?: string): string {
     .join("\n");
 
   const lastBlock = view.agentBlocks.at(-1);
-  const lastBlockSection = lastBlock
-    ? `## Final Step
+  const resultSection = lastBlock
+    ? `## Result
 Agent: ${lastBlock.agentName}
 Status: ${lastBlock.status}
 Output: ${JSON.stringify(lastBlock.output)}${lastBlock.error ? `\nError: ${lastBlock.error}` : ""}`
     : "No steps executed.";
 
-  return `Summarize the result of this automated job.
+  return `Summarize this automated job. Focus on what was delivered, not the process.
+
+Key details should be the concrete deliverables and artifacts produced (documents created, URLs, titles). Do NOT rehash intermediate steps or restate the job description.
 
 ## Job
 ${job}
@@ -86,5 +90,5 @@ Status: ${view.status}
 ## Steps
 ${steps || "No steps."}
 
-${lastBlockSection}`;
+${resultSection}`;
 }

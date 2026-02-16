@@ -6,10 +6,10 @@
   import { Icons } from "$lib/components/icons";
   import { hasContext, type Snippet } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
-  import { get, writable } from "svelte/store";
+  import { get } from "svelte/store";
   import { getContext } from "./context";
 
-  const { item, createCheckboxItem } = getContext();
+  const { item } = getContext();
   const dialogContext = getDialogContext();
 
   type Props = {
@@ -40,12 +40,6 @@
     disabled,
     ...rest
   }: Props & HTMLAttributes<HTMLElement> = $props();
-
-  let localChecked = writable(Boolean(checked));
-
-  const {
-    elements: { checkboxItem },
-  } = createCheckboxItem({ checked: localChecked });
 
   function getElementType() {
     if (rest?.href) {
