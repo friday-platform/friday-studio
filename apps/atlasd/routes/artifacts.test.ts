@@ -1,10 +1,16 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import { MAX_FILE_SIZE, MAX_OFFICE_SIZE, MAX_PDF_SIZE } from "@atlas/core/artifacts/file-upload";
+import {
+  MAX_FILE_SIZE,
+  MAX_IMAGE_SIZE,
+  MAX_OFFICE_SIZE,
+  MAX_PDF_SIZE,
+} from "@atlas/core/artifacts/file-upload";
+import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { black, PDF } from "@libpdf/core";
 import JSZip from "jszip";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { artifactsApp } from "./artifacts.ts";
 
@@ -174,7 +180,7 @@ describe("Upload endpoint", () => {
     const body = await response.json();
     assertErrorResponse(
       body,
-      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
     );
   });
 
@@ -207,7 +213,7 @@ describe("Upload endpoint", () => {
     const body = await response.json();
     assertErrorResponse(
       body,
-      "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+      "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
     );
   });
 
@@ -529,6 +535,219 @@ describe("Get artifact endpoint", () => {
     expect(getResponse.status).toEqual(404);
     const body = await getResponse.json();
     assertErrorResponse(body, "Artifact not found");
+  });
+});
+
+describe("Content endpoint", () => {
+  it("returns binary content with correct Content-Type for image upload", async () => {
+    // Minimal valid 1x1 red PNG (67 bytes) — enough for file-type magic-byte detection
+    // prettier-ignore
+    const pngBytes = new Uint8Array([
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a, // PNG signature
+      0x00,
+      0x00,
+      0x00,
+      0x0d,
+      0x49,
+      0x48,
+      0x44,
+      0x52, // IHDR chunk
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x01, // 1x1, 8-bit RGB
+      0x08,
+      0x02,
+      0x00,
+      0x00,
+      0x00,
+      0x90,
+      0x77,
+      0x53,
+      0xde,
+      0x00,
+      0x00,
+      0x00,
+      0x0c,
+      0x49,
+      0x44,
+      0x41, // IDAT chunk
+      0x54,
+      0x08,
+      0xd7,
+      0x63,
+      0xf8,
+      0xcf,
+      0xc0,
+      0x00,
+      0x00,
+      0x00,
+      0x02,
+      0x00,
+      0x01,
+      0xe2,
+      0x21,
+      0xbc,
+      0x33,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x49,
+      0x45,
+      0x4e, // IEND chunk
+      0x44,
+      0xae,
+      0x42,
+      0x60,
+      0x82,
+    ]);
+    const file = new File([pngBytes], "photo.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("image/png");
+    expect(contentResponse.headers.get("Cache-Control")).toEqual(
+      "private, max-age=31536000, immutable",
+    );
+
+    const returnedBytes = new Uint8Array(await contentResponse.arrayBuffer());
+    expect(returnedBytes).toEqual(pngBytes);
+  });
+
+  it("returns 404 for non-existent artifact", async () => {
+    const response = await artifactsApp.request("/00000000-0000-0000-0000-000000000000/content", {
+      method: "GET",
+    });
+
+    expect(response.status).toEqual(404);
+    const body = await response.json();
+    assertErrorResponse(body, "Artifact not found");
+  });
+
+  it("returns 404 for non-file artifact", async () => {
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Summary",
+        summary: "A summary",
+        data: { type: "summary", version: 1, data: "Some content" },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(404);
+    const body = await contentResponse.json();
+    assertErrorResponse(body, "Content endpoint only supports file artifacts");
+  });
+
+  it("returns 500 with error message when readBinaryContents fails", async () => {
+    // Upload a valid file to get a real artifact ID
+    const file = createTestFile("binary content", "data.txt", "text/plain");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Stub readBinaryContents to simulate storage failure
+    const spy = vi
+      .spyOn(ArtifactStorage, "readBinaryContents")
+      .mockResolvedValueOnce({ ok: false, error: "Storage read failed" });
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(500);
+    const body = await contentResponse.json();
+    assertErrorResponse(body, "Storage read failed");
+
+    spy.mockRestore();
+  });
+
+  it("returns security headers for image content", async () => {
+    // Minimal valid 1x1 PNG
+    // prettier-ignore
+    const pngBytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+      0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8,
+      0xcf, 0xc0, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00, 0x00, 0x00,
+      0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const file = new File([pngBytes], "sec.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    expect(contentResponse.headers.get("Content-Disposition")).toEqual("inline");
+  });
+
+  it("returns attachment disposition for non-image content", async () => {
+    const file = createTestFile('{"key":"val"}', "data.json", "application/json");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    expect(contentResponse.headers.get("Content-Disposition")).toEqual("attachment");
   });
 });
 
@@ -1058,6 +1277,127 @@ describe("Mismatched extension rejection", () => {
     expect(response.status).toEqual(500);
     const body = await response.json();
     assertErrorResponse(body, "This DOCX file appears to be corrupted or invalid.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Image upload tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Minimal valid 1x1 PNG (67 bytes) */
+const TINY_PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+  0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+  0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+  0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+/** Minimal valid JPEG (SOI + APP0/JFIF + EOI) */
+const TINY_JPEG = new Uint8Array([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+  0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
+]);
+
+describe("Image upload integration", () => {
+  it("creates file artifact for PNG upload", async () => {
+    const file = new File([TINY_PNG.buffer], "photo.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("chatId", "test-chat-img");
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.title).toEqual("photo.png");
+    expect(body.artifact.chatId).toEqual("test-chat-img");
+  });
+
+  it("creates file artifact for JPEG upload", async () => {
+    const file = new File([TINY_JPEG.buffer], "photo.jpg", { type: "image/jpeg" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.title).toEqual("photo.jpg");
+  });
+
+  it("stores image with correct mimeType and originalName", async () => {
+    const file = new File([TINY_PNG.buffer], "diagram.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = FileArtifactResponseSchema.parse(await uploadResponse.json());
+
+    expect(artifact.data.type).toEqual("file");
+    expect(artifact.data.data.mimeType).toEqual("image/png");
+    expect(artifact.data.data.originalName).toEqual("diagram.png");
+  });
+
+  it("uses 'Image: {originalName}' as summary (no LLM call)", async () => {
+    const file = new File([TINY_PNG.buffer], "screenshot.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const body = await uploadResponse.json();
+    const parsed = ArtifactResponseSchema.parse(body);
+    const summary = (parsed.artifact as { summary?: string }).summary;
+    expect(summary).toEqual("Image: screenshot.png");
+  });
+
+  it("rejects image over 5MB with 413", async () => {
+    const largeContent = createLargeBuffer(MAX_IMAGE_SIZE + 1);
+    const file = new File([largeContent], "huge.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(413);
+    const body = await response.json();
+    assertErrorResponse(body, "Image files must be under 5MB.");
+  });
+
+  it("rejects unsupported image format (.bmp) with 415", async () => {
+    const file = createTestFile("fake bmp content", "photo.bmp", "image/bmp");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(415);
+  });
+
+  it("does not convert images — stored path retains original extension", async () => {
+    const file = new File([TINY_PNG.buffer], "raw.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = FileArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // The stored path should have .png extension, not .md
+    expect(artifact.data.data.path).toMatch(/\.png$/);
   });
 });
 

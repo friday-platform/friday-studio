@@ -20,6 +20,7 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
+import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -443,6 +444,7 @@ export class WorkspaceRuntime {
       agentExecutor,
       mcpToolProvider,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
+      artifactStorage: ArtifactStorage,
     };
 
     // Load engine from inline definition or file

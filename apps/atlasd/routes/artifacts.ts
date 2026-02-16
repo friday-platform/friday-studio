@@ -20,9 +20,11 @@ import {
 import {
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
+  isImageMimeType,
   isInvalidChatId,
   LEGACY_FORMAT_ERRORS,
   MAX_FILE_SIZE,
+  MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
@@ -42,11 +44,15 @@ import { getCurrentUserId } from "./me/adapter.ts";
 const logger = createLogger({ name: "artifacts-upload" });
 const analytics = createAnalyticsClient();
 
-/** Binary MIME types that are allowed through magic-byte detection (converted to markdown). */
-const CONVERTIBLE_BINARY_MIMES = new Set([
+/** Binary MIME types allowed through magic-byte detection (documents are converted; images stored as-is). */
+const ALLOWED_BINARY_MIMES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
 ]);
 
 /** Office extensions that may be detected as application/zip by file-type. */
@@ -309,13 +315,14 @@ export async function createArtifactFromFile(opts: {
   const detected = await fileTypeFromFile(filePath);
   if (detected) {
     const isAllowed =
-      CONVERTIBLE_BINARY_MIMES.has(detected.mime) ||
+      ALLOWED_BINARY_MIMES.has(detected.mime) ||
       (detected.mime === "application/zip" && OFFICE_EXTENSIONS.has(ext));
     if (!isAllowed) {
       await rm(filePath, { force: true });
       return {
         ok: false as const,
-        error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+        error:
+          "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
       };
     }
   }
@@ -424,6 +431,58 @@ export async function createArtifactFromFile(opts: {
         return `PPTX presentation, ${slideCount} slide${slideCount !== 1 ? "s" : ""}`;
       },
     });
+  }
+
+  // Image files — store as-is, no conversion, no LLM summarization
+  const detectedMime = getValidatedMimeType(fileName);
+  if (detectedMime && isImageMimeType(detectedMime)) {
+    try {
+      const { size } = await stat(filePath);
+      if (size > MAX_IMAGE_SIZE) {
+        await rm(filePath, { force: true });
+        return { ok: false as const, error: "Image files must be under 5MB." };
+      }
+
+      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${extname(fileName)}`);
+      await copyFile(filePath, persistedImagePath);
+
+      const result = await ArtifactStorage.create({
+        title: fileName,
+        summary: `Image: ${fileName}`,
+        data: {
+          type: "file",
+          version: 1,
+          data: { path: persistedImagePath, originalName: fileName },
+        },
+        chatId,
+      });
+
+      if (!result.ok) {
+        await unlink(persistedImagePath).catch(() => {});
+        await unlink(filePath).catch(() => {});
+        return { ok: false as const, error: result.error };
+      }
+
+      await unlink(filePath).catch(() => {});
+      if (usingCortex) {
+        await unlink(persistedImagePath).catch((err) => {
+          logger.debug("Failed to cleanup temp image file", {
+            path: persistedImagePath,
+            error: stringifyError(err),
+          });
+        });
+      }
+
+      await emitArtifactCreatedEvent(result.data.id, "file", chatId);
+      return { ok: true as const, artifact: result.data };
+    } catch (error) {
+      await unlink(filePath).catch(() => {});
+      logger.error("Failed to create image artifact", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false as const, error: "Upload failed" };
+    }
   }
 
   // Non-CSV file artifact — copy to staging dir (persistent for local, /tmp for Cortex)
@@ -771,6 +830,52 @@ const artifactsApp = daemonFactory
       return c.json({ error: "Failed to export database" }, 500);
     }
   })
+  /** Serve raw binary content for file artifacts */
+  .get(
+    "/:id/content",
+    zValidator("param", z.object({ id: z.string() })),
+    zValidator("query", GetArtifactQuery.optional()),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const query = c.req.valid("query");
+
+      const result = await ArtifactStorage.get({ id, revision: query?.revision });
+      if (!result.ok) {
+        return c.json({ error: result.error }, 500);
+      }
+      if (!result.data) {
+        return c.json({ error: "Artifact not found" }, 404);
+      }
+
+      const artifact = result.data;
+      if (artifact.data.type !== "file") {
+        return c.json({ error: "Content endpoint only supports file artifacts" }, 404);
+      }
+
+      const binaryResult = await ArtifactStorage.readBinaryContents({
+        id,
+        revision: query?.revision,
+      });
+      if (!binaryResult.ok) {
+        return c.json({ error: binaryResult.error }, 500);
+      }
+
+      const { mimeType } = artifact.data.data;
+      const disposition = isImageMimeType(mimeType) ? "inline" : "attachment";
+
+      const body = new Uint8Array(binaryResult.data);
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "Content-Type": mimeType,
+          "Content-Length": String(body.byteLength),
+          "Content-Disposition": disposition,
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "private, max-age=31536000, immutable",
+        },
+      });
+    },
+  )
   /** Upload file as artifact */
   .post("/upload", async (c) => {
     const contentType = c.req.header("content-type") || "";
@@ -799,7 +904,7 @@ const artifactsApp = daemonFactory
       return c.json({ error: uploadLegacyError }, 415);
     }
 
-    // Size validation - PDFs and Office files have a lower limit due to memory usage during extraction
+    // Size validation - type-specific limits enforced before the general limit
     if (isPdfFile(file.name) && file.size > MAX_PDF_SIZE) {
       const maxSizeMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
       return c.json({ error: `PDF too large (max ${maxSizeMB}MB)` }, 413);
@@ -810,6 +915,10 @@ const artifactsApp = daemonFactory
         { error: `${uploadExt.slice(1).toUpperCase()} too large (max ${maxSizeMB}MB)` },
         413,
       );
+    }
+    const mimeType = getValidatedMimeType(file.name);
+    if (mimeType && isImageMimeType(mimeType) && file.size > MAX_IMAGE_SIZE) {
+      return c.json({ error: "Image files must be under 5MB." }, 413);
     }
     if (file.size > MAX_FILE_SIZE) {
       const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));

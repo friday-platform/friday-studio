@@ -1,5 +1,6 @@
 <script lang="ts">
   import { type FileData } from "@atlas/core/artifacts";
+  import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { createCollapsible } from "@melt-ui/svelte";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
@@ -16,12 +17,20 @@
   } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
 
-  type Props = { data: FileData; contents?: string };
+  type Props = { data: FileData; contents?: string; artifactId?: string };
 
-  let { data, contents }: Props = $props();
+  let { data, contents, artifactId }: Props = $props();
+
+  const isImage = $derived(data.mimeType?.startsWith("image/") ?? false);
+  const imageUrl = $derived(
+    isImage && artifactId
+      ? `${getAtlasDaemonUrl()}/api/artifacts/${artifactId}/content`
+      : undefined,
+  );
+  let imageError = $state(false);
 
   const parsedContent = $derived.by((): ParsedContent | undefined => {
-    if (!contents) return undefined;
+    if (!contents || isImage) return undefined;
     return parseFileContents(contents, data.mimeType);
   });
 
@@ -98,7 +107,18 @@
     </header>
 
     <div class="contents" use:content {...$content} class:expanded={$open}>
-      {#if parsedContent}
+      {#if isImage && imageUrl}
+        {#if imageError}
+          <p class="image-error">Image could not be loaded</p>
+        {:else}
+          <img
+            src={imageUrl}
+            alt={fileName}
+            class="image-preview"
+            onerror={() => (imageError = true)}
+          />
+        {/if}
+      {:else if parsedContent}
         {#if parsedContent.type === "markdown"}
           <MarkdownContent content={parsedContent.content} />
         {:else if parsedContent.type === "csv"}
@@ -210,6 +230,17 @@
       margin: 0;
       white-space: pre-wrap;
       font-size: var(--font-size-2);
+    }
+
+    .image-error {
+      color: var(--color-text-muted);
+      font-style: italic;
+    }
+
+    .image-preview {
+      display: block;
+      max-inline-size: 100%;
+      object-fit: contain;
     }
 
     .unsupported,

@@ -12,14 +12,16 @@ import {
 } from "@atlas/agent-sdk";
 import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
+import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
+import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { logger } from "@atlas/logger";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
-import { type Tool, tool } from "ai";
+import { type CoreMessage, type ImagePart, type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
-import { expandArtifactRefsInDocuments } from "./artifact-expansion.ts";
+import { expandArtifactRefsInDocuments, extractRefs } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
@@ -174,6 +176,8 @@ export interface FSMEngineOptions {
   agentExecutor?: AgentExecutor;
   mcpToolProvider?: import("./mcp-tool-context.ts").MCPToolProvider;
   validateOutput?: OutputValidator;
+  /** Storage adapter for resolving image artifact binary data */
+  artifactStorage?: ArtifactStorageAdapter;
 }
 
 export class FSMEngine {
@@ -783,8 +787,12 @@ export class FSMEngine {
             }
           }
 
-          // Build prompt with expanded artifact content and skills
-          let contextPrompt = await this.buildContextPrompt(action.prompt, documents, skills);
+          // Build prompt with expanded artifact content, skills, and image resolution
+          let { prompt: contextPrompt, images } = await this.buildContextPrompt(
+            action.prompt,
+            documents,
+            skills,
+          );
 
           if (completeToolInjected) {
             contextPrompt +=
@@ -798,10 +806,18 @@ export class FSMEngine {
           // Build agentId for the LLM action
           const llmAgentId = `fsm:${this.definition.id}:${action.outputTo ?? "llm"}`;
 
+          // When images are present, assemble a messages array with mixed content.
+          // Otherwise, use the prompt-only path for backward compatibility.
+          const messages: CoreMessage[] | undefined =
+            images.length > 0
+              ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
+              : undefined;
+
           let result = await this.options.llmProvider.call({
             agentId: llmAgentId,
             model: action.model,
             prompt: contextPrompt,
+            messages,
             tools,
             toolChoice: "auto", // Let LLM decide when to stop calling tools
             stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
@@ -849,10 +865,17 @@ export class FSMEngine {
                 }\n</validation-feedback>\n` +
                 `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
 
+              // Rebuild messages with retry prompt, preserving image parts from the original call
+              const retryMessages: CoreMessage[] | undefined =
+                images.length > 0
+                  ? [{ role: "user", content: [{ type: "text", text: retryPrompt }, ...images] }]
+                  : undefined;
+
               result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
                 model: action.model,
                 prompt: retryPrompt,
+                messages: retryMessages,
                 tools,
                 toolChoice: "auto", // Let LLM decide when to stop calling tools
                 stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
@@ -1152,14 +1175,44 @@ export class FSMEngine {
     basePrompt: string,
     documents: Map<string, Document> = this._documents,
     skills: SkillSummary[] = [],
-  ): Promise<string> {
+  ): Promise<{ prompt: string; images: ImagePart[] }> {
     let prompt = basePrompt;
+    const images: ImagePart[] = [];
 
     // Inject document context into prompt with expanded artifact content
     const docs = Array.from(documents.values());
     if (docs.length > 0) {
       // Expand artifact refs to include actual content for downstream LLM steps
       const expandedDocs = await expandArtifactRefsInDocuments(docs);
+
+      // Resolve image artifacts if storage adapter is available
+      if (this.options.artifactStorage) {
+        const artifactIds = new Set<string>();
+        for (const doc of docs) {
+          for (const ref of extractRefs(doc)) {
+            artifactIds.add(ref.id);
+          }
+        }
+
+        if (artifactIds.size > 0) {
+          const result = await this.options.artifactStorage.getManyLatest({
+            ids: [...artifactIds],
+          });
+
+          if (result.ok) {
+            const parts = await resolveImageParts(result.data, this.options.artifactStorage);
+
+            for (const part of parts) {
+              if (part.type === "image") {
+                images.push(part);
+              } else {
+                // TextPart fallback (binary read failed) — append to prompt
+                prompt += `\n${part.text}`;
+              }
+            }
+          }
+        }
+      }
 
       const docsContext = expandedDocs
         .map((doc) => `Document ${doc.id} (${doc.type}): ${JSON.stringify(doc.data, null, 2)}`)
@@ -1173,7 +1226,7 @@ export class FSMEngine {
       prompt = `${prompt}\n\n${formatAvailableSkills(skills)}`;
     }
 
-    return prompt;
+    return { prompt, images };
   }
 
   /**

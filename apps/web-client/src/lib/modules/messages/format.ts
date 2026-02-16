@@ -29,8 +29,9 @@ export function formatMessage(
         type: "artifact_attached",
         id: message.id,
         timestamp: new Date().toISOString(),
-        artifactIds: (part.data?.artifactIds as string[]) ?? [],
-        filenames: (part.data?.filenames as string[]) ?? [],
+        artifactIds: part.data.artifactIds ?? [],
+        filenames: part.data.filenames ?? [],
+        mimeTypes: part.data.mimeTypes,
       };
     }
   }

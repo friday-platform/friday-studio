@@ -659,6 +659,52 @@ describe("LocalAdapter: Files", () => {
 });
 
 //
+// 6b. Binary File Handling
+//
+
+describe("LocalAdapter: Binary Files", () => {
+  it("readBinaryContents returns raw bytes for image file", async () => {
+    const adapter = await createTestAdapter();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "test-img-"));
+    const tempFile = path.join(tempDir, "test.png");
+    const imageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await fs.writeFile(tempFile, imageBytes);
+
+    const createResult = await adapter.create(createFileArtifactInput(tempFile));
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readBinaryContents({ id: createResult.data.id });
+
+    assertResultOk(readResult);
+    expect(readResult.data).toBeInstanceOf(Uint8Array);
+    expect(readResult.data).toEqual(imageBytes);
+
+    await cleanupTempFile(tempFile);
+  });
+
+  it("readBinaryContents fails for non-file artifacts", async () => {
+    const adapter = await createTestAdapter();
+
+    const createResult = await adapter.create(createSummaryArtifactInput());
+    assertResultOk(createResult);
+
+    const readResult = await adapter.readBinaryContents({ id: createResult.data.id });
+
+    assertResultFail(readResult);
+    expect(readResult.error).toContain("not a file artifact");
+  });
+
+  it("readBinaryContents fails for missing artifacts", async () => {
+    const adapter = await createTestAdapter();
+
+    const readResult = await adapter.readBinaryContents({ id: "non-existent" });
+
+    assertResultFail(readResult);
+    expect(readResult.error).toContain("not found");
+  });
+});
+
+//
 // 7. Artifact Type Coverage
 //
 

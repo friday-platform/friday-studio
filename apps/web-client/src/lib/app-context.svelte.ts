@@ -4,7 +4,10 @@ import {
   ALLOWED_MIME_TYPES,
   CHUNK_SIZE,
   CHUNKED_UPLOAD_THRESHOLD,
+  EXTENSION_TO_MIME,
+  isImageMimeType,
   MAX_FILE_SIZE,
+  MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
@@ -186,6 +189,10 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
     const maxMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
     return { valid: false, error: `${ext.slice(1).toUpperCase()} files must be under ${maxMB}MB.` };
   }
+  const mimeForExt = EXTENSION_TO_MIME.get(ext);
+  if (mimeForExt && isImageMimeType(mimeForExt) && file.size > MAX_IMAGE_SIZE) {
+    return { valid: false, error: "Image files must be under 5MB." };
+  }
 
   // MIME type check (browser-provided, may be empty)
   if (file.type && ALLOWED_MIME_TYPES.has(file.type)) {
@@ -200,7 +207,7 @@ function validateFile(file: File): { valid: true } | { valid: false; error: stri
   return {
     valid: false,
     error:
-      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, and PPTX files are allowed.",
+      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, WebP, and GIF files are allowed.",
   };
 }
 

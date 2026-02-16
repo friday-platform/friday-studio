@@ -131,7 +131,7 @@ describe("Init endpoint (POST /init)", () => {
     const body = await res.json();
     assertErrorResponse(
       body,
-      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX",
+      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
     );
   });
 
@@ -471,48 +471,15 @@ describe("Completing rejection (409)", () => {
 });
 
 describe("Artifact creation failure (500)", () => {
-  it("fails when file is detected as binary", async () => {
-    // PNG file with enough magic bytes for file-type detection
-    const pngHeader = new Uint8Array([
-      0x89,
-      0x50,
-      0x4e,
-      0x47,
-      0x0d,
-      0x0a,
-      0x1a,
-      0x0a, // PNG signature
-      0x00,
-      0x00,
-      0x00,
-      0x0d,
-      0x49,
-      0x48,
-      0x44,
-      0x52, // IHDR chunk header
-      0x00,
-      0x00,
-      0x00,
-      0x01,
-      0x00,
-      0x00,
-      0x00,
-      0x01, // 1x1 dimensions
-      0x08,
-      0x02,
-      0x00,
-      0x00,
-      0x00,
-      0x90,
-      0x77,
-      0x53, // bit depth, color type, crc start
-    ]);
-    const fileSize = pngHeader.byteLength;
+  it("fails when file is detected as disallowed binary", async () => {
+    // ZIP magic bytes disguised with .txt extension
+    const zipHeader = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const fileSize = zipHeader.byteLength;
 
     const initRes = await initUpload({ fileName: "sneaky.txt", fileSize });
     const { uploadId } = InitResponseSchema.parse(await initRes.json());
 
-    await uploadChunk(uploadId, 0, new Blob([pngHeader]));
+    await uploadChunk(uploadId, 0, new Blob([zipHeader]));
 
     const result = await completeAndWait(uploadId);
     expect(result.status).toEqual("failed");

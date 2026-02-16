@@ -13,6 +13,9 @@ export const MAX_PDF_SIZE = 50 * 1024 * 1024;
 /** Maximum file size for Office document uploads (50MB) - same limit as PDF for same reasons */
 export const MAX_OFFICE_SIZE = 50 * 1024 * 1024;
 
+/** Maximum file size for image uploads (5MB) - matches Anthropic API per-image limit */
+export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
 /** Maximum cumulative decompressed content size for OOXML files (200MB) */
 export const MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024;
 
@@ -29,26 +32,9 @@ export const LEGACY_FORMAT_ERRORS = new Map([
 /**
  * Extension to MIME type mapping for allowed file types.
  *
- * **Why text-only files?**
- *
- * 1. **Security** - Text files are inherently safe to read and display without
- *    special handling. Binary files (executables, archives, images) carry security
- *    risks and require sandboxed rendering.
- *
- * 2. **Agent capability** - The `artifacts_get` tool returns file contents inline
- *    as text. Binary files would require base64 encoding or streaming, adding
- *    complexity without clear use cases today.
- *
- * 3. **MVP scope** - These four formats cover the primary agent use cases:
- *    - CSV: Data analysis, spreadsheets, exports
- *    - JSON: API responses, configs, structured data
- *    - TXT: Logs, notes, plain text content
- *    - MD: Documentation, formatted content
- *
- * 4. **Storage efficiency** - Text files compress well. Binary uploads would
- *    require different storage strategies (deduplication, CDN, etc).
- *
- * Future expansion should be driven by concrete use cases, not speculation.
+ * Covers text formats (CSV, JSON, TXT, MD, YAML), documents (PDF, DOCX, PPTX),
+ * and images (PNG, JPEG, WebP, GIF). Images are stored as-is (no conversion)
+ * and sent as native image content parts to LLMs.
  */
 export const EXTENSION_TO_MIME = new Map([
   [".csv", "text/csv"],
@@ -61,6 +47,11 @@ export const EXTENSION_TO_MIME = new Map([
   [".pdf", "application/pdf"],
   [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
 ]);
 
 /**
@@ -71,7 +62,7 @@ export const EXTENSION_TO_MIME = new Map([
  * Server-side validation uses magic byte detection as the primary check;
  * this set is for fallback when magic bytes aren't conclusive.
  *
- * @see EXTENSION_TO_MIME for the rationale behind text-only file types
+ * @see EXTENSION_TO_MIME for the list of supported file types
  */
 export const ALLOWED_MIME_TYPES = new Set([
   "text/plain",
@@ -83,6 +74,10 @@ export const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,7 +105,15 @@ export function isInvalidChatId(chatId: string): boolean {
 
 /** Error message for disallowed file types */
 export const FILE_TYPE_NOT_ALLOWED_ERROR =
-  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX";
+  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF";
+
+/** MIME types supported for image upload and LLM vision input */
+const SUPPORTED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+/** Returns true if the given MIME type is a supported image type */
+export function isImageMimeType(mimeType: string): boolean {
+  return SUPPORTED_IMAGE_MIMES.has(mimeType);
+}
 
 /** Extract and validate file extension against EXTENSION_TO_MIME. Returns MIME type or undefined. */
 export function getValidatedMimeType(fileName: string): string | undefined {

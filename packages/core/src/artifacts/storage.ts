@@ -61,6 +61,8 @@ export const ArtifactStorage: ArtifactStorageAdapter = {
   listByChat: (input: { chatId: string; limit?: number }) => adapter.listByChat(input),
   deleteArtifact: (input: { id: string }) => adapter.deleteArtifact(input),
   readFileContents: (input: { id: string; revision?: number }) => adapter.readFileContents(input),
+  readBinaryContents: (input: { id: string; revision?: number }) =>
+    adapter.readBinaryContents(input),
   readDatabasePreview: (input: ReadDatabasePreviewOptions) => adapter.readDatabasePreview(input),
   downloadDatabaseFile: (input: { id: string; revision?: number; outputDir?: string }) =>
     adapter.downloadDatabaseFile(input),

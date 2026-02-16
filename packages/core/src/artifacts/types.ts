@@ -111,6 +111,13 @@ export interface ArtifactStorageAdapter {
   readFileContents(input: { id: string; revision?: number }): Promise<Result<string, string>>;
 
   /**
+   * Read binary contents for file-type artifacts.
+   * Returns raw bytes for any file artifact regardless of MIME type.
+   * Used for image support and binary content endpoints.
+   */
+  readBinaryContents(input: { id: string; revision?: number }): Promise<Result<Uint8Array, string>>;
+
+  /**
    * Read database preview for database-type artifacts.
    * Returns first N rows with schema information.
    *

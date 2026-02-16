@@ -1,5 +1,6 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
+  import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { getAppContext, handleFileDrop, isFileInProgress } from "$lib/app-context.svelte";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
@@ -109,6 +110,7 @@
         <input
           type="file"
           class="sr-only"
+          accept={ALLOWED_EXTENSION_LIST.join(",")}
           multiple
           onchange={(e) => {
             const files = e.currentTarget.files;

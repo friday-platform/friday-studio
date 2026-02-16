@@ -19,7 +19,7 @@ const logger = baseLogger.child({ component: "artifact-expansion" });
  * Also handles Result wrapper pattern: { ok: true, data: { artifactRef: {...} } }
  * Malformed refs are logged and skipped rather than crashing.
  */
-function extractRefs(doc: Document): ArtifactRef[] {
+export function extractRefs(doc: Document): ArtifactRef[] {
   const refs: ArtifactRef[] = [];
   const raw = doc.data;
 

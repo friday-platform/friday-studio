@@ -6,9 +6,17 @@
  */
 
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import { isImageMimeType } from "@atlas/core/artifacts/file-upload";
+import { resolveImageParts } from "@atlas/core/artifacts/images";
+import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { pruneMessages } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { convertToModelMessages, type ModelMessage, type UserModelMessage } from "ai";
+import {
+  convertToModelMessages,
+  type ImagePart,
+  type ModelMessage,
+  type UserModelMessage,
+} from "ai";
 
 interface MessageWindowConfig {
   /** Maximum token budget for message history (excluding system prompts) */
@@ -17,6 +25,8 @@ interface MessageWindowConfig {
 
 // Token estimation constants
 const AVG_CHARS_PER_TOKEN = 4;
+/** Estimated tokens per image — based on Anthropic's ~1600 token cost for most images */
+const TOKENS_PER_IMAGE = 1600;
 
 /**
  * Expand credential-linked data parts into text parts for LLM consumption.
@@ -59,9 +69,9 @@ function expandArtifactAttachedParts(messages: AtlasUIMessage[]): AtlasUIMessage
     return {
       ...msg,
       parts: msg.parts.map((part) => {
-        if (part.type === "data-artifact-attached" && Array.isArray(part.data?.artifactIds)) {
-          const ids = part.data.artifactIds as string[];
-          const filenames = (part.data.filenames as string[]) ?? [];
+        if (part.type === "data-artifact-attached" && Array.isArray(part.data.artifactIds)) {
+          const ids = part.data.artifactIds;
+          const filenames = part.data.filenames ?? [];
 
           // Build attachment list with both filename and artifact ID
           // Format: "filename (artifact:uuid)" - filename for friendly display, ID for agent processing
@@ -79,13 +89,123 @@ function expandArtifactAttachedParts(messages: AtlasUIMessage[]): AtlasUIMessage
 }
 
 /**
+ * Collect image artifact IDs from the most recent user message only.
+ * Uses the mimeTypes array from the event payload (added by task #6).
+ * Must be called BEFORE expandArtifactAttachedParts since expansion replaces data parts.
+ *
+ * Only the last user turn's images are injected as ImageParts — older images
+ * are represented by the text fallback from expandArtifactAttachedParts.
+ */
+function collectImageArtifactIds(messages: AtlasUIMessage[]): string[] {
+  const imageIds: string[] = [];
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "user") continue;
+
+    for (const part of msg.parts) {
+      if (part.type !== "data-artifact-attached") continue;
+      if (!Array.isArray(part.data.artifactIds)) continue;
+
+      const ids = part.data.artifactIds;
+      const mimeTypes = part.data.mimeTypes ?? [];
+
+      for (let j = 0; j < ids.length; j++) {
+        const mime = mimeTypes[j];
+        const id = ids[j];
+        if (id && mime && isImageMimeType(mime)) {
+          imageIds.push(id);
+        }
+      }
+    }
+
+    break; // Only process the last user message
+  }
+
+  return imageIds;
+}
+
+/**
+ * Inject resolved ImageParts into the last user ModelMessage.
+ * Fetches image artifacts from storage, resolves binary data, and appends
+ * ImageParts alongside the existing text content.
+ */
+async function injectImageParts(
+  modelMessages: ModelMessage[],
+  imageArtifactIds: string[],
+  logger: Logger,
+): Promise<ModelMessage[]> {
+  if (imageArtifactIds.length === 0) return modelMessages;
+
+  const fetchResult = await ArtifactStorage.getManyLatest({ ids: imageArtifactIds });
+  if (!fetchResult.ok) {
+    logger.warn("Failed to fetch image artifacts for message injection", {
+      error: fetchResult.error,
+    });
+    return modelMessages;
+  }
+
+  const imageParts = await resolveImageParts(fetchResult.data, ArtifactStorage);
+  if (imageParts.length === 0) return modelMessages;
+
+  // Find the last user message and append ImageParts to it
+  const lastUserIdx = modelMessages.findLastIndex((m) => m.role === "user");
+  if (lastUserIdx === -1) return modelMessages;
+
+  const lastUser = modelMessages[lastUserIdx];
+  if (!lastUser) return modelMessages;
+  const existingContent =
+    typeof lastUser.content === "string"
+      ? [{ type: "text" as const, text: lastUser.content }]
+      : [...lastUser.content];
+
+  const result = [...modelMessages];
+  result[lastUserIdx] = {
+    ...lastUser,
+    content: [...existingContent, ...imageParts],
+  } as ModelMessage;
+
+  logger.debug("Injected image parts into last user message", {
+    imageCount: imageParts.length,
+    artifactIds: imageArtifactIds,
+  });
+
+  return result;
+}
+
+/**
  * Estimate tokens for any input (message object or string) using robust JSON string length heuristic.
+ * ImageParts are assigned a fixed cost (~1600 tokens) instead of serializing binary data.
  */
 export function estimateTokens(input: unknown): number {
   if (input === undefined || input === null) return 0;
+
+  // Handle ModelMessage objects — check content array for ImageParts
+  if (isModelMessageLike(input) && Array.isArray(input.content)) {
+    let tokens = 0;
+    for (const part of input.content) {
+      if (isImagePartLike(part)) {
+        tokens += TOKENS_PER_IMAGE;
+      } else {
+        tokens += Math.ceil((JSON.stringify(part)?.length || 0) / AVG_CHARS_PER_TOKEN);
+      }
+    }
+    // Add overhead for role and message structure
+    tokens += Math.ceil(JSON.stringify({ role: input.role }).length / AVG_CHARS_PER_TOKEN);
+    return tokens;
+  }
+
   // Simple, robust heuristic: 1 token ~= 4 characters of JSON representation
   const jsonString = JSON.stringify(input);
   return Math.ceil((jsonString?.length || 0) / AVG_CHARS_PER_TOKEN);
+}
+
+function isModelMessageLike(input: unknown): input is { role: string; content: unknown } {
+  return typeof input === "object" && input !== null && "role" in input && "content" in input;
+}
+
+function isImagePartLike(input: unknown): input is ImagePart {
+  return typeof input === "object" && input !== null && "type" in input && input.type === "image";
 }
 
 /**
@@ -142,27 +262,36 @@ export function truncateMessageHistory(
 }
 
 /**
- * Process message history: Convert -> Prune Tool Bloat -> Truncate to Budget
+ * Process message history: Convert -> Inject Images -> Prune Tool Bloat -> Truncate to Budget
  *
  * Algorithm:
- * 1. Convert to ModelMessages (standard format)
- * 2. Prune tool results (remove heavy outputs from old messages)
- * 3. Truncate based on the PRUNED size (maximize retained context)
+ * 0. Collect image artifact IDs from data parts (before expansion destroys them)
+ * 1. Expand data parts to text (credentials, artifacts)
+ * 2. Convert to ModelMessages (standard format)
+ * 3. Inject ImageParts for image artifacts into last user message
+ * 4. Prune tool results (remove heavy outputs from old messages)
+ * 5. Truncate based on the PRUNED size (maximize retained context)
  */
-export function processMessageHistory(
+export async function processMessageHistory(
   messages: AtlasUIMessage[],
   config: MessageWindowConfig,
   logger: Logger,
-): ModelMessage[] {
-  // 0. Expand data parts to text before conversion
+): Promise<ModelMessage[]> {
+  // 0. Collect image artifact IDs before expansion (expansion replaces data parts with text)
+  const imageArtifactIds = collectImageArtifactIds(messages);
+
+  // 1. Expand data parts to text before conversion
   // This ensures structured data (credentials, artifacts) is available in prompt text
   let expandedMessages = expandCredentialLinkedParts(messages);
   expandedMessages = expandArtifactAttachedParts(expandedMessages);
 
-  // 1. Convert to ModelMessages first (to enable pruning)
-  const modelMessages = convertToModelMessages(expandedMessages);
+  // 2. Convert to ModelMessages first (to enable pruning)
+  let modelMessages = convertToModelMessages(expandedMessages);
 
-  // 2. Prune tool results (Phase 1)
+  // 3. Inject ImageParts for image artifacts
+  modelMessages = await injectImageParts(modelMessages, imageArtifactIds, logger);
+
+  // 4. Prune tool results (Phase 1)
   // This shrinks the "fat" messages BEFORE we calculate budget.
   // We keep tool results only in the last 4 messages for recent context
   // but strip them from older history to save tokens.
@@ -172,13 +301,13 @@ export function processMessageHistory(
     emptyMessages: "remove",
   });
 
-  // 3. Merge consecutive user messages (Phase 2)
+  // 5. Merge consecutive user messages (Phase 2)
   // Empty assistant messages (e.g. from content-filter) produce zero model messages
   // after conversion and pruning, creating consecutive user messages that violate
   // the API's alternating role requirement. Merge them to prevent API errors.
   const mergedMessages = mergeConsecutiveUserMessages(prunedMessages, logger);
 
-  // 4. Truncate based on the pruned size (Phase 3)
+  // 6. Truncate based on the pruned size (Phase 3)
   // Now that messages are smaller, we can keep more of them.
   const finalMessages = truncateMessageHistory(mergedMessages, config, logger);
 

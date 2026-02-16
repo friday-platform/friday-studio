@@ -49,6 +49,7 @@ export interface ArtifactAttachedEntry {
   timestamp: string;
   artifactIds: string[];
   filenames: string[];
+  mimeTypes?: string[];
 }
 
 /** Tool: display_artifact */

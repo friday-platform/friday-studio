@@ -1,17 +1,33 @@
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { pruneMessages } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import type { ImagePart, ModelMessage } from "ai";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   estimateTokens,
   processMessageHistory,
   truncateMessageHistory,
 } from "./message-windowing.ts";
 
+const { mockGetManyLatest, mockResolveImageParts } = vi.hoisted(() => ({
+  mockGetManyLatest: vi.fn(),
+  mockResolveImageParts: vi.fn(),
+}));
+
+vi.mock("@atlas/core/artifacts/storage", () => ({
+  ArtifactStorage: { getManyLatest: mockGetManyLatest },
+}));
+
+vi.mock("@atlas/core/artifacts/images", () => ({ resolveImageParts: mockResolveImageParts }));
+
 // Helper to create long strings for token weight
 const makeString = (length: number) => "a".repeat(length);
 
 describe("message-windowing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("estimateTokens - basic estimation", () => {
     expect(estimateTokens(null)).toEqual(0);
     expect(estimateTokens(undefined)).toEqual(0);
@@ -130,6 +146,95 @@ describe("message-windowing", () => {
     expect(result.at(1)?.content).toEqual("pad 1");
   });
 
+  it("processMessageHistory - injects ImageParts for image artifacts", async () => {
+    const messages: AtlasUIMessage[] = [
+      {
+        id: "msg-1",
+        role: "user" as const,
+        parts: [
+          { type: "text" as const, text: "Look at this photo" },
+          {
+            type: "data-artifact-attached" as const,
+            data: { artifactIds: ["img-1"], filenames: ["photo.png"], mimeTypes: ["image/png"] },
+          },
+        ],
+      },
+    ];
+
+    const fakeImagePart: ImagePart = {
+      type: "image",
+      image: new Uint8Array([1, 2, 3]),
+      mediaType: "image/png",
+    };
+
+    mockGetManyLatest.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: "img-1",
+          data: { type: "file", data: { mimeType: "image/png", originalName: "photo.png" } },
+        },
+      ],
+    });
+    mockResolveImageParts.mockResolvedValue([fakeImagePart]);
+
+    const result = await processMessageHistory(messages, { maxTokens: 10000 }, logger);
+
+    // Last user message should contain the injected ImagePart
+    const lastUser = result.findLast((m) => m.role === "user");
+    if (!lastUser || !Array.isArray(lastUser.content)) {
+      throw new Error("Expected user message with array content");
+    }
+
+    const hasImage = lastUser.content.some((p) => p.type === "image");
+    expect(hasImage).toBe(true);
+
+    expect(mockGetManyLatest).toHaveBeenCalledWith({ ids: ["img-1"] });
+    expect(mockResolveImageParts).toHaveBeenCalled();
+  });
+
+  it("processMessageHistory - skips injection for non-image artifacts", async () => {
+    const messages: AtlasUIMessage[] = [
+      {
+        id: "msg-1",
+        role: "user" as const,
+        parts: [
+          { type: "text" as const, text: "Here is a spreadsheet" },
+          {
+            type: "data-artifact-attached" as const,
+            data: { artifactIds: ["csv-1"], filenames: ["data.csv"], mimeTypes: ["text/csv"] },
+          },
+        ],
+      },
+    ];
+
+    const result = await processMessageHistory(messages, { maxTokens: 10000 }, logger);
+
+    // Non-image artifacts should not trigger storage fetch
+    expect(mockGetManyLatest).not.toHaveBeenCalled();
+
+    // Result should still contain the user message with text content
+    const lastUser = result.findLast((m) => m.role === "user");
+    expect(lastUser).toBeDefined();
+  });
+
+  it("estimateTokens - assigns ~1600 tokens per ImagePart instead of serializing binary", () => {
+    const bigImage = new Uint8Array(1_000_000); // 1MB
+    const messageWithImage = {
+      role: "user",
+      content: [
+        { type: "text", text: "describe this" },
+        { type: "image", image: bigImage, mediaType: "image/png" },
+      ],
+    };
+
+    const tokens = estimateTokens(messageWithImage);
+
+    // Should be ~1600 for the image + small overhead for text + role, NOT millions
+    expect(tokens).toBeLessThan(2000);
+    expect(tokens).toBeGreaterThanOrEqual(1600);
+  });
+
   /**
    * Regression test for chat_kBcv9mRgs2mXSRtW "swallowed messages" bug.
    *
@@ -147,7 +252,7 @@ describe("message-windowing", () => {
    * The fix merges consecutive user messages after pruning so the API always
    * sees properly alternating user/assistant roles.
    */
-  it("regression: content-filter step-start-only assistant must not create consecutive user messages", () => {
+  it("regression: content-filter step-start-only assistant must not create consecutive user messages", async () => {
     // Reproduce the exact message structure from the production bug.
     // Messages 0-3: normal conversation
     // Message 4 (user): attaches PDFs, asks to fill SOW
@@ -207,7 +312,7 @@ describe("message-windowing", () => {
     ];
 
     const config = { maxTokens: 100000 };
-    const result = processMessageHistory(messages, config, logger);
+    const result = await processMessageHistory(messages, config, logger);
 
     // CRITICAL ASSERTION: no consecutive user messages in the output.
     // Without the fix, msg-3 and msg-5 (step-start-only assistants) produce

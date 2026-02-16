@@ -249,6 +249,8 @@ export interface LLMProvider {
     agentId: string;
     model: string;
     prompt: string;
+    /** Structured messages with mixed content types (e.g., text + images). When present, used instead of prompt. */
+    messages?: Array<import("ai").CoreMessage>;
     tools?: Record<string, import("ai").Tool>;
     toolChoice?: "auto" | "required" | "none";
     /** Tool names that should trigger early stop when called successfully */

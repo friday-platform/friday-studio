@@ -1167,6 +1167,50 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   }
 
   /**
+   * Read binary contents for a file artifact.
+   * Delegates to downloadBinaryBlob for the raw bytes.
+   */
+  async readBinaryContents(input: {
+    id: string;
+    revision?: number;
+  }): Promise<Result<Uint8Array, string>> {
+    try {
+      const artifactResult = await this.get(input);
+      if (!artifactResult.ok) {
+        return fail(artifactResult.error);
+      }
+
+      const artifact = artifactResult.data;
+      if (!artifact) {
+        return fail(`Artifact ${input.id} not found`);
+      }
+
+      if (artifact.data.type !== "file") {
+        return fail(`Artifact ${input.id} is not a file artifact`);
+      }
+
+      const path = artifact.data.data.path;
+      if (!path.startsWith("cortex://")) {
+        return fail(`Invalid Cortex path: ${path}`);
+      }
+
+      const cortexId = path.replace("cortex://", "");
+      const bytes = await this.downloadBinaryBlob(cortexId);
+      if (!bytes) {
+        return fail(`Failed to download binary contents from Cortex`);
+      }
+
+      return success(bytes);
+    } catch (error) {
+      logger.error("Failed to read binary contents", {
+        artifactId: input.id,
+        error: stringifyError(error),
+      });
+      return fail(`Failed to read file: ${stringifyError(error)}`);
+    }
+  }
+
+  /**
    * Read database preview for database-type artifacts.
    *
    * For databases stored in Cortex:

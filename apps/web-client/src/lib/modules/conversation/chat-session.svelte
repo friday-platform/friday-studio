@@ -4,6 +4,7 @@
   import { GA4, trackApiError, trackEvent, trackNetworkError } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import type { ArtifactWithContents } from "@atlas/core/artifacts";
+  import { getValidatedMimeType } from "@atlas/core/artifacts/file-upload";
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { afterNavigate, beforeNavigate, goto } from "$app/navigation";
@@ -497,6 +498,9 @@
                             .map((f) => f.artifactId)
                             .filter((f) => f !== undefined),
                           filenames: readyFiles.map((f) => f.name),
+                          mimeTypes: readyFiles.map(
+                            (f) => getValidatedMimeType(f.name) ?? "application/octet-stream",
+                          ),
                         },
                       },
                     ],

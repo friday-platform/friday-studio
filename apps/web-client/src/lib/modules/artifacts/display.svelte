@@ -87,7 +87,7 @@
           <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
         </Document>
       {:else if artifact.type === "file"}
-        <File data={artifact.data} {contents} />
+        <File data={artifact.data} {contents} {artifactId} />
       {/if}
     </div>
   {/if}

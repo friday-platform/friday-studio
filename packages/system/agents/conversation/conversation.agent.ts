@@ -754,7 +754,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         });
 
         // Truncate message history to fit within dynamically calculated budget
-        const prunedModelMessages = processMessageHistory(
+        const prunedModelMessages = await processMessageHistory(
           messages,
           { maxTokens: dynamicMessageBudget },
           logger,

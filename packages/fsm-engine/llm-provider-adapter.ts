@@ -9,7 +9,7 @@ import {
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import type { StopCondition, Tool } from "ai";
+import type { CoreMessage, StopCondition, Tool } from "ai";
 import { generateText, hasToolCall, stepCountIs } from "ai";
 import type { FSMLLMOutput, LLMProvider } from "./types.ts";
 
@@ -29,6 +29,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     agentId: string;
     model: string;
     prompt: string;
+    messages?: Array<CoreMessage>;
     tools?: Record<string, Tool>;
     toolChoice?: "auto" | "required" | "none";
     stopOnToolCall?: string[];
@@ -49,15 +50,21 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     }
 
     try {
+      const promptOrMessages = params.messages
+        ? { messages: params.messages }
+        : {
+            messages: [
+              {
+                role: "user" as const,
+                content: params.prompt,
+                providerOptions: getDefaultProviderOpts(this.provider),
+              },
+            ],
+          };
+
       const response = await generateText({
         model: registry.languageModel(modelId),
-        messages: [
-          {
-            role: "user",
-            content: params.prompt,
-            providerOptions: getDefaultProviderOpts(this.provider),
-          },
-        ],
+        ...promptOrMessages,
         tools: params.tools,
         toolChoice: params.toolChoice,
         experimental_repairToolCall: repairToolCall,

@@ -454,6 +454,39 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
   }
 
   /**
+   * Read binary contents for a file artifact.
+   * Returns raw bytes for any file type (no MIME restriction).
+   */
+  async readBinaryContents(input: {
+    id: string;
+    revision?: number;
+  }): Promise<Result<Uint8Array, string>> {
+    const artifactResult = await this.get(input);
+    if (!artifactResult.ok) {
+      return fail(artifactResult.error);
+    }
+
+    const artifact = artifactResult.data;
+    if (!artifact) {
+      return fail(`Artifact ${input.id} not found`);
+    }
+
+    if (artifact.data.type !== "file") {
+      return fail(`Artifact ${input.id} is not a file artifact`);
+    }
+
+    const { path } = artifact.data.data;
+
+    try {
+      const buffer = await readFile(path);
+      return success(new Uint8Array(buffer));
+    } catch (error) {
+      logger.error("Failed to read binary contents", { path, error: stringifyError(error) });
+      return fail(`Failed to read file: ${stringifyError(error)}`);
+    }
+  }
+
+  /**
    * Read database preview for a database artifact.
    * Returns first N rows with headers and truncation info.
    */

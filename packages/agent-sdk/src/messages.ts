@@ -102,6 +102,7 @@ export const AtlasDataEventSchemas = {
   "artifact-attached": z.object({
     artifactIds: z.array(z.string()), // UUIDs of attached artifacts
     filenames: z.array(z.string()), // Original filenames for display
+    mimeTypes: z.array(z.string()).optional(), // MIME types of attached artifacts
   }),
 };
 
