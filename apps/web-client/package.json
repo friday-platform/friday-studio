@@ -22,7 +22,7 @@
     "generate-build-info": "deno run --allow-read --allow-write --allow-env scripts/generate-build-info.ts"
   },
   "dependencies": {
-    "@ai-sdk/svelte": "^3.0.131",
+    "@ai-sdk/svelte": "^3.0.133",
     "@atlas/analytics": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
