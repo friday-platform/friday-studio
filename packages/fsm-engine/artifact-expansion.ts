@@ -19,7 +19,7 @@ const logger = baseLogger.child({ component: "artifact-expansion" });
  * Also handles Result wrapper pattern: { ok: true, data: { artifactRef: {...} } }
  * Malformed refs are logged and skipped rather than crashing.
  */
-export function extractRefs(doc: Document): ArtifactRef[] {
+function extractRefs(doc: Document): ArtifactRef[] {
   const refs: ArtifactRef[] = [];
   const raw = doc.data;
 
@@ -206,4 +206,71 @@ export async function expandArtifactRefsInDocuments(
   }
 
   return expandedDocs;
+}
+
+/**
+ * Expand artifact references in a prepare result input object.
+ *
+ * Scans the input for `artifactRefs` arrays, batch-fetches content from
+ * artifact storage, and injects `artifactContent` map into the result.
+ * Returns the input unchanged if no artifact refs are found.
+ *
+ * @param input - Prepare result object that may contain artifactRefs
+ * @returns Input with artifactContent injected where refs were found
+ */
+export async function expandArtifactRefsInInput(
+  input: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  // Extract artifact refs from the input object
+  const refs: ArtifactRef[] = [];
+  const rawRefs = input.artifactRefs;
+
+  if (Array.isArray(rawRefs)) {
+    for (const rawRef of rawRefs) {
+      const result = ArtifactRefSchema.safeParse(rawRef);
+      if (result.success) {
+        refs.push(result.data);
+      } else {
+        logger.warn("Malformed artifactRef in input, skipping", { error: result.error.message });
+      }
+    }
+  }
+
+  if (refs.length === 0) {
+    return input;
+  }
+
+  const ids = refs.map((ref) => ref.id);
+
+  logger.info("Expanding artifact refs in prepare result input", { count: ids.length });
+
+  try {
+    const timeout = AbortSignal.timeout(5000);
+
+    const response = await parseResult(
+      client.artifactsStorage["batch-get"].$post({ json: { ids } }, { init: { signal: timeout } }),
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch artifacts: ${stringifyError(response.error)}`);
+    }
+
+    const artifactContent: Record<string, unknown> = {};
+    for (const artifact of response.data.artifacts) {
+      artifactContent[artifact.id] = artifact.data;
+    }
+
+    if (Object.keys(artifactContent).length === 0) {
+      return input;
+    }
+
+    return { ...input, artifactContent };
+  } catch (error) {
+    logger.error("Failed to expand artifacts in input", {
+      error: stringifyError(error),
+      artifactCount: ids.length,
+    });
+
+    throw new Error(`Artifact expansion failed: ${stringifyError(error)}`);
+  }
 }

@@ -30,6 +30,7 @@
       }
     },
     "JSON": { "formatter": { "language_server": { "name": "biome" } } },
-    "JSONC": { "formatter": { "language_server": { "name": "biome" } } }
+    "JSONC": { "formatter": { "language_server": { "name": "biome" } } },
+    "Markdown": { "formatter": { "language_server": { "name": "deno" } } }
   }
 }

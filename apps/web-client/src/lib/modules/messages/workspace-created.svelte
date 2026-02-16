@@ -10,7 +10,7 @@
   import { MCPExecutionResultSchema } from "./types.ts";
   import MessageWrapper from "./wrapper.svelte";
 
-  type Props = { output: { result: { content: Array<{ type: string; text?: string }> } } };
+  type Props = { output: unknown };
   const { output }: Props = $props();
 
   let queryClient = useQueryClient();
@@ -32,23 +32,38 @@
     data: FSMCreatorSuccessDataSchema,
   });
 
+  /** Schema for direct invocation output: { ok: true, data: FSMCreatorSuccessData } */
+  const DirectResultSchema = z.object({ ok: z.literal(true), data: FSMCreatorSuccessDataSchema });
+
+  /**
+   * Parse FSMCreatorSuccessData from tool output.
+   *
+   * Supports two formats:
+   * 1. Direct invocation: { ok: true, data: { workspaceId, ... } }
+   * 2. MCP envelope: { result: { content: [{ text: JSON }] } }
+   */
   const workspace: FSMCreatorSuccessData | null = $derived.by(() => {
     try {
-      const mcpResult = output.result.content.at(0)?.text;
+      // Direct invocation format: { ok: true, data: { workspaceId, ... } }
+      const direct = DirectResultSchema.safeParse(output);
+      if (direct.success) return direct.data.data;
+
+      // MCP envelope format: { result: { content: [{ text: JSON }] } }
+      const outer = z
+        .object({ result: z.object({ content: z.array(z.object({ text: z.string() })) }) })
+        .safeParse(output);
+      if (!outer.success) return null;
+
+      const mcpResult = outer.data.result.content.at(0)?.text;
       if (!mcpResult) return null;
 
       const parsed = JSON.parse(mcpResult);
       const executionResult = MCPExecutionResultSchema.safeParse(parsed);
       if (!executionResult.success) return null;
 
-      // Parse as AgentResult envelope - data field contains FSMCreatorSuccessData
       const envelope = AgentResultSchema.safeParse(executionResult.data.result);
-      if (envelope.success) {
-        return envelope.data.data;
-      }
+      if (envelope.success) return envelope.data.data;
 
-      // If parsing fails, it might be an error result (ok: false)
-      // Return null to gracefully hide the component
       console.warn("fsm-workspace-creator result was not a success", parsed);
       return null;
     } catch (e) {

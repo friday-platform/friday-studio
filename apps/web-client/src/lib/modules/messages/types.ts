@@ -71,20 +71,15 @@ export interface WorkspacePlannerEntry {
 /**
  * Tool output for fsm-workspace-creator.
  *
- * The output structure is an MCP tool result containing the AgentResult envelope:
- * { result: { content: [{ type: "text", text: JSON }] } }
- *
- * The JSON text contains the full AgentResult with:
- * - agentId, timestamp, input, durationMs (envelope metadata)
- * - ok: true/false (success discriminant)
- * - data: FSMCreatorSuccessData (when ok: true)
- * - error: { reason: string } (when ok: false)
+ * Supports two formats:
+ * 1. Direct invocation: { ok: true, data: { workspaceId, ... } }
+ * 2. MCP envelope: { result: { content: [{ type: "text", text: JSON }] } }
  */
 export interface WorkspaceCreator {
   type: "workspace_creator";
   id: string;
   timestamp: string;
-  output: { result: { content: Array<{ type: string; text?: string }>; isError?: boolean } };
+  output: unknown;
 }
 
 /** Tool: connect_service */
@@ -150,13 +145,25 @@ export const MCPExecutionResultSchema = z.object({
 /** Schema for workspace-planner success data */
 const WorkspacePlannerSuccessDataSchema = z.object({ artifactId: z.string() });
 
+/** Schema for direct invocation output: { ok: true, data: { artifactId } } */
+const DirectAgentPayloadSchema = z.object({
+  ok: z.literal(true),
+  data: WorkspacePlannerSuccessDataSchema,
+});
+
 /**
  * Extract artifactId from workspace-planner's part.output.
  *
- * Supports the AgentResult envelope structure:
- * { agentId, timestamp, input, durationMs, ok: true, data: { artifactId } }
+ * Supports two formats:
+ * 1. Direct invocation: { ok: true, data: { artifactId } }
+ * 2. MCP envelope: { result: { content: [{ text: JSON.stringify({ type: "completed", result: AgentResult }) }] } }
  */
 export function parseWorkspacePlannerArtifactId(output: unknown): string | undefined {
+  // Direct invocation format: AgentPayload returned from tool({ execute })
+  const direct = DirectAgentPayloadSchema.safeParse(output);
+  if (direct.success) return direct.data.data.artifactId;
+
+  // MCP envelope format (legacy): { result: { content: [{ text: "..." }] } }
   const outer = MCPToolResultSchema.safeParse(output);
   if (!outer.success) return undefined;
 
@@ -171,9 +178,7 @@ export function parseWorkspacePlannerArtifactId(output: unknown): string | undef
     const envelope = AgentResultSchema.safeParse(executionResult.data.result);
     if (envelope.success && envelope.data.ok) {
       const data = WorkspacePlannerSuccessDataSchema.safeParse(envelope.data.data);
-      if (data.success) {
-        return data.data.artifactId;
-      }
+      if (data.success) return data.data.artifactId;
     }
   } catch {
     // JSON parse failed

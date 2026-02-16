@@ -1,9 +1,24 @@
 /**
- * Task Progress Types
- *
- * Progress event types for do_task execution.
- * Note: EnhancedTaskStep lives in planner.ts to avoid circular deps.
+ * Task execution types for do_task.
  */
+
+import type { MCPServerResult } from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
+
+/** A single step in an enhanced task plan. */
+export interface EnhancedTaskStep {
+  agentId?: string;
+  description: string;
+  executionType: "agent" | "llm";
+  needs: string[];
+  friendlyDescription?: string;
+}
+
+/** Full task plan with aggregated needs and MCP server configs. */
+export interface EnhancedTaskPlan {
+  steps: EnhancedTaskStep[];
+  needs: string[];
+  mcpServers: MCPServerResult[];
+}
 
 /**
  * Progress events emitted during task execution.

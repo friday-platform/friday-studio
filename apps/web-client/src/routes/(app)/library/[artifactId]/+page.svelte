@@ -154,7 +154,14 @@
         </div>
       {/if}
     {:else if artifact.type === "workspace-plan"}
-      <WorkspacePlanDetails workspacePlan={artifact.data} hideControls={true} />
+      {#if artifact.version === 1}
+        <WorkspacePlanDetails workspacePlan={artifact.data} hideControls={true} />
+      {:else}
+        <WorkspacePlanDetails
+          workspacePlan={{ workspace: artifact.data.workspace, signals: artifact.data.signals }}
+          hideControls={true}
+        />
+      {/if}
     {:else if artifact.type === "table"}
       <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
     {:else if artifact.type === "database"}

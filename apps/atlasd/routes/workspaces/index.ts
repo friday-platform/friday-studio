@@ -668,6 +668,14 @@ const workspacesRoutes = daemonFactory
         if (errorMessage.includes("Workspace not found")) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
+        if (errorMessage.includes("Workspace path does not exist")) {
+          return c.json(
+            {
+              error: `Workspace '${workspaceId}' is not running. The workspace directory is unavailable.`,
+            },
+            422,
+          );
+        }
         if (errorMessage.includes("Signal not found") || errorMessage.includes("not found")) {
           return c.json(
             { error: `Signal '${signalId}' not found in workspace '${workspaceId}'` },
@@ -688,6 +696,16 @@ const workspacesRoutes = daemonFactory
       const jobs = runtime.listJobs();
       return c.json(jobs);
     } catch (error) {
+      // When workspace path doesn't exist (stopped/deleted workspace), fall back to config
+      if (stringifyError(error).includes("Workspace path does not exist")) {
+        logger.debug("Workspace path unavailable, reading jobs from config", { workspaceId });
+        const manager = ctx.getWorkspaceManager();
+        const config = await manager.getWorkspaceConfig(workspaceId);
+        const jobs = config?.workspace?.jobs || {};
+        return c.json(
+          Object.entries(jobs).map(([name, job]) => ({ name, description: job.description })),
+        );
+      }
       logger.error("Failed to list jobs", { error, workspaceId });
       return c.json({ error: `Failed to list jobs: ${stringifyError(error)}` }, 500);
     }
@@ -726,6 +744,26 @@ const workspacesRoutes = daemonFactory
       const signals = runtime.listSignals();
       return c.json({ signals: signals.map((signal) => ({ name: signal.id, signal })) }, 200);
     } catch (error) {
+      // When workspace path doesn't exist (stopped/deleted workspace), fall back to config
+      if (stringifyError(error).includes("Workspace path does not exist")) {
+        logger.debug("Workspace path unavailable, reading signals from config", { workspaceId });
+        const manager = ctx.getWorkspaceManager();
+        const config = await manager.getWorkspaceConfig(workspaceId);
+        const signals = config?.workspace?.signals || {};
+        return c.json(
+          {
+            signals: Object.entries(signals).map(([id, signalConfig]) => ({
+              name: id,
+              signal: {
+                id,
+                description: signalConfig.description,
+                provider: signalConfig.provider,
+              },
+            })),
+          },
+          200,
+        );
+      }
       logger.error("Failed to list signals", { error, workspaceId });
       return c.json({ error: `Failed to list signals: ${stringifyError(error)}` }, 500);
     }

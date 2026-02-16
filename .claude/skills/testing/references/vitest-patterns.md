@@ -218,6 +218,45 @@ expect(mockFn).toHaveBeenCalledWith({ status: "pending" }); // Fails
 // GOOD — Clone or assert on result
 ```
 
+### vi.mock state persists across tests
+
+```typescript
+// BAD — Second test sees first test's mock config
+describe("thing", () => {
+  test("first", () => { mockFn.mockReturnValue("a"); /* ... */ });
+  test("second", () => { /* mockFn still returns "a" */ });
+});
+
+// GOOD — Always reset in beforeEach
+beforeEach(() => { vi.restoreAllMocks(); });
+```
+
+### vi.mock doesn't intercept in Deno+vitest
+
+`vi.mock("ai")` and similar module mocks don't reliably intercept in Deno's
+vitest runtime. Use dependency injection instead of module mocking.
+
+### expect.objectContaining doesn't assert undefined
+
+```typescript
+// BAD — Does NOT assert key is undefined
+expect(result).toEqual(expect.objectContaining({ deletedField: undefined }));
+
+// GOOD — Assert key is absent
+expect(result).not.toHaveProperty("deletedField");
+```
+
+### Shared fixtures mutate across tests
+
+```typescript
+// BAD — Test A mutates registry, Test B sees mutated state
+const registry = createRegistry();
+
+// GOOD — Clone before each test
+let registry: Registry;
+beforeEach(() => { registry = structuredClone(baseRegistry); });
+```
+
 ---
 
 ## Async Patterns
@@ -373,7 +412,7 @@ expect.soft(response.body.items).toHaveLength(3);
 ### expect.assert — type narrowing
 
 **`expect.assert` does TypeScript type narrowing.** Use it to narrow
-discriminated unions before asserting on variant-specific properties.
+discriminated unions and nullable types before asserting on properties.
 
 ```typescript
 // Narrow a discriminated union
@@ -382,7 +421,14 @@ expect.assert(result.type === "success");
 // TypeScript now knows result is the success variant
 expect(result.data.items).toHaveLength(3);
 
-// Without expect.assert you'd need `as` or non-null assertions
+// Narrow away undefined — avoids `!` and `as` casts
+const item = list.find(x => x.id === targetId);
+expect.assert(item !== undefined);
+expect(item.name).toBe("expected");
+
+// Guard-throw also works for narrowing
+if (!item) throw new Error("missing");
+expect(item.name).toBe("expected");
 ```
 
 ### expect.unreachable — dead code assertion

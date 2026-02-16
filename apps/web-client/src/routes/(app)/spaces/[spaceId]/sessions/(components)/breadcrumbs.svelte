@@ -1,14 +1,26 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import type { SessionDigest } from "@atlas/core/session/build-session-digest";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
 
-  let { session, workspaceName }: { session: SessionDigest; workspaceName?: string } = $props();
+  interface Props {
+    session: { id: string; workspaceId: string };
+    workspaceName?: string;
+    sessionTitle?: string;
+    sessionDate?: string;
+  }
+
+  let { session, workspaceName, sessionTitle, sessionDate }: Props = $props();
 
   const appCtx = getAppContext();
   const workspaceId = $derived(session.workspaceId);
+
+  const breadcrumbLabel = $derived(
+    sessionTitle && sessionDate
+      ? `${sessionTitle} – ${sessionDate}`
+      : sessionTitle || "Session Details",
+  );
 </script>
 
 {#if session}
@@ -30,13 +42,14 @@
     <Breadcrumbs.Segment />
 
     <Breadcrumbs.Title hasActions>
-      Session Details
+      {breadcrumbLabel}
 
       {#snippet actions()}
-        <!-- <DropdownMenu.Item disabled>Re-run Session</DropdownMenu.Item>
-				<DropdownMenu.Item disabled>Export Details</DropdownMenu.Item>
+        <DropdownMenu.Item disabled>Re-run Session</DropdownMenu.Item>
+        <DropdownMenu.Item disabled>Export</DropdownMenu.Item>
 
-				<DropdownMenu.Separator /> -->
+        <DropdownMenu.Separator />
+
         <DropdownMenu.Label>Copy</DropdownMenu.Label>
         <DropdownMenu.Item
           onclick={() => {

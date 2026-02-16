@@ -1,0 +1,2386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proto Playground</title>
+<style>
+  /* ------------------------------------------------------------------ */
+  /* Design tokens — mirrors apps/web-client/src/app.css                */
+  /* ------------------------------------------------------------------ */
+  :root {
+    /* Surfaces — exact web-client dark mode values */
+    --color-surface-1: hsl(228 2% 7% / 1);
+    --color-surface-2: hsl(228 2% 9% / 1);
+
+    /* Borders */
+    --color-border-1: hsl(230 10% 24%);
+
+    /* Text */
+    --color-text: hsl(40 12% 95% / 1);
+    --color-text-muted: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --color-text-dim: color-mix(in srgb, var(--color-text) 30%, transparent);
+
+    /* Highlight — used for hover/active/elevation tints */
+    --color-highlight-1: hsl(223 28% 90% / 0.06);
+
+    /* Accent palette — exact web-client -2 tier values */
+    --color-yellow: hsl(42 100% 52%);
+    --color-green: hsl(100 78% 43%);
+    --color-red: hsl(24 97% 49%);
+    --color-blue: hsl(212 97% 49%);
+    --color-purple: hsl(271 61% 54%);
+    --color-orange: hsl(34 100% 32%);
+
+    /* Active accent — yellow by default (matches web-client) */
+    --accent: var(--color-yellow);
+
+    /* Spacing */
+    --size-px: 1px;
+    --size-0-5: 0.125rem;
+    --size-1: 0.25rem;
+    --size-1-5: 0.375rem;
+    --size-2: 0.5rem;
+    --size-2-5: 0.625rem;
+    --size-3: 0.75rem;
+    --size-4: 1rem;
+    --size-5: 1.25rem;
+    --size-6: 1.5rem;
+    --size-8: 2rem;
+    --size-10: 2.5rem;
+    --size-12: 3rem;
+
+    /* Radius */
+    --radius-2: 0.375rem;
+    --radius-2-5: 0.5rem;
+    --radius-3: 0.625rem;
+    --radius-4: 0.75rem;
+    --radius-5: 0.875rem;
+    --radius-6: 1rem;
+    --radius-7: 1.25rem;
+    --radius-round: 9999px;
+
+    /* Typography */
+    --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+
+    --font-size-1: 0.6875rem;
+    --font-size-2: 0.75rem;
+    --font-size-3: 0.8125rem;
+    --font-size-4: 0.875rem;
+    --font-size-5: 0.9375rem;
+    --font-size-6: 1.125rem;
+
+    --font-weight-4: 400;
+    --font-weight-4-5: 450;
+    --font-weight-5: 500;
+    --font-weight-6: 600;
+
+    /* Shadows */
+    --shadow-canvas: 0 0 0 1px hsl(0 0% 100% / 0.04);
+    --shadow-1:
+      0px 0px 0px 1px rgba(0, 0, 0, 0.12),
+      0px 2px 3px -1px rgba(0, 0, 0, 0.12),
+      0px 3px 12px -4px rgba(0, 0, 0, 0.12),
+      0px 4px 16px -8px rgba(0, 0, 0, 0.12),
+      0px 0px 0px 1px rgba(237, 234, 223, 0.02);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reset & base                                                       */
+  /* ------------------------------------------------------------------ */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-4-5);
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* App shell — mimics web-client container + canvas feel               */
+  /* ------------------------------------------------------------------ */
+  #app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--size-6);
+  }
+
+  .app-canvas {
+    background: var(--color-surface-1);
+    border-radius: var(--radius-7);
+    box-shadow: var(--shadow-canvas);
+    padding: var(--size-6) var(--size-8);
+    min-height: calc(100dvh - var(--size-12));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Header                                                              */
+  /* ------------------------------------------------------------------ */
+  header {
+    display: flex;
+    gap: var(--size-2);
+    align-items: center;
+    margin-bottom: var(--size-6);
+  }
+
+  header h1 {
+    font-size: var(--font-size-4);
+    font-weight: var(--font-weight-6);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    margin-right: var(--size-2);
+    letter-spacing: 0.04em;
+  }
+
+  #prompt-input {
+    flex: 1;
+    background: transparent;
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-2-5);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-4);
+    font-weight: var(--font-weight-4-5);
+    padding: var(--size-2) var(--size-3);
+    outline: none;
+    caret-color: var(--accent);
+    transition: border-color 150ms ease;
+  }
+
+  #prompt-input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  #prompt-input:focus {
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Buttons — matches web-client button.svelte                          */
+  /* ------------------------------------------------------------------ */
+  button {
+    height: var(--size-8);
+    background: var(--color-surface-1);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-2-5);
+    box-shadow: var(--shadow-1);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    padding: 0 var(--size-3);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 150ms ease;
+    user-select: none;
+  }
+
+  button:hover {
+    background: color-mix(in srgb, var(--accent) 3%, var(--color-surface-1));
+    border-color: color-mix(in srgb, var(--color-border-1) 80%, var(--color-text));
+  }
+
+  button:active {
+    background: color-mix(in srgb, var(--accent) 6%, var(--color-surface-1));
+  }
+
+  button.primary {
+    background: color-mix(in srgb, var(--accent) 18%, var(--color-surface-1));
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--color-border-1));
+    color: var(--accent);
+    font-weight: var(--font-weight-6);
+  }
+
+  button.primary:hover {
+    background: color-mix(in srgb, var(--accent) 25%, var(--color-surface-1));
+  }
+
+  button.primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Select                                                              */
+  /* ------------------------------------------------------------------ */
+  select {
+    height: var(--size-8);
+    background: var(--color-surface-1);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-2-5);
+    box-shadow: var(--shadow-1);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    padding: 0 var(--size-3);
+    outline: none;
+    max-width: 260px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  select:hover {
+    border-color: color-mix(in srgb, var(--color-border-1) 80%, var(--color-text));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mode toggles                                                        */
+  /* ------------------------------------------------------------------ */
+  .mode-toggles {
+    display: flex;
+    gap: var(--size-3);
+    align-items: center;
+    margin-left: var(--size-1);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .toggle-label:hover { color: var(--color-text); }
+
+  .toggle-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .toggle-label.active { color: var(--accent); }
+
+  /* ------------------------------------------------------------------ */
+  /* Log panel                                                           */
+  /* ------------------------------------------------------------------ */
+  #log-panel {
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-4);
+    padding: var(--size-3) var(--size-4);
+    margin-bottom: var(--size-4);
+    max-height: 220px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-1);
+    line-height: 1.7;
+    display: none;
+    scrollbar-width: thin;
+  }
+
+  #log-panel.visible { display: block; }
+
+  .log-line { color: var(--color-text-dim); }
+  .log-line.stderr { color: var(--color-red); }
+  .log-line.phase { color: var(--accent); font-weight: var(--font-weight-6); }
+
+  /* ------------------------------------------------------------------ */
+  /* Accordion / details                                                 */
+  /* ------------------------------------------------------------------ */
+  details {
+    background: var(--color-surface-1);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-4);
+    margin-bottom: var(--size-2);
+    transition: border-color 150ms ease;
+  }
+
+  details[open] {
+    border-color: var(--color-border-1);
+  }
+
+  summary {
+    padding: var(--size-3) var(--size-4);
+    cursor: pointer;
+    font-weight: var(--font-weight-5);
+    font-size: var(--font-size-3);
+    color: var(--color-text-muted);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--size-2);
+    user-select: none;
+    transition: color 150ms ease;
+  }
+
+  summary:hover {
+    color: var(--color-text);
+  }
+
+  summary::before {
+    content: '\25B6';
+    font-size: 9px;
+    transition: transform 150ms ease;
+    opacity: 0.5;
+  }
+
+  details[open] > summary::before { transform: rotate(90deg); }
+  summary::-webkit-details-marker { display: none; }
+
+  .phase-content {
+    padding: var(--size-4);
+    border-top: var(--size-px) solid var(--color-border-1);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Badges                                                              */
+  /* ------------------------------------------------------------------ */
+  .badge {
+    display: inline-block;
+    padding: 2px var(--size-2);
+    border-radius: var(--radius-round);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.01em;
+  }
+
+  .badge-http {
+    background: color-mix(in srgb, var(--color-green) 8%, var(--color-surface-1));
+    color: var(--color-green);
+  }
+  .badge-schedule {
+    background: color-mix(in srgb, var(--color-yellow) 8%, var(--color-surface-1));
+    color: var(--color-yellow);
+  }
+  .badge-bundled {
+    background: color-mix(in srgb, var(--color-blue) 8%, var(--color-surface-1));
+    color: var(--color-blue);
+  }
+  .badge-llm {
+    background: color-mix(in srgb, var(--color-purple) 8%, var(--color-surface-1));
+    color: var(--color-purple);
+  }
+  .badge-mcp {
+    background: color-mix(in srgb, var(--color-orange) 8%, var(--color-surface-1));
+    color: var(--color-orange);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Cards                                                               */
+  /* ------------------------------------------------------------------ */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: var(--size-2);
+  }
+
+  .card {
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    padding: var(--size-3);
+    transition: border-color 150ms ease;
+  }
+
+  .card:hover {
+    border-color: var(--color-border-1);
+  }
+
+  .card-title {
+    font-weight: var(--font-weight-5);
+    font-size: var(--font-size-2);
+    margin-bottom: var(--size-1);
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+  }
+
+  .card-id {
+    color: var(--color-text-dim);
+    font-size: var(--font-size-1);
+    font-family: var(--font-mono);
+  }
+
+  .card-desc {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-1);
+    line-height: 1.45;
+  }
+
+  .needs-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+    margin-top: var(--size-2);
+  }
+
+  .need-tag {
+    padding: 1px var(--size-1-5);
+    border-radius: var(--radius-2);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    background: var(--color-surface-1);
+    border: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text-muted);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* DAG                                                                 */
+  /* ------------------------------------------------------------------ */
+  .dag-container { padding: var(--size-2) 0; }
+
+  .dag-job { margin-bottom: var(--size-4); }
+
+  .dag-job-title {
+    font-weight: var(--font-weight-6);
+    font-size: var(--font-size-2);
+    color: var(--accent);
+    margin-bottom: var(--size-2);
+  }
+
+  .dag-steps {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+    flex-wrap: wrap;
+  }
+
+  .dag-step {
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    padding: var(--size-2) var(--size-3);
+    font-size: var(--font-size-1);
+    transition: border-color 150ms ease;
+  }
+
+  .dag-arrow { color: var(--color-text-dim); font-size: 14px; }
+
+  .dag-parallel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    border-left: 2px solid var(--color-border-1);
+    padding-left: var(--size-2);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Tables                                                              */
+  /* ------------------------------------------------------------------ */
+  .contract-table, .mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-top: var(--size-2);
+  }
+
+  .contract-table th, .mapping-table th {
+    text-align: left;
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-5);
+    font-size: var(--font-size-1);
+  }
+
+  .contract-table td, .mapping-table td {
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text);
+  }
+
+  .contract-table tr:hover td,
+  .mapping-table tr:hover td {
+    background: var(--color-highlight-1);
+  }
+
+  .section-label {
+    font-weight: var(--font-weight-6);
+    font-size: var(--font-size-2);
+    color: var(--color-text-muted);
+    margin: var(--size-4) 0 var(--size-1);
+    letter-spacing: 0.02em;
+  }
+
+  .section-label:first-child { margin-top: 0; }
+
+  /* ------------------------------------------------------------------ */
+  /* FSM Section                                                         */
+  /* ------------------------------------------------------------------ */
+  #fsm-section {
+    background: var(--color-surface-1);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-4);
+    padding: var(--size-4);
+    margin-bottom: var(--size-2);
+    display: none;
+  }
+
+  #fsm-section.visible { display: block; }
+
+  #fsm-section h2 {
+    font-size: var(--font-size-4);
+    font-weight: var(--font-weight-6);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-3);
+  }
+
+  /* SVG diagram */
+  #fsm-svg-container {
+    overflow-x: auto;
+    margin-bottom: var(--size-3);
+    padding: var(--size-2) 0;
+    scrollbar-width: thin;
+  }
+
+  #fsm-svg-container svg { display: block; }
+
+  /* FSM node styles */
+  .fsm-node rect {
+    fill: var(--color-surface-1);
+    stroke: var(--color-border-1);
+    stroke-width: 1;
+    rx: 8;
+    ry: 8;
+  }
+
+  .fsm-node.active rect {
+    fill: color-mix(in srgb, var(--color-blue) 6%, var(--color-surface-1));
+    stroke: color-mix(in srgb, var(--color-blue) 50%, var(--color-border-1));
+    stroke-width: 1.5;
+  }
+
+  .fsm-node.visited rect {
+    fill: color-mix(in srgb, var(--color-green) 4%, var(--color-surface-1));
+    stroke: color-mix(in srgb, var(--color-green) 40%, var(--color-border-1));
+    stroke-width: 1;
+  }
+
+  .fsm-node.final circle {
+    fill: none;
+    stroke: var(--color-border-1);
+    stroke-width: 1;
+  }
+
+  .fsm-node.final.visited circle,
+  .fsm-node.final.active circle {
+    stroke: color-mix(in srgb, var(--color-green) 40%, var(--color-border-1));
+    fill: color-mix(in srgb, var(--color-green) 4%, var(--color-surface-1));
+  }
+
+  .fsm-node text {
+    fill: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+
+  .fsm-node.active text { fill: color-mix(in srgb, var(--color-blue) 80%, var(--color-text)); }
+  .fsm-node.visited text { fill: color-mix(in srgb, var(--color-green) 60%, var(--color-text)); }
+
+  .fsm-edge line, .fsm-edge path {
+    stroke: var(--color-border-1);
+    stroke-width: 1;
+    fill: none;
+  }
+
+  .fsm-edge.active line, .fsm-edge.active path {
+    stroke: var(--color-blue);
+    stroke-width: 2;
+  }
+
+  .fsm-edge.visited line, .fsm-edge.visited path {
+    stroke: var(--color-green);
+    stroke-width: 1.5;
+  }
+
+  .fsm-edge-label {
+    fill: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    text-anchor: middle;
+  }
+
+  .fsm-edge polygon { fill: var(--color-border-1); }
+  .fsm-edge.active polygon { fill: var(--color-blue); }
+  .fsm-edge.visited polygon { fill: var(--color-green); }
+
+  /* ------------------------------------------------------------------ */
+  /* Stepper                                                             */
+  /* ------------------------------------------------------------------ */
+  .stepper-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+    margin-bottom: var(--size-3);
+  }
+
+  .stepper-controls button {
+    height: var(--size-6);
+    font-size: var(--font-size-1);
+    padding: 0 var(--size-2);
+  }
+
+  .step-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-2);
+    font-family: var(--font-mono);
+    margin-left: var(--size-2);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* State detail panels                                                 */
+  /* ------------------------------------------------------------------ */
+  .state-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-3);
+    margin-bottom: var(--size-3);
+  }
+
+  .detail-panel {
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    padding: var(--size-3);
+    min-height: 120px;
+  }
+
+  .detail-panel h3 {
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    color: var(--color-text-dim);
+    margin-bottom: var(--size-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .action-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+    padding: 2px 0;
+    font-size: var(--font-size-1);
+  }
+
+  .action-icon { font-size: 12px; }
+  .action-icon.completed { color: var(--color-green); }
+  .action-icon.failed { color: var(--color-red); }
+  .action-icon.pending { color: var(--color-text-dim); }
+
+  .action-type {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    min-width: 40px;
+  }
+
+  .action-id {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+  }
+
+  .results-snapshot {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-1);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--color-text-muted);
+    max-height: 360px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .result-entry {
+    margin-bottom: var(--size-2);
+    padding: var(--size-2);
+    border-radius: var(--radius-2);
+    border: var(--size-px) solid transparent;
+    transition: border-color 200ms ease, background 200ms ease;
+  }
+
+  .result-entry.new-result {
+    border-color: color-mix(in srgb, var(--color-green) 30%, transparent);
+    background: color-mix(in srgb, var(--color-green) 3%, transparent);
+  }
+
+  .result-entry-key {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+    margin-bottom: 2px;
+  }
+
+  .result-entry-id {
+    color: var(--accent);
+    font-weight: var(--font-weight-6);
+  }
+
+  .result-new-badge {
+    display: inline-block;
+    padding: 0 var(--size-1-5);
+    border-radius: var(--radius-round);
+    font-size: 9px;
+    font-weight: var(--font-weight-6);
+    background: color-mix(in srgb, var(--color-green) 12%, var(--color-surface-1));
+    color: var(--color-green);
+    letter-spacing: 0.04em;
+  }
+
+  .result-empty {
+    color: var(--color-text-dim);
+    font-style: italic;
+    padding: var(--size-2);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Results accumulator bar — shows progressive fill                    */
+  /* ------------------------------------------------------------------ */
+  .results-bar {
+    display: flex;
+    gap: var(--size-1);
+    margin-bottom: var(--size-3);
+    padding: var(--size-2) var(--size-3);
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    align-items: center;
+    min-height: var(--size-8);
+    flex-wrap: wrap;
+  }
+
+  .results-bar-label {
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: var(--size-1);
+    white-space: nowrap;
+  }
+
+  .results-bar-key {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px var(--size-2);
+    border-radius: var(--radius-2);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    font-weight: var(--font-weight-5);
+    transition: all 200ms ease;
+  }
+
+  .results-bar-key.filled {
+    background: color-mix(in srgb, var(--color-green) 10%, var(--color-surface-1));
+    color: var(--color-green);
+    border: var(--size-px) solid color-mix(in srgb, var(--color-green) 20%, transparent);
+  }
+
+  .results-bar-key.empty {
+    background: var(--color-surface-1);
+    color: var(--color-text-dim);
+    border: var(--size-px) solid var(--color-border-1);
+  }
+
+  .results-bar-key.just-filled {
+    background: color-mix(in srgb, var(--color-green) 20%, var(--color-surface-1));
+    color: var(--color-green);
+    border: var(--size-px) solid color-mix(in srgb, var(--color-green) 40%, transparent);
+    font-weight: var(--font-weight-6);
+  }
+
+  .results-bar-empty {
+    font-size: var(--font-size-1);
+    color: var(--color-text-dim);
+    font-style: italic;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Assertions                                                          */
+  /* ------------------------------------------------------------------ */
+  .assertions-panel { margin-top: var(--size-3); }
+
+  .assertion-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-1-5);
+    padding: 2px 0;
+    font-size: var(--font-size-1);
+  }
+
+  .assertion-pass { color: var(--color-green); }
+  .assertion-fail { color: var(--color-red); }
+
+  /* ------------------------------------------------------------------ */
+  /* Status bar                                                          */
+  /* ------------------------------------------------------------------ */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--size-3);
+    padding: var(--size-2) 0;
+    font-size: var(--font-size-2);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .status-success { color: var(--color-green); }
+  .status-failure { color: var(--color-red); }
+
+  .spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--color-border-1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hidden { display: none; }
+
+  /* ------------------------------------------------------------------ */
+  /* Workspace Overview                                                  */
+  /* ------------------------------------------------------------------ */
+  #workspace-overview {
+    background: var(--color-surface-2);
+    border: var(--size-px) solid var(--color-border-1);
+    border-radius: var(--radius-4);
+    padding: var(--size-4) var(--size-5);
+    margin-bottom: var(--size-4);
+    display: none;
+  }
+
+  #workspace-overview.visible { display: block; }
+
+  .ws-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-3);
+    margin-bottom: var(--size-2);
+  }
+
+  .ws-name {
+    font-size: var(--font-size-6);
+    font-weight: var(--font-weight-6);
+    color: var(--color-text);
+  }
+
+  .ws-readiness {
+    display: inline-block;
+    padding: 2px var(--size-2-5);
+    border-radius: var(--radius-round);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+  }
+
+  .ws-readiness.ready {
+    background: color-mix(in srgb, var(--color-green) 8%, var(--color-surface-1));
+    color: var(--color-green);
+  }
+
+  .ws-readiness.not-ready {
+    background: color-mix(in srgb, var(--color-red) 8%, var(--color-surface-1));
+    color: var(--color-red);
+  }
+
+  .ws-purpose {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-3);
+    line-height: 1.5;
+    margin-bottom: var(--size-2);
+  }
+
+  .ws-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-3);
+  }
+
+  .ws-detail {
+    font-size: var(--font-size-2);
+    color: var(--color-text-muted);
+  }
+
+  .ws-detail-label {
+    color: var(--color-text-dim);
+    margin-right: var(--size-1);
+  }
+
+  .ws-detail-value { color: var(--color-text); }
+
+  /* ------------------------------------------------------------------ */
+  /* Credential dot                                                      */
+  /* ------------------------------------------------------------------ */
+  .cred-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-left: var(--size-1);
+    vertical-align: middle;
+  }
+
+  .cred-dot.ok { background: var(--color-green); }
+  .cred-dot.missing { background: var(--color-red); }
+
+  /* ------------------------------------------------------------------ */
+  /* Credentials section                                                 */
+  /* ------------------------------------------------------------------ */
+  .cred-section {
+    margin-top: var(--size-4);
+  }
+
+  .cred-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-top: var(--size-2);
+  }
+
+  .cred-table th {
+    text-align: left;
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-5);
+    font-size: var(--font-size-1);
+  }
+
+  .cred-table td {
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text);
+  }
+
+  .cred-table tr:hover td {
+    background: var(--color-highlight-1);
+  }
+
+  .cred-key {
+    font-family: var(--font-mono);
+    font-weight: var(--font-weight-5);
+  }
+
+  .cred-desc {
+    color: var(--color-text-muted);
+    font-size: 10px;
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+
+  .cred-status {
+    display: inline-block;
+    padding: 2px var(--size-2);
+    border-radius: var(--radius-round);
+    font-size: 10px;
+    font-weight: var(--font-weight-6);
+    letter-spacing: 0.02em;
+  }
+
+  .cred-status.missing {
+    background: color-mix(in srgb, var(--color-red) 10%, var(--color-surface-1));
+    color: var(--color-red);
+  }
+
+  .cred-status.present {
+    background: color-mix(in srgb, var(--color-green) 10%, var(--color-surface-1));
+    color: var(--color-green);
+  }
+
+  .cred-provider {
+    display: inline-block;
+    padding: 1px var(--size-1-5);
+    border-radius: var(--radius-2);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    background: color-mix(in srgb, var(--color-purple) 8%, var(--color-surface-1));
+    color: var(--color-purple);
+    border: var(--size-px) solid color-mix(in srgb, var(--color-purple) 15%, transparent);
+  }
+
+  .cred-source {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Card-inner details                                                  */
+  /* ------------------------------------------------------------------ */
+  .card details {
+    background: transparent;
+    border: none;
+    margin: var(--size-1-5) 0 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .card details[open] { border-color: transparent; }
+
+  .card details summary {
+    padding: 2px 0;
+    font-size: 10px;
+    font-weight: var(--font-weight-5);
+    color: var(--color-text-dim);
+    gap: var(--size-1);
+  }
+
+  .card details summary::before { font-size: 7px; }
+
+  .card-inner-content {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    padding: var(--size-1) 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* YAML preview                                                        */
+  /* ------------------------------------------------------------------ */
+  .yml-preview {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2);
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+    padding: var(--size-3) var(--size-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-3);
+    max-height: 600px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .yml-key { color: var(--color-blue); }
+  .yml-string { color: var(--color-green); }
+  .yml-bool { color: var(--color-yellow); }
+  .yml-num { color: var(--color-orange); }
+  .yml-comment { color: var(--color-text-dim); }
+
+  /* ------------------------------------------------------------------ */
+  /* Schema fields                                                       */
+  /* ------------------------------------------------------------------ */
+  .schema-field {
+    display: inline;
+    font-size: var(--font-size-1);
+    font-family: var(--font-mono);
+  }
+
+  .schema-field-name { color: var(--color-text); }
+  .schema-field-required { color: var(--color-red); font-weight: 700; }
+  .schema-type-string { color: var(--color-green); }
+  .schema-type-number { color: var(--color-orange); }
+  .schema-type-boolean { color: var(--color-yellow); }
+  .schema-type-array { color: var(--color-purple); }
+  .schema-type-object { color: var(--color-blue); }
+  .schema-type-unknown { color: var(--color-text-dim); }
+
+  /* ------------------------------------------------------------------ */
+  /* DAG step description                                                */
+  /* ------------------------------------------------------------------ */
+  .dag-step-desc {
+    color: var(--color-text-dim);
+    font-size: 10px;
+    margin-top: 2px;
+    line-height: 1.35;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Responsive                                                          */
+  /* ------------------------------------------------------------------ */
+  @media (max-width: 800px) {
+    .state-details { grid-template-columns: 1fr; }
+    header { flex-wrap: wrap; }
+    .app-canvas { padding: var(--size-4); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+<div class="app-canvas">
+  <header>
+    <h1>proto</h1>
+    <input id="prompt-input" type="text"
+      placeholder="Describe your workspace... e.g. 'When I upload a CSV, analyze data and email a report to analytics@acme.com'"
+    >
+    <button id="run-btn" class="primary">Run</button>
+    <select id="runs-select">
+      <option value="">Previous Runs</option>
+    </select>
+    <div class="mode-toggles">
+      <label class="toggle-label" title="Execute with real agents via direct MCP execution">
+        <input type="checkbox" id="real-toggle"> Real
+      </label>
+    </div>
+  </header>
+
+  <div id="log-panel"></div>
+
+  <div id="workspace-overview"></div>
+
+  <div id="results">
+    <details id="phase1-panel">
+      <summary>Phase 1: Signals & Agents</summary>
+      <div class="phase-content" id="phase1-content"></div>
+    </details>
+
+    <details id="phase2-panel">
+      <summary>Phase 2: Job DAG</summary>
+      <div class="phase-content" id="phase2-content"></div>
+    </details>
+
+    <details id="phase3-panel">
+      <summary>Phase 3: Contracts & Mappings</summary>
+      <div class="phase-content" id="phase3-content"></div>
+    </details>
+
+    <details id="workspace-yml-panel">
+      <summary>workspace.yml</summary>
+      <div class="phase-content" id="workspace-yml-content"></div>
+    </details>
+
+    <div id="fsm-section">
+      <h2>FSM Execution</h2>
+      <div id="fsm-svg-container"></div>
+      <div class="stepper-controls">
+        <button id="step-prev">Prev</button>
+        <button id="step-next">Next</button>
+        <button id="step-play">Play</button>
+        <button id="step-reset">Reset</button>
+        <span class="step-label" id="step-label">idle</span>
+      </div>
+      <div id="results-bar"></div>
+      <div class="state-details">
+        <div class="detail-panel">
+          <h3>Entry Actions</h3>
+          <div id="actions-list"></div>
+        </div>
+        <div class="detail-panel">
+          <h3>Results Accumulator</h3>
+          <div id="results-view" class="results-snapshot"></div>
+        </div>
+      </div>
+      <div class="assertions-panel" id="assertions-panel"></div>
+      <div class="status-bar" id="status-bar"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+const state = {
+  artifacts: {},
+  currentStep: -1,     // -1 = pre-execution (idle), 0..N = transitions
+  playInterval: null,
+  fsmGraph: null,       // parsed FSM graph for rendering
+  executionReport: null,
+  running: false,
+};
+
+// ---------------------------------------------------------------------------
+// DOM refs
+// ---------------------------------------------------------------------------
+
+const $ = (s) => document.querySelector(s);
+const promptInput = $('#prompt-input');
+const runBtn = $('#run-btn');
+const runsSelect = $('#runs-select');
+const logPanel = $('#log-panel');
+const realToggle = $('#real-toggle');
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+loadRunsList().then(() => {
+  const params = new URLSearchParams(location.search);
+  const runSlug = params.get('run');
+  if (runSlug) {
+    loadRun(runSlug);
+  } else if (runsSelect.options.length > 1) {
+    loadRun(runsSelect.options[1].value);
+  }
+});
+
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !state.running) runPipeline();
+});
+
+runBtn.addEventListener('click', () => {
+  if (!state.running) runPipeline();
+});
+
+runsSelect.addEventListener('change', () => {
+  if (runsSelect.value) loadRun(runsSelect.value);
+});
+
+$('#step-prev').addEventListener('click', stepPrev);
+$('#step-next').addEventListener('click', stepNext);
+$('#step-play').addEventListener('click', togglePlay);
+$('#step-reset').addEventListener('click', stepReset);
+
+realToggle.addEventListener('change', () => {
+  realToggle.parentElement.classList.toggle('active', realToggle.checked);
+});
+
+// ---------------------------------------------------------------------------
+// Load runs list
+// ---------------------------------------------------------------------------
+
+async function loadRunsList() {
+  try {
+    const res = await fetch('/api/runs');
+    const runs = await res.json();
+    runsSelect.innerHTML = '<option value="">Previous Runs</option>';
+    for (const run of runs) {
+      const opt = document.createElement('option');
+      opt.value = run.slug;
+      opt.textContent = `${run.slug.slice(0, 20)}  ${run.summary.slice(0, 40)}`;
+      runsSelect.appendChild(opt);
+    }
+  } catch { /* no runs available */ }
+}
+
+// ---------------------------------------------------------------------------
+// Load existing run
+// ---------------------------------------------------------------------------
+
+async function loadRun(slug) {
+  clearAll();
+  // Persist selected run in URL so it survives live-reload
+  const url = new URL(location.href);
+  url.searchParams.set('run', slug);
+  history.replaceState(null, '', url);
+  // Sync the dropdown
+  runsSelect.value = slug;
+
+  const res = await fetch(`/api/run/${encodeURIComponent(slug)}`);
+  const artifacts = await res.json();
+  state.artifacts = artifacts;
+
+  // phase1.json is emitted separately during streaming; for saved runs it may
+  // only exist inside phase3.json (the full PlanWithContracts).
+  const phase1Source = artifacts['phase1.json'] || artifacts['phase3.json'];
+  if (phase1Source) {
+    renderWorkspaceOverview();
+    renderPhase1(phase1Source);
+  }
+  if (artifacts['phase3.json']) {
+    renderPhase2(artifacts['phase3.json']);
+    renderPhase3(artifacts['phase3.json']);
+  }
+  if (artifacts['workspace.yml']) {
+    renderWorkspaceYml(artifacts['workspace.yml']);
+  }
+  if (artifacts['fsm.json'] && artifacts['execution-report.json']) {
+    renderFSM(artifacts['fsm.json'], artifacts['execution-report.json']);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Run pipeline (SSE)
+// ---------------------------------------------------------------------------
+
+async function runPipeline() {
+  const prompt = promptInput.value.trim();
+  if (!prompt) return;
+
+  state.running = true;
+  runBtn.disabled = true;
+  runBtn.textContent = 'Running...';
+  clearAll();
+
+  // Clear URL state for fresh run
+  const url = new URL(location.href);
+  url.searchParams.delete('run');
+  history.replaceState(null, '', url);
+
+  logPanel.classList.add('visible');
+  logPanel.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        real: realToggle.checked,
+      }),
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop(); // keep incomplete event in buffer
+
+      for (const raw of events) {
+        const lines = raw.split('\n');
+        let eventType = '';
+        let data = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7);
+          else if (line.startsWith('data: ')) data = line.slice(6);
+        }
+        if (!eventType || !data) continue;
+
+        handleSSEEvent(eventType, JSON.parse(data));
+      }
+    }
+  } catch (err) {
+    appendLog(`Pipeline error: ${err.message}`, true);
+  }
+
+  state.running = false;
+  runBtn.disabled = false;
+  runBtn.textContent = 'Run';
+  loadRunsList();
+}
+
+function handleSSEEvent(type, data) {
+  switch (type) {
+    case 'log':
+      appendLog(data.text, data.stderr);
+      break;
+
+    case 'artifact': {
+      state.artifacts[data.name] = data.data;
+
+      if (data.name === 'phase1.json') {
+        renderWorkspaceOverview();
+        renderPhase1(data.data);
+        $('#phase1-panel').open = true;
+      }
+      if (data.name === 'readiness.json') {
+        renderWorkspaceOverview();
+        const p1Src = state.artifacts['phase1.json'] || state.artifacts['phase3.json'];
+        if (p1Src) renderPhase1(p1Src);
+      }
+      if (data.name === 'pipeline-context.json') {
+        const p1Src = state.artifacts['phase1.json'] || state.artifacts['phase3.json'];
+        if (p1Src) renderPhase1(p1Src);
+      }
+      if (data.name === 'phase3.json') {
+        renderPhase2(data.data);
+        renderPhase3(data.data);
+        // phase3.json contains signals + agents — render phase1 from it
+        renderWorkspaceOverview();
+        renderPhase1(data.data);
+        $('#phase1-panel').open = true;
+      }
+      if (data.name === 'workspace.yml') {
+        renderWorkspaceYml(data.data);
+      }
+      if (data.name === 'fsm.json') {
+        // Wait for execution report before rendering FSM
+        if (state.artifacts['execution-report.json']) {
+          renderFSM(data.data, state.artifacts['execution-report.json']);
+        }
+      }
+      if (data.name === 'execution-report.json') {
+        if (state.artifacts['fsm.json']) {
+          renderFSM(state.artifacts['fsm.json'], data.data);
+        }
+      }
+      break;
+    }
+
+    case 'done':
+      if (data.exitCode === 0) {
+        appendLog('Pipeline completed successfully', false, true);
+      } else {
+        appendLog(`Pipeline exited with code ${data.exitCode}`, true);
+      }
+      break;
+  }
+}
+
+function appendLog(text, isStderr = false, isSuccess = false) {
+  const el = document.createElement('div');
+  el.className = `log-line${isStderr ? ' stderr' : ''}`;
+  if (/Phase \d|Compiling|Enriching|Classifying|Running FSM/.test(text)) {
+    el.className = 'log-line phase';
+  }
+  if (isSuccess) el.style.color = 'var(--color-green)';
+  el.textContent = text;
+  logPanel.appendChild(el);
+  logPanel.scrollTop = logPanel.scrollHeight;
+}
+
+function clearAll() {
+  state.artifacts = {};
+  state.currentStep = -1;
+  state.fsmGraph = null;
+  state.executionReport = null;
+  stopPlay();
+
+  logPanel.innerHTML = '';
+  logPanel.classList.remove('visible');
+  $('#workspace-overview').innerHTML = '';
+  $('#workspace-overview').classList.remove('visible');
+  $('#phase1-content').innerHTML = '';
+  $('#phase2-content').innerHTML = '';
+  $('#phase3-content').innerHTML = '';
+  $('#workspace-yml-content').innerHTML = '';
+  $('#fsm-svg-container').innerHTML = '';
+  $('#actions-list').innerHTML = '';
+  $('#results-view').innerHTML = '';
+  $('#results-bar').innerHTML = '';
+  $('#assertions-panel').innerHTML = '';
+  $('#status-bar').innerHTML = '';
+  $('#fsm-section').classList.remove('visible');
+  $('#phase1-panel').removeAttribute('open');
+  $('#phase2-panel').removeAttribute('open');
+  $('#phase3-panel').removeAttribute('open');
+  $('#workspace-yml-panel').removeAttribute('open');
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: Signals & Agents
+// ---------------------------------------------------------------------------
+
+function renderPhase1(data) {
+  const el = $('#phase1-content');
+  const enrichedAgents = getEnrichedAgents(data.agents);
+
+  let html = '<div class="section-label">Signals</div>';
+  html += '<div class="card-grid">';
+  for (const s of data.signals) {
+    html += `<div class="card">`;
+    html += `<div class="card-title">${esc(s.name)} <span class="badge badge-${s.signalType}">${s.signalType}</span></div>`;
+    html += `<div class="card-id">${esc(s.id)}</div>`;
+    html += `<div class="card-desc">${esc(s.description || '')}</div>`;
+    if (s.signalConfig) {
+      html += `<div class="card-desc" style="margin-top:4px;color:var(--color-yellow)">`;
+      if (s.signalConfig.provider === 'schedule') {
+        html += `cron: ${esc(s.signalConfig.config.schedule)}`;
+      } else if (s.signalConfig.provider === 'http') {
+        html += `path: ${esc(s.signalConfig.config.path)}`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="section-label" style="margin-top:16px">Agents</div>';
+  html += '<div class="card-grid">';
+  for (const a of enrichedAgents) {
+    const typeBadge = a.bundledId
+      ? `atlas:${esc(a.bundledId)}`
+      : a.mcpServers?.length ? 'mcp' : 'llm';
+    const badgeClass = a.bundledId ? 'bundled' : a.mcpServers?.length ? 'mcp' : 'llm';
+
+    html += `<div class="card">`;
+    html += `<div class="card-title">${esc(a.name)} <span class="badge badge-${badgeClass}">${typeBadge}</span>`;
+    // Credential dot
+    if (a.credStatus !== null) {
+      const dotCls = a.credStatus === 'ok' ? 'ok' : 'missing';
+      html += ` <span class="cred-dot ${dotCls}" title="${a.credStatus === 'ok' ? 'Credentials ready' : 'Missing credentials'}"></span>`;
+    }
+    html += `</div>`;
+    html += `<div class="card-id">${esc(a.id)}</div>`;
+    html += `<div class="card-desc">${esc(a.shortDescription)}</div>`;
+
+    if (a.needs?.length) {
+      html += '<div class="needs-list">';
+      for (const n of a.needs) html += `<span class="need-tag">${esc(n)}</span>`;
+      html += '</div>';
+    }
+
+    // Expandable config
+    if (a.configuration && Object.keys(a.configuration).length > 0) {
+      html += `<details><summary>Configuration</summary>`;
+      html += `<div class="card-inner-content">${esc(JSON.stringify(a.configuration, null, 2))}</div>`;
+      html += `</details>`;
+    }
+
+    // Expandable downstream requirements
+    if (a.downstreamText) {
+      html += `<details><summary>Downstream Requirements</summary>`;
+      html += `<div class="card-inner-content">${esc(a.downstreamText)}</div>`;
+      html += `</details>`;
+    }
+
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Credentials section — show full details from readiness.json
+  html += renderCredentialsSection();
+
+  el.innerHTML = html;
+  $('#phase1-panel').open = true;
+}
+
+/**
+ * Renders the credentials section showing each required credential,
+ * which agent needs it, the provider, and whether it's present or missing.
+ */
+function renderCredentialsSection() {
+  const readiness = state.artifacts['readiness.json'];
+  if (!readiness?.checks?.length) return '';
+
+  const totalMissing = readiness.summary?.missing || 0;
+
+  let html = '<div class="cred-section">';
+  html += `<div class="section-label">Credentials`;
+  if (totalMissing > 0) {
+    html += ` <span class="cred-status missing">${totalMissing} missing</span>`;
+  } else {
+    html += ` <span class="cred-status present">all resolved</span>`;
+  }
+  html += '</div>';
+
+  html += '<table class="cred-table"><thead><tr>';
+  html += '<th>Agent</th><th>Credential</th><th>Provider</th><th>Source</th><th>Status</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const agentCheck of readiness.checks) {
+    for (const check of agentCheck.checks) {
+      const statusCls = check.status === 'missing' ? 'missing' : 'present';
+      const statusLabel = check.status === 'missing' ? 'missing' : 'ready';
+
+      html += '<tr>';
+      html += `<td>${esc(agentCheck.agentName)}<div class="cred-desc">${esc(agentCheck.agentId)}</div></td>`;
+      html += `<td><span class="cred-key">${esc(check.key)}</span>`;
+      if (check.description) {
+        html += `<div class="cred-desc">${esc(check.description)}</div>`;
+      }
+      html += `</td>`;
+      html += `<td><span class="cred-provider">${esc(check.provider || '-')}</span></td>`;
+      html += `<td><span class="cred-source">${esc(check.source || '-')}</span></td>`;
+      html += `<td><span class="cred-status ${statusCls}">${statusLabel}</span></td>`;
+      html += '</tr>';
+    }
+  }
+
+  html += '</tbody></table>';
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Merges agent data from phase1, phase3, pipeline-context, and readiness
+ * into enriched agent objects for rendering.
+ */
+function getEnrichedAgents(baseAgents) {
+  const phase3 = state.artifacts['phase3.json'];
+  const pipelineCtx = state.artifacts['pipeline-context.json'];
+  const readiness = state.artifacts['readiness.json'];
+
+  // Index phase3 agents by id for bundledId + enriched description
+  const phase3Agents = {};
+  if (phase3?.agents) {
+    for (const a of phase3.agents) {
+      phase3Agents[a.id] = a;
+    }
+  }
+
+  // Index pipeline-context by agentId for downstream info
+  const ctxByAgent = {};
+  if (Array.isArray(pipelineCtx)) {
+    for (const c of pipelineCtx) {
+      ctxByAgent[c.agentId] = c;
+    }
+  }
+
+  // Index readiness checks by agentId
+  const readinessByAgent = {};
+  if (readiness?.checks) {
+    for (const c of readiness.checks) {
+      const allOk = c.checks.every(ch => ch.status !== 'missing');
+      readinessByAgent[c.agentId] = allOk ? 'ok' : 'missing';
+    }
+  }
+
+  return baseAgents.map(a => {
+    const p3 = phase3Agents[a.id];
+    const ctx = ctxByAgent[a.id];
+    const bundledId = p3?.bundledId || a.bundledId || null;
+
+    // Use enriched description from phase3 or pipeline-context, fall back to base
+    const fullDesc = ctx?.enrichedDescription || p3?.description || a.description || '';
+
+    // Split on DOWNSTREAM to get short description vs downstream section
+    const downstreamIdx = fullDesc.indexOf('DOWNSTREAM DATA REQUIREMENTS:');
+    const shortDescription = downstreamIdx > 0
+      ? fullDesc.slice(0, downstreamIdx).trim()
+      : truncate(fullDesc, 200);
+    const downstreamText = downstreamIdx > 0
+      ? fullDesc.slice(downstreamIdx + 'DOWNSTREAM DATA REQUIREMENTS:'.length).trim()
+      : null;
+
+    return {
+      ...a,
+      bundledId,
+      shortDescription,
+      downstreamText,
+      credStatus: readinessByAgent[a.id] ?? null,
+      configuration: a.configuration || {},
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Overview
+// ---------------------------------------------------------------------------
+
+function renderWorkspaceOverview() {
+  const phase1 = state.artifacts['phase1.json'] || state.artifacts['phase3.json'];
+  if (!phase1?.workspace) return;
+
+  const ws = phase1.workspace;
+  const readiness = state.artifacts['readiness.json'];
+  const el = $('#workspace-overview');
+
+  let html = '<div class="ws-header">';
+  html += `<span class="ws-name">${esc(ws.name)}</span>`;
+
+  if (readiness) {
+    const cls = readiness.ready ? 'ready' : 'not-ready';
+    const label = readiness.ready ? 'Ready' : `${readiness.summary?.missing || 0} missing`;
+    html += ` <span class="ws-readiness ${cls}">${esc(label)}</span>`;
+  }
+
+  html += '</div>';
+  html += `<div class="ws-purpose">${esc(ws.purpose)}</div>`;
+
+  if (ws.details?.length) {
+    html += '<div class="ws-details">';
+    for (const d of ws.details) {
+      html += `<span class="ws-detail"><span class="ws-detail-label">${esc(d.label)}:</span> <span class="ws-detail-value">${esc(d.value)}</span></span>`;
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+  el.classList.add('visible');
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: DAG
+// ---------------------------------------------------------------------------
+
+function renderPhase2(plan) {
+  const el = $('#phase2-content');
+  let html = '<div class="dag-container">';
+
+  for (const job of plan.jobs) {
+    html += '<div class="dag-job">';
+    html += `<div class="dag-job-title">${esc(job.name)} <span class="card-id">(${esc(job.id)})</span> `;
+    html += `<span class="badge badge-http">trigger: ${esc(job.triggerSignalId)}</span></div>`;
+
+    // Topological sort into tiers
+    const tiers = topoSortTiers(job.steps);
+    html += '<div class="dag-steps">';
+    for (let i = 0; i < tiers.length; i++) {
+      if (i > 0) html += '<span class="dag-arrow">&#8594;</span>';
+      const tier = tiers[i];
+      if (tier.length === 1) {
+        const step = job.steps.find(s => s.id === tier[0]);
+        html += `<div class="dag-step"><strong>${esc(tier[0])}</strong><br><span class="card-desc">${esc(step?.agentId || '')}</span>`;
+        if (step?.description) html += `<div class="dag-step-desc">${esc(truncate(step.description, 80))}</div>`;
+        html += `</div>`;
+      } else {
+        html += '<div class="dag-parallel">';
+        for (const id of tier) {
+          const step = job.steps.find(s => s.id === id);
+          html += `<div class="dag-step"><strong>${esc(id)}</strong><br><span class="card-desc">${esc(step?.agentId || '')}</span>`;
+          if (step?.description) html += `<div class="dag-step-desc">${esc(truncate(step.description, 80))}</div>`;
+          html += `</div>`;
+        }
+        html += '</div>';
+      }
+    }
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+  $('#phase2-panel').open = true;
+}
+
+function topoSortTiers(steps) {
+  const inDeg = new Map(steps.map(s => [s.id, s.depends_on.length]));
+  let frontier = [];
+  for (const [id, deg] of inDeg) {
+    if (deg === 0) frontier.push(id);
+  }
+  frontier.sort();
+
+  const tiers = [];
+  let processed = 0;
+  while (frontier.length > 0) {
+    tiers.push([...frontier]);
+    processed += frontier.length;
+    const next = [];
+    for (const current of frontier) {
+      for (const step of steps) {
+        if (step.depends_on.includes(current)) {
+          const nd = inDeg.get(step.id) - 1;
+          inDeg.set(step.id, nd);
+          if (nd === 0) next.push(step.id);
+        }
+      }
+    }
+    next.sort();
+    frontier = next;
+  }
+  if (processed !== steps.length) return steps.map(s => [s.id]);
+  return tiers;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: Contracts & Mappings
+// ---------------------------------------------------------------------------
+
+function renderPhase3(plan) {
+  const el = $('#phase3-content');
+  let html = '';
+
+  for (const job of plan.jobs) {
+    html += `<div class="section-label">${esc(job.name)} &mdash; Contracts</div>`;
+    html += '<table class="contract-table"><thead><tr>';
+    html += '<th>Step</th><th>Document ID</th><th>Type</th><th>Schema Fields</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of job.documentContracts || []) {
+      html += `<tr>`;
+      html += `<td>${esc(c.producerStepId)}</td>`;
+      html += `<td style="color:var(--accent)">${esc(c.documentId)}</td>`;
+      html += `<td>${esc(c.documentType)}</td>`;
+      html += `<td>${renderSchemaFields(c.schema)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+
+    if (job.prepareMappings?.length) {
+      html += `<div class="section-label" style="margin-top:16px">${esc(job.name)} &mdash; Mappings</div>`;
+      html += '<table class="mapping-table"><thead><tr>';
+      html += '<th>Consumer</th><th>From Document</th><th>Sources</th><th>Constants</th>';
+      html += '</tr></thead><tbody>';
+      for (const m of job.prepareMappings) {
+        const sources = m.sources.map(s => {
+          let txt = `${s.from} -> ${s.to}`;
+          if (s.transform) txt += ` [transform]`;
+          return txt;
+        }).join('; ');
+        const constants = (m.constants || []).map(c => `${c.key}=${JSON.stringify(c.value)}`).join('; ');
+        html += '<tr>';
+        html += `<td>${esc(m.consumerStepId)}</td>`;
+        html += `<td style="color:var(--accent)">${esc(m.documentId)}</td>`;
+        html += `<td class="card-desc">${esc(sources)}</td>`;
+        html += `<td class="card-desc">${esc(constants || '-')}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+  }
+
+  el.innerHTML = html;
+  $('#phase3-panel').open = true;
+}
+
+// ---------------------------------------------------------------------------
+// FSM Diagram — SVG rendering
+// ---------------------------------------------------------------------------
+
+function renderFSM(fsmDefs, execReports) {
+  // Use first FSM/report for now (multi-job: extend later)
+  const fsm = Array.isArray(fsmDefs) ? fsmDefs[0] : fsmDefs;
+  const report = Array.isArray(execReports) ? execReports[0] : execReports;
+  if (!fsm || !report) return;
+
+  state.executionReport = report;
+  state.fsmGraph = buildGraph(fsm);
+  state.currentStep = -1;
+
+  renderSVG();
+  renderStepDetails();
+  renderAssertions();
+  renderStatusBar();
+
+  // Auto-advance to first step so the user sees something
+  if (report.stateTransitions?.length > 0) {
+    state.currentStep = 0;
+    renderSVG();
+    renderStepDetails();
+  }
+
+  $('#fsm-section').classList.add('visible');
+}
+
+function buildGraph(fsm) {
+  const stateNames = Object.keys(fsm.states);
+  const edges = [];
+  const entryActions = {};
+
+  for (const [name, stateObj] of Object.entries(fsm.states)) {
+    entryActions[name] = stateObj.entry || [];
+
+    if (!stateObj.on) continue;
+    for (const [signal, trans] of Object.entries(stateObj.on)) {
+      if (Array.isArray(trans)) {
+        // Conditional: array of guarded transitions
+        for (const t of trans) {
+          edges.push({ from: name, to: t.target, signal, guard: t.guards?.[0] || t.guard });
+        }
+      } else {
+        edges.push({ from: name, to: trans.target, signal, guard: trans.guards?.[0] || trans.guard });
+      }
+    }
+  }
+
+  // Layout: BFS depth from idle
+  const depth = {};
+  const queue = [fsm.initial || 'idle'];
+  depth[queue[0]] = 0;
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    for (const e of edges) {
+      if (e.from === cur && !(e.to in depth)) {
+        depth[e.to] = depth[cur] + 1;
+        queue.push(e.to);
+      }
+    }
+  }
+
+  // Assign position
+  const levels = {};
+  for (const name of stateNames) {
+    const d = depth[name] ?? 0;
+    if (!levels[d]) levels[d] = [];
+    levels[d].push(name);
+  }
+
+  const NODE_W = 180;
+  const NODE_H = 44;
+  const GAP_X = 70;
+  const GAP_Y = 28;
+  const PAD = 30;
+
+  const positions = {};
+  const maxDepth = Math.max(...Object.values(depth), 0);
+
+  for (const [d, names] of Object.entries(levels)) {
+    const x = PAD + Number(d) * (NODE_W + GAP_X);
+    const totalH = names.length * NODE_H + (names.length - 1) * GAP_Y;
+    const startY = PAD + (200 - totalH) / 2; // center vertically
+    for (let i = 0; i < names.length; i++) {
+      positions[names[i]] = {
+        x,
+        y: Math.max(PAD, startY + i * (NODE_H + GAP_Y)),
+        w: NODE_W,
+        h: NODE_H,
+      };
+    }
+  }
+
+  const svgWidth = PAD * 2 + (maxDepth + 1) * NODE_W + maxDepth * GAP_X;
+  const maxY = Math.max(...Object.values(positions).map(p => p.y + p.h)) + PAD;
+
+  return { stateNames, edges, positions, entryActions, svgWidth, svgHeight: Math.max(maxY, 160), fsm };
+}
+
+function renderSVG() {
+  const g = state.fsmGraph;
+  const report = state.executionReport;
+  if (!g) return;
+
+  // Determine visited states and the current active step
+  const visitedStates = new Set();
+  const visitedEdges = new Set();
+  const transitions = report?.stateTransitions || [];
+  const step = state.currentStep;
+
+  if (step >= 0) {
+    for (let i = 0; i <= Math.min(step, transitions.length - 1); i++) {
+      visitedStates.add(transitions[i].from);
+      visitedStates.add(transitions[i].to);
+      visitedEdges.add(`${transitions[i].from}->${transitions[i].to}`);
+    }
+  }
+
+  const activeState = step < 0
+    ? g.fsm.initial || 'idle'
+    : step < transitions.length
+      ? transitions[step].to
+      : transitions.length > 0
+        ? transitions[transitions.length - 1].to
+        : 'idle';
+
+  let svg = `<svg width="${g.svgWidth}" height="${g.svgHeight}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Arrowhead marker
+  svg += `<defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-text-dim)"/>
+    </marker>
+    <marker id="arrow-active" viewBox="0 0 10 10" refX="10" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-blue)"/>
+    </marker>
+    <marker id="arrow-visited" viewBox="0 0 10 10" refX="10" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-green)"/>
+    </marker>
+  </defs>`;
+
+  // Draw edges first (behind nodes)
+  for (const e of g.edges) {
+    const from = g.positions[e.from];
+    const to = g.positions[e.to];
+    if (!from || !to) continue;
+
+    const edgeKey = `${e.from}->${e.to}`;
+    const isVisited = visitedEdges.has(edgeKey);
+    const isActive = step >= 0 && step < transitions.length &&
+      transitions[step].from === e.from && transitions[step].to === e.to;
+
+    const cls = isActive ? 'active' : isVisited ? 'visited' : '';
+    const marker = isActive ? 'arrow-active' : isVisited ? 'arrow-visited' : 'arrow';
+
+    const x1 = from.x + from.w;
+    const y1 = from.y + from.h / 2;
+    const x2 = to.x;
+    const y2 = to.y + to.h / 2;
+
+    if (Math.abs(y1 - y2) < 5) {
+      // Straight line
+      svg += `<g class="fsm-edge ${cls}">`;
+      svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#${marker})"/>`;
+      svg += `</g>`;
+    } else {
+      // Curved path for branching/merging
+      const midX = (x1 + x2) / 2;
+      svg += `<g class="fsm-edge ${cls}">`;
+      svg += `<path d="M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}" marker-end="url(#${marker})"/>`;
+      svg += `</g>`;
+    }
+
+    // Edge label (signal name)
+    if (e.signal && e.signal !== 'ADVANCE') {
+      const lx = (x1 + x2) / 2;
+      const ly = Math.min(y1, y2) - 8;
+      svg += `<text class="fsm-edge-label" x="${lx}" y="${ly}">${esc(e.signal)}</text>`;
+    }
+  }
+
+  // Draw nodes
+  for (const name of g.stateNames) {
+    const p = g.positions[name];
+    if (!p) continue;
+
+    const isFinal = g.fsm.states[name]?.type === 'final';
+    const isActive = name === activeState;
+    const isVisited = visitedStates.has(name) && !isActive;
+    const cls = [
+      'fsm-node',
+      isFinal ? 'final' : '',
+      isActive ? 'active' : '',
+      isVisited ? 'visited' : '',
+    ].filter(Boolean).join(' ');
+
+    svg += `<g class="${cls}">`;
+
+    if (isFinal) {
+      // Final state: double circle
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const r = 16;
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="none" stroke="${isActive ? 'var(--color-blue)' : isVisited ? 'var(--color-green)' : 'var(--color-text-dim)'}" stroke-width="1"/>`;
+      svg += `<text x="${cx}" y="${cy + 1}">${esc(formatStateName(name))}</text>`;
+    } else {
+      svg += `<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}"/>`;
+      svg += `<text x="${p.x + p.w / 2}" y="${p.y + p.h / 2}">${esc(formatStateName(name))}</text>`;
+    }
+
+    svg += '</g>';
+  }
+
+  svg += '</svg>';
+  $('#fsm-svg-container').innerHTML = svg;
+}
+
+function formatStateName(name) {
+  return name.replace(/^step_/, '').replace(/_/g, '-');
+}
+
+// ---------------------------------------------------------------------------
+// Stepper
+// ---------------------------------------------------------------------------
+
+function stepNext() {
+  const max = (state.executionReport?.stateTransitions?.length ?? 0) - 1;
+  if (state.currentStep < max) {
+    state.currentStep++;
+    renderSVG();
+    renderStepDetails();
+  }
+}
+
+function stepPrev() {
+  if (state.currentStep > -1) {
+    state.currentStep--;
+    renderSVG();
+    renderStepDetails();
+  }
+}
+
+function stepReset() {
+  stopPlay();
+  state.currentStep = -1;
+  renderSVG();
+  renderStepDetails();
+}
+
+function togglePlay() {
+  if (state.playInterval) {
+    stopPlay();
+  } else {
+    state.playInterval = setInterval(() => {
+      const max = (state.executionReport?.stateTransitions?.length ?? 0) - 1;
+      if (state.currentStep >= max) {
+        stopPlay();
+        return;
+      }
+      stepNext();
+    }, 800);
+    $('#step-play').textContent = 'Pause';
+  }
+}
+
+function stopPlay() {
+  if (state.playInterval) {
+    clearInterval(state.playInterval);
+    state.playInterval = null;
+  }
+  $('#step-play').textContent = 'Play';
+}
+
+function renderStepDetails() {
+  const report = state.executionReport;
+  if (!report) return;
+
+  const transitions = report.stateTransitions;
+  const step = state.currentStep;
+  const total = transitions.length;
+
+  // Current state name
+  const currentState = step < 0
+    ? (state.fsmGraph?.fsm?.initial || 'idle')
+    : step < total
+      ? transitions[step].to
+      : transitions[total - 1]?.to || 'idle';
+
+  // Previous state name (for delta detection)
+  const prevState = step <= 0
+    ? null
+    : step - 1 < total
+      ? transitions[step - 1].to
+      : null;
+
+  $('#step-label').textContent = `${step + 1} / ${total}  —  ${currentState}`;
+
+  // Entry actions for current state
+  const actions = report.actionTrace.filter(a => a.state === currentState);
+  // Deduplicate: group by actionId, show completed status if any completed entry exists
+  const seen = new Map();
+  for (const a of actions) {
+    const key = a.actionId || a.actionType;
+    const existing = seen.get(key);
+    if (!existing || a.status === 'completed' || a.status === 'failed') {
+      seen.set(key, a);
+    }
+  }
+
+  let actionsHtml = '';
+  for (const [, a] of seen) {
+    const iconCls = a.status === 'completed' ? 'completed' : a.status === 'failed' ? 'failed' : 'pending';
+    const icon = a.status === 'completed' ? '\u2713' : a.status === 'failed' ? '\u2717' : '\u25CB';
+    actionsHtml += `<div class="action-item">`;
+    actionsHtml += `<span class="action-icon ${iconCls}">${icon}</span>`;
+    actionsHtml += `<span class="action-type">${esc(a.actionType)}</span>`;
+    actionsHtml += `<span class="action-id">${esc(a.actionId || '')}</span>`;
+    actionsHtml += `</div>`;
+
+    // Show input for agent/llm actions
+    if (a.input && (a.actionType === 'agent' || a.actionType === 'llm')) {
+      actionsHtml += `<div style="margin-left:28px;margin-bottom:4px">`;
+      if (a.input.task) {
+        actionsHtml += `<div class="card-desc" style="color:var(--color-yellow)">task: ${esc(truncate(a.input.task, 120))}</div>`;
+      }
+      if (a.input.config && Object.keys(a.input.config).length > 0) {
+        actionsHtml += `<details style="margin-top:2px"><summary style="font-size:10px;padding:0;color:var(--color-text-dim)">config</summary>`;
+        actionsHtml += `<div class="card-inner-content">${esc(JSON.stringify(a.input.config, null, 2))}</div>`;
+        actionsHtml += `</details>`;
+      }
+      actionsHtml += `</div>`;
+    }
+  }
+
+  const initialState = state.fsmGraph?.fsm?.initial || 'idle';
+  if (currentState === initialState && step < 0) {
+    actionsHtml = '<div class="card-desc">Waiting for trigger signal...</div>';
+  }
+
+  $('#actions-list').innerHTML = actionsHtml;
+
+  // Results accumulator — handle both resultSnapshots (new) and documentSnapshots (legacy)
+  const _hasResultSnapshots = !!report.resultSnapshots;
+  const currentResults = getResultsAtState(report, currentState);
+  const prevResults = prevState ? getResultsAtState(report, prevState) : {};
+  const newKeys = new Set(
+    Object.keys(currentResults).filter(k => !(k in prevResults))
+  );
+
+  // Render results bar (progressive fill indicators)
+  renderResultsBar(report, currentState, newKeys);
+
+  // Render results detail panel
+  let resultsHtml = '';
+  const resultKeys = Object.keys(currentResults);
+
+  if (resultKeys.length > 0) {
+    for (const key of resultKeys) {
+      const isNew = newKeys.has(key);
+      resultsHtml += `<div class="result-entry${isNew ? ' new-result' : ''}">`;
+      resultsHtml += `<div class="result-entry-key">`;
+      resultsHtml += `<span class="result-entry-id">${esc(key)}</span>`;
+      if (isNew) resultsHtml += `<span class="result-new-badge">NEW</span>`;
+      resultsHtml += `</div>`;
+      resultsHtml += `<div>${esc(JSON.stringify(currentResults[key], null, 2))}</div>`;
+      resultsHtml += `</div>`;
+    }
+  } else if (currentState === initialState) {
+    resultsHtml = '<div class="result-empty">results = {} — cleared on return to initial state</div>';
+  } else {
+    resultsHtml = '<div class="result-empty">No results accumulated yet</div>';
+  }
+
+  $('#results-view').innerHTML = resultsHtml;
+}
+
+/**
+ * Extracts results at a given state, handling both resultSnapshots and documentSnapshots formats.
+ *
+ * resultSnapshots: Record<state, Record<key, data>>
+ * documentSnapshots: Record<state, Array<{id, type, data}>>
+ */
+function getResultsAtState(report, stateName) {
+  // Prefer resultSnapshots (new format from accumulated job context design)
+  if (report.resultSnapshots) {
+    return report.resultSnapshots[stateName] || {};
+  }
+
+  // Fall back to documentSnapshots (legacy format) — convert to results shape
+  const docs = report.documentSnapshots?.[stateName];
+  if (!docs || !Array.isArray(docs)) return {};
+
+  const results = {};
+  for (const doc of docs) {
+    results[doc.id] = doc.data;
+  }
+  return results;
+}
+
+/**
+ * Collects all possible result keys from the full execution (all states).
+ */
+function getAllResultKeys(report) {
+  const keys = new Set();
+  if (report.resultSnapshots) {
+    for (const snap of Object.values(report.resultSnapshots)) {
+      for (const k of Object.keys(snap)) keys.add(k);
+    }
+  } else if (report.documentSnapshots) {
+    for (const docs of Object.values(report.documentSnapshots)) {
+      if (Array.isArray(docs)) {
+        for (const doc of docs) keys.add(doc.id);
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * Renders the results bar — a horizontal strip showing all expected result
+ * keys with fill state (empty / filled / just-filled) at the current step.
+ */
+function renderResultsBar(report, currentState, newKeys) {
+  const allKeys = getAllResultKeys(report);
+  if (allKeys.size === 0) {
+    $('#results-bar').innerHTML = '';
+    return;
+  }
+
+  const currentResults = getResultsAtState(report, currentState);
+
+  let html = '<div class="results-bar">';
+  html += '<span class="results-bar-label">results</span>';
+
+  for (const key of allKeys) {
+    const isFilled = key in currentResults;
+    const isJustFilled = newKeys.has(key);
+    const cls = isJustFilled ? 'just-filled' : isFilled ? 'filled' : 'empty';
+    html += `<span class="results-bar-key ${cls}">${esc(key)}</span>`;
+  }
+
+  html += '</div>';
+  $('#results-bar').innerHTML = html;
+}
+
+function renderAssertions() {
+  const report = state.executionReport;
+  if (!report?.assertions?.length) return;
+
+  let html = '<div class="section-label">Assertions</div>';
+  for (const a of report.assertions) {
+    const cls = a.passed ? 'assertion-pass' : 'assertion-fail';
+    const icon = a.passed ? '\u2713' : '\u2717';
+    // Normalize assertion label for display
+    const label = a.check
+      .replace('document_exists:', 'result_exists:')
+      .replace('reached_completed', 'reached completed');
+    html += `<div class="assertion-item ${cls}">`;
+    html += `<span>${icon}</span>`;
+    html += `<span>${esc(label)}</span>`;
+    if (a.detail) html += `<span class="card-desc"> &mdash; ${esc(a.detail)}</span>`;
+    html += '</div>';
+  }
+  $('#assertions-panel').innerHTML = html;
+}
+
+function renderStatusBar() {
+  const report = state.executionReport;
+  if (!report) return;
+
+  const cls = report.success ? 'status-success' : 'status-failure';
+  const icon = report.success ? '\u2713' : '\u2717';
+  let html = `<span class="${cls}">${icon} ${report.success ? 'Success' : 'Failed'}</span>`;
+  html += `<span>Final: ${esc(report.finalState)}</span>`;
+  html += `<span>${report.stateTransitions.length} transitions</span>`;
+  html += `<span>${report.durationMs}ms</span>`;
+  if (report.error) html += `<span class="status-failure">${esc(report.error)}</span>`;
+  $('#status-bar').innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace YML Preview
+// ---------------------------------------------------------------------------
+
+function renderWorkspaceYml(yml) {
+  if (!yml) return;
+  const el = $('#workspace-yml-content');
+  el.innerHTML = `<div class="yml-preview">${highlightYaml(typeof yml === 'string' ? yml : JSON.stringify(yml, null, 2))}</div>`;
+}
+
+function highlightYaml(text) {
+  return text.split('\n').map(line => {
+    // Comment lines
+    if (/^\s*#/.test(line)) {
+      return `<span class="yml-comment">${esc(line)}</span>`;
+    }
+    // Key: value lines
+    const m = line.match(/^(\s*)([\w._-]+)(\s*:\s*)(.*)/);
+    if (m) {
+      const [, indent, key, colon, val] = m;
+      return `${esc(indent)}<span class="yml-key">${esc(key)}</span>${esc(colon)}${highlightYamlValue(val)}`;
+    }
+    // List items with values
+    const listM = line.match(/^(\s*-\s+)(.*)/);
+    if (listM) {
+      return esc(listM[1]) + highlightYamlValue(listM[2]);
+    }
+    return esc(line);
+  }).join('\n');
+}
+
+function highlightYamlValue(val) {
+  if (!val) return '';
+  const trimmed = val.trim();
+  if (trimmed === 'true' || trimmed === 'false') return `<span class="yml-bool">${esc(val)}</span>`;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `<span class="yml-num">${esc(val)}</span>`;
+  if (/^['"]/.test(trimmed)) return `<span class="yml-string">${esc(val)}</span>`;
+  if (trimmed === '|-' || trimmed === '|' || trimmed === '>-' || trimmed === '>') return esc(val);
+  if (trimmed === '{}' || trimmed === '[]') return esc(val);
+  // Bare string values (no colon = probably a value)
+  if (trimmed && !trimmed.includes(':')) return `<span class="yml-string">${esc(val)}</span>`;
+  return esc(val);
+}
+
+// ---------------------------------------------------------------------------
+// Schema Fields
+// ---------------------------------------------------------------------------
+
+function renderSchemaFields(schema) {
+  if (!schema?.properties) return '<span class="card-desc">-</span>';
+  const required = new Set(schema.required || []);
+  const parts = [];
+  for (const [name, prop] of Object.entries(schema.properties)) {
+    const isReq = required.has(name);
+    const type = prop.type || 'unknown';
+    const typeClass = `schema-type-${type}`;
+    parts.push(
+      `<span class="schema-field"><span class="schema-field-name">${esc(name)}</span>${isReq ? '<span class="schema-field-required">*</span>' : ''}:<span class="${typeClass}">${esc(type)}</span></span>`
+    );
+  }
+  return parts.join(', ');
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function truncate(str, max) {
+  if (!str) return '';
+  return str.length > max ? `${str.slice(0, max)}...` : str;
+}
+</script>
+<script>
+// Live-reload: reconnect on server restart, then refresh the page.
+(function livereload() {
+  const es = new EventSource('/livereload');
+  es.onerror = () => {
+    es.close();
+    const retry = setInterval(() => {
+      fetch('/livereload', { method: 'HEAD' }).then(() => {
+        clearInterval(retry);
+        location.reload();
+      }).catch(() => {});
+    }, 300);
+  };
+})();
+</script>
+</body>
+</html>

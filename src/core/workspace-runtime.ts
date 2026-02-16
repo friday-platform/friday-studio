@@ -12,10 +12,19 @@ import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { type MergedConfig, validateSignalPayload } from "@atlas/config";
 import {
   AgentOrchestrator,
+  type AgentResultData,
+  buildSessionView,
+  type EphemeralChunk,
+  extractPlannedSteps,
   type GlobalMCPServerPool,
+  isAgentAction,
+  mapActionToStepComplete,
+  mapActionToStepStart,
   mapFsmEventToSessionEvent,
   ReasoningResultStatus,
   SessionHistoryStorage,
+  type SessionStreamEvent,
+  type SessionSummary as SessionSummaryV2,
   UserConfigurationError,
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
@@ -28,6 +37,7 @@ import {
   AtlasLLMProviderAdapter,
   type Context,
   createEngine,
+  type FSMActionExecutionEvent,
   FSMDefinitionSchema,
   type FSMEngine,
   type FSMEvent,
@@ -57,9 +67,7 @@ import {
   extractAgentConfigPrompt,
   validateAgentOutput,
 } from "./agent-helpers.ts";
-
-// Re-export for backward compatibility (was previously defined locally)
-export type { SessionHistoryEventPayload } from "@atlas/core";
+import { generateSessionSummary } from "./session-summarizer.ts";
 
 /**
  * Classify an error to determine session status.
@@ -153,11 +161,21 @@ function createStubMessageManager(): ITempestMessageManager {
   };
 }
 
+/** Minimal interface for session event stream (avoids atlasd import) */
+interface SessionStream {
+  emit(event: SessionStreamEvent): void;
+  emitEphemeral(chunk: EphemeralChunk): void;
+  finalize(summary: SessionSummaryV2): Promise<void>;
+  getBufferedEvents(): SessionStreamEvent[];
+}
+
 interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   workspacePath?: string;
   mcpServerPool?: GlobalMCPServerPool;
   daemonUrl?: string;
+  /** Factory to create a session event stream (injected by daemon via registry) */
+  createSessionStream?: (sessionId: string) => SessionStream;
   onSessionFinished?: (data: {
     workspaceId: string;
     sessionId: string;
@@ -230,6 +248,10 @@ export class WorkspaceRuntime {
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
   private sessionCompletionEmitter = new EventEmitter();
+
+  // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
+  // Populated by executeAgent, consumed by onEvent callback for step:complete events
+  private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
 
   // Track emitted jobs to prevent duplicate analytics events on hot-reload
   private emittedJobs = new Set<string>();
@@ -577,7 +599,6 @@ export class WorkspaceRuntime {
     const sessionId = crypto.randomUUID();
     // Extract userId from signal data for analytics
     const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
-    const collectedFsmEvents: FSMEvent[] = [];
     const session: SessionResult = {
       id: sessionId,
       workspaceId: this.workspace.id,
@@ -585,8 +606,13 @@ export class WorkspaceRuntime {
       startedAt: new Date(),
       artifacts: [],
       userId,
-      collectedFsmEvents,
     };
+
+    // Session history v2: create stream + side-channel for this session
+    const sessionStream = this.options.createSessionStream?.(sessionId);
+    const sideChannel = new Map<string, AgentResultData>();
+    this.agentResultSideChannel.set(sessionId, sideChannel);
+    let stepCounter = 0;
 
     logger.info("Processing signal via FSM", {
       sessionId: session.id,
@@ -607,6 +633,28 @@ export class WorkspaceRuntime {
       });
     }
 
+    // Derive planned steps from FSM graph for progress visibility
+    const rawPlannedSteps = extractPlannedSteps(job.engine.definition);
+    const plannedSteps =
+      rawPlannedSteps.length > 0
+        ? rawPlannedSteps.map((step) => ({
+            agentName: step.agentName,
+            task: this.config.workspace.agents?.[step.agentName]?.description ?? step.agentName,
+            actionType: step.actionType,
+          }))
+        : undefined;
+
+    // Emit session:start to v2 stream
+    sessionStream?.emit({
+      type: "session:start",
+      sessionId,
+      workspaceId: this.workspace.id,
+      jobName: job.name,
+      task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
+      plannedSteps,
+      timestamp: session.startedAt.toISOString(),
+    });
+
     try {
       // Process signal through FSM with callback context
       await job.engine.signal(
@@ -615,33 +663,50 @@ export class WorkspaceRuntime {
           sessionId: session.id,
           workspaceId: this.workspace.id,
           abortSignal,
-          // Handle streaming events from FSM actions and agent execution
-          // Events may be:
-          // 1. FSM events (data-fsm-*) - convert and forward, also capture for persistence
-          // 2. Agent stream events (text, reasoning, tool-*, etc.) - forward directly
+          // FSM lifecycle events only (state transitions, action executions, tool calls/results)
           onEvent: (event) => {
+            // Forward FSM events to the stream as converted chunks
             if (onStreamEvent) {
-              // Check if this is an FSM event that needs conversion
               const fsmChunk = fsmEventToStreamChunk(event);
               if (fsmChunk) {
-                // FSM event - forward converted chunk
                 onStreamEvent(fsmChunk);
-              } else {
-                // Non-FSM event (text, reasoning, etc.) - forward directly
-                // These come from agent execution and are already AtlasUIMessageChunk format
-                onStreamEvent(event as unknown as AtlasUIMessageChunk);
               }
             }
 
-            // Capture FSM events for persistence (only actual FSM events)
-            // Note: data-fsm-state-transition is no longer persisted
+            // Session history v2: map agent actions to step events
             if (
-              event.type === "data-fsm-action-execution" ||
-              event.type === "data-fsm-tool-call" ||
-              event.type === "data-fsm-tool-result"
+              sessionStream &&
+              event.type === "data-fsm-action-execution" &&
+              isAgentAction(event as FSMActionExecutionEvent)
             ) {
-              collectedFsmEvents.push(event);
+              const actionEvent = event as FSMActionExecutionEvent;
+              if (actionEvent.data.status === "started") {
+                stepCounter++;
+                sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
+              } else if (
+                actionEvent.data.status === "completed" ||
+                actionEvent.data.status === "failed"
+              ) {
+                // LLM actions carry result data directly on the event (populated by FSM engine).
+                // Agent actions use the side-channel (populated by executeAgent callback).
+                let agentResult: AgentResultData | undefined;
+                if (actionEvent.data.llmResult) {
+                  agentResult = actionEvent.data.llmResult;
+                } else {
+                  const sideChannelKey = `${actionEvent.data.jobName}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
+                  agentResult = sideChannel.get(sideChannelKey);
+                  sideChannel.delete(sideChannelKey);
+                }
+                sessionStream.emit(mapActionToStepComplete(actionEvent, agentResult, stepCounter));
+              }
             }
+          },
+          // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
+          // this separate channel, bypassing the FSMEvent-typed onEvent callback
+          onStreamEvent: (chunk) => {
+            onStreamEvent?.(chunk);
+            // Session history v2: route ephemeral chunks to session stream
+            sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
           },
         },
       );
@@ -692,6 +757,67 @@ export class WorkspaceRuntime {
           });
         }
       }
+
+      // Session history v2: emit session:complete + finalize
+      if (sessionStream) {
+        const durationMs = session.completedAt
+          ? session.completedAt.getTime() - session.startedAt.getTime()
+          : 0;
+
+        sessionStream.emit({
+          type: "session:complete",
+          sessionId,
+          status:
+            session.status === "active"
+              ? "completed"
+              : session.status === "cancelled"
+                ? "failed"
+                : session.status,
+          durationMs,
+          error: session.error?.message,
+          timestamp: (session.completedAt ?? new Date()).toISOString(),
+        });
+
+        // Build summary from buffered events via reducer
+        const view = buildSessionView(sessionStream.getBufferedEvents());
+
+        // Generate AI summary and emit session:summary event (before finalize)
+        const aiSummary = await generateSessionSummary(view, undefined, job.description);
+        if (aiSummary) {
+          sessionStream.emit({
+            type: "session:summary",
+            timestamp: new Date().toISOString(),
+            summary: aiSummary.summary,
+            keyDetails: aiSummary.keyDetails,
+          });
+        }
+
+        // Only count actually-executed blocks in summary metrics
+        const executedBlocks = view.agentBlocks.filter(
+          (b) => b.status !== "skipped" && b.status !== "pending",
+        );
+        const summaryV2: SessionSummaryV2 = {
+          sessionId,
+          workspaceId: this.workspace.id,
+          jobName: job.name,
+          task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
+          status: view.status,
+          startedAt: session.startedAt.toISOString(),
+          completedAt: (session.completedAt ?? new Date()).toISOString(),
+          durationMs,
+          stepCount: executedBlocks.length,
+          agentNames: executedBlocks.map((b) => b.agentName),
+          error: session.error?.message,
+          aiSummary,
+        };
+
+        await sessionStream.finalize(summaryV2).catch((err) => {
+          logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
+        });
+      }
+
+      // Clean up side-channel
+      this.agentResultSideChannel.delete(sessionId);
     }
 
     return session;
@@ -780,14 +906,9 @@ export class WorkspaceRuntime {
     // Build final prompt with correct precedence: action.prompt > agentConfig.prompt > context only
     const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
 
-    // Extract streamId from conversation-context document if present
-    const conversationContext = fsmContext.documents.find(
-      (doc) => doc.id === "conversation-context",
-    );
+    // Use streamId from signal data (e.g. chatId for conversations), fall back to sessionId
     const streamId =
-      typeof conversationContext?.data?.streamId === "string"
-        ? conversationContext.data.streamId
-        : undefined;
+      typeof signal.data?.streamId === "string" ? signal.data.streamId : signal._context?.sessionId;
 
     // Extract datetime from signal data for session context
     const datetime = signal.data?.datetime as
@@ -802,26 +923,13 @@ export class WorkspaceRuntime {
 
     // Execute agent via orchestrator - returns AgentResult directly
     const result = await this.orchestrator.executeAgent(agentId, prompt, {
-      sessionId: signal._context?.sessionId || crypto.randomUUID(), // Use signal's sessionId or generate new
+      sessionId: signal._context?.sessionId || crypto.randomUUID(),
       workspaceId: signal._context?.workspaceId || this.workspace.id,
-      streamId, // Pass streamId for conversation agent streaming support
-      datetime, // Pass client datetime context
-      // Forward ALL streaming events (text, reasoning, tool calls, FSM events, etc.)
-      // The orchestrator emits AtlasUIMessageChunk which includes text streaming.
-      // The signal._context.onEvent callback handles both:
-      // 1. FSM events (data-fsm-*) - captured for session history persistence
-      // 2. All other events (text, reasoning, etc.) - streamed to client
-      // We cast to unknown first since FSMEvent is a subset of AtlasUIMessageChunk
-      onStreamEvent: signal._context?.onEvent
-        ? (chunk) => {
-            const callback = signal._context?.onEvent;
-            if (callback) {
-              // Forward all chunks - the outer callback in processSignalForJob
-              // handles routing FSM events to persistence and all events to the stream
-              callback(chunk as unknown as import("@atlas/fsm-engine").FSMEvent);
-            }
-          }
-        : undefined,
+      streamId,
+      datetime,
+      // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
+      // keeping the FSM onEvent callback clean (FSMEvent types only)
+      onStreamEvent: signal._context?.onStreamEvent,
       additionalContext: { documents: fsmContext.documents },
       config: agentCustomConfig,
     });
@@ -833,6 +941,30 @@ export class WorkspaceRuntime {
     await validateAgentOutput(result, fsmContext, agentType);
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
+
+    // Populate side-channel so onEvent callback can build step:complete
+    const sideChannelSessionId = signal._context?.sessionId;
+    if (sideChannelSessionId) {
+      const sideChannel = this.agentResultSideChannel.get(sideChannelSessionId);
+      if (sideChannel) {
+        const key = `${job.name}/${action.agentId}/${fsmContext.state}`;
+        const toolCalls =
+          (result.ok ? result.toolCalls : undefined)?.map((tc) => ({
+            toolName: tc.toolName,
+            args: tc.input,
+          })) ?? [];
+        // Structured output = args from the "complete" tool call (the actual result
+        // stored in context.results). Falls back to result.data (LLM text) when no
+        // complete tool call exists.
+        const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
+        const agentResultData: AgentResultData = {
+          toolCalls,
+          reasoning: result.ok ? result.reasoning : undefined,
+          output: completeCall?.args ?? (result.ok ? result.data : undefined),
+        };
+        sideChannel.set(key, agentResultData);
+      }
+    }
 
     return result;
   }
@@ -1119,12 +1251,22 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * List all jobs (FSM definitions) in this workspace
+   * List all jobs (FSM definitions) in this workspace.
+   * Falls back to config when runtime hasn't been initialized yet (lazy mode).
    */
   listJobs(): Array<{ name: string; description?: string }> {
-    return Array.from(this.jobs.values()).map((job) => ({
-      name: job.name,
-      description: `FSM workflow at ${job.fsmPath}`,
+    if (this.jobs.size > 0) {
+      return Array.from(this.jobs.values()).map((job) => ({
+        name: job.name,
+        description: job.description ?? `FSM workflow at ${job.fsmPath}`,
+      }));
+    }
+
+    // Before initialization, read directly from config
+    const configJobs = this.config.workspace?.jobs || {};
+    return Object.entries(configJobs).map(([name, job]) => ({
+      name,
+      description: job.description,
     }));
   }
 

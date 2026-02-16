@@ -2,6 +2,7 @@
  * Signal configuration schemas with tagged unions
  */
 
+import { stringifyError } from "@atlas/utils";
 import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
@@ -20,7 +21,48 @@ const BaseSignalConfigSchema = z.strictObject({
 });
 
 // ==============================================================================
-// SIGNAL PROVIDER SCHEMAS
+// PER-PROVIDER CONFIG SCHEMAS (canonical — import these for provider config shapes)
+// ==============================================================================
+
+/** HTTP provider config: webhook path + optional timeout. */
+export const HTTPProviderConfigSchema = z.strictObject({
+  path: z.string().describe("HTTP path for the webhook (method is always POST)"),
+  timeout: DurationSchema.optional().describe("Timeout for signal processing"),
+});
+export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
+
+/** Schedule provider config: cron expression + timezone. */
+export const ScheduleProviderConfigSchema = z.strictObject({
+  schedule: z
+    .string()
+    .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)")
+    .superRefine((schedule, ctx) => {
+      try {
+        CronExpressionParser.parse(schedule);
+      } catch (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid cron expression: ${stringifyError(err)}`,
+        });
+      }
+    }),
+  timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
+});
+export type ScheduleProviderConfig = z.infer<typeof ScheduleProviderConfigSchema>;
+
+/** File-watch provider config: path + recursive flag. */
+export const FSWatchProviderConfigSchema = z.strictObject({
+  path: z.string().describe("Absolute or workspace-relative path to watch"),
+  recursive: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Watch subdirectories when path is a directory"),
+});
+export type FSWatchProviderConfig = z.infer<typeof FSWatchProviderConfigSchema>;
+
+// ==============================================================================
+// SIGNAL PROVIDER SCHEMAS (full signal config = base + provider + config)
 // ==============================================================================
 
 /**
@@ -28,10 +70,7 @@ const BaseSignalConfigSchema = z.strictObject({
  */
 export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("http"),
-  config: z.strictObject({
-    path: z.string().describe("HTTP path for the webhook (method is always POST)"),
-    timeout: DurationSchema.optional().describe("Timeout for signal processing"),
-  }),
+  config: HTTPProviderConfigSchema,
 });
 
 /**
@@ -39,23 +78,7 @@ export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
  */
 export const ScheduleSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("schedule"),
-  config: z.strictObject({
-    schedule: z
-      .string()
-      .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)")
-      .refine(
-        (schedule) => {
-          try {
-            CronExpressionParser.parse(schedule);
-            return true;
-          } catch {
-            return false;
-          }
-        },
-        { message: "Invalid cron expression. Must be a valid cron format." },
-      ),
-    timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
-  }),
+  config: ScheduleProviderConfigSchema,
 });
 
 /**
@@ -71,14 +94,7 @@ const SystemSignalConfigSchema = BaseSignalConfigSchema.extend({
  */
 export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("fs-watch"),
-  config: z.strictObject({
-    path: z.string().describe("Absolute or workspace-relative path to watch"),
-    recursive: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Watch subdirectories when path is a directory"),
-  }),
+  config: FSWatchProviderConfigSchema,
 });
 
 // ==============================================================================

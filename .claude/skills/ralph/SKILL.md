@@ -45,7 +45,10 @@ Load the `testing` skill before implementing.
    and fill your context window with relevant information that will allow you to
    complete the task.
 3. **Implement** - Write code following existing patterns from recent commits
-4. **Verify** - Run tests, check against acceptance criteria
+4. **Verify**:
+   - Run `deno check <your-changed-files>` — fix any type errors before proceeding
+   - Run `deno task test <file>` — tests must pass
+   - Check against acceptance criteria
 5. **Commit** - Use the structured format below
 6. **Complete** - `TaskUpdate` with `status: "completed"`
 7. **Return** - Report success or blocker

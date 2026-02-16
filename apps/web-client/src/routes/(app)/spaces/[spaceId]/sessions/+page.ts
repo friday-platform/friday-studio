@@ -4,7 +4,7 @@ import type { PageLoad } from "./$types";
 
 export const load: PageLoad = async ({ params }) => {
   const res = await parseResult(
-    client.sessionHistory.index.$get({ query: { workspaceId: params.spaceId } }),
+    client.sessions.index.$get({ query: { workspaceId: params.spaceId } }),
   );
 
   if (!res.ok) {

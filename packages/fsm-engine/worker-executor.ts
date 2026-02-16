@@ -29,7 +29,11 @@ interface WorkerExecutorOptions {
 interface WorkerRequest {
   requestId: string;
   functionCode: string;
-  contextData: { documents: Document[]; state: string };
+  contextData: {
+    documents: Document[];
+    state: string;
+    results: Record<string, Record<string, unknown>>;
+  };
   signal: Signal;
   timeout: number;
 }
@@ -42,6 +46,10 @@ const MutationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("createDoc"), args: z.tuple([DocumentSchema]) }),
   z.object({ op: z.literal("deleteDoc"), args: z.tuple([z.string()]) }),
   z.object({ op: z.literal("emit"), args: z.tuple([SignalSchema]) }),
+  z.object({
+    op: z.literal("setResult"),
+    args: z.tuple([z.string(), z.record(z.string(), z.unknown())]),
+  }),
 ]);
 
 type Mutation = z.infer<typeof MutationSchema>;
@@ -155,7 +163,11 @@ export class WorkerExecutor {
       const request: WorkerRequest = {
         requestId,
         functionCode,
-        contextData: { documents: context.documents, state: context.state },
+        contextData: {
+          documents: context.documents,
+          state: context.state,
+          results: context.results,
+        },
         signal,
         timeout: this.timeout,
       };
@@ -177,6 +189,9 @@ export class WorkerExecutor {
           break;
         case "emit":
           context.emit?.(mutation.args[0]);
+          break;
+        case "setResult":
+          context.setResult?.(mutation.args[0], mutation.args[1]);
           break;
       }
     }

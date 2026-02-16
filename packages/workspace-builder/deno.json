@@ -1,6 +1,1 @@
-{
-  "name": "@atlas/workspace-builder",
-  "version": "1.0.0",
-  "exports": "./mod.ts",
-  "imports": { "@atlas/fsm-engine": "../fsm-engine/mod.ts", "@atlas/utils": "../utils/mod.ts" }
-}
+{ "name": "@atlas/workspace-builder", "version": "1.0.0", "exports": "./mod.ts" }

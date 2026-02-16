@@ -7,7 +7,7 @@ import { parseWorkspacePlannerArtifactId } from "../modules/messages/types.ts";
  *
  * Handles:
  * - display_artifact: part.output.artifactId
- * - workspace-planner: part.output.result.content[0].text (JSON) -> result.data.artifactId
+ * - workspace-planner: part.output.data.artifactId (direct) or MCP envelope (legacy)
  */
 export function extractArtifactIds(messages: AtlasUIMessage[]): string[] {
   const ids = new Set<string>();

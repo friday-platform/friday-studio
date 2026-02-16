@@ -34,13 +34,17 @@ go build                # Build
 
 ## Hard Rules
 
-- Use `@atlas/logger`, never `console.*`
+- Use `@atlas/logger`, never `console.*` (`proto/` dev CLI tools are exempt)
 - No `any` types - use `unknown` or proper types
-- No `as` assertions - use Zod schemas for parsing
+- No `as` assertions - use Zod schemas for parsing. `as const` on string
+  literals for discriminated unions is OK. `!` (non-null assertion) is same
+  family — use `?? fallback` or `if (!x) throw` instead.
+  Exceptions: `ValidatedJSONSchema` properties (typed `unknown` from `z.lazy`)
+  and `JSON.parse` in test helpers before immediate Zod parse
 - Static imports only (top of file) - no `import("@pkg")` in type positions
 - Validate all external input with Zod
-- Use `process.env` from `node:process`, not `Deno.env` (migrating away from
-  Deno APIs)
+- Use `node:*` builtins (`node:path`, `node:process`, etc.), not Deno APIs
+  (`Deno.env`, `@std/path`) — migrating away from Deno APIs
 - Dependencies go in `package.json`, not `deno.json` (use `deno add npm:pkg`)
 - All database queries acting on behalf of a user MUST use `withUserContext()`
   — never construct raw SQL outside an RLS-enforced transaction. This sets
@@ -48,6 +52,56 @@ go build                # Build
   row-level isolation even if app code has a bug. Cross-user lookups (e.g.
   ownership checks) use SECURITY DEFINER functions, not superuser queries.
   See `apps/link/src/adapters/rls.ts` for the implementation.
+
+## Gotchas
+
+### Zod v4
+
+- `z.object()` strips unknown keys by default — removing fields from a schema
+  is sufficient to reject them, no `.strict()` needed
+- `z.discriminatedUnion` rejects duplicate discriminator values — use `z.union`
+  as fallback (`z.infer` produces identical TS union types)
+- `Omit<ZodInferredType, "field">` triggers TS2589 with `strictObject` types —
+  define explicit interfaces for derived types instead
+- `z.toJSONSchema()` returns deeply typed JSON Schema — parse through a Zod
+  schema to avoid TS2589 when converting to `ValidatedJSONSchema`
+- Zod discriminated unions cause deep type instantiation with AI SDK's
+  `generateObject` generic — split into per-type schemas
+
+### AI SDK (Vercel) v5
+
+- `tool()` requires `jsonSchema()` for `inputSchema`, not `z.object()` for
+  `parameters` — wrong one causes overload resolution to fail silently
+- `TypedToolCall` uses `input` property, not `args`
+- `stopWhen: stepCountIs(N)` replaces `maxSteps`, `maxOutputTokens` replaces
+  `maxTokens`
+- When agents switch from MCP-routed to direct `tool({ execute })` invocation,
+  output shape changes from MCP envelope (`result.content[].text`) to raw
+  payload — downstream parsers silently fail
+
+### Deno
+
+- `deno check` with multiple entry points sharing recursive `z.lazy()` types
+  can trigger TS2589 — check files separately
+- deno.json import map only maps root (`@atlas/pkg` → `mod.ts`) — subpath
+  imports like `@atlas/pkg/sub/path` don't resolve; re-export from `mod.ts`
+- Package-level deno.json needs explicit import map entries for cross-package
+  `@atlas/*` deps — root deno.json handles runtime, but `deno check` within
+  package scope needs them
+- `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite` (FFI) — web client
+  and test code must use subpath exports (e.g. `@atlas/core/session/types`) to
+  avoid vitest/browser failures
+
+### TypeScript
+
+- `[key: string]: unknown` index signature on typed interfaces enables
+  assignment to `Record<string, unknown>` without `as` casts — clean widening
+  pattern
+- Explicit named exports shadow wildcard re-exports from the same barrel —
+  remove old wildcards when replacing modules to prevent silent type mismatches
+- Adding a variant to a discriminated union requires updating all exhaustive
+  handlers in the same commit — splitting them creates a broken intermediate
+  state
 
 ## Code Philosophy
 
@@ -92,6 +146,13 @@ git checkout -b feature/your-feature-name
 git push -u origin feature/your-feature-name
 gh pr create
 ```
+
+**Shared worktrees:** `git add` picks up other teammates' staged files — always
+use `git add <specific-files>`, never `git add .` or `git add -A`. Safest:
+`git commit -- <specific-files>` bypasses staging area entirely.
+
+`git diff HEAD~1` includes uncommitted working tree changes — use
+`git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.
 
 If you accidentally commit to main locally:
 
@@ -146,6 +207,16 @@ Quick mental model:
 4. Session supervisor plans execution
 5. Agents execute with MCP tool access
 6. Results returned via SSE stream
+
+**Worker context:** Worker-executed code actions can't read Context properties
+unless explicitly serialized in `WorkerRequest.contextData` AND reconstructed in
+`function-executor.worker.ts` — adding a Context field requires changes in 4
+places: types.ts interface, fsm-engine.ts context building, worker-executor.ts
+serialization, worker reconstruction.
+
+**LLM output format:** Keep LLM output format simple (flat field lists) and
+convert to JSON Schema in code — more reliable than asking LLMs to produce JSON
+Schema directly.
 
 ## Local Development with CLI
 

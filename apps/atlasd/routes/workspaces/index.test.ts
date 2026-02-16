@@ -44,6 +44,8 @@ function createTestApp() {
       runtimes: new Map(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
   };
 
   const app = new Hono<AppVariables>();

@@ -41,6 +41,9 @@ Parse for:
    gh pr diff <url>
    ```
 
+   **Note:** `git diff HEAD~1` includes uncommitted working tree changes — use
+   `git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.
+
 2. **Get PR description** (if PR link):
    ```bash
    gh pr view <url>

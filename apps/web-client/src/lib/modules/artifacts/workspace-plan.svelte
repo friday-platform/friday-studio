@@ -1,10 +1,6 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
-  import {
-    ArtifactDataSchema,
-    type ArtifactWithContents,
-    type WorkspacePlan,
-  } from "@atlas/core/artifacts";
+  import { ArtifactDataSchema, type ArtifactWithContents } from "@atlas/core/artifacts";
   import MessageWrapper from "$lib/modules/messages/wrapper.svelte";
   import { getContext } from "svelte";
   import WorkspacePlanDetails from "./workspace-plan-details.svelte";
@@ -17,18 +13,26 @@
 
   const artifactsMap = getContext<Map<string, ArtifactWithContents> | undefined>(ARTIFACTS_KEY);
 
-  let workspacePlan = $state<WorkspacePlan>();
+  /** Extracts the plan card data from a parsed workspace-plan artifact (v1 or v2). */
+  function extractPlanData(
+    parsed: ReturnType<typeof ArtifactDataSchema.parse>,
+  ): Parameters<typeof WorkspacePlanDetails>[1]["workspacePlan"] | undefined {
+    if (parsed.type !== "workspace-plan") return undefined;
+    if (parsed.version === 1) return parsed.data;
+    // v2 WorkspaceBlueprint — map to the common plan card shape
+    return { workspace: parsed.data.workspace, signals: parsed.data.signals };
+  }
+
+  let planData = $state<Parameters<typeof WorkspacePlanDetails>[1]["workspacePlan"]>();
 
   $effect(() => {
-    if (workspacePlan || !artifactId) return;
+    if (planData || !artifactId) return;
 
     // Check context first (batch-loaded artifacts)
     const cached = artifactsMap?.get(artifactId);
     if (cached) {
       const parsed = ArtifactDataSchema.parse(cached.data);
-      if (parsed.type === "workspace-plan") {
-        workspacePlan = parsed.data;
-      }
+      planData = extractPlanData(parsed);
       return;
     }
 
@@ -42,9 +46,7 @@
         if (!result.ok) throw new Error("Failed to get artifact");
 
         const parsed = ArtifactDataSchema.parse(result.data.artifact.data);
-        if (parsed.type === "workspace-plan") {
-          workspacePlan = parsed.data;
-        }
+        planData = extractPlanData(parsed);
       } catch (error) {
         console.error(error);
       }
@@ -55,9 +57,9 @@
 </script>
 
 <MessageWrapper>
-  {#if workspacePlan}
+  {#if planData}
     <div id={`artifact-${artifactId}`}>
-      <WorkspacePlanDetails {workspacePlan} {onApprove} {onTest} />
+      <WorkspacePlanDetails workspacePlan={planData} {onApprove} {onTest} />
     </div>
   {/if}
 </MessageWrapper>

@@ -8,6 +8,7 @@ const isDenoRuntime = typeof (globalThis as Record<string, unknown>).Deno !== "u
 const mockContext: Context = {
   documents: [{ id: "doc1", type: "test", data: { value: 42 } }],
   state: "active",
+  results: {},
 };
 
 const mockSignal = { type: "TEST", data: { foo: "bar" } };
@@ -67,6 +68,13 @@ describe.skipIf(!isDenoRuntime)("WorkerExecutor - Basic", () => {
     const result = await executor.execute(code, "noop", mockContext, mockSignal);
     expect(result).toEqual(undefined);
   });
+
+  it("action return value is propagated", async () => {
+    const executor = new WorkerExecutor({ timeout: 5000, functionType: "action" });
+    const code = `export default () => ({ task: "Do it", config: { model: "gpt-4" } })`;
+    const result = await executor.execute(code, "prepare", mockContext, mockSignal);
+    expect(result).toMatchObject({ task: "Do it", config: { model: "gpt-4" } });
+  });
 });
 
 describe.skipIf(!isDenoRuntime)("WorkerExecutor - Async Code", () => {
@@ -77,6 +85,7 @@ describe.skipIf(!isDenoRuntime)("WorkerExecutor - Async Code", () => {
     const ctx: Context = {
       documents: [{ id: "x", type: "test", data: { step: 0 } }],
       state: "test",
+      results: {},
       updateDoc: (id: string, data: Record<string, unknown>) =>
         ops.push(`update:${id}:${JSON.stringify(data)}`),
     };
@@ -106,7 +115,7 @@ describe.skipIf(!isDenoRuntime)("WorkerExecutor - Async Code", () => {
 
 describe.skipIf(!isDenoRuntime)("WorkerExecutor - Security Isolation", () => {
   const executor = new WorkerExecutor({ timeout: 5000, functionType: "action" });
-  const ctx: Context = { documents: [], state: "test" };
+  const ctx: Context = { documents: [], state: "test", results: {} };
   const sig = { type: "TEST" };
 
   it("cannot read filesystem", async () => {

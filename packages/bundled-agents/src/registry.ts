@@ -1,4 +1,5 @@
 import type { AgentEnvironmentConfig, AtlasAgent } from "@atlas/agent-sdk";
+import type { ValidatedJSONSchema } from "@atlas/schemas/json-schema";
 import { z } from "zod";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
@@ -118,9 +119,15 @@ function deriveRegistryEntry(agent: AtlasAgent) {
     requiredConfig: toConfigFields(environmentConfig?.required),
     optionalConfig: toOptionalConfigFields(environmentConfig?.optional),
 
-    // Schemas (converted from Zod to JSON Schema)
-    inputJsonSchema: metadata.inputSchema ? z.toJSONSchema(metadata.inputSchema) : undefined,
-    outputJsonSchema: metadata.outputSchema ? z.toJSONSchema(metadata.outputSchema) : undefined,
+    // Schemas (Zod → JSON Schema, engine compatibility enforced by registry.test.ts)
+    // Cast: Zod's JSON Schema type allows boolean sub-schemas (draft 2020-12),
+    // which our engine doesn't use. The test guarantees no data loss.
+    inputJsonSchema: metadata.inputSchema
+      ? (z.toJSONSchema(metadata.inputSchema) as ValidatedJSONSchema)
+      : undefined,
+    outputJsonSchema: metadata.outputSchema
+      ? (z.toJSONSchema(metadata.outputSchema) as ValidatedJSONSchema)
+      : undefined,
   };
 }
 

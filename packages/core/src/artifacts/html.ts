@@ -5,7 +5,7 @@
  * Used by web client share functionality.
  */
 
-import type { TableData, WorkspacePlan } from "./primitives.ts";
+import type { TableData } from "./primitives.ts";
 
 /**
  * Escape HTML special characters to prevent XSS
@@ -19,10 +19,18 @@ export function escapeHTML(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+/** Common plan shape accepted by renderWorkspacePlanHTML (v1 WorkspacePlan and v2 WorkspaceBlueprint). */
+interface RenderablePlan {
+  workspace: { name: string; purpose: string };
+  signals: Array<{ id: string; description?: string }>;
+  agents: Array<{ id: string; name: string; description?: string }>;
+  jobs: Array<{ name: string; triggerSignalId: string; steps: Array<{ agentId: string }> }>;
+}
+
 /**
- * Render a workspace plan to HTML
+ * Render a workspace plan to HTML. Accepts both v1 WorkspacePlan and v2 WorkspaceBlueprint.
  */
-export function renderWorkspacePlanHTML(plan: WorkspacePlan): string {
+export function renderWorkspacePlanHTML(plan: RenderablePlan): string {
   const parts: string[] = [];
 
   parts.push(`<h1>${escapeHTML(plan.workspace.name)}</h1>`);

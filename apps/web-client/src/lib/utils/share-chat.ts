@@ -9,7 +9,6 @@ import {
   type CalendarSchedule,
   type FileData,
   type TableData,
-  type WorkspacePlan,
 } from "@atlas/core/artifacts";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { formatMessage } from "../modules/messages/format.ts";
@@ -232,7 +231,7 @@ function renderArtifactHTML(artifact: ArtifactData): string {
  * - Content visible with max-height and gradient fade
  * - Checkbox hack for expand/collapse
  */
-function wrapPlanArtifact(plan: WorkspacePlan): string {
+function wrapPlanArtifact(plan: Parameters<typeof renderWorkspacePlanHTML>[0]): string {
   const coreHTML = renderWorkspacePlanHTML(plan);
   const planId = `plan-${Math.random().toString(36).slice(2, 9)}`;
 

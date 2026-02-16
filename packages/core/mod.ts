@@ -54,20 +54,61 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
-// Session Digest Builder
+export { CortexSessionHistoryAdapter } from "./src/session/cortex-session-history-adapter.ts";
+// Event Emission Mapper (FSM events → session stream events)
 export {
-  buildSessionDigest,
-  type DigestError,
-  type DigestInput,
-  type DigestStep,
-  type DigestToolCall,
-  type SessionDigest,
-} from "./src/session/build-session-digest.ts";
-export type { SessionHistoryEventPayload } from "./src/session/fsm-event-mapper.ts";
-// FSM Event Mapper
+  type AgentResultData,
+  isAgentAction,
+  mapActionToStepComplete,
+  mapActionToStepStart,
+} from "./src/session/event-emission-mapper.ts";
+// Session History
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
-// Session History Storage
 export * from "./src/session/history-storage.ts";
+export { LocalSessionHistoryAdapter } from "./src/session/local-session-history-adapter.ts";
+// Planned Steps (FSM graph traversal)
+export {
+  extractPlannedSteps,
+  type PlannedStep,
+} from "./src/session/planned-steps.ts";
+// Session Events v2
+export {
+  type AgentBlock,
+  AgentBlockSchema,
+  type EphemeralChunk,
+  EphemeralChunkSchema,
+  type SessionActionType,
+  SessionActionTypeSchema,
+  type SessionAISummary,
+  SessionAISummarySchema,
+  type SessionCompleteEvent,
+  SessionCompleteEventSchema,
+  type SessionStartEvent,
+  SessionStartEventSchema,
+  type SessionStatus,
+  SessionStatusSchema,
+  type SessionStreamEvent,
+  SessionStreamEventSchema,
+  type SessionSummary,
+  type SessionSummaryEvent,
+  SessionSummaryEventSchema,
+  SessionSummarySchema,
+  type SessionView,
+  SessionViewSchema,
+  type StepCompleteEvent,
+  StepCompleteEventSchema,
+  type StepStartEvent,
+  StepStartEventSchema,
+  type ToolCallSummary,
+  ToolCallSummarySchema,
+} from "./src/session/session-events.ts";
+export type { SessionHistoryAdapter } from "./src/session/session-history-adapter.ts";
+// Session Reducer
+export {
+  buildSessionView,
+  initialSessionView,
+  reduceSessionEvent,
+} from "./src/session/session-reducer.ts";
 // Stream Emitters
 export {
   CallbackStreamEmitter,

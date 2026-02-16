@@ -12,6 +12,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
+    "@atlas/schemas": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",

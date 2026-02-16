@@ -95,19 +95,23 @@ class DaemonClient {
    */
   async listSessions(): Promise<
     Array<{
-      id: string;
+      sessionId: string;
       workspaceId: string;
+      jobName: string;
+      task: string;
       status: string;
-      summary: string;
-      signal: string;
-      progress: number;
+      startedAt: string;
+      completedAt?: string;
+      durationMs?: number;
+      stepCount: number;
+      agentNames: string[];
     }>
   > {
     const response = await parseResult(v2Client.sessions.index.$get({ query: {} }));
     if (!response.ok) {
       throw new Error(`Failed to list sessions: ${stringifyError(response.error)}`);
     }
-    return response.data.items;
+    return response.data.sessions;
   }
 
   /**
@@ -116,14 +120,25 @@ class DaemonClient {
   async getSession(
     sessionId: string,
   ): Promise<{
-    id: string;
+    sessionId: string;
     workspaceId: string;
+    jobName: string;
+    task: string;
     status: string;
-    progress: number;
-    summary: string;
-    signal: string;
-    artifacts: Array<{ type: string; data: unknown }>;
-    results?: unknown;
+    startedAt: string;
+    completedAt?: string;
+    durationMs?: number;
+    agentBlocks: Array<{
+      agentName: string;
+      actionType: string;
+      task: string;
+      status: string;
+      durationMs?: number;
+      output: unknown;
+      error?: string;
+    }>;
+    results?: Record<string, unknown>;
+    error?: string;
   }> {
     const response = await parseResult(v2Client.sessions[":id"].$get({ param: { id: sessionId } }));
     if (!response.ok) {

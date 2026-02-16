@@ -1,11 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
   type BundledAgentMatch,
+  extractKeywordsFromNeed,
   findUnmatchedNeeds,
   type MCPServerMatch,
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "./deterministic-matching.ts";
+
+describe("extractKeywordsFromNeed", () => {
+  it("returns exact capability match", () => {
+    const keywords = extractKeywordsFromNeed("slack");
+    expect(keywords).toContain("slack");
+  });
+
+  it("does not match partial segments — 'data-analysis' should not extract 'data'", () => {
+    const keywords = extractKeywordsFromNeed("data-analysis");
+    expect(keywords).toContain("data-analysis");
+    expect(keywords).not.toContain("data");
+  });
+
+  it("matches suffix segments — 'html-email' extracts 'email'", () => {
+    const keywords = extractKeywordsFromNeed("html-email");
+    expect(keywords).toContain("email");
+  });
+
+  it("returns normalized need when no keywords match", () => {
+    const keywords = extractKeywordsFromNeed("totally-unknown-thing");
+    expect(keywords).toEqual(["totally-unknown-thing"]);
+  });
+});
 
 describe("matchBundledAgents", () => {
   it("matches slack capability case-insensitively", () => {
@@ -83,6 +107,16 @@ describe("matchBundledAgents", () => {
 
     const calendarMatch = matches.find((m) => m.agentId === "google-calendar");
     expect(calendarMatch).toBeUndefined();
+  });
+
+  it("data-analysis resolves to data-analyst only, not table agent", () => {
+    // Regression: extractKeywordsFromNeed("data-analysis") was extracting "data"
+    // via substring match, which matched the table agent's "data" capability
+    const keywords = extractKeywordsFromNeed("data-analysis");
+    const matches = matchBundledAgents(keywords);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.agentId).toEqual("data-analyst");
   });
 });
 

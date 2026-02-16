@@ -1,18 +1,47 @@
 /**
- * Type definitions for FSM Builder API
+ * Type definitions for workspace-builder package.
+ *
+ * Blueprint types (WorkspaceBlueprint, JobWithDAG, etc.) are defined in
+ * @atlas/schemas/workspace and re-exported here for public API compatibility.
+ * Builder types (Result, BuildError, StateConfig, etc.) support the FSMBuilder fluent API.
  */
 
 import type { Action, FSMDefinition, JSONSchema, TransitionDefinition } from "../fsm-engine/mod.ts";
 
-/**
- * Result type for builder operations
- * Follows the same pattern as @atlas/utils but specialized for builder
- */
+// ---------------------------------------------------------------------------
+// Blueprint types — re-exported from @atlas/schemas/workspace
+// ---------------------------------------------------------------------------
+
+export type {
+  Agent,
+  ClassifiedDAGStep,
+  Conditional,
+  CredentialBinding,
+  DAGStep,
+  DocumentContract,
+  JobWithDAG,
+  PrepareMapping,
+  Signal,
+  SignalConfig,
+  WorkspaceBlueprint,
+} from "@atlas/schemas/workspace";
+export {
+  ClassifiedDAGStepSchema,
+  CredentialBindingSchema,
+  PrepareMappingSchema,
+  WorkspaceBlueprintSchema,
+} from "@atlas/schemas/workspace";
+
+/** Sentinel documentId for prepare mappings sourced from the trigger signal payload. */
+export const SIGNAL_DOCUMENT_ID = "__trigger_signal__";
+export type { ClassifiedJobWithDAG } from "./planner/stamp-execution-types.ts";
+
+// ---------------------------------------------------------------------------
+// FSM Builder types
+// ---------------------------------------------------------------------------
+
 export type Result<T, E> = { success: true; value: T } | { success: false; error: E };
 
-/**
- * Build error types
- */
 export type BuildErrorType =
   | "duplicate_state"
   | "duplicate_function"
@@ -25,43 +54,28 @@ export type BuildErrorType =
   | "invalid_function_reference"
   | "invalid_guard_reference";
 
-/**
- * Build error with context
- */
 export interface BuildError {
   type: BuildErrorType;
   message: string;
   context?: Record<string, unknown>;
 }
 
-/**
- * Internal state configuration during building
- */
 export interface StateConfig {
   name: string;
   entry: Action[];
-  on: Record<string, TransitionConfig>;
+  on: Record<string, TransitionConfig | TransitionConfig[]>;
   final?: boolean;
 }
 
-/**
- * Internal transition configuration during building
- */
 export interface TransitionConfig {
   target: string;
   guards: string[];
   actions: Action[];
 }
 
-/**
- * Internal function configuration during building
- */
 export interface FunctionConfig {
   type: "action" | "guard";
   code: string;
 }
 
-/**
- * Re-export types from fsm-engine for convenience
- */
 export type { Action, FSMDefinition, JSONSchema, TransitionDefinition };

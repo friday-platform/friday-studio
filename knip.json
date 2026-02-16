@@ -101,6 +101,10 @@
       "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
     },
+    "tools/workspace-simulator": {
+      "entry": ["cli.ts!", "playground.ts!", "**/*.test.ts"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
     "tools/evals-2": {
       "entry": ["agents/**/*.eval.ts!", "tools/**/*.eval.ts!", "lib/*.ts!", "evalite.config.ts!"],
       "project": [

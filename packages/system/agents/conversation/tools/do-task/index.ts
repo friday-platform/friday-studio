@@ -8,15 +8,28 @@ import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidat
 import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import {
+  type Agent,
+  type BlueprintResult,
+  buildBlueprint,
+  buildFSMFromPlan,
+  type ClassifiedDAGStep,
+  ClassifiedDAGStepSchema,
+  type CredentialBinding,
+  PipelineError,
+} from "@atlas/workspace-builder";
 import type { UIMessageStreamWriter } from "ai";
 import { jsonSchema, tool } from "ai";
-import { fetchLinkSummary } from "../../link-context.ts";
-import { getAgentCatalog } from "./catalog.ts";
+import type { MCPServerResult } from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
+import { executeTaskViaFSMDirect } from "./ephemeral-executor.ts";
 import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
-import { executeTaskViaFSM } from "./fsm-executor.ts";
-import { generateTaskFSM } from "./fsm-generator.ts";
-import { type MCPContext, planTaskEnhanced } from "./planner.ts";
-import type { TaskExecutionContext, TaskProgressEvent } from "./types.ts";
+import { generateFriendlyDescriptions } from "./friendly-descriptions.ts";
+import type {
+  EnhancedTaskPlan,
+  EnhancedTaskStep,
+  TaskExecutionContext,
+  TaskProgressEvent,
+} from "./types.ts";
 
 /**
  * Strip UUIDs from user-facing progress messages.
@@ -116,6 +129,80 @@ async function storeTaskArtifact(
 }
 
 /**
+ * Build MCP server configs from blueprint agents using the MCP server registry.
+ * Applies credential bindings from the pipeline's credential resolution step.
+ */
+function buildMCPServerConfigs(agents: Agent[], bindings: CredentialBinding[]): MCPServerResult[] {
+  const seen = new Set<string>();
+  const results: MCPServerResult[] = [];
+
+  for (const agent of agents) {
+    if (!agent.mcpServers) continue;
+    for (const { serverId } of agent.mcpServers) {
+      if (seen.has(serverId)) continue;
+      seen.add(serverId);
+      const serverMeta = mcpServersRegistry.servers[serverId];
+      if (!serverMeta) continue;
+      const config = structuredClone(serverMeta.configTemplate);
+      // Apply credential bindings to env entries
+      if (config.env) {
+        for (const binding of bindings) {
+          if (binding.targetType !== "mcp" || binding.targetId !== serverId) continue;
+          config.env[binding.field] = {
+            from: "link" as const,
+            id: binding.credentialId,
+            key: binding.key,
+          };
+        }
+      }
+      results.push({ id: serverId, config });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Convert BlueprintResult into the EnhancedTaskPlan shape the existing
+ * executor pipeline expects. Bridges new planner → old executor.
+ *
+ * Classified steps carry metadata from stampExecutionTypes():
+ * - agentId resolved to bundledId for bundled agents
+ * - executionType set to "bundled" or "llm"
+ */
+function blueprintToTaskPlan(
+  result: BlueprintResult,
+  classifiedSteps: ClassifiedDAGStep[],
+  friendlyDescriptions: string[],
+): EnhancedTaskPlan {
+  const { blueprint } = result;
+  const agentMap = new Map(blueprint.agents.map((a) => [a.id, a]));
+
+  const steps: EnhancedTaskStep[] = classifiedSteps.map((step, i) => {
+    const agent = agentMap.get(step.agentId);
+    return {
+      agentId: step.agentId,
+      description: step.description,
+      executionType: step.executionType === "llm" ? "llm" : "agent",
+      needs: agent?.needs ?? [],
+      friendlyDescription: friendlyDescriptions[i],
+    };
+  });
+
+  // Aggregate needs
+  const allNeeds = new Set<string>();
+  for (const step of steps) {
+    for (const need of step.needs) {
+      allNeeds.add(need);
+    }
+  }
+
+  const mcpServers = buildMCPServerConfigs(blueprint.agents, result.credentials.bindings);
+
+  return { steps, needs: Array.from(allNeeds), mcpServers };
+}
+
+/**
  * Creates the do_task tool with writer closure access.
  */
 export function createDoTaskTool(
@@ -174,38 +261,92 @@ export function createDoTaskTool(
       logger.info("do_task executing", { intent });
 
       try {
-        // 1. Planning
+        // 1. Plan via shared workspace-builder pipeline
         emitProgress({ type: "planning" });
-        const catalog = await getAgentCatalog();
 
-        // Build MCP context for URL domain matching
-        const linkSummary = await fetchLinkSummary(logger);
-        const connectedProviders = new Set(linkSummary?.credentials.map((c) => c.provider) ?? []);
+        let blueprintResult: BlueprintResult;
+        try {
+          blueprintResult = await buildBlueprint(intent, { mode: "task", logger, abortSignal });
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") throw err;
+          if (err instanceof PipelineError) {
+            logger.error("Pipeline failed", { phase: err.phase, error: err.cause.message });
+            return {
+              success: false,
+              error: `Planning failed at "${err.phase}": ${err.cause.message}`,
+            };
+          }
+          throw err;
+        }
 
-        const mcpContext: MCPContext[] = Object.entries(mcpServersRegistry.servers).map(
-          ([id, entry]) => ({
-            id,
-            urlDomains: entry.urlDomains ?? [],
-            connected: connectedProviders.has(id),
-          }),
+        // Bail on blocking clarifications (ambiguous agents / no match)
+        const blockingClarifications = blueprintResult.clarifications.filter(
+          (c) => c.issue.type === "no-match",
+        );
+        if (blockingClarifications.length > 0) {
+          const msgs = blockingClarifications.map(
+            (c) => `Agent "${c.agentName}" need "${c.need}": no matching capability`,
+          );
+          return { success: false, error: `Cannot plan task: ${msgs.join("; ")}` };
+        }
+
+        // Bail on unresolved credentials
+        if (blueprintResult.credentials.unresolved.length > 0) {
+          const first = blueprintResult.credentials.unresolved[0];
+          if (!first)
+            return { success: false, error: "Cannot execute task: unresolved credentials" };
+          return {
+            success: false,
+            error: `Cannot execute task: ${first.reason}. Provider '${first.provider}' requires credentials for field '${first.field}'.`,
+          };
+        }
+
+        // Inject synthetic triggerSignalId for task-mode jobs
+        for (const job of blueprintResult.blueprint.jobs) {
+          job.triggerSignalId = "adhoc-trigger";
+        }
+
+        // Task mode produces one job — classify and compile it
+        const rawJob = blueprintResult.blueprint.jobs[0];
+        if (!rawJob) {
+          return { success: false, error: "Pipeline produced no jobs" };
+        }
+        // Jobs carry classified steps at runtime (from stampExecutionTypes); parse to narrow the type
+        const classifiedJob = {
+          ...rawJob,
+          steps: rawJob.steps.map((s) => ClassifiedDAGStepSchema.parse(s)),
+        };
+
+        // Generate friendly descriptions for progress UX
+        const friendlyDescriptions = await generateFriendlyDescriptions(
+          classifiedJob.steps.map((s) => ({ agentId: s.agentId, description: s.description })),
+          intent,
+          abortSignal,
         );
 
-        const planResult = await planTaskEnhanced(intent, catalog, mcpContext, abortSignal);
-
-        if (!planResult.success) {
-          return { success: false, error: planResult.reason };
-        }
-
-        const plan = planResult.plan;
+        // Convert to legacy plan format for executor
+        const plan = blueprintToTaskPlan(
+          blueprintResult,
+          classifiedJob.steps,
+          friendlyDescriptions,
+        );
         const totalSteps = plan.steps.length;
 
-        // 2. Generate FSM
+        // 2. Compile FSM deterministically (no LLM, no retries)
         emitProgress({ type: "preparing", stepCount: totalSteps });
-        const fsmResult = await generateTaskFSM(plan, intent, abortSignal);
 
-        if (!fsmResult.ok) {
-          return { success: false, error: fsmResult.error.message };
+        const compiled = buildFSMFromPlan(classifiedJob);
+        if (!compiled.success) {
+          const errors = compiled.error.map((e) => `${e.type}: ${e.message}`).join("; ");
+          return { success: false, error: `FSM compilation failed: ${errors}` };
         }
+        // Compiler warnings are fatal — upstream gates should prevent them
+        if (compiled.value.warnings.length > 0) {
+          const warnings = compiled.value.warnings.map((w) => w.message).join("; ");
+          logger.error("Compiler warnings (fatal)", { warnings: compiled.value.warnings });
+          return { success: false, error: `FSM compilation produced warnings: ${warnings}` };
+        }
+        const fsmDefinition = compiled.value.fsm;
 
         // 3. Create MCP pool and provider
         // Always create the pool - bundled agents (like google-calendar) need it
@@ -239,14 +380,21 @@ export function createDoTaskTool(
             onProgress: emitProgress,
           };
 
-          const execResult = await executeTaskViaFSM(
-            fsmResult.data,
-            plan.steps,
-            context,
+          const execResult = await executeTaskViaFSMDirect(fsmDefinition, plan.steps, {
+            sessionId: context.sessionId,
+            workspaceId: context.workspaceId,
+            streamId: context.streamId,
+            userId: context.userId,
+            daemonUrl: context.daemonUrl,
+            datetime: context.datetime,
             mcpServerPool,
             mcpToolProvider,
+            onProgress: context.onProgress,
+            abortSignal: context.abortSignal,
             intent,
-          );
+            dagSteps: classifiedJob.steps,
+            documentContracts: classifiedJob.documentContracts,
+          });
 
           // 5. Extract artifacts from agent outputs
           const artifacts = execResult.results

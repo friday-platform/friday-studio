@@ -21,7 +21,7 @@ export const EmailOutputSchema = z.object({
   message_id: z.string().describe("SendGrid message ID").optional(),
   email: z
     .object({
-      to: z.union([z.string(), z.array(z.string())]).describe("Recipient email address(es)"),
+      to: z.string().describe("Recipient email address"),
       subject: z.string(),
       content: z.string(),
       from: z.string(),
@@ -321,7 +321,7 @@ CONTENT GUIDELINES (for composeEmail):
           response: `Email sent successfully to ${params.to}`,
           message_id,
           email: {
-            to: emailParams.to,
+            to: params.to,
             subject: emailParams.subject,
             content: emailParams.content,
             from: fromEmail,

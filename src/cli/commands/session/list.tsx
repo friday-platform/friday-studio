@@ -65,9 +65,9 @@ export const handler = async ({ workspace, json }: ListArgs): Promise<void> => {
 
       // Transform session data to match expected interface
       const transformedSessions = filteredSessions.map((session) => ({
-        id: session.id,
+        id: session.sessionId,
         workspaceName: session.workspaceId, // Use workspaceId as workspaceName
-        signal: session.signal,
+        signal: session.jobName,
         status: session.status,
         agents: [], // Default empty agents array
       }));

@@ -60,7 +60,7 @@ function logQueries(queries: QueryExecution[]): void {
   console.log(`\n--- Executed ${queries.length} queries ---`);
   for (const q of queries) {
     const status = q.success ? "✓" : "✗";
-    const rows = q.rowCount !== null ? `${q.rowCount} rows` : q.error;
+    const rows = q.rowCount !== undefined ? `${q.rowCount} rows` : q.error;
     const duration = q.durationMs.toFixed(0);
     // Truncate long queries for readability
     const sqlPreview = q.sql.length > 100 ? `${q.sql.slice(0, 100)}...` : q.sql;

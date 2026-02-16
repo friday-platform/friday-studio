@@ -2,7 +2,7 @@
  * Core type definitions for the FSM Engine
  */
 
-import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@atlas/agent-sdk";
 
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
@@ -13,9 +13,10 @@ import type { DocumentScope } from "../document-store/node.ts";
 export type { DocumentScope };
 
 export interface JSONSchema {
-  type?: "object" | "array" | "string" | "number" | "boolean" | "null";
-  properties?: Record<string, unknown>; // Recursive, but typed as unknown for Zod compatibility
-  items?: unknown; // Recursive, but typed as unknown for Zod compatibility
+  [key: string]: unknown;
+  type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
+  properties?: Record<string, JSONSchema>;
+  items?: JSONSchema;
   required?: string[];
   enum?: unknown[];
   minimum?: number;
@@ -23,7 +24,7 @@ export interface JSONSchema {
   minLength?: number;
   maxLength?: number;
   pattern?: string;
-  additionalProperties?: boolean | unknown; // Recursive, but typed as unknown for Zod compatibility
+  additionalProperties?: boolean | JSONSchema;
   description?: string;
 }
 
@@ -83,6 +84,8 @@ export interface AgentAction {
   type: "agent";
   agentId: string;
   outputTo?: string;
+  /** Explicit result type name for schema validation. */
+  outputType?: string;
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt?: string;
 }
@@ -99,11 +102,20 @@ export interface ToolFunctionDefinition {
 }
 
 export interface Context {
-  documents: Document[];
   state: string;
+  results: Record<string, Record<string, unknown>>;
+  setResult?: (key: string, data: Record<string, unknown>) => void;
+  /** Structured input from a preceding prepare (code) action in the same action sequence */
+  input?: { task?: string; config?: Record<string, unknown> };
   emit?: (signal: Signal) => Promise<void>;
+
+  /** @deprecated Use context.results instead */
+  documents: Document[];
+  /** @deprecated */
   updateDoc?: (id: string, data: Record<string, unknown>) => void;
+  /** @deprecated */
   createDoc?: (doc: Document) => void;
+  /** @deprecated */
   deleteDoc?: (id: string) => void;
 }
 
@@ -148,6 +160,12 @@ export interface FSMActionExecutionEvent {
     error?: string;
     timestamp: number;
     inputSnapshot?: { task?: string; requestDocId?: string; config?: Record<string, unknown> };
+    /** LLM action result data, populated on completion for session history */
+    llmResult?: {
+      toolCalls: Array<{ toolName: string; args: unknown }>;
+      reasoning?: string;
+      output: unknown;
+    };
   };
 }
 
@@ -201,6 +219,8 @@ export interface SignalWithContext extends Signal {
     sessionId: string;
     workspaceId: string;
     onEvent?: (event: FSMEvent) => void;
+    /** Separate channel for agent UIMessageChunks (text, reasoning, tool-call, etc.) */
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
     abortSignal?: AbortSignal;
   };
 }

@@ -95,6 +95,9 @@ gateway
 apps/cypher/cypheradmin/cypheradmin
 atlas-otel-collector
 
+# Workspace simulator saved runs
+tools/workspace-simulator/runs/
+
 # Ralph coverage progress
 test-coverage-progress.txt
 scripts/ralph/progress.txt

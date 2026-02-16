@@ -306,12 +306,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       activeExecutionsCount: this.activeAgentExecutions.size,
     });
 
-    if (context.onStreamEvent && context.streamId) {
+    if (context.onStreamEvent) {
       const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
       this.activeStreamHandlers.set(handlerKey, context.onStreamEvent);
       logger.debug("Registered handler for SSE stream", { handlerKey });
     } else {
-      logger.debug("No stream callback provided or missing streamId");
+      logger.debug("No stream callback provided");
     }
 
     try {
@@ -415,7 +415,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       } satisfies AgentExecutionError<string>;
     } finally {
       // Must cleanup here to avoid race with late-arriving notifications after finish
-      if (context.onStreamEvent && context.streamId) {
+      if (context.onStreamEvent) {
         const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
         this.activeStreamHandlers.delete(handlerKey);
         logger.debug("Cleaned up stream handler", { handlerKey });

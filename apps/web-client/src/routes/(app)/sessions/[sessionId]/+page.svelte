@@ -1,171 +1,172 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
+  import type {
+    EphemeralChunk,
+    SessionStreamEvent,
+    SessionView,
+  } from "@atlas/core/session/session-events";
+  import { initialSessionView, reduceSessionEvent } from "@atlas/core/session/session-reducer";
+  import { experimental_streamedQuery } from "@tanstack/query-core";
+  import { createQuery } from "@tanstack/svelte-query";
   import { IconSmall } from "$lib/components/icons/small";
-  import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
-  import TimelineMain from "$lib/components/session-timeline/timeline-main.svelte";
-  import { formatSessionDate } from "$lib/utils/date";
+  import AgentBlockCard from "$lib/components/session-history/agent-block-card.svelte";
+  import { formatDuration, formatSessionDate } from "$lib/utils/date";
+  import { sessionEventStream } from "$lib/utils/session-event-stream";
   import { onMount } from "svelte";
   import Breadcrumbs from "../(components)/breadcrumbs.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
 
-  const session = $derived(data.session);
-  const sessionDate = $derived(formatSessionDate(session.createdAt));
-  const isTask = $derived(session.type === "task");
+  const query = createQuery(() => ({
+    queryKey: ["session-stream", data.sessionId],
+    queryFn: experimental_streamedQuery<SessionStreamEvent | EphemeralChunk, SessionView>({
+      streamFn: () => sessionEventStream(data.sessionId),
+      reducer: reduceSessionEvent,
+      initialValue: initialSessionView(),
+    }),
+  }));
 
-  // Extract meaningful title: prefer title, then truncated task/summary
-  const displayTitle = $derived(
-    session.title ??
-      session.input?.task?.slice(0, 80) ??
-      session.summary?.slice(0, 80) ??
-      session.id,
-  );
+  const session = $derived(query.data);
+  const isLive = $derived(query.isFetching);
+  const isOutdated = $derived(query.error?.message?.includes("outdated format") ?? false);
 
-  // Get task description from input
-  const taskDescription = $derived(session.input?.task ?? session.summary);
-
-  // Use pre-computed fields from digest
-  const outputContent = $derived(session.outputContent);
-  const artifacts = $derived(session.artifacts);
-  const primaryError = $derived(session.primaryError);
-
-  // Show either LLM output or error for failed sessions
-  const hasOutput = $derived(outputContent !== undefined || primaryError !== undefined);
+  const displayTitle = $derived(session?.task?.slice(0, 80) || session?.jobName || data.sessionId);
+  const sessionDate = $derived(session?.startedAt ? formatSessionDate(session.startedAt) : "");
+  const duration = $derived(session?.durationMs ? formatDuration(0, session.durationMs) : null);
 
   onMount(() => {
-    trackEvent(GA4.SESSION_VIEW, { session_id: session.id, session_status: session.status });
+    trackEvent(GA4.SESSION_VIEW, {
+      session_id: data.sessionId,
+      session_status: session?.status ?? "unknown",
+    });
   });
 </script>
 
-<Breadcrumbs {session} />
+<Breadcrumbs session={{ id: data.sessionId, workspaceId: session?.workspaceId }} />
 
 <div class="page">
   <div class="content">
-    <span
-      class="status"
-      class:completed={session.status === "completed"}
-      class:failed={session.status === "failed"}
-      class:pending={session.status === "partial"}
-    >
-      {#if session.status === "completed"}
-        <IconSmall.Check />
-        Complete
-      {:else if session.status === "failed"}
+    {#if query.isPending}
+      <div class="loading">Loading session...</div>
+    {:else if isOutdated}
+      <div class="outdated">
         <IconSmall.Close />
-        Failed
-      {:else if session.status === "partial"}
-        <IconSmall.Progress />
-        Running
-      {/if}
-    </span>
-
-    <h1>{displayTitle}</h1>
-
-    <div class="meta">
-      <time title={session.createdAt} datetime={session.createdAt} class="session-date">
-        {sessionDate}
-      </time>
-    </div>
-
-    <div class="details">
-      <h2>Task</h2>
-      <p>{taskDescription}</p>
-      {#if hasOutput}
-        <h2>Output</h2>
-        {#if outputContent}
-          <div class="output-content">
-            <MarkdownContent content={outputContent} />
-          </div>
-        {:else if primaryError}
-          <div class="output-error">
-            <pre class="error-message">{primaryError}</pre>
-          </div>
+        <p>This session uses an outdated storage format and cannot be displayed.</p>
+      </div>
+    {:else if query.isError}
+      <div class="error-state">
+        <p>Connection lost</p>
+        <button class="retry-button" onclick={() => query.refetch()}>Retry</button>
+      </div>
+    {:else if session}
+      <span
+        class="status"
+        class:completed={session.status === "completed"}
+        class:failed={session.status === "failed"}
+        class:active={session.status === "active" || isLive}
+      >
+        {#if session.status === "completed"}
+          <IconSmall.Check />
+          Complete
+        {:else if session.status === "failed"}
+          <IconSmall.Close />
+          Failed
+        {:else if isLive}
+          <IconSmall.Progress />
+          Running
+        {:else}
+          <IconSmall.Check />
+          Complete
         {/if}
+      </span>
+
+      <h1>{displayTitle}</h1>
+
+      <div class="meta">
+        {#if sessionDate}
+          <time title={session.startedAt} datetime={session.startedAt} class="session-date">
+            {sessionDate}
+          </time>
+        {/if}
+        {#if duration}
+          <span class="duration">{duration}</span>
+        {/if}
+      </div>
+
+      {#if session.error}
+        <div class="session-error">
+          <pre class="error-message">{session.error}</pre>
+        </div>
       {/if}
 
-      <h2>Steps</h2>
-      <TimelineMain steps={session.steps} fallbackTask={session.input?.task} />
-    </div>
+      {#if session.aiSummary}
+        <div class="summary-section">
+          <h2 class="summary-heading">Summary</h2>
+          <p class="summary-text">{session.aiSummary.summary}</p>
+          {#if session.aiSummary.keyDetails.length > 0}
+            <dl class="key-details">
+              {#each session.aiSummary.keyDetails as detail (detail.label)}
+                <div class="key-detail-row">
+                  <dt>{detail.label}</dt>
+                  <dd>
+                    {#if detail.url}
+                      <a href={detail.url} target="_blank" rel="noopener noreferrer">
+                        {detail.value}
+                      </a>
+                    {:else}
+                      {detail.value}
+                    {/if}
+                  </dd>
+                </div>
+              {/each}
+            </dl>
+          {/if}
+        </div>
+      {:else if isLive && session.status !== "active"}
+        <div class="summary-section">
+          <h2 class="summary-heading">Summary</h2>
+          <div class="summary-skeleton">
+            <div class="skeleton-line wide"></div>
+            <div class="skeleton-line medium"></div>
+          </div>
+        </div>
+      {/if}
+
+      <div class="agent-blocks">
+        {#each session.agentBlocks as block, i (i)}
+          <AgentBlockCard {block} />
+        {/each}
+      </div>
+    {/if}
   </div>
-
-  <aside class="sidebar">
-    {#if artifacts.length > 0}
-      <div class="sidebar-section">
-        <span class="sidebar-label">Artifacts</span>
-        <ul class="sidebar-list">
-          {#each artifacts as artifact (artifact.id)}
-            <li>
-              <a
-                href="/library/{artifact.id}"
-                class="sidebar-item"
-                onclick={() =>
-                  trackEvent(GA4.SESSION_ARTIFACT_CLICK, {
-                    session_id: session.id,
-                    artifact_id: artifact.id,
-                  })}
-              >
-                <IconSmall.File />
-                <span class="item-text">{artifact.title ?? "Untitled"}</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    {/if}
-
-    {#if isTask && session.parentStreamId}
-      <div class="sidebar-section">
-        <span class="sidebar-label">Chat</span>
-        <ul class="sidebar-list">
-          <li>
-            <a
-              href="/chat/{session.parentStreamId}"
-              class="sidebar-item"
-              onclick={() =>
-                trackEvent(GA4.SESSION_CHAT_LINK_CLICK, {
-                  session_id: session.id,
-                  chat_id: session.parentStreamId!,
-                })}
-            >
-              <span class="item-text">{session.parentTitle ?? "Conversation"}</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    {/if}
-  </aside>
 </div>
 
 <style>
   .page {
-    display: grid;
-    grid-template-columns: 1fr var(--size-56);
     block-size: 100%;
     inline-size: 100%;
-    gap: var(--size-6);
     overflow: auto;
   }
 
   .content {
-    flex: 1;
+    margin-inline: auto;
+    max-inline-size: 800px;
     padding-block: var(--size-12);
     padding-inline: var(--size-14);
-    overflow-y: auto;
-    scrollbar-width: thin;
   }
 
   h1 {
     font-size: var(--font-size-8);
     font-weight: var(--font-weight-7);
-    margin-block: var(--size-3) var(--size-1);
     line-height: var(--font-lineheight-1);
+    margin-block: var(--size-3) var(--size-1);
   }
 
   .meta {
     align-items: center;
     display: flex;
-    gap: var(--size-2);
+    gap: var(--size-3);
   }
 
   .session-date {
@@ -176,16 +177,22 @@
     opacity: 0.7;
   }
 
+  .duration {
+    color: var(--text-3);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-3);
+  }
+
   .status {
     align-items: center;
-    border-radius: var(--radius-2-5);
-    border: 1px solid transparent;
     block-size: var(--size-5-5);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2-5);
     color: var(--color-text-2);
     display: flex;
-    gap: var(--size-1);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
+    gap: var(--size-1);
     inline-size: fit-content;
     padding-inline: var(--size-1-5) var(--size-2);
 
@@ -199,47 +206,104 @@
       color: var(--color-red);
     }
 
-    &.pending {
+    &.active {
       background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
       color: var(--color-yellow-2);
     }
   }
 
-  .details {
-    padding-block-start: var(--size-10);
-
-    h2 {
-      font-size: var(--font-size-4);
-      font-weight: var(--font-weight-5);
-      line-height: var(--font-lineheight-1);
-      opacity: 0.7;
-
-      &:not(:first-child) {
-        margin-block-start: var(--size-8);
-      }
-    }
-
-    p {
-      font-size: var(--font-size-4);
-      opacity: 0.8;
-      padding-block-start: var(--size-1);
-    }
+  /* AI Summary */
+  .summary-section {
+    margin-block-start: var(--size-8);
   }
 
-  .output-content {
-    background-color: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
+  .summary-heading {
+    font-size: var(--font-size-5);
+    font-weight: var(--font-weight-6);
+    margin-block-end: var(--size-2);
+  }
+
+  .summary-text {
+    color: var(--text-2);
+    font-size: var(--font-size-3);
+    line-height: var(--font-lineheight-3);
+  }
+
+  .key-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
     margin-block-start: var(--size-3);
-    padding-block: var(--size-4);
-    padding-inline: var(--size-5);
   }
 
-  .output-error {
+  .key-detail-row {
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .key-detail-row dt {
+    color: var(--text-3);
+    flex-shrink: 0;
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-5);
+    min-inline-size: var(--size-24);
+  }
+
+  .key-detail-row dd {
+    font-size: var(--font-size-3);
+  }
+
+  .key-detail-row dd a {
+    color: var(--color-blue);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .summary-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .skeleton-line {
+    animation: pulse 1.5s ease-in-out infinite;
+    background: var(--color-surface-1);
+    block-size: var(--size-4);
+    border-radius: var(--radius-1);
+  }
+
+  .skeleton-line.wide {
+    inline-size: 90%;
+  }
+
+  .skeleton-line.medium {
+    inline-size: 60%;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+
+  .agent-blocks {
+    display: flex;
+    flex-direction: column;
+    padding-block-start: var(--size-8);
+  }
+
+  .session-error {
     background-color: color-mix(in srgb, var(--color-red) 10%, transparent);
     border-inline-start: 3px solid var(--color-red);
     border-radius: var(--radius-1);
-    margin-block-start: var(--size-3);
+    margin-block-start: var(--size-6);
     padding-block: var(--size-2);
     padding-inline: var(--size-3);
   }
@@ -249,82 +313,63 @@
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-2);
     line-height: var(--font-lineheight-3);
+    margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
-    margin: 0;
   }
 
-  /* Sidebar styles - matching chat sidebar pattern */
-  .sidebar {
+  .loading {
+    color: var(--text-3);
+    font-size: var(--font-size-4);
+    padding-block-start: var(--size-8);
+  }
+
+  .outdated {
+    align-items: center;
+    color: var(--text-3);
     display: flex;
     flex-direction: column;
-    gap: 0;
-    inline-size: 228px;
-    padding-block: var(--size-12);
-    padding-inline: 0 var(--size-6);
-    position: sticky;
-    inset-block-start: 0;
-    align-self: start;
-  }
+    gap: var(--size-3);
+    padding-block-start: var(--size-12);
+    text-align: center;
 
-  .sidebar-section {
-    display: flex;
-    flex-direction: column;
-  }
+    p {
+      font-size: var(--font-size-4);
+    }
 
-  .sidebar-label {
-    border-block-start: var(--size-px) solid var(--color-border-1);
-    block-size: var(--size-9);
-    display: flex;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-4-5);
-    padding-block: var(--size-3) var(--size-1-5);
-    padding-inline: var(--size-2-5);
-  }
-
-  .sidebar-list {
-    display: flex;
-    flex-direction: column;
-    padding-block-end: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding-inline: 0;
-
-    li {
-      inline-size: 100%;
+    :global(svg) {
+      block-size: 24px;
+      color: var(--color-red);
+      inline-size: 24px;
     }
   }
 
-  .sidebar-item {
+  .error-state {
     align-items: center;
-    block-size: var(--size-7);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4);
+    padding-block-start: var(--size-12);
+    text-align: center;
+
+    p {
+      color: var(--text-3);
+      font-size: var(--font-size-4);
+    }
+  }
+
+  .retry-button {
+    background-color: var(--color-surface-1);
+    border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     color: var(--color-text);
-    display: flex;
+    cursor: pointer;
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-4-5);
-    gap: var(--size-2);
-    padding-inline: var(--size-2-5) var(--size-2);
-    text-decoration: none;
-    outline: none;
+    padding-block: var(--size-2);
+    padding-inline: var(--size-4);
 
-    & :global(svg) {
-      color: var(--color-text);
-      flex: none;
-      opacity: 0.5;
-    }
-
-    &:hover,
-    &:focus-visible {
+    &:hover {
       background-color: var(--color-highlight-1);
     }
-  }
-
-  .item-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    opacity: 0.8;
   }
 </style>

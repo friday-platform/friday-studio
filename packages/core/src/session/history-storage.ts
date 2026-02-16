@@ -446,7 +446,7 @@ export async function appendSessionEvent(
       await migrateLegacyEventsIfNeeded(input.sessionId);
 
       // Append event as a single JSONL line
-      await appendFile(eventsFile, JSON.stringify(event) + "\n", "utf-8");
+      await appendFile(eventsFile, `${JSON.stringify(event)}\n`, "utf-8");
 
       // Update metadata timestamp
       const metadata = await readMetadata(metadataFile);
@@ -676,7 +676,7 @@ async function migrateLegacyEventsIfNeeded(sessionId: string): Promise<void> {
 
   // Migrate events to JSONL
   const legacyEvents = parsed.data.events;
-  const lines = legacyEvents.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  const lines = `${legacyEvents.map((e) => JSON.stringify(e)).join("\n")}\n`;
   await writeFile(eventsFile, lines, "utf-8");
 
   // Rewrite metadata without events

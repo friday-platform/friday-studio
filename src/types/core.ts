@@ -9,11 +9,6 @@ import type { MaybePromise } from "@atlas/utils";
  *
  * Returned from FSM execution to track phase counts and overall status.
  * Used by waitForCompletion() to signal session termination.
- *
- * @remarks
- * This is distinct from {@link SessionDigest} (packages/core/src/session/build-session-digest.ts)
- * which captures full I/O content for agent analysis. SessionSummary focuses
- * on orchestration status; SessionDigest focuses on actual data.
  */
 export interface SessionSummary {
   sessionId: string;

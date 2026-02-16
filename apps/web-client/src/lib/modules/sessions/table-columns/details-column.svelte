@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { ReasoningResultStatusType } from "@atlas/core";
   import { IconSmall } from "$lib/components/icons/small";
 
   type Props = {
@@ -9,15 +8,13 @@
     sessionType?: "conversation" | "task";
     title?: string;
     parentTitle?: string;
-    status?: ReasoningResultStatusType;
+    status?: string;
   };
 
   let { job, summary, workspaceName, sessionType, title, parentTitle, status }: Props = $props();
 
-  // parentStreamId is available for navigation but not currently used in this display component
-
   const isFailed = $derived(status === "failed");
-  const isRunning = $derived(status === "partial");
+  const isRunning = $derived(status === "partial" || status === "active");
   const isTask = $derived(sessionType === "task");
   // Show title if available, otherwise fall back to workspace/job name
   const displayName = $derived(

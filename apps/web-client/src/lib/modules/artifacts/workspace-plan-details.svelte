@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
+  import type { CredentialBinding } from "@atlas/core/artifacts";
   import Button from "$lib/components/button.svelte";
   import GlobeIcon from "$lib/components/icons/globe.svelte";
   import Anthropic from "$lib/components/icons/integrations/anthropic.svelte";
@@ -11,8 +11,15 @@
   import SentryIcon from "$lib/components/icons/integrations/sentry.svelte";
   import SlackIcon from "$lib/components/icons/integrations/slack-color.svelte";
 
+  /** Common shape that both v1 WorkspacePlan and v2 WorkspaceBlueprint satisfy. */
+  type PlanCardData = {
+    workspace: { name: string; purpose: string; details?: Array<{ label: string; value: string }> };
+    signals: Array<{ id: string; name: string; signalType: string; displayLabel?: string }>;
+    credentials?: CredentialBinding[];
+  };
+
   type Props = {
-    workspacePlan: WorkspacePlan;
+    workspacePlan: PlanCardData;
     hideControls?: boolean;
     onApprove?: () => void;
     onTest?: () => void;

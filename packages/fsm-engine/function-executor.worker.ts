@@ -11,13 +11,14 @@ interface WorkerRequest {
   contextData: {
     documents: Array<{ id: string; type: string; data: Record<string, unknown> }>;
     state: string;
+    results: Record<string, Record<string, unknown>>;
   };
   signal: { type: string; data?: Record<string, unknown> };
   timeout: number;
 }
 
 interface Mutation {
-  op: "updateDoc" | "createDoc" | "deleteDoc" | "emit";
+  op: "updateDoc" | "createDoc" | "deleteDoc" | "emit" | "setResult";
   args: unknown[];
 }
 
@@ -84,6 +85,7 @@ async function executeFunction(
   const context = {
     documents,
     state: contextData.state,
+    results: contextData.results ?? {},
 
     // SYNC methods - mutate local + record mutation
     updateDoc(id: string, data: Record<string, unknown>) {
@@ -111,6 +113,12 @@ async function executeFunction(
 
     emit(sig: { type: string; data?: Record<string, unknown> }) {
       mutations.push({ op: "emit", args: [sig] });
+    },
+
+    setResult(key: string, data: Record<string, unknown>) {
+      // Update local results so subsequent reads in the same execution see the write
+      context.results[key] = data;
+      mutations.push({ op: "setResult", args: [key, data] });
     },
   };
 

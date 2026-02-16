@@ -15,8 +15,8 @@ const QueryRowsSchema = z.array(z.record(z.string(), z.unknown()));
 export const QueryExecutionSchema = z.object({
   sql: z.string(),
   success: z.boolean(),
-  rowCount: z.number().nullable(),
-  error: z.string().nullable(),
+  rowCount: z.number().optional(),
+  error: z.string().optional(),
   durationMs: z.number(),
   tool: z.enum(["execute_sql", "save_results"]),
 });
@@ -77,14 +77,7 @@ export function executeReadOnlyQuery(
     if (!proc.stdout || !proc.stderr) {
       const durationMs = performance.now() - start;
       const error = `Failed to spawn duckdb: stdio streams unavailable (is "${DUCKDB_PATH}" installed?)`;
-      queryLog.push({
-        sql: query,
-        success: false,
-        rowCount: null,
-        error,
-        durationMs,
-        tool: toolName,
-      });
+      queryLog.push({ sql: query, success: false, error, durationMs, tool: toolName });
       resolve({ success: false, error, durationMs });
       return;
     }
@@ -103,7 +96,6 @@ export function executeReadOnlyQuery(
       queryLog.push({
         sql: query,
         success: false,
-        rowCount: null,
         error: "Query timed out",
         durationMs,
         tool: toolName,
@@ -120,7 +112,6 @@ export function executeReadOnlyQuery(
         queryLog.push({
           sql: query,
           success: false,
-          rowCount: null,
           error: "Query aborted",
           durationMs,
           tool: toolName,
@@ -146,14 +137,7 @@ export function executeReadOnlyQuery(
       clearTimeout(timeout);
       const durationMs = performance.now() - start;
       const error = `Failed to spawn duckdb: ${err.message}`;
-      queryLog.push({
-        sql: query,
-        success: false,
-        rowCount: null,
-        error,
-        durationMs,
-        tool: toolName,
-      });
+      queryLog.push({ sql: query, success: false, error, durationMs, tool: toolName });
       resolve({ success: false, error, durationMs });
     });
 
@@ -166,14 +150,7 @@ export function executeReadOnlyQuery(
 
       if (code !== 0) {
         const error = stderr || `DuckDB exited with code ${code}`;
-        queryLog.push({
-          sql: query,
-          success: false,
-          rowCount: null,
-          error,
-          durationMs,
-          tool: toolName,
-        });
+        queryLog.push({ sql: query, success: false, error, durationMs, tool: toolName });
         resolve({ success: false, error, durationMs });
         return;
       }
@@ -206,14 +183,7 @@ export function executeReadOnlyQuery(
 
         if (!parseResult.success) {
           const error = `Failed to parse output: ${parseResult.error.message}`;
-          queryLog.push({
-            sql: query,
-            success: false,
-            rowCount: null,
-            error,
-            durationMs,
-            tool: toolName,
-          });
+          queryLog.push({ sql: query, success: false, error, durationMs, tool: toolName });
           resolve({ success: false, error, durationMs });
           return;
         }
@@ -222,21 +192,13 @@ export function executeReadOnlyQuery(
           sql: query,
           success: true,
           rowCount: parseResult.data.length,
-          error: null,
           durationMs,
           tool: toolName,
         });
         resolve({ success: true, rows: parseResult.data, durationMs });
       } catch (err) {
         const error = `Failed to parse output: ${err instanceof Error ? err.message : String(err)}`;
-        queryLog.push({
-          sql: query,
-          success: false,
-          rowCount: null,
-          error,
-          durationMs,
-          tool: toolName,
-        });
+        queryLog.push({ sql: query, success: false, error, durationMs, tool: toolName });
         resolve({ success: false, error, durationMs });
       }
     });

@@ -1,33 +1,26 @@
-/**
- * Helper functions for creating actions with cleaner syntax
- */
+/** Action factory functions for the FSMBuilder fluent API. */
 
 import type { Action } from "../fsm-engine/mod.ts";
 
-/**
- * Create a code action that calls a function
- *
- * @example
- * builder.onEntry(codeAction('initialize_workflow'))
- */
+/** @example builder.onEntry(codeAction('initialize_workflow')) */
 export function codeAction(functionName: string): Action {
   return { type: "code", function: functionName };
 }
 
 /**
- * Create an agent action
- *
- * @example
- * builder.onEntry(agentAction('quality-checker', { outputTo: 'quality_result' }))
- * builder.onEntry(agentAction('claude-code', { prompt: 'Implement the feature' }))
+ * @example builder.onEntry(agentAction('quality-checker', { outputTo: 'quality_result' }))
+ * @example builder.onEntry(agentAction('claude-code', { prompt: 'Implement the feature' }))
  */
 export function agentAction(
   agentId: string,
-  opts?: { outputTo?: string; prompt?: string },
+  opts?: { outputTo?: string; outputType?: string; prompt?: string },
 ): Action {
   const action: Action = { type: "agent", agentId };
   if (opts?.outputTo !== undefined) {
     action.outputTo = opts.outputTo;
+  }
+  if (opts?.outputType !== undefined) {
+    action.outputType = opts.outputType;
   }
   if (opts?.prompt !== undefined) {
     action.prompt = opts.prompt;
@@ -36,8 +29,6 @@ export function agentAction(
 }
 
 /**
- * Create an LLM action
- *
  * @example
  * builder.onEntry(llmAction({
  *   provider: 'anthropic',
@@ -76,11 +67,8 @@ export function llmAction(opts: {
 }
 
 /**
- * Create an emit action that triggers an event
- *
- * @example
- * builder.onEntry(emitAction('ADVANCE'))
- * builder.onEntry(emitAction('COMPLETE', { result: 'success' }))
+ * @example builder.onEntry(emitAction('ADVANCE'))
+ * @example builder.onEntry(emitAction('COMPLETE', { result: 'success' }))
  */
 export function emitAction(event: string, data?: Record<string, unknown>): Action {
   const action: Action = { type: "emit", event };

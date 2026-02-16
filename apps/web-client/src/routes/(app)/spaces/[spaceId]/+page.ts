@@ -4,7 +4,7 @@ import type { PageLoad } from "./$types";
 
 export const load: PageLoad = async ({ params }) => {
   const [sessionsRes, artifactsRes] = await Promise.all([
-    parseResult(client.sessionHistory.index.$get({ query: { workspaceId: params.spaceId } })),
+    parseResult(client.sessions.index.$get({ query: { workspaceId: params.spaceId } })),
     parseResult(
       client.artifactsStorage.index.$get({ query: { workspaceId: params.spaceId, limit: "10" } }),
     ),

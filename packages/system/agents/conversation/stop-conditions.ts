@@ -1,12 +1,12 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { StopCondition } from "ai";
 import z from "zod";
-import { FSMCreatorResultSchema } from "../../agent-types/mod.ts";
+import { FSMCreatorSuccessDataSchema } from "../../agent-types/mod.ts";
 
-const mcpAgentResult = z.object({
-  result: z.object({ content: z.object({ type: z.literal("text"), text: z.string() }).array() }),
-});
-
+/**
+ * Stop condition for fsm-workspace-creator: stop only on success.
+ * Direct invocation returns AgentPayload: { ok: true, data: FSMCreatorSuccessData }
+ */
 export const workspaceCreationComplete =
   (): StopCondition<AtlasTools> =>
   ({ steps }) => {
@@ -16,19 +16,16 @@ export const workspaceCreationComplete =
           continue;
         }
         try {
-          const mcpResult = mcpAgentResult.parse(toolResult.output);
-          const agentResultString = mcpResult.result.content.at(0)?.text;
-          if (!agentResultString) {
-            throw new Error("No content in MCP result");
-          }
-          const agentResult = z
-            .object({ type: z.literal("completed"), result: FSMCreatorResultSchema })
-            .parse(JSON.parse(agentResultString));
-          if (agentResult.result.ok) {
+          const result = z
+            .object({
+              output: z.object({ ok: z.literal(true), data: FSMCreatorSuccessDataSchema }),
+            })
+            .parse(toolResult);
+
+          if (result.output.ok) {
             return true;
           }
-        } catch (e) {
-          console.error(e);
+        } catch {
           return false;
         }
       }

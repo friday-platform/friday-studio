@@ -1,7 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "workspace": ["./apps/*", "./packages/*", "./tools/evals", "./tools/evals-2"],
+  "workspace": [
+    "./apps/*",
+    "./packages/*",
+    "./tools/evals",
+    "./tools/evals-2",
+    "./tools/workspace-simulator"
+  ],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": ["./reset.d.ts"],
@@ -24,7 +30,8 @@
     "apps/friday-website/src/**",
     "apps/atlas-installer",
     "packages/vendor/**",
-    "apps/web-client/src-tauri/**"
+    "apps/web-client/src-tauri/**",
+    "opensrc"
   ],
   "unstable": ["worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",
@@ -49,7 +56,9 @@
     "lint": "deno lint --fix && deno run -A npm:@biomejs/biome check --write",
     "lint:check": "deno lint && deno run -A npm:@biomejs/biome check --max-diagnostics=200",
     "clean": "deno run -A scripts/clean.ts",
-    "compile": "./scripts/compile.sh"
+    "compile": "./scripts/compile.sh",
+    "sim": "deno run --allow-all tools/workspace-simulator/cli.ts",
+    "sim:playground": "deno run --allow-all --watch=tools/workspace-simulator/playground.ts,tools/workspace-simulator/playground.html,tools/workspace-simulator/cli.ts,tools/workspace-simulator/harness/ tools/workspace-simulator/playground.ts"
   },
   "lint": {
     "rules": { "tags": ["recommended"] },
@@ -71,6 +80,8 @@
     "jose": "npm:jose@^6.1.3",
     "nanoid": "npm:nanoid@^5.1.6",
     "openapi-fetch": "npm:openapi-fetch@^0.15.0",
+    "cron-parser": "npm:cron-parser@^5.5.0",
+    "evalite/ai-sdk": "npm:evalite@^1.0.0-beta.15/ai-sdk",
     "@atlas/workspace-builder": "./packages/workspace-builder/mod.ts",
     "@atlas/fsm-engine": "./packages/fsm-engine/mod.ts",
     "@atlas/hallucination": "./packages/hallucination/mod.ts"

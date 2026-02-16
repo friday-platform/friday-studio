@@ -242,9 +242,9 @@ describe("executeReadOnlyQuery", () => {
       sql: "SELECT 1 as x",
       success: true,
       rowCount: 1,
-      error: null,
       tool: "execute_sql",
     });
+    expect(log[0]?.error).toBeUndefined();
     expect(log[0]?.durationMs).toBeGreaterThanOrEqual(0);
   });
 

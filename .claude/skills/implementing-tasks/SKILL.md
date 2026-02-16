@@ -127,12 +127,18 @@ When a teammate messages "Task X complete":
    - `karpathy-guidelines`
    - `testing`
    - `reviewing-comments`
-2. Review the changes:
+2. **Type check the changed files** before reading the diff:
+   ```bash
+   git diff HEAD~1 --name-only | xargs deno check
+   ```
+   If type errors exist, **reject immediately** — don't waste time on visual
+   review until types are clean. Send the error output to the teammate.
+3. Review the changes:
    ```bash
    git log -1 --stat
    git diff HEAD~1
    ```
-3. Check against quality standards:
+4. Check against quality standards:
    - **karpathy**: Is this the smallest change? Any speculative code? Any
      unnecessary abstractions?
    - **testing**: Do tests verify behavior or mock internals? Any
@@ -143,12 +149,24 @@ When a teammate messages "Task X complete":
    - **Database isolation** (if diff touches SQL, adapters, or repositories):
      load `database-rls` skill and verify compliance
    - **Patterns**: Does it match the style of recent commits?
-4. **Approve** → Confirm to teammate. Check their task count against their
+5. **Approve** → Confirm to teammate. Check their task count against their
    weight cap (see Teammate Rotation):
    - Under cap → they claim next task
    - At cap → shutdown this teammate, spawn fresh replacement
-5. **Reject** → Send specific feedback: what's wrong, what to do instead.
+6. **Reject** → Send specific feedback: what's wrong, what to do instead.
    Teammate fixes and resubmits. (Rejections don't count toward the cap.)
+
+### Gate 3: Full Type Check (after each wave)
+
+After approving all tasks in a wave, before spawning the next wave:
+
+```bash
+deno check
+```
+
+If errors exist, create fix tasks and resolve them before starting the next wave.
+Type debt compounds across waves — a broken type in wave 1 cascades into every
+wave that follows. Catch it early.
 
 ### Escalation
 
@@ -186,10 +204,17 @@ session end with: `chore(meta): capture team lead learnings`
 
 When all tasks are complete:
 
-1. Run a final check: `git log` to see all commits from this session
-2. Commit the learnings file if it has content
-3. Summarize to the user: what was done, any decisions made, any concerns
-4. Clean up the team
+1. Run a final verification:
+   ```bash
+   deno check         # Type check — must be clean
+   deno task lint     # Lint — must pass
+   deno task fmt      # Format — commit if changes
+   ```
+2. If any errors, create fix tasks and resolve before finishing
+3. Run `git log` to see all commits from this session
+4. Commit the learnings file if it has content
+5. Summarize to the user: what was done, any decisions made, any concerns
+6. Clean up the team
 
 ## Rules
 

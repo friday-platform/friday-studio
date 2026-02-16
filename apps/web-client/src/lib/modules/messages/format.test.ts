@@ -56,7 +56,7 @@ describe("formatMessage - display_artifact tool", () => {
 });
 
 describe("formatMessage - fsm-workspace-creator tool", () => {
-  it("falls through to tool_call when output lacks result.content", () => {
+  it("falls through to tool_call when output has neither format", () => {
     const message = createMessage("assistant");
     const part = createToolPart("tool-fsm-workspace-creator", { result: {} });
 
@@ -65,7 +65,26 @@ describe("formatMessage - fsm-workspace-creator tool", () => {
     expect(result).toMatchObject({ type: "tool_call" });
   });
 
-  it("returns workspace_creator when output has valid structure", () => {
+  it("returns workspace_creator for direct invocation format", () => {
+    const message = createMessage("assistant");
+    const part = createToolPart("tool-fsm-workspace-creator", {
+      ok: true,
+      data: {
+        workspaceId: "ws-123",
+        workspaceName: "Test Workspace",
+        workspaceDescription: "A test workspace",
+        workspaceUrl: "/spaces/ws-123",
+        jobCount: 1,
+        metadata: { generatedCode: {}, codegenAttempts: {} },
+      },
+    });
+
+    const result = formatMessage(message as AtlasUIMessage, part);
+
+    expect(result).toMatchObject({ type: "workspace_creator" });
+  });
+
+  it("returns workspace_creator for MCP envelope format", () => {
     const message = createMessage("assistant");
     const agentResult = {
       agentId: "fsm-workspace-creator",
@@ -89,11 +108,6 @@ describe("formatMessage - fsm-workspace-creator tool", () => {
     const result = formatMessage(message as AtlasUIMessage, part);
 
     expect(result).toMatchObject({ type: "workspace_creator" });
-    // Output passed through raw - downstream does its own parsing
-    if (result?.type === "workspace_creator") {
-      const text = result.output.result.content[0]?.text;
-      expect(text).toBe(JSON.stringify(agentResult));
-    }
   });
 });
 
@@ -130,7 +144,27 @@ describe("formatMessage - data-agent-* events", () => {
 });
 
 describe("parseWorkspacePlannerArtifactId", () => {
-  it("extracts artifactId from execution result envelope", () => {
+  it("extracts artifactId from direct invocation format", () => {
+    const output = {
+      ok: true,
+      data: {
+        planSummary: "Weekly gravel bike digest",
+        artifactId: "direct-artifact-123",
+        revision: 1,
+        nextStep: "Show plan to user.",
+      },
+    };
+
+    expect(parseWorkspacePlannerArtifactId(output)).toBe("direct-artifact-123");
+  });
+
+  it("returns undefined for direct invocation error (ok: false)", () => {
+    const output = { ok: false, error: { reason: "Something went wrong" } };
+
+    expect(parseWorkspacePlannerArtifactId(output)).toBeUndefined();
+  });
+
+  it("extracts artifactId from MCP execution result envelope", () => {
     const agentResult = {
       agentId: "workspace-planner",
       timestamp: "2026-02-04T12:00:00.000Z",
@@ -147,7 +181,7 @@ describe("parseWorkspacePlannerArtifactId", () => {
     expect(parseWorkspacePlannerArtifactId(output)).toBe("artifact-xyz-123");
   });
 
-  it("returns undefined for error result (ok: false)", () => {
+  it("returns undefined for MCP error result (ok: false)", () => {
     const agentResult = {
       agentId: "workspace-planner",
       timestamp: "2026-02-04T12:00:00.000Z",

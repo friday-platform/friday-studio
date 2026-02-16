@@ -2,12 +2,13 @@
  * Tests for buildContextPrompt image orchestration.
  *
  * Since buildContextPrompt is private, we test through the public LLM action
- * execution path: create an FSM with an LLM action, provide a mock artifactStorage,
- * and verify the messages param passed to the mock LLMProvider.
+ * execution path: create an FSM with a prepare code action + LLM action,
+ * provide a mock artifactStorage, and verify the messages param passed to the
+ * mock LLMProvider.
  *
- * expandArtifactRefsInDocuments is mocked because it calls the daemon HTTP API
+ * expandArtifactRefsInInput is mocked because it calls the daemon HTTP API
  * which isn't available in unit tests. The image resolution path under test
- * is separate: it uses extractRefs + artifactStorage directly.
+ * is separate: it uses artifactStorage directly.
  */
 
 import type { Artifact, ArtifactStorageAdapter } from "@atlas/core/artifacts";
@@ -17,34 +18,34 @@ import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider, OutputValidator } from "../types.ts";
 
-// Mock expandArtifactRefsInDocuments to avoid hitting the daemon HTTP API.
-// This returns documents unchanged — artifact expansion isn't what we're testing.
+// Mock expandArtifactRefsInInput to avoid hitting the daemon HTTP API.
+// This returns the input unchanged — artifact text expansion isn't what we're testing.
 vi.mock("../artifact-expansion.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../artifact-expansion.ts")>();
-  return { ...actual, expandArtifactRefsInDocuments: vi.fn((docs) => Promise.resolve(docs)) };
+  return { ...actual, expandArtifactRefsInInput: vi.fn((input) => Promise.resolve(input)) };
 });
 
-/** Minimal FSM: pending --RUN--> done, with an LLM action referencing a document with an artifactRef. */
+/**
+ * Minimal FSM: pending --RUN--> done.
+ * A prepare code action surfaces artifact refs, then an LLM action consumes them.
+ */
 function makeFSM(): FSMDefinition {
   return {
     id: "image-ctx-test",
     initial: "pending",
+    functions: {
+      prepareImageTask: {
+        type: "action",
+        code: `(context) => ({ task: "Describe the image", artifactRefs: [{ id: "art-img-1", type: "file", summary: "A photo" }] })`,
+      },
+    },
     states: {
       pending: {
-        documents: [
-          {
-            id: "img-doc",
-            type: "ImageDoc",
-            data: {
-              summary: "Has an image ref",
-              artifactRef: { id: "art-img-1", type: "file", summary: "A photo" },
-            },
-          },
-        ],
         on: {
           RUN: {
             target: "done",
             actions: [
+              { type: "code", function: "prepareImageTask" },
               { type: "llm", provider: "test", model: "test-model", prompt: "Describe the image" },
             ],
           },

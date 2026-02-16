@@ -15,7 +15,7 @@ import { WorkerExecutor } from "../worker-executor.ts";
 const isDenoRuntime = typeof (globalThis as Record<string, unknown>).Deno !== "undefined";
 
 const executor = new WorkerExecutor({ timeout: 5000, functionType: "action" });
-const ctx: Context = { documents: [], state: "test" };
+const ctx: Context = { documents: [], state: "test", results: {} };
 const sig = { type: "TEST" };
 
 /**
@@ -367,6 +367,7 @@ describe.skipIf(!isDenoRuntime)("Legitimate Operations - All Allowed", () => {
     const ctxWithDocs: Context = {
       documents: [{ id: "doc1", type: "test", data: { value: 42 } }],
       state: "active",
+      results: {},
     };
     const code = `
       export default (ctx) => ctx.documents[0].data.value
@@ -401,6 +402,7 @@ describe.skipIf(!isDenoRuntime)("Legitimate Operations - All Allowed", () => {
     const ctxWithMethods: Context = {
       documents: [{ id: "x", type: "test", data: { count: 0 } }],
       state: "active",
+      results: {},
       updateDoc: (id, data) => mutations.push(`update:${id}:${JSON.stringify(data)}`),
     };
     const code = `

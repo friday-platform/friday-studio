@@ -4,8 +4,6 @@
  * This module exports comprehensive Zod schemas for Atlas configuration
  * with improved type safety, tagged unions, and clear separation of concerns.
  */
-import { convertJsonSchemaToZod } from "zod-from-json-schema";
-
 // Agent schemas with tagged unions
 export * from "./src/agents.ts";
 // Atlas-specific schemas
@@ -100,9 +98,9 @@ export function validateSignalPayload(
   if (!signal.schema) {
     return { success: true, data: payload };
   }
-  let zodSchema: ReturnType<typeof convertJsonSchemaToZod>;
+  let zodSchema: z.ZodType;
   try {
-    zodSchema = convertJsonSchemaToZod(signal.schema);
+    zodSchema = z.fromJSONSchema(signal.schema);
   } catch (e) {
     return { success: false, error: stringifyError(e) };
   }

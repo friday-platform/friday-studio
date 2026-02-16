@@ -59,6 +59,12 @@ npx @sveltejs/mcp svelte-autofixer ./Component.svelte --svelte-version 4
 
 **Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\$` to prevent shell variable substitution.
 
+## Gotchas
+
+- **Template type narrowing doesn't compose with discriminated unions** — Svelte
+  templates can't narrow discriminated union variants inline. Extract and narrow
+  data in `<script>` before passing to template expressions.
+
 ## Workflow
 
 1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics

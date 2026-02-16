@@ -1,5 +1,5 @@
 <script lang="ts">
-  type Props = { status: "completed" | "partial" | "cancelled" | "failed" };
+  type Props = { status: string };
   let { status }: Props = $props();
 </script>
 

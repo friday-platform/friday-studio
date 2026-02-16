@@ -1,29 +1,27 @@
 /**
- * FSM Workspace Creator Agent (v2.0 - LLM Code Generation)
+ * FSM Workspace Creator Agent (v3.0 - Deterministic Compiler)
  *
- * Generates FSM definitions from WorkspacePlan artifacts using LLM-powered code generation.
- * Replaces template-based generation with dynamic TypeScript code execution.
+ * Compiles FSM definitions from v2 WorkspaceBlueprint artifacts using the
+ * deterministic compiler. No LLM calls, no retry loops. Same plan always
+ * produces same FSM, every time.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { type WorkspacePlan, WorkspacePlanSchema } from "@atlas/core/artifacts";
-import { type ValidatedFSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
 import { stringifyError } from "@atlas/utils";
-import { executeCodegen } from "@atlas/workspace-builder";
+import {
+  buildFSMFromPlan,
+  buildWorkspaceYaml,
+  ClassifiedDAGStepSchema,
+  type CompileWarning,
+  PipelineError,
+  type WorkspaceBlueprint,
+  WorkspaceBlueprintSchema,
+} from "@atlas/workspace-builder";
 import { toKebabCase } from "@std/text";
-import { stringify as stringifyYaml } from "@std/yaml";
 import { z } from "zod";
 import type { FSMCreatorSuccessData } from "../../agent-types/mod.ts";
-import { classifyAgents } from "./agent-classifier.ts";
-import { enrichAgentsWithPipelineContext, flattenAgent } from "./agent-helpers.ts";
-import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
-import { generateMCPServers } from "./enrichers/mcp-servers.ts";
-import { enrichSignal } from "./enrichers/signals.ts";
-import { generateFSMCode, type PreviousAttempt } from "./fsm-generation-core.ts";
-import { formatMissingCredentialsError, validateCredentials } from "./preflight-validator.ts";
-import { buildWorkspaceConfig } from "./workspace-config-builder.ts";
 
 const FSMCreatorInputSchema = z.object({
   artifactId: z.string().describe("WorkspacePlan artifact ID"),
@@ -36,280 +34,109 @@ const FSMCreatorInputSchema = z.object({
 type FSMCreatorInput = z.infer<typeof FSMCreatorInputSchema>;
 
 /**
- * FSM Workspace Creator Agent v2.0
+ * FSM Workspace Creator Agent v3.0
  *
- * Uses LLM to generate TypeScript code with FSMBuilder API instead of templates.
- * Supports multiple jobs with one FSM per job.
+ * Deterministic compiler shell. Loads v2 blueprint, compiles FSMs, assembles
+ * workspace.yml, registers with daemon. No LLM calls.
  */
 export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorSuccessData>({
   id: "fsm-workspace-creator",
   displayName: "FSM Workspace Creator",
-  version: "2.0.0",
+  version: "3.0.0",
   description:
-    "Generates FSM definitions from workspace plans using LLM code generation. " +
-    "Creates workspace.yml with validated FSM definitions for each job.",
+    "Compiles FSM definitions from v2 workspace blueprints using deterministic compilation. " +
+    "Creates workspace.yml with validated FSM definitions for each job. No LLM calls.",
 
-  expertise: {
-    domains: ["FSM generation", "Code generation", "Workflow automation", "State machines"],
-    examples: [],
-  },
+  expertise: { domains: ["FSM compilation", "Workspace assembly", "State machines"], examples: [] },
 
   inputSchema: FSMCreatorInputSchema,
 
-  handler: async (input, { logger, stream, abortSignal }) => {
-    logger.info("Starting FSM generation from workspace plan", { artifactId: input.artifactId });
+  handler: async (input, { logger, stream }) => {
+    logger.info("Starting deterministic FSM compilation", { artifactId: input.artifactId });
 
     try {
-      // 1. Load workspace plan
+      // 1. Load v2 artifact
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Loading workspace plan" },
+        data: { toolName: "FSM Creator", content: "Loading workspace blueprint" },
       });
 
-      const plan = await loadWorkspacePlan(input.artifactId);
+      const blueprint = await loadBlueprint(input.artifactId);
 
-      logger.info("Loaded workspace plan", {
-        signals: plan.signals.length,
-        agents: plan.agents.length,
-        jobs: plan.jobs.length,
+      logger.info("Loaded workspace blueprint", {
+        signals: blueprint.signals.length,
+        agents: blueprint.agents.length,
+        jobs: blueprint.jobs.length,
       });
 
-      // Validate plan has jobs
-      if (!plan.jobs || plan.jobs.length === 0) {
-        return err("WorkspacePlan must have at least one job");
-      }
+      // 2. Compile FSMs — deterministic, no LLM
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "FSM Creator", content: "Compiling FSM definitions" },
+      });
 
-      // Check for duplicate job IDs
-      const jobIds = new Set<string>();
-      for (const job of plan.jobs) {
-        if (jobIds.has(job.id)) {
-          return err(`Duplicate job ID found: ${job.id}`);
+      const fsms = [];
+      for (const job of blueprint.jobs) {
+        logger.info("Compiling FSM for job", { jobId: job.id });
+        // Jobs carry classified steps at runtime (from stampExecutionTypes); parse to narrow the type
+        const classifiedJob = {
+          ...job,
+          steps: job.steps.map((s) => ClassifiedDAGStepSchema.parse(s)),
+        };
+        const result = buildFSMFromPlan(classifiedJob);
+        if (!result.success) {
+          return err(`FSM compilation failed for job '${job.id}': ${JSON.stringify(result.error)}`);
         }
-        jobIds.add(job.id);
-      }
 
-      // Validate agent IDs (kebab-case only)
-      for (const agent of plan.agents) {
-        if (!/^[a-z][a-z0-9-]*$/.test(agent.id)) {
-          return err(
-            `Invalid agent ID '${agent.id}': must be lowercase kebab-case (a-z, 0-9, hyphens only)`,
+        // Compiler warnings are fatal — upstream gates should prevent them
+        if (result.value.warnings.length > 0) {
+          const warningMessages = result.value.warnings
+            .map((w: CompileWarning) => `  ${w.type}: ${w.message}`)
+            .join("\n");
+          throw new PipelineError(
+            "compile",
+            new Error(`Compiler warnings for job '${job.id}':\n${warningMessages}`),
           );
         }
-      }
 
-      // 1.5 PRE-FLIGHT: Verify Link credentials exist for MCP servers
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Verifying credentials" },
-      });
-
-      const mcpServersPrecheck = await generateMCPServers(plan.agents, plan.credentials);
-      const preflightResult = validateCredentials(mcpServersPrecheck, plan.credentials);
-
-      if (!preflightResult.valid) {
-        // Include structured credential info in error for LLM recovery
-        const errorWithCredentials = [
-          formatMissingCredentialsError(preflightResult.missingCredentials),
-          "",
-          `missingCredentials: ${JSON.stringify(preflightResult.missingCredentials)}`,
-          "suggestedAction: connect_service",
-        ].join("\n");
-        return err(errorWithCredentials);
-      }
-
-      logger.info("Credential pre-flight passed", { servers: mcpServersPrecheck.map((s) => s.id) });
-
-      // 2. Enrich signals (prose → workspace.yml configs)
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Enriching signal configurations" },
-      });
-
-      const enrichedSignals = await Promise.all(
-        plan.signals.map((s) => enrichSignal(s, abortSignal)),
-      );
-
-      logger.info("Signal enrichment complete", { count: enrichedSignals.length });
-
-      // 3. Generate MCP server configs from agent needs
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Generating MCP server configurations" },
-      });
-
-      const mcpServers = await generateMCPServers(plan.agents, plan.credentials);
-
-      logger.info("MCP generation complete", {
-        count: mcpServers.length,
-        servers: mcpServers.map((s) => s.id),
-      });
-
-      // 4. Classify agents (bundled vs LLM)
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Classifying agents" },
-      });
-
-      const classifiedAgents = classifyAgents(plan);
-      const agents = enrichAgentCredentials(classifiedAgents, plan.credentials);
-
-      logger.info("Agent classification complete", {
-        count: agents.length,
-        bundled: agents.filter((a) => a.type.kind === "bundled").length,
-        llm: agents.filter((a) => a.type.kind === "llm").length,
-      });
-
-      // 5. MULTI-JOB LOOP: Generate FSM for each job
-      const fsms = new Map<string, ValidatedFSMDefinition>();
-      const generatedCodeMap: Record<string, string> = {}; // Track generated code for debugging
-      const codegenAttemptsMap: Record<string, number> = {}; // Track codegen attempts
-
-      for (const job of plan.jobs) {
-        logger.info(`Generating FSM for job: ${job.id}`);
-
-        stream?.emit({
-          type: "data-tool-progress",
-          data: { toolName: "FSM Creator", content: `Generating FSM for job: ${job.name}` },
+        logger.info("FSM compiled successfully", {
+          jobId: job.id,
+          fsmId: result.value.fsm.id,
+          stateCount: Object.keys(result.value.fsm.states).length,
         });
 
-        // Check for duplicate (defensive)
-        if (fsms.has(job.id)) {
-          return err(`Duplicate job ID: ${job.id}`);
-        }
-
-        // Filter and flatten agents for this job, then enrich with pipeline context
-        // Pipeline context fixes bugs like TEM-3625 where LLM chose wrong API params
-        const flattenedAgents = agents
-          .filter((a) => job.steps.some((s) => s.agentId === a.id))
-          .map(flattenAgent);
-        const jobAgents = await enrichAgentsWithPipelineContext(
-          flattenedAgents,
-          job.steps,
-          abortSignal,
-        );
-
-        const triggerSignal = plan.signals.find((s) => s.id === job.triggerSignalId);
-        if (!triggerSignal) {
-          return err(`Job '${job.id}' references unknown trigger signal '${job.triggerSignalId}'`);
-        }
-
-        // Generate TypeScript code via LLM with retry on validation failures
-        const MAX_RETRIES = 2;
-        let previousAttempt: PreviousAttempt | undefined;
-        let lastError: string | undefined;
-        let fsm: ValidatedFSMDefinition | undefined;
-
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          logger.info(`Generating builder code via LLM for job: ${job.id}`, {
-            attempt: attempt + 1,
-            maxAttempts: MAX_RETRIES + 1,
-            isRetry: attempt > 0,
-          });
-
-          const generatedCode = await generateFSMCode(
-            job,
-            jobAgents,
-            triggerSignal,
-            triggerSignal.payloadSchema,
-            abortSignal,
-            previousAttempt,
-          );
-
-          logger.info(`Generated ${generatedCode.length} chars of builder code for job: ${job.id}`);
-
-          // Save generated code for debugging
-          generatedCodeMap[job.id] = generatedCode;
-          codegenAttemptsMap[job.id] = attempt + 1;
-
-          // Execute code via Worker-based codegen (no imports needed - APIs injected in worker scope)
-          const codegenResult = await executeCodegen({ code: generatedCode, timeout: 30000 });
-
-          if (!codegenResult.success) {
-            const errorMsg = codegenResult.error.message;
-            logger.error("Codegen execution failed", {
-              jobId: job.id,
-              error: codegenResult.error,
-              attempt: attempt + 1,
-            });
-            lastError = `Failed to execute generated code for job '${job.id}': ${errorMsg}`;
-            previousAttempt = { code: generatedCode, error: errorMsg };
-            continue;
-          }
-
-          const buildResult = codegenResult.result;
-
-          if (!buildResult.success) {
-            const errorMsg = JSON.stringify(buildResult.error, null, 2);
-            logger.error("FSM build failed", {
-              jobId: job.id,
-              errors: buildResult.error,
-              attempt: attempt + 1,
-            });
-            lastError = `FSM build failed for job '${job.id}': ${errorMsg}`;
-            previousAttempt = { code: generatedCode, error: errorMsg };
-            continue;
-          }
-
-          // Validate FSM structure
-          const validationResult = validateFSMStructure(buildResult.value);
-          if (!validationResult.valid) {
-            const errorMsg = validationResult.errors.join("\n");
-            logger.error("FSM validation failed", {
-              jobId: job.id,
-              errors: validationResult.errors,
-              attempt: attempt + 1,
-            });
-            lastError = `FSM validation failed for job '${job.id}':\n${errorMsg}`;
-            previousAttempt = { code: generatedCode, error: errorMsg };
-            continue;
-          }
-
-          // Success!
-          fsm = buildResult.value;
-          logger.info("FSM validated successfully", {
-            jobId: job.id,
-            fsmId: fsm.id,
-            stateCount: Object.keys(fsm.states).length,
-            attempts: attempt + 1,
-          });
-          break;
-        }
-
-        // Check if we succeeded
-        if (!fsm) {
-          return err(lastError ?? `FSM generation failed for job '${job.id}' after all retries`);
-        }
-
-        // Store validated FSM
-        fsms.set(job.id, fsm);
+        fsms.push(result.value.fsm);
       }
 
-      logger.info("All FSMs generated successfully", { count: fsms.size });
+      logger.info("All FSMs compiled successfully", { count: fsms.length });
 
-      // 6. Build workspace config with all FSMs
+      // 3. Assemble workspace.yml — deterministic, no LLM
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Building workspace configuration" },
+        data: { toolName: "FSM Creator", content: "Assembling workspace configuration" },
       });
 
-      const workspaceConfig = buildWorkspaceConfig(plan, enrichedSignals, mcpServers, fsms);
+      const workspaceYml = buildWorkspaceYaml(
+        { workspace: blueprint.workspace, signals: blueprint.signals, agents: blueprint.agents },
+        blueprint,
+        fsms,
+        blueprint.credentialBindings,
+      );
 
-      // 7. Save to disk
+      // 4. Write to disk
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "FSM Creator", content: "Saving workspace file" },
       });
 
-      const workspaceName = toKebabCase(plan.workspace.name);
+      const workspaceName = toKebabCase(blueprint.workspace.name);
       const workspacePath = input.workspacePath || `./${workspaceName}`;
       await mkdir(workspacePath, { recursive: true });
 
-      const workspaceYml = stringifyYaml(workspaceConfig);
       const ymlPath = `${workspacePath}/workspace.yml`;
-
       await writeFile(ymlPath, workspaceYml, "utf-8");
 
-      // Register workspace with daemon
+      // 5. Register workspace with daemon
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "FSM Creator", content: "Registering workspace with daemon" },
@@ -320,8 +147,8 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         client.workspace.add.$post({
           json: {
             path: absoluteWorkspacePath,
-            name: plan.workspace.name,
-            description: plan.workspace.purpose,
+            name: blueprint.workspace.name,
+            description: blueprint.workspace.purpose,
           },
         }),
       );
@@ -338,28 +165,31 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         );
       }
 
-      logger.info("Workspace generation and registration complete", {
+      logger.info("Workspace compilation and registration complete", {
         workspacePath,
         workspaceId: registrationResponse.data.id,
         ymlPath,
-        signals: enrichedSignals.length,
-        mcpServers: mcpServers.length,
-        jobCount: plan.jobs.length,
-        totalStates: Array.from(fsms.values()).reduce(
-          (sum, fsm) => sum + Object.keys(fsm.states).length,
-          0,
-        ),
+        signals: blueprint.signals.length,
+        jobCount: blueprint.jobs.length,
+        totalStates: fsms.reduce((sum, fsm) => sum + Object.keys(fsm.states).length, 0),
       });
 
       return ok({
         workspaceId: registrationResponse.data.id,
-        workspaceName: plan.workspace.name,
-        workspaceDescription: plan.workspace.purpose,
+        workspaceName: blueprint.workspace.name,
+        workspaceDescription: blueprint.workspace.purpose,
         workspaceUrl: `/spaces/${registrationResponse.data.id}`,
-        jobCount: plan.jobs.length,
-        metadata: { generatedCode: generatedCodeMap, codegenAttempts: codegenAttemptsMap },
+        jobCount: blueprint.jobs.length,
+        metadata: { generatedCode: {}, codegenAttempts: {} },
       });
     } catch (error) {
+      if (error instanceof PipelineError) {
+        logger.error("Pipeline error during FSM creation", {
+          phase: error.phase,
+          cause: error.cause?.message,
+        });
+        return err(`Compilation failed at "${error.phase}": ${error.cause?.message}`);
+      }
       logger.error("FSM creation failed", { error: stringifyError(error) });
       return err(stringifyError(error));
     }
@@ -367,9 +197,10 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
 });
 
 /**
- * Load workspace plan artifact from storage
+ * Load v2 workspace blueprint artifact from storage.
+ * Returns error on v1 artifacts, telling user to re-plan.
  */
-async function loadWorkspacePlan(artifactId: string): Promise<WorkspacePlan> {
+async function loadBlueprint(artifactId: string): Promise<WorkspaceBlueprint> {
   const response = await parseResult(
     client.artifactsStorage[":id"].$get({ param: { id: artifactId } }),
   );
@@ -379,14 +210,25 @@ async function loadWorkspacePlan(artifactId: string): Promise<WorkspacePlan> {
   }
 
   const artifactData = response.data.artifact.data;
-  if (typeof artifactData.data === "string") {
-    throw new Error("Unexpected string data in workspace plan artifact");
+
+  // Reject v1 artifacts — user must re-plan with the new planner
+  if (artifactData.version === 1) {
+    throw new Error(
+      "This artifact uses the v1 plan format which is no longer supported by the workspace creator. " +
+        "Please create a new workspace plan using the workspace planner.",
+    );
   }
 
-  // Validate with Zod schema
-  const validationResult = WorkspacePlanSchema.safeParse(artifactData.data);
+  if (artifactData.version !== 2) {
+    throw new Error(
+      `Unsupported workspace plan version: ${(artifactData as { version: unknown }).version}`,
+    );
+  }
+
+  // Parse with Zod to validate structure
+  const validationResult = WorkspaceBlueprintSchema.safeParse(artifactData.data);
   if (!validationResult.success) {
-    throw new Error(`Invalid workspace plan data: ${validationResult.error.message}`);
+    throw new Error(`Invalid workspace blueprint data: ${validationResult.error.message}`);
   }
 
   return validationResult.data;

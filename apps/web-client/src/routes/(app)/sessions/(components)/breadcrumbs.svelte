@@ -1,10 +1,13 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import type { SessionDigest } from "@atlas/core/session/build-session-digest";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
 
-  let { session }: { session: SessionDigest } = $props();
+  interface Props {
+    session: { id: string; workspaceId?: string };
+  }
+
+  let { session }: Props = $props();
 </script>
 
 {#if session}

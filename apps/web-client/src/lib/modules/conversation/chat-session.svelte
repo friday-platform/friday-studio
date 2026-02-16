@@ -397,7 +397,7 @@
                       />
                     {:else if message.type === "connect_service" && message.provider}
                       <ConnectService provider={message.provider} {chat} />
-                    {:else if message.type === "workspace_creator" && !message.output.result.isError}
+                    {:else if message.type === "workspace_creator"}
                       <WorkspaceCreated output={message.output} />
                     {:else if message.type === "credential_linked"}
                       <CredentialLinked {message} />

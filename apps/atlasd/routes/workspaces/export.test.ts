@@ -112,6 +112,8 @@ function createExportTestApp(options: {
     getLibraryStorage: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     getAgentRegistry: vi.fn(),
   };
 

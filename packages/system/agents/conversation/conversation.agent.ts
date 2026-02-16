@@ -3,12 +3,18 @@
  *
  * Interactive conversation agent for workspace collaboration with:
  * - Persistent conversation history via daemon storage
- * - Tool execution through MCP server
+ * - Direct agent invocation for workspace-planner, fsm-workspace-creator, and skill-distiller
  * - Real-time streaming responses
  * - Task tracking with todos
  */
 import process from "node:process";
-import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
+import type {
+  AgentContext,
+  AtlasTools,
+  AtlasUIMessage,
+  AtlasUIMessageChunk,
+  StreamEmitter,
+} from "@atlas/agent-sdk";
 import { createAgent, ok, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
@@ -20,8 +26,6 @@ import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
-import { Client } from "@modelcontextprotocol/sdk/client";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   createUIMessageStream,
   hasToolCall,
@@ -33,7 +37,12 @@ import {
   tool,
 } from "ai";
 import { z } from "zod";
-import { WorkspacePlannerSuccessDataSchema } from "../workspace-planner/workspace-planner.agent.ts";
+import { fsmWorkspaceCreatorAgent } from "../fsm-workspace-creator/mod.ts";
+import { skillDistillerAgent } from "../skill-distiller/skill-distiller.agent.ts";
+import {
+  WorkspacePlannerSuccessDataSchema,
+  workspacePlannerAgent,
+} from "../workspace-planner/workspace-planner.agent.ts";
 import { getCapabilitiesSection } from "./capabilities.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
@@ -284,26 +293,36 @@ async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Pr
 }
 
 /**
- * Connect to agent server for system agents with custom inputSchemas.
- * Only used for workspace-planner and fsm-workspace-creator which need structured inputs.
- * Regular bundled agents (calendar, email, etc.) go through do_task tool.
+ * Create a StreamEmitter that bridges agent progress events to the conversation writer.
+ * Agents emit data-tool-progress events; the writer forwards them to the UI stream.
  */
-async function getAgentServerClient(streamId: string, logger: Logger) {
-  const client = new Client({ name: "atlas-streaming-client", version: "1.0.0" });
+function createAgentStreamEmitter(writer: {
+  write: (chunk: AtlasUIMessageChunk) => void;
+}): StreamEmitter {
+  return {
+    emit: (event) => {
+      try {
+        writer.write(event);
+      } catch {
+        // Writer may be closed — swallow errors from progress events
+      }
+    },
+    end: () => {},
+    error: () => {},
+  };
+}
 
-  const transport = new StreamableHTTPClientTransport(new URL("http://localhost:8080/agents"), {
-    requestInit: { headers: { "mcp-session-id": crypto.randomUUID(), "x-stream-id": streamId } },
-  });
-
-  try {
-    await client.connect(transport);
-    logger.info("Connected to Agent Server via MCP for system agents");
-  } catch (error) {
-    logger.error("Failed to connect to Agent Server", { error });
-    throw new Error(`Failed to connect to Agent Server: ${error}`);
-  }
-
-  return { agentServer: client, agentServerTransport: transport };
+/**
+ * Build a synthesized AgentContext from the conversation agent's own context.
+ * Used for direct agent invocation (no MCP round-trip).
+ */
+function buildAgentContext(
+  session: AgentContext["session"],
+  logger: Logger,
+  stream: StreamEmitter,
+  abortSignal?: AbortSignal,
+): AgentContext {
+  return { tools: {}, session, env: {}, stream, logger, abortSignal };
 }
 
 // Export the agent
@@ -359,15 +378,6 @@ export const conversationAgent = createAgent<string, ConversationResult>({
     } else {
       logger.error("Failed to load chat history", { error: res.error });
     }
-
-    /**
-     * Connect to Agent Server for system agents with custom inputSchemas.
-     * Regular agents (calendar, email, etc.) go through do_task tool.
-     */
-    const { agentServer, agentServerTransport } = await getAgentServerClient(
-      session.streamId,
-      logger,
-    );
 
     // Store the original error if streamText fails
     let originalStreamError: unknown = null;
@@ -453,57 +463,84 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         };
 
         /**
-         * Register ONLY system agents with custom inputSchemas as direct tools.
-         * These agents (workspace-planner, fsm-workspace-creator) need structured inputs.
-         * Regular bundled agents (calendar, email, etc.) are accessed via do_task tool.
+         * Register workspace-planner and fsm-workspace-creator as static tools.
+         * Direct invocation via .execute() — no MCP round-trip.
          */
-        const { tools: agentTools } = await agentServer.listTools();
-        const systemAgents: AtlasTools = {};
-        const systemAgentNames = ["workspace-planner", "fsm-workspace-creator"];
+        const agentStream = createAgentStreamEmitter(writer);
+        const agentContext = buildAgentContext(session, logger, agentStream, abortSignal);
 
-        for (const agent of agentTools) {
-          // Only register system agents with custom inputSchemas
-          if (!systemAgentNames.includes(agent.name)) continue;
-
-          logger.info("Registering system agent as direct tool", { agentName: agent.name });
-
-          const paramsSchema = structuredClone(agent.inputSchema);
-          delete paramsSchema.properties?._sessionContext;
-          paramsSchema.required = paramsSchema.required?.filter(
-            (r: string) => r !== "_sessionContext",
-          );
-
-          systemAgents[agent.name] = tool({
-            name: agent.name,
-            description: agent.description,
-            inputSchema: jsonSchema(paramsSchema),
-            execute: async (input) => {
-              const requestId = crypto.randomUUID();
-
-              logger.debug("Executing system agent", { agentName: agent.name, input });
-
-              try {
-                const result = await agentServer.callTool(
-                  {
-                    name: agent.name,
-                    arguments: { ...input, _sessionContext: sessionContext },
-                    _meta: { requestId },
-                  },
-                  undefined,
-                  { timeout: 1_200_000 },
-                );
-                return { result };
-              } catch (error) {
-                logger.error("System agent invocation failed", {
-                  error,
-                  agentName: agent.name,
-                  requestId,
-                });
-                throw error;
-              }
+        const systemAgents: AtlasTools = {
+          "workspace-planner": tool({
+            description: workspacePlannerAgent.metadata.description,
+            inputSchema: jsonSchema<{ intent: string; artifactId?: string }>({
+              type: "object",
+              properties: {
+                intent: {
+                  type: "string",
+                  description: "Workspace requirements or modification request",
+                },
+                artifactId: {
+                  type: "string",
+                  description: "Artifact ID to update (omit for new plans)",
+                },
+              },
+              required: ["intent"],
+            }),
+            execute: ({ intent, artifactId }) => {
+              logger.debug("Executing workspace-planner directly", { intent, artifactId });
+              return workspacePlannerAgent.execute({ intent, artifactId }, agentContext);
             },
-          });
-        }
+          }),
+          "fsm-workspace-creator": tool({
+            description: fsmWorkspaceCreatorAgent.metadata.description,
+            inputSchema: jsonSchema<{ artifactId: string; workspacePath?: string }>({
+              type: "object",
+              properties: {
+                artifactId: { type: "string", description: "WorkspacePlan artifact ID" },
+                workspacePath: { type: "string", description: "Path to workspace directory" },
+              },
+              required: ["artifactId"],
+            }),
+            execute: ({ artifactId, workspacePath }) => {
+              logger.debug("Executing fsm-workspace-creator directly", {
+                artifactId,
+                workspacePath,
+              });
+              return fsmWorkspaceCreatorAgent.execute({ artifactId, workspacePath }, agentContext);
+            },
+          }),
+          "skill-distiller": tool({
+            description: skillDistillerAgent.metadata.description,
+            inputSchema: jsonSchema<{
+              artifactIds: string[];
+              workspaceId: string;
+              name?: string;
+              focus?: string;
+              draftArtifactId?: string;
+            }>({
+              type: "object",
+              properties: {
+                artifactIds: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Artifact IDs containing corpus material",
+                },
+                workspaceId: { type: "string", description: "Target workspace for the skill" },
+                name: { type: "string", description: "Suggested skill name" },
+                focus: { type: "string", description: "What aspect to emphasize" },
+                draftArtifactId: { type: "string", description: "Existing draft to revise" },
+              },
+              required: ["artifactIds", "workspaceId"],
+            }),
+            execute: (input) => {
+              logger.debug("Executing skill-distiller directly", {
+                artifactCount: input.artifactIds.length,
+                workspaceId: input.workspaceId,
+              });
+              return skillDistillerAgent.execute(input, agentContext);
+            },
+          }),
+        };
 
         // Track system agent names for prompt injection
         const agentNames = Object.keys(systemAgents);
@@ -660,27 +697,18 @@ export const conversationAgent = createAgent<string, ConversationResult>({
             for (const step of steps) {
               for (const toolResult of step.toolResults) {
                 if (toolResult.toolName === "workspace-planner") {
-                  // Structure: toolResult.output.result.content[0].text is a JSON string
-                  // containing { result: { ok: true, data: WorkspacePlannerSuccessData } }
+                  // Direct invocation returns AgentPayload: { ok: true, data: ... }
                   try {
-                    const outer = z
+                    const result = z
                       .object({
                         output: z.object({
-                          result: z.object({ content: z.tuple([z.object({ text: z.string() })]) }),
-                        }),
-                      })
-                      .parse(toolResult);
-
-                    const inner = z
-                      .object({
-                        result: z.object({
                           ok: z.literal(true),
                           data: WorkspacePlannerSuccessDataSchema,
                         }),
                       })
-                      .parse(JSON.parse(outer.output.result.content[0].text));
+                      .parse(toolResult);
 
-                    if (inner.result.ok) {
+                    if (result.output.ok) {
                       return true;
                     }
                   } catch (e) {
@@ -1036,14 +1064,6 @@ export const conversationAgent = createAgent<string, ConversationResult>({
             errorEmitted = true;
           }
 
-          // Clean up MCP transport before returning error
-          try {
-            await agentServerTransport.close();
-            logger.info("Closed MCP transport after outer error");
-          } catch (closeError) {
-            logger.error("Failed to close MCP transport after outer error", { error: closeError });
-          }
-
           // Return error response instead of throwing
         } finally {
           // Remove the unhandled rejection handler to prevent memory leaks
@@ -1061,7 +1081,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
      * Even though this doesn't return a value, it *must* be awaited otherwise
      * the pipe will break before the LLM has a chance to respond.
      */
-    await pipeUIMessageStream(persistStreamMessage, stream).catch(async (pipeError) => {
+    await pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
       logger.error("pipeUIMessageStream failed", { error: pipeError });
 
       const apiError = parseAPICallError(pipeError);
@@ -1069,23 +1089,8 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         interceptedApiError = apiError;
       }
 
-      // Close MCP transport on error
-      try {
-        await agentServerTransport.close();
-        logger.info("Closed MCP transport after pipe error");
-      } catch (closeError) {
-        logger.error("Failed to close MCP transport", { error: closeError });
-      }
       throw pipeError;
     });
-
-    // Successfully completed - close MCP transport
-    try {
-      await agentServerTransport.close();
-      logger.info("Closed MCP transport after successful completion");
-    } catch (closeError) {
-      logger.error("Failed to close MCP transport", { error: closeError });
-    }
 
     return ok({ text: finalText });
   },

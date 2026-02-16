@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ReasoningResultStatusType } from "@atlas/core";
+  import type { SessionStatus } from "@atlas/core/session/session-events";
   import {
     createColumnHelper,
     createTable,
@@ -19,13 +19,14 @@
   const columnHelper = createColumnHelper<{
     sessionId: string;
     workspaceId: string;
-    status: ReasoningResultStatusType;
-    createdAt: string;
-    updatedAt: string;
-    summary?: string | undefined;
-    title?: string | undefined;
-    sessionType?: "conversation" | "task";
-    parentTitle?: string;
+    jobName: string;
+    task: string;
+    status: SessionStatus;
+    startedAt: string;
+    completedAt?: string;
+    durationMs?: number;
+    stepCount: number;
+    agentNames: string[];
   }>();
 
   const columns = [
@@ -34,17 +35,15 @@
       header: "Deployment",
       cell: (info) => {
         return renderComponent(DetailsColumn, {
-          job: info.row.original.sessionId,
-          summary: info.row.original.summary ?? "",
-          title: info.row.original.title,
-          sessionType: info.row.original.sessionType,
-          parentTitle: info.row.original.parentTitle,
+          job: info.row.original.jobName,
+          summary: info.row.original.task,
+          status: info.row.original.status,
         });
       },
       meta: { minWidth: "0" },
     }),
-    columnHelper.accessor("createdAt", {
-      id: "createdAt",
+    columnHelper.accessor("startedAt", {
+      id: "startedAt",
       header: "Date",
       cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
       meta: { align: "center", faded: true, shrink: true, size: "small" },

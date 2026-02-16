@@ -23,7 +23,10 @@ Load these skills before implementing:
 3. Read the full task description and acceptance criteria
 4. Explore the codebase - fill your context with relevant files and patterns
 5. Implement following existing patterns from recent commits
-6. Verify against acceptance criteria
+6. Verify:
+   - `deno check <your-changed-files>` — type errors are a hard stop, fix before proceeding
+   - `deno task test <file>` — tests must pass
+   - Check against acceptance criteria
 7. Commit using the format below
 8. Message the lead: "Task <id> complete: <1-line summary of what changed>"
 9. WAIT for lead approval before claiming next task

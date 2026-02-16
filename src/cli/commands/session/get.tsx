@@ -60,11 +60,11 @@ export const handler = async (argv: GetArgs): Promise<void> => {
     } else {
       // Render with Ink - convert client response to expected format
       const sessionDetail: SessionDetail = {
-        id: session.id,
-        signal: session.signal,
+        id: session.sessionId,
+        signal: session.jobName,
         status: session.status,
-        startedAt: session.startTime || "",
-        completedAt: session.endTime,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
         result: session.results,
       };
       const { unmount } = render(<SessionDetailCommand session={sessionDetail} />);

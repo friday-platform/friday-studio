@@ -6,7 +6,6 @@ import type {
   HealthRoutes,
   MCPRegistryRoutes,
   MeRoutes,
-  SessionHistoryRoutes,
   SessionsRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
@@ -34,7 +33,6 @@ export const client = {
   health: hc<HealthRoutes>(`${baseUrl}/health`),
   link: hc<LinkRoutes>(`${baseUrl}/api/link`),
   me: hc<MeRoutes>(`${baseUrl}/api/me`),
-  sessionHistory: hc<SessionHistoryRoutes>(`${baseUrl}/api/sessions-history`),
   sessions: hc<SessionsRoutes>(`${baseUrl}/api/sessions`),
   workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
   mcpRegistry: hc<MCPRegistryRoutes>(`${baseUrl}/api/mcp-registry`),

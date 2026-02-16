@@ -87,13 +87,25 @@ export function formatMessage(
       };
     }
 
-    if (part.type === "tool-fsm-workspace-creator" && part.output?.result?.content) {
-      return {
-        id: crypto.randomUUID(),
-        type: "workspace_creator",
-        timestamp: new Date().toISOString(),
-        output: part.output,
-      };
+    if (part.type === "tool-fsm-workspace-creator") {
+      // Direct invocation format: { ok: true, data: { workspaceId, ... } }
+      if (part.output?.ok === true && part.output?.data) {
+        return {
+          id: crypto.randomUUID(),
+          type: "workspace_creator",
+          timestamp: new Date().toISOString(),
+          output: part.output,
+        };
+      }
+      // MCP envelope format: { result: { content: [{ text: JSON }] } }
+      if (part.output?.result?.content) {
+        return {
+          id: crypto.randomUUID(),
+          type: "workspace_creator",
+          timestamp: new Date().toISOString(),
+          output: part.output,
+        };
+      }
     }
 
     if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {

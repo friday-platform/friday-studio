@@ -22,11 +22,28 @@ function normalizeNeed(need: string): string {
 }
 
 /**
+ * Removes keywords that are substrings of other, more specific keywords.
+ * Prevents "data" from surviving when "data-analysis" is also present,
+ * since the longer match is strictly more specific.
+ *
+ * @param keywords - Deduplicated keyword list
+ * @returns Filtered list with only the most specific keywords
+ */
+function removeSubsumedKeywords(keywords: string[]): string[] {
+  return keywords.filter((kw) => !keywords.some((other) => other !== kw && other.includes(kw)));
+}
+
+/**
  * Extracts known keywords from verbose need descriptions.
  * Used by workspace-creation to handle verbose needs from plans.
  *
  * Example: "Slack API access to post messages" → ["slack"]
  * Example: "github" → ["github"]
+ * Example: "data-analysis" → ["data-analysis"] (not ["data-analysis", "data"])
+ *
+ * When multiple keywords match, shorter keywords that are substrings of longer
+ * matches are removed to avoid ambiguity (e.g., "data" is dropped when
+ * "data-analysis" is present).
  *
  * @param need - Need string (can be keyword or verbose description)
  * @returns Array of known keywords found in the need
@@ -61,8 +78,8 @@ export function extractKeywordsFromNeed(need: string): string[] {
     return [normalized];
   }
 
-  // Remove duplicates
-  return [...new Set(keywords)];
+  // Remove duplicates, then drop less-specific keywords subsumed by longer ones
+  return removeSubsumedKeywords([...new Set(keywords)]);
 }
 
 /**

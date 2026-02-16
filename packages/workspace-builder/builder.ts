@@ -1,11 +1,8 @@
 /**
- * FSMBuilder - Fluent API for building FSM definitions
+ * Fluent API for building FSM definitions.
  *
- * Features:
- * - Error collection (doesn't throw, accumulates errors)
- * - Forgiving API (addState() auto-exits previous context)
- * - Function name normalization (kebab-case → snake_case)
- * - Build-time validation
+ * Accumulates errors instead of throwing. addState() auto-exits previous context.
+ * Function names are normalized from kebab-case to snake_case.
  */
 
 import type { Action, FSMDefinition, JSONSchema, StateDefinition } from "../fsm-engine/mod.ts";
@@ -26,7 +23,6 @@ export class FSMBuilder {
   private documentTypes = new Map<string, JSONSchema>();
   private errors: BuildError[] = [];
 
-  // Context tracking for fluent interface
   private currentState?: StateConfig;
   private currentTransition?: TransitionConfig;
 
@@ -34,22 +30,12 @@ export class FSMBuilder {
     this.id = id;
   }
 
-  // ============================================================
-  // State Management
-  // ============================================================
-
-  /**
-   * Set the initial state for the FSM
-   */
   setInitialState(stateName: string): this {
     this.initial = stateName;
     return this;
   }
 
-  /**
-   * Add a new state to the FSM
-   * Auto-exits previous state context (forgiving API)
-   */
+  /** Auto-exits previous state context (forgiving API). */
   addState(name: string): this {
     if (this.states.has(name)) {
       this.errors.push({
@@ -60,7 +46,6 @@ export class FSMBuilder {
       return this;
     }
 
-    // Auto-exit previous context (forgiving API design)
     this.currentState = { name, entry: [], on: {} };
     this.currentTransition = undefined;
 
@@ -68,19 +53,12 @@ export class FSMBuilder {
     return this;
   }
 
-  /**
-   * Explicitly exit state context
-   * Optional - addState() will auto-exit, but available for explicit style
-   */
   endState(): this {
     this.currentState = undefined;
     this.currentTransition = undefined;
     return this;
   }
 
-  /**
-   * Mark current state as final
-   */
   final(): this {
     if (!this.currentState) {
       this.errors.push({
@@ -94,13 +72,6 @@ export class FSMBuilder {
     return this;
   }
 
-  // ============================================================
-  // Entry Actions
-  // ============================================================
-
-  /**
-   * Add entry action to current state
-   */
   onEntry(action: Action): this {
     if (!this.currentState) {
       this.errors.push({
@@ -114,14 +85,7 @@ export class FSMBuilder {
     return this;
   }
 
-  // ============================================================
-  // Transitions
-  // ============================================================
-
-  /**
-   * Add transition from current state on event
-   * Enters transition context for withGuard/withAction
-   */
+  /** Enters transition context for withGuard/withAction. */
   onTransition(event: string, target: string): this {
     if (!this.currentState) {
       this.errors.push({
@@ -131,15 +95,30 @@ export class FSMBuilder {
       return this;
     }
 
-    // Exit previous transition context if any
     this.currentTransition = { target, guards: [], actions: [] };
     this.currentState.on[event] = this.currentTransition;
     return this;
   }
 
-  /**
-   * Add guard to current transition
-   */
+  /** Registers multiple guarded transitions for a single event (conditional branches). */
+  onTransitions(event: string, transitions: Array<{ target: string; guards: string[] }>): this {
+    if (!this.currentState) {
+      this.errors.push({
+        type: "no_state_context",
+        message: "onTransitions() called without addState() context",
+      });
+      return this;
+    }
+
+    this.currentTransition = undefined;
+    this.currentState.on[event] = transitions.map((t) => ({
+      target: t.target,
+      guards: [...t.guards],
+      actions: [],
+    }));
+    return this;
+  }
+
   withGuard(guardName: string): this {
     if (!this.currentTransition) {
       this.errors.push({
@@ -153,9 +132,6 @@ export class FSMBuilder {
     return this;
   }
 
-  /**
-   * Add action to current transition
-   */
   withAction(action: Action): this {
     if (!this.currentTransition) {
       this.errors.push({
@@ -169,16 +145,8 @@ export class FSMBuilder {
     return this;
   }
 
-  // ============================================================
-  // Functions & Document Types
-  // ============================================================
-
-  /**
-   * Add function definition to FSM
-   * Automatically normalizes name to snake_case (replaces hyphens with underscores)
-   */
+  /** Normalizes name to snake_case (kebab-case hyphens become underscores). */
   addFunction(name: string, type: "action" | "guard", code: string): this {
-    // Normalize name to valid JS identifier (kebab-case → snake_case)
     const normalized = name.replace(/-/g, "_");
 
     if (this.functions.has(normalized)) {
@@ -194,9 +162,6 @@ export class FSMBuilder {
     return this;
   }
 
-  /**
-   * Add document type schema to FSM
-   */
   addDocumentType(name: string, schema: JSONSchema): this {
     if (this.documentTypes.has(name)) {
       this.errors.push({
@@ -211,21 +176,11 @@ export class FSMBuilder {
     return this;
   }
 
-  // ============================================================
-  // Build
-  // ============================================================
-
-  /**
-   * Build and validate FSM definition
-   * Returns Result with either FSMDefinition or array of BuildErrors
-   */
   build(): Result<FSMDefinition, BuildError[]> {
-    // Return accumulated errors first
     if (this.errors.length > 0) {
       return { success: false, error: this.errors };
     }
 
-    // Validate initial state
     if (!this.initial) {
       return {
         success: false,
@@ -251,38 +206,41 @@ export class FSMBuilder {
       };
     }
 
-    // Validate state references in transitions
     const validationErrors: BuildError[] = [];
 
     for (const [stateName, state] of this.states) {
-      for (const [event, transition] of Object.entries(state.on)) {
-        if (!this.states.has(transition.target)) {
-          validationErrors.push({
-            type: "invalid_state_reference",
-            message: `State '${stateName}' has transition on '${event}' to undefined state '${transition.target}'`,
-            context: { stateName, event, targetState: transition.target },
-          });
-        }
+      for (const [event, transitionOrArray] of Object.entries(state.on)) {
+        const transitions = Array.isArray(transitionOrArray)
+          ? transitionOrArray
+          : [transitionOrArray];
 
-        // Validate guard references
-        for (const guard of transition.guards) {
-          if (!this.functions.has(guard)) {
+        for (const transition of transitions) {
+          if (!this.states.has(transition.target)) {
             validationErrors.push({
-              type: "invalid_guard_reference",
-              message: `State '${stateName}' transition on '${event}' references undefined guard '${guard}'`,
-              context: { stateName, event, guardName: guard },
+              type: "invalid_state_reference",
+              message: `State '${stateName}' has transition on '${event}' to undefined state '${transition.target}'`,
+              context: { stateName, event, targetState: transition.target },
             });
-          } else if (this.functions.get(guard)?.type !== "guard") {
-            validationErrors.push({
-              type: "invalid_guard_reference",
-              message: `State '${stateName}' transition on '${event}' references '${guard}' which is an action, not a guard`,
-              context: { stateName, event, guardName: guard },
-            });
+          }
+
+          for (const guard of transition.guards) {
+            if (!this.functions.has(guard)) {
+              validationErrors.push({
+                type: "invalid_guard_reference",
+                message: `State '${stateName}' transition on '${event}' references undefined guard '${guard}'`,
+                context: { stateName, event, guardName: guard },
+              });
+            } else if (this.functions.get(guard)?.type !== "guard") {
+              validationErrors.push({
+                type: "invalid_guard_reference",
+                message: `State '${stateName}' transition on '${event}' references '${guard}' which is an action, not a guard`,
+                context: { stateName, event, guardName: guard },
+              });
+            }
           }
         }
       }
 
-      // Validate function references in entry actions
       for (const action of state.entry) {
         if (action.type === "code") {
           const funcName = action.function;
@@ -307,36 +265,34 @@ export class FSMBuilder {
       return { success: false, error: validationErrors };
     }
 
-    // Convert internal representation to FSMDefinition
     const states: Record<string, StateDefinition> = {};
 
     for (const [name, config] of this.states) {
       const state: StateDefinition = {};
 
-      // Add entry actions if present
       if (config.entry.length > 0) {
         state.entry = config.entry;
       }
 
-      // Add transitions if present
       if (Object.keys(config.on).length > 0) {
         state.on = {};
-        for (const [event, transition] of Object.entries(config.on)) {
-          const transitionDef: TransitionDefinition = { target: transition.target };
-
-          // Only include guards/actions if they exist (avoid undefined for YAML serialization)
-          if (transition.guards.length > 0) {
-            transitionDef.guards = transition.guards;
+        for (const [event, transitionOrArray] of Object.entries(config.on)) {
+          if (Array.isArray(transitionOrArray)) {
+            state.on[event] = transitionOrArray.map((t) => {
+              const def: TransitionDefinition = { target: t.target };
+              if (t.guards.length > 0) def.guards = t.guards;
+              if (t.actions.length > 0) def.actions = t.actions;
+              return def;
+            });
+          } else {
+            const def: TransitionDefinition = { target: transitionOrArray.target };
+            if (transitionOrArray.guards.length > 0) def.guards = transitionOrArray.guards;
+            if (transitionOrArray.actions.length > 0) def.actions = transitionOrArray.actions;
+            state.on[event] = def;
           }
-          if (transition.actions.length > 0) {
-            transitionDef.actions = transition.actions;
-          }
-
-          state.on[event] = transitionDef;
         }
       }
 
-      // Mark as final if needed
       if (config.final) {
         state.type = "final";
       }
@@ -344,13 +300,11 @@ export class FSMBuilder {
       states[name] = state;
     }
 
-    // Convert functions Map to Record
     const functions: Record<string, { type: "action" | "guard"; code: string }> = {};
     for (const [name, func] of this.functions) {
       functions[name] = { type: func.type, code: func.code };
     }
 
-    // Convert document types Map to Record
     const documentTypes: Record<string, JSONSchema> = {};
     for (const [name, schema] of this.documentTypes) {
       documentTypes[name] = schema;

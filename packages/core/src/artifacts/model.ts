@@ -1,3 +1,4 @@
+import { WorkspaceBlueprintSchema } from "@atlas/schemas/workspace";
 import { z } from "zod";
 import {
   CalendarScheduleSchema,
@@ -19,10 +20,16 @@ export interface ArtifactRevisionSummary {
   revisionMessage?: string;
 }
 
-const WorkspacePlanArtifactSchema = z.object({
+const WorkspacePlanV1ArtifactSchema = z.object({
   type: z.literal("workspace-plan"),
   version: z.literal(1),
   data: WorkspacePlanSchema,
+});
+
+const WorkspacePlanV2ArtifactSchema = z.object({
+  type: z.literal("workspace-plan"),
+  version: z.literal(2),
+  data: WorkspaceBlueprintSchema,
 });
 
 const CalendarScheduleArtifactSchema = z.object({
@@ -74,8 +81,9 @@ const DatabaseArtifactSchema = z.object({
 });
 
 /** Artifact data schemas for storage (output) */
-export const ArtifactDataSchema = z.discriminatedUnion("type", [
-  WorkspacePlanArtifactSchema,
+export const ArtifactDataSchema = z.union([
+  WorkspacePlanV1ArtifactSchema,
+  WorkspacePlanV2ArtifactSchema,
   CalendarScheduleArtifactSchema,
   SummaryArtifactSchema,
   SlackSummaryArtifactSchema,
@@ -90,7 +98,8 @@ export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
 export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
 
 /** Artifact data schemas for creation (input) */
-const WorkspacePlanInputSchema = WorkspacePlanArtifactSchema;
+const WorkspacePlanV1InputSchema = WorkspacePlanV1ArtifactSchema;
+const WorkspacePlanV2InputSchema = WorkspacePlanV2ArtifactSchema;
 const CalendarScheduleInputSchema = CalendarScheduleArtifactSchema;
 const SummaryInputSchema = SummaryArtifactSchema;
 const SlackSummaryInputSchema = SlackSummaryArtifactSchema;
@@ -104,8 +113,9 @@ const WebSearchInputSchema = WebSearchArtifactSchema;
 const SkillDraftInputSchema = SkillDraftArtifactSchema;
 const DatabaseInputSchema = DatabaseArtifactSchema;
 
-export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
-  WorkspacePlanInputSchema,
+export const ArtifactDataInputSchema = z.union([
+  WorkspacePlanV1InputSchema,
+  WorkspacePlanV2InputSchema,
   CalendarScheduleInputSchema,
   SummaryInputSchema,
   SlackSummaryInputSchema,

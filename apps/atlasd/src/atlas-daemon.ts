@@ -8,6 +8,7 @@ import {
   AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
   GlobalMCPServerPool,
+  LocalSessionHistoryAdapter,
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
@@ -15,12 +16,14 @@ import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { flush as flushSentry } from "@atlas/sentry";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "@atlas/workspace";
 import type {
   WorkspaceSignalRegistrar,
   WorkspaceSignalTriggerCallback,
 } from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@atlas-vendor/hono-mcp";
+import { join } from "@std/path";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
@@ -50,7 +53,7 @@ import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
-import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
+import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
@@ -58,6 +61,7 @@ import { userRoutes } from "../routes/user/index.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
+import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import { StreamRegistry } from "./stream-registry.ts";
@@ -107,6 +111,8 @@ export class AtlasDaemon {
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   public streamRegistry!: StreamRegistry;
+  public sessionStreamRegistry!: SessionStreamRegistry;
+  public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
   // Store per-session MCP servers and transports
@@ -172,6 +178,12 @@ export class AtlasDaemon {
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
+      },
+      get sessionStreamRegistry() {
+        return this.daemon.sessionStreamRegistry;
+      },
+      get sessionHistoryAdapter() {
+        return this.daemon.sessionHistoryAdapter;
       },
     };
     // Only pass env var origins to global CORS (production)
@@ -320,6 +332,13 @@ export class AtlasDaemon {
     // Initialize StreamRegistry
     this.streamRegistry = new StreamRegistry();
     this.streamRegistry.start();
+
+    // Initialize session history v2 adapter + registry
+    this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
+      join(getAtlasHome(), "sessions-v2"),
+    );
+    this.sessionStreamRegistry = new SessionStreamRegistry();
+    this.sessionStreamRegistry.start();
 
     // Start SSE health check interval
     this.startSSEHealthCheck();
@@ -598,7 +617,6 @@ export class AtlasDaemon {
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);
-    this.app.route("/api/sessions-history", sessionHistoryRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
@@ -972,6 +990,8 @@ export class AtlasDaemon {
           workspacePath, // Pass workspace path for daemon mode
           mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
+          createSessionStream: (sessionId) =>
+            this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
             // Record session completion metric
             // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
@@ -1472,6 +1492,9 @@ export class AtlasDaemon {
 
     // Shutdown StreamRegistry
     this.streamRegistry?.shutdown();
+
+    // Shutdown SessionStreamRegistry
+    this.sessionStreamRegistry?.shutdown();
 
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {

@@ -20,7 +20,6 @@ export type {
   FSMEngineOptions,
 } from "./fsm-engine.ts";
 export { FSMEngine } from "./fsm-engine.ts";
-export { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 // LLM integration
 export { AtlasLLMProviderAdapter } from "./llm-provider-adapter.ts";
 // FSM loader with validation

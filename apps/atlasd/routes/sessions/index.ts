@@ -1,19 +1,33 @@
-import { SessionHistoryStorage } from "@atlas/core";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
+import { buildSessionView, type SessionSummary, type SessionView } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 
-interface SessionInfo {
-  id: string;
-  workspaceId: string;
-  status: string;
-  summary: string;
-  signal: string;
-  startTime?: string;
-  endTime?: string;
-  progress: number;
+const ListQuery = z.object({ workspaceId: z.string().optional() });
+
+/**
+ * Build a SessionSummary from a SessionView (for active sessions
+ * that only exist as in-memory event buffers).
+ */
+function viewToSummary(view: SessionView): SessionSummary {
+  return {
+    sessionId: view.sessionId,
+    workspaceId: view.workspaceId,
+    jobName: view.jobName,
+    task: view.task,
+    status: view.status,
+    startedAt: view.startedAt,
+    completedAt: view.completedAt,
+    durationMs: view.durationMs,
+    stepCount: view.agentBlocks.length,
+    agentNames: view.agentBlocks.map((b) => b.agentName),
+    aiSummary: view.aiSummary,
+  };
 }
 
 /**
@@ -23,120 +37,115 @@ interface SessionInfo {
  */
 const sessionsRoutes = daemonFactory
   .createApp()
-  // List sessions across all workspaces
-  .get(
-    "/",
-    zValidator(
-      "query",
-      z.object({
-        limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-        cursor: z.string().optional(),
-      }),
-    ),
-    (c) => {
-      const { limit, cursor } = c.req.valid("query");
-      const ctx = c.get("app");
-      const allSessions: SessionInfo[] = [];
+  /** List session summaries, optionally filtered by workspace. */
+  .get("/", zValidator("query", ListQuery), async (c) => {
+    const { workspaceId } = c.req.valid("query");
+    const ctx = c.get("app");
+    const { sessionStreamRegistry: registry, sessionHistoryAdapter: adapter } = ctx;
 
-      for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-        const sessions = runtime.getSessions().map((activeSession) => ({
-          id: activeSession.id,
-          workspaceId,
-          status: activeSession.session.status,
-          summary: activeSession.session.summarize(),
-          signal: activeSession.signalId,
-          startTime: activeSession.startedAt.toISOString(),
-          endTime: undefined, // Not tracked in current implementation
-          progress: activeSession.session.progress(),
-        }));
-        allSessions.push(...sessions);
+    // Completed sessions from adapter
+    const completedSummaries = await adapter.listByWorkspace(workspaceId);
+
+    // Active sessions from registry — reduce in-memory buffers to summaries
+    const activeSummaries: SessionSummary[] = [];
+    for (const stream of registry.listActive()) {
+      const view = buildSessionView(stream.getBufferedEvents());
+      if (!workspaceId || view.workspaceId === workspaceId) {
+        activeSummaries.push(viewToSummary(view));
       }
+    }
 
-      // Sort by startTime desc (newest first)
-      allSessions.sort((a, b) => {
-        const ta = a.startTime ?? "";
-        const tb = b.startTime ?? "";
-        return tb.localeCompare(ta);
+    // Merge and sort by startedAt descending
+    const sessions = [...activeSummaries, ...completedSummaries].sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
+
+    return c.json({ sessions }, 200);
+  })
+  /**
+   * GET /api/sessions/:id/stream
+   * SSE endpoint for real-time session events.
+   *
+   * Active session: replays buffered durable events, then streams live events.
+   * Finalized session (still in registry): replays all events including
+   * session:complete, then closes.
+   * Completed session (v2 adapter): returns 404 — client falls back to
+   * GET /:id JSON endpoint, which returns the full SessionView.
+   * Old-format session (v1 JSON file exists): returns 410 Gone.
+   */
+  .get("/:id/stream", async (c) => {
+    const ctx = c.get("app");
+    const sessionId = c.req.param("id");
+    const registry = ctx.sessionStreamRegistry;
+
+    // 1. Check registry for active or recently-finalized stream
+    const stream = registry.get(sessionId);
+    if (stream) {
+      const sseStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          stream.subscribe(controller);
+
+          c.req.raw.signal.addEventListener("abort", () => {
+            stream.unsubscribe(controller);
+          });
+        },
       });
 
-      // Apply cursor: skip everything up to and including the cursor session
-      let startIndex = 0;
-      if (cursor) {
-        const cursorIndex = allSessions.findIndex((s) => s.id === cursor);
-        if (cursorIndex !== -1) {
-          startIndex = cursorIndex + 1;
-        }
-      }
+      return c.body(sseStream, 200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+    }
 
-      const page = allSessions.slice(startIndex, startIndex + limit + 1);
-      const hasMore = page.length > limit;
-      const items = hasMore ? page.slice(0, limit) : page;
-      const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
+    // 2. Check for old-format session (v1 JSON file)
+    const oldSessionPath = join(getAtlasHome(), "sessions", `${sessionId}.json`);
+    try {
+      await stat(oldSessionPath);
+      return c.json({ error: "Session uses outdated storage format" }, 410);
+    } catch {
+      // File doesn't exist — not an old-format session
+    }
 
-      return c.json({ items, nextCursor, total: allSessions.length }, 200);
-    },
-  )
-  // Get specific session from any workspace
+    // 3. Unknown session — client falls back to GET /:id JSON endpoint
+    return c.json({ error: `Session not found: ${sessionId}` }, 404);
+  })
+  /** Get a single session — checks active runtimes, v2 registry, v2 adapter. */
   .get("/:id", async (c) => {
     const ctx = c.get("app");
     const sessionId = c.req.param("id");
 
-    // 1. Check active runtimes first (in-memory sessions)
-    for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      const activeSession = runtime.getSessions().find((s) => s.id === sessionId);
-      if (activeSession) {
-        return c.json(
-          {
-            id: activeSession.id,
-            workspaceId,
-            status: activeSession.session.status,
-            progress: activeSession.session.progress(),
-            summary: activeSession.session.summarize(),
-            signal: activeSession.signalId,
-            startTime: activeSession.startedAt.toISOString(),
-            endTime: undefined, // Not tracked in current implementation
-            artifacts: activeSession.session.getArtifacts(),
-          },
-          200,
-        );
-      }
+    // 1. Check v2 registry (active or recently-finalized sessions)
+    const registry = ctx.sessionStreamRegistry;
+    const stream = registry.get(sessionId);
+    if (stream) {
+      const view = buildSessionView(stream.getBufferedEvents());
+      return c.json(view, 200);
     }
 
-    // 2. Fallback to history storage for completed sessions
-    const historyResult = await SessionHistoryStorage.getSessionMetadata(sessionId);
-
-    if (!historyResult.ok) {
-      logger.error("Failed to query session history", { sessionId, error: historyResult.error });
-      return c.json({ error: `Session not found: ${sessionId}` }, 404);
+    // 2. Check v2 adapter (completed sessions persisted to disk)
+    const adapter = ctx.sessionHistoryAdapter;
+    const view = await adapter.get(sessionId);
+    if (view) {
+      return c.json(view, 200);
     }
 
-    if (historyResult.data) {
-      // Found in history storage
-      return c.json(
-        {
-          id: historyResult.data.sessionId,
-          workspaceId: historyResult.data.workspaceId,
-          status: historyResult.data.status,
-          progress: 100, // Completed sessions are always 100%
-          summary: historyResult.data.summary || `Session ${sessionId}`,
-          signal: historyResult.data.signal.id,
-          startTime: historyResult.data.createdAt,
-          endTime: historyResult.data.updatedAt,
-          artifacts: [], // Could load from timeline if needed
-          source: "history", // Indicate this came from storage
-        },
-        200,
-      );
+    // 3. Check for old-format session (v1 JSON file)
+    const oldSessionPath = join(getAtlasHome(), "sessions", `${sessionId}.json`);
+    try {
+      await stat(oldSessionPath);
+      return c.json({ error: "Session uses outdated storage format" }, 410);
+    } catch {
+      // File doesn't exist — not an old-format session
     }
 
     return c.json({ error: `Session not found: ${sessionId}` }, 404);
   })
-  // DELETE /api/sessions/:id - Cancel a session
+  /** Cancel a running session. */
   .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
     const { id } = c.req.valid("param");
     const ctx = c.get("app");
 
-    // Find session across all runtimes
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
       const activeSession = runtime.getSessions().find((s) => s.id === id);
       if (activeSession) {
@@ -155,5 +164,3 @@ const sessionsRoutes = daemonFactory
 
 export { sessionsRoutes };
 export type SessionsRoutes = typeof sessionsRoutes;
-export type { SessionHistoryRoutes } from "./history.ts";
-export { sessionHistoryRoutes } from "./history.ts";

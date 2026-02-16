@@ -21,9 +21,8 @@ import { stringifyError } from "@atlas/utils";
 import { type CoreMessage, type ImagePart, type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
-import { expandArtifactRefsInDocuments, extractRefs } from "./artifact-expansion.ts";
+import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
-import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
 import * as serializer from "./serializer.ts";
 import type {
@@ -33,6 +32,7 @@ import type {
   Context,
   Document,
   EmittedEvent,
+  FSMActionExecutionEvent,
   FSMDefinition,
   FSMLLMOutput,
   LLMActionTrace,
@@ -45,6 +45,104 @@ import type {
 import { WorkerExecutor } from "./worker-executor.ts";
 
 const FSMStateSchema = z.object({ state: z.string() });
+
+const PrepareResultSchema = z
+  .object({ task: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() })
+  .passthrough();
+
+type PrepareResult = z.infer<typeof PrepareResultSchema>;
+
+/**
+ * Parse a code action return value into a PrepareResult.
+ * Returns undefined for null, non-conforming, or empty (neither task nor config) results.
+ */
+export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
+  if (raw == null) return undefined;
+
+  const parsed = PrepareResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.debug("Code action return value did not match PrepareResultSchema", {
+      error: parsed.error.message,
+    });
+    return undefined;
+  }
+
+  // Filter out empty results (neither task nor config present)
+  if (parsed.data.task == null && parsed.data.config == null) {
+    return undefined;
+  }
+
+  return parsed.data;
+}
+
+/**
+ * Derive inputSnapshot for action execution events.
+ * Prefers prepare result when available, falls back to legacy request document lookup
+ * for backward compatibility with unrecompiled workspaces.
+ */
+export function getInputSnapshot(
+  prepareResult: PrepareResult | undefined,
+  action: { type: string; outputTo?: string },
+  documents: Map<string, unknown>,
+): { task?: string; config?: Record<string, unknown> } | undefined {
+  // New path: use prepare result when available
+  if (prepareResult) {
+    const { task, config } = prepareResult;
+    if (task || config) return { task, config };
+  }
+
+  // Fallback: old-style request document lookup (backward compat)
+  // Supports unrecompiled workspaces that still use createDoc in prepare fns.
+  // Remove this fallback when all workspaces are recompiled.
+  return findRequestDocumentLegacy(action, documents);
+}
+
+/**
+ * Derive request document ID from action outputTo field.
+ * Convention: foo_result -> foo-request (underscore to kebab-case)
+ * @deprecated Remove once all workspaces are recompiled to use prepare return values.
+ */
+function getRequestDocIdFromOutputTo(outputTo: string): string | undefined {
+  const match = outputTo.match(/^(.+)_result$/);
+  if (!match?.[1]) return undefined;
+
+  const kebab = match[1].replaceAll("_", "-");
+  return `${kebab}-request`;
+}
+
+/**
+ * Find request document for an action based on its outputTo field.
+ * Returns task and config from the request document if found.
+ * @deprecated Remove once all workspaces are recompiled to use prepare return values.
+ */
+function findRequestDocumentLegacy(
+  action: { type: string; outputTo?: string },
+  documents: Map<string, unknown>,
+): { task?: string; requestDocId?: string; config?: Record<string, unknown> } | undefined {
+  // Get outputTo from agent or llm actions only
+  const outputTo = action.type === "agent" || action.type === "llm" ? action.outputTo : undefined;
+
+  if (!outputTo) return undefined;
+
+  const requestDocId = getRequestDocIdFromOutputTo(outputTo);
+  if (!requestDocId) return undefined;
+
+  const doc = documents.get(requestDocId);
+  if (!doc) return undefined;
+
+  const data = (doc as { data?: Record<string, unknown> }).data;
+  if (!data) return undefined;
+
+  const task = typeof data.task === "string" ? data.task : undefined;
+  const config =
+    typeof data.config === "object" && data.config !== null
+      ? (data.config as Record<string, unknown>)
+      : undefined;
+
+  if (!task && !config) return undefined;
+
+  return { task, requestDocId, config };
+}
 
 type LLMResult = AgentResult<string, FSMLLMOutput>;
 
@@ -183,6 +281,7 @@ export interface FSMEngineOptions {
 export class FSMEngine {
   private _currentState: string;
   private _documents = new Map<string, Document>();
+  private _results = new Map<string, Record<string, unknown>>();
   private _signalQueue: SignalWithContext[] = [];
   private _processing = false;
   private _initialized = false;
@@ -199,10 +298,10 @@ export class FSMEngine {
   private _processedSignalsCount = 0;
 
   constructor(
-    private definition: FSMDefinition,
+    private _definition: FSMDefinition,
     private options: FSMEngineOptions,
   ) {
-    this._currentState = definition.initial;
+    this._currentState = _definition.initial;
 
     // Documents will be loaded in initialize() to avoid race condition
     // between definition and persistent storage
@@ -249,11 +348,11 @@ export class FSMEngine {
     }
 
     // Compile document type schemas
-    if (this.definition.documentTypes) {
-      for (const [typeName, jsonSchema] of Object.entries(this.definition.documentTypes)) {
+    if (this._definition.documentTypes) {
+      for (const [typeName, jsonSchema] of Object.entries(this._definition.documentTypes)) {
         try {
-          validateJSONSchema(jsonSchema, `documentTypes.${typeName}`);
-          const zodSchema = jsonSchemaToZod(jsonSchema);
+          const raw: Record<string, unknown> = jsonSchema;
+          const zodSchema = z.fromJSONSchema(raw);
           this._compiledSchemas.set(typeName, zodSchema);
           logger.debug(`Compiled schema for document type: ${typeName}`);
         } catch (error) {
@@ -265,8 +364,8 @@ export class FSMEngine {
     }
 
     // Load and compile guard/action functions
-    if (this.definition.functions) {
-      for (const [name, func] of Object.entries(this.definition.functions)) {
+    if (this._definition.functions) {
+      for (const [name, func] of Object.entries(this._definition.functions)) {
         try {
           // Validate syntax and auto-fix common LLM escaping issues
           const validatedCode = validateAndFixFunctionSyntax(func.code, name);
@@ -287,7 +386,7 @@ export class FSMEngine {
     }
 
     // Load documents: storage first (if exists), then definition fallback
-    const stored = await this.options.documentStore.list(this.options.scope, this.definition.id);
+    const stored = await this.options.documentStore.list(this.options.scope, this._definition.id);
 
     if (stored.length > 0) {
       // FSM has been run before - restore from persistent storage
@@ -295,7 +394,7 @@ export class FSMEngine {
       for (const id of stored) {
         const readResult = await this.options.documentStore.read(
           this.options.scope,
-          this.definition.id,
+          this._definition.id,
           id,
           FSMDocumentDataSchema,
         );
@@ -307,14 +406,23 @@ export class FSMEngine {
         if (doc) {
           const docType = doc.data.type;
           const docData = doc.data.data;
-          this.validateDocumentData(docType, docData, id);
+          try {
+            this.validateDocumentData(docType, docData, id);
+          } catch (err) {
+            // Stored documents were validated at write time — restore failures
+            // are typically JSON round-trip issues (null vs undefined) or schema
+            // changes between runs. Warn and restore anyway.
+            logger.warn(`Restoring document "${id}" despite validation error`, {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
           this._documents.set(id, { id, type: docType, data: docData });
         }
       }
     } else if (!stateRestored) {
       // First run - initialize from FSM definition
       logger.debug("No stored documents found, initializing from FSM definition");
-      const initialState = this.definition.states[this._currentState];
+      const initialState = this._definition.states[this._currentState];
       if (initialState?.documents) {
         for (const doc of initialState.documents) {
           this.validateDocumentData(doc.type, doc.data, doc.id);
@@ -361,6 +469,8 @@ export class FSMEngine {
       sessionId: string;
       workspaceId: string;
       onEvent?: (event: import("./types.ts").FSMEvent) => void;
+      /** Separate channel for agent UIMessageChunks (text, reasoning, tool-call, etc.) */
+      onStreamEvent?: (chunk: import("@atlas/agent-sdk").AtlasUIMessageChunk) => void;
       abortSignal?: AbortSignal;
     },
   ): Promise<void> {
@@ -399,7 +509,7 @@ export class FSMEngine {
       hasData: !!sig.data,
     });
 
-    const state = this.definition.states[this._currentState];
+    const state = this._definition.states[this._currentState];
     if (!state) throw new Error(`Invalid state: ${this._currentState}`);
 
     if (!state.on || !state.on[sig.type]) {
@@ -472,6 +582,7 @@ export class FSMEngine {
       pendingDocuments.set(id, structuredClone(doc));
     }
 
+    const pendingResults = new Map<string, Record<string, unknown>>(this._results);
     const pendingEvents: EmittedEvent[] = [];
     const pendingSignals: Signal[] = [];
     let pendingState = this._currentState;
@@ -486,6 +597,7 @@ export class FSMEngine {
           pendingEvents,
           pendingSignals,
           pendingState,
+          pendingResults,
         );
       }
 
@@ -496,7 +608,7 @@ export class FSMEngine {
       logger.debug(`FSM transitioned: ${previousState} -> ${pendingState}`, { event: sig.type });
 
       // Initialize documents for new state if they don't exist
-      const newStateDefinition = this.definition.states[pendingState];
+      const newStateDefinition = this._definition.states[pendingState];
       if (newStateDefinition?.documents) {
         for (const doc of newStateDefinition.documents) {
           if (!pendingDocuments.has(doc.id)) {
@@ -520,6 +632,7 @@ export class FSMEngine {
           pendingEvents,
           pendingSignals,
           pendingState,
+          pendingResults,
         );
 
         logger.debug("Entry actions completed for state", { state: pendingState });
@@ -528,11 +641,17 @@ export class FSMEngine {
       // COMMIT PHASE
       // 1. Commit documents
       this._documents = pendingDocuments;
-      // 2. Commit state
+      // 2. Commit results (clear when returning to initial state)
+      if (pendingState === this._definition.initial) {
+        this._results.clear();
+      } else {
+        this._results = pendingResults;
+      }
+      // 3. Commit state
       this._currentState = pendingState;
-      // 3. Commit events
+      // 4. Commit events
       this._emittedEvents = pendingEvents;
-      // 4. Commit signals (enqueue them)
+      // 5. Commit signals (enqueue them)
       for (const s of pendingSignals) {
         this._signalQueue.push(s);
       }
@@ -548,7 +667,7 @@ export class FSMEngine {
           data: {
             sessionId: sig._context.sessionId,
             workspaceId: sig._context.workspaceId,
-            jobName: this.definition.id,
+            jobName: this._definition.id,
             fromState: previousState,
             toState: pendingState,
             triggeringSignal: sig.type,
@@ -580,6 +699,7 @@ export class FSMEngine {
     events: EmittedEvent[],
     signals: SignalWithContext[],
     currentState: string,
+    results?: Map<string, Record<string, unknown>>,
   ): Promise<void> {
     this._recursionDepth++;
     if (this._recursionDepth > FSMEngine.MAX_RECURSION_DEPTH) {
@@ -590,8 +710,18 @@ export class FSMEngine {
     }
 
     try {
+      let prepareResult: PrepareResult | undefined;
       for (const action of actions) {
-        await this.executeAction(action, sig, documents, events, signals, currentState);
+        prepareResult = await this.executeAction(
+          action,
+          sig,
+          documents,
+          events,
+          signals,
+          currentState,
+          results,
+          prepareResult,
+        );
       }
     } finally {
       this._recursionDepth--;
@@ -605,13 +735,15 @@ export class FSMEngine {
     events: EmittedEvent[],
     signals: SignalWithContext[],
     currentState: string,
-  ): Promise<void> {
+    results?: Map<string, Record<string, unknown>>,
+    prepareResult?: PrepareResult,
+  ): Promise<PrepareResult | undefined> {
     const actionStartTime = Date.now();
 
-    // Compute inputSnapshot for agent/llm actions (includes task description from request doc)
+    // Compute inputSnapshot for agent/llm actions
     const inputSnapshot =
       action.type === "agent" || action.type === "llm"
-        ? this.findRequestDocument(action, documents)
+        ? getInputSnapshot(prepareResult, action, documents)
         : undefined;
 
     // Emit action started event
@@ -621,7 +753,7 @@ export class FSMEngine {
         data: {
           sessionId: sig._context.sessionId,
           workspaceId: sig._context.workspaceId,
-          jobName: this.definition.id,
+          jobName: this._definition.id,
           actionType: action.type,
           actionId: this.getActionId(action),
           state: currentState,
@@ -633,9 +765,14 @@ export class FSMEngine {
     }
 
     // Create a context bound to the pending documents/signals
+    const resultsMap = results ?? this._results;
     const context: Context = {
       documents: Array.from(documents.values()),
       state: currentState,
+      results: Object.fromEntries(resultsMap),
+      setResult: (key: string, data: Record<string, unknown>) => {
+        resultsMap.set(key, data);
+      },
       emit: (s: Signal) => {
         logger.debug("Signal emitted from action", {
           signalType: s.type,
@@ -654,6 +791,9 @@ export class FSMEngine {
       deleteDoc: this.makeDeleteDocFn(documents, currentState),
     };
 
+    let codeActionResult: PrepareResult | undefined;
+    let llmResultData: FSMActionExecutionEvent["data"]["llmResult"];
+
     try {
       switch (action.type) {
         case "code": {
@@ -669,10 +809,17 @@ export class FSMEngine {
           });
 
           try {
-            await this._actionExecutor.execute(actionCode, action.function, context, sig);
+            const returnValue = await this._actionExecutor.execute(
+              actionCode,
+              action.function,
+              context,
+              sig,
+            );
+            codeActionResult = parsePrepareResult(returnValue);
             logger.debug("Code action completed", {
               function: action.function,
               state: currentState,
+              hasReturnValue: returnValue != null,
             });
           } catch (error) {
             throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
@@ -761,7 +908,7 @@ export class FSMEngine {
             const docTypeName = action.outputType ?? outputDoc?.type;
 
             if (docTypeName) {
-              const jsonSchema = this.definition.documentTypes?.[docTypeName];
+              const jsonSchema = this._definition.documentTypes?.[docTypeName];
 
               // Only inject complete tool if schema has properties defined (not just catch-all)
               if (hasDefinedSchema(jsonSchema)) {
@@ -787,10 +934,10 @@ export class FSMEngine {
             }
           }
 
-          // Build prompt with expanded artifact content, skills, and image resolution
+          // Build prompt with curated input from prepare function, skills, and image resolution
           let { prompt: contextPrompt, images } = await this.buildContextPrompt(
             action.prompt,
-            documents,
+            prepareResult,
             skills,
           );
 
@@ -804,7 +951,7 @@ export class FSMEngine {
           }
 
           // Build agentId for the LLM action
-          const llmAgentId = `fsm:${this.definition.id}:${action.outputTo ?? "llm"}`;
+          const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
 
           // When images are present, assemble a messages array with mixed content.
           // Otherwise, use the prompt-only path for backward compatibility.
@@ -937,6 +1084,15 @@ export class FSMEngine {
               });
             }
 
+            // Dual-write: results accumulator (replace semantics)
+            if (results && dataToStore) {
+              const parsed = z.record(z.string(), z.unknown()).safeParse(dataToStore);
+              if (parsed.success) {
+                results.set(action.outputTo, parsed.data);
+              }
+            }
+
+            // Dual-write: documents (backward compat)
             if (outputDoc) {
               outputDoc.data = { ...outputDoc.data, ...dataToStore };
             } else {
@@ -946,6 +1102,18 @@ export class FSMEngine {
                 data: dataToStore,
               });
             }
+          }
+
+          // Capture LLM result for session history side-channel
+          if (result.ok) {
+            llmResultData = {
+              toolCalls: (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+              })),
+              reasoning: result.reasoning,
+              output: result.data,
+            };
           }
 
           logger.debug("LLM action completed", { model: action.model, outputTo: action.outputTo });
@@ -971,6 +1139,8 @@ export class FSMEngine {
           const agentContext: Context = {
             documents: Array.from(documents.values()),
             state: currentState,
+            results: Object.fromEntries(resultsMap),
+            ...(prepareResult ? { input: prepareResult } : {}),
             emit: context.emit,
             updateDoc: this.makeUpdateDocFn(documents),
             createDoc: this.makeCreateDocFn(documents, currentState),
@@ -986,18 +1156,40 @@ export class FSMEngine {
             throw new Error(result.error.reason);
           }
 
-          // Store result in document if outputTo specified
+          // Store result if outputTo specified
           // result.data is the structured output from the agent
           if (action.outputTo && result.data) {
             const parsed = z.record(z.string(), z.unknown()).safeParse(result.data);
             const baseData = parsed.success ? parsed.data : { value: result.data };
 
-            // Include artifactRefs so subsequent steps can access artifact references
+            // Validate against schema when outputType is declared
+            if (action.outputType) {
+              const schema = this._compiledSchemas.get(action.outputType);
+              if (schema) {
+                const validation = schema.safeParse(baseData);
+                if (!validation.success) {
+                  const issues = validation.error.issues
+                    .map((i) => `${i.path.join(".")}: ${i.message}`)
+                    .join(", ");
+                  throw new Error(
+                    `Agent '${action.agentId}' output does not match ${action.outputType} schema: ${issues}`,
+                  );
+                }
+              }
+            }
+
+            // Include artifactRefs after validation (execution metadata, not contract fields)
             const data =
               result.artifactRefs && result.artifactRefs.length > 0
                 ? { ...baseData, artifactRefs: result.artifactRefs }
                 : baseData;
 
+            // Dual-write: results accumulator (replace semantics)
+            if (results) {
+              results.set(action.outputTo, data);
+            }
+
+            // Dual-write: documents (backward compat)
             const existingDoc = documents.get(action.outputTo);
             if (existingDoc) {
               existingDoc.data = { ...existingDoc.data, ...data };
@@ -1027,7 +1219,7 @@ export class FSMEngine {
           data: {
             sessionId: sig._context.sessionId,
             workspaceId: sig._context.workspaceId,
-            jobName: this.definition.id,
+            jobName: this._definition.id,
             actionType: action.type,
             actionId: this.getActionId(action),
             state: currentState,
@@ -1035,6 +1227,7 @@ export class FSMEngine {
             durationMs: Date.now() - actionStartTime,
             timestamp: Date.now(),
             inputSnapshot,
+            llmResult: llmResultData,
           },
         });
       }
@@ -1046,7 +1239,7 @@ export class FSMEngine {
           data: {
             sessionId: sig._context.sessionId,
             workspaceId: sig._context.workspaceId,
-            jobName: this.definition.id,
+            jobName: this._definition.id,
             actionType: action.type,
             actionId: this.getActionId(action),
             state: currentState,
@@ -1060,6 +1253,8 @@ export class FSMEngine {
       }
       throw error;
     }
+
+    return codeActionResult;
   }
 
   /**
@@ -1101,7 +1296,7 @@ export class FSMEngine {
     const baseData = {
       sessionId: sig._context.sessionId,
       workspaceId: sig._context.workspaceId,
-      jobName: this.definition.id,
+      jobName: this._definition.id,
       actionId,
       state: currentState,
       timestamp,
@@ -1122,86 +1317,30 @@ export class FSMEngine {
     }
   }
 
-  /**
-   * Derive request document ID from action outputTo field
-   * Convention: foo_result -> foo-request (underscore to kebab-case)
-   */
-  private getRequestDocIdFromOutputTo(outputTo: string): string | undefined {
-    const match = outputTo.match(/^(.+)_result$/);
-    if (!match?.[1]) return undefined;
-
-    const kebab = match[1].replaceAll("_", "-");
-    return `${kebab}-request`;
-  }
-
-  /**
-   * Find request document for an action based on its outputTo field
-   * Returns task and config from the request document if found
-   * @internal Used by executeAction to include in action execution events
-   */
-  private findRequestDocument(
-    action: { type: string; outputTo?: string },
-    documents: Map<string, unknown>,
-  ): { task?: string; requestDocId?: string; config?: Record<string, unknown> } | undefined {
-    // Get outputTo from agent or llm actions only
-    const outputTo =
-      action.type === "agent" || action.type === "llm"
-        ? (action as { outputTo?: string }).outputTo
-        : undefined;
-
-    if (!outputTo) return undefined;
-
-    const requestDocId = this.getRequestDocIdFromOutputTo(outputTo);
-    if (!requestDocId) return undefined;
-
-    const doc = documents.get(requestDocId);
-    if (!doc) return undefined;
-
-    const data = (doc as { data?: Record<string, unknown> }).data;
-    if (!data) return undefined;
-
-    const task = typeof data.task === "string" ? data.task : undefined;
-    const config =
-      typeof data.config === "object" && data.config !== null
-        ? (data.config as Record<string, unknown>)
-        : undefined;
-
-    if (!task && !config) return undefined;
-
-    return { task, requestDocId, config };
-  }
-
   private async buildContextPrompt(
     basePrompt: string,
-    documents: Map<string, Document> = this._documents,
+    prepareResult?: PrepareResult,
     skills: SkillSummary[] = [],
   ): Promise<{ prompt: string; images: ImagePart[] }> {
     let prompt = basePrompt;
     const images: ImagePart[] = [];
 
-    // Inject document context into prompt with expanded artifact content
-    const docs = Array.from(documents.values());
-    if (docs.length > 0) {
-      // Expand artifact refs to include actual content for downstream LLM steps
-      const expandedDocs = await expandArtifactRefsInDocuments(docs);
+    // Inject curated input from prepare function (replaces old Available Documents)
+    if (prepareResult) {
+      const expanded = await expandArtifactRefsInInput(prepareResult);
 
-      // Resolve image artifacts if storage adapter is available
+      // Resolve image artifacts from prepare result if storage adapter is available
       if (this.options.artifactStorage) {
-        const artifactIds = new Set<string>();
-        for (const doc of docs) {
-          for (const ref of extractRefs(doc)) {
-            artifactIds.add(ref.id);
-          }
-        }
+        const input: Record<string, unknown> = prepareResult;
+        const refsResult = z.array(z.object({ id: z.string() })).safeParse(input.artifactRefs);
 
-        if (artifactIds.size > 0) {
+        if (refsResult.success && refsResult.data.length > 0) {
           const result = await this.options.artifactStorage.getManyLatest({
-            ids: [...artifactIds],
+            ids: refsResult.data.map((r) => r.id),
           });
 
           if (result.ok) {
             const parts = await resolveImageParts(result.data, this.options.artifactStorage);
-
             for (const part of parts) {
               if (part.type === "image") {
                 images.push(part);
@@ -1214,11 +1353,7 @@ export class FSMEngine {
         }
       }
 
-      const docsContext = expandedDocs
-        .map((doc) => `Document ${doc.id} (${doc.type}): ${JSON.stringify(doc.data, null, 2)}`)
-        .join("\n\n");
-
-      prompt = `${prompt}\n\nAvailable Documents:\n${docsContext}`;
+      prompt = `${prompt}\n\nInput:\n${JSON.stringify(expanded, null, 2)}`;
     }
 
     // Append available skills if any exist
@@ -1237,16 +1372,17 @@ export class FSMEngine {
   private async buildTools(toolNames: string[], context: Context): Promise<Record<string, Tool>> {
     const tools: Record<string, Tool> = {};
 
-    const fsmToolNames = toolNames.filter((name) => this.definition.tools?.[name]);
-    const mcpServerIds = toolNames.filter((name) => !this.definition.tools?.[name]);
+    const fsmToolNames = toolNames.filter((name) => this._definition.tools?.[name]);
+    const mcpServerIds = toolNames.filter((name) => !this._definition.tools?.[name]);
 
     // FSM tools: compile code, wrap in Tool
     for (const toolName of fsmToolNames) {
-      const toolDef = this.definition.tools?.[toolName];
+      const toolDef = this._definition.tools?.[toolName];
       if (!toolDef) {
         throw new Error(`Tool ${toolName} not found in FSM definition`);
       }
-      const zodSchema = jsonSchemaToZod(toolDef.inputSchema);
+      const raw: Record<string, unknown> = toolDef.inputSchema;
+      const zodSchema = z.fromJSONSchema(raw);
 
       tools[toolName] = {
         description: toolDef.description,
@@ -1281,8 +1417,8 @@ export class FSMEngine {
 
     if (!schema) {
       // No schema defined - check if document types are defined at all
-      if (this.definition.documentTypes) {
-        const availableTypes = Object.keys(this.definition.documentTypes).join(", ");
+      if (this._definition.documentTypes) {
+        const availableTypes = Object.keys(this._definition.documentTypes).join(", ");
         throw new Error(
           `Document "${id}" has type "${type}" which is not defined in documentTypes. ` +
             `Available types: ${availableTypes || "none"}`,
@@ -1394,7 +1530,7 @@ export class FSMEngine {
     for (const doc of this._documents.values()) {
       const result = await this.options.documentStore.write(
         this.options.scope,
-        this.definition.id,
+        this._definition.id,
         doc.id,
         { type: doc.type, data: doc.data },
         FSMDocumentDataSchema,
@@ -1405,12 +1541,21 @@ export class FSMEngine {
     }
   }
 
+  /** The immutable FSM graph definition this engine was constructed with. */
+  get definition(): FSMDefinition {
+    return this._definition;
+  }
+
   get state(): string {
     return this._currentState;
   }
 
   get documents(): Document[] {
     return Array.from(this._documents.values());
+  }
+
+  get results(): Record<string, Record<string, unknown>> {
+    return Object.fromEntries(this._results);
   }
 
   getDocument(id: string): Document | undefined {
@@ -1423,13 +1568,17 @@ export class FSMEngine {
    */
   clearDocuments(): void {
     this._documents.clear();
-    logger.debug("Cleared all documents from FSM engine", { fsmId: this.definition.id });
+    logger.debug("Cleared all documents from FSM engine", { fsmId: this._definition.id });
   }
 
   get context(): Context {
     return {
       documents: this.documents,
       state: this._currentState,
+      results: Object.fromEntries(this._results),
+      setResult: (key: string, data: Record<string, unknown>) => {
+        this._results.set(key, data);
+      },
       emit: (s: Signal) => this.signal(s),
       updateDoc: this.makeUpdateDocFn(),
       createDoc: this.makeCreateDocFn(),
@@ -1456,7 +1605,8 @@ export class FSMEngine {
    * Used when workspace needs to start fresh for trigger signals
    */
   async reset(): Promise<void> {
-    this._currentState = this.definition.initial;
+    this._currentState = this._definition.initial;
+    this._results.clear();
 
     // DON'T clear documents - let idle state entry actions decide what to clean
     this._signalQueue = [];
@@ -1466,7 +1616,7 @@ export class FSMEngine {
     this._processing = false;
 
     // Re-run idle entry actions (like initialize() does)
-    const initialState = this.definition.states[this._currentState];
+    const initialState = this._definition.states[this._currentState];
     if (initialState?.entry) {
       logger.debug("Executing entry actions for reset state", {
         state: this._currentState,
@@ -1487,7 +1637,7 @@ export class FSMEngine {
     }
 
     logger.debug("FSM reset to initial state", {
-      fsmId: this.definition.id,
+      fsmId: this._definition.id,
       initialState: this._currentState,
     });
   }

@@ -53,6 +53,19 @@ async function suspectFunction(input: string) {
 
 Run, capture output, analyze: which caller? which value? which pattern?
 
+**Walking error cause chains:**
+
+`Error.cause` is typed `unknown` — use `instanceof` in a while-loop, not `as`
+casts:
+
+```typescript
+let current: unknown = error;
+while (current instanceof Error) {
+  console.error(current.message, current.stack);
+  current = current.cause;
+}
+```
+
 ### Map Component Boundaries
 
 **For multi-component systems** (CI → build → deploy, API → service → DB):

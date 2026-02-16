@@ -113,17 +113,12 @@ export class AtlasClient {
   /**
    * List all sessions across workspaces
    */
-  async listSessions(options?: {
-    limit?: number;
-    cursor?: string;
-  }): Promise<{ items: SessionInfo[]; nextCursor?: string; total: number }> {
+  async listSessions(options?: { workspaceId?: string }): Promise<{ sessions: SessionInfo[] }> {
     const response = await parseResult(
-      v2Client.sessions.index.$get({
-        query: { limit: options?.limit?.toString(), cursor: options?.cursor },
-      }),
+      v2Client.sessions.index.$get({ query: { workspaceId: options?.workspaceId } }),
     );
     if (!response.ok) {
-      throw new Error(`Failed to get session: ${stringifyError(response.error)}`);
+      throw new Error(`Failed to list sessions: ${stringifyError(response.error)}`);
     }
     return response.data;
   }

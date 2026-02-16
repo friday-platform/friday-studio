@@ -99,6 +99,8 @@ export function createTestApp(options: {
     getAgentRegistry: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
   };
 
   const app = new Hono<AppVariables>();
