@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type BundledAgentMatch,
   extractKeywordsFromNeed,
+  findFullBundledMatch,
   findUnmatchedNeeds,
   type MCPServerMatch,
   mapNeedToMCPServers,
@@ -86,11 +87,10 @@ describe("matchBundledAgents", () => {
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("gmail resolves to email agent", () => {
+  it("gmail does not resolve to email agent", () => {
     const matches = matchBundledAgents(["gmail"]);
 
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.agentId).toBe("email");
+    expect(matches).toHaveLength(0);
   });
 
   it("google-sheets does not match google-calendar agent", () => {
@@ -146,6 +146,35 @@ describe("mapNeedToMCPServers", () => {
     const matches = await mapNeedToMCPServers("completely-fake-service-xyz");
 
     expect(matches).toHaveLength(0);
+  });
+});
+
+describe("findFullBundledMatch", () => {
+  it("returns match when single bundled agent covers all needs", () => {
+    const match = findFullBundledMatch(["email", "sendgrid"]);
+
+    expect(match).not.toBeNull();
+    expect(match?.agentId).toBe("email");
+  });
+
+  it("returns null when bundled agent only partially covers needs", () => {
+    // "email" matches bundled email, but "gmail" does not — partial coverage
+    const match = findFullBundledMatch(["email", "gmail"]);
+
+    expect(match).toBeNull();
+  });
+
+  it("returns null when multiple bundled agents match (ambiguous)", () => {
+    // "notifications" matches both email and slack
+    const match = findFullBundledMatch(["notifications"]);
+
+    expect(match).toBeNull();
+  });
+
+  it("returns null when no bundled agent matches", () => {
+    const match = findFullBundledMatch(["gmail"]);
+
+    expect(match).toBeNull();
   });
 });
 

@@ -34,15 +34,13 @@ describe("getCapabilitiesSection", () => {
   });
 
   it("MCP servers include description", () => {
-    // FAILING TEST BEFORE FIX: MCP servers currently only show name, not description
     const output = getCapabilitiesSection();
 
-    // After fix: google-gmail should have a description mentioning OAuth
+    // google-gmail has a description mentioning OAuth
     expect(output.toLowerCase()).toContain("oauth");
   });
 
   it("MCP servers include constraints when present", () => {
-    // FAILING TEST BEFORE FIX: MCP servers currently have no constraints
     const output = getCapabilitiesSection();
 
     // Check that MCP server section has constraints tags
@@ -52,7 +50,6 @@ describe("getCapabilitiesSection", () => {
   });
 
   it("email vs gmail disambiguation is clear", () => {
-    // FAILING TEST BEFORE FIX: Currently no way for LLM to distinguish
     const output = getCapabilitiesSection();
 
     // The output should make notification vs inbox access distinction clear

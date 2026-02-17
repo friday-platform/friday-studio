@@ -41,7 +41,7 @@ export const emailAgent = createAgent<string, EmailOutput>({
     "Recipients restricted to authenticated user's email or same organization domain. External recipients are automatically redirected to sender. Single recipient only - no CC, BCC, or multi-send supported.",
   outputSchema: EmailOutputSchema,
   expertise: {
-    domains: ["email", "gmail", "notifications", "sendgrid", "messaging"],
+    domains: ["email", "notifications", "sendgrid", "messaging"],
     examples: [
       "Send me an email summary of today's meeting notes",
       "Email me a reminder about the 2pm deadline",

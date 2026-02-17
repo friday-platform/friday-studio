@@ -11,6 +11,7 @@ import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { MCPServerMatch } from "@atlas/core/mcp-registry/deterministic-matching";
 import {
   extractKeywordsFromNeed,
+  findFullBundledMatch,
   findUnmatchedNeeds,
   mapNeedToMCPServers,
   matchBundledAgents,
@@ -243,14 +244,20 @@ export async function classifyAgents(agents: Agent[]): Promise<ClassifyResult> {
     }
 
     // Tier 2: Keyword extraction → bundled agent matching
-    const bundledMatches = matchBundledAgents(agent.needs.flatMap(extractKeywordsFromNeed));
+    // Uses findFullBundledMatch to ensure ALL needs are covered by a single
+    // bundled agent — prevents partial coverage (e.g. ["email", "gmail"] must
+    // not classify as bundled email when "gmail" isn't covered)
+    const fullMatch = findFullBundledMatch(agent.needs);
 
-    if (bundledMatches.length === 1 && bundledMatches[0]) {
-      agent.bundledId = bundledMatches[0].agentId;
-      const req = extractBundledConfigRequirements(agent, bundledMatches[0].agentId);
+    if (fullMatch) {
+      agent.bundledId = fullMatch.agentId;
+      const req = extractBundledConfigRequirements(agent, fullMatch.agentId);
       if (req) configRequirements.push(req);
       continue;
     }
+
+    // Check for ambiguous matches to report clarifications
+    const bundledMatches = matchBundledAgents(agent.needs.flatMap(extractKeywordsFromNeed));
 
     if (bundledMatches.length > 1) {
       // Ambiguous bundled — report per-agent, not per-need

@@ -7,8 +7,8 @@
 import type { MCPServerConfig } from "@atlas/config";
 import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
 import {
+  findFullBundledMatch,
   mapNeedToMCPServers,
-  matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
@@ -43,11 +43,8 @@ export async function generateMCPServers(
   const needsForMCP = new Set<string>();
 
   for (const agent of agents) {
-    // Check if this agent is satisfied by a bundled agent
-    const bundledMatches = matchBundledAgents(agent.needs);
-
-    if (bundledMatches.length > 0) {
-      // Bundled agent provides MCP - skip adding to workspace-level MCP config
+    // Uses same logic as classifyAgents — divergence is structurally impossible
+    if (findFullBundledMatch(agent.needs)) {
       continue;
     }
 

@@ -34,11 +34,13 @@ function removeSubsumedKeywords(keywords: string[]): string[] {
 }
 
 /**
- * Extracts known keywords from verbose need descriptions.
- * Used by workspace-creation to handle verbose needs from plans.
+ * Extracts known bundled-agent keywords from verbose need descriptions.
+ * Only checks bundled agent capabilities — MCP domain matching is handled
+ * separately by mapNeedToMCPServers. This prevents MCP domains from
+ * cross-pollinating into bundled agent matching.
  *
- * Example: "Slack API access to post messages" → ["slack"]
- * Example: "github" → ["github"]
+ * Example: "html-email" → ["email"] (matches email bundled agent capability)
+ * Example: "gmail" → ["gmail"] (no bundled match, returns as-is)
  * Example: "data-analysis" → ["data-analysis"] (not ["data-analysis", "data"])
  *
  * When multiple keywords match, shorter keywords that are substrings of longer
@@ -52,23 +54,13 @@ export function extractKeywordsFromNeed(need: string): string[] {
   const normalized = normalizeNeed(need);
   const keywords: string[] = [];
 
-  // Check bundled agent capabilities
+  // Only check bundled agent capabilities — MCP domains are matched
+  // independently by mapNeedToMCPServers to avoid coupling the two registries
   for (const agent of Object.values(bundledAgentsRegistry)) {
     for (const capability of agent.capabilities) {
       const capNormalized = normalizeNeed(capability);
-      // Check if capability appears as a word in the need
       if (normalized === capNormalized || normalized.includes(capNormalized)) {
         keywords.push(capNormalized);
-      }
-    }
-  }
-
-  // Check MCP server domains
-  for (const server of Object.values(mcpServersRegistry.servers)) {
-    for (const domain of server.domains) {
-      const domainNormalized = normalizeNeed(domain);
-      if (normalized === domainNormalized || normalized.includes(domainNormalized)) {
-        keywords.push(domainNormalized);
       }
     }
   }
@@ -156,6 +148,32 @@ export function matchBundledAgents(needs: string[]): BundledAgentMatch[] {
   }
 
   return matches;
+}
+
+/**
+ * Finds a bundled agent that fully covers all needs.
+ * Returns the match if exactly one bundled agent matches AND all extracted
+ * keywords are covered by that agent's capabilities. Returns null otherwise
+ * (ambiguous matches, partial coverage, or no match).
+ *
+ * This is the single source of truth for the "is this agent bundled?" decision,
+ * used by both classifyAgents and generateMCPServers.
+ */
+export function findFullBundledMatch(needs: string[]): BundledAgentMatch | null {
+  const normalizedNeeds = needs.flatMap(extractKeywordsFromNeed);
+  const bundledMatches = matchBundledAgents(normalizedNeeds);
+
+  if (bundledMatches.length !== 1 || !bundledMatches[0]) {
+    return null;
+  }
+
+  const match = bundledMatches[0];
+  const covered = new Set(match.matchedCapabilities.map(normalizeNeed));
+  if (normalizedNeeds.every((n) => covered.has(n))) {
+    return match;
+  }
+
+  return null;
 }
 
 /**
