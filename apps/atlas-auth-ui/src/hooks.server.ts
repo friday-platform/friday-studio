@@ -5,7 +5,15 @@ import { sequence } from "@sveltejs/kit/hooks";
 
 const log = logger.child({ service: "atlas-auth-ui" });
 
+const SILENT_PATHS = new Set(["/healthz"]);
+
 const accessLog: Handle = async ({ event, resolve }) => {
+  const path = event.url.pathname;
+
+  if (SILENT_PATHS.has(path)) {
+    return resolve(event);
+  }
+
   const start = performance.now();
   let status = 500;
   try {
@@ -16,7 +24,7 @@ const accessLog: Handle = async ({ event, resolve }) => {
     const duration = Math.round(performance.now() - start);
     const entry = {
       method: event.request.method,
-      path: event.url.pathname,
+      path,
       status,
       duration_ms: duration,
       user_agent: event.request.headers.get("user-agent") ?? undefined,
