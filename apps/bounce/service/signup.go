@@ -326,7 +326,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This route is hosted in the SvelteKit app at auth.atlas.tempestdx.dev/complete-setup
+	// This route is hosted in the SvelteKit auth-ui app at /complete-setup
 	RecordAuth("email", "success")
 	analytics.Emit(ctx, analytics.EventUserSignedUp, tu.ID, nil)
 	http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusTemporaryRedirect)

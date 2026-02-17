@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/sveltekit";
-import type { Handle } from "@sveltejs/kit";
+import type { Handle, HandleServerError } from "@sveltejs/kit";
 import { sequence } from "@sveltejs/kit/hooks";
 
 Sentry.init({
@@ -10,7 +10,14 @@ Sentry.init({
   sendDefaultPii: true,
 });
 
-export const handleError = Sentry.handleErrorWithSentry();
+const sentryErrorHandler = Sentry.handleErrorWithSentry();
+
+export const handleError: HandleServerError = (input) => {
+  if (input.status === 404) {
+    return { message: "Not Found" };
+  }
+  return sentryErrorHandler(input);
+};
 
 const securityHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
