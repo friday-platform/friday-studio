@@ -4,8 +4,8 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { isErrnoException } from "@atlas/utils";
-import { join } from "@std/path";
 
 /**
  * Interface for workspace creation adapters

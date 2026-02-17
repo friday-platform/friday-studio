@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
+import { exists } from "../../utils/fs.ts";
 import {
   getAtlasBinaryPath,
   getDefaultServiceName,

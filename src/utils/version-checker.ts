@@ -3,11 +3,11 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { arch, env, platform } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
-import { ensureDir, existsSync } from "@std/fs";
 import { z } from "zod";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
@@ -174,7 +174,7 @@ async function loadCache(): Promise<VersionCache | null> {
 async function saveCache(result: VersionCheckResult): Promise<void> {
   try {
     const cacheDir = getCacheDir();
-    await ensureDir(cacheDir);
+    await mkdir(cacheDir, { recursive: true });
 
     const cache: VersionCache = { timestamp: Date.now(), result };
 

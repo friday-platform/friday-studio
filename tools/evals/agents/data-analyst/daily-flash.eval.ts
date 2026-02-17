@@ -5,13 +5,13 @@
  * See: docs/plans/2026-01-03-data-analyst-agent-eval-plan.md
  */
 
+import { join } from "node:path";
 import {
   type DataAnalystResult,
   dataAnalystAgent,
   type QueryExecution,
 } from "@atlas/bundled-agents";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { join } from "@std/path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";

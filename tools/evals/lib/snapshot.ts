@@ -1,6 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import { ensureDir } from "@std/fs";
-import { dirname, join } from "@std/path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { slugify } from "@std/text/unstable-slugify";
 
 export interface SnapshotOptions {
@@ -33,15 +33,15 @@ export async function saveSnapshot(options: SnapshotOptions): Promise<string> {
   }
 
   // Create snapshots directory alongside the test file
-  const testDir = dirname(testPath);
+  const testDir = dirname(fileURLToPath(testPath));
   const snapshotDir = join(testDir, "__snapshots__");
-  await ensureDir(snapshotDir);
+  await mkdir(snapshotDir, { recursive: true });
 
   let filepath: string;
   if (testCase) {
     // Multi-step test: organize snapshots under testBaseName subdirectory
     const testCaseDir = join(snapshotDir, testBaseName);
-    await ensureDir(testCaseDir);
+    await mkdir(testCaseDir, { recursive: true });
     const filename = `${slugify(testCase)}-${getTimestamp()}-${pass ? "PASS" : "FAIL"}.json`;
     filepath = join(testCaseDir, filename);
   } else {

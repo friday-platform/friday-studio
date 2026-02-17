@@ -11,6 +11,7 @@
  */
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import type {
   LibraryItem,
@@ -23,7 +24,6 @@ import type {
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { typeByExtension } from "@std/media-types";
-import { dirname, join } from "@std/path";
 import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
 import type { KVStorage } from "./kv-storage.ts";
 

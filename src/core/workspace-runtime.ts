@@ -7,6 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
+import * as path from "node:path";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { type MergedConfig, validateSignalPayload } from "@atlas/config";
@@ -51,7 +52,6 @@ import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import * as path from "@std/path";
 import type {
   ITempestContextManager,
   ITempestMessageManager,

@@ -7,11 +7,10 @@
  * Downloads packages directly from npm registry and extracts them.
  */
 
-import { ensureDir } from "jsr:@std/fs";
-import { join } from "jsr:@std/path";
 import { mkdtempSync } from "node:fs";
-import { readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 
 const TAURI_API_VERSION = "2.8.0";
@@ -117,7 +116,7 @@ async function downloadAndExtractPackage(
     }
 
     // Create target directory
-    await ensureDir(targetDir);
+    await mkdir(targetDir, { recursive: true });
 
     // Remove existing directory if it exists
     try {

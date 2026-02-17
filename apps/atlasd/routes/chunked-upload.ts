@@ -1,6 +1,7 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { dirname, extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import {
   CHUNK_SIZE,
@@ -15,7 +16,6 @@ import {
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
-import { dirname, extname, join } from "@std/path";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { createArtifactFromFile, streamToFile } from "./artifacts.ts";

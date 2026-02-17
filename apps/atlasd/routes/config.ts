@@ -3,15 +3,27 @@
  * Handles environment variable CRUD operations
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse, stringify } from "@std/dotenv";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import z from "zod";
+
+/**
+ * Check if a file or directory exists at the given path.
+ */
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 import { daemonFactory } from "../src/factory.ts";
 
 // Schemas

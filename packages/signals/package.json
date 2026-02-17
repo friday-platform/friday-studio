@@ -4,5 +4,5 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": { "@atlas/fs-watch": "workspace:*", "@std/path": "npm:@jsr/std__path@^1.1.2" }
+  "dependencies": { "@atlas/fs-watch": "workspace:*" }
 }

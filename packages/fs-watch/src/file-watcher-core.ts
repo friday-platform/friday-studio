@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
+import { isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
-import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
 
 export type WatchEventKind = "create" | "modify" | "remove" | "any";
 

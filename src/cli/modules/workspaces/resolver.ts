@@ -1,7 +1,7 @@
 import { ConfigLoader, type WorkspaceConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { getWorkspaceManager } from "@atlas/workspace"; // TODO: Use @atlas/client instead
-import { exists } from "@std/fs";
+import { exists } from "../../../utils/fs.ts";
 
 // Enhanced workspace resolution (cleaner separation)
 export async function resolveWorkspaceOnly(

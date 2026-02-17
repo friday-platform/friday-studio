@@ -2,11 +2,10 @@
  * Filesystem implementation of DocumentStore
  */
 
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { ensureDir } from "@std/fs";
-import { join } from "@std/path";
 import { DocumentStore } from "./document-store.ts";
 import type { DocumentScope, StoredDocument } from "./types.ts";
 
@@ -120,7 +119,7 @@ export class FileSystemDocumentStore extends DocumentStore {
     doc: StoredDocument,
   ): Promise<void> {
     const path = this.buildPath(scope, type, id);
-    await ensureDir(join(path, ".."));
+    await mkdir(join(path, ".."), { recursive: true });
 
     await writeFile(path, JSON.stringify(doc, null, 2), "utf-8");
 
@@ -135,7 +134,7 @@ export class FileSystemDocumentStore extends DocumentStore {
 
   protected async saveStateRaw(scope: DocumentScope, key: string, state: unknown): Promise<void> {
     const path = this.buildStatePath(scope, key);
-    await ensureDir(join(path, ".."));
+    await mkdir(join(path, ".."), { recursive: true });
     await writeFile(path, JSON.stringify(state, null, 2), "utf-8");
   }
 

@@ -11,9 +11,9 @@
 
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { SkillStorage } from "@atlas/skills";
-import { join } from "@std/path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";

@@ -4,9 +4,5 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": {
-    "@atlas/logger": "workspace:*",
-    "@std/async": "npm:@jsr/std__async@^1.0.14",
-    "@std/path": "npm:@jsr/std__path@^1.1.2"
-  }
+  "dependencies": { "@atlas/logger": "workspace:*", "@std/async": "npm:@jsr/std__async@^1.0.14" }
 }

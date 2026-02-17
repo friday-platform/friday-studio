@@ -1,12 +1,12 @@
-import { copyFile, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
 import { isErrnoException, stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { ensureDir, exists } from "@std/fs";
-import { join } from "@std/path";
 import z from "zod";
+import { exists } from "../../utils/fs.ts";
 import { getAtlasVersion } from "../../utils/version.ts";
 import { checkForUpdate } from "../../utils/version-checker.ts";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
@@ -234,7 +234,7 @@ async function performUpdate(params: {
     // No need to check if Atlas is running - the update will work even with running processes
 
     // Ensure update directory exists
-    await ensureDir(updateDir);
+    await mkdir(updateDir, { recursive: true });
 
     // Download new binary
     const fileExtension = platform.platform === "windows" ? ".zip" : ".tar.gz";
@@ -1245,7 +1245,7 @@ async function saveChannelPreference(channel: string): Promise<void> {
   config.updateChannel = channel;
 
   // Write config
-  await ensureDir(join(process.env.HOME || "", ".atlas"));
+  await mkdir(join(process.env.HOME || "", ".atlas"), { recursive: true });
   await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
 }
 

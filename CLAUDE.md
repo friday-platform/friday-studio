@@ -48,7 +48,7 @@ go build                # Build
 - Static imports only (top of file) - no `import("@pkg")` in type positions
 - Validate all external input with Zod
 - Use `node:*` builtins (`node:path`, `node:process`, etc.), not Deno APIs
-  (`Deno.env`, `@std/path`) — migrating away from Deno APIs
+  (`Deno.env`) — migrating away from Deno APIs
 - Dependencies go in `package.json`, not `deno.json` (use `deno add npm:pkg`)
 - All database queries acting on behalf of a user MUST use `withUserContext()`
   — never construct raw SQL outside an RLS-enforced transaction. This sets

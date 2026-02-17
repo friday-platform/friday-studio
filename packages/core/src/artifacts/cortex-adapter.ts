@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { basename, extname, join } from "node:path";
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
@@ -8,7 +9,6 @@ import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { decodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
-import { basename, extname, join } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 import { ArtifactDataSchema, ArtifactTypeSchema } from "./model.ts";
 import type { DatabaseSchema } from "./primitives.ts";

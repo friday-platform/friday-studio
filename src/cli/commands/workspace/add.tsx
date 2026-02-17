@@ -1,4 +1,5 @@
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import {
   AtlasClient,
@@ -7,10 +8,9 @@ import {
 } from "@atlas/client";
 import { stringifyError } from "@atlas/utils";
 import { Spinner } from "@inkjs/ui";
-import { exists, walk } from "@std/fs";
-import { basename, dirname, join, resolve } from "@std/path";
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
+import { exists } from "../../../utils/fs.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface AddArgs {
@@ -97,18 +97,18 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
           }
 
           const maxDepth = args.depth || 3;
+          const scanDepth = scanPath.split("/").length;
 
-          for await (const entry of walk(scanPath, {
-            maxDepth,
-            includeDirs: true,
-            includeFiles: false,
-          })) {
-            const depth = entry.path.split("/").length - scanPath.split("/").length;
+          const entries = await readdir(scanPath, { recursive: true, withFileTypes: true });
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const entryPath = join(entry.parentPath, entry.name);
+            const depth = entryPath.split("/").length - scanDepth;
             if (depth > maxDepth) continue;
 
-            const workspaceYml = join(entry.path, "workspace.yml");
+            const workspaceYml = join(entryPath, "workspace.yml");
             if (await exists(workspaceYml)) {
-              paths.push(entry.path);
+              paths.push(entryPath);
             }
           }
 

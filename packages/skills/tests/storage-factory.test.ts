@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
-import { join } from "@std/path";
 import { describe, expect, it } from "vitest";
 import { CortexSkillAdapter } from "../src/cortex-adapter.ts";
 import { LocalSkillAdapter } from "../src/local-adapter.ts";

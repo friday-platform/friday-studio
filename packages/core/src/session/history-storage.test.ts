@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { join } from "@std/path";
 import { afterEach, assert, beforeEach, describe, expect, it } from "vitest";
 import { ReasoningResultStatus } from "../constants/supervisor-status.ts";
 

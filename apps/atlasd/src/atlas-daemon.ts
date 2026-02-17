@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import process, { env } from "node:process";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
@@ -23,7 +24,6 @@ import type {
   WorkspaceSignalTriggerCallback,
 } from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@atlas-vendor/hono-mcp";
-import { join } from "@std/path";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";

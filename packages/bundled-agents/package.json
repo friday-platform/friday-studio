@@ -18,7 +18,6 @@
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
-    "@std/path": "npm:@jsr/std__path@^1.1.2",
     "ai": "^5.0.133",
     "better-sqlite3": "^12.6.2",
     "evalite": "^1.0.0-beta.15",

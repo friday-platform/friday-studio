@@ -1,9 +1,9 @@
 import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
 import { ServiceManager } from "../../services/service-manager.ts";
 import { confirmAction } from "../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";

@@ -8,10 +8,10 @@
  */
 
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { type DataAnalystResult, dataAnalystAgent } from "@atlas/bundled-agents";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { join } from "@std/path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";

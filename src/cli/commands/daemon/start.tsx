@@ -1,4 +1,5 @@
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { extractTempestUserId, fetchCredentials, setToEnv } from "@atlas/core/credentials";
@@ -7,9 +8,8 @@ import { captureException, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { load, parse } from "@std/dotenv";
-import { exists } from "@std/fs";
-import { dirname, join } from "@std/path";
 import { fetchCypherToken } from "../../../services/cypher-token.ts";
+import { exists } from "../../../utils/fs.ts";
 import { getVersionInfo } from "../../../utils/version.ts";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";

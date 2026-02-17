@@ -9,12 +9,12 @@
  */
 
 import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
 import type { CsvCell } from "@atlas/core/artifacts/server";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals } from "@std/assert";
-import { join } from "@std/path";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { setupTest } from "../../lib/utils.ts";

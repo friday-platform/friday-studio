@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
@@ -16,7 +17,6 @@ import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
-import { basename, dirname, join } from "@std/path";
 import {
   createRegistryStorage,
   type RegistryStorageAdapter,

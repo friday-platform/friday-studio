@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { dirname, extname, join } from "node:path";
 import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -35,7 +36,6 @@ import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
-import { dirname, extname, join } from "@std/path";
 import { fileTypeFromFile } from "file-type";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";

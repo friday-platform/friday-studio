@@ -10,7 +10,6 @@
     "@db/sqlite": "jsr:@db/sqlite@0.13",
     "@std/async": "jsr:@std/async@^1.0.15",
     "@std/encoding": "jsr:@std/encoding@^1.0.10",
-    "@std/media-types": "jsr:@std/media-types@^1.1.0",
-    "@std/path": "jsr:@std/path@^1.1.2"
+    "@std/media-types": "jsr:@std/media-types@^1.1.0"
   }
 }

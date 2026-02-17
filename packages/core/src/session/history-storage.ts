@@ -1,9 +1,9 @@
 import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
 
 import { z } from "zod";
 import type { IWorkspaceSignal } from "../../../../src/types/core.ts";

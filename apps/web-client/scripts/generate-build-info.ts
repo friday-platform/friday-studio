@@ -3,10 +3,11 @@
 // This script generates build information at compile time
 // It should be run before building the application in CI/CD
 import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import process, { env } from "node:process";
-import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
+import { fileURLToPath } from "node:url";
 
-const __dirname = dirname(fromFileUrl(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Determine build type based on environment variables or Git branch
 let buildType = "development";

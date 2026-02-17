@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
+import { join } from "node:path";
 import { parse as parseYaml } from "@std/yaml";
+import { exists } from "../../utils/fs.ts";
 
 /**
  * Get the current workspace name from workspace.yml without loading full configuration

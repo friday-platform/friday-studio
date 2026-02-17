@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
-import { join } from "@std/path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 

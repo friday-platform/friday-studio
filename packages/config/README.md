@@ -14,7 +14,8 @@ This package provides:
 
 ## Standard Configuration Format
 
-Atlas uses **TypeScript (.ts)** as the standard format for configuration defaults.
+Atlas uses **TypeScript (.ts)** as the standard format for configuration
+defaults.
 
 ### Benefits of TypeScript Defaults
 
@@ -33,7 +34,12 @@ Atlas uses **TypeScript (.ts)** as the standard format for configuration default
 ## Usage
 
 ```typescript
-import { AtlasConfig, ConfigLoader, supervisorDefaults, WorkspaceConfig } from "@atlas/config";
+import {
+  AtlasConfig,
+  ConfigLoader,
+  supervisorDefaults,
+  WorkspaceConfig,
+} from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 
 // Load configuration
@@ -81,30 +87,30 @@ across the codebase.
 
 ```typescript
 import {
-  createTestConfig,
-  createMergedConfig,
-  httpSignal,
-  scheduleSignal,
-  llmAgent,
   atlasAgent,
-  systemAgent,
   createJob,
+  createMergedConfig,
+  createTestConfig,
   expectError,
+  httpSignal,
+  llmAgent,
+  scheduleSignal,
+  systemAgent,
 } from "@atlas/config/testing";
 ```
 
 ### Factory Functions
 
-| Factory | Creates | Defaults |
-|---------|---------|----------|
-| `createTestConfig(overrides?)` | `WorkspaceConfig` | Minimal valid workspace |
-| `createMergedConfig(workspace)` | `MergedConfig` | Wraps workspace with null atlas |
-| `httpSignal(overrides?)` | `HTTPSignalConfig` | Path `/webhook` |
-| `scheduleSignal(overrides?)` | `ScheduleSignalConfig` | Cron `0 9 * * *`, UTC |
-| `llmAgent(overrides?)` | `LLMAgentConfig` | Anthropic claude-sonnet-4-5 |
-| `atlasAgent(overrides?)` | `AtlasAgentConfig` | GitHub agent |
-| `systemAgent(overrides?)` | `SystemAgentConfig` | Conversation agent |
-| `createJob(overrides?)` | `JobSpecification` | Sequential, one agent |
+| Factory                         | Creates                | Defaults                        |
+| ------------------------------- | ---------------------- | ------------------------------- |
+| `createTestConfig(overrides?)`  | `WorkspaceConfig`      | Minimal valid workspace         |
+| `createMergedConfig(workspace)` | `MergedConfig`         | Wraps workspace with null atlas |
+| `httpSignal(overrides?)`        | `HTTPSignalConfig`     | Path `/webhook`                 |
+| `scheduleSignal(overrides?)`    | `ScheduleSignalConfig` | Cron `0 9 * * *`, UTC           |
+| `llmAgent(overrides?)`          | `LLMAgentConfig`       | Anthropic claude-sonnet-4-5     |
+| `atlasAgent(overrides?)`        | `AtlasAgentConfig`     | GitHub agent                    |
+| `systemAgent(overrides?)`       | `SystemAgentConfig`    | Conversation agent              |
+| `createJob(overrides?)`         | `JobSpecification`     | Sequential, one agent           |
 
 ### Error Assertions
 
@@ -131,4 +137,3 @@ Error types: `not_found`, `validation`, `conflict`, `invalid_operation`, `write`
 - `@atlas/storage` - For configuration adapters
 - `zod` - For schema validation
 - `@std/yaml` - For YAML parsing
-- `@std/path` - For path operations

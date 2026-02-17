@@ -1,9 +1,18 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Fetches bundled API credentials and sets them as environment variables.

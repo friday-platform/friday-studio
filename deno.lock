@@ -3,32 +3,29 @@
   "specifiers": {
     "jsr:@db/sqlite@0.13": "0.13.0",
     "jsr:@denosaurs/plug@1": "1.1.0",
-    "jsr:@std/assert@1": "1.0.18",
-    "jsr:@std/assert@^1.0.16": "1.0.18",
-    "jsr:@std/assert@^1.0.17": "1.0.18",
-    "jsr:@std/async@^1.0.15": "1.1.1",
-    "jsr:@std/async@^1.1.0": "1.1.1",
-    "jsr:@std/data-structures@^1.0.10": "1.0.10",
+    "jsr:@std/assert@1": "1.0.17",
+    "jsr:@std/assert@^1.0.15": "1.0.17",
+    "jsr:@std/assert@^1.0.16": "1.0.17",
+    "jsr:@std/async@^1.0.15": "1.1.0",
+    "jsr:@std/data-structures@^1.0.9": "1.0.9",
     "jsr:@std/dotenv@~0.225.5": "0.225.6",
     "jsr:@std/encoding@1": "1.0.10",
     "jsr:@std/encoding@1.0.10": "1.0.10",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
     "jsr:@std/fmt@1": "1.0.9",
     "jsr:@std/fs@1": "1.0.22",
-    "jsr:@std/fs@^1.0.20": "1.0.22",
-    "jsr:@std/fs@^1.0.22": "1.0.22",
+    "jsr:@std/fs@^1.0.19": "1.0.22",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@1.0": "1.0.9",
     "jsr:@std/path@^1.1.2": "1.1.4",
-    "jsr:@std/path@^1.1.3": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/regexp@^1.0.1": "1.0.1",
     "jsr:@std/streams@^1.0.17": "1.0.17",
     "jsr:@std/tar@~0.1.9": "0.1.10",
-    "jsr:@std/testing@1": "1.0.17",
-    "jsr:@std/testing@^1.0.16": "1.0.17",
+    "jsr:@std/testing@1": "1.0.16",
+    "jsr:@std/testing@^1.0.16": "1.0.16",
     "jsr:@std/text@1": "1.0.17",
     "jsr:@std/yaml@1": "1.0.11",
     "npm:@ai-sdk/anthropic@^2.0.64": "2.0.64_zod@4.3.6",
@@ -59,9 +56,7 @@
     "npm:@jsr/std__collections@^1.1.3": "1.1.5",
     "npm:@jsr/std__dotenv@~0.225.5": "0.225.6",
     "npm:@jsr/std__encoding@^1.0.10": "1.0.10",
-    "npm:@jsr/std__fs@^1.0.19": "1.0.22",
     "npm:@jsr/std__media-types@^1.1.0": "1.1.0",
-    "npm:@jsr/std__path@^1.1.2": "1.1.4",
     "npm:@jsr/std__text@^1.0.16": "1.0.17",
     "npm:@jsr/std__yaml@^1.0.10": "1.0.11",
     "npm:@jsr/std__yaml@^1.0.9": "1.0.11",
@@ -192,17 +187,17 @@
         "jsr:@std/path@1"
       ]
     },
-    "@std/assert@1.0.18": {
-      "integrity": "270245e9c2c13b446286de475131dc688ca9abcd94fc5db41d43a219b34d1c78",
+    "@std/assert@1.0.17": {
+      "integrity": "df5ebfffe77c03b3fa1401e11c762cc8f603d51021c56c4d15a8c7ab45e90dbe",
       "dependencies": [
         "jsr:@std/internal"
       ]
     },
-    "@std/async@1.1.1": {
-      "integrity": "8a79beb3378cc229ce65ba2c746cfd03e4855ddd891d1eb6b9e32128e0d5339c"
+    "@std/async@1.1.0": {
+      "integrity": "72418df08d1be84668a53e48aab3520d68ae6882182f8a5ca75c6d1f087220d1"
     },
-    "@std/data-structures@1.0.10": {
-      "integrity": "f574f86b0e07c69b9edc555fcc814b57d29258bad39fd5a34ba8a80ecf033cfe"
+    "@std/data-structures@1.0.9": {
+      "integrity": "033d6e17e64bf1f84a614e647c1b015fa2576ae3312305821e1a4cb20674bb4d"
     },
     "@std/dotenv@0.225.6": {
       "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
@@ -247,15 +242,15 @@
         "jsr:@std/streams"
       ]
     },
-    "@std/testing@1.0.17": {
-      "integrity": "87bdc2700fa98249d48a17cd72413352d3d3680dcfbdb64947fd0982d6bbf681",
+    "@std/testing@1.0.16": {
+      "integrity": "a917ffdeb5924c9be436dc78bc32e511760e14d3a96e49c607fc5ecca86d0092",
       "dependencies": [
-        "jsr:@std/assert@^1.0.17",
-        "jsr:@std/async@^1.1.0",
+        "jsr:@std/assert@^1.0.15",
+        "jsr:@std/async",
         "jsr:@std/data-structures",
-        "jsr:@std/fs@^1.0.22",
+        "jsr:@std/fs@^1.0.19",
         "jsr:@std/internal",
-        "jsr:@std/path@^1.1.4"
+        "jsr:@std/path@^1.1.2"
       ]
     },
     "@std/text@1.0.17": {
@@ -6028,9 +6023,7 @@
       "jsr:@std/async@^1.0.15",
       "jsr:@std/dotenv@~0.225.5",
       "jsr:@std/encoding@1.0.10",
-      "jsr:@std/fs@^1.0.20",
       "jsr:@std/media-types@^1.1.0",
-      "jsr:@std/path@^1.1.3",
       "jsr:@std/tar@~0.1.9",
       "jsr:@std/testing@^1.0.16",
       "npm:@sendgrid/helpers@8",
@@ -6046,9 +6039,7 @@
       "dependencies": [
         "npm:@inkjs/ui@2",
         "npm:@jsr/std__dotenv@~0.225.5",
-        "npm:@jsr/std__fs@^1.0.19",
         "npm:@jsr/std__media-types@^1.1.0",
-        "npm:@jsr/std__path@^1.1.2",
         "npm:@jsr/std__yaml@^1.0.10",
         "npm:@opentelemetry/api@^1.9.0",
         "npm:@total-typescript/ts-reset@~0.6.1",
@@ -6105,8 +6096,6 @@
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/db__sqlite@0.12",
-            "npm:@jsr/std__fs@^1.0.19",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.2.7",
             "npm:file-type@^21.3.0",
@@ -6252,8 +6241,7 @@
           "jsr:@db/sqlite@0.13",
           "jsr:@std/async@^1.0.15",
           "jsr:@std/encoding@^1.0.10",
-          "jsr:@std/media-types@^1.1.0",
-          "jsr:@std/path@^1.1.2"
+          "jsr:@std/media-types@^1.1.0"
         ],
         "packageJson": {
           "dependencies": [
@@ -6261,7 +6249,6 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@types/better-sqlite3@^7.6.13",
             "npm:ai@^5.0.133",
             "npm:better-sqlite3@^12.6.2",
@@ -6303,7 +6290,6 @@
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@libpdf/core@~0.2.7",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:@xmldom/xmldom@~0.8.11",
@@ -6335,8 +6321,7 @@
       "packages/fs-watch": {
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/std__async@^1.0.14",
-            "npm:@jsr/std__path@^1.1.2"
+            "npm:@jsr/std__async@^1.0.14"
           ]
         }
       },
@@ -6436,13 +6421,6 @@
           ]
         }
       },
-      "packages/signals": {
-        "packageJson": {
-          "dependencies": [
-            "npm:@jsr/std__path@^1.1.2"
-          ]
-        }
-      },
       "packages/skills": {
         "packageJson": {
           "dependencies": [
@@ -6457,7 +6435,6 @@
       "packages/storage": {
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.6"
@@ -6502,7 +6479,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
@@ -6531,8 +6507,6 @@
             "npm:@faker-js/faker@^10.3.0",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__dotenv@~0.225.5",
-            "npm:@jsr/std__fs@^1.0.19",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.133",

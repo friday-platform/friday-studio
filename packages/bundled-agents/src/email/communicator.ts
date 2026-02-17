@@ -1,14 +1,13 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate, stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
-import { resolve } from "@std/path";
 import { generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";

@@ -2,7 +2,7 @@ import process from "node:process";
 import type { WorkspaceInfo } from "@atlas/client";
 import { createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-import { exists } from "@std/fs";
+import { exists } from "../../../utils/fs.ts";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";

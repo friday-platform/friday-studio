@@ -3,7 +3,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { exists } from "@std/fs";
+import { exists } from "../../utils/fs.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "logs";

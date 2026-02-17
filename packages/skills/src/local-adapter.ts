@@ -1,7 +1,7 @@
+import { join } from "node:path";
 import { type Result, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import type { Database } from "@db/sqlite";
-import { join } from "@std/path";
 import { ulid } from "ulid";
 import type { CreateSkillInput, Skill, SkillSummary } from "./schemas.ts";
 import { SkillDbRowSchema, SkillSummarySchema } from "./schemas.ts";

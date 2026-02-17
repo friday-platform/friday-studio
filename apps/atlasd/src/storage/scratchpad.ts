@@ -11,8 +11,8 @@
  * @module scratchpad
  */
 
+import { join } from "node:path";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
 import { z } from "zod";
 
 export const NoteSchema = z.object({ note: z.string().describe("A note to track") });

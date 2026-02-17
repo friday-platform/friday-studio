@@ -5,6 +5,7 @@
  * NOTE: This is a skeleton for initial wiring. Behavior will be implemented next.
  */
 
+import { isAbsolute, normalize, resolve } from "node:path";
 import {
   computeRelativeToRoot,
   createFsWatchRunner,
@@ -12,7 +13,6 @@ import {
   mapFsEventKind,
   resolveToAbsolutePath,
 } from "@atlas/fs-watch";
-import { isAbsolute, normalize, resolve } from "@std/path";
 import type {
   HealthStatus,
   IProvider,

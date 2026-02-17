@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import {
@@ -18,7 +19,6 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
-import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";

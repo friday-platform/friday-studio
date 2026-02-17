@@ -1,10 +1,10 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 
 import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
 
 /**
  * Clean script to remove Atlas data directory contents

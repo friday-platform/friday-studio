@@ -1,8 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
 import { logger } from "@atlas/logger";
-import { basename, dirname, join, resolve } from "@std/path";
 import { parse } from "@std/yaml";
 import type { WorkspaceEntry } from "../types.ts";
 
