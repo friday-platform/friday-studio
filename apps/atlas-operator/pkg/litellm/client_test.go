@@ -10,17 +10,21 @@ import (
 	"testing"
 )
 
-func TestNewClient(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+func mustNewClient(t *testing.T, cfg Config) *Client {
+	t.Helper()
+	c, err := NewClient(cfg, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	return c
+}
 
-	client := NewClient(Config{
+func TestNewClient(t *testing.T) {
+	client := mustNewClient(t, Config{
 		Endpoint:  "http://localhost:4000",
 		MasterKey: "sk-test-key",
-	}, logger)
+	})
 
-	if client == nil {
-		t.Fatal("expected non-nil client")
-	}
 	if client.endpoint != "http://localhost:4000" {
 		t.Errorf("expected endpoint http://localhost:4000, got %s", client.endpoint)
 	}
@@ -29,13 +33,19 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestNewClient_DefaultTimeout(t *testing.T) {
+func TestNewClient_InvalidEndpoint(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	_, err := NewClient(Config{Endpoint: "://bad", MasterKey: "key"}, logger)
+	if err == nil {
+		t.Fatal("expected error for invalid endpoint")
+	}
+}
 
-	client := NewClient(Config{
+func TestNewClient_DefaultTimeout(t *testing.T) {
+	client := mustNewClient(t, Config{
 		Endpoint:  "http://localhost:4000",
 		MasterKey: "sk-test-key",
-	}, logger)
+	})
 
 	if client.timeout != defaultTimeout {
 		t.Errorf("expected default timeout of %v, got %v", defaultTimeout, client.timeout)
@@ -43,8 +53,6 @@ func TestNewClient_DefaultTimeout(t *testing.T) {
 }
 
 func TestCreateVirtualKey_Success(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/key/generate" {
 			t.Errorf("expected path /key/generate, got %s", r.URL.Path)
@@ -79,10 +87,10 @@ func TestCreateVirtualKey_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(Config{
+	client := mustNewClient(t, Config{
 		Endpoint:  server.URL,
 		MasterKey: "sk-master-key",
-	}, logger)
+	})
 
 	resp, err := client.CreateVirtualKey(context.Background(), CreateVirtualKeyRequest{
 		UserID:         "user-123",
@@ -102,18 +110,16 @@ func TestCreateVirtualKey_Success(t *testing.T) {
 }
 
 func TestCreateVirtualKey_Error(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error": "invalid request"}`))
 	}))
 	defer server.Close()
 
-	client := NewClient(Config{
+	client := mustNewClient(t, Config{
 		Endpoint:  server.URL,
 		MasterKey: "sk-master-key",
-	}, logger)
+	})
 
 	_, err := client.CreateVirtualKey(context.Background(), CreateVirtualKeyRequest{
 		UserID: "user-123",
@@ -125,8 +131,6 @@ func TestCreateVirtualKey_Error(t *testing.T) {
 }
 
 func TestDeleteVirtualKeyByUserID_Success(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/key/delete" {
 			t.Errorf("expected path /key/delete, got %s", r.URL.Path)
@@ -148,10 +152,10 @@ func TestDeleteVirtualKeyByUserID_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(Config{
+	client := mustNewClient(t, Config{
 		Endpoint:  server.URL,
 		MasterKey: "sk-master-key",
-	}, logger)
+	})
 
 	err := client.DeleteVirtualKeyByUserID(context.Background(), "user-456")
 	if err != nil {
@@ -160,18 +164,16 @@ func TestDeleteVirtualKeyByUserID_Success(t *testing.T) {
 }
 
 func TestDeleteVirtualKeyByUserID_Error(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"error": "key not found"}`))
 	}))
 	defer server.Close()
 
-	client := NewClient(Config{
+	client := mustNewClient(t, Config{
 		Endpoint:  server.URL,
 		MasterKey: "sk-master-key",
-	}, logger)
+	})
 
 	err := client.DeleteVirtualKeyByUserID(context.Background(), "user-456")
 	if err == nil {
@@ -213,8 +215,7 @@ func TestHasKey_Exists(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+	c := mustNewClient(t, Config{Endpoint: srv.URL, MasterKey: "test-key"})
 
 	got, err := c.HasKey(context.Background(), "user-1")
 	if err != nil {
@@ -232,8 +233,7 @@ func TestHasKey_NotExists(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+	c := mustNewClient(t, Config{Endpoint: srv.URL, MasterKey: "test-key"})
 
 	got, err := c.HasKey(context.Background(), "user-missing")
 	if err != nil {
@@ -251,8 +251,7 @@ func TestHasKey_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	c := NewClient(Config{Endpoint: srv.URL, MasterKey: "test-key"}, logger)
+	c := mustNewClient(t, Config{Endpoint: srv.URL, MasterKey: "test-key"})
 
 	_, err := c.HasKey(context.Background(), "user-1")
 	if err == nil {

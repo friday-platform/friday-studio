@@ -53,7 +53,7 @@ func NewOTP(email, secret string, createTime time.Time) (*OTP, error) {
 	}
 
 	h := hmac.New(sha256.New, []byte(secret))
-	_, err := fmt.Fprintf(h, otpStr, email, o.CreatedAt.Unix())
+	_, err := fmt.Fprintf(h, otpStr, email, o.CreatedAt.Unix()) //nolint:gosec // G705: writing to hmac.Hash, not http.ResponseWriter
 	if err != nil {
 		return nil, err
 	}

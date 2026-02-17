@@ -7,11 +7,14 @@ import (
 	"time"
 )
 
+// testDatabaseURL is a fake connection string for unit tests.
+const testDatabaseURL = "postgresql://user:pass@localhost:5432/db" //nolint:gosec // G101: test fixture
+
 func TestLoadConfig_Success(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// Set up environment variables
-	t.Setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/db")
+	t.Setenv("DATABASE_URL", testDatabaseURL)
 	t.Setenv("RECONCILIATION_INTERVAL", "45s")
 	t.Setenv("NAMESPACE", "atlas")
 	t.Setenv("ARGOCD_NAMESPACE", "argocd")
@@ -33,7 +36,7 @@ func TestLoadConfig_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if cfg.DatabaseURL != "postgresql://user:pass@localhost:5432/db" {
+	if cfg.DatabaseURL != testDatabaseURL {
 		t.Errorf("unexpected DatabaseURL: %s", cfg.DatabaseURL)
 	}
 
@@ -90,7 +93,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// Set only required fields
-	t.Setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/db")
+	t.Setenv("DATABASE_URL", testDatabaseURL)
 	t.Setenv("GIT_REPO_URL", "git@github.com:test/repo.git")
 	t.Setenv("WEBHOOK_TOKEN", "") // Optional field, set to empty
 	t.Setenv("TLS_CERTIFICATE_PATH", "/cert-volume/tls.crt")
@@ -146,7 +149,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 func TestValidate_Success(t *testing.T) {
 	cfg := &Config{
-		DatabaseURL:            "postgresql://user:pass@localhost:5432/db",
+		DatabaseURL:            testDatabaseURL,
 		GitRepoURL:             "git@github.com:test/repo.git",
 		Environment:            "sandbox",
 		ReconciliationInterval: 30 * time.Second,
@@ -180,7 +183,7 @@ func TestValidate_InvalidPortRange(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				DatabaseURL:            "postgresql://user:pass@localhost:5432/db",
+				DatabaseURL:            testDatabaseURL,
 				GitRepoURL:             "git@github.com:test/repo.git",
 				Environment:            "sandbox",
 				ReconciliationInterval: 30 * time.Second,

@@ -182,8 +182,9 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		}
 		recordSendGridRequest(resp.StatusCode)
 
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		if _, err := w.Write([]byte(resp.Body)); err != nil {
+		if _, err := w.Write([]byte(resp.Body)); err != nil { //nolint:gosec // G705: Content-Type set to application/json above
 			s.Logger.Error("failed to write response body", "error", err)
 		}
 		return

@@ -50,5 +50,5 @@ func serveHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	_, _ = w.Write(content)
+	_, _ = w.Write(content) //nolint:gosec // G705: trusted HTML from GCS with explicit Content-Type
 }

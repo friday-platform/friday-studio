@@ -65,7 +65,7 @@ func validateK8sToken(ctx context.Context, client *http.Client, token string) (*
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(saToken)))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL is const k8sTokenReviewURL
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes API request: %w", err)
 	}

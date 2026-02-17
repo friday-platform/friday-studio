@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,7 +68,7 @@ func doOAuthLogin(ctx context.Context) (*oauth2.Token, error) {
 
 		switch {
 		case errMsg != "":
-			_, _ = fmt.Fprintf(w, "Authentication failed: %s", errMsg)
+			_, _ = fmt.Fprintf(w, "Authentication failed: %s", html.EscapeString(errMsg)) //nolint:gosec // G705: errMsg is HTML-escaped
 			errChan <- fmt.Errorf("oauth error: %s", errMsg)
 		case code != "" && state == expectedState:
 			_, _ = fmt.Fprintln(w, "Authentication successful! You can close this window.")
@@ -123,15 +125,24 @@ func doOAuthLogin(ctx context.Context) (*oauth2.Token, error) {
 	return token, nil
 }
 
-func openBrowser(url string) error {
+func openBrowser(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("refusing to open non-HTTP URL: %s", u.Scheme)
+	}
+	validated := u.String()
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", validated) //nolint:gosec // G204: URL scheme validated above
 	case "linux":
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", validated) //nolint:gosec // G204: URL scheme validated above
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", validated) //nolint:gosec // G204: URL scheme validated above
 	default:
 		return errors.New("unsupported platform")
 	}

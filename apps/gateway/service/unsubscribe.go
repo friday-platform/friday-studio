@@ -176,7 +176,7 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 	displayName := workspaceDisplayName(payload.WorkspaceID)
 	unsubscribeRequestsTotal.WithLabelValues("GET", "rendered").Inc()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(displayName), html.EscapeString(token))
+	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(displayName), html.EscapeString(token)) //nolint:gosec // G705: values are HTML-escaped
 }
 
 // workspaceDisplayName returns a human-readable name for a workspace ID.

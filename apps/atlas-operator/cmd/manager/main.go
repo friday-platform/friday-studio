@@ -175,10 +175,13 @@ func run() error {
 	if cfg.LiteLLMEnabled {
 		logger.Info("LiteLLM integration enabled, creating clients")
 
-		litellmClient = litellm.NewClient(litellm.Config{
+		litellmClient, err = litellm.NewClient(litellm.Config{
 			Endpoint:  cfg.LiteLLMEndpoint,
 			MasterKey: cfg.LiteLLMMasterKey,
 		}, logger)
+		if err != nil {
+			return fmt.Errorf("create LiteLLM client: %w", err)
+		}
 
 		// Get CA cert pool from TLS config for Cypher client
 		var rootCAs *x509.CertPool

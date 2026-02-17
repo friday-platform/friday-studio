@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,7 +102,10 @@ func (er *EventRouter) RouteSlackEvent(ctx context.Context, event *SlackMessageE
 	}
 
 	// Construct URL and forward to Atlas
-	atlasURL := er.constructAtlasURL(userID)
+	atlasURL, err := er.constructAtlasURL(userID)
+	if err != nil {
+		return fmt.Errorf("failed to construct atlas URL: %w", err)
+	}
 
 	payload := AtlasSlackPayload{
 		Text: event.Text,
@@ -115,7 +119,11 @@ func (er *EventRouter) RouteSlackEvent(ctx context.Context, event *SlackMessageE
 		},
 	}
 
-	return er.forwardToAtlas(ctx, atlasURL+"/signals/slack", payload)
+	signalURL, err := url.JoinPath(atlasURL, "/signals/slack")
+	if err != nil {
+		return fmt.Errorf("failed to construct signal URL: %w", err)
+	}
+	return er.forwardToAtlas(ctx, signalURL, payload)
 }
 
 // lookupSlackRoute looks up a Slack team route from cache first, then from database.
@@ -149,7 +157,7 @@ func (er *EventRouter) forwardToAtlas(ctx context.Context, url string, payload i
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := er.httpClient.Do(req)
+	resp, err := er.httpClient.Do(req) //nolint:gosec // G704: URL scheme validated in constructAtlasURL
 	if err != nil {
 		return fmt.Errorf("failed to forward to Atlas: %w", err)
 	}
@@ -163,10 +171,15 @@ func (er *EventRouter) forwardToAtlas(ctx context.Context, url string, payload i
 	return nil
 }
 
-// constructAtlasURL constructs the Atlas instance URL from user ID.
-func (er *EventRouter) constructAtlasURL(userID string) string {
-	if strings.Contains(er.atlasURLTemplate, "%s") {
-		return fmt.Sprintf(er.atlasURLTemplate, userID)
+// constructAtlasURL constructs the Atlas instance URL from user ID and validates the result.
+func (er *EventRouter) constructAtlasURL(userID string) (string, error) {
+	result := er.atlasURLTemplate
+	if strings.Contains(result, "%s") {
+		result = fmt.Sprintf(result, userID)
 	}
-	return er.atlasURLTemplate
+	u, err := url.Parse(result)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("invalid atlas URL %q: must be http or https", result)
+	}
+	return result, nil
 }

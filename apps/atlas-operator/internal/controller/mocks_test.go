@@ -66,7 +66,7 @@ func (m *MockDatabaseClient) CreatePoolUser(ctx context.Context) (string, error)
 	if m.CreatePoolErr != nil {
 		return "", m.CreatePoolErr
 	}
-	userID := "pool-user-" + string(rune('a'+len(m.CreatedPoolUsers)))
+	userID := fmt.Sprintf("pool-user-%d", len(m.CreatedPoolUsers))
 	m.CreatedPoolUsers = append(m.CreatedPoolUsers, userID)
 	m.PoolUserCount++
 	return userID, nil

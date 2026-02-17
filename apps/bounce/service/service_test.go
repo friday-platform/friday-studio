@@ -11,12 +11,15 @@ func executeRequest(req *http.Request, r http.Handler) *http.Response {
 	return rr.Result()
 }
 
+// testPostgresURL is a fake connection string for testing (not real credentials).
+const testPostgresURL = "postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable" //nolint:gosec // G101: test fixture
+
 func cfg() Config {
-	return Config{
+	return Config{ //nolint:gosec // G101: test fixture with fake credentials
 		JWTPrivateKey:             "test",
 		JWTPublicKey:              "test",
 		LogLevel:                  "debug",
-		PostgresConnection:        "postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable",
+		PostgresConnection:        testPostgresURL,
 		OAuthGoogleCredentialJSON: `{"web":{"client_id":"test","redirect_uris":["http://acme.com"]}}`,
 	}
 }

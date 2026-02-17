@@ -3,6 +3,7 @@ package service
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -24,7 +25,12 @@ var allowedProxyHeaders = map[string]bool{
 
 func (s *Service) HandleParallelProxy(w http.ResponseWriter, r *http.Request) {
 	targetPath := strings.TrimPrefix(r.URL.Path, "/v1/parallel")
-	targetURL := parallelBaseURL + targetPath
+	targetURL, err := url.JoinPath(parallelBaseURL, targetPath)
+	if err != nil {
+		s.Logger.Error("invalid parallel proxy URL", "error", err)
+		http.Error(w, "invalid request path", http.StatusBadRequest)
+		return
+	}
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery
 	}
@@ -52,7 +58,7 @@ func (s *Service) HandleParallelProxy(w http.ResponseWriter, r *http.Request) {
 	// Inject API key server-side
 	proxyReq.Header.Set("x-api-key", s.cfg.ParallelAPIKey)
 
-	resp, err := s.client.Do(proxyReq)
+	resp, err := s.client.Do(proxyReq) //nolint:gosec // G704: base URL is const parallelBaseURL, path joined via url.JoinPath
 	if err != nil {
 		s.Logger.Error("parallel proxy request failed", "error", err)
 		recordParallelRequest(http.StatusBadGateway)

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -37,6 +38,11 @@ const defaultTimeout = 10 * time.Second
 // NewClient creates a new Cypher client.
 // It configures TLS to trust the provided CA certificate pool.
 func NewClient(cfg Config, logger *slog.Logger) (*Client, error) {
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, fmt.Errorf("invalid cypher endpoint URL %q: must be http or https", cfg.Endpoint)
+	}
+
 	transport := &http.Transport{}
 
 	if cfg.RootCAs != nil {
@@ -90,7 +96,11 @@ func (c *Client) Encrypt(ctx context.Context, userID string, plaintext []string)
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/internal/encrypt", bytes.NewReader(body))
+	reqURL, err := url.JoinPath(c.endpoint, "/internal/encrypt")
+	if err != nil {
+		return nil, fmt.Errorf("build request URL: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -98,7 +108,7 @@ func (c *Client) Encrypt(ctx context.Context, userID string, plaintext []string)
 	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(saToken)))
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}

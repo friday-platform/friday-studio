@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -67,19 +68,13 @@ func NewClient(databaseURL string, logger *slog.Logger) (*Client, error) {
 // GetUsers retrieves users from the database with cursor-based pagination.
 // Use afterID="" for the first page. Returns up to limit users ordered by id.
 func (c *Client) GetUsers(ctx context.Context, limit int, afterID string) ([]User, error) {
-	// Cap limit to a reasonable maximum to prevent overflow
-	if limit > 10000 {
-		limit = 10000
-	}
-	if limit < 0 {
-		limit = 0
-	}
+	l := clampToInt32(limit, 0, 10000)
 
 	// Use separate queries to avoid OR that defeats index usage.
 	if afterID == "" {
-		return c.getUsersFirstPage(ctx, int32(limit)) //nolint:gosec // limit is bounded above
+		return c.getUsersFirstPage(ctx, l)
 	}
-	return c.getUsersAfterCursor(ctx, int32(limit), afterID) //nolint:gosec // limit is bounded above
+	return c.getUsersAfterCursor(ctx, l, afterID)
 }
 
 func (c *Client) getUsersFirstPage(ctx context.Context, limit int32) ([]User, error) {
@@ -169,7 +164,7 @@ func (c *Client) CreatePoolUser(ctx context.Context) (string, error) {
 // GetUserIDsMissingVirtualKeys returns user IDs that don't have a virtual key yet.
 // Uses a LEFT JOIN to compute the diff in a single query instead of per-user checks.
 func (c *Client) GetUserIDsMissingVirtualKeys(ctx context.Context, limit int) ([]string, error) {
-	ids, err := c.queries.GetUserIDsMissingVirtualKeys(ctx, int32(limit)) //nolint:gosec // limit is caller-bounded
+	ids, err := c.queries.GetUserIDsMissingVirtualKeys(ctx, clampToInt32(limit, 0, math.MaxInt32))
 	if err != nil {
 		c.logger.Error("Failed to get users missing virtual keys", "error", err)
 		return nil, fmt.Errorf("get users missing virtual keys: %w", err)
@@ -270,4 +265,21 @@ func userFromByIDRow(row *repo.GetUserByIDRow) User {
 		DisplayName:      &row.DisplayName,
 		ProfilePhoto:     &row.ProfilePhoto,
 	}
+}
+
+// clampToInt32 clamps v to [lo, hi] and returns the result as int32.
+func clampToInt32(v, lo, hi int) int32 {
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
 }

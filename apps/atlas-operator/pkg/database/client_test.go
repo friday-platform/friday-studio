@@ -2,6 +2,7 @@ package database
 
 import (
 	"log/slog"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -235,5 +236,32 @@ func TestUserFromAfterCursorRow_NullBounceAuthUserID(t *testing.T) {
 
 	if user.BounceAuthUserID != nil {
 		t.Errorf("expected nil BounceAuthUserID, got %v", *user.BounceAuthUserID)
+	}
+}
+
+func TestClampToInt32(t *testing.T) {
+	tests := []struct {
+		name      string
+		v, lo, hi int
+		expected  int32
+	}{
+		{"within range", 50, 0, 100, 50},
+		{"at lo boundary", 0, 0, 100, 0},
+		{"at hi boundary", 100, 0, 100, 100},
+		{"below lo", -5, 0, 100, 0},
+		{"above hi", 200, 0, 100, 100},
+		{"lo equals hi", 50, 10, 10, 10},
+		{"negative range", -50, -100, -10, -50},
+		{"exceeds MaxInt32", math.MaxInt32 + 1, 0, math.MaxInt, math.MaxInt32},
+		{"below MinInt32", math.MinInt, math.MinInt, 0, math.MinInt32},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clampToInt32(tt.v, tt.lo, tt.hi)
+			if got != tt.expected {
+				t.Errorf("clampToInt32(%d, %d, %d) = %d, want %d", tt.v, tt.lo, tt.hi, got, tt.expected)
+			}
+		})
 	}
 }

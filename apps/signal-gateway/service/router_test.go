@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConstructAtlasURL(t *testing.T) {
@@ -38,7 +39,8 @@ func TestConstructAtlasURL(t *testing.T) {
 			er := &EventRouter{
 				atlasURLTemplate: tt.atlasURLTemplate,
 			}
-			url := er.constructAtlasURL(tt.userID)
+			url, err := er.constructAtlasURL(tt.userID)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expectedURL, url)
 		})
 	}

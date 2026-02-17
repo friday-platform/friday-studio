@@ -30,14 +30,19 @@ type Config struct {
 const defaultTimeout = 10 * time.Second
 
 // NewClient creates a new LiteLLM client.
-func NewClient(cfg Config, logger *slog.Logger) *Client {
+func NewClient(cfg Config, logger *slog.Logger) (*Client, error) {
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, fmt.Errorf("invalid litellm endpoint URL %q: must be http or https", cfg.Endpoint)
+	}
+
 	return &Client{
 		endpoint:   cfg.Endpoint,
 		masterKey:  cfg.MasterKey,
 		timeout:    defaultTimeout,
 		httpClient: &http.Client{},
 		logger:     logger,
-	}
+	}, nil
 }
 
 // CreateVirtualKeyRequest is the request body for creating a virtual key.
@@ -68,7 +73,11 @@ func (c *Client) CreateVirtualKey(ctx context.Context, req CreateVirtualKeyReque
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/key/generate", bytes.NewReader(body))
+	reqURL, err := url.JoinPath(c.endpoint, "/key/generate")
+	if err != nil {
+		return nil, fmt.Errorf("build request URL: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -76,7 +85,7 @@ func (c *Client) CreateVirtualKey(ctx context.Context, req CreateVirtualKeyReque
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
@@ -121,7 +130,11 @@ func (c *Client) DeleteVirtualKeyByUserID(ctx context.Context, userID string) er
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/key/delete", bytes.NewReader(body))
+	reqURL, err := url.JoinPath(c.endpoint, "/key/delete")
+	if err != nil {
+		return fmt.Errorf("build request URL: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -129,7 +142,7 @@ func (c *Client) DeleteVirtualKeyByUserID(ctx context.Context, userID string) er
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
 	if err != nil {
 		return fmt.Errorf("execute request: %w", err)
 	}
@@ -158,7 +171,11 @@ func (c *Client) HasKey(ctx context.Context, userID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	reqURL := fmt.Sprintf("%s/key/list?user_id=%s&page_size=1", c.endpoint, url.QueryEscape(userID))
+	basePath, err := url.JoinPath(c.endpoint, "/key/list")
+	if err != nil {
+		return false, fmt.Errorf("build request URL: %w", err)
+	}
+	reqURL := fmt.Sprintf("%s?user_id=%s&page_size=1", basePath, url.QueryEscape(userID))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return false, fmt.Errorf("create request: %w", err)
@@ -166,7 +183,7 @@ func (c *Client) HasKey(ctx context.Context, userID string) (bool, error) {
 
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
 	if err != nil {
 		return false, fmt.Errorf("execute request: %w", err)
 	}
