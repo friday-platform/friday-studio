@@ -121,7 +121,6 @@ onMount(() => {
 type UseCase = {
   title: string;
   summary: string;
-  prompt: string;
   integrations: string[];
   category: "productivity" | "research" | "development" | "analysis" | "monitor";
   main?: boolean;
@@ -129,143 +128,115 @@ type UseCase = {
 
 let useCases: UseCase[] = [
   {
-    title: "Create Linear tickets from your meeting notes",
-    summary: "Turn raw meeting notes into tickets with owners and next steps.",
-    prompt:
-      "From my meeting notes in Notion, create Linear tickets with a title, description, owner, and priority.",
+    title: "Turn meeting notes into action",
+    summary: "Meeting notes become actionable tickets with owners and priorities.",
     integrations: ["linear", "notion"],
     category: "development",
     main: true,
   },
   {
-    title: "Send email reminders",
-    summary: "Follow up automatically if someone has not replied after a set amount of time.",
-    prompt:
-      "If someone does not reply to this email in my Gmail within 3 business days, remind me on Slack and draft a polite follow-up.",
+    title: "Never forget to follow up",
+    summary: "Send automatic follow-ups when there’s no reply.",
     integrations: ["google-gmail", "slack"],
     category: "productivity",
   },
   {
-    title: "Upload a data set and conduct analysis via chat",
-    summary: "Upload a dataset once, then explore it over time by asking questions.",
-    prompt:
-      "I'm going to share a dataset via Google Sheets. Remember it and answer my questions about trends, breakdowns, and specific rows as I ask them.",
+    title: "Turn raw data into ongoing insight",
+    summary: "Upload a dataset once and explore it anytime through simple questions.",
     integrations: ["google-sheets"],
     category: "analysis",
   },
   {
-    title: "Research brief on meeting attendees",
-    summary: "Prepare briefs on the company and attendees of upcoming meetings.",
-    prompt:
-      "For any external meetings, research each company and attendee, then send me a briefing the morning of each meeting.",
+    title: "Walk into every meeting prepared",
+    summary: "Research meeting attendees and send a briefing before you sit down.",
     integrations: ["google-gmail", "google-calendar"],
     category: "research",
     main: true,
   },
   {
-    title: "Error trend summary",
-    summary: "Surface patterns and the most frequent errors in Sentry.",
-    prompt:
-      "Send me a weekly summary via Slack of the most frequent errors and any trends, including what's improved or what's gotten worse.",
+    title: "Catch errors before users complain",
+    summary: "Get Sentry trends summarized and delivered weekly.",
     integrations: ["sentry", "slack"],
     category: "monitor",
     main: true,
   },
   {
-    title: "Summarize AI related news for the day",
-    summary: "Get a daily digest of relevant AI-related news, curated to your interests.",
-    prompt:
-      "Every weekday morning, send me a concise summary of the most important tech and AI news.",
+    title: "Stay on top of important news",
+    summary: "Get a daily digest of relevant news, curated to your interests.",
     integrations: ["google-gmail"],
     category: "research",
     main: true,
   },
   {
-    title: "Write release notes based on PRs",
-    summary: "Generate clear, user-friendly release notes from merged pull requests.",
-    prompt:
-      "Look at all PRs merged this week and generate release notes grouped by features, improvements, and fixes. Save them to Notion.",
+    title: "Stop writing release notes manually",
+    summary: "Auto-draft notes from PRs and publish every week.",
     integrations: ["github", "notion"],
     category: "development",
     main: true,
   },
   {
-    title: "Competitor briefing",
-    summary: "Get up to date on information competitor news",
-    prompt:
-      "Every week, send me a summary of the latest news on a short list of competitors. Make sure to link the source.",
+    title: "Stay ahead of your competitors",
+    summary: "Get timely summaries of the competitor news that matters most.",
     integrations: ["google-gmail"],
     category: "research",
   },
   {
-    title: "Distribute meeting notes and next steps",
-    summary: "Summarize meeting notes with action items, then share them with your team.",
-    prompt:
-      "Summarize meeting notes in Notion, outline next steps, and post the summary in a Slack channel.",
+    title: "Make meetings count",
+    summary:
+      "Get meeting transcripts summarized with next steps shared out important stakeholders.",
     integrations: ["slack", "notion"],
     category: "productivity",
     main: true,
   },
   {
-    title: "Daily stock updates",
-    summary: "Get a daily snapshot of your stock performance.",
-    prompt:
-      "Every weekday, send me a daily update on the stocks I'm tracking, including major changes and notable news.",
+    title: "Stop checking your portfolio obsessively",
+    summary: "Get daily stock performance updates sent straight to your inbox.",
     integrations: ["google-gmail"],
     category: "monitor",
     main: true,
   },
   {
-    title: "Week over week performance tracking",
-    summary: "Track multiple data sets to understand how performance is trending.",
-    prompt:
-      "Compare this week's data set to last week data set and summarize the major trends and takeaways.",
+    title: "See week-over-week performance",
+    summary: "Track multiple datasets automatically and get clear trend insights.",
     integrations: ["google-sheets"],
     category: "analysis",
   },
   {
-    title: "Keyword or brand mentions",
-    summary: "Get updates when your brand or product is mentioned online.",
-    prompt: "Every day, monitor the web for mentions of our brand and send me a daily summary.",
+    title: "Never miss a brand mention",
+    summary: "Get alerts when your brand or product appears online.",
     integrations: ["google-gmail"],
     category: "monitor",
   },
   {
-    title: "Weekly standup summary",
-    summary: "Generates a clear weekly standup update based on the work you shipped.",
-    prompt:
-      "Create a weekly standup summary from my GitHub commits in the last 24 hours and save to Notion.",
+    title: "Walk into standup ready",
+    summary: "Generate a clear weekly update based on what you shipped.",
     integrations: ["github", "notion"],
     category: "development",
   },
   {
-    title: "Email inbox summary",
-    summary: "Get a daily overview of your inbox that highlight anything most pressing.",
-    prompt:
-      "Summarize my unread emails in the last 24 hours and send it to me in a Slack channel every morning. Call out any that seem important or urgent.",
+    title: "Never miss what matters",
+    summary: "Surface urgent emails so you don’t live in your inbox.",
     integrations: ["google-gmail", "slack"],
     category: "productivity",
     main: true,
   },
   {
-    title: "Survey response analysis",
-    summary: "Take survey responses and glean themes, patterns, and insights.",
-    prompt:
-      "Analyze survey responses in Google Sheets, group them by theme, and summarize the top insights and patterns in a Google Doc.",
+    title: "Turn survey responses into insights",
+    summary: "Extract themes and patterns from survey responses.",
     integrations: ["google-sheets", "google-docs"],
     category: "analysis",
   },
 ];
 
 let prompts = [
-  "Look at GitHub PRs merged this week and generate release notes in Notion.",
-  "Research the attendees in my meetings and send me a daily morning briefing.",
-  "Create a Slack notification with the last 24 hours of unread emails. Highlight anything urgent.",
-  "Send a weekly email that summarizes the most frequent errors and trends from Sentry.",
-  "Track the stocks in my portfolio and send me a daily email update on how they’re performing.",
-  "Turn my Notion meeting notes into Jira tickets, including a title, description, owner, and priority.",
-  "Summarize my meeting transcripts, outline the next steps, and post the summary in a Slack channel.",
-  "Keep track of my competitors and send me a short summary of important updates every weekday morning.",
+  "Draft release notes from the GitHub PRs merged this week and add them to my Notion page.",
+  "Research the people I’m meeting with and send me a daily morning briefing.",
+  "Send me a Slack summary of unread emails from the last 24 hours and highlight anything urgent.",
+  "Send me a weekly email summarizing the most frequent errors and trends in Sentry.",
+  "Track my stock portfolio and send me a daily email update on performance.",
+  "Turn my Notion meeting notes into Jira tickets with a clear title, description, owner, and priority.",
+  "Summarize my meeting transcripts, outline next steps, and post the update in Slack.",
+  "Research my competitors and send me a weekday morning summary of important updates.",
 ];
 </script>
 
@@ -274,7 +245,7 @@ let prompts = [
 	<div class="pinwheel-shade"></div>
 </div>
 <section class="hero">
-	<h1>AI that works while you’re away</h1>
+	<h1>AI that works for you, around the clock</h1>
 
 	<div class="prompts" bind:this={promptContainer}>
 		{#each prompts as item, i (item)}
@@ -288,7 +259,7 @@ let prompts = [
 		target="_blank"
 		rel="noopener noreferrer"
 	>
-		Start Building
+		Start building
 	</a>
 </section>
 

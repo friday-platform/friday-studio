@@ -11,18 +11,18 @@ import UseCases from "$lib/sections/use-cases.svelte";
 </script>
 
 <svelte:head>
-	<title>Friday — The AI that works while you're away</title>
+	<title>Friday — AI that works for you, around the clock</title>
 	<meta
 		name="description"
 		content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest."
 	/>
 	<meta property="og:type" content="website" />
-	<meta property="og:title" content="Friday — The AI that works while you're away" />
+	<meta property="og:title" content="Friday — AI that works for you, around the clock" />
 	<meta
 		property="og:description"
 		content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest."
 	/>
-	<meta name="twitter:title" content="Friday — The AI that works while you're away" />
+	<meta name="twitter:title" content="Friday — AI that works for you, around the clock" />
 	<meta
 		name="twitter:description"
 		content="Friday is an AI assistant that builds and runs automations through conversation. Describe what you want, and Friday handles the rest."

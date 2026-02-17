@@ -79,7 +79,7 @@ afterNavigate(() => {
 					target="_blank"
 					rel="noopener noreferrer"
 				>
-					Join the Beta
+					Join the beta
 				</DropdownMenu.Item>
 
 				<DropdownMenu.Item
@@ -112,7 +112,7 @@ afterNavigate(() => {
 
 	<div class="ctas">
 		<a href="https://auth.hellofriday.ai/signup" target="_blank" rel="noopener noreferrer"
-			>Join the Beta</a
+			>Join the beta</a
 		>
 
 		<a href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">Login</a>

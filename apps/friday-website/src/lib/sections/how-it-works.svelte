@@ -106,12 +106,12 @@ $effect(() => {
 			<div class="animation" class:visible={activeItem === 1}>
 				<div class="message">
 					<p>
-						Every week, send me a summary of the latest news on a short list of competitors. Make
-						sure to link the source.
+						Review the transcript from my meeting and draft an email with a summary and clear
+						next&nbsp;steps.
 					</p>
 
 					<div class="author">
-						<img src={avatar} alt="User avatar" width="40" height="40" loading="lazy" />
+						<img src={avatar} alt="User avatar" loading="lazy" />
 						<time>Shay, Monday at 8:04am</time>
 					</div>
 				</div>
@@ -120,13 +120,50 @@ $effect(() => {
 			<div class="animation" class:visible={activeItem === 2}>
 				<div class="thinking-steps">
 					<ul>
-						<li>Researching</li>
-						<li>Collating results</li>
+						<li>Analyzing transcript</li>
+						<li>Determining next steps</li>
 						<li>Creating summary</li>
 						<li>Sending email</li>
 					</ul>
 
 					<time>Completed in 3 minutes, 24 seconds</time>
+				</div>
+			</div>
+
+			<div class="animation" class:visible={activeItem === 3}>
+				<div class="result">
+					<header>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							xmlns="http://www.w3.org/2000/svg"
+							aria-hidden="true"
+						>
+							<path
+								d="M11.5 2.5C13.433 2.5 15 4.067 15 6V10C15 11.933 13.433 13.5 11.5 13.5H4.5C2.567 13.5 1 11.933 1 10V6C1 4.067 2.567 2.5 4.5 2.5H11.5ZM2.25293 4.90723C2.09198 5.23756 2 5.60783 2 6V10C2 11.3807 3.11929 12.5 4.5 12.5H11.5C12.8807 12.5 14 11.3807 14 10V6C14 5.63579 13.9203 5.2906 13.7803 4.97852L9.11328 9.64648C8.52749 10.232 7.5779 10.2321 6.99219 9.64648L2.25293 4.90723ZM4.5 3.5C3.87581 3.5 3.30624 3.73015 2.86816 4.1084L7.69922 8.93945C7.89441 9.13459 8.21099 9.13448 8.40625 8.93945L13.1865 4.1582C12.7417 3.75068 12.1508 3.5 11.5 3.5H4.5Z"
+								fill="#FF8333"
+								style="fill:#FF8333;fill:color(display-p3 1.0000 0.5137 0.2000);fill-opacity:1;"
+							/>
+						</svg>
+						<span>Meeting Summary - Project Chimera</span>
+					</header>
+
+					<hr />
+
+					<p>
+						<strong>Key discussion points:</strong> The meeting covered a review of the latest market
+						analysis, an overview of competitor strategies, and a discussion on budget allocation for
+						the upcoming quarter.
+					</p>
+
+					<p>
+						<strong>Next steps:</strong><br />
+						- Finalize campaign drafts<br />
+						- Schedule client presentation<br />
+						- Confirm launch date
+					</p>
 				</div>
 			</div>
 		</div>
@@ -311,6 +348,7 @@ $effect(() => {
 			transform: translateY(var(--size-2));
 
 			img {
+				aspect-ratio: 1;
 				block-size: var(--size-5);
 			}
 
@@ -419,6 +457,70 @@ $effect(() => {
 			opacity: 0.5;
 			transition-delay: 100ms;
 			transform: translateY(0);
+		}
+	}
+
+	.result {
+		background-color: hsl(18 95% 83% / 0.3);
+		border-radius: var(--radius-5);
+		opacity: 0;
+		max-inline-size: var(--size-88);
+		padding: var(--size-4);
+		transform: scale(0.92);
+		transition: all 200ms ease;
+
+		@supports (color: color(display-p3 0 0 0)) {
+			background-color: color(display-p3 0.9919 0.762 0.6635 / 0.3);
+		}
+
+		header {
+			align-items: center;
+			display: flex;
+			gap: var(--size-2);
+			margin: 0;
+
+			svg {
+				flex: none;
+				inline-size: var(--size-4);
+				block-size: var(--size-4);
+			}
+
+			span {
+				font-size: var(--font-size-4);
+				font-weight: var(--font-weight-6);
+				line-height: var(--font-lineheight-1);
+			}
+		}
+
+		hr {
+			border: none;
+			border-block-start: 1px solid hsl(18 95% 83% / 1);
+			margin-block: var(--size-3);
+			opacity: 0.4;
+
+			@supports (color: color(display-p3 0 0 0)) {
+				border-block-start-color: color(display-p3 0.9919 0.762 0.6635 / 1);
+			}
+		}
+
+		p {
+			font-size: var(--font-size-4);
+			font-weight: var(--font-weight-4-5);
+			line-height: var(--font-lineheight-3);
+			opacity: 0.8;
+		}
+
+		p + p {
+			margin-block-start: var(--size-3);
+		}
+
+		strong {
+			font-weight: var(--font-weight-6);
+		}
+
+		.visible & {
+			opacity: 1;
+			transform: scale(1);
 		}
 	}
 </style>

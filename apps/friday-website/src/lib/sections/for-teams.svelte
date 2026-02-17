@@ -19,7 +19,7 @@ import Teams from "$lib/icons/teams.svelte";
 	{#snippet header()}
 		<h2 style:color="var(--color-purple-1)">
 			<Teams />
-			For Teams
+			For teams
 		</h2>
 
 		<h3>Put AI to work across teams</h3>

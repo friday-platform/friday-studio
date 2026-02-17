@@ -60,11 +60,15 @@ let { header, details }: Props = $props();
 		margin-block: var(--size-6) 0;
 		grid-row: 2;
 
+		@media (min-width: 768px) {
+			margin-block: 0;
+		}
+
 		p {
 			font-size: var(--font-size-6);
-			font-weight: var(--font-weight-5);
+			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-1);
-			opacity: 0.8;
+			opacity: 0.6;
 			text-wrap-style: balance;
 		}
 	}

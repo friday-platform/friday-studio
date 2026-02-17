@@ -32,7 +32,7 @@ let activeItems = $state<number[]>([]);
 	<header>
 		<h2>
 			<Faq />
-			Frequently Asked Questions
+			Frequently asked questions
 		</h2>
 	</header>
 

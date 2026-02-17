@@ -19,7 +19,7 @@ import Individuals from "$lib/icons/individuals.svelte";
 	{#snippet header()}
 		<h2 style:color="var(--color-green-1)">
 			<Individuals />
-			For Individuals
+			For individuals
 		</h2>
 
 		<h3>Your personal AI concierge</h3>
