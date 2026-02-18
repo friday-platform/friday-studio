@@ -63,7 +63,7 @@ func (m *Manager) Replenish(ctx context.Context) (int, error) {
 
 	m.logger.Info("Replenishing pool", "current", count, "target", m.targetSize, "deficit", deficit)
 
-	for i := 0; i < deficit; i++ {
+	for i := range deficit {
 		if _, err := m.db.CreatePoolUser(ctx); err != nil {
 			m.logger.Error("Failed to create pool user", "error", err, "created", i)
 			return i, err

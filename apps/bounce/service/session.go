@@ -51,8 +51,8 @@ type TempestClaims struct {
 
 type Claims struct {
 	jwt.RegisteredClaims
-	Email        string                 `json:"email"`
-	UserMetadata map[string]interface{} `json:"user_metadata"`
+	Email        string         `json:"email"`
+	UserMetadata map[string]any `json:"user_metadata"`
 	// Role is a requirement for supabase APIs which use PostgREST
 	Role                          string     `json:"role"`
 	AuthenticatorAssuranceLevel   string     `json:"aal,omitempty"`
@@ -78,7 +78,7 @@ func NewTempestClaims(userID, email string) (*TempestClaims, error) {
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 				ID:        jwi,
 			},
-			UserMetadata: make(map[string]interface{}),
+			UserMetadata: make(map[string]any),
 			Email:        email,
 			Role:         "authenticated",
 			SessionId:    jwi,
@@ -93,7 +93,7 @@ func newEmptyTempestClaims() *TempestClaims {
 				Audience:  jwt.ClaimStrings{"tempest"},
 				NotBefore: jwt.NewNumericDate(time.Now()),
 			},
-			UserMetadata: make(map[string]interface{}),
+			UserMetadata: make(map[string]any),
 		},
 	}
 }
@@ -141,7 +141,7 @@ func (c *TempestClaims) SetTempestAuthUserId(id string) {
 func ParseTempestClaimsFromJWT(secret, accessToken string) (*TempestClaims, error) {
 	claims := newEmptyTempestClaims()
 
-	_, err := jwt.ParseWithClaims(accessToken, claims.claims, func(token *jwt.Token) (interface{}, error) {
+	_, err := jwt.ParseWithClaims(accessToken, claims.claims, func(token *jwt.Token) (any, error) {
 		publicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse RSA public key: %w", err)

@@ -57,7 +57,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Retry with new UUID if collision occurs (extremely unlikely with UUIDv4)
 	var id uuid.UUID
-	for i := 0; i < maxUploadRetries; i++ {
+	for i := range maxUploadRetries {
 		id = uuid.New()
 		if err = storage.Upload(ctx, id, body); err == nil {
 			break

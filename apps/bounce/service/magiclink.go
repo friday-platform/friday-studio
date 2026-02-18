@@ -112,7 +112,7 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 
 	email, err := newSendgridEmail(cfg, &SendgridEmailConfig{
 		TemplateID: MAGIC_LINK_SENDGRID_TEMPLATE_ID,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"login_link":  magicLinkURL(cfg, otp.String(), req.Payload.OriginalReferrer),
 			"login_email": user.Email,
 		},

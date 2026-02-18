@@ -190,7 +190,7 @@ func TestHandleUnsubscribe_Idempotent(t *testing.T) {
 	})
 
 	// Unsubscribe twice — second should not error
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		form := url.Values{}
 		form.Set("token", token)
 		req := httptest.NewRequest(http.MethodPost, "/unsubscribe", strings.NewReader(form.Encode()))

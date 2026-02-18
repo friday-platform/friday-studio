@@ -96,7 +96,7 @@ func TestHandleSendGridEmail(t *testing.T) {
 				From:       "sender@example.com",
 				Subject:    "Test Subject",
 				TemplateID: "d-abc123",
-				TemplateData: map[string]interface{}{
+				TemplateData: map[string]any{
 					"name": "John",
 				},
 			},
@@ -566,15 +566,15 @@ type mockDBTX struct {
 	suppressed bool
 }
 
-func (m *mockDBTX) Exec(_ context.Context, _ string, _ ...interface{}) (pgconn.CommandTag, error) {
+func (m *mockDBTX) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, nil
 }
 
-func (m *mockDBTX) Query(_ context.Context, _ string, _ ...interface{}) (pgx.Rows, error) {
+func (m *mockDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
 	return nil, nil
 }
 
-func (m *mockDBTX) QueryRow(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+func (m *mockDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
 	return mockRow{val: m.suppressed}
 }
 

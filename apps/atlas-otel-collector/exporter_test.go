@@ -18,7 +18,7 @@ type mockInserter struct {
 	called bool
 }
 
-func (m *mockInserter) Put(_ context.Context, src interface{}) error {
+func (m *mockInserter) Put(_ context.Context, src any) error {
 	m.called = true
 	if rows, ok := src.([]*analyticsRow); ok {
 		m.rows = rows

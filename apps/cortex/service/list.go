@@ -33,7 +33,7 @@ const (
 // - is_latest: bool
 // - created_at: string (ISO 8601)
 // - revision_message: string.
-func convertMetadataValue(field, value string) (interface{}, error) {
+func convertMetadataValue(field, value string) (any, error) {
 	switch field {
 	case "revision":
 		// Must be stored as integer in JSONB
@@ -135,7 +135,7 @@ func (s *Service) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	// Build metadata filter from query params with "metadata." prefix
 	// Type conversion must match stored JSONB types exactly for @> containment operator
-	metadataFilter := make(map[string]interface{})
+	metadataFilter := make(map[string]any)
 	for key, values := range r.URL.Query() {
 		if strings.HasPrefix(key, "metadata.") && len(values) > 0 {
 			fieldName := strings.TrimPrefix(key, "metadata.")

@@ -56,7 +56,7 @@ func NewOAuthStateClaimsFromJWT(cfg Config, token string) (*oauthStateClaims, er
 	_, err := jwt.ParseWithClaims(
 		token,
 		claims,
-		func(token *jwt.Token) (interface{}, error) {
+		func(token *jwt.Token) (any, error) {
 			publicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(cfg.JWTPublicKey))
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse RSA public key: %w", err)

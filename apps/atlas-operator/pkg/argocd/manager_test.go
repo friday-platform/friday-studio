@@ -107,11 +107,11 @@ func TestBuildApplication(t *testing.T) {
 	}
 
 	// Verify spec.source (access directly without deep copy to avoid issues with patches slice)
-	spec, ok := app.Object["spec"].(map[string]interface{})
+	spec, ok := app.Object["spec"].(map[string]any)
 	if !ok {
 		t.Fatal("spec not found or not a map")
 	}
-	source, ok := spec["source"].(map[string]interface{})
+	source, ok := spec["source"].(map[string]any)
 	if !ok {
 		t.Fatal("spec.source not found or not a map")
 	}
@@ -126,7 +126,7 @@ func TestBuildApplication(t *testing.T) {
 	}
 
 	// Verify spec.source.kustomize
-	kustomize, ok := source["kustomize"].(map[string]interface{})
+	kustomize, ok := source["kustomize"].(map[string]any)
 	if !ok {
 		t.Fatal("spec.source.kustomize not found or not a map")
 	}
@@ -140,7 +140,7 @@ func TestBuildApplication(t *testing.T) {
 	if !ok {
 		t.Fatal("spec.source.kustomize.patches not found")
 	}
-	patches, ok := patchesRaw.([]interface{})
+	patches, ok := patchesRaw.([]any)
 	if !ok {
 		t.Fatalf("patches is not []interface{}, got %T", patchesRaw)
 	}
@@ -150,11 +150,11 @@ func TestBuildApplication(t *testing.T) {
 
 	// Verify Certificate patch (first patch)
 	if len(patches) > 0 {
-		patch, ok := patches[0].(map[string]interface{})
+		patch, ok := patches[0].(map[string]any)
 		if !ok {
 			t.Fatal("patch is not a map[string]interface{}")
 		}
-		if target, ok := patch["target"].(map[string]interface{}); ok {
+		if target, ok := patch["target"].(map[string]any); ok {
 			if target["kind"] != "Certificate" {
 				t.Errorf("expected patch target kind 'Certificate', got %s", target["kind"])
 			}
@@ -203,11 +203,11 @@ func TestBuildApplication(t *testing.T) {
 
 	// Verify Deployment patch (second patch)
 	if len(patches) > 1 {
-		patch, ok := patches[1].(map[string]interface{})
+		patch, ok := patches[1].(map[string]any)
 		if !ok {
 			t.Fatal("second patch is not a map[string]interface{}")
 		}
-		if target, ok := patch["target"].(map[string]interface{}); ok {
+		if target, ok := patch["target"].(map[string]any); ok {
 			if target["kind"] != "Deployment" {
 				t.Errorf("expected second patch target kind 'Deployment', got %s", target["kind"])
 			}
@@ -250,11 +250,11 @@ func TestBuildApplication(t *testing.T) {
 
 	// Verify Service patch (third patch - NEW!)
 	if len(patches) > 2 {
-		patch, ok := patches[2].(map[string]interface{})
+		patch, ok := patches[2].(map[string]any)
 		if !ok {
 			t.Fatal("third patch is not a map[string]interface{}")
 		}
-		if target, ok := patch["target"].(map[string]interface{}); ok {
+		if target, ok := patch["target"].(map[string]any); ok {
 			if target["kind"] != "Service" {
 				t.Errorf("expected third patch target kind 'Service', got %s", target["kind"])
 			}
@@ -285,11 +285,11 @@ func TestBuildApplication(t *testing.T) {
 
 	// Verify IngressRoute patch (fourth patch)
 	if len(patches) > 3 {
-		patch, ok := patches[3].(map[string]interface{})
+		patch, ok := patches[3].(map[string]any)
 		if !ok {
 			t.Fatal("fourth patch is not a map[string]interface{}")
 		}
-		if target, ok := patch["target"].(map[string]interface{}); ok {
+		if target, ok := patch["target"].(map[string]any); ok {
 			if target["kind"] != "IngressRoute" {
 				t.Errorf("expected fourth patch target kind 'IngressRoute', got %s", target["kind"])
 			}
@@ -369,10 +369,10 @@ func TestCreateApplication(t *testing.T) {
 
 	// Create a pre-existing application to test the "already exists" path
 	existingApp := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      UserIDToAppName("user-123"),
 				"namespace": "argocd",
 			},
@@ -412,10 +412,10 @@ func TestDeleteApplication(t *testing.T) {
 
 	// Create a pre-existing application to test deletion
 	existingApp := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      UserIDToAppName("user-123"),
 				"namespace": "argocd",
 			},
@@ -456,10 +456,10 @@ func TestGetApplication(t *testing.T) {
 	expectedName := UserIDToAppName("user-123")
 	// Create a pre-existing application
 	existingApp := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      expectedName,
 				"namespace": "argocd",
 			},
@@ -509,39 +509,39 @@ func TestListApplications(t *testing.T) {
 
 	// Create some pre-existing applications with the managed-by label
 	app1 := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      UserIDToAppName("user-1"),
 				"namespace": "argocd",
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"managed-by": "atlas-operator",
 				},
 			},
 		},
 	}
 	app2 := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      UserIDToAppName("user-2"),
 				"namespace": "argocd",
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"managed-by": "atlas-operator",
 				},
 			},
 		},
 	}
 	app3 := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      UserIDToAppName("user-3"),
 				"namespace": "argocd",
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"managed-by": "atlas-operator",
 				},
 			},
@@ -582,9 +582,9 @@ func TestGetUserIDFromApplication(t *testing.T) {
 		{
 			name: "valid application with user-id label",
 			app: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{
-						"labels": map[string]interface{}{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
 							"user-id": "user-123",
 						},
 					},
@@ -596,8 +596,8 @@ func TestGetUserIDFromApplication(t *testing.T) {
 		{
 			name: "application missing labels",
 			app: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{},
+				Object: map[string]any{
+					"metadata": map[string]any{},
 				},
 			},
 			expectedID:  "",
@@ -606,9 +606,9 @@ func TestGetUserIDFromApplication(t *testing.T) {
 		{
 			name: "application missing user-id label",
 			app: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{
-						"labels": map[string]interface{}{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
 							"other-label": "value",
 						},
 					},

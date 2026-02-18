@@ -171,10 +171,10 @@ func (m *Manager) ListApplications(ctx context.Context) ([]*unstructured.Unstruc
 }
 
 // createPatchEntry creates a Kustomize patch entry with target selector.
-func createPatchEntry(patch, kind, name string) map[string]interface{} {
-	return map[string]interface{}{
+func createPatchEntry(patch, kind, name string) map[string]any {
+	return map[string]any{
 		"patch": patch,
-		"target": map[string]interface{}{
+		"target": map[string]any{
 			"kind": kind,
 			"name": name,
 		},
@@ -277,30 +277,30 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 `, serviceName)
 
 	app := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      name,
 				"namespace": m.namespace,
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"managed-by": "atlas-operator",
 					"user-id":    userID,
 				},
 			},
-			"spec": map[string]interface{}{
-				"destination": map[string]interface{}{
+			"spec": map[string]any{
+				"destination": map[string]any{
 					"namespace": m.targetNamespace, // Single atlas namespace for all users
 					"server":    "https://kubernetes.default.svc",
 				},
 				"project": "default",
-				"source": map[string]interface{}{
+				"source": map[string]any{
 					"path":           path,
 					"repoURL":        m.gitRepoURL,
 					"targetRevision": m.gitRevision,
-					"kustomize": map[string]interface{}{
+					"kustomize": map[string]any{
 						"nameSuffix": nameSuffix,
-						"patches": []interface{}{
+						"patches": []any{
 							createPatchEntry(certPatch, "Certificate", "atlas-cert"),
 							createPatchEntry(deploymentPatch, "Deployment", "atlas"),
 							createPatchEntry(servicePatch, "Service", "atlas"),
@@ -309,8 +309,8 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 						},
 					},
 				},
-				"syncPolicy": map[string]interface{}{
-					"automated": map[string]interface{}{
+				"syncPolicy": map[string]any{
+					"automated": map[string]any{
 						"prune":    true,
 						"selfHeal": true,
 					},

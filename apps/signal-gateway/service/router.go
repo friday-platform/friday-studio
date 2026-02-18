@@ -145,7 +145,7 @@ func (er *EventRouter) lookupSlackRoute(ctx context.Context, teamID string) (str
 }
 
 // forwardToAtlas forwards an event payload to an Atlas instance.
-func (er *EventRouter) forwardToAtlas(ctx context.Context, url string, payload interface{}) error {
+func (er *EventRouter) forwardToAtlas(ctx context.Context, url string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)

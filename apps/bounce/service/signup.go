@@ -175,7 +175,7 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	sendgrid, err := newSendgridEmail(cfg, &SendgridEmailConfig{
 		TemplateID: SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"signup_email":      body.Payload.Email,
 			"confirmation_link": confirmationLink,
 		},

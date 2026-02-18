@@ -62,18 +62,18 @@ type Attachment struct {
 
 // SendEmailRequest is the incoming request from clients.
 type SendEmailRequest struct {
-	To             string                 `json:"to"`
-	From           string                 `json:"from,omitempty"`
-	FromName       string                 `json:"from_name,omitempty"`
-	Subject        string                 `json:"subject"`
-	Content        string                 `json:"content"`
-	TemplateID     string                 `json:"template_id,omitempty"`
-	TemplateData   map[string]interface{} `json:"template_data,omitempty"`
-	Attachments    []Attachment           `json:"attachments,omitempty"`
-	SandboxMode    bool                   `json:"sandbox_mode,omitempty"`
-	ClientHostname string                 `json:"client_hostname,omitempty"`
-	CustomHeaders  map[string]string      `json:"custom_headers,omitempty"`
-	WorkspaceID    string                 `json:"workspace_id,omitempty"`
+	To             string            `json:"to"`
+	From           string            `json:"from,omitempty"`
+	FromName       string            `json:"from_name,omitempty"`
+	Subject        string            `json:"subject"`
+	Content        string            `json:"content"`
+	TemplateID     string            `json:"template_id,omitempty"`
+	TemplateData   map[string]any    `json:"template_data,omitempty"`
+	Attachments    []Attachment      `json:"attachments,omitempty"`
+	SandboxMode    bool              `json:"sandbox_mode,omitempty"`
+	ClientHostname string            `json:"client_hostname,omitempty"`
+	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
+	WorkspaceID    string            `json:"workspace_id,omitempty"`
 }
 
 // validateSendEmailRequest validates email request fields.

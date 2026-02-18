@@ -9,7 +9,7 @@ import (
 
 type SendgridEmailConfig struct {
 	TemplateID     string
-	Data           map[string]interface{}
+	Data           map[string]any
 	RecipientName  string
 	RecipientEmail string
 	SenderName     string

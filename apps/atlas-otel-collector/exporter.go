@@ -42,7 +42,7 @@ var knownAttributes = map[string]bool{
 
 // rowInserter abstracts BigQuery insert operations for testing.
 type rowInserter interface {
-	Put(ctx context.Context, src interface{}) error
+	Put(ctx context.Context, src any) error
 }
 
 type bigQueryExporter struct {

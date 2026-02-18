@@ -48,10 +48,7 @@ func (m *MockDatabaseClient) GetUsers(ctx context.Context, limit int, afterID st
 	if startIdx >= len(m.Users) {
 		return []database.User{}, nil
 	}
-	endIdx := startIdx + limit
-	if endIdx > len(m.Users) {
-		endIdx = len(m.Users)
-	}
+	endIdx := min(startIdx+limit, len(m.Users))
 	return m.Users[startIdx:endIdx], nil
 }
 
@@ -166,13 +163,13 @@ func (m *MockArgoCDManager) CreateApplication(ctx context.Context, userID string
 	m.CreatedApps = append(m.CreatedApps, userID)
 
 	app := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Application",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      argocd.UserIDToAppName(userID),
 				"namespace": "argocd",
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"managed-by": "atlas-operator",
 					"user-id":    userID,
 				},

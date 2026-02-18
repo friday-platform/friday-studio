@@ -125,15 +125,15 @@ type fakeDBTX struct {
 	err       error
 }
 
-func (f *fakeDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+func (f *fakeDBTX) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, nil
 }
 
-func (f *fakeDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (f *fakeDBTX) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, nil
 }
 
-func (f *fakeDBTX) QueryRow(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+func (f *fakeDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
 	return &fakeRow{spend: f.spend, maxBudget: f.maxBudget, err: f.err}
 }
 
@@ -143,7 +143,7 @@ type fakeRow struct {
 	err       error
 }
 
-func (r *fakeRow) Scan(dest ...interface{}) error {
+func (r *fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}

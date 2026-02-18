@@ -123,13 +123,13 @@ func TestReconcile_DeleteRemovedApplications(t *testing.T) {
 	mockArgoCD := &MockArgoCDManager{
 		Applications: []*unstructured.Unstructured{
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-user-1",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							"user-id":    "user-1",
 						},
@@ -137,13 +137,13 @@ func TestReconcile_DeleteRemovedApplications(t *testing.T) {
 				},
 			},
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-user-2",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							"user-id":    "user-2",
 						},
@@ -195,13 +195,13 @@ func TestReconcile_MixedOperations(t *testing.T) {
 	mockArgoCD := &MockArgoCDManager{
 		Applications: []*unstructured.Unstructured{
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-user-1",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							"user-id":    "user-1",
 						},
@@ -209,13 +209,13 @@ func TestReconcile_MixedOperations(t *testing.T) {
 				},
 			},
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-user-2",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							"user-id":    "user-2",
 						},
@@ -337,13 +337,13 @@ func TestReconcile_AppWithoutUserIDLabel(t *testing.T) {
 	mockArgoCD := &MockArgoCDManager{
 		Applications: []*unstructured.Unstructured{
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-invalid",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							// Missing user-id label
 						},
@@ -669,13 +669,13 @@ func TestReconcile_WithLiteLLM_DeletesKeysForRemovedUsers(t *testing.T) {
 	mockArgoCD := &MockArgoCDManager{
 		Applications: []*unstructured.Unstructured{
 			{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "argoproj.io/v1alpha1",
 					"kind":       "Application",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      "atlas-user-orphan",
 						"namespace": "argocd",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"managed-by": "atlas-operator",
 							"user-id":    "user-orphan",
 						},
@@ -1048,7 +1048,7 @@ func TestReconcile_VerificationEvery10Cycles(t *testing.T) {
 	ctx := context.Background()
 
 	// Run 9 cycles — verification should NOT run
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		_ = r.Reconcile(ctx)
 	}
 	if len(mockDB.DeletedVirtualKeys) != 0 {
