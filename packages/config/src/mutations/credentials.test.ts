@@ -3,7 +3,13 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { extractCredentials, toIdRefs, toProviderRefs, updateCredential } from "./credentials.ts";
+import {
+  extractCredentials,
+  stripCredentialRefs,
+  toIdRefs,
+  toProviderRefs,
+  updateCredential,
+} from "./credentials.ts";
 import { atlasAgent, createTestConfig, expectError } from "./test-fixtures.ts";
 
 describe("extractCredentials", () => {
@@ -638,7 +644,7 @@ describe("toIdRefs", () => {
     });
   });
 
-  test("leaves ref with both id and provider untouched", () => {
+  test("replaces existing id when provider is in credentialMap", () => {
     const config = createTestConfig({
       tools: {
         mcp: {
@@ -648,7 +654,7 @@ describe("toIdRefs", () => {
               env: {
                 GITHUB_TOKEN: {
                   from: "link",
-                  id: "cred_existing",
+                  id: "cred_foreign",
                   provider: "github",
                   key: "token",
                 },
@@ -659,11 +665,11 @@ describe("toIdRefs", () => {
       },
     });
 
-    const result = toIdRefs(config, {});
+    const result = toIdRefs(config, { github: "cred_user_new" });
 
     expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
       from: "link",
-      id: "cred_existing",
+      id: "cred_user_new",
       provider: "github",
       key: "token",
     });
@@ -771,7 +777,7 @@ describe("toIdRefs", () => {
       },
     });
 
-    const result = toIdRefs(config, { linear: "cred_lin_new" });
+    const result = toIdRefs(config, { linear: "cred_lin_new", custom: "cred_custom_new" });
 
     expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
       from: "link",
@@ -782,9 +788,211 @@ describe("toIdRefs", () => {
     expect(result.tools?.mcp?.servers?.linear?.env?.PLAIN_VAR).toBe("not-a-credential");
     expect(result.agents?.["my-agent"]).toHaveProperty("env.AGENT_TOKEN", {
       from: "link",
-      id: "cred_bound",
+      id: "cred_custom_new",
       provider: "custom",
       key: "token",
     });
+  });
+
+  test("throws for ref with both id and provider when provider is missing from credentialMap", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: {
+                GITHUB_TOKEN: {
+                  from: "link",
+                  id: "cred_foreign",
+                  provider: "github",
+                  key: "token",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(() => toIdRefs(config, {})).toThrow(/no credential ID found for provider "github"/);
+  });
+});
+
+describe("stripCredentialRefs", () => {
+  test("strips MCP server env var by path", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = stripCredentialRefs(config, ["mcp:github:GITHUB_TOKEN"]);
+
+    const env = result.tools?.mcp?.servers?.github?.env ?? {};
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(result.tools?.mcp?.servers?.github).toBeDefined();
+  });
+
+  test("strips agent env var by path", () => {
+    const config = createTestConfig({
+      agents: {
+        summarizer: atlasAgent({
+          env: { API_KEY: { from: "link", id: "cred_foreign", key: "api_key" } },
+        }),
+      },
+    });
+
+    const result = stripCredentialRefs(config, ["agent:summarizer:API_KEY"]);
+
+    const agent = result.agents?.summarizer;
+    expect(agent).toBeDefined();
+    if (agent && agent.type === "atlas") {
+      expect(agent.env?.API_KEY).toBeUndefined();
+    }
+  });
+
+  test("returns unchanged config for empty paths array", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_abc", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = stripCredentialRefs(config, []);
+
+    expect(result).toEqual(config);
+  });
+
+  test("returns unchanged config when paths do not match any env vars", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_abc", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const result = stripCredentialRefs(config, ["mcp:nonexistent:SOME_VAR"]);
+
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
+      from: "link",
+      id: "cred_abc",
+      key: "token",
+    });
+  });
+
+  test("preserves other env vars on the same server", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: {
+                GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" },
+                OTHER_VAR: "plain-value",
+                ANOTHER_CRED: { from: "link", provider: "github", key: "secret" },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const result = stripCredentialRefs(config, ["mcp:github:GITHUB_TOKEN"]);
+
+    const env = result.tools?.mcp?.servers?.github?.env ?? {};
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(env.OTHER_VAR).toBe("plain-value");
+    expect(env.ANOTHER_CRED).toEqual({ from: "link", provider: "github", key: "secret" });
+  });
+
+  test("does not mutate original config", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+    const originalRef = config.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN;
+
+    stripCredentialRefs(config, ["mcp:github:GITHUB_TOKEN"]);
+
+    expect(config.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toBe(originalRef);
+  });
+
+  test("skips non-atlas agents", () => {
+    const config = createTestConfig({
+      agents: {
+        "llm-agent": {
+          type: "llm",
+          description: "Test LLM agent",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+        },
+      },
+    });
+
+    const result = stripCredentialRefs(config, ["agent:llm-agent:SOME_VAR"]);
+
+    expect(result).toEqual(config);
+  });
+
+  test("strips from both MCP servers and agents in one call", () => {
+    const config = createTestConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "github-mcp" },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_1", key: "token" } },
+            },
+          },
+        },
+      },
+      agents: {
+        summarizer: atlasAgent({
+          env: { API_KEY: { from: "link", id: "cred_2", key: "api_key" } },
+        }),
+      },
+    });
+
+    const result = stripCredentialRefs(config, [
+      "mcp:github:GITHUB_TOKEN",
+      "agent:summarizer:API_KEY",
+    ]);
+
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toBeUndefined();
+    expect(result.tools?.mcp?.servers?.github).toBeDefined();
+    const agent = result.agents?.summarizer;
+    expect(agent).toBeDefined();
+    if (agent && agent.type === "atlas") {
+      expect(agent.env?.API_KEY).toBeUndefined();
+    }
   });
 });

@@ -1,8 +1,13 @@
+import {
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+} from "@atlas/core/mcp-registry/credential-resolver";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { parse } from "@std/yaml";
 import { Hono } from "hono";
 import { assert, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
+import { workspacesRoutes } from "./index.ts";
 
 // Mock storeWorkspaceHistory to avoid Cortex dependencies
 vi.mock("@atlas/storage", () => ({
@@ -16,16 +21,11 @@ vi.mock("@atlas/analytics", () => ({
   EventNames: {},
 }));
 
-// Mock fetchLinkCredential to control Link responses
+// Mock fetchLinkCredential to control Link responses — real error classes via importOriginal
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
-vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
+vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),
   fetchLinkCredential: mockFetchLinkCredential,
-  LinkCredentialNotFoundError: class extends Error {
-    override name = "LinkCredentialNotFoundError";
-    constructor(public readonly credentialId: string) {
-      super(`Credential '${credentialId}' not found`);
-    }
-  },
 }));
 
 // Mock getCurrentUser
@@ -127,15 +127,13 @@ function createExportTestApp(options: {
   return { app, mockContext };
 }
 
-async function mountRoutes(app: Hono<AppVariables>) {
-  const { workspacesRoutes } = await import("./index.ts");
+function mountRoutes(app: Hono<AppVariables>) {
   app.route("/", workspacesRoutes);
   return app;
 }
 
 describe("GET /:workspaceId/export", () => {
   beforeEach(() => {
-    vi.resetModules();
     mockFetchLinkCredential.mockReset();
   });
 
@@ -242,7 +240,17 @@ describe("GET /:workspaceId/export", () => {
     expect(mockFetchLinkCredential).toHaveBeenCalledOnce();
   });
 
-  test("returns 422 when legacy credential cannot be resolved from Link", async () => {
+  test.each([
+    { label: "not-found", error: new LinkCredentialNotFoundError("cred_gone") },
+    {
+      label: "expired (no refresh)",
+      error: new LinkCredentialExpiredError("cred_gone", "expired_no_refresh"),
+    },
+    {
+      label: "expired (refresh failed)",
+      error: new LinkCredentialExpiredError("cred_gone", "refresh_failed"),
+    },
+  ])("strips $label legacy credential refs and exports successfully", async ({ error }) => {
     const config = {
       atlas: null,
       workspace: {
@@ -253,7 +261,7 @@ describe("GET /:workspaceId/export", () => {
             servers: {
               github: {
                 transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
-                env: { GITHUB_TOKEN: { from: "link", id: "cred_deleted", key: "token" } },
+                env: { GITHUB_TOKEN: { from: "link", id: "cred_gone", key: "token" } },
               },
             },
           },
@@ -263,21 +271,25 @@ describe("GET /:workspaceId/export", () => {
     const { app } = createExportTestApp({ config });
     await mountRoutes(app);
 
-    // Mock Link to throw not found
-    const { LinkCredentialNotFoundError } = await import(
-      "@atlas/core/mcp-registry/credential-resolver"
-    );
-    mockFetchLinkCredential.mockRejectedValue(new LinkCredentialNotFoundError("cred_deleted"));
+    mockFetchLinkCredential.mockRejectedValue(error);
 
     const response = await app.request("/ws-test-id/export");
 
-    expect(response.status).toBe(422);
-    const body = (await response.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({
-      error: "unresolvable_credentials",
-      message: "Cannot resolve credentials for export",
-    });
-    expect(body.unresolvedPaths).toEqual(["mcp:github:GITHUB_TOKEN"]);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/yaml");
+
+    const yaml = await response.text();
+    const parsed = parse(yaml) as Record<string, unknown>;
+
+    const ref = getExportedRef(parsed, "github", "GITHUB_TOKEN");
+    expect(ref).toBeUndefined();
+
+    const tools = parsed.tools as Record<string, unknown>;
+    const mcp = (tools as Record<string, unknown>).mcp as Record<string, unknown>;
+    const servers = mcp.servers as Record<string, unknown>;
+    expect(servers.github).toBeDefined();
+
+    expect(mockFetchLinkCredential).toHaveBeenCalledOnce();
   });
 
   test("returns 500 when legacy ref fetch fails with unexpected error", async () => {
@@ -404,5 +416,77 @@ describe("GET /:workspaceId/export", () => {
     expect(agentRef).not.toHaveProperty("id");
 
     expect(mockFetchLinkCredential).not.toHaveBeenCalled();
+  });
+
+  test("exports mixed refs: strips unresolvable legacy, resolves valid legacy, passes provider-based", async () => {
+    const config = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { id: "ws-test-id", name: "Test Workspace" },
+        tools: {
+          mcp: {
+            servers: {
+              github: {
+                transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+                env: {
+                  GITHUB_TOKEN: {
+                    from: "link",
+                    id: "cred_valid",
+                    provider: "github",
+                    key: "token",
+                  },
+                },
+              },
+              slack: {
+                transport: { type: "stdio", command: "npx", args: ["-y", "server-slack"] },
+                env: { SLACK_TOKEN: { from: "link", id: "cred_legacy_ok", key: "access_token" } },
+              },
+              sentry: {
+                transport: { type: "http", url: "https://mcp.sentry.dev/mcp" },
+                env: { SENTRY_TOKEN: { from: "link", id: "cred_deleted", key: "access_token" } },
+              },
+            },
+          },
+        },
+      },
+    };
+    const { app } = createExportTestApp({ config });
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockImplementation((credId: string) => {
+      if (credId === "cred_legacy_ok") {
+        return Promise.resolve({
+          id: "cred_legacy_ok",
+          provider: "slack",
+          type: "oauth",
+          secret: {},
+        });
+      }
+      // cred_deleted is unresolvable
+      return Promise.reject(new LinkCredentialNotFoundError(credId));
+    });
+
+    const response = await app.request("/ws-test-id/export");
+
+    expect(response.status).toBe(200);
+    const yaml = await response.text();
+    const parsed = parse(yaml) as Record<string, unknown>;
+
+    // Provider-based ref: id stripped, provider kept
+    const githubRef = getExportedRef(parsed, "github", "GITHUB_TOKEN");
+    assert(githubRef, "expected github GITHUB_TOKEN");
+    expect(githubRef).toMatchObject({ from: "link", provider: "github", key: "token" });
+    expect(githubRef).not.toHaveProperty("id");
+
+    // Resolvable legacy ref: id stripped, provider resolved
+    const slackRef = getExportedRef(parsed, "slack", "SLACK_TOKEN");
+    assert(slackRef, "expected slack SLACK_TOKEN");
+    expect(slackRef).toMatchObject({ from: "link", provider: "slack", key: "access_token" });
+    expect(slackRef).not.toHaveProperty("id");
+
+    // Unresolvable legacy ref: stripped entirely
+    const sentryRef = getExportedRef(parsed, "sentry", "SENTRY_TOKEN");
+    expect(sentryRef).toBeUndefined();
   });
 });

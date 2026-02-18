@@ -1,8 +1,14 @@
+import {
+  CredentialNotFoundError,
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+} from "@atlas/core/mcp-registry/credential-resolver";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { parse } from "@std/yaml";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
+import { workspacesRoutes } from "./index.ts";
 
 const mockWriteWorkspaceFiles = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
@@ -28,26 +34,15 @@ vi.mock("../me/adapter.ts", () => ({
   getCurrentUser: vi.fn().mockResolvedValue({ ok: true, data: { id: "user-1" } }),
 }));
 
-// Mock resolveCredentialsByProvider and fetchLinkCredential to control Link responses
+// Mock resolveCredentialsByProvider and fetchLinkCredential — real error classes via importOriginal
 const { mockResolveCredentialsByProvider, mockFetchLinkCredential } = vi.hoisted(() => ({
   mockResolveCredentialsByProvider: vi.fn(),
   mockFetchLinkCredential: vi.fn(),
 }));
-vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
+vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),
   fetchLinkCredential: mockFetchLinkCredential,
-  LinkCredentialNotFoundError: class extends Error {
-    override name = "LinkCredentialNotFoundError";
-    constructor(public readonly credentialId: string) {
-      super(`Credential '${credentialId}' not found`);
-    }
-  },
   resolveCredentialsByProvider: mockResolveCredentialsByProvider,
-  CredentialNotFoundError: class extends Error {
-    override name = "CredentialNotFoundError";
-    constructor(public readonly provider: string) {
-      super(`No credentials found for provider '${provider}'`);
-    }
-  },
 }));
 
 // Mock getAtlasHome
@@ -106,8 +101,7 @@ function createImportTestApp() {
   return { app, mockContext, mockRegisterWorkspace };
 }
 
-async function mountRoutes(app: Hono<AppVariables>) {
-  const { workspacesRoutes } = await import("./index.ts");
+function mountRoutes(app: Hono<AppVariables>) {
   app.route("/", workspacesRoutes);
   return app;
 }
@@ -116,9 +110,40 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
   return { version: "1.0", workspace: { name: "Imported Workspace" }, ...overrides };
 }
 
+/** Extract a credential ref from the written YAML config. */
+function getWrittenRef(serverName: string, envVar: string): Record<string, unknown> | undefined {
+  const writtenYaml = mockWriteWorkspaceFiles.mock.calls[0]?.[1] as string;
+  const config = parse(writtenYaml) as Record<string, unknown>;
+  const tools = config.tools as Record<string, unknown> | undefined;
+  const mcp = tools?.mcp as Record<string, unknown> | undefined;
+  const servers = mcp?.servers as Record<string, unknown> | undefined;
+  const server = servers?.[serverName] as Record<string, unknown> | undefined;
+  const env = server?.env as Record<string, unknown> | undefined;
+  const ref = env?.[envVar];
+  return ref && typeof ref === "object" ? (ref as Record<string, unknown>) : undefined;
+}
+
+/** Extract a server definition from the written YAML config. */
+function getWrittenServer(serverName: string): Record<string, unknown> | undefined {
+  const writtenYaml = mockWriteWorkspaceFiles.mock.calls[0]?.[1] as string;
+  const config = parse(writtenYaml) as Record<string, unknown>;
+  const tools = config.tools as Record<string, unknown> | undefined;
+  const mcp = tools?.mcp as Record<string, unknown> | undefined;
+  const servers = mcp?.servers as Record<string, unknown> | undefined;
+  return servers?.[serverName] as Record<string, unknown> | undefined;
+}
+
+/** Extract an agent env var from the written YAML config. */
+function getWrittenAgentEnv(agentName: string): Record<string, unknown> | undefined {
+  const writtenYaml = mockWriteWorkspaceFiles.mock.calls[0]?.[1] as string;
+  const config = parse(writtenYaml) as Record<string, unknown>;
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const agent = agents?.[agentName] as Record<string, unknown> | undefined;
+  return agent?.env as Record<string, unknown> | undefined;
+}
+
 describe("POST /create — credential resolution", () => {
   beforeEach(() => {
-    vi.resetModules();
     mockResolveCredentialsByProvider.mockReset();
     mockFetchLinkCredential.mockReset();
     mockWriteWorkspaceFiles.mockReset();
@@ -141,9 +166,12 @@ describe("POST /create — credential resolution", () => {
     expect(mockResolveCredentialsByProvider).not.toHaveBeenCalled();
   });
 
-  test("imports config with only id-based refs unchanged", async () => {
+  test("strips foreign id-only refs and imports workspace without them", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
+
+    // Credential ID belongs to another user — Link returns 404
+    mockFetchLinkCredential.mockRejectedValue(new LinkCredentialNotFoundError("cred_foreign"));
 
     const config = makeConfig({
       tools: {
@@ -151,7 +179,7 @@ describe("POST /create — credential resolution", () => {
           servers: {
             github: {
               transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
-              env: { GITHUB_TOKEN: { from: "link", id: "cred_existing", key: "token" } },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" } },
             },
           },
         },
@@ -167,8 +195,301 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    // No provider resolution needed — refs already have IDs
-    expect(mockResolveCredentialsByProvider).not.toHaveBeenCalled();
+    // Should report what was stripped
+    expect(body.strippedCredentials).toEqual(["mcp:github:GITHUB_TOKEN"]);
+
+    // The written config should NOT contain the foreign credential ref
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    expect(getWrittenRef("github", "GITHUB_TOKEN")).toBeUndefined();
+    expect(getWrittenServer("github")).toBeDefined();
+  });
+
+  test("strips foreign id-only refs from agent-level env vars", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockRejectedValue(new LinkCredentialNotFoundError("cred_foreign"));
+
+    const config = makeConfig({
+      agents: {
+        summarizer: {
+          type: "atlas",
+          agent: "summarizer",
+          description: "Summarizes content",
+          prompt: "Summarize the input",
+          env: { API_KEY: { from: "link", id: "cred_foreign", key: "api_key" } },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(body.strippedCredentials).toEqual(["agent:summarizer:API_KEY"]);
+
+    // The written config should strip the env var but preserve the agent
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    const agentEnv = getWrittenAgentEnv("summarizer");
+    expect(agentEnv).toBeDefined();
+    expect(agentEnv?.API_KEY).toBeUndefined();
+  });
+
+  test("returns 400 with actionable message for expired id-only credentials", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockRejectedValue(
+      new LinkCredentialExpiredError("cred_expired", "expired_no_refresh"),
+    );
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_expired", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as JsonBody;
+    expect(body.error).toBe("credential_expired");
+    expect(body.expiredCredentials).toEqual([
+      {
+        credentialId: "cred_expired",
+        path: "mcp:github:GITHUB_TOKEN",
+        status: "expired_no_refresh",
+      },
+    ]);
+  });
+
+  test("returns 400 for refresh-failed id-only credentials", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockRejectedValue(
+      new LinkCredentialExpiredError("cred_stale", "refresh_failed"),
+    );
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            slack: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-slack"] },
+              env: { SLACK_TOKEN: { from: "link", id: "cred_stale", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as JsonBody;
+    expect(body.error).toBe("credential_expired");
+    expect(body.expiredCredentials).toEqual([
+      { credentialId: "cred_stale", path: "mcp:slack:SLACK_TOKEN", status: "refresh_failed" },
+    ]);
+  });
+
+  test("returns 400 for expired when mixed with not-found refs — expired takes priority", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockImplementation((credId: string) => {
+      if (credId === "cred_expired") {
+        return Promise.reject(new LinkCredentialExpiredError("cred_expired", "expired_no_refresh"));
+      }
+      if (credId === "cred_deleted") {
+        return Promise.reject(new LinkCredentialNotFoundError("cred_deleted"));
+      }
+      throw new Error(`Unexpected credential ID: ${credId}`);
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_expired", key: "token" } },
+            },
+            sentry: {
+              transport: { type: "http", url: "https://mcp.sentry.dev/mcp" },
+              env: { SENTRY_TOKEN: { from: "link", id: "cred_deleted", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as JsonBody;
+    expect(body.error).toBe("credential_expired");
+    expect(body.expiredCredentials).toEqual([
+      {
+        credentialId: "cred_expired",
+        path: "mcp:github:GITHUB_TOKEN",
+        status: "expired_no_refresh",
+      },
+    ]);
+    // Workspace should NOT be created when expired credentials exist
+    expect(mockRegisterWorkspace).not.toHaveBeenCalled();
+  });
+
+  test("returns 400 with all expired credentials when multiple are expired", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockImplementation((credId: string) => {
+      if (credId === "cred_expired_1") {
+        return Promise.reject(
+          new LinkCredentialExpiredError("cred_expired_1", "expired_no_refresh"),
+        );
+      }
+      if (credId === "cred_expired_2") {
+        return Promise.reject(new LinkCredentialExpiredError("cred_expired_2", "refresh_failed"));
+      }
+      throw new Error(`Unexpected credential ID: ${credId}`);
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_expired_1", key: "token" } },
+            },
+            slack: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-slack"] },
+              env: { SLACK_TOKEN: { from: "link", id: "cred_expired_2", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as JsonBody;
+    expect(body.error).toBe("credential_expired");
+    const expired = body.expiredCredentials as Array<Record<string, string>>;
+    expect(expired).toHaveLength(2);
+    expect(expired).toEqual(
+      expect.arrayContaining([
+        {
+          credentialId: "cred_expired_1",
+          path: "mcp:github:GITHUB_TOKEN",
+          status: "expired_no_refresh",
+        },
+        { credentialId: "cred_expired_2", path: "mcp:slack:SLACK_TOKEN", status: "refresh_failed" },
+      ]),
+    );
+  });
+
+  test("converts resolvable id-only refs to provider-only and re-resolves for importing user", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    // Phase 1: fetchLinkCredential during preprocessing finds the credential
+    // (it belongs to the current user) and returns its provider
+    mockFetchLinkCredential.mockImplementation((credId: string) => {
+      if (credId === "cred_own") {
+        return Promise.resolve({
+          id: "cred_own",
+          provider: "github",
+          type: "oauth",
+          secret: { token: "ghp_xxx" },
+        });
+      }
+      // Phase 2: re-fetch during key validation (same credential, resolved via provider)
+      if (credId === "cred_resolved") {
+        return Promise.resolve({
+          id: "cred_resolved",
+          provider: "github",
+          type: "oauth",
+          secret: { token: "ghp_xxx" },
+        });
+      }
+      throw new Error(`Unexpected credential ID: ${credId}`);
+    });
+
+    // Phase 2: resolveCredentialsByProvider resolves "github" to user's credential
+    mockResolveCredentialsByProvider.mockResolvedValue([
+      { id: "cred_resolved", provider: "github", label: "My GitHub", type: "oauth" },
+    ]);
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_own", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    // Should have resolved the provider-only ref to the user's credential
+    expect(body.resolvedCredentials).toEqual([
+      {
+        path: "mcp:github:GITHUB_TOKEN",
+        provider: "github",
+        credentialId: "cred_resolved",
+        label: "My GitHub",
+      },
+    ]);
+    // No strippedCredentials since the ref was resolvable
+    expect(body.strippedCredentials).toBeUndefined();
+    // Two phases: preprocessing lookup (cred_own) + key validation fetch (cred_resolved)
+    expect(mockFetchLinkCredential).toHaveBeenCalledTimes(2);
+    expect(mockFetchLinkCredential).toHaveBeenNthCalledWith(1, "cred_own", expect.anything());
+    expect(mockFetchLinkCredential).toHaveBeenNthCalledWith(2, "cred_resolved", expect.anything());
   });
 
   test("resolves provider-based refs to id+provider refs", async () => {
@@ -223,14 +544,7 @@ describe("POST /create — credential resolution", () => {
 
     // Verify the written YAML contains the resolved credential ID
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
-    const writtenYaml = mockWriteWorkspaceFiles.mock.calls[0]?.[1] as string;
-    const writtenConfig = parse(writtenYaml) as Record<string, unknown>;
-    const tools = writtenConfig.tools as Record<string, unknown>;
-    const mcp = tools.mcp as Record<string, unknown>;
-    const servers = mcp.servers as Record<string, unknown>;
-    const github = servers.github as Record<string, unknown>;
-    const env = github.env as Record<string, unknown>;
-    expect(env.GITHUB_TOKEN).toMatchObject({
+    expect(getWrittenRef("github", "GITHUB_TOKEN")).toMatchObject({
       from: "link",
       id: "cred_user_gh",
       provider: "github",
@@ -242,9 +556,6 @@ describe("POST /create — credential resolution", () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
-    const { CredentialNotFoundError } = await import(
-      "@atlas/core/mcp-registry/credential-resolver"
-    );
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
       return Promise.reject(new CredentialNotFoundError(provider));
     });
@@ -689,13 +1000,110 @@ describe("POST /create — credential resolution", () => {
     expect(body.details).toEqual([expect.stringContaining("network timeout")]);
   });
 
+  test("returns 500 when fetchLinkCredential throws unexpected error during id-only preprocessing", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockFetchLinkCredential.mockRejectedValue(new Error("network timeout"));
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("network timeout");
+  });
+
+  test("replaces foreign id in refs with both id and provider", async () => {
+    const { app } = createImportTestApp();
+    await mountRoutes(app);
+
+    // Ref has both id (foreign) and provider — should resolve via provider
+    mockResolveCredentialsByProvider.mockResolvedValue([
+      { id: "cred_mine", provider: "github", label: "My GitHub", type: "oauth" },
+    ]);
+    mockFetchLinkCredential.mockResolvedValue({
+      id: "cred_mine",
+      provider: "github",
+      type: "oauth",
+      secret: { token: "ghp_xxx" },
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: {
+                GITHUB_TOKEN: {
+                  from: "link",
+                  id: "cred_foreign",
+                  provider: "github",
+                  key: "token",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+
+    // Foreign id should be replaced by user's credential
+    expect(body.resolvedCredentials).toEqual([
+      {
+        path: "mcp:github:GITHUB_TOKEN",
+        provider: "github",
+        credentialId: "cred_mine",
+        label: "My GitHub",
+      },
+    ]);
+
+    // Written YAML should contain the user's credential ID, not the foreign one
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    expect(getWrittenRef("github", "GITHUB_TOKEN")).toMatchObject({
+      from: "link",
+      id: "cred_mine",
+      provider: "github",
+      key: "token",
+    });
+
+    // fetchLinkCredential should NOT have been called for the foreign id —
+    // the id-only preprocessing filter skips refs that already have a provider
+    expect(mockFetchLinkCredential).not.toHaveBeenCalledWith("cred_foreign", expect.anything());
+  });
+
   test("partial missing: some providers found, some missing — returns 400 with missing list", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
-    const { CredentialNotFoundError } = await import(
-      "@atlas/core/mcp-registry/credential-resolver"
-    );
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
       if (provider === "github") {
         return Promise.resolve([

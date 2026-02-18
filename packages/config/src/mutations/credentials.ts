@@ -208,7 +208,11 @@ function toProviderRef(
   return { from: "link", provider, key: ref.key };
 }
 
-/** Adds concrete credential IDs to provider-only refs. Refs with existing `id` pass through. */
+/**
+ * Resolves provider-based refs to concrete credential IDs. Replaces any existing foreign IDs.
+ * `credentialMap` must contain entries for ALL providers present in the config — throws if a
+ * ref has a `provider` that is missing from the map.
+ */
 export function toIdRefs(
   config: WorkspaceConfig,
   credentialMap: Record<string, string>,
@@ -237,20 +241,50 @@ export function toIdRefs(
   });
 }
 
-/** Adds `id` from credentialMap to provider-only refs. Refs with existing `id` pass through. */
+/** Resolves provider-based refs to concrete credential IDs. Replaces any existing foreign ID. */
 function toIdRef(ref: LinkCredentialRef, credentialMap: Record<string, string>): LinkCredentialRef {
-  if (ref.id) {
-    return ref;
+  if (ref.provider) {
+    const id = credentialMap[ref.provider];
+    if (!id) {
+      throw new Error(
+        `Cannot import credential: no credential ID found for provider "${ref.provider}". ` +
+          `Provide a credentialMap entry or connect the integration first.`,
+      );
+    }
+    return { from: "link", id, provider: ref.provider, key: ref.key };
   }
 
-  // Refine guarantees provider exists when no id
-  const id = credentialMap[ref.provider ?? ""];
-  if (!id) {
-    throw new Error(
-      `Cannot import credential: no credential ID found for provider "${ref.provider}". ` +
-        `Provide a credentialMap entry or connect the integration first.`,
-    );
-  }
+  // Refs without provider pass through (id-only refs are handled in preprocessing)
+  return ref;
+}
 
-  return { from: "link", id, provider: ref.provider, key: ref.key };
+/**
+ * Removes credential ref env vars at the specified paths from the config.
+ * Used to strip foreign or unresolvable credential refs during import/export.
+ * Path format: "mcp:{serverId}:{envVar}" or "agent:{agentId}:{envVar}"
+ */
+export function stripCredentialRefs(config: WorkspaceConfig, paths: string[]): WorkspaceConfig {
+  const pathSet = new Set(paths);
+  return produce(config, (draft) => {
+    const servers = draft.tools?.mcp?.servers ?? {};
+    for (const [serverId, server] of Object.entries(servers)) {
+      if (!server.env) continue;
+      for (const envVar of Object.keys(server.env)) {
+        if (pathSet.has(`mcp:${serverId}:${envVar}`)) {
+          delete server.env[envVar];
+        }
+      }
+    }
+
+    const agents = draft.agents ?? {};
+    for (const [agentId, agent] of Object.entries(agents)) {
+      if (agent.type !== "atlas") continue;
+      if (!agent.env) continue;
+      for (const envVar of Object.keys(agent.env)) {
+        if (pathSet.has(`agent:${agentId}:${envVar}`)) {
+          delete agent.env[envVar];
+        }
+      }
+    }
+  });
 }

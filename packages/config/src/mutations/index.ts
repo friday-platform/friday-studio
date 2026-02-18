@@ -10,7 +10,13 @@ export type { ApplyMutationOptions } from "./apply.ts";
 export { applyMutation, FilesystemConfigWriter } from "./apply.ts";
 // Credential extraction and mutation
 export type { CredentialUsage } from "./credentials.ts";
-export { extractCredentials, toIdRefs, toProviderRefs, updateCredential } from "./credentials.ts";
+export {
+  extractCredentials,
+  stripCredentialRefs,
+  toIdRefs,
+  toProviderRefs,
+  updateCredential,
+} from "./credentials.ts";
 export type { FSMAgentResponse, FSMAgentUpdate } from "./fsm-agents.ts";
 // FSM agent extraction and mutations
 export { extractFSMAgents, FSMAgentUpdateSchema, updateFSMAgent } from "./fsm-agents.ts";

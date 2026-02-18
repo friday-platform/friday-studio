@@ -33,6 +33,21 @@ export class LinkCredentialNotFoundError extends Error {
   }
 }
 
+/** Error thrown when a credential exists but is expired or its refresh has failed */
+export class LinkCredentialExpiredError extends Error {
+  constructor(
+    public readonly credentialId: string,
+    public readonly status: "expired_no_refresh" | "refresh_failed",
+  ) {
+    const reason =
+      status === "expired_no_refresh"
+        ? "has expired and no refresh token is available"
+        : "refresh failed";
+    super(`Credential '${credentialId}' ${reason}. Re-authorize the integration to continue.`);
+    this.name = "LinkCredentialExpiredError";
+  }
+}
+
 /** Build auth headers for Link API calls. Returns empty object in dev mode. */
 function getLinkAuthHeaders(): Record<string, string> {
   if (process.env.LINK_DEV_MODE === "true") return {};
@@ -95,11 +110,11 @@ export async function fetchLinkCredential(
   const { credential, status } = result.data;
 
   if (status === "expired_no_refresh") {
-    throw new Error(`Credential '${credentialId}' has expired and no refresh token is available.`);
+    throw new LinkCredentialExpiredError(credentialId, "expired_no_refresh");
   }
 
   if (status === "refresh_failed") {
-    throw new Error(`Credential '${credentialId}' refresh failed.`);
+    throw new LinkCredentialExpiredError(credentialId, "refresh_failed");
   }
 
   return credential;

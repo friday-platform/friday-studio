@@ -5,12 +5,14 @@ import { WorkspaceConfigSchema } from "@atlas/config";
 import {
   type CredentialUsage,
   extractCredentials,
+  stripCredentialRefs,
   toIdRefs,
   toProviderRefs,
 } from "@atlas/config/mutations";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
+  LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "@atlas/core/mcp-registry/credential-resolver";
@@ -76,10 +78,83 @@ const workspacesRoutes = daemonFactory
 
       let validatedConfig = validationResult.data;
 
+      // Preprocess id-only credential refs (from foreign/legacy workspace files).
+      // Try to fetch each to discover the provider. If the credential belongs to the
+      // current user, convert to a provider-only ref so the normal resolution flow
+      // re-binds it. If the credential is foreign/deleted (404), strip the env var
+      // so the workspace can still be created.
+      const importLogger = createLogger({ component: "workspace-import" });
+      const initialCredentials = extractCredentials(validatedConfig);
+      const idOnlyRefs = initialCredentials.filter(
+        (cred): cred is CredentialUsage & { credentialId: string } =>
+          !!cred.credentialId && !cred.provider,
+      );
+
+      let strippedCredentialPaths: string[] | undefined;
+
+      if (idOnlyRefs.length > 0) {
+        const lookupResults = await Promise.allSettled(
+          idOnlyRefs.map(async (ref) => {
+            const credential = await fetchLinkCredential(ref.credentialId, importLogger);
+            return { credentialId: ref.credentialId, provider: credential.provider };
+          }),
+        );
+
+        const pathsToStrip: string[] = [];
+        const idProviderMap: Record<string, string> = {};
+        const expiredCredentials: Array<{ credentialId: string; path: string; status: string }> =
+          [];
+
+        for (const [i, result] of lookupResults.entries()) {
+          const ref = idOnlyRefs[i];
+          if (!ref) continue;
+          if (result.status === "fulfilled") {
+            idProviderMap[result.value.credentialId] = result.value.provider;
+          } else if (result.reason instanceof LinkCredentialNotFoundError) {
+            pathsToStrip.push(ref.path);
+          } else if (result.reason instanceof LinkCredentialExpiredError) {
+            expiredCredentials.push({
+              credentialId: result.reason.credentialId,
+              path: ref.path,
+              status: result.reason.status,
+            });
+          } else {
+            throw result.reason;
+          }
+        }
+
+        if (expiredCredentials.length > 0) {
+          return c.json(
+            {
+              error: "credential_expired",
+              message:
+                "Some credentials have expired. Re-authorize the integrations and try again.",
+              expiredCredentials,
+            },
+            400,
+          );
+        }
+
+        // Strip unresolvable refs (foreign/deleted credentials)
+        if (pathsToStrip.length > 0) {
+          importLogger.warn("Stripping unresolvable credential refs during import", {
+            paths: pathsToStrip,
+          });
+          validatedConfig = stripCredentialRefs(validatedConfig, pathsToStrip);
+          strippedCredentialPaths = pathsToStrip;
+        }
+
+        // Convert resolvable id-only refs to provider-only format so the
+        // normal provider resolution flow re-binds them to the importing user
+        if (Object.keys(idProviderMap).length > 0) {
+          validatedConfig = toProviderRefs(validatedConfig, idProviderMap);
+        }
+      }
+
+      // Re-extract credentials from the (potentially modified) config
       const credentials = extractCredentials(validatedConfig);
       const providerOnlyRefs = credentials.filter(
-        (cred): cred is CredentialUsage & { provider: string } =>
-          !!cred.provider && !cred.credentialId,
+        (cred): cred is CredentialUsage & { provider: string } => !!cred.provider,
       );
       const uniqueProviders = [...new Set(providerOnlyRefs.map((ref) => ref.provider))];
 
@@ -151,7 +226,6 @@ const workspacesRoutes = daemonFactory
           label: labelMap[ref.provider] ?? "",
         }));
 
-        const importLogger = createLogger({ component: "workspace-import" });
         const uniqueCredentialIds = [...new Set(Object.values(credentialMap))];
         const credentialSecrets = new Map<string, Record<string, unknown>>();
 
@@ -260,6 +334,9 @@ const workspacesRoutes = daemonFactory
             filesCreated: [ephemeral ? "eph_workspace.yml" : "workspace.yml", ".env"],
             ...(resolvedCredentials && resolvedCredentials.length > 0
               ? { resolvedCredentials }
+              : {}),
+            ...(strippedCredentialPaths && strippedCredentialPaths.length > 0
+              ? { strippedCredentials: strippedCredentialPaths }
               : {}),
           },
           201,
@@ -445,25 +522,28 @@ const workspacesRoutes = daemonFactory
         if (!ref) continue;
         if (result.status === "fulfilled") {
           providerMap[result.value.credentialId] = result.value.provider;
-        } else if (result.reason instanceof LinkCredentialNotFoundError) {
+        } else if (
+          result.reason instanceof LinkCredentialNotFoundError ||
+          result.reason instanceof LinkCredentialExpiredError
+        ) {
           unresolvedPaths.push(ref.path);
         } else {
           throw result.reason;
         }
       }
 
+      // Strip unresolvable legacy refs instead of failing the export.
+      // The exported YAML will omit those env vars; the importing user
+      // will need to configure credentials through workspace settings.
+      let workspaceToExport = config.workspace;
       if (unresolvedPaths.length > 0) {
-        return c.json(
-          {
-            error: "unresolvable_credentials",
-            message: "Cannot resolve credentials for export",
-            unresolvedPaths,
-          },
-          422,
-        );
+        exportLogger.warn("Stripping unresolvable credential refs from export", {
+          unresolvedPaths,
+        });
+        workspaceToExport = stripCredentialRefs(workspaceToExport, unresolvedPaths);
       }
 
-      const portableConfig = toProviderRefs(config.workspace, providerMap);
+      const portableConfig = toProviderRefs(workspaceToExport, providerMap);
 
       // Strip workspace.id - it will be regenerated on import
       const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
