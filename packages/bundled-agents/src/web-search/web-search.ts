@@ -150,7 +150,7 @@ ${excerpts}`;
     .join("\n\n---\n\n");
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     abortSignal,
     schema: ResponseSchema,
     experimental_repairText: repairJson,
@@ -237,7 +237,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     try {
       const response = await generateText({
-        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
         messages: [
           { role: "system", content: QUERY_ANALYSIS_PROMPT },
           { role: "system", content: `Today's date: ${getTodaysDate()}` },

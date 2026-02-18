@@ -55,7 +55,7 @@ type RegistryModelId =
 
 export interface DirectExecutorOptions {
   plan: WorkspaceBlueprint;
-  /** Model ID (default: anthropic:claude-sonnet-4-5) */
+  /** Model ID (default: anthropic:claude-sonnet-4-6) */
   model?: RegistryModelId;
 }
 
@@ -82,7 +82,7 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
   ) => Promise<AgentResult>;
   shutdown: () => Promise<void>;
 } {
-  const { plan, model: modelId = "anthropic:claude-sonnet-4-5" } = opts;
+  const { plan, model: modelId = "anthropic:claude-sonnet-4-6" } = opts;
   const mcpManager = new MCPManager();
   const registeredServers = new Set<string>();
 

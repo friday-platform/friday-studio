@@ -313,7 +313,7 @@ describe("buildFSMFromPlan — linear-ticket (3-step)", () => {
     expect(updateState?.entry?.[1]).toMatchObject({
       type: "llm",
       provider: "anthropic",
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       prompt:
         "Update the ticket with the implementation results, files changed, and completion status",
       tools: ["linear"],

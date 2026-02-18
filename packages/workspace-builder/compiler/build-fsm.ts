@@ -34,7 +34,7 @@ import { validateFieldPath } from "./validate-field-path.ts";
 const DEFAULT_LLM_PROVIDER = "anthropic";
 
 /** Default LLM model for ad-hoc LLM agents. */
-const DEFAULT_LLM_MODEL = "claude-sonnet-4-5";
+const DEFAULT_LLM_MODEL = "claude-sonnet-4-6";
 
 // ---------------------------------------------------------------------------
 // Public API

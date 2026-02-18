@@ -52,7 +52,7 @@ describe("AtlasLLMProviderAdapter", () => {
 
     const result = await adapter.call({
       agentId: "test-agent",
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-4-6",
       prompt: "do the thing",
     });
 
@@ -81,7 +81,7 @@ describe("AtlasLLMProviderAdapter", () => {
 
     const result = await adapter.call({
       agentId: "test-agent",
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-4-6",
       prompt: "fallback prompt",
       messages,
     });

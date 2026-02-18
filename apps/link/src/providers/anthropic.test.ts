@@ -71,9 +71,9 @@ describe("anthropicProvider.health", () => {
       status: 200,
       body: JSON.stringify({
         data: [
-          { id: "claude-3-opus-20240229" },
-          { id: "claude-3-sonnet-20240229" },
-          { id: "claude-3-haiku-20240307" },
+          { id: "claude-opus-4-6" },
+          { id: "claude-sonnet-4-6" },
+          { id: "claude-haiku-4-5-20251001" },
         ],
       }),
     });

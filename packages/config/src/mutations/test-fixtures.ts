@@ -76,7 +76,7 @@ export function llmAgent(
     description: overrides.description ?? "Test LLM agent",
     config: {
       provider: overrides.provider ?? "anthropic",
-      model: overrides.model ?? "claude-sonnet-4-5",
+      model: overrides.model ?? "claude-sonnet-4-6",
       prompt: overrides.prompt ?? "Test prompt",
       ...(overrides.temperature !== undefined && { temperature: overrides.temperature }),
       ...(overrides.max_tokens !== undefined && { max_tokens: overrides.max_tokens }),

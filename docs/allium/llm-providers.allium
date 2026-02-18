@@ -414,7 +414,7 @@ to allow overriding any streamText parameter, or should it merge into
 providerOptions?"
 
 // INCONSISTENCY 3: Conversation agent sends Groq provider options to Anthropic model
-// conversation.agent.ts calls registry.languageModel('anthropic:claude-sonnet-4-5')
+// conversation.agent.ts calls registry.languageModel('anthropic:claude-sonnet-4-6')
 // but passes providerOptions: { groq: { reasoningFormat: 'parsed', reasoningEffort: 'medium' } }.
 // The Groq options are silently ignored by the Anthropic provider.
 open_question "Conversation agent sends Groq-specific providerOptions while using
@@ -443,7 +443,7 @@ temperature, and maxOutputTokens. Should it apply getDefaultProviderOpts?"
 
 // INCONSISTENCY 7: All hardcoded call sites use Anthropic
 // Every system agent, bundled agent, planner, and detector hardcodes
-// 'anthropic:claude-sonnet-4-5' or 'anthropic:claude-haiku-4-5'.
+// 'anthropic:claude-sonnet-4-6' or 'anthropic:claude-haiku-4-5'.
 // The multi-provider registry exists but only workspace-configured LLM agents
 // and smallLLM (Groq) use non-Anthropic providers.
 open_question "All system and bundled agents hardcode Anthropic models. Is the

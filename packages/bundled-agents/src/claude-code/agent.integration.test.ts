@@ -47,7 +47,7 @@ describe.skipIf(!canRun)("integration: stall detection with real subagent", () =
       options: {
         pathToClaudeCodeExecutable: ATLAS_CLAUDE_PATH,
         cwd: process.env.TMPDIR ?? "/tmp",
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         tools: { type: "preset", preset: "claude_code" },
         permissionMode: "bypassPermissions",
         settingSources: [],

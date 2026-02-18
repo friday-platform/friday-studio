@@ -24,7 +24,7 @@ describe("extractAgentConfigPrompt", () => {
         description: "Test agent",
         config: {
           provider: "anthropic",
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-6",
           prompt: "LLM system prompt",
           temperature: 0.3, // Required in output type (has default)
         },

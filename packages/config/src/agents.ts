@@ -25,7 +25,7 @@ export const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   config: z.strictObject({
     // Provider and model
     provider: z.string().describe("Inference provider (e.g., 'anthropic')"),
-    model: z.string().describe("Model identifier (e.g., 'claude-sonnet-4-5')"),
+    model: z.string().describe("Model identifier (e.g., 'claude-sonnet-4-6')"),
 
     // Single prompt string
     prompt: z.string().describe("System prompt for the agent"),

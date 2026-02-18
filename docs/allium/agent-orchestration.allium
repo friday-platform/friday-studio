@@ -145,7 +145,7 @@ value LLMAgentConfig {
   type: llm,
   description: string,
   provider: string,                     // e.g., "anthropic"
-  model: string,                        // e.g., "claude-sonnet-4-5"
+  model: string,                        // e.g., "claude-sonnet-4-6"
   prompt: string,                       // system prompt
   temperature: float,                   // 0..0.7, default 0.3
   max_tokens: int | null,

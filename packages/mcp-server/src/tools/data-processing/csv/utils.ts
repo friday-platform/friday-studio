@@ -99,7 +99,7 @@ export async function executeCsvOperation(
   const tools = getOperationTools(fileMap, operationResult);
 
   const result = await generateText({
-    model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+    model: registry.languageModel("anthropic:claude-sonnet-4-6"),
     system: systemPrompt,
     prompt: task,
     tools,

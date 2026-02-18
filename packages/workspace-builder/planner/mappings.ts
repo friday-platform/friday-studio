@@ -358,7 +358,7 @@ export async function generatePrepareMappings(
         );
 
         const result = await generateText({
-          model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+          model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
           tools,
           stopWhen: [stepCountIs(10), hasToolCall("finalize")],
           messages: [

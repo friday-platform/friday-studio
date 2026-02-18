@@ -85,7 +85,7 @@ export async function generateDAGSteps(
   });
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: jobSchema,
     experimental_repairText: repairJson,
     messages: [

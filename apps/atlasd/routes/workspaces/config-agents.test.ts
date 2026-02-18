@@ -94,7 +94,7 @@ describe("PUT /config/agents/:agentId", () => {
     const configData = createTestConfig({
       jobs: {
         "my-job": createFSMJob([
-          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Original" },
+          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Original" },
         ]),
       },
     });
@@ -123,7 +123,7 @@ describe("PUT /config/agents/:agentId", () => {
           {
             type: "llm",
             provider: "anthropic",
-            model: "claude-sonnet-4-5",
+            model: "claude-sonnet-4-6",
             prompt: "Original prompt",
           },
         ]),
@@ -143,7 +143,7 @@ describe("PUT /config/agents/:agentId", () => {
       body: JSON.stringify({
         type: "llm",
         prompt: "Updated prompt",
-        model: "claude-opus-4",
+        model: "claude-opus-4-6",
         tools: ["filesystem"],
       }),
     });
@@ -184,7 +184,7 @@ describe("PUT /config/agents/:agentId", () => {
     const configData = createTestConfig({
       jobs: {
         "my-job": createFSMJob([
-          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Original" },
+          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Original" },
         ]),
       },
     });

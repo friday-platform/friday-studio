@@ -272,7 +272,7 @@ import { SupervisionLevel } from "../../../../../../src/core/supervision-levels.
 // Inside executeTaskViaFSMDirect function:
 const engine = createEngine(fsmDefinition, {
   documentStore: docStore,
-  llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
+  llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
   scope,
   agentExecutor,
   mcpToolProvider: context.mcpToolProvider,
@@ -290,7 +290,7 @@ import { SupervisionLevel } from "./supervision-levels.ts";
 const engineOptions = {
   documentStore: job.documentStore,
   scope,
-  llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
+  llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
   agentExecutor,
   mcpToolProvider,
   validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),

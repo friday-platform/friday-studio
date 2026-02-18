@@ -32,7 +32,7 @@ agents: {}
 # Use default supervisors (inherit from platform)
 supervisors:
   workspace:
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -45,7 +45,7 @@ supervisors:
     prompts:
       system: "You are a WorkspaceSupervisor for the telephone game workspace."
   session:
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -58,7 +58,7 @@ supervisors:
     prompts:
       system: "You are a SessionSupervisor for the telephone game workspace."
   agent:
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     supervision:
       level: "minimal"
       cache_enabled: true

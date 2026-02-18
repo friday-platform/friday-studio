@@ -95,7 +95,7 @@ describe("extractFSMAgents", () => {
           {
             type: "llm",
             provider: "anthropic",
-            model: "claude-sonnet-4-5",
+            model: "claude-sonnet-4-6",
             prompt: "Summarize this",
           },
         ]),
@@ -112,7 +112,7 @@ describe("extractFSMAgents", () => {
         entryIndex: 0,
         type: "llm",
         provider: "anthropic",
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         prompt: "Summarize this",
       },
     });
@@ -133,7 +133,7 @@ describe("extractFSMAgents", () => {
                   {
                     type: "llm",
                     provider: "anthropic",
-                    model: "claude-sonnet-4-5",
+                    model: "claude-sonnet-4-6",
                     prompt: "Process data",
                     tools: ["linear", "notion"],
                     outputTo: "result_doc",
@@ -176,7 +176,7 @@ describe("extractFSMAgents", () => {
                   {
                     type: "llm",
                     provider: "anthropic",
-                    model: "claude-sonnet-4-5",
+                    model: "claude-sonnet-4-6",
                     prompt: "Step 1",
                   },
                 ],
@@ -205,7 +205,7 @@ describe("extractFSMAgents", () => {
       jobs: {
         "job-a": createFSMJob([{ type: "agent", agentId: "agent-a" }]),
         "job-b": createFSMJob([
-          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Task B" },
+          { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Task B" },
         ]),
       },
     });
@@ -264,7 +264,7 @@ describe("extractFSMAgents", () => {
                   {
                     type: "llm",
                     provider: "anthropic",
-                    model: "claude-sonnet-4-5",
+                    model: "claude-sonnet-4-6",
                     prompt: "Second",
                   },
                 ],
@@ -510,7 +510,7 @@ describe("updateFSMAgent", () => {
       const config = createTestConfig({
         jobs: {
           "my-job": createFSMJob([
-            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Test" },
           ]),
         },
       });
@@ -583,7 +583,7 @@ describe("updateFSMAgent", () => {
       const config = createTestConfig({
         jobs: {
           "my-job": createFSMJob([
-            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Original" },
+            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Original" },
           ]),
         },
       });
@@ -604,20 +604,20 @@ describe("updateFSMAgent", () => {
       const config = createTestConfig({
         jobs: {
           "my-job": createFSMJob([
-            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Test" },
           ]),
         },
       });
 
       const result = updateFSMAgent(config, "my-job:step_0", {
         type: "llm",
-        model: "claude-opus-4",
+        model: "claude-opus-4-6",
       });
 
       expect(result.ok).toBe(true);
       expect(result).toHaveProperty(
         "value.jobs.my-job.fsm.states.step_0.entry.0.model",
-        "claude-opus-4",
+        "claude-opus-4-6",
       );
     });
 
@@ -625,7 +625,7 @@ describe("updateFSMAgent", () => {
       const config = createTestConfig({
         jobs: {
           "my-job": createFSMJob([
-            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Original" },
+            { type: "llm", provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Original" },
           ]),
         },
       });
@@ -633,13 +633,13 @@ describe("updateFSMAgent", () => {
       const result = updateFSMAgent(config, "my-job:step_0", {
         type: "llm",
         prompt: "New prompt",
-        model: "claude-opus-4",
+        model: "claude-opus-4-6",
       });
 
       expect(result.ok).toBe(true);
       expect(result).toHaveProperty(
         "value.jobs.my-job.fsm.states.step_0.entry.0",
-        expect.objectContaining({ prompt: "New prompt", model: "claude-opus-4" }),
+        expect.objectContaining({ prompt: "New prompt", model: "claude-opus-4-6" }),
       );
     });
 

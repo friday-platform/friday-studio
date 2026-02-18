@@ -700,11 +700,11 @@ rule SupervisorDefaultsValidation {
 }
 
 config SupervisorDefaultValues {
-  workspace_model: "claude-sonnet-4-5",
+  workspace_model: "claude-sonnet-4-6",
   workspace_level: "standard",
-  session_model: "claude-sonnet-4-5",
+  session_model: "claude-sonnet-4-6",
   session_level: "detailed",
-  agent_model: "claude-sonnet-4-5",
+  agent_model: "claude-sonnet-4-6",
   agent_level: "minimal"
 }
 

@@ -458,7 +458,7 @@ export class WorkspaceRuntime {
       documentStore: job.documentStore,
       scope,
       llmProvider: new AtlasLLMProviderAdapter(
-        "claude-sonnet-4-5",
+        "claude-sonnet-4-6",
         "anthropic",
         undefined,
         job.maxSteps,

@@ -135,7 +135,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
       }
 
       const result = await generateObject({
-        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-6"),
         experimental_repairText: repairJson,
         system: SKILL_DISTILLER_PROMPT,
         prompt: userPrompt,

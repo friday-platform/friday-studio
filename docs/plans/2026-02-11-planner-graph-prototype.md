@@ -185,7 +185,7 @@ is retained in LLM prompt building.
 
 Post-processes compiled FSMs via `patchLLMActions()` to convert non-bundled
 agents from `agentAction` to `llmAction` with MCP server tool IDs, hardcoded
-`anthropic` provider and `claude-sonnet-4-5` model. Applied between
+`anthropic` provider and `claude-sonnet-4-6` model. Applied between
 `buildFSMFromPlan()` and engine creation.
 
 `ephemeral-executor.ts` fixes: result collection uses `engine.results` with

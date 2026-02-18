@@ -324,7 +324,7 @@ export async function generatePlan(
 
   if (mode === "task") {
     const result = await generateObject({
-      model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+      model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
       schema: TaskPlanSchema,
       experimental_repairText: repairJson,
       messages: [
@@ -349,7 +349,7 @@ export async function generatePlan(
   }
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
+    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: WorkspacePlanSchema,
     experimental_repairText: repairJson,
     messages: [

@@ -230,7 +230,7 @@ agents:
     type: llm
     config:
       provider: anthropic
-      model: claude-sonnet-4-5
+      model: claude-sonnet-4-6
       prompt: |
         When you receive a Slack message in the signal payload:
         1. Extract the channelId from the payload

@@ -213,7 +213,7 @@ agents:
     type: llm
     config:
       provider: anthropic
-      model: claude-sonnet-4-5
+      model: claude-sonnet-4-6
       prompt: "You are a helpful bot. Respond to the user's message."
 ```
 

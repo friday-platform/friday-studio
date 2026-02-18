@@ -107,7 +107,7 @@ import {
 | `createMergedConfig(workspace)` | `MergedConfig`         | Wraps workspace with null atlas |
 | `httpSignal(overrides?)`        | `HTTPSignalConfig`     | Path `/webhook`                 |
 | `scheduleSignal(overrides?)`    | `ScheduleSignalConfig` | Cron `0 9 * * *`, UTC           |
-| `llmAgent(overrides?)`          | `LLMAgentConfig`       | Anthropic claude-sonnet-4-5     |
+| `llmAgent(overrides?)`          | `LLMAgentConfig`       | Anthropic claude-sonnet-4-6     |
 | `atlasAgent(overrides?)`        | `AtlasAgentConfig`     | GitHub agent                    |
 | `systemAgent(overrides?)`       | `SystemAgentConfig`    | Conversation agent              |
 | `createJob(overrides?)`         | `JobSpecification`     | Sequential, one agent           |

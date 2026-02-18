@@ -42,7 +42,7 @@ action output validation against document schemas silently never happens.
 **Module:** LLM Providers
 **File:** `packages/system/agents/conversation/conversation.agent.ts:858`
 
-The conversation agent uses `anthropic:claude-sonnet-4-5` but passes
+The conversation agent uses `anthropic:claude-sonnet-4-6` but passes
 `providerOptions: { groq: { reasoningFormat: "parsed", reasoningEffort: "medium" } }`.
 These are silently ignored. Likely vestigial from a model switch.
 

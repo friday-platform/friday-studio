@@ -8,7 +8,7 @@ import { type SupervisorsConfig, SupervisorsConfigSchema } from "./atlas.ts";
 // Define the default supervisor configuration with TypeScript validation
 const supervisorDefaultsUnvalidated: SupervisorsConfig = {
   workspace: {
-    model: "claude-sonnet-4-5",
+    model: "claude-sonnet-4-6",
     supervision: {
       level: "standard",
       cache_enabled: true,
@@ -62,7 +62,7 @@ Respond in structured format for programmatic processing.`,
   },
 
   session: {
-    model: "claude-sonnet-4-5",
+    model: "claude-sonnet-4-6",
     supervision: {
       level: "detailed",
       cache_enabled: true,
@@ -117,7 +117,7 @@ Format as structured execution plan for immediate implementation.`,
   },
 
   agent: {
-    model: "claude-sonnet-4-5",
+    model: "claude-sonnet-4-6",
     supervision: {
       level: "minimal",
       cache_enabled: true,

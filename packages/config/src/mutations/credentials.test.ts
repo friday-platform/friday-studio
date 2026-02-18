@@ -107,7 +107,7 @@ describe("extractCredentials", () => {
         "llm-agent": {
           type: "llm",
           description: "Test LLM agent",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+          config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Test" },
         },
         "system-agent": { type: "system", agent: "conversation", description: "Test system agent" },
       },
@@ -147,7 +147,7 @@ describe("extractCredentials", () => {
         "llm-agent": {
           type: "llm",
           description: "Test",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+          config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Test" },
         },
       },
     });
@@ -953,7 +953,7 @@ describe("stripCredentialRefs", () => {
         "llm-agent": {
           type: "llm",
           description: "Test LLM agent",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Test" },
+          config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Test" },
         },
       },
     });

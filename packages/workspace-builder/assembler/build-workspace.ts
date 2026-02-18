@@ -137,7 +137,7 @@ function buildAgents(
         description: agent.description,
         config: {
           provider: "anthropic",
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-6",
           prompt: `You are ${agent.name}. ${agent.description}`,
           temperature: 0.3,
           ...(agent.mcpServers?.length && { tools: agent.mcpServers.map((s) => s.serverId) }),

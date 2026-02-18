@@ -202,7 +202,7 @@ export async function executeTaskViaFSMDirect(
     // 5. Create FSM engine
     const engine = createEngine(fsmDefinition, {
       documentStore: docStore,
-      llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
+      llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
       scope,
       agentExecutor,
       mcpToolProvider: context.mcpToolProvider,

@@ -251,7 +251,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
           // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
           pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
           cwd: sandbox.workDir,
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-6",
           tools: { type: "preset", preset: "claude_code" },
           disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
           permissionMode: "bypassPermissions",

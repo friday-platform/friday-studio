@@ -32,7 +32,7 @@ export function agentAction(
  * @example
  * builder.onEntry(llmAction({
  *   provider: 'anthropic',
- *   model: 'claude-sonnet-4-5',
+ *   model: 'claude-sonnet-4-6',
  *   prompt: 'Analyze the data',
  *   tools: ['github.get_pr'],
  *   outputTo: 'analysis_result',

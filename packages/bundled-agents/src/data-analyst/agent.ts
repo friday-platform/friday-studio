@@ -232,7 +232,7 @@ async function runAnalysisLoop(
   const analysisPrompt = buildAnalysisPrompt(schemaContext);
 
   const result = await generateText({
-    model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+    model: registry.languageModel("anthropic:claude-sonnet-4-6"),
     messages: [
       { role: "system", content: analysisPrompt },
       { role: "user", content: question },

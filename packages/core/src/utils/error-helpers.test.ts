@@ -243,7 +243,7 @@ it("createErrorCause - handles LiteLLM budget exceeded error", () => {
   const error = new APICallError({
     message: "Bad Request",
     url: "http://litellm-proxy.atlas-operator.svc.cluster.local:4000/v1/messages",
-    requestBodyValues: { model: "claude-sonnet-4-5", messages: [] },
+    requestBodyValues: { model: "claude-sonnet-4-6", messages: [] },
     statusCode: 400,
     isRetryable: false,
     responseBody: JSON.stringify({

@@ -134,7 +134,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
       ];
 
       const result = await generateObject({
-        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-6"),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
         messages,

@@ -837,7 +837,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         try {
           try {
             result = streamText({
-              model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+              model: registry.languageModel("anthropic:claude-sonnet-4-6"),
               experimental_repairToolCall: repairToolCall,
               messages: [
                 {
