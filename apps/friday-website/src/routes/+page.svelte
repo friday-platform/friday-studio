@@ -48,17 +48,18 @@ import UseCases from "$lib/sections/use-cases.svelte";
 
 <style>
 	.background {
-		block-size: 409px;
 		aspect-ratio: 1 / 1;
+		display: none;
+		inset-block-start: 0;
 		inset-inline-end: 0;
 		overflow-x: clip;
-		inset-block-start: 0;
-		position: absolute;
 		pointer-events: none;
+		position: absolute;
 		z-index: -1;
 
 		@media (min-width: 768px) {
 			block-size: 818px;
+			display: block;
 		}
 	}
 
