@@ -1,1 +1,1 @@
-workspace-mcp==1.11.2
+workspace-mcp==1.11.5
