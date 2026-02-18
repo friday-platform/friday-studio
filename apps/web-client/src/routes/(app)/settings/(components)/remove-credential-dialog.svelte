@@ -27,7 +27,7 @@
 <Dialog.Root>
   {#snippet children(open)}
     <Dialog.Trigger>
-      <Button size="small">Delete</Button>
+      <Button size="small" variant="secondary">Remove</Button>
     </Dialog.Trigger>
 
     <Dialog.Content>

@@ -782,3 +782,4 @@ const configRoutes = daemonFactory
   .put("/credentials/:path", handleUpdateCredential);
 
 export { configRoutes };
+export type WorkspaceConfigRoutes = typeof configRoutes;

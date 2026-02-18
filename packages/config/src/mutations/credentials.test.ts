@@ -736,7 +736,7 @@ describe("toIdRefs", () => {
     });
   });
 
-  test("throws for provider-only ref missing from credentialMap", () => {
+  test("leaves provider-only ref unchanged when missing from credentialMap", () => {
     const config = createTestConfig({
       tools: {
         mcp: {
@@ -750,7 +750,13 @@ describe("toIdRefs", () => {
       },
     });
 
-    expect(() => toIdRefs(config, {})).toThrow("linear");
+    const result = toIdRefs(config, {});
+    // Ref should be unchanged — no id added
+    expect(result.tools?.mcp?.servers?.linear?.env?.LINEAR_TOKEN).toEqual({
+      from: "link",
+      provider: "linear",
+      key: "access_token",
+    });
   });
 
   test("handles mixed refs across MCP servers and agents", () => {
@@ -794,7 +800,7 @@ describe("toIdRefs", () => {
     });
   });
 
-  test("throws for ref with both id and provider when provider is missing from credentialMap", () => {
+  test("leaves ref with both id and provider unchanged when provider is missing from credentialMap", () => {
     const config = createTestConfig({
       tools: {
         mcp: {
@@ -815,7 +821,14 @@ describe("toIdRefs", () => {
       },
     });
 
-    expect(() => toIdRefs(config, {})).toThrow(/no credential ID found for provider "github"/);
+    const result = toIdRefs(config, {});
+    // Ref should be unchanged — provider not in map, partial resolution
+    expect(result.tools?.mcp?.servers?.github?.env?.GITHUB_TOKEN).toEqual({
+      from: "link",
+      id: "cred_foreign",
+      provider: "github",
+      key: "token",
+    });
   });
 });
 

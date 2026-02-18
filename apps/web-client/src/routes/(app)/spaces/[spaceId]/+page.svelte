@@ -13,6 +13,7 @@
   import { formatChatDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
+  import Setup from "./(components)/setup.svelte";
   import ShareActions from "./(components)/share-actions.svelte";
   import type { PageData } from "./$types";
 
@@ -23,13 +24,6 @@
   const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
 
   const workspace = $derived(data.workspace);
-  const recentSessions = $derived(data.sessions.slice(0, 3));
-  const recentArtifacts = $derived(data.artifacts.slice(0, 5));
-  const runnableJobs = $derived(
-    Object.entries(workspace.config?.jobs ?? {}).filter(
-      ([_, job]) => job.triggers && job.triggers.length > 0,
-    ),
-  );
 
   onMount(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -50,135 +44,136 @@
   }
 </script>
 
-<div class="wrapper">
-  <div class="page">
-    <article class="content">
-      <header>
-        <div class="title">
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              <span class="change-color">
-                <Dot color={workspace.metadata?.color} />
-              </span>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content>
-              {#each COLORS as color (color)}
-                <DropdownMenu.Item
-                  accent="inherit"
-                  checked={workspace.metadata?.color === color}
-                  onclick={() => handleUpdateColor(color)}
-                >
-                  <span style:color="var(--{color}-2)">
-                    <Icons.DotFilled />
-                  </span>
+{#if data.requiresSetup}
+  <Setup {workspace} integrations={data.integrations} />
+{:else}
+  {@const recentSessions = data.sessions.slice(0, 3)}
+  {@const recentArtifacts = data.artifacts.slice(0, 5)}
+  {@const runnableJobs = Object.entries(workspace.config?.jobs ?? {}).filter(
+    ([_, job]) => job.triggers && job.triggers.length > 0,
+  )}
 
-                  <span class="color-label">{color}</span>
-                </DropdownMenu.Item>
-              {/each}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-
-          <h1>{workspace.name}</h1>
-        </div>
-
-        {#if workspace.description}
-          <p>{workspace.description}</p>
-        {/if}
-      </header>
-    </article>
-  </div>
-
-  <aside class="sidebar">
-    <div class="actions">
-      <a href={resolve("/spaces/[spaceId]/edit", { spaceId: workspace.id })}>
-        <Icons.Settings />
-        Edit Space
-      </a>
-
-      <ShareActions {workspace} />
-    </div>
-    {#if runnableJobs.length > 0}
-      {#each runnableJobs as [jobId, job] (jobId)}
-        <div class="section">
-          <div class="section-header">
-            <h2>{job.title || job.name || jobId}</h2>
-          </div>
-
-          {#if job.description}
-            <p>{job.description}</p>
-          {/if}
-
-          <div class="job-action">
-            <RunJobDialog
-              {jobId}
-              {job}
-              signals={workspace.config?.signals ?? {}}
-              workspaceId={workspace.id}
-            >
-              {#snippet triggerContents()}
-                <Button size="small">Run Now</Button>
-              {/snippet}
-            </RunJobDialog>
-          </div>
-        </div>
-      {/each}
-    {/if}
-
-    <div class="section">
-      <h2>Resources</h2>
-
-      {#if recentArtifacts.length > 0}
-        <ul class="resources">
-          {#each recentArtifacts as artifact (artifact.id)}
-            <li>
-              <a href={resolve("/library/[libraryId]", { libraryId: artifact.id })}>
-                <span>
-                  {artifact.title}
+  <div class="wrapper">
+    <div class="page">
+      <article class="content">
+        <header>
+          <div class="title">
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                <span class="change-color">
+                  <Dot color={workspace.metadata?.color} />
                 </span>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content>
+                {#each COLORS as color (color)}
+                  <DropdownMenu.Item
+                    accent="inherit"
+                    checked={workspace.metadata?.color === color}
+                    onclick={() => handleUpdateColor(color)}
+                  >
+                    <span style:color="var(--{color}-2)">
+                      <Icons.DotFilled />
+                    </span>
 
-                <IconSmall.CaretRight />
-              </a>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+                    <span class="color-label">{color}</span>
+                  </DropdownMenu.Item>
+                {/each}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+
+            <h1>{workspace.name}</h1>
+          </div>
+
+          {#if workspace.description}
+            <p>{workspace.description}</p>
+          {/if}
+        </header>
+      </article>
     </div>
 
-    <div class="section">
-      <h2>Recent Activity</h2>
+    <aside class="sidebar">
+      <div class="actions">
+        <a href={resolve("/spaces/[spaceId]/edit", { spaceId: workspace.id })}>
+          <Icons.Settings />
+          Edit Space
+        </a>
 
-      {#if recentSessions.length > 0}
-        <div class="sessions">
-          <ul>
-            {#each recentSessions as session (session.sessionId)}
+        <ShareActions {workspace} />
+      </div>
+      {#if runnableJobs.length > 0}
+        {#each runnableJobs as [jobId, job] (jobId)}
+          <div class="section">
+            <div class="section-header">
+              <h2>{job.title || job.name || jobId}</h2>
+            </div>
+
+            {#if job.description}
+              <p>{job.description}</p>
+            {/if}
+
+            <div class="job-action">
+              <RunJobDialog
+                {jobId}
+                {job}
+                signals={workspace.config?.signals ?? {}}
+                workspaceId={workspace.id}
+              >
+                {#snippet triggerContents()}
+                  <Button size="small">Run Now</Button>
+                {/snippet}
+              </RunJobDialog>
+            </div>
+          </div>
+        {/each}
+      {/if}
+
+      <div class="section">
+        <h2>Resources</h2>
+
+        {#if recentArtifacts.length > 0}
+          <ul class="resources">
+            {#each recentArtifacts as artifact (artifact.id)}
               <li>
-                <a href={resolve("/sessions/[sessionId]", { sessionId: session.sessionId })}>
-                  <span>{session.task || session.jobName || session.sessionId}</span>
-
-                  <span class="session-meta">
-                    {#if session.status === "active"}
-                      <span class="session-status active">
-                        <IconSmall.Progress />
-                        Running
-                      </span>
-                    {:else if session.status === "failed"}
-                      <span class="session-status failed">
-                        <IconSmall.Close />
-                        Failed
-                      </span>
-                    {:else}
-                      <time>{formatChatDate(session.startedAt)}</time>
-                    {/if}
+                <a href={resolve("/library/[libraryId]", { libraryId: artifact.id })}>
+                  <span>
+                    {artifact.title}
                   </span>
+
+                  <IconSmall.CaretRight />
                 </a>
               </li>
             {/each}
           </ul>
-        </div>
-      {/if}
-    </div>
-  </aside>
-</div>
+        {/if}
+      </div>
+
+      <div class="section">
+        <h2>Recent Activity</h2>
+
+        {#if recentSessions.length > 0}
+          <div class="sessions">
+            <ul>
+              {#each recentSessions as session (session.sessionId)}
+                {@const displayName =
+                  session.sessionType === "task"
+                    ? `Task: ${session.title ?? session.parentTitle ?? "Conversation"}`
+                    : (session.title ?? session.sessionId)}
+
+                <li>
+                  <a href={resolve("/sessions/[sessionId]", { sessionId: session.sessionId })}>
+                    <span>{displayName}</span>
+
+                    <time>{formatChatDate(session.createdAt)}</time>
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      </div>
+    </aside>
+  </div>
+{/if}
 
 <style>
   .wrapper {
@@ -378,31 +373,6 @@
       time {
         font-size: var(--font-size-2);
         opacity: 0.6;
-      }
-
-      .session-meta {
-        font-size: var(--font-size-2);
-      }
-
-      .session-status {
-        align-items: center;
-        display: inline-flex;
-        font-size: var(--font-size-2);
-        font-weight: var(--font-weight-5);
-        gap: var(--size-1);
-
-        :global(svg) {
-          block-size: var(--size-3);
-          inline-size: var(--size-3);
-        }
-
-        &.active {
-          color: var(--color-yellow-2);
-        }
-
-        &.failed {
-          color: var(--color-red);
-        }
       }
 
       &:before {

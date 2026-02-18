@@ -6,7 +6,7 @@
   type Props = {
     table: Table<T>;
     padded?: boolean;
-    rowSize?: "small" | "large" | "auto";
+    rowSize?: "small" | "large" | "medium" | "auto";
     grow?: boolean;
     hideHeader?: boolean;
     onRowClick?: (item: T, index: number) => void;
@@ -179,7 +179,7 @@
       transition: border-color 250ms ease;
 
       &:first-child {
-        padding-inline-start: calc(var(--size-3) + var(--cell-additional-padding, 0));
+        padding-inline-start: calc(0 + var(--cell-additional-padding, 0));
       }
 
       .padded &:first-child {
@@ -187,7 +187,13 @@
       }
 
       &:last-child {
-        padding-inline-end: var(--size-3);
+        padding-inline-end: var(--size-px);
+      }
+    }
+
+    .rowSize--medium & {
+      :global(.cell) {
+        block-size: var(--size-13);
       }
     }
 

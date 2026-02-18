@@ -2,15 +2,21 @@
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import { invalidateAll } from "$app/navigation";
-  import Button from "$lib/components/button.svelte";
   import { Dialog } from "$lib/components/dialog";
+  import { formatFullDate } from "$lib/utils/date";
 
-  interface Props {
+  type Props = {
+    name: string;
+    label?: string;
+    displayName?: string | null;
+    date: string;
     credentialId: string;
-    currentName: string;
-  }
+  };
 
-  let { credentialId, currentName }: Props = $props();
+  let { name, label, displayName, date, credentialId }: Props = $props();
+
+  const displayLabel = $derived(displayName ?? label);
+  const currentName = $derived(displayName ?? label ?? "");
 
   let inputValue = $state("");
   let isSaving = $state(false);
@@ -68,9 +74,18 @@
   }}
 >
   {#snippet children(open)}
-    <Dialog.Trigger>
-      <Button size="small">Rename</Button>
-    </Dialog.Trigger>
+    <div class="component">
+      <div class="header">
+        <span class="provider">{name}</span>
+        {#if displayLabel}
+          <span>•</span>
+          <Dialog.Trigger>
+            <span class="account">{displayLabel}</span>
+          </Dialog.Trigger>
+        {/if}
+      </div>
+      <time datetime={date}>{formatFullDate(date)}</time>
+    </div>
 
     <Dialog.Content>
       <Dialog.Close />
@@ -91,9 +106,9 @@
           }}
         >
           <div class="field">
-            <label for="displayName">Name</label>
+            <label for="displayName-{credentialId}">Name</label>
             <input
-              id="displayName"
+              id="displayName-{credentialId}"
               type="text"
               bind:value={inputValue}
               placeholder="Enter display name"
@@ -122,6 +137,45 @@
 </Dialog.Root>
 
 <style>
+  .component {
+    display: flex;
+    flex-direction: column;
+  }
+
+  span,
+  time {
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+  }
+
+  .header {
+    align-items: center;
+    display: flex;
+    gap: var(--size-1);
+  }
+
+  .provider {
+    font-size: var(--font-size-3);
+    opacity: 1;
+    font-weight: var(--font-weight-5);
+  }
+
+  .account {
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+    transition: opacity 150ms ease;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+
+  time {
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+  }
+
   .form {
     display: flex;
     flex-direction: column;

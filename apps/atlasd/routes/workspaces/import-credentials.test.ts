@@ -71,6 +71,7 @@ function createImportTestApp() {
     getWorkspaceConfig: vi.fn().mockResolvedValue(null),
     list: vi.fn().mockResolvedValue([]),
     registerWorkspace: mockRegisterWorkspace,
+    updateWorkspaceStatus: vi.fn().mockResolvedValue(undefined),
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 
@@ -486,10 +487,9 @@ describe("POST /create — credential resolution", () => {
     ]);
     // No strippedCredentials since the ref was resolvable
     expect(body.strippedCredentials).toBeUndefined();
-    // Two phases: preprocessing lookup (cred_own) + key validation fetch (cred_resolved)
-    expect(mockFetchLinkCredential).toHaveBeenCalledTimes(2);
-    expect(mockFetchLinkCredential).toHaveBeenNthCalledWith(1, "cred_own", expect.anything());
-    expect(mockFetchLinkCredential).toHaveBeenNthCalledWith(2, "cred_resolved", expect.anything());
+    // Preprocessing lookup only (key validation removed)
+    expect(mockFetchLinkCredential).toHaveBeenCalledTimes(1);
+    expect(mockFetchLinkCredential).toHaveBeenCalledWith("cred_own", expect.anything());
   });
 
   test("resolves provider-based refs to id+provider refs", async () => {
@@ -552,8 +552,8 @@ describe("POST /create — credential resolution", () => {
     });
   });
 
-  test("returns 400 listing ALL missing providers", async () => {
-    const { app } = createImportTestApp();
+  test("creates workspace with requires_setup when all providers missing", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
@@ -583,14 +583,15 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({
-      error: "missing_credentials",
-      message: "Connect these integrations first",
-    });
-    // Both providers should be listed, not just the first
-    expect((body.missingProviders as string[]).sort()).toEqual(["github", "slack"]);
+    expect(body.success).toBe(true);
+    // Workspace should be created
+    expect(mockRegisterWorkspace).toHaveBeenCalled();
+    // requires_setup should be set in the returned workspace metadata
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
   });
 
   test("picks first credential when multiple exist for a provider", async () => {
@@ -738,21 +739,13 @@ describe("POST /create — credential resolution", () => {
     expect(mockResolveCredentialsByProvider).toHaveBeenCalledTimes(2);
   });
 
-  test("returns 400 with invalid_credential_keys when key is missing from secret", async () => {
+  test("creates workspace even when credential key mismatches (no secret validation)", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
       { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
     ]);
-
-    // Credential has "token" but config references "access_token"
-    mockFetchLinkCredential.mockResolvedValue({
-      id: "cred_gh",
-      provider: "github",
-      type: "oauth",
-      secret: { token: "ghp_xxx", refresh_token: "ghr_xxx" },
-    });
 
     const config = makeConfig({
       tools: {
@@ -773,23 +766,15 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(400);
+    // Workspace is created; secret validation is skipped
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({
-      error: "invalid_credential_keys",
-      message: "Resolved credentials are missing expected keys",
-    });
-    expect(body.invalidKeys).toEqual([
-      {
-        path: "mcp:github:GITHUB_TOKEN",
-        provider: "github",
-        key: "access_token",
-        availableKeys: ["token", "refresh_token"],
-      },
-    ]);
+    expect(body.success).toBe(true);
+    // fetchLinkCredential should NOT be called (secret validation removed)
+    expect(mockFetchLinkCredential).not.toHaveBeenCalled();
   });
 
-  test("lists ALL invalid keys in a single error response", async () => {
+  test("creates workspace with resolved credentials even when keys mismatch", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
@@ -805,23 +790,6 @@ describe("POST /create — credential resolution", () => {
         ]);
       }
       return Promise.resolve([]);
-    });
-
-    mockFetchLinkCredential.mockImplementation((credentialId: string) => {
-      if (credentialId === "cred_gh") {
-        return Promise.resolve({
-          id: "cred_gh",
-          provider: "github",
-          type: "oauth",
-          secret: { token: "ghp_xxx" },
-        });
-      }
-      return Promise.resolve({
-        id: "cred_sl",
-        provider: "slack",
-        type: "oauth",
-        secret: { bot_token: "xoxb-xxx" },
-      });
     });
 
     const config = makeConfig({
@@ -847,23 +815,15 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(400);
+    // Workspace is created; secret validation is skipped
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body.error).toBe("invalid_credential_keys");
-    const invalidKeys = body.invalidKeys as Array<Record<string, unknown>>;
-    expect(invalidKeys).toHaveLength(2);
-    expect(invalidKeys).toContainEqual({
-      path: "mcp:github:GITHUB_TOKEN",
-      provider: "github",
-      key: "access_token",
-      availableKeys: ["token"],
-    });
-    expect(invalidKeys).toContainEqual({
-      path: "mcp:slack:SLACK_TOKEN",
-      provider: "slack",
-      key: "webhook_secret",
-      availableKeys: ["bot_token"],
-    });
+    expect(body.success).toBe(true);
+    // Both providers resolved, so credentials should be included
+    const resolved = body.resolvedCredentials as Array<Record<string, string>>;
+    expect(resolved).toHaveLength(2);
+    // fetchLinkCredential should NOT be called (secret validation removed)
+    expect(mockFetchLinkCredential).not.toHaveBeenCalled();
   });
 
   test("valid keys pass through silently — no change to success response", async () => {
@@ -913,20 +873,13 @@ describe("POST /create — credential resolution", () => {
     ]);
   });
 
-  test("deduplicates fetchLinkCredential calls by credential ID", async () => {
+  test("does not call fetchLinkCredential during create (secret validation removed)", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
       { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
     ]);
-
-    mockFetchLinkCredential.mockResolvedValue({
-      id: "cred_gh",
-      provider: "github",
-      type: "oauth",
-      secret: { token: "ghp_xxx" },
-    });
 
     const config = makeConfig({
       tools: {
@@ -957,12 +910,11 @@ describe("POST /create — credential resolution", () => {
     });
 
     expect(response.status).toBe(201);
-    // Only one fetchLinkCredential call despite two refs using the same credential
-    expect(mockFetchLinkCredential).toHaveBeenCalledTimes(1);
-    expect(mockFetchLinkCredential).toHaveBeenCalledWith("cred_gh", expect.anything());
+    // fetchLinkCredential is no longer called during create
+    expect(mockFetchLinkCredential).not.toHaveBeenCalled();
   });
 
-  test("returns 500 with credential_fetch_failed when fetchLinkCredential fails during key validation", async () => {
+  test("creates workspace even if fetchLinkCredential would fail (no secret validation)", async () => {
     const { app } = createImportTestApp();
     await mountRoutes(app);
 
@@ -970,6 +922,7 @@ describe("POST /create — credential resolution", () => {
       { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
     ]);
 
+    // fetchLinkCredential would fail, but it's no longer called during create
     mockFetchLinkCredential.mockRejectedValue(new Error("network timeout"));
 
     const config = makeConfig({
@@ -991,13 +944,11 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({
-      error: "credential_fetch_failed",
-      message: "Failed to fetch resolved credentials for key validation",
-    });
-    expect(body.details).toEqual([expect.stringContaining("network timeout")]);
+    expect(body.success).toBe(true);
+    // fetchLinkCredential should NOT be called
+    expect(mockFetchLinkCredential).not.toHaveBeenCalled();
   });
 
   test("returns 500 when fetchLinkCredential throws unexpected error during id-only preprocessing", async () => {
@@ -1039,12 +990,6 @@ describe("POST /create — credential resolution", () => {
     mockResolveCredentialsByProvider.mockResolvedValue([
       { id: "cred_mine", provider: "github", label: "My GitHub", type: "oauth" },
     ]);
-    mockFetchLinkCredential.mockResolvedValue({
-      id: "cred_mine",
-      provider: "github",
-      type: "oauth",
-      secret: { token: "ghp_xxx" },
-    });
 
     const config = makeConfig({
       tools: {
@@ -1100,8 +1045,8 @@ describe("POST /create — credential resolution", () => {
     expect(mockFetchLinkCredential).not.toHaveBeenCalledWith("cred_foreign", expect.anything());
   });
 
-  test("partial missing: some providers found, some missing — returns 400 with missing list", async () => {
-    const { app } = createImportTestApp();
+  test("partial missing: creates workspace with requires_setup and resolves found providers", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
@@ -1136,12 +1081,22 @@ describe("POST /create — credential resolution", () => {
       body: JSON.stringify({ config }),
     });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({
-      error: "missing_credentials",
-      message: "Connect these integrations first",
-      missingProviders: ["slack"],
-    });
+    expect(body.success).toBe(true);
+    expect(mockRegisterWorkspace).toHaveBeenCalled();
+    // requires_setup should be set because slack is unresolved
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
+    // github should still be resolved
+    expect(body.resolvedCredentials).toEqual([
+      {
+        path: "mcp:github:GITHUB_TOKEN",
+        provider: "github",
+        credentialId: "cred_gh",
+        label: "My GitHub",
+      },
+    ]);
   });
 });

@@ -2,16 +2,16 @@
   import { Icons } from "$lib/components/icons";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
 
-  type Props = { provider: string };
+  type Props = { provider: string; size?: "small" | "large" };
 
-  let { provider }: Props = $props();
+  let { provider, size = "large" }: Props = $props();
 
   const icon = $derived(getServiceIcon(provider));
 </script>
 
 {#if icon}
   <div
-    class="icon"
+    class="icon {size}"
     style:--background={icon.background}
     style:--background-dark={icon.backgroundDark}
   >
@@ -24,7 +24,7 @@
   </div>
 {:else}
   <div
-    class="icon"
+    class="icon {size}"
     style:--background="var(--color-highlight-1)"
     style:--background-dark="var(--color-highlight-1)"
   >
@@ -52,6 +52,12 @@
 
     @media (prefers-color-scheme: dark) {
       background-color: var(--background-dark);
+    }
+
+    &.small {
+      background-color: unset;
+      block-size: var(--size-6);
+      inline-size: var(--size-6);
     }
   }
 </style>

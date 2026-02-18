@@ -17,6 +17,8 @@ export const WorkspaceMetadataSchema = z.object({
   // Ephemeral workspace controls
   ephemeral: z.boolean().optional(),
   expiresAt: z.iso.datetime().optional(),
+  // Setup tracking
+  requires_setup: z.boolean().optional(),
   // Error tracking fields
   lastError: z.string().optional(),
   lastErrorAt: z.iso.datetime().optional(),

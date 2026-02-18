@@ -135,10 +135,10 @@
           <AddWorkspaceDialog>
             {#snippet triggerContents()}
               <li>
-                <button aria-label="New Conversation">
+                <span class="as-button" aria-label="New Conversation">
                   <IconSmall.Workspace />
-                  Add space
-                </button>
+                  Add Space
+                </span>
               </li>
             {/snippet}
           </AddWorkspaceDialog>
@@ -366,7 +366,8 @@
     }
 
     a,
-    button {
+    button,
+    .as-button {
       align-items: center;
       block-size: var(--size-6);
       border-radius: var(--radius-2);

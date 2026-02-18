@@ -265,6 +265,7 @@ svg {
   --layer-5: 50;
 
   /* Colors */
+  --accent-1: var(--color-highlight-1);
 
   /* Backwards compatibility */
   --color-white: hsl(0 0% 100% / 1);

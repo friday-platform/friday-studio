@@ -165,13 +165,13 @@ const workspacesRoutes = daemonFactory
         label: string;
       };
       let resolvedCredentials: ResolvedCredentialInfo[] | undefined;
+      const unresolvedProviders: string[] = [];
 
       if (uniqueProviders.length > 0) {
         const results = await Promise.allSettled(
           uniqueProviders.map((provider) => resolveCredentialsByProvider(provider)),
         );
 
-        const missingProviders: string[] = [];
         const credentialMap: Record<string, string> = {};
         const labelMap: Record<string, string> = {};
 
@@ -179,7 +179,7 @@ const workspacesRoutes = daemonFactory
           const provider = uniqueProviders[i] ?? "";
           if (result.status === "rejected") {
             if (result.reason instanceof CredentialNotFoundError) {
-              missingProviders.push(provider);
+              unresolvedProviders.push(provider);
             } else {
               throw result.reason;
             }
@@ -192,101 +192,17 @@ const workspacesRoutes = daemonFactory
           }
         }
 
-        if (missingProviders.length > 0) {
-          const providerKeys: Record<string, string[]> = {};
-          for (const ref of providerOnlyRefs) {
-            if (missingProviders.includes(ref.provider)) {
-              if (!providerKeys[ref.provider]) {
-                providerKeys[ref.provider] = [];
-              }
-              const keys = providerKeys[ref.provider] ?? [];
-              if (!keys.includes(ref.key)) {
-                keys.push(ref.key);
-              }
-            }
-          }
-
-          return c.json(
-            {
-              error: "missing_credentials",
-              message: "Connect these integrations first",
-              missingProviders,
-              providerKeys,
-            },
-            400,
-          );
-        }
-
+        // Apply credential IDs for providers that resolved (unresolved refs left unchanged)
         validatedConfig = toIdRefs(validatedConfig, credentialMap);
 
-        resolvedCredentials = providerOnlyRefs.map((ref) => ({
-          path: ref.path,
-          provider: ref.provider,
-          credentialId: credentialMap[ref.provider] ?? "",
-          label: labelMap[ref.provider] ?? "",
-        }));
-
-        const uniqueCredentialIds = [...new Set(Object.values(credentialMap))];
-        const credentialSecrets = new Map<string, Record<string, unknown>>();
-
-        const secretResults = await Promise.allSettled(
-          uniqueCredentialIds.map(async (credId) => {
-            const credential = await fetchLinkCredential(credId, importLogger);
-            return { credId, secret: credential.secret };
-          }),
-        );
-
-        const failedCredentials: string[] = [];
-        for (const result of secretResults) {
-          if (result.status === "fulfilled") {
-            credentialSecrets.set(result.value.credId, result.value.secret);
-          } else {
-            failedCredentials.push(String(result.reason));
-          }
-        }
-
-        if (failedCredentials.length > 0) {
-          return c.json(
-            {
-              error: "credential_fetch_failed",
-              message: "Failed to fetch resolved credentials for key validation",
-              details: failedCredentials,
-            },
-            500,
-          );
-        }
-
-        const invalidKeys: Array<{
-          path: string;
-          provider: string;
-          key: string;
-          availableKeys: string[];
-        }> = [];
-
-        for (const ref of providerOnlyRefs) {
-          const credId = credentialMap[ref.provider];
-          if (!credId) continue;
-          const secret = credentialSecrets.get(credId);
-          if (secret && !(ref.key in secret)) {
-            invalidKeys.push({
-              path: ref.path,
-              provider: ref.provider,
-              key: ref.key,
-              availableKeys: Object.keys(secret),
-            });
-          }
-        }
-
-        if (invalidKeys.length > 0) {
-          return c.json(
-            {
-              error: "invalid_credential_keys",
-              message: "Resolved credentials are missing expected keys",
-              invalidKeys,
-            },
-            400,
-          );
-        }
+        resolvedCredentials = providerOnlyRefs
+          .filter((ref) => credentialMap[ref.provider])
+          .map((ref) => ({
+            path: ref.path,
+            provider: ref.provider,
+            credentialId: credentialMap[ref.provider] ?? "",
+            label: labelMap[ref.provider] ?? "",
+          }));
       }
 
       const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
@@ -315,6 +231,14 @@ const workspacesRoutes = daemonFactory
           description: validatedConfig.workspace.description,
           createdBy: userId,
         });
+
+        // Set requires_setup flag if any providers couldn't be resolved
+        if (unresolvedProviders.length > 0 && created) {
+          await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
+            metadata: { ...workspace.metadata, requires_setup: true },
+          });
+          workspace.metadata = { ...workspace.metadata, requires_setup: true };
+        }
 
         // Emit workspace.created analytics event for new workspaces
         if (created && userId) {
@@ -737,6 +661,56 @@ const workspacesRoutes = daemonFactory
         return c.json({ ...workspace, metadata: newMetadata }, 200);
       } catch (error) {
         return c.json({ error: `Failed to update metadata: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Complete workspace setup (verify all credentials are connected)
+  .post(
+    "/:workspaceId/setup/complete",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        const config = await manager.getWorkspaceConfig(workspace.id);
+        if (!config) {
+          return c.json({ error: "Failed to load workspace configuration" }, 500);
+        }
+
+        const credentials = extractCredentials(config.workspace);
+
+        // Group by provider and check each has a credentialId
+        const byProvider = new Map<string, boolean>();
+        for (const cred of credentials) {
+          if (!cred.provider) continue;
+          const currentlyConnected = byProvider.get(cred.provider) ?? true;
+          byProvider.set(cred.provider, currentlyConnected && !!cred.credentialId);
+        }
+
+        const missingProviders = [...byProvider.entries()]
+          .filter(([, connected]) => !connected)
+          .map(([provider]) => provider);
+
+        if (missingProviders.length > 0) {
+          return c.json({ error: "incomplete_setup", missingProviders }, 422);
+        }
+
+        // All credentials connected — clear requires_setup
+        const newMetadata = { ...workspace.metadata, requires_setup: false };
+        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
+          metadata: newMetadata,
+        });
+
+        return c.json({ ok: true }, 200);
+      } catch (error) {
+        return c.json({ error: `Failed to complete setup: ${stringifyError(error)}` }, 500);
       }
     },
   )

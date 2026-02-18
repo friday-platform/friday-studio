@@ -208,11 +208,8 @@ function toProviderRef(
   return { from: "link", provider, key: ref.key };
 }
 
-/**
- * Resolves provider-based refs to concrete credential IDs. Replaces any existing foreign IDs.
- * `credentialMap` must contain entries for ALL providers present in the config — throws if a
- * ref has a `provider` that is missing from the map.
- */
+/** Adds concrete credential IDs to provider-based refs. Replaces any existing foreign IDs.
+ * Refs whose provider is missing from `credentialMap` are left unchanged (partial resolution). */
 export function toIdRefs(
   config: WorkspaceConfig,
   credentialMap: Record<string, string>,
@@ -246,10 +243,8 @@ function toIdRef(ref: LinkCredentialRef, credentialMap: Record<string, string>):
   if (ref.provider) {
     const id = credentialMap[ref.provider];
     if (!id) {
-      throw new Error(
-        `Cannot import credential: no credential ID found for provider "${ref.provider}". ` +
-          `Provide a credentialMap entry or connect the integration first.`,
-      );
+      // Provider not in map — leave ref unchanged (partial resolution)
+      return ref;
     }
     return { from: "link", id, provider: ref.provider, key: ref.key };
   }

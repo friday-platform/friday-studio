@@ -9,7 +9,7 @@
     provider: string;
     displayName: string;
     secretFieldName: string;
-    onSuccess: (label: string) => void;
+    onSuccess: (credentialId: string) => void;
     triggerContents: Snippet;
   };
 
@@ -46,7 +46,7 @@
 
       if (result.ok) {
         trackEvent(GA4.CREDENTIAL_LINK_SUCCESS, { provider, type: "apikey" });
-        onSuccess(label.trim());
+        onSuccess(result.data.id);
         open.set(false);
         resetForm();
       } else {

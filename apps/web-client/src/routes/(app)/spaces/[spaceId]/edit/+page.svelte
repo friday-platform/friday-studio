@@ -11,6 +11,7 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import { onMount } from "svelte";
+  import IntegrationTable from "../(components)/integration-table.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -20,6 +21,7 @@
   const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
 
   const workspace = $derived(data.workspace);
+  const integrations = $derived(data.integrations);
 
   onMount(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -111,6 +113,14 @@
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   </div>
+
+  {#if integrations.length > 0}
+    <div>
+      <h2>Integrations</h2>
+
+      <IntegrationTable {integrations} workspaceId={workspace.id} />
+    </div>
+  {/if}
 
   <div>
     <h2>Actions</h2>

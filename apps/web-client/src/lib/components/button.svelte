@@ -8,6 +8,7 @@
     prepend?: Snippet;
     append?: Snippet;
     isDropdown?: boolean;
+    variant?: "primary" | "secondary";
     size?: "regular" | "small";
     type?: "button" | "reset" | "submit";
     cursor?: "default" | "hand";
@@ -20,6 +21,7 @@
     prepend = undefined,
     append = undefined,
     isDropdown = false,
+    variant = "primary",
     size = "regular",
     type = "button",
     cursor,
@@ -58,17 +60,22 @@
     {href}
     data-sveltekit-reload
     data-tempest
-    class="button size-{size}  cursor-{cursor}"
+    class="button size-{size} variant-{variant}  cursor-{cursor}"
     {...rest}
   >
     {@render contents()}
   </a>
 {:else if noninteractive}
-  <div data-tempest class="button size-{size} ">
+  <div data-tempest class="button size-{size} variant-{variant}">
     {@render contents()}
   </div>
 {:else}
-  <button {type} {...rest} data-tempest class="button size-{size}  cursor-{cursor}">
+  <button
+    {type}
+    {...rest}
+    data-tempest
+    class="button size-{size} variant-{variant} cursor-{cursor}"
+  >
     {@render contents()}
   </button>
 {/if}
@@ -101,6 +108,29 @@
     transition: all 150ms ease;
     -webkit-user-select: none;
     user-select: none;
+
+    &.size-small {
+      font-size: var(--font-size-2);
+    }
+
+    &.variant-primary.size-small {
+      block-size: var(--size-5-5);
+      font-size: var(--font-size-2);
+    }
+
+    &.variant-secondary {
+      background-color: var(--accent-1);
+      box-shadow: none;
+
+      &:hover {
+        background-color: color-mix(in srgb, var(--accent-1), var(--color-text) 5%);
+      }
+    }
+
+    /* &.size-small.variant-secondary {
+      border-radius: var(--radius-3);
+      block-size: var(--size-6-5);
+    } */
 
     &:focus-visible {
       outline: 1px solid var(--color-text);
@@ -141,7 +171,7 @@
   }
 
   /* DEFAULT */
-  .variant-default {
+  .variant-primary {
     --button-variant-default-color: var(--accent-1);
 
     /* Due to snippets, this selector isn't captured without :global() */
@@ -168,13 +198,5 @@
         var(--button-variant-default-color) 3%
       );
     }
-  }
-
-  .size-small {
-    border-radius: var(--radius-2);
-    block-size: var(--size-5-5);
-    font-size: var(--font-size-2);
-    gap: var(--size-1-5);
-    padding-inline: var(--size-1-5);
   }
 </style>

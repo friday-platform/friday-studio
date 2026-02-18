@@ -6,13 +6,7 @@
   import { Dialog } from "$lib/components/dialog";
   import { Icons } from "$lib/components/icons";
   import type { Snippet } from "svelte";
-  import MissingCredentialsDialog from "./missing-credentials-dialog.svelte";
-  import {
-    addWorkspace,
-    CredentialRetryState,
-    handleWorkspaceFile,
-    MissingCredentialsError,
-  } from "./utils.svelte";
+  import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
 
   let { triggerContents }: { triggerContents: Snippet } = $props();
 
@@ -25,8 +19,6 @@
   function captureFileInput(node: HTMLInputElement) {
     fileInputEl = node;
   }
-
-  const credRetry = new CredentialRetryState();
 
   async function handleFileSelected() {
     if (!fileInputEl) return;
@@ -137,12 +129,7 @@
 
                 open.set(false);
               } catch (error) {
-                if (error instanceof MissingCredentialsError) {
-                  credRetry.handleError(workspaceConfig, error);
-                  open.set(false);
-                } else {
-                  console.error("Failed to add workspace:", error);
-                }
+                console.error("Failed to add workspace:", error);
               }
             }}
           >
@@ -164,17 +151,3 @@
     </Dialog.Content>
   {/snippet}
 </Dialog.Root>
-
-<MissingCredentialsDialog
-  missingProviders={credRetry.missingProviders}
-  providerKeys={credRetry.providerKeys}
-  continueDisabled={credRetry.retrying}
-  open={credRetry.openStore}
-  onComplete={async () => {
-    await credRetry.retry({
-      refreshWorkspaces: () =>
-        queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" }),
-      getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id),
-    });
-  }}
-/>

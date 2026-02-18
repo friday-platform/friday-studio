@@ -10,19 +10,18 @@
   } from "@tanstack/svelte-table";
   import { invalidateAll } from "$app/navigation";
   import { BUILD_INFO } from "$lib/build-info";
-  import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import Button from "$lib/components/button.svelte";
   import { IconSmall } from "$lib/components/icons/small";
   import { Table } from "$lib/components/table";
   import { getClientContext } from "$lib/modules/client/context.svelte";
+  import Logo from "$lib/modules/integrations/logo-column.svelte";
+  import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
   import { getVersion, invoke } from "$lib/utils/tauri-loader";
   import { onMount } from "svelte";
+  import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
-  import Logo from "./(components)/logo-column.svelte";
-  import ProviderDetails from "./(components)/provider-details-column.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
   import RemoveCredentialDialog from "./(components)/remove-credential-dialog.svelte";
-  import RenameCredentialModal from "./(components)/rename-credential-modal.svelte";
   import ValueInputCell from "./(components)/value-input-cell.svelte";
   import type { PageData } from "./$types";
 
@@ -30,16 +29,13 @@
   const credentials = $derived(data.credentials);
   const providers = $derived(data.providers);
 
-  // Credentials row type
   type CredentialRow = PageData["credentials"][number];
 
-  // Lookup provider displayName by ID
   function getProviderName(providerId: string): string {
     const provider = providers.find((p) => p.id === providerId);
     return provider?.displayName ?? providerId.charAt(0).toUpperCase() + providerId.slice(1);
   }
 
-  // Remove credential by ID
   async function removeCredential(id: string, provider: string) {
     trackEvent(GA4.CREDENTIAL_REMOVE, { provider });
     const res = await parseResult(client.link.v1.credentials[":id"].$delete({ param: { id } }));
@@ -50,7 +46,6 @@
       return;
     }
 
-    // Refresh the page data
     await invalidateAll();
   }
 
@@ -66,59 +61,49 @@
   let _isSaving = $state(false);
   let isRestarting = $state(false);
   let message = $state("");
-
   let version = $state<string>(BUILD_INFO?.version || "1.0.0-beta");
   let commitHash = BUILD_INFO?.commitHash || "unknown";
 
-  // Credentials table
+  // Integrations table (connected credentials only)
   const columnHelper = createColumnHelper<CredentialRow>();
 
-  const credentialsTable = createTable({
+  const integrationsTable = createTable({
     get data() {
       return credentials;
     },
     columns: [
-      columnHelper.accessor("provider", {
+      columnHelper.display({
         id: "provider_logo",
         header: "",
-        cell: (info) => {
-          return renderComponent(Logo, { provider: info.getValue() });
-        },
+        cell: (info) => renderComponent(Logo, { provider: info.row.original.provider }),
         meta: { shrink: true },
       }),
       columnHelper.display({
         id: "provider",
         header: "Provider",
-        cell: (info) =>
-          renderComponent(ProviderDetails, {
-            name: getProviderName(info.row.original.provider),
-            label: info.row.original.label,
-            displayName: info.row.original.displayName,
-            date: info.row.original.createdAt,
-          }),
+        cell: (info) => {
+          const row = info.row.original;
+          return renderComponent(ProviderDetails, {
+            name: getProviderName(row.provider),
+            label: row.label,
+            displayName: row.displayName,
+            date: row.createdAt,
+            credentialId: row.id,
+          });
+        },
       }),
-
-      columnHelper.display({
-        id: "edit",
-        header: "",
-        cell: (info) =>
-          renderComponent(RenameCredentialModal, {
-            credentialId: info.row.original.id,
-            currentName: info.row.original.displayName ?? info.row.original.label,
-          }),
-        meta: { shrink: true },
-      }),
-
       columnHelper.display({
         id: "actions",
         header: "",
-        cell: (info) =>
-          renderComponent(RemoveCredentialDialog, {
-            credentialId: info.row.original.id,
-            provider: info.row.original.provider,
-            displayName: info.row.original.displayName ?? info.row.original.label,
+        cell: (info) => {
+          const row = info.row.original;
+          return renderComponent(RemoveCredentialDialog, {
+            credentialId: row.id,
+            provider: row.provider,
+            displayName: row.displayName ?? row.label,
             onRemove: removeCredential,
-          }),
+          });
+        },
         meta: { shrink: true },
       }),
     ],
@@ -177,6 +162,18 @@
   });
 
   onMount(async () => {
+    // Handle OAuth redirect fallback (popup-blocked same-tab redirect)
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("credential_id")) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("credential_id");
+      cleanUrl.searchParams.delete("provider");
+      cleanUrl.searchParams.delete("error");
+      cleanUrl.searchParams.delete("error_description");
+      history.replaceState({}, "", cleanUrl.href);
+      await invalidateAll();
+    }
+
     // Get version info from Tauri if available
     if (getVersion) {
       try {
@@ -253,22 +250,19 @@
 </script>
 
 <div class="main">
-  <div class="breadcrumbs">
-    <Breadcrumbs.Root>
-      <Breadcrumbs.Item>Settings</Breadcrumbs.Item>
-    </Breadcrumbs.Root>
-  </div>
-
   <div class="main-int">
-    <h2>Integrations</h2>
+    <h1>Integrations</h1>
+    <p>Manage connections to external services</p>
 
     {#if credentials.length === 0}
-      <p class="empty">No integrations have been configured</p>
+      <p class="empty">No integrations connected</p>
     {:else}
       <div class="credentials-table">
-        <Table.Root table={credentialsTable} rowSize="large" hideHeader />
+        <Table.Root table={integrationsTable} rowSize="large" hideHeader />
       </div>
     {/if}
+
+    <AddIntegrationDialog {providers} />
 
     <div class="advanced-settings" {...$root} use:root>
       <h2>
@@ -322,13 +316,11 @@
 <style>
   .main {
     position: relative;
-    transition: all 150ms ease;
     z-index: var(--layer-1);
   }
 
   .main-int {
-    padding-block: var(--size-9) var(--size-10);
-    padding-inline: var(--size-14);
+    padding: var(--size-14);
   }
 
   .version-info {
@@ -340,19 +332,26 @@
     inset-block-start: var(--size-3-5);
   }
 
+  h1 {
+    color: var(--color-text);
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-6);
+    line-height: var(--font-lineheight-1);
+  }
+
   h2 {
     color: var(--color-text);
-    font-size: var(--font-size-5);
+    font-size: var(--font-size-6);
     font-weight: var(--font-weight-6);
     line-height: var(--font-lineheight-1);
   }
 
   p {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-4);
+    font-size: var(--font-size-5);
+    font-weight: var(--font-weight-5);
     line-height: var(--font-lineheight-1);
-    margin-block: var(--size-1-5) var(--size-4);
-    opacity: 0.8;
+    margin-block: var(--size-1) var(--size-4);
+    opacity: 0.6;
   }
 
   .empty {
@@ -361,7 +360,8 @@
   }
 
   .credentials-table {
-    margin-block: var(--size-4) var(--size-8);
+    /* top offset calculates top padding of the table cell */
+    margin-block: calc(var(--size-10) - var(--size-3-5)) var(--size-8);
   }
 
   .env-vars-table {

@@ -7,7 +7,7 @@
   type Props = {
     children: Snippet;
     icon?: Snippet;
-    size?: "regular" | "large";
+    size?: "regular" | "large" | "auto";
     header: Snippet;
     footer: Snippet;
   };
@@ -32,8 +32,6 @@
       use:content
       transition:scale={{ duration: 150, start: 0.98, easing: quadInOut, opacity: 0 }}
     >
-      {@render children()}
-
       <header>
         {#if icon}
           <div class="icon">
@@ -43,6 +41,8 @@
 
         {@render header()}
       </header>
+
+      {@render children()}
 
       <footer>
         {@render footer()}
@@ -86,7 +86,7 @@
     flex-direction: column;
     align-items: center;
     gap: var(--size-6);
-    inline-size: fit-content;
+    inline-size: max-content;
     max-inline-size: var(--size-72);
     padding-block: var(--size-12) var(--size-8);
     padding-inline: var(--size-6);
@@ -95,6 +95,10 @@
 
     &.large {
       max-inline-size: var(--size-96);
+    }
+
+    &.auto {
+      max-inline-size: unset;
     }
   }
 
