@@ -2,7 +2,7 @@
 import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { onMount } from "svelte";
-import pinwheel from "$lib/assets/pinwheel.svg";
+import pinwheel from "$lib/assets/pinwheel.svg?no-inline";
 import { getServiceIcon } from "$lib/service-icons.svelte";
 
 gsap.registerPlugin(SplitText);

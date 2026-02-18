@@ -1,6 +1,6 @@
 <script lang="ts">
 import { resolve } from "$app/paths";
-import circleDecal from "$lib/assets/circle-decal.svg";
+import circleDecal from "$lib/assets/circle-decal.svg?no-inline";
 import Announcement from "$lib/components/announcement.svelte";
 import BackgroundBlobs from "$lib/components/background-blobs.svelte";
 import Faq from "$lib/sections/faq.svelte";
