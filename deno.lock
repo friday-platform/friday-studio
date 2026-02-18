@@ -6463,6 +6463,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
+            "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
         }

@@ -8,6 +8,7 @@ import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidat
 import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { truncateUnicode } from "@atlas/utils";
 import {
   type Agent,
   type BlueprintResult,
@@ -90,7 +91,7 @@ async function generateTaskSummary(
       maxOutputTokens: 50,
     });
   } catch {
-    return `Task: ${intent.slice(0, 60)}... (${stepCount} steps, ${success ? "ok" : "failed"})`;
+    return `Task: ${truncateUnicode(intent, 60, "...")} (${stepCount} steps, ${success ? "ok" : "failed"})`;
   }
 }
 
@@ -113,7 +114,7 @@ async function storeTaskArtifact(
           version: 1 as const,
           data: JSON.stringify({ ...data, timestamp: new Date().toISOString() }, null, 2),
         },
-        title: `Task: ${data.intent.slice(0, 80)}${data.intent.length > 80 ? "..." : ""}`,
+        title: `Task: ${truncateUnicode(data.intent, 80, "...")}`,
         summary,
         workspaceId: context.workspaceId,
         chatId: context.streamId,

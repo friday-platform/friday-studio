@@ -10,5 +10,6 @@
     "./telemetry.server": "./src/telemetry.ts",
     "./temp.server": "./src/temp.server.ts"
   },
-  "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.3.5" }
+  "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.3.5" },
+  "devDependencies": { "vitest": "^4.0.18" }
 }

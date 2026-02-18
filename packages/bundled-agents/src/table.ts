@@ -15,7 +15,7 @@ import {
 import { client, parseResult } from "@atlas/client/v2";
 import { TableDataSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
-import { stringifyError } from "@atlas/utils";
+import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -77,7 +77,7 @@ Output clean, well-organized data appropriate for tabular display.`;
           json: {
             data: { type: "table", version: 1, data: tableData },
             title: tableData.title || "Generated Table",
-            summary: `Generated table: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
+            summary: `Generated table: ${truncateUnicode(prompt, 100, "...")}`,
             workspaceId: session.workspaceId,
             chatId: session.streamId,
           },

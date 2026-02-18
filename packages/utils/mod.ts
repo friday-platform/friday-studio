@@ -221,6 +221,37 @@ export function isErrnoException(error: unknown): error is ErrnoException {
   return error instanceof Error && ("errno" in error || "code" in error);
 }
 
+/**
+ * Safely truncates a string to a maximum number of Unicode code points
+ * without splitting surrogate pairs.
+ *
+ * Also strips null bytes (`\u0000`) since PostgreSQL JSONB rejects them.
+ *
+ * Uses spread into code points (`[...str]`) so a surrogate pair counts
+ * as one character, unlike `String.prototype.slice` which counts
+ * UTF-16 code units and can split a pair to produce a lone surrogate.
+ *
+ * @param str - The string to truncate (undefined/empty returns "")
+ * @param maxLength - Maximum total output length in Unicode code points (includes ellipsis)
+ * @param ellipsis - Suffix appended when truncation occurs (default "")
+ * @returns The truncated, null-byte-free string (at most maxLength code points)
+ *
+ * @example
+ * truncateUnicode("hello world", 8) // => "hello wo"
+ * truncateUnicode("hello world", 8, "...") // => "hello..."
+ * truncateUnicode("📊 Ad Platform", 3) // => "📊 A"
+ * truncateUnicode("has\u0000null", 10) // => "hasnull"
+ */
+export function truncateUnicode(str: string | undefined, maxLength: number, ellipsis = ""): string {
+  if (!str) return "";
+  const clean = str.replaceAll("\u0000", "");
+  const codePoints = [...clean];
+  if (codePoints.length <= maxLength) return clean;
+  const ellipsisLen = [...ellipsis].length;
+  const contentLen = Math.max(0, maxLength - ellipsisLen);
+  return codePoints.slice(0, contentLen).join("") + ellipsis;
+}
+
 export const ColorSchema = z
   .enum(["yellow", "purple", "red", "blue", "green", "brown"])
   .catch("yellow");

@@ -5,7 +5,7 @@ import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
+import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { generateText, stepCountIs } from "ai";
@@ -259,14 +259,14 @@ async function createSummaryArtifact(
   question: string,
   session: { workspaceId: string; streamId?: string },
 ): Promise<ArtifactRef> {
-  const questionSummary = question.length > 50 ? `${question.slice(0, 47)}...` : question;
+  const questionSummary = truncateUnicode(question, 50, "...");
 
   const result = await ArtifactStorage.create({
     workspaceId: session.workspaceId,
     chatId: session.streamId,
     data: { type: "summary", version: 1, data: summary },
     title: `Analysis: ${questionSummary}`,
-    summary: summary.slice(0, 200),
+    summary: truncateUnicode(summary, 200),
   });
 
   if (!result.ok) {
@@ -385,7 +385,7 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         data: {
           id: "data-analyst-complete",
           title: "Analysis Complete",
-          content: summary.slice(0, 200),
+          content: truncateUnicode(summary, 200),
           timestamp: Date.now(),
           artifactId: summaryRef.id,
           artifactLabel: "View Analysis",

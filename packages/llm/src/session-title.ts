@@ -1,5 +1,6 @@
 import type { WorkspaceSessionStatusType } from "@atlas/core";
 import { logger } from "@atlas/logger";
+import { truncateUnicode } from "@atlas/utils";
 import { smallLLM } from "./small.ts";
 
 const MAX_TITLE_LENGTH = 60;
@@ -112,8 +113,5 @@ function generateFallbackTitle(input: GenerateSessionTitleInput): string {
  * Status is shown via UI badge, not in title.
  */
 function formatTitle(title: string): string {
-  if (title.length <= MAX_TITLE_LENGTH) {
-    return title;
-  }
-  return `${title.slice(0, MAX_TITLE_LENGTH - 3)}...`;
+  return truncateUnicode(title, MAX_TITLE_LENGTH, "...");
 }

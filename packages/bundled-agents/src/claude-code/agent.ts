@@ -5,7 +5,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
-import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { fail, type Result, stringifyError, success, truncateUnicode } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createSandbox, sandboxOptions } from "./sandbox.ts";
@@ -330,7 +330,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
           json: {
             data: { type: "summary" as const, version: 1 as const, data: responseText },
             title: "Claude Code Output",
-            summary: `Claude Code: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
+            summary: `Claude Code: ${truncateUnicode(prompt, 100, "...")}`,
           },
         }),
       );

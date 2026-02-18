@@ -32,7 +32,7 @@ import {
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
+import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
@@ -256,7 +256,7 @@ async function convertBinaryToMarkdown(opts: {
       maxOutputTokens: 60,
     })
       .then(async (llmSummary) => {
-        const trimmed = llmSummary.trim().slice(0, 200);
+        const trimmed = truncateUnicode(llmSummary.trim(), 200);
         if (trimmed) {
           await ArtifactStorage.update({
             id: artifactId,
