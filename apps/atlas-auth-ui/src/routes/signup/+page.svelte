@@ -110,7 +110,7 @@
             <GoogleLogo />
           {/snippet}
 
-          Sign up with Google Workspace
+          Sign up with Google
         </Button>
       </form>
     </div>
