@@ -16,7 +16,7 @@ import {
   type FSMEvent,
 } from "@atlas/fsm-engine";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
-import { createMockAgentExecutor } from "./mock-executor.ts";
+import { createMockAgentExecutor, createMockLLMProvider } from "./mock-executor.ts";
 
 // ---------------------------------------------------------------------------
 // Report types
@@ -75,11 +75,22 @@ export async function runFSM(opts: RunFSMOptions): Promise<ExecutionReport> {
   const store = new InMemoryDocumentStore();
   const scope = { workspaceId: "harness-workspace", sessionId: `harness-${startTime}` };
 
+  const isMockMode = !opts.agentExecutor;
+
   const agentExecutor =
     opts.agentExecutor ??
     createMockAgentExecutor({ plan: opts.plan, agentOverrides: opts.agentOverrides });
 
-  const engine = new FSMEngine(opts.fsm, { documentStore: store, scope, agentExecutor });
+  const llmProvider = isMockMode
+    ? createMockLLMProvider({ plan: opts.plan, agentOverrides: opts.agentOverrides })
+    : undefined;
+
+  const engine = new FSMEngine(opts.fsm, {
+    documentStore: store,
+    scope,
+    agentExecutor,
+    llmProvider,
+  });
 
   // Event collector for tracing
   function collectEvents(event: FSMEvent) {

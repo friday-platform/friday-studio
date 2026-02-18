@@ -1,15 +1,24 @@
 /**
- * Mock agent executor for FSM execution harness.
+ * Mock executors for FSM execution harness.
  *
- * Plugs into FSMEngine's `agentExecutor` callback. Resolves stub data
- * from an override map or falls back to schema-derived stubs, then
- * wraps the result in a valid AgentResult envelope.
+ * Provides mock implementations of both `AgentExecutor` and `LLMProvider`
+ * for deterministic FSM simulation without real agents or LLM calls.
+ *
+ * Both resolve stub data from an override map or fall back to
+ * schema-derived stubs, wrapping results in the expected envelopes.
  *
  * @module
  */
 
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
-import type { AgentAction, AgentResult, Context, SignalWithContext } from "@atlas/fsm-engine";
+import type {
+  AgentAction,
+  AgentResult,
+  Context,
+  FSMLLMOutput,
+  LLMProvider,
+  SignalWithContext,
+} from "@atlas/fsm-engine";
 import { generateStubFromSchema, type WorkspaceBlueprint } from "@atlas/workspace-builder";
 
 /**
@@ -35,31 +44,15 @@ export interface MockExecutorOptions {
  * @returns An async function matching the AgentExecutor signature
  */
 export function createMockAgentExecutor(opts: MockExecutorOptions) {
-  const { plan, agentOverrides = {} } = opts;
-
-  // Build a lookup from documentId → schema for O(1) access
-  const schemaByDocId = new Map<string, ValidatedJSONSchema>();
-  for (const job of plan.jobs) {
-    for (const contract of job.documentContracts) {
-      schemaByDocId.set(contract.documentId, contract.schema);
-    }
-  }
+  const { agentOverrides = {} } = opts;
+  const schemaByDocId = buildSchemaLookup(opts.plan);
 
   return (
     action: AgentAction,
     _context: Context,
     _signal: SignalWithContext,
   ): Promise<AgentResult> => {
-    const outputTo = action.outputTo;
-
-    let data: unknown;
-    if (outputTo && outputTo in agentOverrides) {
-      data = agentOverrides[outputTo];
-    } else if (outputTo) {
-      data = resolveFromSchema(outputTo, schemaByDocId);
-    } else {
-      data = {};
-    }
+    const data = resolveStubData(action.outputTo, schemaByDocId, agentOverrides);
 
     return Promise.resolve({
       ok: true as const,
@@ -72,14 +65,82 @@ export function createMockAgentExecutor(opts: MockExecutorOptions) {
   };
 }
 
-/** Falls back to schema-derived stub or empty object. */
-function resolveFromSchema(
-  outputTo: string,
+/**
+ * Creates a mock LLMProvider for deterministic FSM simulation.
+ *
+ * Resolves stub data using the same schema lookup as the agent executor.
+ * Returns results with a `complete` tool call so FSMEngine's
+ * `findCompleteToolArgs` extracts the structured data.
+ *
+ * @param opts - Mock executor options (same as agent executor)
+ * @returns An LLMProvider with a mock `call` method
+ */
+export function createMockLLMProvider(opts: MockExecutorOptions): LLMProvider {
+  const { agentOverrides = {} } = opts;
+  const schemaByDocId = buildSchemaLookup(opts.plan);
+
+  return {
+    call(params) {
+      // Extract outputTo from agentId (format: "fsm:<definition-id>:<outputTo>")
+      const outputTo = params.agentId.split(":").at(-1);
+      const stubData = resolveStubData(outputTo, schemaByDocId, agentOverrides) as Record<
+        string,
+        unknown
+      >;
+
+      const hasCompleteTool = params.tools !== undefined && "complete" in params.tools;
+
+      const result: AgentResult<string, FSMLLMOutput> = {
+        ok: true as const,
+        agentId: params.agentId,
+        timestamp: new Date().toISOString(),
+        input: params.prompt,
+        data: stubData,
+        toolCalls: hasCompleteTool
+          ? [
+              {
+                type: "tool-call" as const,
+                toolCallId: "mock-complete",
+                toolName: "complete",
+                input: stubData,
+              },
+            ]
+          : [],
+        durationMs: 0,
+      };
+
+      return Promise.resolve(result);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/** Builds a documentId to JSON Schema lookup from all jobs in the plan. */
+function buildSchemaLookup(plan: WorkspaceBlueprint): Map<string, ValidatedJSONSchema> {
+  const lookup = new Map<string, ValidatedJSONSchema>();
+  for (const job of plan.jobs) {
+    for (const contract of job.documentContracts) {
+      lookup.set(contract.documentId, contract.schema);
+    }
+  }
+  return lookup;
+}
+
+/** Resolves stub data from overrides, schema, or empty fallback. */
+function resolveStubData(
+  outputTo: string | undefined,
   schemaByDocId: Map<string, ValidatedJSONSchema>,
+  overrides: Record<string, unknown>,
 ): unknown {
-  const schema = schemaByDocId.get(outputTo);
-  if (schema) {
-    return generateStubFromSchema(schema);
+  if (outputTo && outputTo in overrides) {
+    return overrides[outputTo];
+  }
+  if (outputTo) {
+    const schema = schemaByDocId.get(outputTo);
+    return schema ? generateStubFromSchema(schema) : {};
   }
   return {};
 }

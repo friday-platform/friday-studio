@@ -138,6 +138,53 @@ describe("runFSM — agent overrides", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Fixture: linear-ticket plan (contains llm actions)
+// ---------------------------------------------------------------------------
+
+const llmFixturePath = resolve(
+  import.meta.dirname,
+  "../../../packages/workspace-builder/fixtures/linear-ticket-plan.json",
+);
+const llmPlan = WorkspaceBlueprintSchema.parse(JSON.parse(readFileSync(llmFixturePath, "utf-8")));
+const llmJob = llmPlan.jobs[0];
+if (!llmJob) throw new Error("No jobs in llm fixture");
+const llmCompiled = buildFSMFromPlan(llmJob);
+if (!llmCompiled.success) throw new Error("Failed to compile LLM fixture FSM");
+const llmFsm = llmCompiled.value.fsm;
+
+// ---------------------------------------------------------------------------
+// LLM action support
+// ---------------------------------------------------------------------------
+
+describe("runFSM — llm actions", () => {
+  it("reaches completed state with mock llm provider", async () => {
+    const report = await runFSM({ fsm: llmFsm, plan: llmPlan, triggerSignal: "ticket-assigned" });
+
+    expect(report.success).toBe(true);
+    expect(report.finalState).toBe("completed");
+  });
+
+  it("produces stub data for llm action outputTo documents", async () => {
+    const report = await runFSM({ fsm: llmFsm, plan: llmPlan, triggerSignal: "ticket-assigned" });
+
+    expect(report.success).toBe(true);
+    const completedResults = report.resultSnapshots.completed;
+    expect(completedResults).toBeDefined();
+    if (!completedResults) throw new Error("Expected completed results");
+
+    // llm steps produce: ticket-details (read-ticket) and ticket-update-confirmation (update-ticket)
+    expect(completedResults["ticket-details"]).toBeDefined();
+    expect(completedResults["ticket-update-confirmation"]).toBeDefined();
+
+    // Verify stub data has schema-derived keys
+    const ticketDetails = completedResults["ticket-details"];
+    expect(ticketDetails).toHaveProperty("title");
+    expect(ticketDetails).toHaveProperty("description");
+    expect(ticketDetails).toHaveProperty("acceptance_criteria");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
