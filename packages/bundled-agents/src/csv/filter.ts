@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
@@ -101,7 +101,7 @@ Call validateArtifact tool with the extracted information to verify the artifact
       ];
 
       const parseResult = await generateText({
-        model: registry.languageModel("groq:openai/gpt-oss-120b"),
+        model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
         abortSignal,
         messages: parseMessages,
         tools: { validateArtifact: validateArtifactTool },
@@ -229,7 +229,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       ];
 
       const sqlResult = await generateText({
-        model: registry.languageModel("groq:openai/gpt-oss-120b"),
+        model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
         abortSignal,
         messages: sqlMessages,
         tools: { buildSqlWhere: buildSqlWhereTool },

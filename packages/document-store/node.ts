@@ -3,7 +3,7 @@
  *
  * Node.js-compatible exports (excludes Deno-specific FileSystemDocumentStore)
  *
- * For Node.js environments (like evalite), import from this file:
+ * For Node.js environments, import from this file:
  * ```
  * import { InMemoryDocumentStore } from "../document-store/node.ts";
  * ```

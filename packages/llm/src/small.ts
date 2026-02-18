@@ -1,7 +1,7 @@
 import { logger } from "@atlas/logger";
 import { generateText } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { registry } from "./registry.ts";
+import { traceModel } from "./tracing.ts";
 
 // Default model for small/fast LLM tasks - routes through LiteLLM when configured
 const SMALL_LLM_MODEL = "groq:meta-llama/llama-4-maverick-17b-128e-instruct";
@@ -18,7 +18,7 @@ export async function smallLLM(params: {
 }): Promise<string> {
   try {
     const result = await generateText({
-      model: wrapAISDKModel(registry.languageModel(SMALL_LLM_MODEL)),
+      model: traceModel(registry.languageModel(SMALL_LLM_MODEL)),
       messages: [
         { role: "system", content: params.system },
         { role: "user", content: params.prompt },

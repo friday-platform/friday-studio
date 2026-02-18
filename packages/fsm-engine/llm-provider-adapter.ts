@@ -7,7 +7,7 @@ import {
   repairToolCall,
 } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import type { CoreMessage, StopCondition, Tool } from "ai";
 import { generateText, hasToolCall, stepCountIs } from "ai";
@@ -63,7 +63,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
           };
 
       const response = await generateText({
-        model: registry.languageModel(modelId),
+        model: traceModel(registry.languageModel(modelId)),
         ...promptOrMessages,
         tools: params.tools,
         toolChoice: params.toolChoice,

@@ -9,11 +9,10 @@
 import { repairJson } from "@atlas/agent-sdk";
 import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { CronExpressionParser } from "cron-parser";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import type { z } from "zod";
 import type { Signal, SignalConfig } from "../types.ts";
 
@@ -109,7 +108,7 @@ async function callEnrichmentLLM<S extends z.ZodType>(
   abortSignal?: AbortSignal,
 ) {
   const { object } = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+    model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     schema: opts.schema,
     experimental_repairText: repairJson,
     schemaName: opts.schemaName,

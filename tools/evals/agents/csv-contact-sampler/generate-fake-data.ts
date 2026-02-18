@@ -219,11 +219,4 @@ export async function generateFakeCSV(
   // Convert to CSV
   const csv = Papa.unparse(records);
   await writeFile(outputPath, csv, "utf-8");
-
-  console.log(`Generated ${totalRecords} fake contact records at ${outputPath}`);
-  console.log(`- USA contacts: ${usaCount} (${(usaPercentage * 100).toFixed(1)}%)`);
-  console.log(
-    `- Decision makers: ${decisionMakerCount} (${(decisionMakerPercentage * 100).toFixed(1)}%)`,
-  );
-  console.log(`- USA decision makers (target for filtering): ${usaDecisionMakers}`);
 }

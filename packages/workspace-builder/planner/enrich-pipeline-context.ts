@@ -9,10 +9,9 @@
  * Reference: packages/system/agents/fsm-workspace-creator/agent-helpers.ts:35-126
  */
 
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateText } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import type { Agent, JobWithDAG } from "../types.ts";
 
 const logger = createLogger({ component: "proto-pipeline-context" });
@@ -44,7 +43,7 @@ async function inferDownstreamDataNeeds(
 
   try {
     const result = await generateText({
-      model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       system: SYSTEM_PROMPT,
       prompt: `Current step: ${currentStep.description}
 

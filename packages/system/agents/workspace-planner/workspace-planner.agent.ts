@@ -1,12 +1,11 @@
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { buildBlueprint, formatClarifications, PipelineError } from "@atlas/workspace-builder";
 import { generateText } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 
 /** Schema for workspace planner success data - exported for use in stop conditions */
@@ -36,7 +35,7 @@ async function summarize(params: {
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const result = await generateText({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+    model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `

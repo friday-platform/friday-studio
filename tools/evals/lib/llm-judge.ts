@@ -1,39 +1,55 @@
+/**
+ * LLM-as-judge scorer for semantic evaluation.
+ *
+ * Uses a fast model (Groq) to evaluate agent output against criteria,
+ * returning a normalized 0-1 score with justification.
+ */
+
 import { repairJson } from "@atlas/agent-sdk";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
+import { getTodaysDate } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { createScore, type Score } from "./scoring.ts";
 
 const evaluationSchema = z.object({
-  pass: z.boolean().describe("Did the agent meet the given criteria"),
-  justification: z.string().describe("A detailed justification for the grade"),
+  score: z.number().min(0).max(1).describe("0-1, how well output meets criteria"),
+  justification: z.string().describe("Reasoning for the score"),
 });
 
-export type Evaluation = z.infer<typeof evaluationSchema>;
-
-type LLMJudgeInput = { criteria: string; agentOutput: unknown };
-
-export async function llmJudge(input: LLMJudgeInput): Promise<Evaluation> {
+/**
+ * Evaluates output against criteria using an LLM judge.
+ *
+ * @param output - The agent's output to evaluate
+ * @param criteria - The criteria to evaluate against
+ * @returns Score with justification in metadata
+ */
+export async function llmJudge(output: unknown, criteria: string): Promise<Score> {
   const { object } = await generateObject({
-    model: registry.languageModel("anthropic:claude-haiku-4-5"),
+    model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
     schema: evaluationSchema,
     experimental_repairText: repairJson,
-    prompt: `
-    <identity>
-    You are an expert AI agent evaluator. Evaluate the following output from an AI agent its effectiveness at meeting the following criteria:
-    </identity>
+    maxOutputTokens: 2000,
+    messages: [
+      {
+        role: "system",
+        content: `You are an AI agent evaluator. Rate outputs from 0 to 1 based on how well they meet the criteria.
 
-    <judging_criteria>
-    ${input.criteria}
-    </judging_criteria>
-
-    <agent_output>
-    ${JSON.stringify(input.agentOutput, null, 2)}
-    </agent_output>
-
-    <grading_criteria>
-    Did the agent meet the given criteria in a coherent manner? Provide a justification.
-    </grading_criteria>
-    `,
+Score 0 = completely fails to meet criteria
+Score 1 = fully meets criteria
+Use decimal values (e.g., 0.7, 0.85) for partial matches.`,
+      },
+      { role: "system", content: `Today: ${getTodaysDate()}` },
+      {
+        role: "user",
+        content: `<criteria>${criteria}</criteria>
+<output>${JSON.stringify(output, null, 2)}</output>`,
+      },
+    ],
   });
-  return object;
+
+  return {
+    ...createScore("LLMJudge", object.score),
+    metadata: { justification: object.justification },
+  };
 }

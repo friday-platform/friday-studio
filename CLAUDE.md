@@ -22,7 +22,8 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 # Deno/TypeScript
 deno check              # Type check
 deno task lint          # Lint
-deno task test $file    # Run tests
+deno task test $file    # Run tests (vitest)
+deno task evals run                 # Run evals (custom runner CLI)
 deno task start         # Run daemon
 
 # Go
@@ -71,6 +72,7 @@ go build                # Build
   schema to avoid TS2589 when converting to `ValidatedJSONSchema`
 - Zod discriminated unions cause deep type instantiation with AI SDK's
   `generateObject` generic — split into per-type schemas
+- `z.record()` requires two args (key schema, value schema) — v3 accepted one
 
 ### AI SDK (Vercel) v5
 
@@ -82,6 +84,12 @@ go build                # Build
 - When agents switch from MCP-routed to direct `tool({ execute })` invocation,
   output shape changes from MCP envelope (`result.content[].text`) to raw
   payload — downstream parsers silently fail
+- `@ai-sdk/provider` is not re-exported by the `ai` package — add as explicit
+  dep, pin to `^2.0.1` for ai@5 compatibility
+- `LanguageModelV2ToolCall.input` is stringified JSON, not parsed — must
+  `JSON.parse` for extraction
+- `LanguageModelV2`'s `doGenerate`/`doStream` return `PromiseLike<T>` — `async`
+  is structurally required even without `await`, use lint-ignore not removal
 
 ### Deno
 
@@ -95,6 +103,13 @@ go build                # Build
 - `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite` (FFI) — web client
   and test code must use subpath exports (e.g. `@atlas/core/session/types`) to
   avoid vitest/browser failures
+- Deno workspace resolution reads both `deno.json` AND `package.json`
+  workspaces — both must stay in sync or you get "Could not find package.json
+  for workspace member" errors
+- deno.json with `name` but no `exports` triggers warning — add
+  `"exports": "./mod.ts"`
+- Some packages resolve `@atlas/*` through root deno.json import map without
+  explicit `package.json` dep — adding them creates duplicate resolution paths
 
 ### TypeScript
 
@@ -152,8 +167,9 @@ gh pr create
 ```
 
 **Shared worktrees:** `git add` picks up other teammates' staged files — always
-use `git add <specific-files>`, never `git add .` or `git add -A`. Safest:
-`git commit -- <specific-files>` bypasses staging area entirely.
+use `git add <specific-files> && git commit -m "msg"`, never `git add .` or
+`git add -A`. Do NOT use `git commit -- <files> -m` — `--` terminates option
+parsing and git treats `-m` as a pathspec.
 
 `git diff HEAD~1` includes uncommitted working tree changes — use
 `git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.

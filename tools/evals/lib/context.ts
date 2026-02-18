@@ -1,3 +1,11 @@
+/**
+ * Minimal agent context adapter for eval runs.
+ *
+ * Creates hermetic, per-test contexts without requiring workspace runtime,
+ * daemon, or database. Each `createContext()` call returns an isolated
+ * context with its own session ID, stream capture, and log capture.
+ */
+
 import type {
   AgentContext,
   AgentSessionData,
@@ -5,11 +13,38 @@ import type {
   AtlasUIMessageChunk,
   StreamEmitter,
 } from "@atlas/agent-sdk";
-import { AgentTelemetryCollector, type CollectedMetrics } from "./agent-telemetry-collector.ts";
+import type { LogContext, Logger } from "@atlas/logger";
+
+/** Log level matching @atlas/logger's LogLevel. */
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+
+/** Captured log entry for test assertions. */
+export interface LogEntry {
+  level: LogLevel;
+  message: string;
+  context?: LogContext;
+}
+
+/** Options for `createContext()`. */
+export interface CreateContextOptions {
+  /** AbortSignal for test-level cancellation. */
+  signal?: AbortSignal;
+}
 
 /**
- * StreamEmitter implementation that captures emitted events for testing
+ * Override of AgentContext that guarantees streamId is always set.
+ * Eval contexts always generate a streamId.
  */
+type EvalAgentContext = AgentContext & { session: { streamId: string } };
+
+/** Hermetic test context returned by `createContext()`. */
+export interface EvalTestContext {
+  context: EvalAgentContext;
+  getStreamEvents: () => AtlasUIMessageChunk[];
+  getLogs: () => LogEntry[];
+}
+
+/** StreamEmitter that captures emitted events for test assertions. */
 class CapturedStreamEmitter implements StreamEmitter<AtlasUIMessageChunk> {
   private events: AtlasUIMessageChunk[] = [];
 
@@ -21,119 +56,93 @@ class CapturedStreamEmitter implements StreamEmitter<AtlasUIMessageChunk> {
 
   error(_error: Error): void {}
 
-  getEvents(): AtlasUIMessageChunk[] {
-    return structuredClone(this.events); // Return copy to prevent mutation
+  get capturedEvents(): AtlasUIMessageChunk[] {
+    return structuredClone(this.events);
+  }
+}
+
+/** Logger that captures all log entries for test assertions. */
+class CapturedLogger implements Logger {
+  private logs: LogEntry[] = [];
+
+  trace(message: string, context?: LogContext): void {
+    this.logs.push({ level: "trace", message, context });
+  }
+
+  debug(message: string, context?: LogContext): void {
+    this.logs.push({ level: "debug", message, context });
+  }
+
+  info(message: string, context?: LogContext): void {
+    this.logs.push({ level: "info", message, context });
+  }
+
+  warn(message: string, context?: LogContext): void {
+    this.logs.push({ level: "warn", message, context });
+  }
+
+  error(message: string, context?: LogContext): void {
+    this.logs.push({ level: "error", message, context });
+  }
+
+  fatal(message: string, context?: LogContext): void {
+    this.logs.push({ level: "fatal", message, context });
+  }
+
+  child(_context: LogContext): Logger {
+    return this;
+  }
+
+  get capturedLogs(): LogEntry[] {
+    return structuredClone(this.logs);
   }
 }
 
 /**
- * Temporary until the entire repo is in Bun.
- */
-const testLogger = {
-  trace(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  debug(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  info(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  warn(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  error(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  fatal(message: string, context: Record<string, unknown>): void {
-    console.log(message, JSON.stringify(context, null, 2));
-  },
-  child() {
-    return testLogger;
-  },
-};
-
-/**
- * We're overriding StreamID here because it will always be provided in the test harness.
- */
-type EvalAgentContext = AgentContext & { session: { streamId: string } };
-
-/**
- * Minimal context adapter for testing agents without full Atlas infrastructure
+ * Creates minimal agent execution contexts for eval runs.
+ *
+ * Does not depend on workspace runtime, daemon, or database.
+ * Each `createContext()` call returns a fresh, isolated context.
+ *
+ * @param tools - AtlasTools to make available in the context
+ * @param env - Environment variables (e.g., API keys)
  */
 export class AgentContextAdapter {
-  private telemetryCollector: AgentTelemetryCollector | null = null;
-  private streamEmitter: CapturedStreamEmitter | null = null;
-
   constructor(
     private tools: AtlasTools = {},
     private env: Record<string, string> = {},
-    private memories?: string[],
   ) {}
 
-  createContext(options?: { telemetry?: boolean }): EvalAgentContext {
-    const testSessionId = crypto.randomUUID();
+  /**
+   * Creates a fresh, hermetic agent context for a single eval run.
+   *
+   * @param options - Optional configuration (e.g., AbortSignal)
+   * @returns Isolated test context with capture accessors
+   */
+  createContext(options?: CreateContextOptions): EvalTestContext {
+    const sessionId = crypto.randomUUID();
     const session: AgentSessionData = {
-      sessionId: testSessionId,
+      sessionId,
       workspaceId: "eval-workspace",
       userId: "eval-user",
     };
 
-    // Create capturing stream emitter
-    this.streamEmitter = new CapturedStreamEmitter();
+    const streamEmitter = new CapturedStreamEmitter();
+    const logger = new CapturedLogger();
 
-    const context: AgentContext = {
+    const evalContext: EvalAgentContext = {
       tools: this.tools,
       env: this.env,
-      session,
-      stream: this.streamEmitter,
-      logger: testLogger,
+      session: { ...session, streamId: `stream-${sessionId}` },
+      stream: streamEmitter,
+      logger,
+      abortSignal: options?.signal,
     };
 
-    // Add telemetry if enabled
-    if (options?.telemetry && this.telemetryCollector) {
-      context.telemetry = {
-        tracer: this.telemetryCollector,
-        recordInputs: true,
-        recordOutputs: true,
-      };
-    }
-    // Manually appending the Stream ID is required here. See EvalAgentContext.
-    return { ...context, session: { ...session, streamId: `stream-${testSessionId}` } };
-  }
-
-  enrichPrompt(prompt: string): string {
-    if (!this.memories || this.memories.length === 0) return prompt;
-    return `${this.memories.join("\n")}\n\n${prompt}`;
-  }
-
-  /**
-   * Enable telemetry collection for this context
-   */
-  enableTelemetry(): AgentTelemetryCollector {
-    this.telemetryCollector = new AgentTelemetryCollector();
-    return this.telemetryCollector;
-  }
-
-  /**
-   * Get telemetry metrics after execution
-   */
-  getMetrics(): CollectedMetrics | null {
-    return this.telemetryCollector?.getMetrics() || null;
-  }
-
-  /**
-   * Get all stream events emitted during execution
-   */
-  getStreamEvents(): AtlasUIMessageChunk[] {
-    return this.streamEmitter?.getEvents() || [];
-  }
-
-  /**
-   * Reset telemetry and stream data between test executions
-   */
-  reset(): void {
-    this.telemetryCollector?.reset();
-    this.streamEmitter = null;
+    return {
+      context: evalContext,
+      getStreamEvents: () => streamEmitter.capturedEvents,
+      getLogs: () => logger.capturedLogs,
+    };
   }
 }

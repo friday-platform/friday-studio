@@ -1,10 +1,9 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, tool } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 // Import pure utils (extracted to avoid circular deps in tests)
 import {
@@ -119,7 +118,7 @@ export async function extractAndHydrate(
 ): Promise<HydratedConfig | ExtractionError> {
   // LLM extraction
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+    model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
     schema: LLMExtractionResultSchema,
     messages: [
       { role: "system", content: EXTRACTION_PROMPT },

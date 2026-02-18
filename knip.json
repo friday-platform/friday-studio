@@ -52,10 +52,7 @@
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/system": {
-      "entry": ["**/*.test.ts", "agents/conversation/tools/connect-mcp-server.ts!"],
-      "project": ["**/*.{ts,tsx,js,jsx}!"]
-    },
+    "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": {
       "entry": ["src/**/*.test.ts"],
@@ -98,21 +95,12 @@
       }
     },
     "tools/evals": {
-      "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
-      "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
+      "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
     },
     "tools/workspace-simulator": {
       "entry": ["cli.ts!", "playground.ts!", "**/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
-    },
-    "tools/evals-2": {
-      "entry": ["agents/**/*.eval.ts!", "tools/**/*.eval.ts!", "lib/*.ts!", "evalite.config.ts!"],
-      "project": [
-        "agents/**/*.{ts,tsx,js,jsx}!",
-        "tools/**/*.{ts,tsx,js,jsx}!",
-        "lib/**/*.{ts,tsx,js,jsx}!",
-        "*.ts!"
-      ]
     }
   },
   "ignore": [

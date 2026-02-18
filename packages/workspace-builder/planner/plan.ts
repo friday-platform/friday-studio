@@ -1,10 +1,9 @@
 import { repairJson } from "@atlas/agent-sdk";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { generateObject } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import { getCapabilitiesSection } from "../../system/agents/conversation/capabilities.ts";
 import {
@@ -324,7 +323,7 @@ export async function generatePlan(
 
   if (mode === "task") {
     const result = await generateObject({
-      model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+      model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
       schema: TaskPlanSchema,
       experimental_repairText: repairJson,
       messages: [
@@ -349,7 +348,7 @@ export async function generatePlan(
   }
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: WorkspacePlanSchema,
     experimental_repairText: repairJson,
     messages: [

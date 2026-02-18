@@ -6,6 +6,7 @@ const mockLanguageModel = vi.fn();
 vi.mock("@atlas/llm", () => ({
   registry: { languageModel: mockLanguageModel },
   getDefaultProviderOpts: () => ({}),
+  traceModel: (model: unknown) => model,
 }));
 
 const { AtlasLLMProviderAdapter } = await import("../llm-provider-adapter.ts");

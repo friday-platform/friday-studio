@@ -16,9 +16,8 @@ vi.mock("@atlas/agent-sdk", async (importOriginal) => {
 vi.mock("@atlas/llm", () => ({
   getDefaultProviderOpts: vi.fn(() => ({})),
   registry: { languageModel: vi.fn(() => "mock-model") },
+  traceModel: vi.fn((m: unknown) => m),
 }));
-
-vi.mock("evalite/ai-sdk", () => ({ wrapAISDKModel: vi.fn((m: unknown) => m) }));
 
 vi.mock("@atlas/logger", () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),

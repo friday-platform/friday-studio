@@ -16,7 +16,7 @@ import {
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -124,7 +124,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
     stream?.emit({ type: "data-tool-progress", data: { toolName: "Slack", content: `Planning` } });
 
     const planResult = await generateObject({
-      model: registry.languageModel("anthropic:claude-haiku-4-5"),
+      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       messages: [
         {
           role: "system",
@@ -158,7 +158,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       const translatePrompt = `Read the provided artifact ids and create a Slack mrkdwn compatible artifact, then return the new artifact id. Use the following ids: ${JSON.stringify(plan.artifactIds)}`;
 
       const translateResult = await generateText({
-        model: registry.languageModel("anthropic:claude-haiku-4-5"),
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
         messages: [
           {
@@ -246,7 +246,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       }
 
       const executionResult = await generateText({
-        model: registry.languageModel("anthropic:claude-haiku-4-5"),
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
         messages: [
           {

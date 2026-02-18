@@ -1,7 +1,7 @@
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { SkillDraft } from "@atlas/core/artifacts";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { SkillNameSchema } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
@@ -135,7 +135,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
       }
 
       const result = await generateObject({
-        model: registry.languageModel("anthropic:claude-sonnet-4-6"),
+        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
         experimental_repairText: repairJson,
         system: SKILL_DISTILLER_PROMPT,
         prompt: userPrompt,

@@ -11,7 +11,7 @@ import {
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, smallLLM, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -176,7 +176,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
       }
 
       const result = await generateText({
-        model: registry.languageModel("anthropic:claude-haiku-4-5"),
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
@@ -216,7 +216,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
       // Only create artifact if get_events was called AND no write operations were performed
       if (calledGetEvents && !calledWriteTools) {
         const { object: calendarData } = await generateObject({
-          model: registry.languageModel("anthropic:claude-haiku-4-5"),
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
           schema: CalendarScheduleSchema,
           experimental_repairText: repairJson,
           abortSignal,

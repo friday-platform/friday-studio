@@ -1,6 +1,6 @@
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject } from "ai";
@@ -134,7 +134,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
       ];
 
       const result = await generateObject({
-        model: registry.languageModel("anthropic:claude-sonnet-4-6"),
+        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
         messages,

@@ -3,9 +3,8 @@ import { join } from "node:path";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { generateText, hasToolCall, stepCountIs, tool } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import type { Agent, JobWithDAG, PrepareMapping, WorkspaceBlueprint } from "../types.ts";
 import { PrepareMappingSchema, SIGNAL_DOCUMENT_ID } from "../types.ts";
@@ -358,7 +357,7 @@ export async function generatePrepareMappings(
         );
 
         const result = await generateText({
-          model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
           tools,
           stopWhen: [stepCountIs(10), hasToolCall("finalize")],
           messages: [

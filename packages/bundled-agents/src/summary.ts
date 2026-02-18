@@ -3,7 +3,7 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -82,7 +82,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
       });
 
       const result = await generateText({
-        model: registry.languageModel("anthropic:claude-haiku-4-5"),
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },

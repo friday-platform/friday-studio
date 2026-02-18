@@ -39,5 +39,6 @@ description: Formats conventional commit messages with structured progress foote
   If nothing non-obvious was learned, write "None" — don't force it.
   These get mined by `remembering-learnings` and curated into CLAUDE.md.
 - **Shared worktrees:** `git add` picks up other teammates' staged files —
-  always use `git add <specific-files>`, never `git add .` or `git add -A`.
-  Safest: `git commit -- <specific-files>` bypasses staging area entirely
+  always use `git add <specific-files> && git commit -m "msg"`, never
+  `git add .` or `git add -A`. Do NOT use `git commit -- <files> -m` —
+  `--` terminates option parsing and git treats `-m` as a pathspec

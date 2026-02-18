@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
@@ -232,7 +232,7 @@ async function runAnalysisLoop(
   const analysisPrompt = buildAnalysisPrompt(schemaContext);
 
   const result = await generateText({
-    model: registry.languageModel("anthropic:claude-sonnet-4-6"),
+    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     messages: [
       { role: "system", content: analysisPrompt },
       { role: "user", content: question },

@@ -2,10 +2,9 @@ import { repairJson } from "@atlas/agent-sdk";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import type { Agent, DAGStep } from "../types.ts";
 
@@ -182,7 +181,7 @@ export async function generateOutputSchemas(
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           try {
             const result = await generateObject({
-              model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+              model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
               schema: OutputFieldSchema,
               experimental_repairText: repairJson,
               messages: [

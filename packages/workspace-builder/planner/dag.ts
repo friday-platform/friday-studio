@@ -1,7 +1,6 @@
 import { repairJson } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { generateObject } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import { topologicalSort } from "../topological-sort.ts";
 import type { Agent, JobWithDAG, Signal } from "../types.ts";
@@ -85,7 +84,7 @@ export async function generateDAGSteps(
   });
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: jobSchema,
     experimental_repairText: repairJson,
     messages: [

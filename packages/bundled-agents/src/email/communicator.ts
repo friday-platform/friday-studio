@@ -4,12 +4,11 @@ import { resolve } from "node:path";
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { getTodaysDate, stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
 import { generateText, tool } from "ai";
-import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import { validateRecipient } from "./recipient-validation.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
@@ -120,7 +119,7 @@ CONTENT GUIDELINES (for composeEmail):
 `;
 
     const res = await generateText({
-      model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       messages: [
         {
           role: "system",

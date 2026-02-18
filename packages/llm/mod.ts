@@ -14,6 +14,7 @@ export {
   generateSessionTitle,
 } from "./src/session-title.ts";
 export { smallLLM } from "./src/small.ts";
+export { enterTraceScope, type TraceEntry, traceModel } from "./src/tracing.ts";
 export { validateProvider } from "./src/util.ts";
 
 /**

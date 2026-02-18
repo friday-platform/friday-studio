@@ -13,7 +13,7 @@
 
 import type { AgentResult } from "@atlas/agent-sdk";
 import { repairJson } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
 import { generateObject } from "ai";
@@ -292,7 +292,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
     ];
 
     const llmResult = await generateObject({
-      model: registry.languageModel("anthropic:claude-haiku-4-5"),
+      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       messages,
       schema: ValidationSchema,
       temperature: 0.05,

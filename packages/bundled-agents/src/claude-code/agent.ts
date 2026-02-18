@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, smallLLM } from "@atlas/llm";
+import { registry, smallLLM, traceModel } from "@atlas/llm";
 import { fail, type Result, stringifyError, success, truncateUnicode } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -33,7 +33,7 @@ async function extractRepoAndTask(
   abortSignal?: AbortSignal,
 ): Promise<z.infer<typeof PrepSchema>> {
   const { object } = await generateObject({
-    model: registry.languageModel("anthropic:claude-haiku-4-5"),
+    model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     schema: PrepSchema,
     abortSignal,
     prompt: `Extract repository and task from this prompt.

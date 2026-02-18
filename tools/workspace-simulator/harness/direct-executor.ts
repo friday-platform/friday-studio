@@ -11,7 +11,7 @@
 
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { AgentAction, AgentResult, Context, SignalWithContext } from "@atlas/fsm-engine";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
@@ -182,7 +182,7 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
 
     // Agentic loop
     const result = await generateText({
-      model: registry.languageModel(modelId),
+      model: traceModel(registry.languageModel(modelId)),
       system: `You are ${agent.name}. ${agent.description}\n\nYou have access to tools. Use them to accomplish your task.`,
       prompt,
       tools: allTools,

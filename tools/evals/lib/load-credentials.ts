@@ -1,36 +1,37 @@
-import { access } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
+import { type Credentials, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { load } from "@std/dotenv";
+import dotenv from "dotenv";
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
+/** Override points for testing — production callers should omit. */
+export interface CredentialDeps {
+  fetch: (opts: { atlasKey: string; retries: number; retryDelay: number }) => Promise<Credentials>;
+  setEnv: typeof setToEnv;
 }
 
-/**
- * Fetches bundled API credentials and sets them as environment variables.
- */
-export async function loadCredentials() {
-  await load({ export: true });
+const prodDeps: CredentialDeps = { fetch: fetchCredentials, setEnv: setToEnv };
 
-  // Load global Atlas configuration as fallback
-  // Note: getAtlasHome() will return the appropriate path based on system/user mode
+/**
+ * Loads `.env` files and fetches bundled API credentials into `process.env`.
+ *
+ * Reads `.env` from cwd first, then falls back to `~/.atlas/.env`.
+ * Requires `ATLAS_KEY` to be present after dotenv loading.
+ */
+export async function loadCredentials(deps: CredentialDeps = prodDeps) {
+  dotenv.config();
+
   const globalAtlasEnv = join(getAtlasHome(), ".env");
-  if (await exists(globalAtlasEnv)) {
-    await load({ export: true, envPath: globalAtlasEnv });
+  if (existsSync(globalAtlasEnv)) {
+    dotenv.config({ path: globalAtlasEnv, override: true });
   }
 
   const atlasKey = process.env.ATLAS_KEY;
   if (!atlasKey) {
     throw new Error("ATLAS_KEY environment variable is not set");
   }
-  const credentials = await fetchCredentials({ atlasKey, retries: 3, retryDelay: 2000 });
-  setToEnv(credentials);
+
+  const credentials = await deps.fetch({ atlasKey, retries: 3, retryDelay: 2000 });
+  deps.setEnv(credentials);
 }

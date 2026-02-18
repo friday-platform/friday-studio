@@ -3,7 +3,7 @@
  */
 
 import { repairToolCall } from "@atlas/agent-sdk";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { generateText } from "ai";
 import type { ToolContext } from "../../types.ts";
@@ -99,7 +99,7 @@ export async function executeCsvOperation(
   const tools = getOperationTools(fileMap, operationResult);
 
   const result = await generateText({
-    model: registry.languageModel("anthropic:claude-sonnet-4-6"),
+    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     system: systemPrompt,
     prompt: task,
     tools,

@@ -6,7 +6,10 @@
     "./workspaces": "./workspaces/mod.ts",
     "./agents": "./agents/mod.ts",
     "./agent-types": "./agent-types/mod.ts",
-    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts"
+    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts",
+    "./agents/fsm-workspace-creator/agent-classifier": "./agents/fsm-workspace-creator/agent-classifier.ts",
+    "./agents/fsm-workspace-creator/enrichers/mcp-servers": "./agents/fsm-workspace-creator/enrichers/mcp-servers.ts",
+    "./agents/conversation/tools/connect-mcp-server": "./agents/conversation/tools/connect-mcp-server.ts"
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
@@ -27,7 +30,6 @@
     "@std/text": "npm:@jsr/std__text@^1.0.16",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^5.0.135",
-    "evalite": "^1.0.0-beta.15",
     "zod": "^4.3.5"
   },
   "devDependencies": { "vitest": "^4.0.18" }

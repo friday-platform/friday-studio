@@ -21,7 +21,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { OutlineRefsResultSchema } from "@atlas/core";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
-import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, smallLLM, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
@@ -837,7 +837,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         try {
           try {
             result = streamText({
-              model: registry.languageModel("anthropic:claude-sonnet-4-6"),
+              model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
               experimental_repairToolCall: repairToolCall,
               messages: [
                 {

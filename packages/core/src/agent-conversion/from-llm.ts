@@ -6,7 +6,7 @@ import {
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
-import { getDefaultProviderOpts, registry, validateProvider } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel, validateProvider } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { stepCountIs, streamText } from "ai";
@@ -37,7 +37,7 @@ export function convertLLMToAgent(
   const maxRetries = config.config.max_retries ?? 3;
 
   const provider = validateProvider(config.config.provider);
-  const model = registry.languageModel(`${provider}:${config.config.model}`);
+  const model = traceModel(registry.languageModel(`${provider}:${config.config.model}`));
 
   const agent = createAgent<string, LLMOutput>({
     id: agentId,

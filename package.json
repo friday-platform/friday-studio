@@ -2,13 +2,7 @@
   "name": "atlas",
   "version": "1.0.0",
   "type": "module",
-  "workspaces": [
-    "./apps/*",
-    "./packages/*",
-    "./packages/vendor/*",
-    "./tools/evals",
-    "./tools/evals-2"
-  ],
+  "workspaces": ["./apps/*", "./packages/*", "./packages/vendor/*", "./tools/evals"],
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/analytics": "workspace:*",
@@ -49,5 +43,5 @@
     "knip": "5.83.1",
     "vitest": "^4.0.18"
   },
-  "knip": { "ignoreWorkspaces": ["tools/evals-2"] }
+  "knip": {}
 }

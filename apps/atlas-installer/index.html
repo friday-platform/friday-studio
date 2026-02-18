@@ -18,13 +18,14 @@
   <body>
     <div class="titlebar"></div>
     <div class="container">
-      <button class="btn-secondary hidden" id="back-btn" aria-label="Go Back">
+      <button type="button" class="btn-secondary hidden" id="back-btn" aria-label="Go Back">
         <svg
           width="16"
           height="16"
           viewBox="0 0 16 16"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
         >
           <path
             d="M12.0003 7.99999H3.9997M3.9997 7.99999L7.49971 11.5M3.9997 7.99999L7.49971 4.49999"
@@ -93,6 +94,7 @@
                     viewBox="0 0 16 16"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
                   >
                     <path
                       fill-rule="evenodd"
@@ -189,7 +191,7 @@
         </div>
       </div>
 
-      <button class="btn btn-primary" id="next-btn">Continue</button>
+      <button type="button" class="btn btn-primary" id="next-btn">Continue</button>
     </div>
 
     <script type="module" src="dist/renderer.js"></script>

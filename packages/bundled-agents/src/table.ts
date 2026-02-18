@@ -14,7 +14,7 @@ import {
 } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { TableDataSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -53,7 +53,7 @@ Output clean, well-organized data appropriate for tabular display.`;
       });
 
       const result = await generateObject({
-        model: registry.languageModel("anthropic:claude-haiku-4-5"),
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         schema: TableDataSchema,
         experimental_repairText: repairJson,
         abortSignal,

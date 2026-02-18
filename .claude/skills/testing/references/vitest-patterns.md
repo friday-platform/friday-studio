@@ -148,6 +148,22 @@ vi.mock('./mcpClient', () => ({ listTools: vi.fn() }));
 
 ## Vitest Gotchas
 
+### vi.mock factory must export every SUT import
+
+`vi.mock` factory replaces the entire module — any export the SUT imports that's
+missing from the factory silently becomes `undefined` at runtime (no import-time
+error). Failures surface as `TypeError: X is not a function` deep in the call
+stack.
+
+```typescript
+// BAD — SUT imports { doThing, doOther } but mock only provides doThing
+vi.mock("./thing", () => ({ doThing: vi.fn() }));
+// doOther is undefined at runtime — silent failure
+
+// GOOD — Export everything the SUT needs
+vi.mock("./thing", () => ({ doThing: vi.fn(), doOther: vi.fn() }));
+```
+
 ### vi.mock() is hoisted
 
 ```typescript

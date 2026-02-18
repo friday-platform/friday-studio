@@ -10,7 +10,7 @@
 
 import { repairJson } from "@atlas/agent-sdk";
 import { type SessionAISummary, SessionAISummarySchema, type SessionView } from "@atlas/core";
-import { registry } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject as defaultGenerateObject } from "ai";
 
@@ -38,7 +38,7 @@ export async function generateSessionSummary(
     const prompt = buildPrompt(view, jobDescription);
 
     const { object } = await generate({
-      model: registry.languageModel("anthropic:claude-haiku-4-5"),
+      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       schema: SessionAISummarySchema,
       prompt,
       maxOutputTokens: 300,
