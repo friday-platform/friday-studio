@@ -9,8 +9,20 @@ import (
 	"context"
 )
 
-const isEmailSuppressed = `-- name: IsEmailSuppressed :one
+const getUserEmail = `-- name: GetUserEmail :one
 
+SELECT email FROM public."user" WHERE id = $1
+`
+
+// Gateway queries
+func (q *Queries) GetUserEmail(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getUserEmail, id)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
+const isEmailSuppressed = `-- name: IsEmailSuppressed :one
 SELECT EXISTS(
     SELECT 1 FROM gateway.email_suppressions
     WHERE email = $1 AND workspace_id = $2
@@ -22,7 +34,6 @@ type IsEmailSuppressedParams struct {
 	WorkspaceID string
 }
 
-// Gateway email suppression queries
 func (q *Queries) IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (bool, error) {
 	row := q.db.QueryRow(ctx, isEmailSuppressed, arg.Email, arg.WorkspaceID)
 	var exists bool

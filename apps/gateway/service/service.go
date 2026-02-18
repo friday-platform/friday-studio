@@ -17,11 +17,12 @@ import (
 )
 
 type Service struct {
-	Logger  *httplog.Logger
-	cfg     Config
-	client  *http.Client
-	db      *pgxpool.Pool // nil when unsubscribe is disabled
-	queries *repo.Queries // nil when unsubscribe is disabled
+	Logger     *httplog.Logger
+	cfg        Config
+	client     *http.Client
+	db         *pgxpool.Pool // nil when unsubscribe is disabled
+	queries    *repo.Queries // nil when unsubscribe is disabled
+	emailCache *EmailCache   // nil when DB unavailable
 }
 
 type contextKey string
@@ -57,14 +58,18 @@ func New(cfg Config) *Service {
 		},
 	}
 
-	if cfg.UnsubscribeEnabled() {
+	if cfg.PostgresConnection != "" {
 		pool, err := repo.NewPool(context.Background(), cfg.PostgresConnection)
 		if err != nil {
-			logger.Error("Failed to initialize unsubscribe DB — feature disabled", "error", err)
+			logger.Error("Failed to initialize DB pool", "error", err)
 		} else {
 			svc.db = pool
-			svc.queries = repo.New(pool)
-			logger.Info("Unsubscribe support enabled")
+			svc.emailCache = NewEmailCache(pool, 16384)
+
+			if cfg.UnsubscribeEnabled() {
+				svc.queries = repo.New(pool)
+				logger.Info("Unsubscribe support enabled")
+			}
 		}
 	}
 

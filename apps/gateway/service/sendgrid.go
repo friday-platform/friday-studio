@@ -94,8 +94,14 @@ func validateSendEmailRequest(req *SendEmailRequest) error {
 	if _, err := mail.ParseAddress(req.To); err != nil {
 		return fmt.Errorf("invalid email format: to")
 	}
+	if strings.HasSuffix(strings.ToLower(req.To), "@pool.internal") {
+		return fmt.Errorf("invalid recipient: internal pool address")
+	}
 	if _, err := mail.ParseAddress(req.From); err != nil {
 		return fmt.Errorf("invalid email format: from")
+	}
+	if strings.HasSuffix(strings.ToLower(req.From), "@pool.internal") {
+		return fmt.Errorf("invalid sender: internal pool address")
 	}
 
 	if len(req.Subject) > maxSubjectLength {
@@ -124,6 +130,35 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := userIDFromContext(r.Context())
+
+	// Resolve real email when the JWT contains a stale pool placeholder.
+	// Pool-provisioned pods get JWTs with @pool.internal emails that are never
+	// refreshed after the user claims the pod, so we look up the current email
+	// from the database and replace it in the request.
+	// Runs BEFORE validateSendEmailRequest so resolved emails pass validation
+	// while the defense-in-depth @pool.internal rejection in validation only
+	// catches code paths that bypass resolution.
+	if s.emailCache != nil && isPoolEmail(req.To) {
+		resolvedEmail, err := s.emailCache.Resolve(r.Context(), userID)
+		switch {
+		case err != nil:
+			log := httplog.LogEntry(r.Context())
+			log.Error("failed to resolve pool email from DB",
+				"error", err, "to", req.To)
+			http.Error(w, "failed to resolve recipient email", http.StatusServiceUnavailable)
+			return
+		case isPoolEmail(resolvedEmail):
+			http.Error(w, "cannot send email: user account not yet activated", http.StatusUnprocessableEntity)
+			return
+		default:
+			log := httplog.LogEntry(r.Context())
+			log.Warn("replaced stale pool email with current email",
+				"original", req.To, "resolved", resolvedEmail)
+			req.To = resolvedEmail
+		}
+	}
+
 	if err := validateSendEmailRequest(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -134,7 +169,7 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, invalidWorkspaceMsg, http.StatusBadRequest)
 		return
 	}
-	userID := userIDFromContext(r.Context())
+
 	if workspaceID == "" {
 		workspaceID = uuid.NewString()
 		s.Logger.Warn("email sent without workspace ID, using fallback", "fallbackID", workspaceID)

@@ -9,7 +9,8 @@ import (
 )
 
 // withUserContext executes a function within a transaction with the request.user_id
-// session variable set for RLS policy enforcement.
+// session variable set for RLS policy enforcement. For read operations that return
+// a value, use withUserContextRead instead.
 //
 // The session variable is set with LOCAL scope (transaction-only) to ensure
 // it doesn't leak to other queries using the same connection from the pool.
@@ -57,4 +58,20 @@ func withUserContext(
 	tx = nil
 
 	return nil
+}
+
+// withUserContextRead is like withUserContext but returns a value from the query.
+func withUserContextRead[T any](
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	userID string,
+	fn func(queries *repo.Queries) (T, error),
+) (T, error) {
+	var result T
+	err := withUserContext(ctx, pool, userID, func(queries *repo.Queries) error {
+		var err error
+		result, err = fn(queries)
+		return err
+	})
+	return result, err
 }

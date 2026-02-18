@@ -69,6 +69,46 @@ func TestValidateSendEmailRequest(t *testing.T) {
 			wantErr: "invalid template_id format",
 		},
 		{
+			name: "pool.internal recipient rejected",
+			req: SendEmailRequest{
+				To:      "abc123@pool.internal",
+				From:    "sender@example.com",
+				Subject: "test",
+				Content: "hello",
+			},
+			wantErr: "invalid recipient: internal pool address",
+		},
+		{
+			name: "pool.internal recipient rejected case insensitive",
+			req: SendEmailRequest{
+				To:      "ABC@POOL.INTERNAL",
+				From:    "sender@example.com",
+				Subject: "test",
+				Content: "hello",
+			},
+			wantErr: "invalid recipient: internal pool address",
+		},
+		{
+			name: "pool.internal sender rejected",
+			req: SendEmailRequest{
+				To:      "user@example.com",
+				From:    "abc123@pool.internal",
+				Subject: "test",
+				Content: "hello",
+			},
+			wantErr: "invalid sender: internal pool address",
+		},
+		{
+			name: "pool.internal sender rejected case insensitive",
+			req: SendEmailRequest{
+				To:      "user@example.com",
+				From:    "ABC@POOL.INTERNAL",
+				Subject: "test",
+				Content: "hello",
+			},
+			wantErr: "invalid sender: internal pool address",
+		},
+		{
 			name: "valid with content",
 			req: SendEmailRequest{
 				To:      "test@example.com",

@@ -1,4 +1,7 @@
--- Gateway email suppression queries
+-- Gateway queries
+
+-- name: GetUserEmail :one
+SELECT email FROM public."user" WHERE id = $1;
 
 -- name: IsEmailSuppressed :one
 SELECT EXISTS(
