@@ -84,10 +84,14 @@ INSERT INTO bounce.otp (token, auth_user_id, not_valid_after, use, created_at)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
+-- name: GetUnusedOTP :one
+SELECT * FROM bounce.otp WHERE token = $1 AND used_at IS NULL;
+
 -- name: UseOTP :one
 UPDATE bounce.otp
 SET used_at = now()
 WHERE token = $1
+    AND used_at IS NULL
 RETURNING *;
 
 -- name: ValidMagicLinkOTPByAuthUserID :one

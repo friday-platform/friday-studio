@@ -624,10 +624,33 @@ func (q *Queries) UpdateUserStripeCustomerID(ctx context.Context, arg *UpdateUse
 	return err
 }
 
+const getUnusedOTP = `-- name: GetUnusedOTP :one
+SELECT id, token, auth_user_id, created_at, not_valid_after, used_at, use FROM bounce.otp WHERE token = $1 AND used_at IS NULL
+`
+
+// GetUnusedOTP
+//
+//	SELECT id, token, auth_user_id, created_at, not_valid_after, used_at, use FROM bounce.otp WHERE token = $1 AND used_at IS NULL
+func (q *Queries) GetUnusedOTP(ctx context.Context, token string) (*BounceOtp, error) {
+	row := q.db.QueryRow(ctx, getUnusedOTP, token)
+	var i BounceOtp
+	err := row.Scan(
+		&i.ID,
+		&i.Token,
+		&i.AuthUserID,
+		&i.CreatedAt,
+		&i.NotValidAfter,
+		&i.UsedAt,
+		&i.Use,
+	)
+	return &i, err
+}
+
 const useOTP = `-- name: UseOTP :one
 UPDATE bounce.otp
 SET used_at = now()
 WHERE token = $1
+    AND used_at IS NULL
 RETURNING id, token, auth_user_id, created_at, not_valid_after, used_at, use
 `
 
@@ -636,6 +659,7 @@ RETURNING id, token, auth_user_id, created_at, not_valid_after, used_at, use
 //	UPDATE bounce.otp
 //	SET used_at = now()
 //	WHERE token = $1
+//	    AND used_at IS NULL
 //	RETURNING id, token, auth_user_id, created_at, not_valid_after, used_at, use
 func (q *Queries) UseOTP(ctx context.Context, token string) (*BounceOtp, error) {
 	row := q.db.QueryRow(ctx, useOTP, token)

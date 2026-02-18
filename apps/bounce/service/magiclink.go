@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/httplog/v2"
@@ -23,22 +24,15 @@ type magicLinkRequest struct {
 }
 
 func magicLinkURL(cfg Config, otp, originalReferrer string) string {
-	u := fmt.Sprintf("%s/magiclink/verify?otp=%s", cfg.BounceServiceURL, otp)
+	u := fmt.Sprintf("%s/magiclink/verify?otp=%s", cfg.BounceServiceURL, url.QueryEscape(otp))
 	if originalReferrer != "" {
 		u += fmt.Sprintf("&original_referrer=%s", url.QueryEscape(originalReferrer))
 	}
 	return u
 }
 
-// sendMagicLink sends a magic link to the user's email address.
-// This is a public route that doesn't go through forwardauth.
-// It needs to be rate limited by Traefik.
-// As currently implemented, it's vulnerable to enumeration via.
-// timing attacks, as the difference between finding a user or not.
-// results in some measurable processing time.
-// This could be mitigated by using a constant time comparison.
-// or by adding some jitter to the response time when a user is not found.
-// Or, @lcf had a great idea to drop the request off in a queue.
+// sendMagicLink sends a magic link email. Public route, not behind forwardauth.
+// Vulnerable to timing enumeration — see TEM-2234 for mitigation plan.
 // https://linear.app/tempestteam/issue/TEM-2234/protect-magic-links-from-timing-enumeration-attack
 func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 	log := httplog.LogEntry(r.Context())
@@ -59,7 +53,6 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 		pgxerr.WithLog(log),
 	)
 
-	// First, lets check if a bounce.auth user with this email exists
 	tx, queries, conn, err := queriesWithTx(r.Context())
 	defer expect.DeferRollbackRelease(tx, conn)
 	if err != nil {
@@ -75,15 +68,13 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for duplicate magic link - if query succeeds, a valid unexpired link exists
+	// Deduplicate: if a valid unexpired link already exists, don't send another
 	_, err = queries.ValidMagicLinkOTPByAuthUserID(r.Context(), pgtype.Text{String: user.ID, Valid: true})
 	if err == nil {
-		// Valid magic link already exists, don't send another one
 		log.Info("valid magic link already exists for user", "user_id", user.ID, "email", user.Email)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	// No valid OTP exists (query returned error), proceed to create a new one
 
 	otp, err := NewOTP(user.Email, cfg.SignupHMACSecret, time.Now())
 	if err != nil {
@@ -136,16 +127,44 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-type verifyMagicLinkRequest struct {
-	OTP string `in:"query=otp" validate:"required"`
+// GET /magiclink/verify?otp=<token> — redirects to auth-ui confirmation page.
+// Does NOT consume the token. Scanners follow GET links but won't POST.
+func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
+	cfg, err := ConfigFromContext(r.Context())
+	if err != nil {
+		httplog.LogEntry(r.Context()).Error("error getting config from context", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	otp := r.URL.Query().Get("otp")
+	if otp == "" {
+		http.Redirect(w, r, cfg.AuthUIURL+"/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	redirect := cfg.AuthUIURL + "/confirm-login?otp=" + url.QueryEscape(otp)
+	if ref := r.URL.Query().Get("original_referrer"); ref != "" {
+		redirect += "&original_referrer=" + url.QueryEscape(ref)
+	}
+
+	http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
 }
 
-func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
+type verifyMagicLinkPostRequest struct {
+	Payload struct {
+		OTP              string `json:"otp" validate:"required"`
+		OriginalReferrer string `json:"original_referrer,omitempty"`
+	} `in:"body=json"`
+}
+
+// POST /magiclink/verify — consumes the token and returns JSON.
+func verifyMagicLinkPost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := httplog.LogEntry(ctx)
-	req, err := decodeAndValidateFromRequest[verifyMagicLinkRequest](ctx, w, r)
+
+	req, err := decodeAndValidateFromRequest[verifyMagicLinkPostRequest](ctx, w, r)
 	if err != nil {
-		log.Debug("Failed to decode and validate magic-link request", "request", req)
 		return
 	}
 
@@ -169,79 +188,111 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	otp, err := queries.UseOTP(ctx, req.OTP)
+	// Read the OTP without consuming — validate type and expiry before burning the token.
+	otp, err := queries.GetUnusedOTP(ctx, req.Payload.OTP)
 	if err != nil {
-		log.Error("error using OTP", "error", err)
-		_ = expect.ExactlyOneRow(err)
+		log.Error("error looking up OTP", "error", err)
 		RecordAuth("magiclink", "failure")
-
-		msg := url.QueryEscape("magic link expired")
-
-		http.Redirect(w, r, cfg.AuthUIURL+"/error?msg="+msg, http.StatusFound)
+		writeJSON(w, http.StatusGone, map[string]string{
+			"error": "Magic link expired or already used",
+			"code":  "token_consumed",
+		})
 		return
 	}
 
 	if otp.Use != bouncerepo.BounceOtpUseMagiclink {
 		log.Error("Expected a magic link OTP, but got something else", "otp", otp, "use", otp.Use)
-		w.WriteHeader(http.StatusOK)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Invalid token",
+			"code":  "token_invalid",
+		})
 		return
 	}
 
 	if otp.NotValidAfter.Time.Before(time.Now()) {
 		log.Error("Magic link OTP is expired", "otp", otp)
 		RecordAuth("magiclink", "failure")
-		http.Error(w, "Magic link expired. Please request another one", http.StatusGone)
+		writeJSON(w, http.StatusGone, map[string]string{
+			"error": "Magic link expired",
+			"code":  "token_expired",
+		})
 		return
 	}
 
-	// Get the user
 	au, err := queries.AuthUserByID(ctx, otp.AuthUserID.String)
 	if err != nil {
 		log.Error("error getting user by ID", "error", err)
-		_ = expect.ExactlyOneRow(err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
-	// While we have already verified that this OTP was previously generated
-	// and stored in the database, and that the user has presented it to us,
-	// we perform this additional check to ensure that it's a valid OTP that was
-	// generated by bounce. This protects against attacks where an attacker might have
-	// access to the database, but not the application or secrets store where the HMAC key is stored.
-	// Defense in depth!
+	// Defense in depth: verify the OTP was generated by bounce using the HMAC secret.
+	// Protects against database-only compromise where the attacker lacks the secret.
 	dbOTP, err := NewOTP(au.Email, cfg.SignupHMACSecret, otp.CreatedAt.Time)
 	if err != nil {
 		log.Error("error creating OTP to validate", "error", err)
-		w.WriteHeader(http.StatusOK)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
-	valid, err := dbOTP.Verify(req.OTP)
+	valid, err := dbOTP.Verify(req.Payload.OTP)
 	if err != nil {
 		log.Error("error verifying OTP", "error", err)
-		w.WriteHeader(http.StatusOK)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
 	if !valid {
-		log.Error("Magic link OTP is invalid", "otp", req.OTP)
-		w.WriteHeader(http.StatusOK)
+		log.Error("Magic link OTP is invalid", "otp", req.Payload.OTP)
+		RecordAuth("magiclink", "failure")
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Invalid token",
+			"code":  "token_invalid",
+		})
 		return
 	}
 
-	// get the Tempest user
+	// All checks passed — consume the token atomically.
+	// Race: if consumed between SELECT and UPDATE, UseOTP returns no rows.
+	_, err = queries.UseOTP(ctx, req.Payload.OTP)
+	if err != nil {
+		log.Error("error consuming OTP", "error", err)
+		RecordAuth("magiclink", "failure")
+		writeJSON(w, http.StatusGone, map[string]string{
+			"error": "Magic link expired or already used",
+			"code":  "token_consumed",
+		})
+		return
+	}
+
 	tu, err := queries.TempestUserByAuthUserID(ctx, pgtype.Text{String: au.ID, Valid: true})
 	if err != nil {
 		log.Error("error getting Tempest user by AuthUserID", "error", err)
-		_ = expect.ExactlyOneRow(err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
 	err = expect.Commit(tx)
 	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
-	// Create a new session
 	amr := &AMREntry{
 		Method:    "magiclink",
 		Provider:  "tempest",
@@ -255,13 +306,21 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Error("error setting session cookie", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	// Redirect to default URI
 	redirectURL := cfg.RedirectURI + "/"
-	log.Info("Magic link verification successful, redirecting", "userID", tu.ID, "redirectURL", redirectURL)
+	if ref := req.Payload.OriginalReferrer; ref != "" {
+		if strings.HasPrefix(ref, "/") {
+			redirectURL = cfg.RedirectURI + ref
+		}
+	}
+
+	log.Info("Magic link verification successful", "userID", tu.ID, "redirectURL", redirectURL)
 	RecordAuth("magiclink", "success")
 	analytics.Emit(ctx, analytics.EventUserLoggedIn, tu.ID, nil)
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"redirect": redirectURL,
+	})
 }

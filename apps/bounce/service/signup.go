@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/ggicci/httpin"
@@ -98,7 +100,6 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a new confirmation token
 	otp, err := NewOTP(body.Payload.Email, cfg.SignupHMACSecret, time.Now())
 	if err != nil {
 		log.Error("Could not create OTP", "error", err)
@@ -171,8 +172,6 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	confirmationLink := cfg.SignupHostname + "/signup/email/verify?t=" + otpStr
-	// Send the confirmation email
-
 	sendgrid, err := newSendgridEmail(cfg, &SendgridEmailConfig{
 		TemplateID: SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID,
 		Data: map[string]any{
@@ -206,20 +205,40 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return 200 OK
 	w.WriteHeader(http.StatusOK)
 }
 
-type verifyEmailSignupRequest struct {
-	Token string `in:"query=t" validate:"required"`
+// GET /signup/email/verify?t=<token> — redirects to auth-ui confirmation page.
+// Does NOT consume the token. Scanners follow GET links but won't POST.
+func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
+	cfg, err := ConfigFromContext(r.Context())
+	if err != nil {
+		httplog.LogEntry(r.Context()).Error("Could not retrieve config", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	token := r.URL.Query().Get("t")
+	if token == "" {
+		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
+		return
+	}
+
+	http.Redirect(w, r, cfg.AuthUIURL+"/confirm-email?t="+url.QueryEscape(token), http.StatusTemporaryRedirect)
 }
 
-// GET /signup/email/verify?t=<token>.
-func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
+type verifyEmailSignupPostRequest struct {
+	Payload struct {
+		Token string `json:"token" validate:"required"`
+	} `in:"body=json"`
+}
+
+// POST /signup/email/verify — consumes the token and returns JSON.
+func verifyEmailSignupPost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := httplog.LogEntry(ctx)
 
-	req, err := decodeAndValidateFromRequest[verifyEmailSignupRequest](ctx, w, r)
+	req, err := decodeAndValidateFromRequest[verifyEmailSignupPostRequest](ctx, w, r)
 	if err != nil {
 		return
 	}
@@ -244,15 +263,18 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	au, err := queries.AuthUserByConfirmationToken(ctx, pgtype.Text{String: req.Token, Valid: true})
+	au, err := queries.AuthUserByConfirmationToken(ctx, pgtype.Text{String: req.Payload.Token, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			log.Info("Token not found", "token", req.Token)
+			log.Info("Token not found", "token", req.Payload.Token)
 			RecordAuth("email", "failure")
-			http.Error(w, "", http.StatusUnauthorized)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "Invalid or already used token",
+				"code":  "token_invalid",
+			})
 			return
 		}
-		log.Error("Could not query auth user by token", "error", err, "token", req.Token)
+		log.Error("Could not query auth user by token", "error", err, "token", req.Payload.Token)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -260,9 +282,10 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	if time.Now().After(au.ConfirmationSentAt.Time.Add(time.Hour * 24)) {
 		log.Info("Token has expired", "error", errors.New("token has expired"))
 		RecordAuth("email", "failure")
-
-		// Redirect to retry page--for controlled retries to prevent brute force attacks
-		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
+		writeJSON(w, http.StatusGone, map[string]string{
+			"error": "This confirmation link has expired. Please request a new one.",
+			"code":  "token_expired",
+		})
 		return
 	}
 
@@ -273,7 +296,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verified, err := otp.Verify(req.Token)
+	verified, err := otp.Verify(req.Payload.Token)
 	if err != nil {
 		log.Error("Could not verify OTP", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -281,9 +304,12 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !verified {
-		log.Info("Token did not verify contents", "token", req.Token, "email", au.Email)
+		log.Info("Token did not verify contents", "token", req.Payload.Token, "email", au.Email)
 		RecordAuth("email", "failure")
-		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Invalid token",
+			"code":  "token_invalid",
+		})
 		return
 	}
 
@@ -300,13 +326,19 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	tu, err := claimOrCreateUser(ctx, queries, authUser.ID, authUser.Email, authUser.Email, "", "")
 	if err != nil {
 		log.Error("Could not create tempest user", "error", err)
-		_ = expect.ExactlyOneRow(err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
-	// User confirmed, commit and redirect to registration
 	err = expect.Commit(tx)
 	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Internal error",
+			"code":  "internal",
+		})
 		return
 	}
 
@@ -323,13 +355,15 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Error("error setting session cookie", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
-	// This route is hosted in the SvelteKit auth-ui app at /complete-setup
 	RecordAuth("email", "success")
 	analytics.Emit(ctx, analytics.EventUserSignedUp, tu.ID, nil)
-	http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusTemporaryRedirect)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"redirect": "/complete-setup",
+	})
 }
 
 func queriesWithTx(ctx context.Context) (pgx.Tx, *bouncerepo.Queries, *pgxpool.Conn, error) {
@@ -371,6 +405,12 @@ func decodeAndValidateFromRequest[T any](ctx context.Context, w http.ResponseWri
 	}
 
 	return decoded, nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 type completeSignupRequest struct {
@@ -474,8 +514,7 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	go createStripeCustomer(log, cfg, pool, user)
 }
 
-// createStripeCustomer creates a Stripe customer for the given user and stores the customer ID.
-// This is a fire-and-forget operation - errors are logged but don't affect the user's signup.
+// createStripeCustomer is fire-and-forget — errors are logged but don't affect signup.
 func createStripeCustomer(log *slog.Logger, cfg Config, pool *pgxpool.Pool, user *bouncerepo.User) {
 	sublog := log.WithGroup("create.stripe.signup").With("user_id", user.ID)
 
@@ -498,8 +537,7 @@ func createStripeCustomer(log *slog.Logger, cfg Config, pool *pgxpool.Pool, user
 
 	sublog.Info("Created Stripe customer", "stripe_customer_id", stripeCID)
 
-	// Store the Stripe customer ID in the database
-	// Use timeout to prevent hanging during shutdown
+	// Timeout prevents hanging during shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

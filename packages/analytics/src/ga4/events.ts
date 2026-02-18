@@ -1,8 +1,3 @@
-/**
- * GA4 event name constants.
- * Use these to avoid typos when calling trackEvent().
- */
-
 export const GA4 = {
   // Auth UI - Login
   LOGIN_GOOGLE_CLICK: "login_google_click",
@@ -22,6 +17,16 @@ export const GA4 = {
   SIGNUP_TERMS_LINK_CLICK: "signup_terms_link_click",
   SIGNUP_RESEND_LINK_CLICK: "signup_resend_link_click",
   SIGNUP_SUPPORT_LINK_CLICK: "signup_support_link_click",
+
+  // Auth UI - Confirm Email
+  CONFIRM_EMAIL_VERIFY_CLICK: "confirm_email_verify_click",
+  CONFIRM_EMAIL_VERIFY_SUCCESS: "confirm_email_verify_success",
+  CONFIRM_EMAIL_VERIFY_ERROR: "confirm_email_verify_error",
+
+  // Auth UI - Confirm Login
+  CONFIRM_LOGIN_VERIFY_CLICK: "confirm_login_verify_click",
+  CONFIRM_LOGIN_VERIFY_SUCCESS: "confirm_login_verify_success",
+  CONFIRM_LOGIN_VERIFY_ERROR: "confirm_login_verify_error",
 
   // Auth UI - Signup Retry
   SIGNUP_RETRY_SUBMIT: "signup_retry_submit",

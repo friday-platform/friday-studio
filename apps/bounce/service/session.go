@@ -14,11 +14,10 @@ import (
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
 )
 
-// Define a custom type for AAL levels.
 type AAL int
 
 const (
-	AAL1 AAL = iota + 1 // Start from 1
+	AAL1 AAL = iota + 1
 	AAL2
 	AAL3
 )
@@ -36,15 +35,13 @@ func (a AAL) String() string {
 	}
 }
 
-// AMREntry represents a method that a user has logged in together with the corresponding time.
 type AMREntry struct {
 	Method    string `json:"method"`
 	Timestamp int64  `json:"timestamp"`
 	Provider  string `json:"provider,omitempty"`
 }
 
-// Copied from supabase/auth.
-// AccessTokenClaims is a struct thats used for JWT claims.
+// Derived from supabase/auth AccessTokenClaims.
 type TempestClaims struct {
 	claims *Claims
 }
@@ -128,8 +125,7 @@ func (c *TempestClaims) SignedString(keyContent string) (string, error) {
 	return tok.SignedString(privateKey)
 }
 
-// SetTempestUserID sets the tempest_user_id claim, which is particularly.
-// useful while we transition from supabase/auth to our own auth system.
+// SetTempestUserID is needed while transitioning from supabase/auth.
 func (c *TempestClaims) SetTempestUserID(id string) {
 	c.claims.UserMetadata["tempest_user_id"] = id
 }
@@ -163,8 +159,6 @@ func TempestTokenFromCookies(cfg *Config, r *http.Request) (string, error) {
 
 	return cookie.Value, nil
 }
-
-// Session storage has been removed - sessions are now stateless and validated only by JWT signature
 
 func setCookieTempestToken(cfg *Config, w http.ResponseWriter, token string, expiresAt time.Time) error {
 	secureFlag := !strings.HasSuffix(cfg.CookieDomain, "localhost")
@@ -215,7 +209,6 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	)
 	if err != nil {
 		log.Error("Could not create TempestClaims", "error", err)
-		w.WriteHeader(http.StatusOK)
 		return err
 	}
 
@@ -232,7 +225,6 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	}
 	if len(amrErrs) > 0 {
 		log.Error("Could not set AMR", "errors", amrErrs)
-		w.WriteHeader(http.StatusOK)
 		return fmt.Errorf("could not set AMR: %v", amrErrs)
 	}
 
@@ -240,14 +232,12 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	err = tc.SetAALLevel(aal)
 	if err != nil {
 		log.Error("Could not set AAL", "error", err)
-		w.WriteHeader(http.StatusOK)
 		return err
 	}
 
 	tempestToken, err := tc.SignedString(cfg.JWTPrivateKey)
 	if err != nil {
 		log.Error("Could not sign JWT", "error", err)
-		w.WriteHeader(http.StatusOK)
 		return err
 	}
 
@@ -255,7 +245,6 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	err = setCookieTempestToken(&cfg, w, tempestToken, expiresAt)
 	if err != nil {
 		log.Error("Could not set cookie", "error", err)
-		w.WriteHeader(http.StatusOK)
 		return err
 	}
 
@@ -280,7 +269,6 @@ func sessionCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse and validate the JWT token
 	_, err = ParseTempestClaimsFromJWT(cfg.JWTPublicKey, token)
 	if err != nil {
 		log.Info("Failed to parse tempest token", "error", err)
@@ -288,6 +276,5 @@ func sessionCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Token is valid
 	w.WriteHeader(http.StatusOK)
 }

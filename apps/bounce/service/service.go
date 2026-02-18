@@ -115,7 +115,6 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 		Config:   gCfg,
 	}
 
-	// Define CORS options once
 	corsOptions := cors.Options{
 		AllowedOrigins:   []string{s.cfg.CORSAllowedOrigins},
 		AllowedMethods:   []string{"POST", "OPTIONS"},
@@ -129,6 +128,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 
 		r.Route("/signup", func(r chi.Router) {
 			r.Get("/email/verify", verifyEmailSignup)
+			r.With(cors.Handler(corsOptions)).Post("/email/verify", verifyEmailSignupPost)
 			r.Post("/email", newEmailSignup)
 
 			// This is a public route that doesn't go through
@@ -148,6 +148,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 		r.Route("/magiclink", func(r chi.Router) {
 			r.Post("/", sendMagicLink)
 			r.Get("/verify", verifyMagicLink)
+			r.With(cors.Handler(corsOptions)).Post("/verify", verifyMagicLinkPost)
 		})
 		r.Get("/logout", logout)
 	})
@@ -155,11 +156,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	return r
 }
 
-/*
-Init is a method on the service struct that initializes the service by setting up the database connection pool.
-We specifically separate this out so main can call initialization and we keep New as a constructor
-free of side effects that result in a dependency such as a network call.
-*/
+// Init opens the database pool. Separated from New to keep the constructor side-effect-free.
 func (s *service) Init() error {
 	poolCfg, err := pgxpool.ParseConfig(s.cfg.PostgresConnection)
 	if err != nil {
@@ -212,7 +209,6 @@ func (s *service) Serve() (*server.Config, <-chan error) {
 	// Give Listen() a moment to set up and populate ShutdownFn
 	time.Sleep(50 * time.Millisecond)
 
-	// Store shutdown function for cleanup
 	s.shutdownFn = srv.ShutdownFn
 
 	return srv, errChan
