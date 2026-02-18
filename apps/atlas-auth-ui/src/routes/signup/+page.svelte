@@ -22,7 +22,7 @@
 <main>
   <p class="existing-users">
     Already have an account?
-    <a href="/" onclick={() => trackEvent(GA4.SIGNUP_LOGIN_LINK_CLICK)}>Login</a>
+    <a href="/" onclick={() => trackEvent(GA4.SIGNUP_LOGIN_LINK_CLICK)}>Log in</a>
   </p>
 
   <section>
@@ -100,10 +100,10 @@
           spellcheck="false"
         />
         <Button type="submit" disabled={submitted}>
-          {submitted ? "Completing signup..." : "Sign up"}
+          {submitted ? "Signing up..." : "Sign up"}
         </Button>
 
-        <h2>Additional Options</h2>
+        <h2>Additional options</h2>
 
         <Button disabled={submitted || !agree_to_terms} onclick={handleGoogleAuth}>
           {#snippet prepend()}

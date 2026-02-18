@@ -38,10 +38,8 @@
 
         // in case of an error return the data and errors
         if (!input.success) {
-          trackEvent(GA4.SETUP_PROFILE_ERROR, {
-            error_message: "Please enter all required fields",
-          });
-          toast("Please enter all required fields", true);
+          trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Please enter your name" });
+          toast("Please enter your name", true);
           submitted = false;
         }
 
@@ -62,9 +60,9 @@
 
               if (response.status === 409) {
                 trackEvent(GA4.SETUP_PROFILE_ERROR, {
-                  error_message: "Organization name already exists",
+                  error_message: "This name is already taken",
                 });
-                toast("Organization name already exists", true);
+                toast("This name is already taken", true);
               } else {
                 trackEvent(GA4.SETUP_PROFILE_ERROR, { error_message: "Failed to complete setup" });
                 toast("Failed to complete setup", true);
@@ -98,7 +96,7 @@
 
       <div class="form-footer">
         <Button type="submit" disabled={submitted}>
-          {submitted ? "Completing..." : "Complete Setup"}
+          {submitted ? "Completing..." : "Complete setup"}
         </Button>
       </div>
     </form>

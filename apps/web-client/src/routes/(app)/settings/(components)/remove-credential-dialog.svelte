@@ -34,7 +34,7 @@
       <Dialog.Close />
 
       {#snippet header()}
-        <Dialog.Title>Delete Credential</Dialog.Title>
+        <Dialog.Title>Delete credential</Dialog.Title>
         <Dialog.Description>
           <span>{provider} • {displayName}</span>
           <p>Existing workspaces may be affected by this change.</p>

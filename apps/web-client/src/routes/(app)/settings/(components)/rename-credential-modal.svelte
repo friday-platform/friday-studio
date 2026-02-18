@@ -76,7 +76,7 @@
       <Dialog.Close />
 
       {#snippet header()}
-        <Dialog.Title>Rename Credential</Dialog.Title>
+        <Dialog.Title>Rename credential</Dialog.Title>
         <Dialog.Description>
           <p>Change the display name for this credential</p>
         </Dialog.Description>

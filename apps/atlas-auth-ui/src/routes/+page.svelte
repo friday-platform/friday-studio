@@ -35,7 +35,7 @@
         magiclinkSent = true;
       } else {
         trackEvent(GA4.LOGIN_MAGIC_LINK_ERROR);
-        alert("Failed to send magic link. Please try again.");
+        alert("Unable to send sign-in link. Please try again.");
       }
     } catch (error) {
       trackEvent(GA4.LOGIN_MAGIC_LINK_ERROR);
@@ -77,7 +77,7 @@
           <Logo />
         </div>
 
-        <h1>Login to Friday</h1>
+        <h1>Log in to Friday</h1>
 
         <div class="login-form">
           <form onsubmit={handleMagicLink}>
@@ -100,7 +100,7 @@
 
             <Button variant="default" type="button" onclick={handleGoogleAuth}>
               {#snippet prepend()}<GoogleLogo />{/snippet}
-              Sign in with Google
+              Log in with Google
             </Button>
           </form>
         </div>
@@ -109,7 +109,7 @@
 
     <p class="signup">
       <a href="/signup" onclick={() => trackEvent(GA4.LOGIN_SIGNUP_LINK_CLICK)}>
-        Create an Account
+        Create an account
       </a>
     </p>
   </section>

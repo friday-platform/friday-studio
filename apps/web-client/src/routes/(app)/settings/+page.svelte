@@ -289,7 +289,7 @@
           <Table.Root table={envVarsTable} rowSize="small" />
         </div>
 
-        <Button size="small" onclick={addEntry}>Add Variable</Button>
+        <Button size="small" onclick={addEntry}>Add variable</Button>
       </div>
 
       {#if __TAURI_BUILD__}

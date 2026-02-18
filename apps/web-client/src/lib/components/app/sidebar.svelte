@@ -77,7 +77,7 @@
               data-sveltekit-reload
               onclick={() => trackEvent(GA4.LOGOUT_CLICK)}
             >
-              Logout
+              Log out
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
@@ -137,7 +137,7 @@
               <li>
                 <button aria-label="New Conversation">
                   <IconSmall.Workspace />
-                  Add Space
+                  Add space
                 </button>
               </li>
             {/snippet}
@@ -171,7 +171,7 @@
                 aria-label="New Conversation"
               >
                 <IconSmall.Chat />
-                New Conversation
+                New conversation
               </button>
             </li>
 
@@ -244,7 +244,7 @@
                               {/snippet}
 
                               {#snippet header()}
-                                <Dialog.Title>Delete Conversation</Dialog.Title>
+                                <Dialog.Title>Delete conversation</Dialog.Title>
                                 <Dialog.Description>
                                   <p>
                                     Shared conversations may be available for up to 90 days after
@@ -273,7 +273,7 @@
                                     }
                                   }}
                                 >
-                                  Confirm
+                                  Delete
                                 </Dialog.Button>
 
                                 <Dialog.Cancel>Cancel</Dialog.Cancel>

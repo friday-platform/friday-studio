@@ -23,7 +23,7 @@
         <Logo />
 
         <h1>Resend Confirmation Email</h1>
-        <p>Enter the email you used to sign up with to get a new one.</p>
+        <p>Enter your email and we'll send a new confirmation link.</p>
       </div>
 
       {#if !success}

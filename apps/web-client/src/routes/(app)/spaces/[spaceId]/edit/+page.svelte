@@ -124,7 +124,7 @@
                 <Icons.Trash />
               </span>
             {/snippet}
-            Delete Space
+            Delete space
           </Button>
         </Dialog.Trigger>
 
@@ -138,14 +138,14 @@
           {/snippet}
 
           {#snippet header()}
-            <Dialog.Title>Remove Space</Dialog.Title>
+            <Dialog.Title>Delete space</Dialog.Title>
             <Dialog.Description>
-              <p>Are you sure you want to remove this space?</p>
+              <p>Are you sure you want to delete this space?</p>
             </Dialog.Description>
           {/snippet}
 
           {#snippet footer()}
-            <Dialog.Button onclick={handleDeleteWorkspace}>Confirm</Dialog.Button>
+            <Dialog.Button onclick={handleDeleteWorkspace}>Delete</Dialog.Button>
 
             <Dialog.Cancel>Cancel</Dialog.Cancel>
           {/snippet}

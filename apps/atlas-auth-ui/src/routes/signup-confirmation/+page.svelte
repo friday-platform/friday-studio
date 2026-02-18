@@ -19,11 +19,11 @@
       <div class="title">
         <Logo />
 
-        <h1>Almost done!</h1>
+        <h1>Check your email</h1>
         {#if email}
           <p>We've sent a confirmation email to {email}.</p>
         {:else}
-          <p>We've sent instructions to your email to complete setup.</p>
+          <p>We've sent a confirmation link to your email address.</p>
         {/if}
       </div>
 
