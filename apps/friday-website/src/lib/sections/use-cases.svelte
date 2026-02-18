@@ -1,50 +1,55 @@
 <script lang="ts">
-import { gsap } from "gsap";
-import { SplitText } from "gsap/SplitText";
 import { onMount } from "svelte";
 import pinwheel from "$lib/assets/pinwheel.svg?no-inline";
 import { getServiceIcon } from "$lib/service-icons.svelte";
 
-gsap.registerPlugin(SplitText);
-
 let promptElements: (HTMLParagraphElement | undefined)[] = $state([]);
-let promptContainer: HTMLParagraphElement | undefined = $state();
 
 onMount(() => {
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   if (prefersReducedMotion) {
-    // Show first prompt statically, skip all GSAP animations
-    promptElements.forEach((el, i) => {
-      if (!el) return;
-      el.style.visibility = i === 0 ? "visible" : "hidden";
-      el.style.opacity = i === 0 ? "1" : "0";
-    });
-    if (promptContainer) promptContainer.style.opacity = "1";
     return;
   }
 
-  const splits: SplitText[] = [];
   let currentIndex = 0;
   let destroyed = false;
+  let gsapModule: typeof import("gsap") | undefined;
+  let splitTextModule: typeof import("gsap/SplitText") | undefined;
+  const splits: Record<number, InstanceType<typeof import("gsap/SplitText").SplitText>> = {};
 
-  // Create splits for all prompts
-  promptElements.forEach((el) => {
-    if (!el) return;
+  function ensureSplit(index: number) {
+    if (splits[index]) return splits[index];
+    const el = promptElements[index];
+    if (!el || !splitTextModule) return undefined;
+    const split = splitTextModule.SplitText.create(el, { type: "lines", mask: "lines" });
+    splits[index] = split;
+    return split;
+  }
 
-    const split = SplitText.create(el, { type: "lines", mask: "lines" });
-    splits.push(split);
-    // Hide all initially except first
-    gsap.set(el, { autoAlpha: 0 });
-  });
+  async function init() {
+    [gsapModule, splitTextModule] = await Promise.all([import("gsap"), import("gsap/SplitText")]);
+    if (destroyed) return;
+
+    const { gsap } = gsapModule;
+    gsap.registerPlugin(splitTextModule.SplitText);
+
+    // Hide all prompts except the first — first prompt stays as plain
+    // text (no SplitText) so it paints immediately for LCP. SplitText
+    // is applied lazily when the prompt needs to animate.
+    promptElements.forEach((el, i) => {
+      if (!el || i === 0) return;
+      gsap.set(el, { autoAlpha: 0 });
+    });
+  }
 
   function animateIn(index: number) {
-    if (destroyed) return;
+    if (destroyed || !gsapModule) return;
+    const { gsap } = gsapModule;
     const el = promptElements[index];
-    const split = splits[index];
+    const split = ensureSplit(index);
     if (!el || !split) return;
 
-    // Reset lines position
     gsap.set(split.lines, { y: "100%" });
     gsap.set(el, { autoAlpha: 1 });
 
@@ -52,9 +57,10 @@ onMount(() => {
   }
 
   function animateOut(index: number) {
-    if (destroyed) return;
+    if (destroyed || !gsapModule) return;
+    const { gsap } = gsapModule;
     const el = promptElements[index];
-    const split = splits[index];
+    const split = ensureSplit(index);
     if (!el || !split) return;
 
     return gsap.to(split.lines, {
@@ -71,50 +77,51 @@ onMount(() => {
   async function cycle() {
     if (destroyed) return;
 
-    // Animate out current
     await animateOut(currentIndex);
     if (destroyed) return;
 
-    // Move to next
     currentIndex = (currentIndex + 1) % promptElements.length;
 
-    // Animate in next
     await animateIn(currentIndex);
   }
 
-  if (promptContainer) {
-    promptContainer.style.opacity = "1";
-  }
-
-  // Initial animation
-  animateIn(0);
-
-  // Cycle using requestAnimationFrame
-  let lastTime = performance.now();
   let rafId: number;
   let isAnimating = false;
 
-  function tick(now: number) {
-    if (destroyed) return;
-    if (!isAnimating && now - lastTime >= 5000) {
-      isAnimating = true;
-      cycle().then(() => {
-        isAnimating = false;
-        lastTime = performance.now();
-      });
-    }
-    rafId = requestAnimationFrame(tick);
-  }
-
-  rafId = requestAnimationFrame(tick);
+  init()
+    .then(() => {
+      if (destroyed) return;
+      // Pre-split first prompt now that GSAP is loaded — the DOM restructure
+      // is invisible when content hasn't changed, but ensures the first
+      // animateOut transition is smooth (no flash from late SplitText init)
+      ensureSplit(0);
+      let lastTime = performance.now();
+      function tick(now: number) {
+        if (destroyed) return;
+        if (!isAnimating && now - lastTime >= 5000) {
+          isAnimating = true;
+          cycle().then(() => {
+            isAnimating = false;
+            lastTime = performance.now();
+          });
+        }
+        rafId = requestAnimationFrame(tick);
+      }
+      rafId = requestAnimationFrame(tick);
+    })
+    .catch(() => {});
 
   return () => {
     destroyed = true;
     cancelAnimationFrame(rafId);
-    gsap.killTweensOf(splits.flatMap((s) => s.lines));
-    splits.forEach((split) => {
+    const allSplits = Object.values(splits);
+    if (gsapModule) {
+      const { gsap } = gsapModule;
+      gsap.killTweensOf(allSplits.flatMap((s) => s.lines));
+    }
+    for (const split of allSplits) {
       split.revert();
-    });
+    }
   };
 });
 
@@ -247,7 +254,7 @@ let prompts = [
 <section class="hero">
 	<h1>AI that works for you, around the clock</h1>
 
-	<div class="prompts" bind:this={promptContainer}>
+	<div class="prompts">
 		{#each prompts as item, i (item)}
 			<p bind:this={promptElements[i]}>“{item}”</p>
 		{/each}
@@ -334,7 +341,6 @@ let prompts = [
 			display: grid;
 			grid-template-columns: 1fr;
 			grid-template-rows: 1fr;
-			opacity: 0;
 
 			p {
 				font-size: var(--font-size-7);
@@ -346,6 +352,11 @@ let prompts = [
 				max-inline-size: var(--size-216);
 				text-wrap-style: balance;
 				text-align: center;
+			}
+
+			/* First prompt visible for LCP, rest hidden until GSAP loads */
+			p:not(:first-child) {
+				visibility: hidden;
 			}
 		}
 
@@ -372,6 +383,7 @@ let prompts = [
 	}
 
 	.use-cases {
+		contain: layout paint;
 		display: flex;
 		gap: var(--size-6);
 		max-inline-size: 100%;
