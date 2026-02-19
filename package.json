@@ -40,7 +40,7 @@
   "devDependencies": {
     "@total-typescript/ts-reset": "^0.6.1",
     "@vitest/coverage-v8": "4.0.18",
-    "knip": "5.83.1",
+    "knip": "5.84.1",
     "vitest": "^4.0.18"
   },
   "knip": {}
