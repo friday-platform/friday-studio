@@ -13,7 +13,7 @@
     "@atlas/utils": "workspace:*",
     "@faker-js/faker": "^10.3.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "ai": "^5.0.135",
+    "ai": "^5.0.136",
     "dotenv": "17.3.1",
     "gunshi": "^0.28.0",
     "papaparse": "^5.5.3",
