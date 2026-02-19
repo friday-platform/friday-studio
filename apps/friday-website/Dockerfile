@@ -3,7 +3,7 @@
 FROM node:25.6.1-alpine3.23 AS builder
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
 COPY . .
 ARG PUBLIC_ANALYTICS_ENABLED=true
 ENV PUBLIC_ANALYTICS_ENABLED=$PUBLIC_ANALYTICS_ENABLED
@@ -12,7 +12,7 @@ RUN pnpm build
 FROM node:25.6.1-alpine3.23 AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile --prod
+RUN npm install -g pnpm && pnpm install --frozen-lockfile --prod
 
 FROM node:25.6.1-alpine3.23
 RUN addgroup -g 266 -S friday && adduser -u 266 -S -G friday -h /home/friday friday
