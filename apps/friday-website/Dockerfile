@@ -1,12 +1,14 @@
 # Friday marketing website
-# Build: docker build -t friday-website apps/friday-website
+# Build: docker build --build-arg GIT_COMMIT_SHA=$(git rev-parse HEAD) -t friday-website apps/friday-website
 FROM node:25.6.1-alpine3.23 AS builder
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm && pnpm install --frozen-lockfile
 COPY . .
 ARG PUBLIC_ANALYTICS_ENABLED=true
+ARG GIT_COMMIT_SHA
 ENV PUBLIC_ANALYTICS_ENABLED=$PUBLIC_ANALYTICS_ENABLED
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 RUN pnpm build
 
 FROM node:25.6.1-alpine3.23 AS deps

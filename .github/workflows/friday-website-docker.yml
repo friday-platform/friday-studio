@@ -33,6 +33,7 @@ jobs:
         run: |-
           docker build \
             -f apps/friday-website/Dockerfile \
+            --build-arg GIT_COMMIT_SHA="$GITHUB_SHA" \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:latest" \
           apps/friday-website
