@@ -15,6 +15,7 @@ export function makeDirectives({ dev }) {
       "https://cdn-cookieyes.com",
       "https://www.googletagmanager.com",
       "https://*.clarity.ms",
+      "https://static.cloudflareinsights.com",
     ],
     "style-src": ["self", "report-sample", "unsafe-inline", "https://cdn-cookieyes.com"],
     "img-src": [
@@ -38,6 +39,7 @@ export function makeDirectives({ dev }) {
       "https://*.googletagmanager.com",
       "https://*.clarity.ms",
       "https://c.bing.com",
+      "https://cloudflareinsights.com",
     ],
     "worker-src": dev ? ["self", "blob:"] : ["self"],
     "object-src": ["none"],
