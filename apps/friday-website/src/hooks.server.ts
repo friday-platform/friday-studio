@@ -50,33 +50,6 @@ const PERMISSIONS_POLICY_REPORT_ONLY = DENIED_FEATURES.map((d) => `${d};report-t
 );
 const CSP_HEADER = directivesToHeaderString(makeDirectives({ dev }));
 
-const analyticsEnabled = process.env.ANALYTICS_ENABLED === "true";
-
-const ANALYTICS_TEMPLATE = `<!-- Google Tag Manager -->
-<script nonce="__CSP_NONCE__">
-(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-WKFQFCTM');
-</script>`;
-
-function injectAnalytics(html: string): string {
-  // Extract the nonce SvelteKit already inserted into its own script tags
-  const nonceMatch = html.match(/nonce="([^"]+)"/);
-  if (!nonceMatch) {
-    log("error", "CSP nonce not found in rendered HTML — analytics injection skipped", {});
-    return html;
-  }
-
-  const nonce = nonceMatch[1];
-  const analyticsHtml = ANALYTICS_TEMPLATE.replaceAll("__CSP_NONCE__", nonce);
-  const gtmNoscript = `\n<!-- Google Tag Manager (noscript) -->\n<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WKFQFCTM" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>`;
-  return html
-    .replace("</head>", `${analyticsHtml}\n</head>`)
-    .replace(/<body([^>]*)>/, `<body$1>${gtmNoscript}`);
-}
-
 function setSecurityHeaders(headers: Headers): void {
   // NOTE: Static assets served by sirv bypass this hook. Configure the reverse
   // proxy (Nginx/Caddy/Cloud Run) to add these headers to all responses.
@@ -230,9 +203,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   const start = performance.now();
-  const response = await resolve(event, {
-    transformPageChunk: analyticsEnabled ? ({ html }) => injectAnalytics(html) : undefined,
-  });
+  const response = await resolve(event);
   const durationMs = performance.now() - start;
   const durationSec = durationMs / 1000;
 
@@ -275,8 +246,8 @@ export const handle: Handle = async ({ event, resolve }) => {
     if (!contentType.includes("charset")) {
       response.headers.set("content-type", "text/html; charset=utf-8");
     }
-    // Strip ETag — CSP nonce changes every response so the ETag is never
-    // reusable, and conditional requests always return 200 anyway.
+    // Strip ETag — dynamic HTML responses (errors, fallbacks) are not
+    // cacheable and conditional requests always return 200 anyway.
     response.headers.delete("etag");
   }
 

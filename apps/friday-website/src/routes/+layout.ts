@@ -1,5 +1,4 @@
-// Prerendering disabled: prerendered pages are served directly by sirv,
-// bypassing hooks.server.ts — so no security headers (CSP, X-Frame-Options,
-// X-Content-Type-Options, etc.) are set. SSR ensures hooks run for every
-// HTML response.
-export const prerender = false;
+// All routes are static marketing pages — prerender everything.
+// Security headers for prerendered HTML are set by the reverse proxy / CDN.
+// hooks.server.ts still handles dynamic responses (errors, redirects, /metrics).
+export const prerender = true;

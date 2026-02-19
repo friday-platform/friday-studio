@@ -3,6 +3,10 @@
 declare global {
   function gtag(...args: unknown[]): void;
 
+  interface Window {
+    dataLayer: Record<string, unknown>[];
+  }
+
   namespace App {
     // interface Error {}
     interface Locals {

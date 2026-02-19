@@ -1,8 +1,10 @@
 <script lang="ts">
 import "../app.css";
+import { onMount } from "svelte";
 import { afterNavigate } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
+import { env } from "$env/dynamic/public";
 import favicon from "$lib/assets/favicon.svg?no-inline";
 import logo from "$lib/assets/logo.svg?no-inline";
 import logoGrey from "$lib/assets/logo-grey.svg?no-inline";
@@ -16,6 +18,19 @@ import X from "$lib/icons/x.svelte";
 let { children } = $props();
 
 const currentYear = new Date().getFullYear();
+
+onMount(() => {
+  if (env.PUBLIC_ANALYTICS_ENABLED !== "true") return;
+
+  // Bootstrap GTM client-side — avoids CSP inline script issues with prerendered pages.
+  // The GTM external URL is already allowed in script-src CSP directives.
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://www.googletagmanager.com/gtm.js?id=GTM-WKFQFCTM";
+  document.head.appendChild(script);
+});
 
 afterNavigate(() => {
   if (typeof gtag === "function") {
@@ -36,6 +51,10 @@ afterNavigate(() => {
 	<meta name="twitter:card" content="summary" />
 	<meta property="og:locale" content="en_US" />
 </svelte:head>
+
+{#if env.PUBLIC_ANALYTICS_ENABLED === "true"}
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WKFQFCTM" title="GTM" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+{/if}
 
 <a href="#main-content" class="skip-to-content">Skip to content</a>
 

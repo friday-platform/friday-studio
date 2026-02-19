@@ -471,6 +471,58 @@ updates:
       - "friday-website"
     rebase-strategy: "auto"
 
+  # Keep Docker dependencies up to date (for friday-website)
+  - package-ecosystem: "docker"
+    directory: "/apps/friday-website"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "friday-website"
+    rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for cypher service)
+  - package-ecosystem: "docker"
+    directory: "/apps/cypher"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for gateway service)
+  - package-ecosystem: "docker"
+    directory: "/apps/gateway"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
   # Keep Docker dependencies up to date (for static service)
   - package-ecosystem: "docker"
     directory: "/apps/static"
