@@ -172,7 +172,7 @@ func setCookieTempestToken(cfg *Config, w http.ResponseWriter, token string, exp
 		Value:    token,
 		Expires:  expiresAt,
 		Domain:   cfg.CookieDomain,
-		MaxAge:   int((time.Hour * 24 * 7).Seconds()),
+		MaxAge:   int((time.Hour * 24).Seconds()),
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secureFlag,
@@ -183,13 +183,18 @@ func setCookieTempestToken(cfg *Config, w http.ResponseWriter, token string, exp
 }
 
 func DeleteTempestTokenCookie(cfg *Config, w http.ResponseWriter) {
+	secureFlag := !strings.HasSuffix(cfg.CookieDomain, "localhost")
+
 	http.SetCookie(w, &http.Cookie{
-		Name:    cfg.CookieName,
-		Value:   "",
-		Domain:  cfg.CookieDomain,
-		Path:    "/",
-		Expires: time.Now().Add(-time.Hour),
-		MaxAge:  -1,
+		Name:     cfg.CookieName,
+		Value:    "",
+		Domain:   cfg.CookieDomain,
+		Path:     "/",
+		Expires:  time.Now().Add(-time.Hour),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secureFlag,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
