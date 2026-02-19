@@ -85,9 +85,7 @@ deno task evals list                 # List available eval files
 deno task evals report               # Show summary of latest results
 deno task evals report --failures    # Only failures
 deno task evals inspect -e name      # Show full transcript for an eval
-deno task evals baseline save        # Save current results as baseline
-deno task evals baseline show        # Print the current baseline
-deno task evals diff --baseline      # Compare current vs baseline
+deno task evals compare --before <tag> --after <tag>  # Compare two runs
 ```
 
 ## Conventions
@@ -107,6 +105,9 @@ deno task evals diff --baseline      # Compare current vs baseline
   type workaround (TS lacks `∃T. EvalConfig<T>`)
 - gunshi positional args in subcommands get consumed by parent arg parser — use
   named flags (`-e`, `-F`) for subcommand args
+- `EvalResult` has no `pass` field — pass/fail is inferred from
+  `metadata.error` presence. The `Score` type's optional `reason` field maps to
+  `scoreReasons` in compare output.
 
 ## Adding a New Eval
 

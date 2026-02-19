@@ -173,6 +173,31 @@ describe("readOutputDir", () => {
     expect(results.has("good-eval")).toBe(true);
   });
 
+  it("filters by tag", async () => {
+    const tagged = makeResult({
+      evalName: "test",
+      timestamp: "2026-02-17T10:00:00.000Z",
+      tag: "experiment-1",
+    });
+    const untagged = makeResult({ evalName: "test", timestamp: "2026-02-17T11:00:00.000Z" });
+    const otherTag = makeResult({
+      evalName: "test",
+      timestamp: "2026-02-17T12:00:00.000Z",
+      tag: "experiment-2",
+    });
+
+    await writeEvalResult(tagged, TEST_OUTPUT_DIR);
+    await writeEvalResult(untagged, TEST_OUTPUT_DIR);
+    await writeEvalResult(otherTag, TEST_OUTPUT_DIR);
+
+    const results = await readOutputDir({ outputDir: TEST_OUTPUT_DIR, tag: "experiment-1" });
+
+    const testResults = results.get("test");
+    expect.assert(testResults !== undefined);
+    expect(testResults).toHaveLength(1);
+    expect(testResults[0]?.tag).toBe("experiment-1");
+  });
+
   it("skips files that fail schema validation without crashing", async () => {
     const valid = makeResult({ evalName: "good-eval", timestamp: "2026-02-17T10:00:00.000Z" });
     await writeEvalResult(valid, TEST_OUTPUT_DIR);

@@ -76,7 +76,7 @@ export async function runEval<T>(
   name: string,
   adapter: AgentContextAdapter,
   config: EvalConfig<T>,
-  options?: { runId?: string },
+  options?: { runId?: string; tag?: string },
 ): Promise<RunEvalOutcome> {
   const traces: TraceEntry[] = [];
   const { context } = adapter.createContext();
@@ -123,6 +123,7 @@ export async function runEval<T>(
     },
     timestamp: new Date().toISOString(),
     ...(options?.runId ? { runId: options.runId } : {}),
+    ...(options?.tag ? { tag: options.tag } : {}),
   };
 
   await writeEvalResult(evalResult, config.outputDir);

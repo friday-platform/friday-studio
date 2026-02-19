@@ -16,6 +16,8 @@ export interface RunOptions {
   failFast?: boolean;
   /** Case-insensitive substring match against eval name — non-matching evals are skipped. */
   filter?: string;
+  /** Tag to attach to every result in this run (e.g., "baseline", "experiment-1"). */
+  tag?: string;
 }
 
 /**
@@ -42,7 +44,7 @@ export async function executeEvals(files: string[], options?: RunOptions): Promi
       registrations = await importEvalFile(file);
     } catch (e) {
       // File-level import failure — record a synthetic error result
-      results.push(makeImportErrorResult(file, e, runId));
+      results.push(makeImportErrorResult(file, e, runId, options?.tag));
       if (options?.failFast) break;
       continue;
     }
@@ -51,7 +53,10 @@ export async function executeEvals(files: string[], options?: RunOptions): Promi
     for (const reg of registrations) {
       if (filterLower && !reg.name.toLowerCase().includes(filterLower)) continue;
 
-      const { result, error } = await runEval(reg.name, reg.adapter, reg.config, { runId });
+      const { result, error } = await runEval(reg.name, reg.adapter, reg.config, {
+        runId,
+        tag: options?.tag,
+      });
       results.push(result);
 
       if (error && options?.failFast) {
@@ -83,7 +88,7 @@ async function importEvalFile(file: string): Promise<EvalRegistration[]> {
 }
 
 /** Creates a synthetic EvalResult for file-level import failures. */
-function makeImportErrorResult(file: string, e: unknown, runId: string): EvalResult {
+function makeImportErrorResult(file: string, e: unknown, runId: string, tag?: string): EvalResult {
   const message = e instanceof Error ? e.message : String(e);
   return {
     evalName: basename(file),
@@ -92,5 +97,6 @@ function makeImportErrorResult(file: string, e: unknown, runId: string): EvalRes
     metadata: { error: { phase: "import" as const, message }, file },
     timestamp: new Date().toISOString(),
     runId,
+    ...(tag ? { tag } : {}),
   };
 }

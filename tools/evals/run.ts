@@ -10,19 +10,15 @@
  *   list           List available eval files
  *   report         Show summary of latest eval results
  *   inspect        Show full eval result for a specific eval
- *   baseline save  Save current results as baseline for regression detection
- *   baseline show  Print the current baseline
- *   diff           Compare current results against baseline
+ *   compare        Compare two tagged (or runId-identified) eval runs
  */
 
-import { execSync } from "node:child_process";
-import { glob, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { glob } from "node:fs/promises";
+import { resolve } from "node:path";
 import process from "node:process";
 import { cli, define } from "gunshi";
 
-import { BaselineSchema, extractBaseline } from "./lib/baseline.ts";
-import { computeDiff } from "./lib/diff.ts";
+import { compareRuns } from "./lib/compare.ts";
 import { readOutputDir } from "./lib/output.ts";
 import { buildReport } from "./lib/report.ts";
 import { executeEvals } from "./lib/runner.ts";
@@ -56,6 +52,11 @@ const runCommand = define({
       short: "F",
       description: "Run only evals whose name contains this string (case-insensitive)",
     },
+    tag: {
+      type: "string",
+      short: "T",
+      description: "Tag to attach to all results in this run (e.g., baseline, experiment-1)",
+    },
   },
   examples: `
 # Run all evals
@@ -69,6 +70,9 @@ evals run --fail-fast
 
 # Run only evals matching "refusal"
 evals run --filter refusal
+
+# Tag a run for later comparison
+evals run --tag baseline
 `.trim(),
   run: async (ctx) => {
     const { target } = ctx.values;
@@ -86,7 +90,8 @@ evals run --filter refusal
       }
     }
 
-    const results = await executeEvals(files, { failFast, filter });
+    const tag = ctx.values.tag;
+    const results = await executeEvals(files, { failFast, filter, tag });
 
     const passed = results.filter((r) => !r.metadata.error).length;
     const failed = results.length - passed;
@@ -193,103 +198,63 @@ evals inspect -e small-llm/Groq/progress/tool-read --run abc123
   },
 });
 
-/** Resolve the current git commit hash. */
-function getCommitHash(): string {
-  try {
-    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
-  } catch {
-    return "unknown";
-  }
+/**
+ * Resolves eval results by trying tag match first, then falling back to runId.
+ * Returns a flat array of EvalResult objects.
+ */
+async function resolveResults(identifier: string) {
+  const byTag = await readOutputDir({ tag: identifier });
+  if (byTag.size > 0) return [...byTag.values()].flat();
+
+  const byRunId = await readOutputDir({ runId: identifier });
+  if (byRunId.size > 0) return [...byRunId.values()].flat();
+
+  return [];
 }
 
-const BASELINE_PATH = join(import.meta.dirname ?? ".", "baseline.json");
-
-const baselineSaveCommand = define({
-  name: "save",
-  description: "Save current eval results as the baseline",
-  run: async () => {
-    const grouped = await readOutputDir({ latest: true });
-
-    if (grouped.size === 0) {
-      console.error("No eval results found in __output__/");
-      process.exit(1);
-    }
-
-    const commitHash = getCommitHash();
-    const baseline = extractBaseline(grouped, commitHash);
-
-    await writeFile(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`, "utf-8");
-
-    json({
-      saved: true,
-      path: "tools/evals/baseline.json",
-      count: Object.keys(baseline.evals).length,
-      commit: commitHash,
-    });
-  },
-});
-
-const baselineShowCommand = define({
-  name: "show",
-  description: "Print the current baseline",
-  run: async () => {
-    let raw: string;
-    try {
-      raw = await readFile(BASELINE_PATH, "utf-8");
-    } catch {
-      console.error("No baseline found. Run 'evals baseline save' first.");
-      process.exit(1);
-    }
-
-    const baseline = BaselineSchema.parse(JSON.parse(raw));
-    json(baseline);
-  },
-});
-
-const baselineCommand = define({
-  name: "baseline",
-  description: "Manage eval baselines for regression detection",
-  subCommands: { save: baselineSaveCommand, show: baselineShowCommand },
-  run: () => {
-    console.error('Use "evals baseline save" or "evals baseline show". Run --help for details.');
-  },
-});
-
-const diffCommand = define({
-  name: "diff",
-  description: "Compare current eval results against baseline",
+const compareCommand = define({
+  name: "compare",
+  description: "Compare two tagged eval runs",
   args: {
-    baseline: {
+    before: { type: "string", description: "Tag or runId for the baseline run", required: true },
+    after: { type: "string", description: "Tag or runId for the experiment run", required: true },
+    verbose: {
       type: "boolean",
-      short: "b",
-      description: "Compare against committed baseline.json",
-      required: true,
+      short: "v",
+      description: "Include scoreReasons and promptDiff in output",
     },
   },
   examples: `
-# Compare current results against baseline
-evals diff --baseline
+# Compare two tagged runs
+evals compare --before baseline --after collapse-v1
+
+# Verbose output with score reasons
+evals compare --before baseline --after collapse-v1 --verbose
 `.trim(),
-  run: async () => {
-    let raw: string;
-    try {
-      raw = await readFile(BASELINE_PATH, "utf-8");
-    } catch {
-      console.error("No baseline found. Run 'evals baseline save' first.");
+  run: async (ctx) => {
+    const { before, after, verbose } = ctx.values;
+    if (!before || !after) {
+      console.error("Error: --before and --after are required");
       process.exit(1);
     }
 
-    const baseline = BaselineSchema.parse(JSON.parse(raw));
-
-    const grouped = await readOutputDir({ latest: true });
-    if (grouped.size === 0) {
-      console.error("No eval results found in __output__/");
+    const beforeResults = await resolveResults(before);
+    if (beforeResults.length === 0) {
+      console.error(`No results found for "${before}" (tried tag and runId)`);
       process.exit(1);
     }
 
-    const commitHash = getCommitHash();
-    const current = extractBaseline(grouped, commitHash);
-    const result = computeDiff(baseline, current);
+    const afterResults = await resolveResults(after);
+    if (afterResults.length === 0) {
+      console.error(`No results found for "${after}" (tried tag and runId)`);
+      process.exit(1);
+    }
+
+    const result = compareRuns(beforeResults, afterResults, {
+      verbose,
+      beforeLabel: before,
+      afterLabel: after,
+    });
 
     json(result);
 
@@ -316,7 +281,6 @@ await cli(process.argv.slice(2), mainCommand, {
     list: listCommand,
     report: reportCommand,
     inspect: inspectCommand,
-    baseline: baselineCommand,
-    diff: diffCommand,
+    compare: compareCommand,
   },
 });

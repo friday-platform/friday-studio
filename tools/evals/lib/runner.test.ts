@@ -336,6 +336,62 @@ export const evals = [
     expect(result.metadata).toHaveProperty("result");
   });
 
+  it("--tag stores tag on all results", async () => {
+    const filepath = writeEvalFile(
+      "tagged.eval.ts",
+      `
+import { AgentContextAdapter } from "${join(import.meta.dirname ?? ".", "context.ts")}";
+const adapter = new AgentContextAdapter();
+export const evals = [
+  {
+    name: "test-runner/tagged-a",
+    adapter,
+    config: { input: "a", run: () => "a", outputDir: "${TEST_OUTPUT_DIR}" },
+  },
+  {
+    name: "test-runner/tagged-b",
+    adapter,
+    config: { input: "b", run: () => "b", outputDir: "${TEST_OUTPUT_DIR}" },
+  },
+];
+`,
+    );
+
+    const results = await executeEvals([filepath], { tag: "baseline" });
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.tag === "baseline")).toBe(true);
+  });
+
+  it("--tag stores tag on import-error results", async () => {
+    const filepath = join(TEST_DIR, "missing-tagged.eval.ts");
+
+    const results = await executeEvals([filepath], { tag: "experiment-1" });
+    expect(results).toHaveLength(1);
+
+    const result = resultAt(results, 0);
+    expect(result.metadata.error).toMatchObject({ phase: "import" });
+    expect(result.tag).toBe("experiment-1");
+  });
+
+  it("omits tag when --tag not provided", async () => {
+    const filepath = writeEvalFile(
+      "no-tag.eval.ts",
+      `
+import { AgentContextAdapter } from "${join(import.meta.dirname ?? ".", "context.ts")}";
+const adapter = new AgentContextAdapter();
+export const evals = [{
+  name: "test-runner/no-tag",
+  adapter,
+  config: { input: "a", run: () => "a", outputDir: "${TEST_OUTPUT_DIR}" },
+}];
+`,
+    );
+
+    const results = await executeEvals([filepath]);
+    expect(results).toHaveLength(1);
+    expect(resultAt(results, 0).tag).toBeUndefined();
+  });
+
   it("--filter with no matches returns empty results", async () => {
     const filepath = writeEvalFile(
       "no-match.eval.ts",

@@ -40,6 +40,7 @@ export const EvalResultSchema = z.object({
   metadata: z.record(z.string(), z.unknown()),
   timestamp: z.string(),
   runId: z.string().optional(),
+  tag: z.string().optional(),
 });
 
 /** Structured result from a single eval run. */
@@ -72,6 +73,8 @@ export interface ReadOptions {
   runId?: string;
   /** Filter by evalName substring match. */
   evalName?: string;
+  /** Filter to results whose tag matches this value (exact match). */
+  tag?: string;
   /** Override the output directory path (defaults to __output__ relative to this file). */
   outputDir?: string;
 }
@@ -97,6 +100,7 @@ export async function readOutputDir(options?: ReadOptions): Promise<Map<string, 
 
     if (options?.runId && result.runId !== options.runId) continue;
     if (options?.evalName && !result.evalName.includes(options.evalName)) continue;
+    if (options?.tag && result.tag !== options.tag) continue;
 
     const group = grouped.get(result.evalName) ?? [];
     group.push(result);

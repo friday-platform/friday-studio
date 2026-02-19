@@ -171,6 +171,34 @@ describe("runEval", () => {
     expect(result.scores).toMatchObject([{ name: "s", value: 0.5 }]);
   });
 
+  it("stores tag on result when provided in options", async () => {
+    const adapter = new AgentContextAdapter();
+
+    const { result } = await runEval(
+      "test/tagged",
+      adapter,
+      { input: "hello", run: (input) => input, outputDir: TEST_OUTPUT_DIR },
+      { tag: "my-tag" },
+    );
+
+    expect(result.tag).toBe("my-tag");
+
+    const written = readOutput("test/tagged");
+    expect(written.tag).toBe("my-tag");
+  });
+
+  it("omits tag from result when not provided", async () => {
+    const adapter = new AgentContextAdapter();
+
+    const { result } = await runEval("test/no-tag", adapter, {
+      input: "hello",
+      run: (input) => input,
+      outputDir: TEST_OUTPUT_DIR,
+    });
+
+    expect(result.tag).toBeUndefined();
+  });
+
   it("context is passed to run callback", async () => {
     const adapter = new AgentContextAdapter({}, { API_KEY: "test-key" });
 

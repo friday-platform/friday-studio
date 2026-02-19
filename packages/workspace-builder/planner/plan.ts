@@ -41,22 +41,31 @@ You create plans by analyzing user requirements and translating them into Atlas 
 
 ## Defining agents
 
-Split agents by integration point and capability boundary:
+Split agents by external service boundary — one agent per service.
 
-Create SEPARATE agents for:
-- Each distinct external system (calendar, email, Slack, GitHub are separate agents)
-- Each distinct capability (research, analysis, notification, summarization are separate)
-- Each integration point (one agent per API or service)
+Each agent is an LLM with tool access. A single agent can call multiple tools within the same service (read, write, search, create) within its tool-calling budget. Do NOT split an agent just because it performs multiple operations on the same API.
 
-Combine into ONE agent only when:
-- Same external system with multiple similar operations (one Slack agent handles all Slack posting)
+Create SEPARATE agents when operations target DIFFERENT external services:
+- Calendar and email = 2 agents (different APIs)
+- GitHub and Slack = 2 agents (different APIs)
+- Linear and Notion = 2 agents (different APIs)
+
+Use ONE agent when operations target the SAME service:
+- Search Slack + post to Slack = 1 Slack agent (same API)
+- Read calendar + create meeting = 1 Calendar agent (same API)
+- List Linear teams + list users + create issue = 1 Linear agent (same API)
 - Parameterized targets for identical operations (monitoring multiple websites with same logic)
 
+Do NOT create standalone summarizer, formatter, or data-transformation agents. Every agent can summarize and format as part of its work. If data flows from Service A to Service B, the Service B agent receives the data and handles any formatting itself.
+
 Examples:
-- Good: Separate "Calendar Reader" + "Company Researcher" + "Email Sender" (distinct systems)
+- Good: ONE "Calendar Manager" that reads today's events and creates tomorrow's meeting (same service)
+- Good: ONE "Slack Incident Reporter" that searches messages and posts summary to #incidents (same service)
+- Good: Separate "GitHub PR Fetcher" + "Slack Poster" (different services)
 - Good: ONE "Website Monitor" with targets: ["Nike.com", "Adidas.com"] (same operation, different targets)
-- Bad: ONE "Research + Email Agent" (mixes research capability with email integration)
-- Bad: ONE "Calendar + Research + Email Pipeline" (bundles unrelated systems)
+- Bad: Separate "Calendar Reader" + "Meeting Creator" (same service, unnecessarily split)
+- Bad: "Slack Searcher" + "Summarizer" + "Slack Poster" (same service + needless summarizer)
+- Bad: ONE "Research + Email Agent" (mixes different services)
 
 ### Agent needs
 
@@ -101,7 +110,8 @@ DO NOT include:
 
 ## Planning guidelines
 
-- Split agents by external system and capability boundary
+- One agent per external service — never split operations on the same API into separate agents
+- No standalone summarizer or formatter agents — every agent handles its own output formatting
 - Capture user-specific details in configuration (sparingly)
 - Describe agents by WHAT they accomplish, not HOW (implementation)
 
@@ -155,9 +165,18 @@ Generate structured plan with:
 /**
  * Build the system prompt for the given planning mode.
  */
-function getSystemPrompt(mode: PlanMode): string {
+export function getSystemPrompt(mode: PlanMode): string {
   const modeSection = mode === "workspace" ? WORKSPACE_PROMPT_SECTION : TASK_PROMPT_SECTION;
   return `${SYSTEM_PROMPT_BASE}\n${modeSection}`;
+}
+
+/**
+ * Format the user message sent to the model for plan generation.
+ */
+export function formatUserMessage(prompt: string, mode: PlanMode): string {
+  return mode === "workspace"
+    ? `Create a workspace plan for these requirements:\n${prompt}\nOne agent per external service. Do not split operations on the same API into separate agents.`
+    : `Create a task plan for these requirements:\n${prompt}\nOne agent per external service. Do not split operations on the same API into separate agents. Do not generate signals — this task will be triggered ad-hoc.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,10 +335,7 @@ export async function generatePlan(
     ? formatIntegrationsSection(linkSummary)
     : "<integrations><!-- No OAuth services connected --></integrations>";
 
-  const userMessage =
-    mode === "workspace"
-      ? `Create a workspace plan for these requirements:\n${prompt}\nSplit agents by external system and capability boundary. Each agent should handle one integration point or one distinct capability.`
-      : `Create a task plan for these requirements:\n${prompt}\nSplit agents by external system and capability boundary. Each agent should handle one integration point or one distinct capability. Do not generate signals — this task will be triggered ad-hoc.`;
+  const userMessage = formatUserMessage(prompt, mode);
 
   if (mode === "task") {
     const result = await generateObject({

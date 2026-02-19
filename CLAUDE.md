@@ -39,7 +39,8 @@ go build                # Build
   variables with `_` to silence the linter. Trace the dependency chain and
   delete everything that's only reachable from the unused symbol.
 
-- Use `@atlas/logger`, never `console.*` (`proto/` dev CLI tools are exempt)
+- Use `@atlas/logger`, never `console.*` (`proto/` and `tools/` CLI tools are
+  exempt)
 - No `any` types - use `unknown` or proper types
 - No `as` assertions - use Zod schemas for parsing. `as const` on string
   literals for discriminated unions is OK. `!` (non-null assertion) is same
@@ -110,6 +111,8 @@ go build                # Build
   `"exports": "./mod.ts"`
 - Some packages resolve `@atlas/*` through root deno.json import map without
   explicit `package.json` dep — adding them creates duplicate resolution paths
+- gunshi `required: true` on CLI args still produces `string | undefined` at the
+  type level — add a runtime guard even for required args
 
 ### TypeScript
 
