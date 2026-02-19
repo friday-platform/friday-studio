@@ -61,7 +61,7 @@
     "npm:@jsr/std__yaml@^1.0.9": "1.0.11",
     "npm:@lezer/common@^1.5.1": "1.5.1",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
-    "npm:@libpdf/core@~0.2.7": "0.2.7",
+    "npm:@libpdf/core@~0.2.8": "0.2.8",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.53.0__acorn@8.15.0",
     "npm:@octokit/auth-app@^7.2.0": "7.2.2",
     "npm:@octokit/auth-app@^8.2.0": "8.2.0",
@@ -1134,12 +1134,13 @@
         "@lezer/highlight"
       ]
     },
-    "@libpdf/core@0.2.7": {
-      "integrity": "sha512-oe4O7QHcn9WoW5HVVfRUeKKut7aI6uexau5tROnaMU2Xkw/yzH2eV1isoMklvsr5zNO8H9RY7ss/HizEbeEqxQ==",
+    "@libpdf/core@0.2.8": {
+      "integrity": "sha512-ZcpROEB4XzMBNiBeqGmS/gnRsrRoa4N/+0NP6Gedjpx1foapfEjOyyvaNkaqaMPWV0Osf6UlYskyo3hYJSlEWQ==",
       "dependencies": [
         "@noble/ciphers",
         "@noble/hashes@2.0.1",
         "@scure/base",
+        "lru-cache@11.2.6",
         "pako@2.1.0",
         "pkijs"
       ]
@@ -4151,6 +4152,9 @@
     "lru-cache@10.4.3": {
       "integrity": "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="
     },
+    "lru-cache@11.2.6": {
+      "integrity": "sha512-ESL2CrkS/2wTPfuend7Zhkzo2u0daGJ/A2VucJOgQ/C48S/zB8MMeMHSGKYpXhIjbPxfuezITkaBH1wqv00DDQ=="
+    },
     "lru-cache@5.1.1": {
       "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
       "dependencies": [
@@ -5570,7 +5574,7 @@
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@libpdf/core@~0.2.7",
+            "npm:@libpdf/core@~0.2.8",
             "npm:file-type@^21.3.0",
             "npm:hono-openapi@^1.2.0",
             "npm:hono@^4.11.8",
@@ -5760,7 +5764,7 @@
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
-            "npm:@libpdf/core@~0.2.7",
+            "npm:@libpdf/core@~0.2.8",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:@xmldom/xmldom@~0.8.11",
             "npm:ai@^5.0.136",
