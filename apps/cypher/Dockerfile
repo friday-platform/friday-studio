@@ -20,7 +20,7 @@ ARG GITHUB_SHA=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o cypher .
 
 # Final stage
-FROM alpine:3.23.0
+FROM alpine:3.23.3
 
 RUN apk --no-cache add ca-certificates
 
