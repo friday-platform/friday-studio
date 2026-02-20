@@ -1,6 +1,7 @@
 export {
   analyzeResults,
   containsSeverePatterns,
+  formatToolResults,
   getSevereIssues,
   type HallucinationAnalysis,
   type HallucinationDetectorConfig,

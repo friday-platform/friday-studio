@@ -12,3 +12,6 @@
   (`fsm-engine.ts`) and workspace-runtime agent actions
   (`workspace-runtime.ts`) each extract `completeCall?.args` independently.
   Changes to one don't propagate to the other.
+- **LLM actions bypass agent executor callback.** They go through
+  `buildContextPrompt` which only adds Input/skills, not datetime or task
+  framing. Any grounding context must be embedded directly in `action.prompt`.

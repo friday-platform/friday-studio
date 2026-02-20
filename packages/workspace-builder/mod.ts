@@ -16,11 +16,33 @@ export type {
 export { buildBlueprint, PipelineError } from "./planner/build-blueprint.ts";
 
 // ---------------------------------------------------------------------------
+// Planner step functions (used by fastpath to run steps independently)
+// ---------------------------------------------------------------------------
+
+export { classifyAgents } from "./planner/classify-agents.ts";
+export type { Phase1Result } from "./planner/plan.ts";
+export { generatePlan } from "./planner/plan.ts";
+export { checkEnvironmentReadiness } from "./planner/preflight.ts";
+export { resolveCredentials } from "./planner/resolve-credentials.ts";
+
+// ---------------------------------------------------------------------------
 // Compiler
 // ---------------------------------------------------------------------------
 
-export type { CompileError, CompilerOutput, CompileWarning } from "./compiler/build-fsm.ts";
-export { buildFSMFromPlan, formatCompilerWarnings } from "./compiler/build-fsm.ts";
+export type {
+  CompileError,
+  CompilerContext,
+  CompilerOutput,
+  CompileWarning,
+} from "./compiler/build-fsm.ts";
+export {
+  buildFSMFromPlan,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
+  formatCompilerWarnings,
+  normalize,
+  stateName,
+} from "./compiler/build-fsm.ts";
 
 // ---------------------------------------------------------------------------
 // Assembler
@@ -68,7 +90,7 @@ export {
 // ---------------------------------------------------------------------------
 
 export type { ReadinessResult, UnresolvedCredential } from "./planner/build-blueprint.ts";
-export type { AgentClarification } from "./planner/classify-agents.ts";
+export type { AgentClarification, ConfigRequirement } from "./planner/classify-agents.ts";
 export { formatClarifications } from "./planner/classify-agents.ts";
 export { generateStubFromSchema } from "./planner/generate-stub.ts";
 

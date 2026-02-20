@@ -440,4 +440,65 @@ describe("buildBlueprint", () => {
       expect(job.documentContracts).toHaveLength(2);
     });
   });
+
+  describe("precomputed option", () => {
+    it("skips generatePlan and classifyAgents when precomputed is provided", async () => {
+      // Set up mocks for steps after plan+classify
+      mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
+      mockGenerateDAGSteps.mockResolvedValue(JOBS);
+      mockEnrichAgentsWithPipelineContext.mockResolvedValue({
+        agents: PLAN_RESULT.agents,
+        entries: [],
+      });
+      mockGenerateOutputSchemas.mockResolvedValue(SCHEMA_MAP);
+      mockGeneratePrepareMappings.mockResolvedValue(MAPPINGS);
+
+      const result = await buildBlueprint(
+        "test",
+        baseOpts({
+          precomputed: {
+            plan: PLAN_RESULT,
+            classified: { clarifications: [], configRequirements: [] },
+          },
+        }),
+      );
+
+      expect(mockGeneratePlan).not.toHaveBeenCalled();
+      expect(mockClassifyAgents).not.toHaveBeenCalled();
+      expect(result.blueprint.workspace).toStrictEqual(PLAN_RESULT.workspace);
+      expect(result.blueprint.agents.map((a) => a.id)).toEqual(["researcher", "reporter"]);
+    });
+
+    it("uses precomputed clarifications and configRequirements", async () => {
+      mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
+      mockGenerateDAGSteps.mockResolvedValue(JOBS);
+      mockEnrichAgentsWithPipelineContext.mockResolvedValue({
+        agents: PLAN_RESULT.agents,
+        entries: [],
+      });
+      mockGenerateOutputSchemas.mockResolvedValue(SCHEMA_MAP);
+      mockGeneratePrepareMappings.mockResolvedValue(MAPPINGS);
+
+      const precomputedClarifications = [
+        {
+          agentId: "researcher",
+          agentName: "Researcher",
+          need: "obscure-tool",
+          issue: { type: "no-match" as const },
+        },
+      ];
+
+      const result = await buildBlueprint(
+        "test",
+        baseOpts({
+          precomputed: {
+            plan: PLAN_RESULT,
+            classified: { clarifications: precomputedClarifications, configRequirements: [] },
+          },
+        }),
+      );
+
+      expect(result.clarifications).toStrictEqual(precomputedClarifications);
+    });
+  });
 });

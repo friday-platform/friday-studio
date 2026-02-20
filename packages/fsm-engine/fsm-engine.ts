@@ -1048,6 +1048,15 @@ export class FSMEngine {
               }
 
               const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
+
+              // Merge original call's tool results into the retry trace so the
+              // validator can see all fetched data, even if the retry LLM didn't
+              // re-issue the same tool calls.
+              if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
+                retryTrace.toolResults = trace.toolResults;
+                retryTrace.toolCalls = trace.toolCalls;
+              }
+
               const retryValidation = await this.options.validateOutput(retryTrace);
 
               if (!retryValidation.valid) {

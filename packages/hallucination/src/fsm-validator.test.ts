@@ -1,5 +1,6 @@
 import type { LLMActionTrace } from "@atlas/fsm-engine";
 import { describe, expect, it } from "vitest";
+import { formatToolResults } from "./detector.ts";
 import { traceToAgentResult } from "./fsm-validator.ts";
 
 describe("traceToAgentResult", () => {
@@ -157,7 +158,7 @@ describe("traceToAgentResult", () => {
     expect(toolResult?.output).toEqual(complexOutput);
   });
 
-  it("preserves tool call IDs for correlation", () => {
+  it("preserves tool call IDs for correlation (AI SDK format)", () => {
     const trace: LLMActionTrace = {
       prompt: "Calls with results",
       content: "Done",
@@ -204,5 +205,145 @@ describe("traceToAgentResult", () => {
       const matchingResult = result.toolResults?.find((r) => r.toolCallId === call.toolCallId);
       expect(matchingResult).toBeDefined();
     }
+  });
+});
+
+describe("formatToolResults", () => {
+  /** Helper to build a typed ToolResult with MCP-shaped output. */
+  function mcpResult(
+    toolName: string,
+    textContent: string,
+    callId = "call-1",
+  ): {
+    type: "tool-result";
+    toolCallId: string;
+    toolName: string;
+    input: unknown;
+    output: unknown;
+  } {
+    return {
+      type: "tool-result",
+      toolCallId: callId,
+      toolName,
+      input: {},
+      output: { content: [{ type: "text", text: textContent }] },
+    };
+  }
+
+  it("extracts text content from MCP tool results", () => {
+    const results = [
+      mcpResult("linear_search_issues", '{"id":"TEM-100","title":"Fix bug"}'),
+      mcpResult("linear_search_issues", '{"id":"TEM-101","title":"Add feature"}'),
+    ];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).toContain("=== Tool Result 1: linear_search_issues | input: {} ===");
+    expect(formatted).toContain("=== Tool Result 2: linear_search_issues | input: {} ===");
+    expect(formatted).toContain("TEM-100");
+    expect(formatted).toContain("TEM-101");
+    expect(formatted).not.toContain("…");
+  });
+
+  it("includes tool name in header for each result", () => {
+    const results = [
+      mcpResult("linear_search_issues", "issues data"),
+      mcpResult("linear_get_issue", "single issue"),
+    ];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).toContain("linear_search_issues");
+    expect(formatted).toContain("linear_get_issue");
+  });
+
+  it("includes input and strips envelope noise (toolCallId, type metadata)", () => {
+    const results = [
+      {
+        type: "tool-result" as const,
+        toolCallId: "call-abc-123",
+        toolName: "linear_search",
+        input: { query: "assignee:me" },
+        output: { content: [{ type: "text", text: "the actual data" }] },
+      },
+    ];
+
+    const formatted = formatToolResults(results);
+
+    // Should contain tool name and input
+    expect(formatted).toContain("linear_search");
+    expect(formatted).toContain("assignee:me");
+    // Should NOT contain envelope fields
+    expect(formatted).not.toContain("call-abc-123");
+    expect(formatted).not.toContain('"type":"tool-result"');
+    // Should contain the actual data
+    expect(formatted).toContain("the actual data");
+  });
+
+  it("preserves all issues in a large Linear-like MCP result", () => {
+    // Simulate Linear returning 50 issues as MCP text content
+    const issues = Array.from({ length: 50 }, (_, i) => ({
+      id: `TEM-${3000 + i}`,
+      title: `Issue title for ${3000 + i}`,
+      status: ["Todo", "In Progress", "Done", "Backlog"][i % 4],
+      priority: i % 5,
+      assignee: { name: "Eric Skram", email: "eric@tempest.team" },
+    }));
+    const results = [mcpResult("linear_search_issues", JSON.stringify(issues))];
+
+    const formatted = formatToolResults(results);
+
+    for (const issue of issues) {
+      expect(formatted).toContain(issue.id);
+    }
+    expect(formatted).not.toContain("…");
+  });
+
+  it("truncates individual results exceeding 50k chars", () => {
+    const hugePayload = "x".repeat(60_000);
+    const results = [mcpResult("big_tool", hugePayload)];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).toContain("…");
+    expect(formatted.length).toBeLessThan(60_000);
+  });
+
+  it("falls back to JSON for non-MCP output shapes", () => {
+    const results = [
+      {
+        type: "tool-result" as const,
+        toolCallId: "call-1",
+        toolName: "custom_tool",
+        input: {},
+        output: { someField: "value", nested: { deep: true } },
+      },
+    ];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).toContain("someField");
+    expect(formatted).toContain("value");
+  });
+
+  it("handles empty array", () => {
+    const formatted = formatToolResults([]);
+    expect(formatted).toEqual("");
+  });
+
+  it("handles string output directly", () => {
+    const results = [
+      {
+        type: "tool-result" as const,
+        toolCallId: "call-1",
+        toolName: "text_tool",
+        input: {},
+        output: "plain text response",
+      },
+    ];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).toContain("plain text response");
   });
 });

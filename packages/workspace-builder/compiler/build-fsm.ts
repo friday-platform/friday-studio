@@ -31,10 +31,10 @@ import { validateFieldPath } from "./validate-field-path.ts";
 // ---------------------------------------------------------------------------
 
 /** Default LLM provider for ad-hoc LLM agents. */
-const DEFAULT_LLM_PROVIDER = "anthropic";
+export const DEFAULT_LLM_PROVIDER = "anthropic";
 
 /** Default LLM model for ad-hoc LLM agents. */
-const DEFAULT_LLM_MODEL = "claude-sonnet-4-6";
+export const DEFAULT_LLM_MODEL = "claude-sonnet-4-6";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -358,11 +358,11 @@ function resolveNextState(
   return nextStep ? stateName(nextStep.id) : "completed";
 }
 
-function stateName(stepId: string): string {
+export function stateName(stepId: string): string {
   return `step_${normalize(stepId)}`;
 }
 
-function normalize(id: string): string {
+export function normalize(id: string): string {
   return id.replace(/-/g, "_");
 }
 

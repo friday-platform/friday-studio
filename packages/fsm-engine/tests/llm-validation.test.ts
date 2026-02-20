@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine } from "../fsm-engine.ts";
-import type { FSMDefinition, FSMLLMOutput, OutputValidator } from "../types.ts";
+import type { FSMDefinition, FSMLLMOutput, LLMActionTrace, OutputValidator } from "../types.ts";
 
 /**
  * Part 1: Pure Function Tests for buildLLMActionTrace
@@ -165,6 +165,8 @@ interface MockLLMResponse {
   content: string;
   data?: Record<string, unknown>;
   calledTool?: { name: string; args: unknown };
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
 }
 
 /**
@@ -175,9 +177,9 @@ function mockToEnvelope(
   agentId: string,
   prompt: string,
 ): AgentResult<string, FSMLLMOutput> {
-  // Build tool calls array from calledTool if present
-  const toolCalls: ToolCall[] = [];
-  if (mock.calledTool) {
+  // Build tool calls: use explicit arrays if provided, otherwise build from calledTool
+  const toolCalls: ToolCall[] = mock.toolCalls ?? [];
+  if (!mock.toolCalls && mock.calledTool) {
     toolCalls.push({
       type: "tool-call",
       toolCallId: `mock-${mock.calledTool.name}`,
@@ -196,6 +198,7 @@ function mockToEnvelope(
     ok: true,
     data,
     toolCalls,
+    toolResults: mock.toolResults,
     durationMs: 0,
   };
 }
@@ -418,5 +421,122 @@ describe("LLM Action Validation Hook", () => {
 
     // Observable outcome: state unchanged (transaction rolled back)
     expect(engine.state).toEqual("pending");
+  });
+
+  it("retry merges original tool results when retry LLM does not re-issue calls", async () => {
+    const originalToolCalls: ToolCall[] = [
+      { type: "tool-call", toolCallId: "tc1", toolName: "search", input: { q: "test" } },
+    ];
+    const originalToolResults: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "tc1",
+        toolName: "search",
+        input: { q: "test" },
+        output: { hits: 42 },
+      },
+    ];
+
+    // Capture the trace passed to the validator on each call
+    const validatorTraces: LLMActionTrace[] = [];
+    const validator: OutputValidator = (trace) => {
+      validatorTraces.push(trace);
+      // Fail first, pass second
+      if (validatorTraces.length === 1) {
+        return Promise.resolve({ valid: false, feedback: "Looks hallucinated" });
+      }
+      return Promise.resolve({ valid: true });
+    };
+
+    const { engine } = await createLLMEngine({
+      validator,
+      llmResponses: [
+        // First call: has tool results
+        {
+          content: "original with tools",
+          toolCalls: originalToolCalls,
+          toolResults: originalToolResults,
+        },
+        // Retry: no tool calls or results (LLM didn't re-issue)
+        { content: "retry without tools" },
+      ],
+    });
+
+    await engine.signal({ type: "RUN_LLM" });
+
+    // Validator called twice (initial + retry)
+    expect(validatorTraces.length).toEqual(2);
+
+    // Retry trace should contain the ORIGINAL tool results (merged)
+    const retryTrace = validatorTraces[1];
+    expect(retryTrace?.toolResults?.length).toEqual(1);
+    expect(retryTrace?.toolResults?.[0]?.toolName).toEqual("search");
+    expect(retryTrace?.toolResults?.[0]?.output).toEqual({ hits: 42 });
+    expect(retryTrace?.toolCalls?.length).toEqual(1);
+    expect(retryTrace?.toolCalls?.[0]?.toolName).toEqual("search");
+  });
+
+  it("retry keeps its own tool results when it re-issues calls", async () => {
+    const originalToolResults: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "tc1",
+        toolName: "search",
+        input: { q: "test" },
+        output: { hits: 42 },
+      },
+    ];
+    const retryToolCalls: ToolCall[] = [
+      { type: "tool-call", toolCallId: "tc2", toolName: "lookup", input: { id: 1 } },
+    ];
+    const retryToolResults: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "tc2",
+        toolName: "lookup",
+        input: { id: 1 },
+        output: { name: "fresh data" },
+      },
+    ];
+
+    const validatorTraces: LLMActionTrace[] = [];
+    const validator: OutputValidator = (trace) => {
+      validatorTraces.push(trace);
+      if (validatorTraces.length === 1) {
+        return Promise.resolve({ valid: false, feedback: "Hallucinated" });
+      }
+      return Promise.resolve({ valid: true });
+    };
+
+    const { engine } = await createLLMEngine({
+      validator,
+      llmResponses: [
+        // First call: has tool results
+        {
+          content: "original",
+          toolCalls: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "search", input: { q: "test" } },
+          ],
+          toolResults: originalToolResults,
+        },
+        // Retry: has its OWN tool results
+        {
+          content: "retry with own tools",
+          toolCalls: retryToolCalls,
+          toolResults: retryToolResults,
+        },
+      ],
+    });
+
+    await engine.signal({ type: "RUN_LLM" });
+
+    expect(validatorTraces.length).toEqual(2);
+
+    // Retry trace should keep its OWN tool results (NOT merged)
+    const retryTrace = validatorTraces[1];
+    expect(retryTrace?.toolResults?.length).toEqual(1);
+    expect(retryTrace?.toolResults?.[0]?.toolName).toEqual("lookup");
+    expect(retryTrace?.toolResults?.[0]?.output).toEqual({ name: "fresh data" });
+    expect(retryTrace?.toolCalls?.[0]?.toolName).toEqual("lookup");
   });
 });

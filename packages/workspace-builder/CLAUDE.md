@@ -56,6 +56,15 @@ fixtures/         Test plans (JSON)
 - Mapping validation uses `generateStubFromSchema()` → sandboxed worker
   execution → type checking against consumer schema.
 
+## Gotchas
+
+- **`classifyAgents()` mutates `Agent[]` in place** — writes `bundledId` and
+  `mcpServers` on the original objects. Downstream code gets modified references
+  without cloning.
+- **`EnhancedTaskStep.executionType` is `"agent"` not `"bundled"`** —
+  `blueprintToTaskPlan` maps compiler's `"bundled"` to `"agent"` for the
+  executor. Wrong value silently breaks progress reporting.
+
 ## Testing Conventions
 
 - Mock LLM calls with `vi.fn()` — never hit real models in unit tests.

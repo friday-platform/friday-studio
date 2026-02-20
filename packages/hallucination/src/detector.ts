@@ -11,7 +11,7 @@
  * - Type-safe with Zod validation
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, ToolResult } from "@atlas/agent-sdk";
 import { repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -19,6 +19,17 @@ import type { CoreMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "./supervision-levels.ts";
+
+/**
+ * MCP CallToolResult content item — the actual payload inside tool result `output`.
+ * Zod-parsed at the boundary since DynamicToolResult.output is `unknown`.
+ */
+const McpContentItemSchema = z.object({ type: z.string(), text: z.string().optional() });
+
+const McpToolOutputSchema = z.object({
+  content: z.array(McpContentItemSchema).optional(),
+  isError: z.boolean().optional(),
+});
 
 /**
  * Check if issues indicate severe fabrication
@@ -445,6 +456,59 @@ Return ONLY valid JSON:
 }`;
 }
 
+/** Max chars per tool result sent to the validation LLM. */
+const MAX_TOOL_RESULT_CHARS = 50_000;
+
+/**
+ * Extract the human-readable content from a tool result's output.
+ *
+ * MCP tools return `CallToolResult` with a `content` array of typed items.
+ * We Zod-parse the `unknown` output to extract text content cleanly.
+ * Falls back to compact JSON for non-MCP or unrecognized shapes.
+ *
+ * @param output - The raw `output` field from a ToolResult (typed `unknown` on DynamicToolResult)
+ */
+function extractOutputText(output: unknown): string {
+  if (typeof output === "string") return output;
+
+  const parsed = McpToolOutputSchema.safeParse(output);
+  if (parsed.success && parsed.data.content) {
+    const texts = parsed.data.content.map((item) => item.text ?? `[${item.type}]`).filter(Boolean);
+    if (texts.length > 0) return texts.join("\n");
+  }
+
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
+/**
+ * Format tool results for the validation LLM.
+ *
+ * Accepts the typed `ToolResult[]` from AgentResult. Extracts tool name and
+ * text content from MCP envelopes — strips envelope noise (toolCallId,
+ * providerMetadata) that wastes tokens without aiding validation.
+ *
+ * @param toolResults - Typed tool results from agent execution
+ * @returns Formatted string with all tool results, each capped at MAX_TOOL_RESULT_CHARS
+ */
+export function formatToolResults(toolResults: ToolResult[]): string {
+  return toolResults
+    .map((tr, i) => {
+      const inputText = tr.input != null ? ` | input: ${JSON.stringify(tr.input)}` : "";
+      const header = `=== Tool Result ${i + 1}: ${tr.toolName}${inputText} ===`;
+      try {
+        const text = extractOutputText(tr.output);
+        return `${header}\n${text.length > MAX_TOOL_RESULT_CHARS ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}…` : text}`;
+      } catch {
+        return `${header}\n[Failed to serialize]`;
+      }
+    })
+    .join("\n\n");
+}
+
 /**
  * Build validation input with full data visibility
  */
@@ -472,17 +536,7 @@ function buildValidationInput(result: AgentResult): string {
       return "No tool results available";
     }
 
-    return toolResults
-      .map((tr, i) => {
-        try {
-          const text = typeof tr === "string" ? tr : JSON.stringify(tr, null, 2);
-          // Show up to 15000 chars per result
-          return `=== Tool Result ${i + 1} ===\n${text.length > 15000 ? `${text.slice(0, 15000)}…` : text}`;
-        } catch {
-          return `=== Tool Result ${i + 1} ===\n[Failed to serialize]`;
-        }
-      })
-      .join("\n\n");
+    return formatToolResults(toolResults);
   })();
 
   // Format output - use data for success, error.reason for failure

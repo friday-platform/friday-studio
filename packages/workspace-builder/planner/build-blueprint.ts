@@ -11,13 +11,13 @@ import type { Logger } from "@atlas/logger";
 import type { CredentialBinding } from "@atlas/schemas/workspace";
 import type { DocumentContract, WorkspaceBlueprint } from "../types.ts";
 
-import type { AgentClarification } from "./classify-agents.ts";
+import type { AgentClarification, ConfigRequirement } from "./classify-agents.ts";
 import { classifyAgents } from "./classify-agents.ts";
 import { generateDAGSteps } from "./dag.ts";
 import { enrichAgentsWithPipelineContext } from "./enrich-pipeline-context.ts";
 import { enrichSignals } from "./enrich-signals.ts";
 import { generatePrepareMappings } from "./mappings.ts";
-import { generatePlan, type PlanMode } from "./plan.ts";
+import { generatePlan, type Phase1Result, type PlanMode } from "./plan.ts";
 import { checkEnvironmentReadiness, type ReadinessResult } from "./preflight.ts";
 import { resolveCredentials, type UnresolvedCredential } from "./resolve-credentials.ts";
 import { generateOutputSchemas } from "./schemas.ts";
@@ -66,6 +66,11 @@ export type BuildBlueprintOpts = {
   logger: Logger;
   /** Abort signal for cancellation. */
   abortSignal?: AbortSignal;
+  /** Pre-computed plan + classify results — skips those steps when provided. */
+  precomputed?: {
+    plan: Phase1Result;
+    classified: { clarifications: AgentClarification[]; configRequirements: ConfigRequirement[] };
+  };
 };
 
 /** Result from buildBlueprint(). */
@@ -133,34 +138,34 @@ export async function buildBlueprint(
   prompt: string,
   opts: BuildBlueprintOpts,
 ): Promise<BlueprintResult> {
-  const { mode, logger, abortSignal } = opts;
+  const { mode, logger, abortSignal, precomputed } = opts;
 
   // -- plan ----------------------------------------------------------------
-  const phase1 = await runStep("plan", () => generatePlan(prompt, { mode, abortSignal }), {
-    logger,
-    abortSignal,
-    inputs: { prompt, mode },
-    logOutputs: (r) => ({
-      workspace: r.workspace.name,
-      signals: r.signals.length,
-      agents: r.agents.length,
-    }),
-  });
+  const phase1 = precomputed
+    ? precomputed.plan
+    : await runStep("plan", () => generatePlan(prompt, { mode, abortSignal }), {
+        logger,
+        abortSignal,
+        inputs: { prompt, mode },
+        logOutputs: (r) => ({
+          workspace: r.workspace.name,
+          signals: r.signals.length,
+          agents: r.agents.length,
+        }),
+      });
 
   // -- classify ------------------------------------------------------------
-  const { clarifications, configRequirements } = await runStep(
-    "classify",
-    () => classifyAgents(phase1.agents),
-    {
-      logger,
-      abortSignal,
-      inputs: { agentCount: phase1.agents.length },
-      logOutputs: (r) => ({
-        clarifications: r.clarifications.length,
-        configRequirements: r.configRequirements.length,
-      }),
-    },
-  );
+  const { clarifications, configRequirements } = precomputed
+    ? precomputed.classified
+    : await runStep("classify", () => classifyAgents(phase1.agents), {
+        logger,
+        abortSignal,
+        inputs: { agentCount: phase1.agents.length },
+        logOutputs: (r) => ({
+          clarifications: r.clarifications.length,
+          configRequirements: r.configRequirements.length,
+        }),
+      });
 
   // -- credentials ---------------------------------------------------------
   let credentialBindings: CredentialBinding[] = [];

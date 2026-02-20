@@ -17,13 +17,24 @@ import {
   type ClassifiedDAGStep,
   ClassifiedDAGStepSchema,
   type CredentialBinding,
+  checkEnvironmentReadiness,
+  classifyAgents,
+  generatePlan,
   PipelineError,
+  resolveCredentials,
 } from "@atlas/workspace-builder";
 import type { UIMessageStreamWriter } from "ai";
 import { jsonSchema, tool } from "ai";
 import type { MCPServerResult } from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
 import { executeTaskViaFSMDirect } from "./ephemeral-executor.ts";
 import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
+import {
+  buildFastpathContract,
+  buildFastpathDAGStep,
+  buildFastpathFSM,
+  buildFastpathStep,
+  isFastpathEligible,
+} from "./fastpath.ts";
 import { generateFriendlyDescriptions } from "./friendly-descriptions.ts";
 import type {
   EnhancedTaskPlan,
@@ -96,7 +107,13 @@ async function generateTaskSummary(
 }
 
 async function storeTaskArtifact(
-  data: { intent: string; plan: unknown; results: unknown; success: boolean },
+  data: {
+    intent: string;
+    plan: unknown;
+    results: unknown;
+    success: boolean;
+    timing?: { planningMs: number; executionMs: number; totalMs: number; fastpath: boolean };
+  },
   context: { workspaceId: string; streamId: string },
   logger: Logger,
 ): Promise<string> {
@@ -260,14 +277,222 @@ export function createDoTaskTool(
       }
 
       logger.info("do_task executing", { intent });
+      const startMs = Date.now();
 
       try {
-        // 1. Plan via shared workspace-builder pipeline
+        // 1. Run plan + classify directly (shared first two pipeline steps)
         emitProgress({ type: "planning" });
+
+        const planResult = await generatePlan(intent, { mode: "task", abortSignal });
+        const classifyResult = await classifyAgents(planResult.agents);
+        const planMs = Date.now();
+
+        if (isFastpathEligible(planResult, classifyResult)) {
+          // ---------------------------------------------------------------
+          // FASTPATH: single-agent dispatch
+          // ---------------------------------------------------------------
+          const agent = planResult.agents[0];
+          if (!agent) throw new Error("Fastpath requires exactly one agent");
+
+          logger.info("do-task fastpath: single-agent dispatch", {
+            agentName: agent.name,
+            executionType: agent.bundledId ? "bundled" : "llm",
+            bundledId: agent.bundledId,
+            mcpServers: agent.mcpServers?.map((s) => s.serverId),
+          });
+
+          // Resolve credentials if needed
+          let credentialBindings: CredentialBinding[] = [];
+          if (classifyResult.configRequirements.length > 0) {
+            const credResult = await resolveCredentials(classifyResult.configRequirements);
+
+            // Bail on unresolved credentials
+            if (credResult.unresolved.length > 0) {
+              const first = credResult.unresolved[0];
+              const error = first
+                ? `Cannot execute task: ${first.reason}. Provider '${first.provider}' requires credentials for field '${first.field}'.`
+                : "Cannot execute task: unresolved credentials";
+              logger.info("do_task completed", {
+                durationMs: Date.now() - startMs,
+                planningMs: planMs - startMs,
+                executionMs: 0,
+                fastpath: true,
+                agentName: agent.name,
+                executionType: agent.bundledId ? "bundled" : "llm",
+                success: false,
+                reason: "unresolved_credentials",
+              });
+              return { success: false, error };
+            }
+            credentialBindings = credResult.bindings;
+
+            const readiness = checkEnvironmentReadiness(
+              classifyResult.configRequirements,
+              credentialBindings,
+            );
+            if (!readiness.ready) {
+              const missing = readiness.checks
+                .flatMap((c) => c.checks.filter((f) => f.status === "missing"))
+                .map((f) => f.key);
+              logger.info("do_task completed", {
+                durationMs: Date.now() - startMs,
+                planningMs: planMs - startMs,
+                executionMs: 0,
+                fastpath: true,
+                agentName: agent.name,
+                executionType: agent.bundledId ? "bundled" : "llm",
+                success: false,
+                reason: "environment_not_ready",
+              });
+              return {
+                success: false,
+                error: `Cannot execute task: missing configuration: ${missing.join(", ")}`,
+              };
+            }
+          }
+
+          // Build trivial FSM and executor data structures
+          const dagStep = buildFastpathDAGStep(agent, intent);
+          const fsmDefinition = buildFastpathFSM(agent, dagStep, intent, session.datetime);
+          const fastpathStep = buildFastpathStep(agent, intent);
+          const contract = buildFastpathContract(dagStep);
+          const mcpServers = buildMCPServerConfigs([agent], credentialBindings);
+
+          emitProgress({ type: "preparing", stepCount: 1 });
+
+          // Create MCP pool and provider
+          const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
+          const mcpServerConfigMap: Record<string, MCPServerConfig> = {};
+          for (const server of mcpServers) {
+            mcpServerConfigMap[server.id] = server.config;
+          }
+          const mcpToolProvider = new GlobalMCPToolProvider(
+            mcpServerPool,
+            session.workspaceId,
+            mcpServerConfigMap,
+            logger.child({ component: "TaskMCPProvider" }),
+          );
+
+          try {
+            const execResult = await executeTaskViaFSMDirect(fsmDefinition, [fastpathStep], {
+              sessionId: session.sessionId,
+              workspaceId: session.workspaceId,
+              streamId: session.streamId,
+              userId: session.userId,
+              daemonUrl: session.daemonUrl,
+              datetime: session.datetime,
+              mcpServerPool,
+              mcpToolProvider,
+              onProgress: emitProgress,
+              abortSignal,
+              intent,
+              dagSteps: [dagStep],
+              documentContracts: [contract],
+            });
+
+            const execMs = Date.now();
+            const artifacts = execResult.results
+              .filter((r) => r.success && r.output)
+              .flatMap((r) => extractArtifactsFromOutput(r.output));
+            const sanitizedResults = execResult.results.map((r) => ({
+              step: r.step,
+              agent: r.agent,
+              success: r.success,
+              error: r.error,
+              output: sanitizeAgentOutput(r.output),
+            }));
+
+            const timing = {
+              planningMs: planMs - startMs,
+              executionMs: execMs - planMs,
+              totalMs: execMs - startMs,
+              fastpath: true,
+            };
+
+            logger.info("do_task completed", {
+              durationMs: timing.totalMs,
+              planningMs: timing.planningMs,
+              executionMs: timing.executionMs,
+              fastpath: true,
+              agentName: agent.name,
+              executionType: fastpathStep.executionType,
+              success: execResult.success,
+            });
+
+            try {
+              await storeTaskArtifact(
+                {
+                  intent,
+                  plan: [fastpathStep],
+                  results: execResult.results,
+                  success: execResult.success,
+                  timing,
+                },
+                { workspaceId: session.workspaceId, streamId: session.streamId },
+                logger,
+              );
+            } catch (storeErr) {
+              logger.warn("Failed to store task artifact (fastpath)", {
+                error: storeErr instanceof Error ? storeErr.message : String(storeErr),
+              });
+            }
+
+            const planInfo = {
+              steps: [
+                {
+                  agentId: fastpathStep.agentId,
+                  description: fastpathStep.description,
+                  executionType: fastpathStep.executionType,
+                },
+              ],
+              mcpServers: mcpServers.map((m) => m.id),
+            };
+
+            if (execResult.success) {
+              return {
+                success: true,
+                summary: `Executed ${execResult.results.length} step(s)`,
+                plan: planInfo,
+                results: sanitizedResults,
+                artifacts: artifacts.length > 0 ? artifacts : undefined,
+              };
+            }
+
+            const failedStep = execResult.results.find((r) => !r.success);
+            return {
+              success: false,
+              error: `Step ${failedStep?.step} failed: ${failedStep?.error || "unknown"}`,
+              plan: planInfo,
+              results: sanitizedResults,
+              artifacts: artifacts.length > 0 ? artifacts : undefined,
+            };
+          } finally {
+            await mcpServerPool.dispose();
+          }
+        }
+
+        // -----------------------------------------------------------------
+        // FULL PIPELINE: multi-agent or ambiguous classification
+        // -----------------------------------------------------------------
+        logger.info("do-task fastpath: ineligible, using full pipeline", {
+          agentCount: planResult.agents.length,
+          hasClarifications: classifyResult.clarifications.length > 0,
+        });
 
         let blueprintResult: BlueprintResult;
         try {
-          blueprintResult = await buildBlueprint(intent, { mode: "task", logger, abortSignal });
+          blueprintResult = await buildBlueprint(intent, {
+            mode: "task",
+            logger,
+            abortSignal,
+            precomputed: {
+              plan: planResult,
+              classified: {
+                clarifications: classifyResult.clarifications,
+                configRequirements: classifyResult.configRequirements,
+              },
+            },
+          });
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
           if (err instanceof PipelineError) {
@@ -333,7 +558,7 @@ export function createDoTaskTool(
         );
         const totalSteps = plan.steps.length;
 
-        // 2. Compile FSM deterministically (no LLM, no retries)
+        // Compile FSM deterministically (no LLM, no retries)
         emitProgress({ type: "preparing", stepCount: totalSteps });
 
         const compiled = buildFSMFromPlan(classifiedJob);
@@ -349,18 +574,12 @@ export function createDoTaskTool(
         }
         const fsmDefinition = compiled.value.fsm;
 
-        // 3. Create MCP pool and provider
-        // Always create the pool - bundled agents (like google-calendar) need it
-        // for their embedded MCP configs even when plan.mcpServers is empty
+        // Create MCP pool and provider
         const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
-
-        // Always create provider - GlobalMCPToolProvider auto-includes atlas-platform
-        // for ambient tools (webfetch, artifacts) even when no explicit servers requested
         const mcpServerConfigs: Record<string, MCPServerConfig> = {};
         for (const server of plan.mcpServers) {
           mcpServerConfigs[server.id] = server.config;
         }
-
         const mcpToolProvider = new GlobalMCPToolProvider(
           mcpServerPool,
           session.workspaceId,
@@ -369,7 +588,6 @@ export function createDoTaskTool(
         );
 
         try {
-          // 4. Execute with progress callbacks
           const context: TaskExecutionContext = {
             sessionId: session.sessionId,
             workspaceId: session.workspaceId,
@@ -397,12 +615,10 @@ export function createDoTaskTool(
             documentContracts: classifiedJob.documentContracts,
           });
 
-          // 5. Extract artifacts from agent outputs
+          const execMs = Date.now();
           const artifacts = execResult.results
             .filter((r) => r.success && r.output)
             .flatMap((r) => extractArtifactsFromOutput(r.output));
-
-          // Sanitize results: strip artifactRef/artifactRefs, keep response text
           const sanitizedResults = execResult.results.map((r) => ({
             step: r.step,
             agent: r.agent,
@@ -411,52 +627,83 @@ export function createDoTaskTool(
             output: sanitizeAgentOutput(r.output),
           }));
 
-          // 6. Store task artifact (for debugging/history, not shown to user)
-          await storeTaskArtifact(
-            { intent, plan: plan.steps, results: execResult.results, success: execResult.success },
-            { workspaceId: session.workspaceId, streamId: session.streamId },
-            logger,
-          );
+          const timing = {
+            planningMs: planMs - startMs,
+            executionMs: execMs - planMs,
+            totalMs: execMs - startMs,
+            fastpath: false,
+          };
+
+          logger.info("do_task completed", {
+            durationMs: timing.totalMs,
+            planningMs: timing.planningMs,
+            executionMs: timing.executionMs,
+            fastpath: false,
+            agentName: planResult.agents[0]?.name,
+            executionType: plan.steps[0]?.executionType,
+            success: execResult.success,
+          });
+
+          try {
+            await storeTaskArtifact(
+              {
+                intent,
+                plan: plan.steps,
+                results: execResult.results,
+                success: execResult.success,
+                timing,
+              },
+              { workspaceId: session.workspaceId, streamId: session.streamId },
+              logger,
+            );
+          } catch (storeErr) {
+            logger.warn("Failed to store task artifact (full pipeline)", {
+              error: storeErr instanceof Error ? storeErr.message : String(storeErr),
+            });
+          }
+
+          const planInfo = {
+            steps: plan.steps.map((s) => ({
+              agentId: s.agentId,
+              description: s.description,
+              executionType: s.executionType,
+            })),
+            mcpServers: plan.mcpServers.map((m) => m.id),
+          };
 
           if (execResult.success) {
             return {
               success: true,
               summary: `Executed ${execResult.results.length} step(s)`,
-              plan: {
-                steps: plan.steps.map((s) => ({
-                  agentId: s.agentId,
-                  description: s.description,
-                  executionType: s.executionType,
-                })),
-                mcpServers: plan.mcpServers.map((m) => m.id),
-              },
-              results: sanitizedResults,
-              artifacts: artifacts.length > 0 ? artifacts : undefined,
-            };
-          } else {
-            const failedStep = execResult.results.find((r) => !r.success);
-            return {
-              success: false,
-              error: `Step ${failedStep?.step} failed: ${failedStep?.error || "unknown"}`,
-              plan: {
-                steps: plan.steps.map((s) => ({
-                  agentId: s.agentId,
-                  description: s.description,
-                  executionType: s.executionType,
-                })),
-                mcpServers: plan.mcpServers.map((m) => m.id),
-              },
+              plan: planInfo,
               results: sanitizedResults,
               artifacts: artifacts.length > 0 ? artifacts : undefined,
             };
           }
+
+          const failedStep = execResult.results.find((r) => !r.success);
+          return {
+            success: false,
+            error: `Step ${failedStep?.step} failed: ${failedStep?.error || "unknown"}`,
+            plan: planInfo,
+            results: sanitizedResults,
+            artifacts: artifacts.length > 0 ? artifacts : undefined,
+          };
         } finally {
           await mcpServerPool.dispose();
         }
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        if (error instanceof PipelineError) {
+          logger.error("Pipeline failed", { phase: error.phase, error: error.cause.message });
+          return {
+            success: false,
+            error: `Planning failed at "${error.phase}": ${error.cause.message}`,
+          };
+        }
         const message = error instanceof Error ? error.message : String(error);
         logger.error("do_task failed", { error: message });
-        return { success: false, error: message };
+        return { success: false, error: `Task failed: ${message}` };
       }
     },
   });
