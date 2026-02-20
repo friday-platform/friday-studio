@@ -79,6 +79,7 @@ dist/
 .channels_cache_v2.json
 .users_cache.json
 /bounce
+/bounceadmin
 
 # Temp files
 temp/
@@ -93,6 +94,9 @@ gateway
 
 # cypheradmin binary
 apps/cypher/cypheradmin/cypheradmin
+
+# bounceadmin binary
+apps/bounce/bounceadmin/bounceadmin
 atlas-otel-collector
 
 # Workspace simulator saved runs
