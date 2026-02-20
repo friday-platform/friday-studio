@@ -1,6 +1,7 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
   import { stringifyError } from "@atlas/utils";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { Dialog } from "$lib/components/dialog";
   import { toast } from "$lib/components/notification/notification.svelte";
@@ -31,8 +32,10 @@
 
   let { jobId, job, signals, workspaceId, triggerContents }: Props = $props();
 
-  let isSubmitting = $state(false);
+  const queryClient = useQueryClient();
+
   let error = $state<string | null>(null);
+  let isRunning = $state(false);
   let selectedSignalId = $state("");
   let formData = $state<Record<string, unknown>>({});
 
@@ -107,35 +110,41 @@
       }
     }
 
-    isSubmitting = true;
-    error = null;
+    const signalId = activeSignalId;
+    const payload = hasSchema ? { ...formData } : undefined;
 
-    try {
-      const result = await parseResult(
-        client.workspace[":workspaceId"].signals[":signalId"].$post({
-          param: { workspaceId, signalId: activeSignalId },
-          json: { payload: hasSchema ? formData : undefined },
-        }),
-      );
+    isRunning = true;
 
+    // Fire the signal — don't await, it blocks until the job completes
+    const signalPromise = parseResult(
+      client.workspace[":workspaceId"].signals[":signalId"].$post({
+        param: { workspaceId, signalId },
+        json: { payload },
+      }),
+    );
+
+    // Give the backend a moment to register the session in memory
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await queryClient.invalidateQueries({ queryKey: ["sessions", workspaceId] });
+
+    isRunning = false;
+    open.set(false);
+    resetForm();
+    toast({ title: "Job triggered", description: jobTitle });
+
+    signalPromise.then((result) => {
       if (result.ok) {
-        const sessionId = result.data.sessionId;
-        open.set(false);
-        resetForm();
+        queryClient.invalidateQueries({ queryKey: ["sessions", workspaceId] });
         toast({
-          title: "Job triggered",
+          title: "Job completed",
           description: jobTitle,
           viewLabel: "View Session",
-          viewAction: () => goto(`/spaces/${workspaceId}/sessions/${sessionId}`),
+          viewAction: () => goto(`/spaces/${workspaceId}/sessions/${result.data.sessionId}`),
         });
       } else {
-        error = stringifyError(result.error);
+        toast({ title: "Job failed", description: stringifyError(result.error), error: true });
       }
-    } catch (err) {
-      error = stringifyError(err);
-    } finally {
-      isSubmitting = false;
-    }
+    });
   }
 </script>
 
@@ -173,7 +182,7 @@
           {/if}
 
           {#if isMultiTrigger}
-            <fieldset class="field" disabled={isSubmitting}>
+            <fieldset class="field">
               <legend class="legend">Select trigger</legend>
               {#each triggerSignals as { id, signal } (id)}
                 <label class="radio-label">
@@ -211,7 +220,6 @@
                       onchange={(e) => {
                         formData[fieldName] = e.currentTarget.checked;
                       }}
-                      disabled={isSubmitting}
                     />
                     <span>Enabled</span>
                   </label>
@@ -224,7 +232,6 @@
                       const val = e.currentTarget.value;
                       formData[fieldName] = val === "" ? undefined : Number(val);
                     }}
-                    disabled={isSubmitting}
                     required={isRequired}
                     step={fieldDef.type === "integer" ? "1" : "any"}
                   />
@@ -236,7 +243,6 @@
                     oninput={(e) => {
                       formData[fieldName] = e.currentTarget.value;
                     }}
-                    disabled={isSubmitting}
                     required={isRequired}
                   />
                 {/if}
@@ -251,7 +257,9 @@
           {/if}
 
           <div class="buttons">
-            <Dialog.Button type="submit" disabled={isSubmitting}>Run</Dialog.Button>
+            <Dialog.Button type="submit" closeOnClick={false} disabled={isRunning}>
+              {isRunning ? "Running..." : "Run"}
+            </Dialog.Button>
             <Dialog.Cancel onclick={resetForm}>Cancel</Dialog.Cancel>
           </div>
         </form>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
+  import { stringifyError } from "@atlas/utils";
   import type { Color } from "@atlas/utils";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto, invalidateAll } from "$app/navigation";
@@ -10,6 +11,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import { toast } from "$lib/components/notification/notification.svelte";
   import { onMount } from "svelte";
   import IntegrationTable from "../(components)/integration-table.svelte";
   import type { PageData } from "./$types";
@@ -45,26 +47,22 @@
     if (!workspace) return;
     trackEvent(GA4.WORKSPACE_DELETE_CONFIRM, { workspace_id: workspace.id });
 
-    try {
-      const res = await parseResult(
-        client.workspace[":workspaceId"].$delete({ param: { workspaceId: workspace.id } }),
-      );
+    const res = await parseResult(
+      client.workspace[":workspaceId"].$delete({ param: { workspaceId: workspace.id } }),
+    );
 
-      if (!res.ok) {
-        throw new Error(typeof res.error === "string" ? res.error : "Failed to delete workspace");
-      }
-
-      // Trigger workspace list refresh
-      queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
-
-      // Redirect to main page
-      await goto(appCtx.routes.main);
-    } catch (error) {
-      console.error("Failed to delete workspace:", error);
-      alert(
-        `Failed to delete workspace: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    if (!res.ok) {
+      toast({
+        title: "Failed to delete space",
+        description: stringifyError(res.error),
+        error: true,
+      });
+      return;
     }
+
+    queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
+    toast({ title: "Space deleted", description: workspace.name });
+    await goto("/chat");
   }
 </script>
 

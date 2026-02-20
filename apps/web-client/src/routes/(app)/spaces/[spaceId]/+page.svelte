@@ -2,7 +2,7 @@
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import type { Color } from "@atlas/utils";
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "$lib/components/button.svelte";
@@ -10,6 +10,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import { listWorkspaceSessions } from "$lib/queries/sessions";
   import { formatChatDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
@@ -24,6 +25,13 @@
   const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
 
   const workspace = $derived(data.workspace);
+
+  const sessionsQuery = createQuery(() => ({
+    queryKey: ["sessions", workspace.id],
+    queryFn: () => listWorkspaceSessions(workspace.id),
+    initialData: data.sessions,
+    refetchInterval: 10_000,
+  }));
 
   onMount(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -47,7 +55,7 @@
 {#if data.requiresSetup}
   <Setup {workspace} integrations={data.integrations} />
 {:else}
-  {@const recentSessions = data.sessions.slice(0, 3)}
+  {@const recentSessions = (sessionsQuery.data ?? []).slice(0, 3)}
   {@const recentArtifacts = data.artifacts.slice(0, 5)}
   {@const runnableJobs = Object.entries(workspace.config?.jobs ?? {}).filter(
     ([_, job]) => job.triggers && job.triggers.length > 0,
@@ -154,16 +162,28 @@
           <div class="sessions">
             <ul>
               {#each recentSessions as session (session.sessionId)}
-                {@const displayName =
-                  session.sessionType === "task"
-                    ? `Task: ${session.title ?? session.parentTitle ?? "Conversation"}`
-                    : (session.title ?? session.sessionId)}
+                {@const displayName = session.jobName || session.task || session.sessionId}
+                {@const isRunning = session.status === "partial" || session.status === "active"}
+                {@const isFailed = session.status === "failed"}
 
                 <li>
                   <a href={resolve("/sessions/[sessionId]", { sessionId: session.sessionId })}>
-                    <span>{displayName}</span>
+                    <span class="session-name">
+                      {displayName}
+                      {#if isRunning}
+                        <span class="running-tag">
+                          <IconSmall.Progress />
+                          Running
+                        </span>
+                      {:else if isFailed}
+                        <span class="failed-tag">
+                          <IconSmall.Close />
+                          Failed
+                        </span>
+                      {/if}
+                    </span>
 
-                    <time>{formatChatDate(session.createdAt)}</time>
+                    <time>{formatChatDate(session.startedAt)}</time>
                   </a>
                 </li>
               {/each}
@@ -365,9 +385,12 @@
       position: relative;
       z-index: 1;
 
-      span {
+      .session-name {
+        align-items: center;
+        display: flex;
         font-size: var(--font-size-3);
         font-weight: var(--font-weight-5);
+        gap: var(--size-1);
       }
 
       time {
@@ -394,6 +417,42 @@
         opacity: 1;
         visibility: visible;
       }
+    }
+
+    .running-tag,
+    .failed-tag {
+      align-items: center;
+      border-radius: var(--radius-2-5);
+      display: inline-flex;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-5);
+      gap: var(--size-0-5);
+      padding-block: var(--size-0-5);
+      padding-inline: var(--size-1) var(--size-1-5);
+      white-space: nowrap;
+    }
+
+    .running-tag {
+      background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
+      color: var(--color-yellow-2);
+
+      & :global(svg) {
+        animation: spin 1.2s linear infinite;
+      }
+    }
+
+    .failed-tag {
+      background: color-mix(in srgb, var(--color-red) 7%, transparent);
+      color: var(--color-red);
+    }
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
     }
   }
 </style>
