@@ -13,7 +13,7 @@
     "@worker-tools/html-rewriter": "0.1.0-pre.19",
     "ai": "^5.0.136",
     "fast-glob": "^3.3.3",
-    "minimatch": "^10.2.1",
+    "minimatch": "^10.2.2",
     "papaparse": "^5.5.3",
     "turndown": "7.2.2",
     "vitest": "^4.0.18",
