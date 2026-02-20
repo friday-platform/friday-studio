@@ -15,13 +15,45 @@ import type { Agent, Signal } from "../types.ts";
 const logger = createLogger({ component: "proto-planner" });
 
 /**
+ * Latin characters that NFKD normalization does not decompose.
+ * Must be replaced before normalization or they get silently stripped.
+ */
+const LATIN_CHAR_MAP: Record<string, string> = {
+  æ: "ae",
+  Æ: "AE",
+  œ: "oe",
+  Œ: "OE",
+  ß: "ss",
+  ø: "o",
+  Ø: "O",
+  ł: "l",
+  Ł: "L",
+  đ: "d",
+  Đ: "D",
+  þ: "th",
+  Þ: "TH",
+  ð: "d",
+  Ð: "D",
+};
+
+const LATIN_CHAR_RE = new RegExp(`[${Object.keys(LATIN_CHAR_MAP).join("")}]`, "g");
+
+/** Strip zero-width chars, soft hyphens, BOM, and bidi controls. */
+const INVISIBLE_RE = /[\u00AD\u200B-\u200F\u2028-\u202F\u2060-\u2069\uFEFF]/g;
+
+/**
  * Convert a string to kebab-case. Mirrors `@std/text/to-kebab-case`
  * which isn't available outside workspace packages.
  */
-function toKebabCase(str: string): string {
+export function toKebabCase(str: string): string {
   return str
+    .replace(INVISIBLE_RE, "")
+    .replace(LATIN_CHAR_RE, (ch) => LATIN_CHAR_MAP[ch] ?? ch)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/([a-z])([A-Z])/g, "$1-$2")
-    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
     .toLowerCase();
 }
 
@@ -304,6 +336,9 @@ export interface Phase1Result {
 function assignKebabIds<T extends { name: string }>(items: T[]): Array<T & { id: string }> {
   return items.map((item, idx, arr) => {
     const baseId = toKebabCase(item.name);
+    if (!baseId) {
+      throw new Error(`Name "${item.name}" produces an empty ID after sanitization`);
+    }
     const duplicateCount = arr
       .slice(0, idx)
       .filter((other) => toKebabCase(other.name) === baseId).length;

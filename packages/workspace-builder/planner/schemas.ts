@@ -153,6 +153,12 @@ export async function generateOutputSchemas(
   agents: Agent[],
 ): Promise<Map<string, ValidatedJSONSchema>> {
   const agentMap = new Map(agents.map((a) => [a.id, a]));
+  // Secondary index: bundled IDs → agent (for post-stamp step.agentId lookups)
+  for (const agent of agents) {
+    if (agent.bundledId && !agentMap.has(agent.bundledId)) {
+      agentMap.set(agent.bundledId, agent);
+    }
+  }
   const schemas = new Map<string, ValidatedJSONSchema>();
 
   const llmSteps: Array<{ step: DAGStep; agent: Agent }> = [];

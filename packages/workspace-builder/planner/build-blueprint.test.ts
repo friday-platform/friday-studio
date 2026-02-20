@@ -441,6 +441,101 @@ describe("buildBlueprint", () => {
     });
   });
 
+  describe("bundled agent schema lookup", () => {
+    it("passes post-stamp steps and agents with bundledId to generateOutputSchemas", async () => {
+      // Post-classify: agent keeps planner ID "csv-data-analyst" but gets bundledId "data-analyst"
+      const bundledAgents = [
+        {
+          id: "csv-data-analyst",
+          name: "CSV Data Analyst",
+          description: "Analyzes CSV data",
+          needs: ["data-analysis"],
+          bundledId: "data-analyst",
+        },
+        { id: "reporter", name: "Reporter", description: "Reports findings", needs: [] },
+      ];
+
+      // Post-stamp: steps use bundled IDs (stampExecutionTypes rewrites agentId)
+      const stamped = [
+        {
+          id: "stamp-job",
+          name: "Job",
+          title: "Job",
+          triggerSignalId: "daily-check",
+          steps: [
+            {
+              id: "analyze",
+              agentId: "data-analyst",
+              description: "Analyze",
+              depends_on: [],
+              executionType: "bundled",
+            },
+            {
+              id: "report",
+              agentId: "reporter",
+              description: "Report",
+              depends_on: ["analyze"],
+              executionType: "llm",
+              tools: [],
+            },
+          ],
+          documentContracts: [],
+          prepareMappings: [],
+        },
+      ];
+
+      mockGeneratePlan.mockResolvedValue({
+        workspace: { name: "Test", purpose: "Test" },
+        signals: PLAN_RESULT.signals,
+        agents: bundledAgents,
+      });
+      mockClassifyAgents.mockResolvedValue({
+        agents: bundledAgents,
+        clarifications: [],
+        configRequirements: [],
+      });
+      mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
+      mockGenerateDAGSteps.mockResolvedValue(stamped);
+      mockEnrichAgentsWithPipelineContext.mockResolvedValue({ agents: bundledAgents, entries: [] });
+      // generateOutputSchemas is mocked — verify it receives post-stamp steps + original agents
+      mockGenerateOutputSchemas.mockResolvedValue(
+        new Map([
+          ["analyze", { type: "object", properties: { result: { type: "string" } } }],
+          ["report", { type: "object", properties: { summary: { type: "string" } } }],
+        ]),
+      );
+      mockGeneratePrepareMappings.mockResolvedValue([]);
+
+      const result = await buildBlueprint("Analyze CSV", baseOpts());
+
+      // generateOutputSchemas received post-stamp steps (agentId: "data-analyst")
+      // alongside agents keyed by planner ID ("csv-data-analyst")
+      expect(mockGenerateOutputSchemas).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ agentId: "data-analyst" })]),
+        expect.arrayContaining([
+          expect.objectContaining({ id: "csv-data-analyst", bundledId: "data-analyst" }),
+        ]),
+      );
+      expect(result.blueprint.jobs).toHaveLength(1);
+      const job = result.blueprint.jobs[0];
+      expect.assert(job !== undefined);
+      // Returned schemas land in documentContracts
+      expect(job.documentContracts).toHaveLength(2);
+      expect(job.documentContracts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            producerStepId: "analyze",
+            schema: { type: "object", properties: { result: { type: "string" } } },
+          }),
+          expect.objectContaining({
+            producerStepId: "report",
+            schema: { type: "object", properties: { summary: { type: "string" } } },
+          }),
+        ]),
+      );
+    });
+  });
+
   describe("precomputed option", () => {
     it("skips generatePlan and classifyAgents when precomputed is provided", async () => {
       // Set up mocks for steps after plan+classify

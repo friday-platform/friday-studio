@@ -34,11 +34,42 @@ vi.mock("../../system/agents/conversation/link-context.ts", () => ({
   formatIntegrationsSection: vi.fn(() => ""),
 }));
 
-import { generatePlan } from "./plan.ts";
+import { generatePlan, toKebabCase } from "./plan.ts";
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("toKebabCase", () => {
+  it.each([
+    // Special characters
+    ["Digest Compiler & Email Sender", "digest-compiler-email-sender"],
+    ["Dust.tt Researcher", "dust-tt-researcher"],
+    ["Report (Weekly)", "report-weekly"],
+    // NFKD-decomposable diacritics
+    ["Résumé Analyzer", "resume-analyzer"],
+    ["Ñoño Über Reporter", "nono-uber-reporter"],
+    // Non-decomposable Latin characters (pre-NFKD map)
+    ["Straße Monitor", "strasse-monitor"],
+    ["Æthelred Øresund Łódź", "aethelred-oresund-lodz"],
+    ["Þór ð Agent", "thor-d-agent"],
+    ["Đào œuvre", "dao-oeuvre"],
+    // Emoji (stripped, ASCII remains)
+    ["🤖 News Bot", "news-bot"],
+    // Invisible Unicode (stripped without inserting hyphens)
+    ["News\u200BBot", "news-bot"],
+    ["Data\u00ADAnalyzer", "data-analyzer"],
+    ["\uFEFFReport Agent", "report-agent"],
+    // Combined: invisible char inside a non-decomposable Latin word
+    ["Stra\u200Bße Agent", "strasse-agent"],
+    // camelCase splitting
+    ["camelCase", "camel-case"],
+    // Plain ASCII
+    ["Simple Name", "simple-name"],
+  ])("%s → %s", (input, expected) => {
+    expect(toKebabCase(input)).toBe(expected);
+  });
+});
 
 describe("generatePlan — mode parameter", () => {
   beforeEach(() => {
@@ -94,6 +125,21 @@ describe("generatePlan — mode parameter", () => {
           expect.objectContaining({ content: expect.stringContaining("Signal Types") }),
         ]),
       }),
+    );
+  });
+
+  it("throws when agent name produces an empty ID after sanitization", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Bad Plan", purpose: "Test" },
+          agents: [{ name: "&&&", description: "All special chars", needs: [] }],
+        },
+      },
+    });
+
+    await expect(generatePlan("test", { mode: "task" })).rejects.toThrow(
+      'Name "&&&" produces an empty ID after sanitization',
     );
   });
 
