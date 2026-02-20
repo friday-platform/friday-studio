@@ -1,4 +1,4 @@
-FROM joseluisq/static-web-server:2.40.1
+FROM joseluisq/static-web-server:2.41.0
 
 COPY apps/static/robots-auth-hellofriday.txt /var/www/robots/robots-auth-hellofriday.txt
 COPY apps/static/robots-otel-hellofriday.txt /var/www/robots/robots-otel-hellofriday.txt
