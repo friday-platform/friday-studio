@@ -28,7 +28,7 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@types/react": "^19.2.14",
-    "ai": "^5.0.136",
+    "ai": "^5.0.137",
     "ink": "^6.8.0",
     "js-levenshtein": "^1.1.6",
     "lint-staged": "^16.2.7",

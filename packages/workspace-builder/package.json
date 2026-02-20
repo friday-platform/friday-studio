@@ -10,7 +10,7 @@
     "@atlas/schemas": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "ai": "^5.0.136",
+    "ai": "^5.0.137",
     "cron-parser": "^5.5.0",
     "zod": "^4.3.5"
   },
