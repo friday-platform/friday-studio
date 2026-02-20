@@ -116,7 +116,7 @@
       </Collapsible.Trigger>
 
       <Collapsible.Content animate>
-        <ul>
+        <ul class="section-list">
           {#if query.isSuccess}
             {#each query.data as space (space.id)}
               <li>
