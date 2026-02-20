@@ -7,6 +7,8 @@
 
 import {
   type AgentResult as AgentSDKExecutionResult,
+  type ArtifactRef,
+  ArtifactRefSchema,
   type FailInput,
   FailInputSchema,
 } from "@atlas/agent-sdk";
@@ -722,6 +724,36 @@ export class FSMEngine {
           results,
           prepareResult,
         );
+
+        // After a code action produces a prepareResult without artifactRefs,
+        // collect any artifactRefs from prior agent results in the accumulator.
+        // This ensures LLM steps see artifact content even when the prepare
+        // function only forwards .response (the common compiled-workspace pattern).
+        if (prepareResult && !prepareResult.artifactRefs && results) {
+          const seen = new Set<string>();
+          const collectedRefs: ArtifactRef[] = [];
+          for (const entry of results.values()) {
+            const refs = entry.artifactRefs;
+            if (Array.isArray(refs)) {
+              for (const ref of refs) {
+                const parsed = ArtifactRefSchema.safeParse(ref);
+                if (parsed.success) {
+                  if (!seen.has(parsed.data.id)) {
+                    seen.add(parsed.data.id);
+                    collectedRefs.push(parsed.data);
+                  }
+                } else {
+                  logger.warn("Malformed artifactRef in agent result, skipping", {
+                    error: parsed.error.message,
+                  });
+                }
+              }
+            }
+          }
+          if (collectedRefs.length > 0) {
+            prepareResult = { ...prepareResult, artifactRefs: collectedRefs };
+          }
+        }
       }
     } finally {
       this._recursionDepth--;

@@ -168,6 +168,223 @@ describe("LLM prompt: input-only from prepare result", () => {
     expect(prompt).not.toContain("Available Documents:");
   });
 
+  it("agent artifactRefs in context.results are merged into LLM prompt when prepare result omits them", async () => {
+    // Reproduces: https://github.com/tempestteam/atlas/issues/dried-mushroom
+    // Scenario: code action returns prepareResult with only .response/.config,
+    // but a preceding agent action stored artifactRefs in context.results.
+    // The LLM step should still see the expanded artifact content.
+    const { __mockBatchGet } = (await import("@atlas/client/v2")) as unknown as {
+      __mockBatchGet: ReturnType<typeof vi.fn>;
+    };
+    __mockBatchGet.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        artifacts: [
+          {
+            id: "agent-art-456",
+            data: {
+              mentions: [
+                { title: "G2 Review", source: "G2", url: "https://g2.com/bucketlist" },
+                {
+                  title: "ADP Listing",
+                  source: "ADP Marketplace",
+                  url: "https://apps.adp.com/bucketlist",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const fsm: FSMDefinition = {
+      id: "agent-artifact-to-llm-test",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                // 1. Agent returns structured data in artifact, prose in .response
+                {
+                  type: "agent",
+                  agentId: "search",
+                  outputTo: "search-result",
+                  prompt: "Search for brand mentions",
+                },
+                // 2. Prepare function reads only .response (mimics compiled workspace pattern)
+                { type: "code", function: "prepare" },
+                // 3. LLM should see BOTH prepare config AND agent's artifact content
+                {
+                  type: "llm",
+                  provider: "test",
+                  prompt: "Format the verified mentions into a digest",
+                  model: "test-model",
+                  outputTo: "digest",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      functions: {
+        prepare: {
+          type: "action",
+          code: `export default function prepare(context) {
+            const config = {};
+            config['verifiedMentions'] = context.results['search-result']?.response;
+            return { task: 'Format mentions into digest', config };
+          }`,
+        },
+      },
+    };
+
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const capturedPrompts: string[] = [];
+
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        capturedPrompts.push(params.prompt);
+        return Promise.resolve(mockLLMEnvelope(params.agentId, params.prompt));
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      agentExecutor: (action: { agentId: string }) =>
+        Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { response: "All 9 URLs confirmed valid. No broken links found." },
+          artifactRefs: [{ id: "agent-art-456", type: "web-search", summary: "Verified mentions" }],
+          durationMs: 100,
+        } as AgentResult<string, Record<string, unknown>>),
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0];
+    if (!prompt) throw new Error("Expected captured prompt");
+
+    // Prepare result's config should be present
+    expect(prompt).toContain("Input:\n");
+    expect(prompt).toContain("verifiedMentions");
+
+    // Agent's artifact content should ALSO be expanded in the prompt
+    expect(prompt).toContain("artifactContent");
+    expect(prompt).toContain("agent-art-456");
+    expect(prompt).toContain("G2 Review");
+    expect(prompt).toContain("https://g2.com/bucketlist");
+  });
+
+  it("agent artifactRefs are NOT merged when prepare result already includes its own", async () => {
+    const { __mockBatchGet } = (await import("@atlas/client/v2")) as unknown as {
+      __mockBatchGet: ReturnType<typeof vi.fn>;
+    };
+    // Only the prepare's artifact should be fetched — not the agent's
+    __mockBatchGet.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        artifacts: [{ id: "prepare-art-789", data: { curated: "Hand-picked top 3 mentions" } }],
+      },
+    });
+
+    const fsm: FSMDefinition = {
+      id: "agent-artifact-no-override-test",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                {
+                  type: "agent",
+                  agentId: "search",
+                  outputTo: "search-result",
+                  prompt: "Search for brand mentions",
+                },
+                { type: "code", function: "prepare" },
+                {
+                  type: "llm",
+                  provider: "test",
+                  prompt: "Format the curated mentions",
+                  model: "test-model",
+                  outputTo: "digest",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      functions: {
+        prepare: {
+          type: "action",
+          code: `export default function prepare(context) {
+            return {
+              task: 'Format curated mentions',
+              config: { source: context.results['search-result']?.response },
+              artifactRefs: [{ id: "prepare-art-789", type: "curated", summary: "Curated list" }],
+            };
+          }`,
+        },
+      },
+    };
+
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const capturedPrompts: string[] = [];
+
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        capturedPrompts.push(params.prompt);
+        return Promise.resolve(mockLLMEnvelope(params.agentId, params.prompt));
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      agentExecutor: (action: { agentId: string }) =>
+        Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { response: "Found 9 mentions" },
+          artifactRefs: [
+            { id: "agent-art-456", type: "web-search", summary: "Raw search results" },
+          ],
+          durationMs: 100,
+        } as AgentResult<string, Record<string, unknown>>),
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0];
+    if (!prompt) throw new Error("Expected captured prompt");
+
+    // Prepare's artifact should be expanded
+    expect(prompt).toContain("prepare-art-789");
+    expect(prompt).toContain("Hand-picked top 3 mentions");
+
+    // Agent's artifact should NOT appear — prepare explicitly provided its own refs
+    expect(prompt).not.toContain("agent-art-456");
+  });
+
   it("prompt has no Input section when no prepare result", async () => {
     const fsm: FSMDefinition = {
       id: "llm-no-input-test",
