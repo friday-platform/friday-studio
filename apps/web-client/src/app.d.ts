@@ -38,6 +38,9 @@ declare global {
 
   /** Sentry release identifier for deployment tracking */
   const __SENTRY_RELEASE__: string;
+
+  /** Feature flag names enabled via FEATURE_FLAGS env var at build time */
+  const __FEATURE_FLAGS__: string[];
 }
 
 declare module "@tanstack/svelte-table" {

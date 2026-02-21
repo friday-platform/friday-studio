@@ -14,6 +14,9 @@ const isTauriBuild = process.env.TAURI_BUILD === "true";
 // Set via SENTRY_ENVIRONMENT env var at build time, defaults to "production" for Docker builds
 const sentryEnvironment = process.env.SENTRY_ENVIRONMENT || "production";
 
+// Parse FEATURE_FLAGS env var: comma-separated list of flag names to enable
+const featureFlags = (process.env.FEATURE_FLAGS || "").split(",").filter(Boolean);
+
 // Get git commit hash for Sentry release tracking
 const gitCommit = (() => {
   try {
@@ -38,6 +41,7 @@ export default defineConfig(({ mode }) => ({
     __SENTRY_ENVIRONMENT__: JSON.stringify(mode === "development" ? "local" : sentryEnvironment),
     // Sentry release for tracking deployments
     __SENTRY_RELEASE__: JSON.stringify(`atlas-web-client@${gitCommit}`),
+    __FEATURE_FLAGS__: JSON.stringify(featureFlags),
   },
   server: {
     port: 1420,

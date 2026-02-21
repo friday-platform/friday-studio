@@ -106,6 +106,19 @@
           Activity
         </a>
       </li>
+
+      <!-- Current example, working on this next -->
+      {#if ctx.flags.ENABLE_GLOBAL_SKILLS}
+        <li>
+          <a
+            href={ctx.routes.sessions.list}
+            class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
+            onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
+          >
+            Skills
+          </a>
+        </li>
+      {/if}
     </ul>
 
     <Collapsible.Root defaultOpen>
