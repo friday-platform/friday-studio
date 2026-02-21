@@ -255,6 +255,14 @@ func verifyEmailSignupPost(w http.ResponseWriter, r *http.Request) {
 		pgxerr.WithContext(ctx),
 	)
 
+	// Get the pool before the request context is done - needed for async Stripe operations
+	pool, err := pgxdb.PoolFromContext(ctx, "signup")
+	if err != nil {
+		log.Error("Could not get database pool", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
 	tx, queries, conn, err := queriesWithTx(ctx)
 	defer expect.DeferRollbackRelease(tx, conn)
 	if err != nil {
@@ -341,6 +349,9 @@ func verifyEmailSignupPost(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Async: Create Stripe customer (non-blocking, fire-and-forget)
+	go createStripeCustomer(log, cfg, pool, tu)
 
 	amr := &AMREntry{
 		Method:    "email",

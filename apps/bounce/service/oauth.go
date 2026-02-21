@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
 	"github.com/tempestteam/atlas/pkg/analytics"
+	pgxdb "github.com/tempestteam/atlas/pkg/x/middleware/pgxdb"
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
@@ -222,6 +223,14 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 		pgxerr.WithLog(log),
 		pgxerr.WithContext(ctx),
 	)
+
+	// Get the pool before the request context is done - needed for async Stripe operations
+	pool, err := pgxdb.PoolFromContext(ctx, "signup")
+	if err != nil {
+		log.Error("Could not get database pool", "error", err)
+		http.Error(w, "Failed to get database pool", http.StatusInternalServerError)
+		return
+	}
 
 	tx, queries, conn, err := queriesWithTx(ctx)
 	defer expect.DeferRollbackRelease(tx, conn)
@@ -461,6 +470,11 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 		log.Error("Failed to commit transaction", "error", err)
 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
 		return
+	}
+
+	// Async: Create Stripe customer if missing (non-blocking, fire-and-forget)
+	if !tempestUser.StripeCustomerID.Valid || tempestUser.StripeCustomerID.String == "" {
+		go createStripeCustomer(log, cfg, pool, tempestUser)
 	}
 
 	// Now we can generate a session and redirect the user to the redirect_to URL
