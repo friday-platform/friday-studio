@@ -1,20 +1,18 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
 
-vi.mock("@atlas/client/v2", () => {
-  const mockBatchGet = vi.fn();
-  return {
-    client: { artifactsStorage: { "batch-get": { $post: mockBatchGet } } },
-    parseResult: async (promise: Promise<unknown>) => {
-      const result = await promise;
-      return result;
-    },
-    __mockBatchGet: mockBatchGet,
-  };
-});
+const mockBatchGet = vi.hoisted(() => vi.fn());
+
+vi.mock("@atlas/client/v2", () => ({
+  client: { artifactsStorage: { "batch-get": { $post: mockBatchGet } } },
+  parseResult: async (promise: Promise<unknown>) => {
+    const result = await promise;
+    return result;
+  },
+}));
 
 /** Convert simple mock data into the AgentResult envelope the engine expects. */
 function mockLLMEnvelope(
@@ -54,6 +52,10 @@ async function createLLMEngine(fsm: FSMDefinition) {
 }
 
 describe("LLM prompt: input-only from prepare result", () => {
+  beforeEach(() => {
+    mockBatchGet.mockReset();
+  });
+
   it("prompt contains Input section from prepare result and no Available Documents", async () => {
     const fsm: FSMDefinition = {
       id: "llm-input-test",
@@ -106,10 +108,7 @@ describe("LLM prompt: input-only from prepare result", () => {
 
   it("artifact refs in prepare result are expanded in Input section", async () => {
     // Set up mock to return artifact content
-    const { __mockBatchGet } = (await import("@atlas/client/v2")) as unknown as {
-      __mockBatchGet: ReturnType<typeof vi.fn>;
-    };
-    __mockBatchGet.mockResolvedValueOnce({
+    mockBatchGet.mockResolvedValueOnce({
       ok: true,
       data: {
         artifacts: [
@@ -173,10 +172,7 @@ describe("LLM prompt: input-only from prepare result", () => {
     // Scenario: code action returns prepareResult with only .response/.config,
     // but a preceding agent action stored artifactRefs in context.results.
     // The LLM step should still see the expanded artifact content.
-    const { __mockBatchGet } = (await import("@atlas/client/v2")) as unknown as {
-      __mockBatchGet: ReturnType<typeof vi.fn>;
-    };
-    __mockBatchGet.mockResolvedValueOnce({
+    mockBatchGet.mockResolvedValueOnce({
       ok: true,
       data: {
         artifacts: [
@@ -287,11 +283,8 @@ describe("LLM prompt: input-only from prepare result", () => {
   });
 
   it("agent artifactRefs are NOT merged when prepare result already includes its own", async () => {
-    const { __mockBatchGet } = (await import("@atlas/client/v2")) as unknown as {
-      __mockBatchGet: ReturnType<typeof vi.fn>;
-    };
     // Only the prepare's artifact should be fetched — not the agent's
-    __mockBatchGet.mockResolvedValueOnce({
+    mockBatchGet.mockResolvedValueOnce({
       ok: true,
       data: {
         artifacts: [{ id: "prepare-art-789", data: { curated: "Hand-picked top 3 mentions" } }],

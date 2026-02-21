@@ -247,6 +247,34 @@ describe("thing", () => {
 beforeEach(() => { vi.restoreAllMocks(); });
 ```
 
+### vi.restoreAllMocks() doesn't clear vi.hoisted() mocks
+
+`vi.restoreAllMocks()` restores original implementations but does **not** clear
+call history on mocks created with `vi.hoisted()`. Tests leak state silently.
+
+```typescript
+// BAD — mockFn.mock.calls carries over between tests
+const mockFn = vi.hoisted(() => vi.fn());
+beforeEach(() => { vi.restoreAllMocks(); });
+
+// GOOD — Explicitly reset each hoisted mock
+const mockFn = vi.hoisted(() => vi.fn());
+beforeEach(() => { mockFn.mockReset(); });
+```
+
+### vi.fn() needs type parameter for typed props
+
+`vi.fn()` without a type parameter produces `Mock<Procedure | Constructable>`
+which fails assignability to typed callback props (e.g., Svelte component props).
+
+```typescript
+// BAD — svelte-check fails: Mock<Procedure> is not assignable to (id: string | undefined) => void
+const onchange = vi.fn();
+
+// GOOD — Explicit type parameter
+const onchange = vi.fn<(id: string | undefined) => void>();
+```
+
 ### vi.mock doesn't intercept in Deno+vitest
 
 `vi.mock("ai")` and similar module mocks don't reliably intercept in Deno's

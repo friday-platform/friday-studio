@@ -3,10 +3,16 @@
   import { stringifyError } from "@atlas/utils";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
+  import ArtifactRefInput from "$lib/components/artifact-ref-input.svelte";
   import { Dialog } from "$lib/components/dialog";
   import { toast } from "$lib/components/notification/notification.svelte";
+  import {
+    getFieldRendering,
+    humanizeFieldName,
+    parseFieldDef,
+    type FieldDef,
+  } from "$lib/utils/field-helpers";
   import type { Snippet } from "svelte";
-  import { z } from "zod";
 
   type Signal = {
     description: string;
@@ -38,6 +44,8 @@
   let isRunning = $state(false);
   let selectedSignalId = $state("");
   let formData = $state<Record<string, unknown>>({});
+  let uploadingStates = $state<Record<string, boolean>>({});
+  let hasUploadsInProgress = $derived(Object.values(uploadingStates).some(Boolean));
 
   const jobTitle = $derived(job.title ?? job.name ?? jobId);
 
@@ -57,18 +65,6 @@
 
   const activeSchema = $derived(activeSignal?.schema);
 
-  type FieldDef = { type?: string; description?: string };
-
-  const FieldDefSchema = z.object({
-    type: z.string().optional(),
-    description: z.string().optional(),
-  });
-
-  function parseFieldDef(value: unknown): FieldDef {
-    const result = FieldDefSchema.safeParse(value);
-    return result.success ? result.data : {};
-  }
-
   const schemaProperties = $derived.by((): [string, FieldDef][] => {
     const props = activeSchema?.["properties"];
     if (!props || typeof props !== "object") return [];
@@ -86,12 +82,15 @@
   function resetForm() {
     selectedSignalId = "";
     formData = {};
+    uploadingStates = {};
     error = null;
   }
 
   function handleSignalChange(signalId: string) {
     selectedSignalId = signalId;
     formData = {};
+    uploadingStates = {};
+    error = null;
   }
 
   async function handleSubmit(open: { set: (v: boolean) => void }) {
@@ -101,10 +100,17 @@
     }
 
     if (hasSchema) {
-      for (const field of requiredFields) {
+      for (const [field, fieldDef] of schemaProperties) {
+        if (!requiredFields.has(field)) continue;
         const value = formData[field];
         if (value === undefined || value === "") {
-          error = `Field "${field}" is required`;
+          const isArtifactRef = getFieldRendering(fieldDef) === "artifact-ref";
+          if (isArtifactRef) {
+            error = "Please upload a file to continue";
+          } else {
+            const label = fieldDef.title ?? humanizeFieldName(field);
+            error = `Field "${label}" is required`;
+          }
           return;
         }
       }
@@ -164,9 +170,6 @@
 
       {#snippet header()}
         <Dialog.Title>Run {jobTitle}?</Dialog.Title>
-        {#if job.description}
-          <Dialog.Description>{job.description}</Dialog.Description>
-        {/if}
       {/snippet}
 
       {#snippet footer()}
@@ -203,15 +206,24 @@
             {#each schemaProperties as [fieldName, fieldDef] (fieldName)}
               {@const fieldId = `field-${jobId}-${fieldName}`}
               {@const isRequired = requiredFields.has(fieldName)}
+              {@const rendering = getFieldRendering(fieldDef)}
+              {@const isArtifactRef = rendering === "artifact-ref"}
+              {@const fieldLabel =
+                fieldDef.title ??
+                (isArtifactRef
+                  ? humanizeFieldName(fieldName).replace(/\bArtifact\b/gi, "File")
+                  : humanizeFieldName(fieldName))}
               <div class="field">
-                <label for={fieldId}>
-                  {fieldName}
-                  {#if isRequired}<span class="required">*</span>{/if}
-                </label>
-                {#if fieldDef.description}
+                {#if !isArtifactRef}
+                  <label for={fieldId}>
+                    {fieldLabel}
+                    {#if isRequired}<span class="required">*</span>{/if}
+                  </label>
+                {/if}
+                {#if fieldDef.description && !isArtifactRef}
                   <span class="field-description">{fieldDef.description}</span>
                 {/if}
-                {#if fieldDef.type === "boolean"}
+                {#if rendering === "boolean"}
                   <label class="checkbox-label">
                     <input
                       id={fieldId}
@@ -223,7 +235,21 @@
                     />
                     <span>Enabled</span>
                   </label>
-                {:else if fieldDef.type === "number" || fieldDef.type === "integer"}
+                {:else if rendering === "artifact-ref"}
+                  <ArtifactRefInput
+                    {fieldName}
+                    label={fieldLabel}
+                    required={isRequired}
+                    bind:uploading={uploadingStates[fieldName]}
+                    onchange={(id) => {
+                      if (id) {
+                        formData[fieldName] = id;
+                      } else {
+                        delete formData[fieldName];
+                      }
+                    }}
+                  />
+                {:else if rendering === "number"}
                   <input
                     id={fieldId}
                     type="number"
@@ -257,7 +283,11 @@
           {/if}
 
           <div class="buttons">
-            <Dialog.Button type="submit" closeOnClick={false} disabled={isRunning}>
+            <Dialog.Button
+              type="submit"
+              closeOnClick={false}
+              disabled={hasUploadsInProgress || isRunning}
+            >
               {isRunning ? "Running..." : "Run"}
             </Dialog.Button>
             <Dialog.Cancel onclick={resetForm}>Cancel</Dialog.Cancel>

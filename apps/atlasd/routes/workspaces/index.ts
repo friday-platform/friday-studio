@@ -758,11 +758,20 @@ const workspacesRoutes = daemonFactory
             422,
           );
         }
-        if (errorMessage.includes("Signal not found") || errorMessage.includes("not found")) {
+        if (
+          errorMessage.includes("No FSM job handles signal") ||
+          errorMessage.includes("Signal not found")
+        ) {
           return c.json(
             { error: `Signal '${signalId}' not found in workspace '${workspaceId}'` },
             404,
           );
+        }
+        if (errorMessage.includes("payload validation failed")) {
+          return c.json({ error: errorMessage }, 400);
+        }
+        if (errorMessage.includes("already has an active session")) {
+          return c.json({ error: errorMessage }, 409);
         }
         return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
       }

@@ -113,6 +113,8 @@ go build                # Build
   explicit `package.json` dep — adding them creates duplicate resolution paths
 - gunshi `required: true` on CLI args still produces `string | undefined` at the
   type level — add a runtime guard even for required args
+- `deno check` cannot parse `.svelte` files — use
+  `npx svelte-check --threshold error` for Svelte type checking
 
 ### TypeScript
 
@@ -124,6 +126,9 @@ go build                # Build
 - Adding a variant to a discriminated union requires updating all exhaustive
   handlers in the same commit — splitting them creates a broken intermediate
   state
+- `.svelte.ts` files have looser `JSON.parse` inference (returns any-ish) —
+  plain `.ts` files enforce `unknown`, so extracted code needs explicit Zod
+  parsing for `JSON.parse` results
 
 ## Code Philosophy
 
