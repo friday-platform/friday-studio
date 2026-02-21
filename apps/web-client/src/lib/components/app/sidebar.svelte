@@ -56,7 +56,7 @@
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
             <span class="user-name">
-              {ctx.user.display_name}
+              {ctx.user.display_name ?? ctx.user.full_name ?? ctx.user.email}
 
               <IconSmall.CaretDown />
             </span>
