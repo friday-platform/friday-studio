@@ -84,7 +84,9 @@
           </Dialog.Trigger>
         {/if}
       </div>
-      <time datetime={date}>{formatFullDate(date)}</time>
+      {#if date}
+        <time datetime={date}>{formatFullDate(date)}</time>
+      {/if}
     </div>
 
     <Dialog.Content>
