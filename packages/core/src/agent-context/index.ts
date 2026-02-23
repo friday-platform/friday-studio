@@ -41,7 +41,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     sessionData: AgentSessionData & { streamId?: string },
     prompt: string,
     overrides?: Partial<AgentContext>,
-  ): Promise<{ context: AgentContext; enrichedPrompt: string }> {
+  ): Promise<{ context: AgentContext; enrichedPrompt: string; releaseMCPTools: () => void }> {
     const agentLogger = logger.child({
       agentId: agent.metadata.id,
       workspaceId: sessionData.workspaceId,
@@ -51,18 +51,21 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
     // 1. Fetch all tools directly from MCP servers
     let allTools: Record<string, AtlasTool> = {};
+    let releaseMCPTools = () => {};
     agentLogger.debug("Building agent context", {
       agentId: agent.metadata.id,
       hasMcpConfig: !!agent.mcpConfig,
       mcpConfigKeys: agent.mcpConfig ? Object.keys(agent.mcpConfig) : [],
     });
     try {
-      allTools = await fetchAllTools(
+      const fetched = await fetchAllTools(
         sessionData.workspaceId,
         agent.mcpConfig,
         mcpServerPool,
         logger,
       );
+      allTools = fetched.tools;
+      releaseMCPTools = fetched.release;
 
       agentLogger.info("Pre-fetched tools", { toolCount: Object.keys(allTools).length });
     } catch (error) {
@@ -129,7 +132,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       tools: overrides?.tools || allTools,
     };
 
-    return { context, enrichedPrompt };
+    return { context, enrichedPrompt, releaseMCPTools };
   };
 }
 
@@ -142,7 +145,7 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   mcpServerPool: GlobalMCPServerPool,
   logger: Logger,
-): Promise<Record<string, AtlasTool>> {
+): Promise<{ tools: Record<string, AtlasTool>; release: () => void }> {
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
@@ -180,20 +183,21 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
-  // Get pooled MCP manager and fetch all tools
+  // Get pooled MCP manager and fetch all tools.
+  // The manager is NOT released here — callers hold the release callback
+  // and must call it when execution finishes. This prevents the pool's
+  // cleanup timer from disposing the manager (and its MCP clients) during
+  // long-running agent executions.
   const mcpManager = await mcpServerPool.getMCPManager(allServerConfigs);
   const serverIds = Object.keys(allServerConfigs);
+  const release = () => mcpServerPool.releaseMCPManager(allServerConfigs);
 
   try {
     const tools = await mcpManager.getToolsForServers(serverIds);
-
-    // Release the manager back to the pool
-    mcpServerPool.releaseMCPManager(allServerConfigs);
-
-    return tools;
+    return { tools, release };
   } catch (error) {
-    // Make sure to release the manager even on error
-    mcpServerPool.releaseMCPManager(allServerConfigs);
+    // Release immediately on fetch failure — no tools to keep alive
+    release();
     throw error;
   }
 }

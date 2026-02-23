@@ -32,7 +32,11 @@ type PrepareContextInput = {
   abortSignal?: AbortSignal;
 };
 
-export type PrepareContextOutput = { context: AgentContext; enrichedPrompt: string };
+export type PrepareContextOutput = {
+  context: AgentContext;
+  enrichedPrompt: string;
+  releaseMCPTools: () => void;
+};
 
 type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentContext };
 type ExecuteAgentOutput = AgentPayload<unknown>;
@@ -59,6 +63,7 @@ interface AgentExecutionContext {
   sessionData?: AgentSessionData;
   abortSignal?: AbortSignal;
   preparedContext?: AgentContext;
+  releaseMCPTools?: () => void;
   result?: AgentPayload<unknown>;
   error?: Error;
   startTime?: number;
@@ -185,6 +190,12 @@ export function createAgentExecutionMachine(
           }
           return event.output.enrichedPrompt;
         },
+        releaseMCPTools: ({ event }) => {
+          if (event.type !== "xstate.done.actor.prepareContext") {
+            return undefined;
+          }
+          return event.output.releaseMCPTools;
+        },
       }),
 
       assignExecutionResult: assign({
@@ -234,6 +245,10 @@ export function createAgentExecutionMachine(
         const duration =
           context.endTime && context.startTime ? context.endTime - context.startTime : 0;
         logger.info("Persisting results", { agentId: context.agentId, duration });
+      },
+
+      releaseMCPTools: ({ context }) => {
+        context.releaseMCPTools?.();
       },
 
       logCompleted: ({ context }) => {
@@ -397,6 +412,7 @@ export function createAgentExecutionMachine(
       },
 
       completed: {
+        entry: "releaseMCPTools",
         on: {
           EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
           UNLOAD: { target: "idle" },
@@ -404,7 +420,7 @@ export function createAgentExecutionMachine(
       },
 
       failed: {
-        entry: "logError",
+        entry: ["logError", "releaseMCPTools"],
 
         on: {
           LOAD: { target: "loading" },
