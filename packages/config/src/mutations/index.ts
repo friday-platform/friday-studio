@@ -30,7 +30,7 @@ export type {
   FSMStateDefinition,
 } from "./fsm-types.ts";
 // Signal mutations
-export { createSignal, deleteSignal, updateSignal } from "./signals.ts";
+export { createSignal, deleteSignal, patchSignalConfig, updateSignal } from "./signals.ts";
 // Types
 export type {
   CascadeTarget,

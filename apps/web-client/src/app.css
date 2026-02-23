@@ -446,6 +446,7 @@ html {
 }
 
 body {
+  background-color: var(--color-surface-2);
   color: var(--color-text);
   cursor: default;
   block-size: 100dvh;

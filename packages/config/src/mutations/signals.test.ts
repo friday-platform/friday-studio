@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createSignal, deleteSignal, updateSignal } from "./signals.ts";
+import { createSignal, deleteSignal, patchSignalConfig, updateSignal } from "./signals.ts";
 import {
   createJob,
   createTestConfig,
@@ -78,7 +78,7 @@ describe("updateSignal", () => {
     });
   });
 
-  test("fails with invalid_operation when provider type changes", () => {
+  test("allows provider type changes", () => {
     const config = createTestConfig({
       signals: { webhook: httpSignal({ description: "HTTP webhook" }) },
     });
@@ -89,7 +89,10 @@ describe("updateSignal", () => {
       scheduleSignal({ description: "Changed to schedule" }),
     );
 
-    expectError(result, "invalid_operation", (e) => expect(e.message).toContain("provider type"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.signals?.webhook?.provider).toBe("schedule");
+    }
   });
 });
 
@@ -175,5 +178,55 @@ describe("deleteSignal", () => {
         remainingTriggers: 1,
       });
     });
+  });
+});
+
+describe("patchSignalConfig", () => {
+  test("patches schedule+timezone without affecting description or title", () => {
+    const config = createTestConfig({
+      signals: {
+        daily: scheduleSignal({
+          description: "Daily check",
+          schedule: "0 9 * * *",
+          timezone: "UTC",
+        }),
+      },
+    });
+
+    const result = patchSignalConfig(config, "daily", {
+      schedule: "0 10 * * 1-5",
+      timezone: "America/New_York",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const patched = result.value.signals?.daily;
+      expect(patched?.description).toBe("Daily check");
+      expect(patched?.provider).toBe("schedule");
+      expect(patched).toMatchObject({
+        config: { schedule: "0 10 * * 1-5", timezone: "America/New_York" },
+      });
+    }
+  });
+
+  test("returns not_found for missing signal", () => {
+    const config = createTestConfig();
+
+    const result = patchSignalConfig(config, "nonexistent", { schedule: "0 0 * * *" });
+
+    expectError(result, "not_found", (e) => {
+      expect(e.entityId).toBe("nonexistent");
+      expect(e.entityType).toBe("signal");
+    });
+  });
+
+  test("returns validation_error when merged config is invalid", () => {
+    const config = createTestConfig({
+      signals: { daily: scheduleSignal({ description: "Daily check" }) },
+    });
+
+    const result = patchSignalConfig(config, "daily", { schedule: "not a cron" });
+
+    expectError(result, "validation");
   });
 });

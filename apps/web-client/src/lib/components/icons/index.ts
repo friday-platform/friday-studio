@@ -21,6 +21,8 @@ import Paperclip from "./paperclip.svelte";
 import Pause from "./pause.svelte";
 import Pencil from "./pencil.svelte";
 import Plus from "./plus.svelte";
+import RadioChecked from "./radio-checked.svelte";
+import RadioUnchecked from "./radio-unchecked.svelte";
 import Return from "./return.svelte";
 import Search from "./search.svelte";
 import Settings from "./settings.svelte";
@@ -55,6 +57,8 @@ export const Icons = {
   Pause,
   Pencil,
   Plus,
+  RadioChecked,
+  RadioUnchecked,
   Return,
   Search,
   Settings,

@@ -101,9 +101,10 @@
     font-weight: var(--font-weight-5);
     gap: var(--size-1);
     inline-size: max-content;
+    min-inline-size: var(--size-12);
     line-height: var(--font-lineheight-0);
     justify-content: center;
-    padding-inline: var(--size-2);
+    padding-inline: var(--size-3);
     white-space: initial;
     transition: all 150ms ease;
     -webkit-user-select: none;
@@ -114,16 +115,16 @@
     }
 
     &.variant-primary.size-small {
-      block-size: var(--size-5-5);
+      block-size: var(--size-6);
       font-size: var(--font-size-2);
     }
 
     &.variant-secondary {
-      background-color: var(--accent-1);
+      background-color: var(--color-surface-2);
       box-shadow: none;
 
       &:hover {
-        background-color: color-mix(in srgb, var(--accent-1), var(--color-text) 5%);
+        background-color: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
       }
     }
 

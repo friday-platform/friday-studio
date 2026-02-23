@@ -6,6 +6,7 @@ export type { ChatStorageRoutes } from "./routes/chat-storage.ts";
 export type { ConfigRoutes } from "./routes/config.ts";
 export type { DaemonRoutes } from "./routes/daemon.ts";
 export type { HealthRoutes } from "./routes/health.ts";
+export type { JobsRoutes } from "./routes/jobs.ts";
 export type { MCPRegistryRoutes } from "./routes/mcp-registry.ts";
 export type { MeRoutes, UserIdentity } from "./routes/me/index.ts";
 export type { SessionsRoutes } from "./routes/sessions/index.ts";

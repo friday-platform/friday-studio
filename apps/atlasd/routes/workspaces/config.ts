@@ -1,4 +1,5 @@
 import {
+  SignalConfigPatchSchema,
   type WorkspaceConfig,
   type WorkspaceSignalConfig,
   WorkspaceSignalConfigSchema,
@@ -14,6 +15,7 @@ import {
   FSMAgentUpdateSchema,
   type MutationError,
   type MutationResult,
+  patchSignalConfig,
   updateCredential,
   updateFSMAgent,
   updateSignal,
@@ -712,6 +714,18 @@ const handleUpdateSignal = createMutationHandler({
   entityName: "Signal",
 });
 
+/** PATCH /signals/:signalId - Patch signal config (schedule, timezone, etc.) */
+const handlePatchSignal = createMutationHandler({
+  schema: SignalConfigPatchSchema,
+  extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
+  buildMutation:
+    (configPatch, { signalId }) =>
+    (config) =>
+      patchSignalConfig(config, signalId, configPatch),
+  successStatus: 200,
+  entityName: "Signal",
+});
+
 /** DELETE /signals/:signalId - Delete signal */
 const handleDeleteSignal = createMutationHandler({
   schema: undefined,
@@ -769,6 +783,7 @@ const configRoutes = daemonFactory
   .get("/signals", handleListSignals)
   .get("/signals/:signalId", handleGetSignal)
   .put("/signals/:signalId", handleUpdateSignal)
+  .patch("/signals/:signalId", handlePatchSignal)
   .delete("/signals/:signalId", handleDeleteSignal)
   .post("/signals", handleCreateSignal)
   // Agents - read + UPDATE ONLY (no create/delete - wired into FSM states)

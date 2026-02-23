@@ -38,14 +38,29 @@
 
 <style>
   .content {
+    --dropdown-menu-content-size: auto;
+
+    background-color: var(--color-surface-1);
+    border-radius: var(--radius-4);
+    box-shadow: var(--shadow-1);
     display: flex;
     flex-direction: column;
-    outline: none;
+    inline-size: var(--dropdown-menu-content-size, auto);
+    min-inline-size: var(--size-40);
     opacity: 1;
+    outline: none;
     overflow: auto;
+    padding-block: var(--size-1);
+    position: relative;
+    scrollbar-width: thin;
     transform: translate3d(0, 0, 0);
     transition: opacity 100ms ease;
     visibility: visible;
+    z-index: var(--layer-3);
+
+    :global(&:has(.dropdown-list)) {
+      padding-block: 0;
+    }
 
     :global(body:has([role="dialog"][data-state="open"])) & {
       opacity: 0;

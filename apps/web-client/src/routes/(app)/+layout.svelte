@@ -23,16 +23,6 @@
 
   let unlisten: (() => void) | undefined;
 
-  $effect(() => {
-    document.body.style.backgroundColor = data.color
-      ? `var(--${data.color}-1)`
-      : "var(--color-surface-2)";
-
-    return () => {
-      document.body.style.backgroundColor = "";
-    };
-  });
-
   onMount(async () => {
     appCtx.user = data.user;
 
@@ -168,7 +158,7 @@
   }
 
   div[role="region"] {
-    background-color: var(--accent-1);
+    background-color: var(--color-surface-2);
 
     &.new-chat {
       animation-name: changeColor;

@@ -16,6 +16,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import { featureFlags } from "$lib/feature-flags";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
@@ -108,7 +109,7 @@
       </li>
 
       <!-- Current example, working on this next -->
-      {#if ctx.flags.ENABLE_GLOBAL_SKILLS}
+      {#if featureFlags.ENABLE_GLOBAL_SKILLS}
         <li>
           <a
             href={ctx.routes.sessions.list}
@@ -323,7 +324,7 @@
 
 <style>
   header {
-    background-color: var(--accent-1);
+    background-color: var(--color-surface-2);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -391,11 +392,19 @@
       gap: var(--size-1);
       inline-size: 100%;
       outline: none;
+
       padding-inline: var(--size-2);
       position: relative;
 
       & :global(svg) {
         opacity: 0.5;
+      }
+
+      .text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-wrap: nowrap;
       }
 
       &.active,
@@ -427,37 +436,6 @@
       transform: rotate(-90deg);
       transition: transform 150ms ease;
     }
-
-    /* .section__add-new {
-      align-items: center;
-      background-color: var(--color-surface-1);
-      border-radius: var(--radius-round);
-      block-size: var(--size-4);
-      box-shadow: var(--shadow-1);
-      inline-size: var(--size-4);
-      display: flex;
-      font-size: var(--font-size-1);
-      font-weight: var(--font-weight-5);
-      margin-inline-end: calc(-1 * var(--size-1));
-
-      &,
-      & :global(svg) {
-        transition: transform 200ms ease-in;
-      }
-
-      &:hover {
-        transform: rotate(-90deg) scale(1.14);
-
-        & :global(svg) {
-          transform: scale(0.86);
-        }
-      }
-
-      :global(:focus-visible) &,
-      &:matches(button):focus-visible {
-        outline: var(--size-px) solid color-mix(in srgb, var(--color-text), transparent 50%);
-      }
-    } */
   }
 
   :global([data-melt-collapsible-trigger][data-state="open"]) .section-trigger :global(svg) {

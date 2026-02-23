@@ -985,7 +985,11 @@ export class WorkspaceManager {
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     try {
-      await this.registry.updateWorkspaceStatus(workspaceId, "inactive", { metadata });
+      await this.registry.updateWorkspaceStatus(
+        workspaceId,
+        "inactive",
+        metadata !== undefined ? { metadata } : undefined,
+      );
     } catch (error) {
       logger.debug("Failed to update workspace status to inactive", { workspaceId, error });
     }

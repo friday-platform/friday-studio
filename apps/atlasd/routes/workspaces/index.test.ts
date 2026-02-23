@@ -9,7 +9,7 @@ import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import { describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
-import { workspacesRoutes } from "./index.ts";
+import { extractJobIntegrations, formatJobName, workspacesRoutes } from "./index.ts";
 
 // Mock external dependencies that route handlers import
 vi.mock("@atlas/analytics", () => ({
@@ -123,5 +123,360 @@ describe("POST /workspaces/:workspaceId/update validation", () => {
     const { app } = createTestApp();
     const res = await post(app, "/workspaces/ws-1/update", { config: "not-an-object" });
     expect(res.status).toBe(400);
+  });
+});
+
+// =============================================================================
+// formatJobName
+// =============================================================================
+
+describe("formatJobName", () => {
+  const cases = [
+    {
+      name: "uses title when present",
+      key: "daily_summary",
+      job: { title: "Daily Summary" },
+      expected: "Daily Summary",
+    },
+    { name: "formats key without title", key: "daily_summary", job: {}, expected: "Daily summary" },
+    { name: "handles single word key", key: "cleanup", job: {}, expected: "Cleanup" },
+    {
+      name: "ignores name field in favor of title",
+      key: "x",
+      job: { title: "My Title", name: "mcp-name" },
+      expected: "My Title",
+    },
+    {
+      name: "falls back to formatted key when no title",
+      key: "send_weekly_report",
+      job: { name: "mcp-name" },
+      expected: "Send weekly report",
+    },
+  ] as const;
+
+  test.each(cases)("$name", ({ key, job, expected }) => {
+    expect(formatJobName(key, job)).toBe(expected);
+  });
+});
+
+// =============================================================================
+// extractJobIntegrations
+// =============================================================================
+
+describe("extractJobIntegrations", () => {
+  function makeConfig(overrides: Record<string, unknown> = {}) {
+    return { version: "1.0" as const, workspace: { id: "ws-1", name: "Test" }, ...overrides };
+  }
+
+  function makeFsmJob(tools: string[][]) {
+    const states: Record<string, { entry: Array<{ type: string; tools: string[] }> }> = {};
+    tools.forEach((t, i) => {
+      states[`step_${i}`] = { entry: [{ type: "llm", tools: t }] };
+    });
+    return { fsm: { states } };
+  }
+
+  test("extracts providers from MCP servers referenced by FSM action tools", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            "github-server": { env: { TOKEN: { from: "link", provider: "github", key: "token" } } },
+            "slack-server": { env: { TOKEN: { from: "link", provider: "slack", key: "token" } } },
+          },
+        },
+      },
+    });
+    const job = makeFsmJob([["github-server", "slack-server"]]);
+    expect(extractJobIntegrations(job, config)).toEqual(["github", "slack"]);
+  });
+
+  test("filters to only MCP servers used by the job's FSM actions", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            "github-server": { env: { TOKEN: { from: "link", provider: "github", key: "token" } } },
+            "slack-server": { env: { TOKEN: { from: "link", provider: "slack", key: "token" } } },
+          },
+        },
+      },
+    });
+    const job = makeFsmJob([["github-server"]]);
+    expect(extractJobIntegrations(job, config)).toEqual(["github"]);
+  });
+
+  test("collects tools across multiple FSM states", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            "github-server": { env: { TOKEN: { from: "link", provider: "github", key: "token" } } },
+            "slack-server": { env: { TOKEN: { from: "link", provider: "slack", key: "token" } } },
+          },
+        },
+      },
+    });
+    const job = makeFsmJob([["github-server"], ["slack-server"]]);
+    expect(extractJobIntegrations(job, config)).toEqual(["github", "slack"]);
+  });
+
+  test("deduplicates providers", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            server1: { env: { A: { from: "link", provider: "github", key: "a" } } },
+            server2: { env: { B: { from: "link", provider: "github", key: "b" } } },
+          },
+        },
+      },
+    });
+    const job = makeFsmJob([["server1", "server2"]]);
+    expect(extractJobIntegrations(job, config)).toEqual(["github"]);
+  });
+
+  test("returns empty array when job has no FSM", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            "github-server": { env: { TOKEN: { from: "link", provider: "github", key: "token" } } },
+          },
+        },
+      },
+    });
+    expect(extractJobIntegrations({}, config)).toEqual([]);
+  });
+
+  test("returns empty array when FSM actions have no tools", () => {
+    const config = makeConfig();
+    const job = { fsm: { states: { step_0: { entry: [{ type: "llm" }] } } } };
+    expect(extractJobIntegrations(job, config)).toEqual([]);
+  });
+
+  test("extracts providers from bundled agent actions", () => {
+    const config = makeConfig();
+    const job = { fsm: { states: { step_0: { entry: [{ type: "agent", agentId: "slack" }] } } } };
+    expect(extractJobIntegrations(job, config)).toEqual(["slack"]);
+  });
+
+  test("combines providers from LLM tools and bundled agents", () => {
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            "google-sheets": { env: { TOKEN: { from: "link", provider: "google", key: "token" } } },
+          },
+        },
+      },
+    });
+    const job = {
+      fsm: {
+        states: {
+          step_0: { entry: [{ type: "agent", agentId: "slack" }] },
+          step_1: { entry: [{ type: "llm", tools: ["google-sheets"] }] },
+        },
+      },
+    };
+    expect(extractJobIntegrations(job, config)).toEqual(["google", "slack"]);
+  });
+
+  test("ignores unknown agent IDs", () => {
+    const config = makeConfig();
+    const job = {
+      fsm: { states: { step_0: { entry: [{ type: "agent", agentId: "nonexistent" }] } } },
+    };
+    expect(extractJobIntegrations(job, config)).toEqual([]);
+  });
+});
+
+// =============================================================================
+// GET /workspaces/:workspaceId/jobs
+// =============================================================================
+
+describe("GET /workspaces/:workspaceId/jobs", () => {
+  function createJobsTestApp(options: {
+    runtimeError?: Error;
+    config?: Record<string, unknown> | null;
+  }) {
+    const { runtimeError, config = null } = options;
+
+    const mockWorkspaceManager = {
+      find: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      getWorkspaceConfig: vi.fn().mockResolvedValue(config),
+      registerWorkspace: vi.fn(),
+      deleteWorkspace: vi.fn(),
+    } as unknown as WorkspaceManager;
+
+    const mockDaemon = {
+      getWorkspaceManager: () => mockWorkspaceManager,
+      runtimes: new Map(),
+      getOrCreateWorkspaceRuntime: runtimeError
+        ? vi.fn().mockRejectedValue(runtimeError)
+        : vi.fn().mockResolvedValue({ listJobs: () => [] }),
+    };
+
+    const mockContext: AppContext = {
+      runtimes: new Map(),
+      startTime: Date.now(),
+      sseClients: new Map(),
+      sseStreams: new Map(),
+      getWorkspaceManager: () => mockWorkspaceManager,
+      getOrCreateWorkspaceRuntime: vi.fn(),
+      resetIdleTimeout: vi.fn(),
+      getWorkspaceRuntime: vi.fn(),
+      destroyWorkspaceRuntime: vi.fn(),
+      getLibraryStorage: vi.fn(),
+      getAgentRegistry: vi.fn(),
+      daemon: mockDaemon as unknown as AppContext["daemon"],
+      streamRegistry: {} as AppContext["streamRegistry"],
+      sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+      sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    };
+
+    const app = new Hono<AppVariables>();
+    app.use("*", async (c, next) => {
+      c.set("app", mockContext);
+      await next();
+    });
+    app.route("/workspaces", workspacesRoutes);
+
+    return { app, mockWorkspaceManager };
+  }
+
+  test("returns enriched job data with title as name", async () => {
+    const { app } = createJobsTestApp({
+      config: {
+        workspace: {
+          version: "1.0",
+          workspace: { id: "ws-1", name: "Test" },
+          jobs: {
+            daily_summary: {
+              title: "Daily Summary",
+              description: "Summarizes the day",
+              execution: { agents: ["agent-1"], strategy: "sequential" },
+            },
+          },
+        },
+      },
+    });
+
+    const res = await app.request("/workspaces/ws-1/jobs");
+    expect(res.status).toBe(200);
+
+    const body = JSON.parse(await res.text());
+    expect(body).toEqual([
+      {
+        id: "daily_summary",
+        name: "Daily Summary",
+        description: "Summarizes the day",
+        integrations: [],
+      },
+    ]);
+  });
+
+  test("formats job key when no title", async () => {
+    const { app } = createJobsTestApp({
+      config: {
+        workspace: {
+          version: "1.0",
+          workspace: { id: "ws-1", name: "Test" },
+          jobs: {
+            send_weekly_report: {
+              description: "Weekly report",
+              execution: { agents: ["agent-1"], strategy: "sequential" },
+            },
+          },
+        },
+      },
+    });
+
+    const res = await app.request("/workspaces/ws-1/jobs");
+    const body = JSON.parse(await res.text()) as Record<string, unknown>[];
+    expect(body[0]).toMatchObject({ id: "send_weekly_report", name: "Send weekly report" });
+  });
+
+  test("extracts integrations from MCP credentials per FSM job", async () => {
+    const { app } = createJobsTestApp({
+      config: {
+        workspace: {
+          version: "1.0",
+          workspace: { id: "ws-1", name: "Test" },
+          tools: {
+            mcp: {
+              servers: {
+                "github-server": {
+                  command: "npx",
+                  env: { GITHUB_TOKEN: { from: "link", provider: "github", key: "access_token" } },
+                },
+                "slack-server": {
+                  command: "npx",
+                  env: { SLACK_TOKEN: { from: "link", provider: "slack", key: "bot_token" } },
+                },
+              },
+            },
+          },
+          jobs: {
+            sync_issues: {
+              title: "Sync Issues",
+              fsm: { states: { step_0: { entry: [{ type: "llm", tools: ["github-server"] }] } } },
+            },
+            post_updates: {
+              title: "Post Updates",
+              fsm: { states: { step_0: { entry: [{ type: "llm", tools: ["slack-server"] }] } } },
+            },
+          },
+        },
+      },
+    });
+
+    const res = await app.request("/workspaces/ws-1/jobs");
+    const body = JSON.parse(await res.text()) as Record<string, unknown>[];
+
+    const syncJob = body.find((j: Record<string, unknown>) => j.id === "sync_issues");
+    const postJob = body.find((j: Record<string, unknown>) => j.id === "post_updates");
+    expect(syncJob?.integrations).toEqual(["github"]);
+    expect(postJob?.integrations).toEqual(["slack"]);
+  });
+
+  test("fallback path returns same shape when workspace path unavailable", async () => {
+    const { app } = createJobsTestApp({
+      runtimeError: new Error("Workspace path does not exist"),
+      config: {
+        workspace: {
+          version: "1.0",
+          workspace: { id: "ws-1", name: "Test" },
+          jobs: {
+            cleanup: {
+              title: "Cleanup",
+              description: "Runs cleanup",
+              execution: { agents: ["agent-1"], strategy: "sequential" },
+            },
+          },
+        },
+      },
+    });
+
+    const res = await app.request("/workspaces/ws-1/jobs");
+    expect(res.status).toBe(200);
+
+    const body = JSON.parse(await res.text());
+    expect(body).toEqual([
+      { id: "cleanup", name: "Cleanup", description: "Runs cleanup", integrations: [] },
+    ]);
+  });
+
+  test("returns empty array when no jobs configured", async () => {
+    const { app } = createJobsTestApp({
+      config: { workspace: { version: "1.0", workspace: { id: "ws-1", name: "Test" } } },
+    });
+
+    const res = await app.request("/workspaces/ws-1/jobs");
+    expect(res.status).toBe(200);
+
+    const body = JSON.parse(await res.text());
+    expect(body).toEqual([]);
   });
 });

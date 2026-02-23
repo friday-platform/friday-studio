@@ -14,10 +14,12 @@
 
   type Props = {
     children: Snippet;
+    prepend?: Snippet;
+    append?: Snippet;
     accent?: "primary" | "destructive" | "information" | "inherit" | "none";
     href?: string;
-    description?: Snippet;
     checked?: boolean;
+    radio?: boolean;
     indeterminate?: boolean;
     closeOnClick?: boolean;
     noninteractive?: boolean;
@@ -28,9 +30,11 @@
 
   let {
     children,
+    prepend,
+    append,
     accent = "none",
-    description,
     checked,
+    radio = false,
     indeterminate = false,
     closeOnClick = true,
     noninteractive = false,
@@ -55,23 +59,35 @@
 {#snippet contents()}
   <span class="label">
     {@render children()}
-
-    <div class="status">
-      {#if checked}
-        <div class="checked">
-          <Icons.Checkmark />
-        </div>
-      {:else if indeterminate}
-        <div class="indeterminate">-</div>
-      {/if}
-    </div>
   </span>
 
-  {#if description}
-    <div class="item-description">
-      {@render description()}
+  {#if prepend}
+    <div class="prepend">
+      {@render prepend()}
     </div>
   {/if}
+
+  {#if append}
+    <div class="append">
+      {@render append()}
+    </div>
+  {/if}
+
+  <div class="status">
+    <div class="checked">
+      {#if checked}
+        {#if radio}
+          <Icons.RadioChecked />
+        {:else}
+          <Icons.Checkmark />
+        {/if}
+      {:else if indeterminate}
+        <div class="indeterminate">-</div>
+      {:else if radio}
+        <Icons.RadioUnchecked />
+      {/if}
+    </div>
+  </div>
 {/snippet}
 
 {#if hasContext(DIALOG_KEY)}
@@ -84,7 +100,6 @@
     use:trigger
     {...$item}
     {...get(trigger)}
-    class:description={description !== undefined}
     class="item accent--{accent} size--{size}"
     class:faded
     on:m-click={(e) => {
@@ -101,7 +116,6 @@
     use:item
     {...$item}
     {...rest}
-    class:description={description !== undefined}
     class="item accent--{accent} size--{size}"
     class:faded
     on:m-click={(e) => {
@@ -116,11 +130,12 @@
 
 <style>
   .item {
+    align-items: center;
     block-size: var(--size-8);
     cursor: default;
     display: flex;
     flex: 1 0 auto;
-    flex-direction: column;
+    gap: var(--size-1-5);
     justify-content: center;
     padding-inline: var(--size-3);
     position: relative;
@@ -132,15 +147,6 @@
 
     &.size--large {
       block-size: var(--size-10);
-    }
-
-    &.description {
-      block-size: var(--size-10);
-    }
-
-    .item-description {
-      opacity: 0.5;
-      font-size: var(--font-size-1);
     }
 
     &.faded,
@@ -165,10 +171,12 @@
     }
   }
 
+  .prepend {
+    order: 1;
+  }
+
   .label {
-    align-items: center;
-    display: flex;
-    gap: var(--size-1-5);
+    order: 2;
     inline-size: 100%;
     font-weight: var(--font-weight-5);
     line-height: var(--font-lineheight-0);
@@ -176,12 +184,17 @@
     .faded & :global(svg) {
       opacity: 0.5;
     }
+  }
 
-    .status {
-      margin-inline-start: auto;
-      padding-inline-start: var(--size-2);
-      opacity: 0.6;
-    }
+  .append {
+    order: 3;
+  }
+
+  .status {
+    order: 4;
+    flex: none;
+    inline-size: var(--size-4);
+    opacity: 0.8;
   }
 
   .accent--inherit :global(svg) {

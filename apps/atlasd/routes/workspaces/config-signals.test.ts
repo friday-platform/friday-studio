@@ -49,7 +49,7 @@ describe("PUT /config/signals/:signalId", () => {
     expect(body).toMatchObject({ error: "not_found", entityType: "signal" });
   });
 
-  test("returns 422 when changing provider type", async () => {
+  test("allows changing provider type (http → schedule)", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     const configData = createTestConfig({ signals: { webhook: httpSignal({ path: "/hook" }) } });
@@ -67,10 +67,9 @@ describe("PUT /config/signals/:signalId", () => {
       }),
     });
 
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as JsonBody;
-    expect(body.error).toBe("invalid_operation");
-    expect(body.message).toContain("provider type");
+    expect(body.ok).toBe(true);
   });
 
   test("updates signal successfully and destroys runtime", async () => {

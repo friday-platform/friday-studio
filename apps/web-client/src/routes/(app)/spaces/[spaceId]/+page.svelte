@@ -10,6 +10,9 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import { Page } from "$lib/components/page";
+  import { featureFlags } from "$lib/feature-flags";
+  import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { listWorkspaceSessions } from "$lib/queries/sessions";
   import { formatChatDate } from "$lib/utils/date";
   import { onMount } from "svelte";
@@ -32,10 +35,35 @@
     initialData: data.sessions,
     refetchInterval: 10_000,
   }));
+  const recentSessions = $derived((sessionsQuery.data ?? []).slice(0, 3));
+  const recentArtifacts = $derived(data.artifacts.slice(0, 5));
+  type ApiJob = { id: string; name: string; description?: string; integrations: string[] };
 
-  onMount(() => {
+  let apiJobs = $state<ApiJob[]>([]);
+  let jobsError = $state(false);
+
+  onMount(async () => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
+
+    try {
+      const result = await parseResult(
+        client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId: workspace.id } }),
+      );
+      if (result.ok) {
+        apiJobs = result.data;
+      } else {
+        jobsError = true;
+      }
+    } catch {
+      jobsError = true;
+    }
   });
+
+  /** Look up the full job config by API job id, needed for RunJobDialog. */
+  function getJobConfig(jobId: string) {
+    const jobs = workspace.config?.jobs ?? {};
+    return jobs[jobId];
+  }
 
   async function handleUpdateColor(color: Color) {
     const res = await parseResult(
@@ -55,51 +83,109 @@
 {#if data.requiresSetup}
   <Setup {workspace} integrations={data.integrations} />
 {:else}
-  {@const recentSessions = (sessionsQuery.data ?? []).slice(0, 3)}
-  {@const recentArtifacts = data.artifacts.slice(0, 5)}
-  {@const runnableJobs = Object.entries(workspace.config?.jobs ?? {}).filter(
-    ([_, job]) => job.triggers && job.triggers.length > 0,
-  )}
-
-  <div class="wrapper">
-    <div class="page">
-      <article class="content">
-        <header>
-          <div class="title">
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                <span class="change-color">
-                  <Dot color={workspace.metadata?.color} />
+  <Page.Root>
+    <Page.Content>
+      {#snippet header()}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            <span class="change-color">
+              <Dot color={workspace.metadata?.color} />
+            </span>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content>
+            {#each COLORS as color (color)}
+              <DropdownMenu.Item
+                accent="inherit"
+                checked={workspace.metadata?.color === color}
+                onclick={() => handleUpdateColor(color)}
+              >
+                <span style:color="var(--{color}-2)">
+                  <Icons.DotFilled />
                 </span>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content>
-                {#each COLORS as color (color)}
-                  <DropdownMenu.Item
-                    accent="inherit"
-                    checked={workspace.metadata?.color === color}
-                    onclick={() => handleUpdateColor(color)}
-                  >
-                    <span style:color="var(--{color}-2)">
-                      <Icons.DotFilled />
-                    </span>
 
-                    <span class="color-label">{color}</span>
-                  </DropdownMenu.Item>
-                {/each}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
+                <span class="color-label">{color}</span>
+              </DropdownMenu.Item>
+            {/each}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
 
-            <h1>{workspace.name}</h1>
+        <h1>{workspace.name}</h1>
+      {/snippet}
+
+      {#snippet description()}
+        {#if workspace.description}
+          <p>{workspace.description}</p>
+        {/if}
+      {/snippet}
+
+      {#if apiJobs.length > 0}
+        <section class="jobs">
+          <div class="jobs-grid">
+            {#each apiJobs as job (job.id)}
+              {@const jobConfig = getJobConfig(job.id)}
+
+              <div class="job-card">
+                {#if job.integrations.length > 0}
+                  <div class="job-integrations">
+                    {#each job.integrations as integration (integration)}
+                      {@const icon = getServiceIcon(integration)}
+                      {#if icon}
+                        <span class="job-integration-icon">
+                          {#if icon.type === "component"}
+                            {@const Component = icon.src}
+                            <Component />
+                          {:else}
+                            <img src={icon.src} alt={integration} />
+                          {/if}
+                        </span>
+                      {/if}
+                    {/each}
+                  </div>
+                {/if}
+
+                <h3>{job.name}</h3>
+
+                {#if job.description}
+                  <p class="job-description">{job.description}</p>
+                {/if}
+
+                <div class="job-actions">
+                  {#if jobConfig}
+                    <RunJobDialog
+                      jobId={job.id}
+                      job={jobConfig}
+                      signals={workspace.config?.signals ?? {}}
+                      workspaceId={workspace.id}
+                    >
+                      {#snippet triggerContents()}
+                        <Button size="small">Run</Button>
+                      {/snippet}
+                    </RunJobDialog>
+                  {/if}
+
+                  {#if featureFlags.ENABLE_GLOBAL_JOB_VIEWS}
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      href={resolve("/spaces/[spaceId]/jobs/[jobId]", {
+                        spaceId: workspace.id,
+                        jobId: job.id,
+                      })}
+                    >
+                      View
+                    </Button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
           </div>
+        </section>
+      {:else if jobsError}
+        <p class="jobs-error">Failed to load jobs.</p>
+      {/if}
+    </Page.Content>
 
-          {#if workspace.description}
-            <p>{workspace.description}</p>
-          {/if}
-        </header>
-      </article>
-    </div>
-
-    <aside class="sidebar">
+    <Page.Sidebar>
       <div class="actions">
         <a href={resolve("/spaces/[spaceId]/edit", { spaceId: workspace.id })}>
           <Icons.Settings />
@@ -108,32 +194,6 @@
 
         <ShareActions {workspace} />
       </div>
-      {#if runnableJobs.length > 0}
-        {#each runnableJobs as [jobId, job] (jobId)}
-          <div class="section">
-            <div class="section-header">
-              <h2>{job.title || job.name || jobId}</h2>
-            </div>
-
-            {#if job.description}
-              <p>{job.description}</p>
-            {/if}
-
-            <div class="job-action">
-              <RunJobDialog
-                {jobId}
-                {job}
-                signals={workspace.config?.signals ?? {}}
-                workspaceId={workspace.id}
-              >
-                {#snippet triggerContents()}
-                  <Button size="small">Run Now</Button>
-                {/snippet}
-              </RunJobDialog>
-            </div>
-          </div>
-        {/each}
-      {/if}
 
       <div class="section">
         <h2>Resources</h2>
@@ -163,7 +223,7 @@
             <ul>
               {#each recentSessions as session (session.sessionId)}
                 {@const displayName = session.jobName || session.task || session.sessionId}
-                {@const isRunning = session.status === "partial" || session.status === "active"}
+                {@const isRunning = session.status === "active"}
                 {@const isFailed = session.status === "failed"}
 
                 <li>
@@ -191,28 +251,11 @@
           </div>
         {/if}
       </div>
-    </aside>
-  </div>
+    </Page.Sidebar>
+  </Page.Root>
 {/if}
 
 <style>
-  .wrapper {
-    block-size: 100%;
-    display: grid;
-    grid-template-columns: 2fr minmax(var(--size-80), 1fr);
-    inline-size: 100%;
-
-    @media (min-width: 1920px) {
-      grid-template-columns: 1fr var(--size-112);
-    }
-  }
-
-  .page {
-    overflow: auto;
-    padding-inline: 0 var(--size-14);
-    scrollbar-width: thin;
-  }
-
   .change-color {
     display: block;
     position: relative;
@@ -237,84 +280,86 @@
     visibility: visible;
   }
 
-  .content {
+  .jobs-grid {
+    display: grid;
+    gap: var(--size-4);
+    grid-template-columns: repeat(auto-fill, minmax(var(--size-64), 1fr));
+    margin-block-start: var(--size-4);
+  }
+
+  .job-card {
+    border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    gap: var(--size-10);
-    flex: 1;
-    padding-block: var(--size-12);
-    padding-inline: var(--size-14);
+    gap: var(--size-1);
 
-    header {
-      .title {
-        align-items: center;
-        display: flex;
-        gap: var(--size-3);
-      }
+    h3 {
+      font-size: var(--font-size-5);
+      font-weight: var(--font-weight-6);
+    }
 
-      h1 {
-        font-size: var(--font-size-7);
-        font-weight: var(--font-weight-6);
-      }
-
-      p {
-        font-size: var(--font-size-5);
-        font-weight: var(--font-weight-5);
-        line-height: var(--font-lineheight-3);
-        margin-block: var(--size-1-5) 0;
-        max-inline-size: 80ch;
-        opacity: 0.6;
-        text-wrap-style: balance;
-      }
+    .job-description {
+      font-size: var(--font-size-3);
+      line-height: var(--font-lineheight-3);
+      opacity: 0.8;
     }
   }
 
-  .sidebar {
-    border-inline-start: var(--size-px) solid var(--accent-1);
+  .job-integrations {
+    align-items: center;
     display: flex;
-    flex-direction: column;
-    gap: var(--size-10);
-    inline-size: 100%;
-    min-inline-size: var(--size-80);
-    padding: var(--size-10);
+    gap: var(--size-1-5);
+  }
 
-    .actions {
-      align-items: center;
+  .job-integration-icon {
+    color: var(--color-text);
+    display: flex;
+
+    & :global(svg),
+    img {
+      block-size: var(--size-4);
+      inline-size: var(--size-4);
+      object-fit: contain;
+    }
+  }
+
+  .job-actions {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+    margin-block-start: var(--size-1);
+  }
+
+  .jobs-error {
+    font-size: var(--font-size-3);
+    opacity: 0.6;
+  }
+
+  .actions {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin: calc(-1 * var(--size-5));
+    margin-block-end: 0;
+
+    & :global(svg) {
+      opacity: 0.5;
+    }
+
+    a {
+      color: color-mix(in srgb, var(--color-text), transparent 20%);
       display: flex;
-      margin: calc(-1 * var(--size-5));
-      margin-block-end: 0;
-      justify-content: space-between;
-
-      & :global(svg) {
-        opacity: 0.5;
-      }
-
-      a {
-        display: flex;
-        color: color-mix(in srgb, var(--color-text), transparent 20%);
-        font-size: var(--font-size-2);
-        font-weight: var(--font-weight-5);
-        gap: var(--size-1-5);
-      }
+      font-size: var(--font-size-2);
+      font-weight: var(--font-weight-5);
+      gap: var(--size-1-5);
     }
+  }
 
-    .section {
-      h2 {
-        font-size: var(--font-size-5);
-        font-weight: var(--font-weight-6);
-      }
-
-      p {
-        font-size: var(--font-size-4);
-        line-height: var(--font-lineheight-3);
-        margin-block: var(--size-1-5) 0;
-        opacity: 0.8;
-        text-wrap-style: balance;
-      }
-    }
-
-    .job-action {
-      margin-block: var(--size-3) 0;
+  .section {
+    h2 {
+      font-size: var(--font-size-4);
+      font-weight: var(--font-weight-5);
+      opacity: 0.6;
     }
   }
 
@@ -329,17 +374,16 @@
       font-weight: var(--font-weight-5);
       gap: var(--size-1);
       inline-size: max-content;
-      max-inline-size: 100%;
       line-height: var(--font-lineheight-5);
-
+      max-inline-size: 100%;
       position: relative;
       z-index: 1;
 
       span {
         flex: 1;
         overflow: hidden;
-        text-wrap: nowrap;
         text-overflow: ellipsis;
+        text-wrap: nowrap;
       }
 
       & :global(svg) {
@@ -376,8 +420,8 @@
 
   .sessions {
     a {
-      border-block-end: var(--size-px) solid var(--accent-1);
       block-size: var(--size-16);
+      border-block-end: var(--size-px) solid var(--accent-1);
       display: flex;
       flex-direction: column;
       gap: var(--size-0-5);

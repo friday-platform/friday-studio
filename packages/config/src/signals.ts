@@ -114,6 +114,13 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 
+/**
+ * Loose schema for PATCH /signals/:signalId/config.
+ * Accepts any string-keyed record — the merged result gets validated
+ * against the full provider-specific config schema after merge.
+ */
+export const SignalConfigPatchSchema = z.record(z.string(), z.unknown());
+
 // Type guards for signal types
 export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;

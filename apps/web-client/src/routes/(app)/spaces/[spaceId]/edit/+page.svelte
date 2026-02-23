@@ -29,6 +29,28 @@
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
   });
 
+  let nameValue = $state(workspace.name);
+
+  async function handleUpdateName() {
+    const trimmed = nameValue.trim();
+    if (!trimmed || trimmed === workspace.name) {
+      nameValue = workspace.name;
+      return;
+    }
+
+    const res = await parseResult(
+      client.workspace[":workspaceId"].metadata.$patch({
+        param: { workspaceId: workspace.id },
+        json: { name: trimmed },
+      }),
+    );
+
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
+      await invalidateAll();
+    }
+  }
+
   async function handleUpdateColor(color: Color) {
     const res = await parseResult(
       client.workspace[":workspaceId"].metadata.$patch({
@@ -78,6 +100,13 @@
 
   <div>
     <h2>General</h2>
+
+    <div class="name-field">
+      <label>
+        <span class="form-field">Name</span>
+        <input type="text" bind:value={nameValue} onblur={handleUpdateName} />
+      </label>
+    </div>
 
     <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
       <DropdownMenu.Trigger>
@@ -193,6 +222,33 @@
     font-weight: var(--font-weight-5);
     gap: var(--size-2);
     opacity: 0.5;
+  }
+
+  .name-field {
+    margin-block: var(--size-2) 0;
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: var(--size-2);
+    }
+
+    .form-field {
+      font-size: var(--font-size-2);
+      font-weight: var(--font-weight-5);
+    }
+
+    input {
+      background: var(--color-surface-1);
+      border: 1px solid var(--color-border-1);
+      border-radius: var(--radius-3);
+      block-size: var(--size-9);
+      color: var(--color-text);
+      font-size: var(--font-size-3);
+      inline-size: 100%;
+      max-inline-size: var(--size-80);
+      padding-inline: var(--size-3);
+    }
   }
 
   .change-color {

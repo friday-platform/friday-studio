@@ -6,6 +6,7 @@
   "exports": { ".": "./mod.ts" },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/bundled-agents": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/sentry": "workspace:*",
     "@atlas/core": "workspace:*",

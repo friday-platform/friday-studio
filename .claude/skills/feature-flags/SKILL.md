@@ -13,7 +13,7 @@ main without being visible to users. Once the feature is ready, remove the flag.
 
 | What | File |
 |------|------|
-| Flag interface + defaults | `apps/web-client/src/lib/app-context.svelte.ts` — `FeatureFlags` interface and `DEFAULT_FLAGS` object |
+| Flag interface + defaults | `apps/web-client/src/lib/feature-flags.ts` — `FeatureFlags` interface, `DEFAULT_FLAGS`, and `featureFlags` singleton |
 | Build-time injection | `apps/web-client/vite.config.ts` — parses `FEATURE_FLAGS` env var into `__FEATURE_FLAGS__` global |
 | Global type declaration | `apps/web-client/src/app.d.ts` — declares `__FEATURE_FLAGS__: string[]` |
 
@@ -33,17 +33,29 @@ FEATURE_FLAGS=ENABLE_WORKSPACE_NAV_ACTIVITY,ENABLE_WORKSPACE_NAV_RESOURCES,ENABL
 Flags not listed remain `false`. No env var = all flags off (production
 defaults).
 
-## Checking Flags in Components
+## Checking Flags
+
+`featureFlags` is a plain module singleton — works in components, load functions,
+and anywhere else:
 
 ```svelte
 <script lang="ts">
-  import { getAppContext } from "$lib/app-context.svelte";
-  const appCtx = getAppContext();
+  import { featureFlags } from "$lib/feature-flags";
 </script>
 
-{#if appCtx.flags.ENABLE_WORKSPACE_NAV_RESOURCES}
+{#if featureFlags.ENABLE_WORKSPACE_NAV_RESOURCES}
   <NavItem href="..." label="Resources" />
 {/if}
+```
+
+```ts
+// +page.ts / +layout.ts
+import { featureFlags } from "$lib/feature-flags";
+import { redirect } from "@sveltejs/kit";
+
+export function load() {
+  if (!featureFlags.ENABLE_SOME_FLAG) throw redirect(303, "/");
+}
 ```
 
 ## Branch Review: Are Any Flags Ready to Ship?
@@ -63,11 +75,11 @@ flags used in the branch are now fully implemented. Do this by:
 
 ## Adding a New Flag
 
-1. **`FeatureFlags` interface** in `app-context.svelte.ts` — add the new
+1. **`FeatureFlags` interface** in `feature-flags.ts` — add the new
    property (boolean)
-2. **`DEFAULT_FLAGS` object** in `app-context.svelte.ts` — add the key with
+2. **`DEFAULT_FLAGS` object** in `feature-flags.ts` — add the key with
    value `false`
-3. Use `appCtx.flags.ENABLE_YOUR_FLAG` in components
+3. Use `featureFlags.ENABLE_YOUR_FLAG` anywhere (components, load functions)
 4. Verify with: `FEATURE_FLAGS=ENABLE_YOUR_FLAG deno task dev`
 
 ## Removing a Flag (Feature Is Ready to Ship)
@@ -75,14 +87,14 @@ flags used in the branch are now fully implemented. Do this by:
 When a feature behind a flag is complete and approved for shipping:
 
 1. **Remove the property** from the `FeatureFlags` interface in
-   `app-context.svelte.ts`
-2. **Remove the key** from `DEFAULT_FLAGS` in `app-context.svelte.ts`
-3. **Remove all conditional checks** — find every `{#if appCtx.flags.ENABLE_X}`
-   and `appCtx.flags.ENABLE_X` reference in components. Replace conditional
-   blocks with just the inner content (the feature is now always on):
+   `feature-flags.ts`
+2. **Remove the key** from `DEFAULT_FLAGS` in `feature-flags.ts`
+3. **Remove all conditional checks** — find every `{#if featureFlags.ENABLE_X}`
+   and `featureFlags.ENABLE_X` reference. Replace conditional blocks with just
+   the inner content (the feature is now always on):
    ```svelte
    <!-- Before -->
-   {#if appCtx.flags.ENABLE_WORKSPACE_NAV_RESOURCES}
+   {#if featureFlags.ENABLE_WORKSPACE_NAV_RESOURCES}
      <NavItem href="..." label="Resources" />
    {/if}
 

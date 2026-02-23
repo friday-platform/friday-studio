@@ -6,7 +6,7 @@
  */
 
 import { produce } from "immer";
-import type { WorkspaceSignalConfig } from "../signals.ts";
+import { type WorkspaceSignalConfig, WorkspaceSignalConfigSchema } from "../signals.ts";
 import type { WorkspaceConfig } from "../workspace.ts";
 import {
   conflictError,
@@ -14,7 +14,7 @@ import {
   type JobCascadeTarget,
   type MutationResult,
   notFoundError,
-  typeChangeError,
+  validationError,
 } from "./types.ts";
 
 /**
@@ -48,7 +48,7 @@ export function createSignal(
 
 /**
  * Updates an existing signal in the workspace configuration.
- * Fails if the signal doesn't exist or if attempting to change the provider type.
+ * Fails if the signal doesn't exist.
  *
  * @param config - Current workspace configuration
  * @param signalId - ID of the signal to update
@@ -67,10 +67,48 @@ export function updateSignal(
     return { ok: false, error: notFoundError(signalId, "signal") };
   }
 
-  if (existingSignal.provider !== signal.provider) {
+  return {
+    ok: true,
+    value: produce(config, (draft) => {
+      draft.signals ??= {};
+      draft.signals[signalId] = signal;
+    }),
+  };
+}
+
+/**
+ * Patches the config sub-object of an existing signal.
+ * Merges configPatch into the existing signal's config, then validates
+ * the full merged signal against WorkspaceSignalConfigSchema.
+ *
+ * @param config - Current workspace configuration
+ * @param signalId - ID of the signal to patch
+ * @param configPatch - Partial config fields to merge
+ * @returns MutationResult with updated config or error
+ */
+export function patchSignalConfig(
+  config: WorkspaceConfig,
+  signalId: string,
+  configPatch: Record<string, unknown>,
+): MutationResult<WorkspaceConfig> {
+  const existingSignals = config.signals ?? {};
+  const existingSignal = existingSignals[signalId];
+
+  if (!existingSignal) {
+    return { ok: false, error: notFoundError(signalId, "signal") };
+  }
+
+  const mergedConfig = {
+    ...("config" in existingSignal ? existingSignal.config : {}),
+    ...configPatch,
+  };
+  const mergedSignal = { ...existingSignal, config: mergedConfig };
+
+  const parseResult = WorkspaceSignalConfigSchema.safeParse(mergedSignal);
+  if (!parseResult.success) {
     return {
       ok: false,
-      error: typeChangeError(existingSignal.provider, signal.provider, "signal provider type"),
+      error: validationError("Invalid signal config after merge", parseResult.error.issues),
     };
   }
 
@@ -78,7 +116,7 @@ export function updateSignal(
     ok: true,
     value: produce(config, (draft) => {
       draft.signals ??= {};
-      draft.signals[signalId] = signal;
+      draft.signals[signalId] = parseResult.data;
     }),
   };
 }

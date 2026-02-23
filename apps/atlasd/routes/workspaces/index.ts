@@ -1,6 +1,8 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
+import type { WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import {
   type CredentialUsage,
@@ -35,6 +37,76 @@ import {
 const analytics = createAnalyticsClient();
 
 export * from "./schemas.ts";
+
+/** Format a job key into a display name: title > formatted key > raw key */
+export function formatJobName(
+  key: string,
+  job: { title?: string; [key: string]: unknown },
+): string {
+  if (job.title) return job.title;
+  const formatted = key.replace(/[-_]/g, " ");
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+}
+
+/**
+ * Extract integration provider names for a specific job by tracing:
+ * - LLM actions: tools (MCP server IDs) → credential paths → providers
+ * - Agent actions: agentId → bundled agent registry → requiredConfig link providers
+ */
+export function extractJobIntegrations(
+  job: {
+    fsm?: {
+      states?: Record<
+        string,
+        { entry?: Array<{ type: string; tools?: string[]; agentId?: string }> }
+      >;
+    };
+  },
+  config: WorkspaceConfig,
+): string[] {
+  const states = job.fsm?.states;
+  if (!states) return [];
+
+  const serverIds = new Set<string>();
+  const agentIds = new Set<string>();
+
+  for (const state of Object.values(states)) {
+    for (const action of state.entry ?? []) {
+      if (action.type === "llm" && action.tools) {
+        for (const t of action.tools) serverIds.add(t);
+      } else if (action.type === "agent" && action.agentId) {
+        agentIds.add(action.agentId);
+      }
+    }
+  }
+
+  const providers = new Set<string>();
+
+  // LLM tools → MCP server credentials → providers
+  if (serverIds.size > 0) {
+    const credentials = extractCredentials(config);
+    for (const cred of credentials) {
+      const [type, entityId] = cred.path.split(":");
+      if (!cred.provider || !entityId) continue;
+      if (type === "mcp" && serverIds.has(entityId)) {
+        providers.add(cred.provider);
+      }
+    }
+  }
+
+  // Bundled agent IDs → registry requiredConfig link providers
+  for (const agentId of agentIds) {
+    const entry = bundledAgentsRegistry[agentId];
+    if (!entry) continue;
+    for (const field of entry.requiredConfig) {
+      if (field.from === "link") {
+        providers.add(field.provider);
+      }
+    }
+  }
+
+  return [...providers];
+}
 
 // Create and mount routes
 const workspacesRoutes = daemonFactory
@@ -640,10 +712,17 @@ const workspacesRoutes = daemonFactory
   .patch(
     "/:workspaceId/metadata",
     zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator("json", z.object({ color: ColorSchema.optional() })),
+    zValidator(
+      "json",
+      z.object({
+        name: z.string().min(1).optional(),
+        color: ColorSchema.optional(),
+        description: z.string().optional(),
+      }),
+    ),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
-      const updates = c.req.valid("json");
+      const { name, ...metadataUpdates } = c.req.valid("json");
       const ctx = c.get("app");
 
       try {
@@ -653,12 +732,14 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
 
-        const newMetadata = { ...workspace.metadata, ...updates };
+        const newMetadata = { ...workspace.metadata, ...metadataUpdates };
         await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
+          ...(name ? { name } : {}),
           metadata: newMetadata,
         });
 
-        return c.json({ ...workspace, metadata: newMetadata }, 200);
+        const updated = { ...workspace, metadata: newMetadata, ...(name ? { name } : {}) };
+        return c.json(updated, 200);
       } catch (error) {
         return c.json({ error: `Failed to update metadata: ${stringifyError(error)}` }, 500);
       }
@@ -784,22 +865,28 @@ const workspacesRoutes = daemonFactory
 
     try {
       const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-      const jobs = runtime.listJobs();
-      return c.json(jobs);
+      runtime.listJobs(); // ensure runtime is initialized
     } catch (error) {
-      // When workspace path doesn't exist (stopped/deleted workspace), fall back to config
-      if (stringifyError(error).includes("Workspace path does not exist")) {
-        logger.debug("Workspace path unavailable, reading jobs from config", { workspaceId });
-        const manager = ctx.getWorkspaceManager();
-        const config = await manager.getWorkspaceConfig(workspaceId);
-        const jobs = config?.workspace?.jobs || {};
-        return c.json(
-          Object.entries(jobs).map(([name, job]) => ({ name, description: job.description })),
-        );
+      if (!stringifyError(error).includes("Workspace path does not exist")) {
+        logger.error("Failed to list jobs", { error, workspaceId });
+        return c.json({ error: `Failed to list jobs: ${stringifyError(error)}` }, 500);
       }
-      logger.error("Failed to list jobs", { error, workspaceId });
-      return c.json({ error: `Failed to list jobs: ${stringifyError(error)}` }, 500);
+      logger.debug("Workspace path unavailable, reading jobs from config", { workspaceId });
     }
+
+    const manager = ctx.getWorkspaceManager();
+    const config = await manager.getWorkspaceConfig(workspaceId);
+    const workspaceConfig = config?.workspace;
+    const jobs = workspaceConfig?.jobs || {};
+
+    return c.json(
+      Object.entries(jobs).map(([key, job]) => ({
+        id: key,
+        name: formatJobName(key, job),
+        description: job.description,
+        integrations: workspaceConfig ? extractJobIntegrations(job, workspaceConfig) : [],
+      })),
+    );
   })
   // Get workspace sessions
   .get("/:workspaceId/sessions", async (c) => {

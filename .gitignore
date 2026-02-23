@@ -28,6 +28,7 @@ Thumbs.db
 
 # AI-related files
 tasks
+.claude/projects/
 
 lgtm/
 build/
