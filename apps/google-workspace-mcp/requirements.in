@@ -1,0 +1,5 @@
+workspace-mcp==1.12.0
+# Pin fastmcp<3 — workspace-mcp calls Context.get_state() synchronously but
+# fastmcp 3.0 made it async, causing unawaited coroutines that break all
+# Google API tool calls (email comparison always fails).
+fastmcp>=2.14,<3

@@ -384,6 +384,7 @@ updates:
         versions: [">= 1.26.a"]
 
   # Keep google-workspace-mcp Python dependencies up to date
+  # Uses pip-compile: requirements.in (constraints) → requirements.txt (lockfile)
   - package-ecosystem: "pip"
     directory: "/apps/google-workspace-mcp"
     schedule:
@@ -400,6 +401,11 @@ updates:
       - "python"
       - "mcp"
     rebase-strategy: "auto"
+    # fastmcp 3.0 made Context.get_state() async — breaks workspace-mcp's
+    # synchronous usage, causing unawaited coroutines in Google API tool calls
+    ignore:
+      - dependency-name: "fastmcp"
+        update-types: ["version-update:semver-major"]
 
   # Keep google-workspace-mcp Docker dependencies up to date
   - package-ecosystem: "docker"
