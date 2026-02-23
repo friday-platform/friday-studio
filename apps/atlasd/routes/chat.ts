@@ -180,7 +180,11 @@ const chatRoutes = daemonFactory
 
     const buffer = ctx.streamRegistry.getStream(chatId);
 
-    // No active stream - return 204
+    // No active stream — return 204 so AI SDK's resumeStream() sets status to "ready".
+    // We intentionally don't replay finished buffers here: the AI SDK creates a new
+    // message on resumeStream(), so full replay causes duplicate messages in the UI.
+    // Late reconnectors get eventual consistency via page reload (messages persisted to DB).
+    // TODO: Add Last-Event-Id / offset-based replay to eliminate the data gap.
     if (!buffer || !buffer.active) {
       return c.body(null, 204);
     }

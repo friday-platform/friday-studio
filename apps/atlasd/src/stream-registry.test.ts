@@ -1,6 +1,7 @@
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CLEANUP_INTERVAL_MS,
   FINISHED_TTL_MS,
   MAX_EVENTS,
   STALE_TTL_MS,
@@ -62,6 +63,30 @@ describe("StreamRegistry", () => {
       expect(first).not.toBe(second);
       // First should have been marked inactive
       expect(first?.active).toBe(false);
+    });
+
+    it("sends [DONE] to old subscribers when cancelling", () => {
+      registry.createStream("chat-1");
+
+      const received: Uint8Array[] = [];
+      let closeCalled = false;
+      const controller = createController({
+        onEnqueue: (data) => received.push(data),
+        onClose: () => {
+          closeCalled = true;
+        },
+      });
+      registry.subscribe("chat-1", controller);
+
+      // Creating a new stream for the same chatId cancels the old one
+      registry.createStream("chat-1");
+
+      // Old subscriber should have received [DONE] before close
+      const decoder = new TextDecoder();
+      const last = received[received.length - 1];
+      expect.assert(last !== undefined, "last chunk should exist");
+      expect(decoder.decode(last)).toBe("data: [DONE]\n\n");
+      expect(closeCalled).toBe(true);
     });
   });
 
@@ -166,6 +191,16 @@ describe("StreamRegistry", () => {
       const result = registry.subscribe("nonexistent", controller);
       expect(result).toBe(false);
     });
+
+    it("returns false for finished stream", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+      registry.finishStream("chat-1");
+
+      const controller = createController();
+      const result = registry.subscribe("chat-1", controller);
+      expect(result).toBe(false);
+    });
   });
 
   describe("unsubscribe", () => {
@@ -264,54 +299,162 @@ describe("StreamRegistry", () => {
       // Should not throw
       registry.finishStream("nonexistent");
     });
+
+    it("sends [DONE] to subscribers before closing", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+
+      const received: Uint8Array[] = [];
+      let closeCalled = false;
+      const controller = createController({
+        onEnqueue: (data) => received.push(data),
+        onClose: () => {
+          closeCalled = true;
+        },
+      });
+
+      registry.subscribe("chat-1", controller);
+      // received[0] = replay of event-1
+      const replayCount = received.length;
+
+      registry.finishStream("chat-1");
+
+      // Should have received [DONE] after the replay events
+      expect(received.length).toBe(replayCount + 1);
+      const decoder = new TextDecoder();
+      const last = received[received.length - 1];
+      expect.assert(last !== undefined, "last chunk should exist");
+      expect(decoder.decode(last)).toBe("data: [DONE]\n\n");
+      expect(closeCalled).toBe(true);
+    });
+  });
+
+  describe("shutdown", () => {
+    it("sends [DONE] to all subscribers before closing", () => {
+      registry.createStream("chat-1");
+      registry.createStream("chat-2");
+
+      const received1: Uint8Array[] = [];
+      let close1 = false;
+      const received2: Uint8Array[] = [];
+      let close2 = false;
+
+      registry.subscribe(
+        "chat-1",
+        createController({
+          onEnqueue: (d) => received1.push(d),
+          onClose: () => {
+            close1 = true;
+          },
+        }),
+      );
+      registry.subscribe(
+        "chat-2",
+        createController({
+          onEnqueue: (d) => received2.push(d),
+          onClose: () => {
+            close2 = true;
+          },
+        }),
+      );
+
+      registry.shutdown();
+
+      const decoder = new TextDecoder();
+      const last1 = received1[received1.length - 1];
+      const last2 = received2[received2.length - 1];
+      expect.assert(last1 !== undefined, "chat-1 should receive [DONE]");
+      expect.assert(last2 !== undefined, "chat-2 should receive [DONE]");
+      expect(decoder.decode(last1)).toBe("data: [DONE]\n\n");
+      expect(decoder.decode(last2)).toBe("data: [DONE]\n\n");
+      expect(close1).toBe(true);
+      expect(close2).toBe(true);
+    });
   });
 
   describe("cleanup", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("removes finished streams after FINISHED_TTL_MS", () => {
+      registry.start();
       registry.createStream("chat-1");
       registry.finishStream("chat-1");
 
       const buffer = registry.getStream("chat-1");
       if (buffer) {
-        // Simulate time passing beyond TTL
         buffer.lastEventAt = Date.now() - FINISHED_TTL_MS - 1000;
       }
 
-      // Trigger cleanup via the exposed method
-      registry.triggerCleanup();
+      vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
       expect(registry.getStream("chat-1")).toBeUndefined();
     });
 
     it("removes stale active streams after STALE_TTL_MS", () => {
+      registry.start();
       registry.createStream("chat-1");
 
       const buffer = registry.getStream("chat-1");
       if (buffer) {
-        // Simulate time passing beyond stale TTL
         buffer.lastEventAt = Date.now() - STALE_TTL_MS - 1000;
       }
 
-      registry.triggerCleanup();
+      vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
       expect(registry.getStream("chat-1")).toBeUndefined();
     });
 
+    it("sends [DONE] to subscribers when cleaning stale active streams", () => {
+      registry.start();
+      registry.createStream("chat-1");
+
+      const received: Uint8Array[] = [];
+      let closeCalled = false;
+      registry.subscribe(
+        "chat-1",
+        createController({
+          onEnqueue: (d) => received.push(d),
+          onClose: () => {
+            closeCalled = true;
+          },
+        }),
+      );
+
+      const buffer = registry.getStream("chat-1");
+      if (buffer) {
+        buffer.lastEventAt = Date.now() - STALE_TTL_MS - 1000;
+      }
+
+      vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
+
+      const decoder = new TextDecoder();
+      const last = received[received.length - 1];
+      expect.assert(last !== undefined, "should receive [DONE]");
+      expect(decoder.decode(last)).toBe("data: [DONE]\n\n");
+      expect(closeCalled).toBe(true);
+    });
+
     it("keeps recent finished streams", () => {
+      registry.start();
       registry.createStream("chat-1");
       registry.finishStream("chat-1");
 
-      // Stream is finished but recent - should not be cleaned up
-      registry.triggerCleanup();
+      vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
       expect(registry.getStream("chat-1")?.chatId).toBe("chat-1");
     });
 
     it("keeps recent active streams", () => {
+      registry.start();
       registry.createStream("chat-1");
 
-      // Stream is active and recent - should not be cleaned up
-      registry.triggerCleanup();
+      vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
       expect(registry.getStream("chat-1")?.chatId).toBe("chat-1");
     });

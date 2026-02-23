@@ -921,10 +921,26 @@ export class WorkspaceRuntime {
         }
       | undefined;
 
+    const sessionId = signal._context?.sessionId;
+    if (!sessionId) {
+      throw new Error(
+        `Missing sessionId in signal context for agent '${agentId}' — ` +
+          `caller of engine.signal() must provide context with sessionId`,
+      );
+    }
+
+    const workspaceId = signal._context?.workspaceId;
+    if (!workspaceId) {
+      throw new Error(
+        `Missing workspaceId in signal context for agent '${agentId}' — ` +
+          `caller of engine.signal() must provide context with workspaceId`,
+      );
+    }
+
     // Execute agent via orchestrator - returns AgentResult directly
     const result = await this.orchestrator.executeAgent(agentId, prompt, {
-      sessionId: signal._context?.sessionId || crypto.randomUUID(),
-      workspaceId: signal._context?.workspaceId || this.workspace.id,
+      sessionId,
+      workspaceId,
       streamId,
       datetime,
       // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,

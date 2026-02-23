@@ -36,6 +36,28 @@ export class StreamRegistry {
   private streams = new Map<string, StreamBuffer>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
+  /** Encode and cache the [DONE] sentinel once */
+  private static readonly DONE_CHUNK = new TextEncoder().encode("data: [DONE]\n\n");
+
+  /**
+   * Send [DONE] sentinel to all subscribers, close their controllers, and clear the set.
+   */
+  private static closeSubscribers(subscribers: Set<StreamController>): void {
+    for (const controller of subscribers) {
+      try {
+        controller.enqueue(StreamRegistry.DONE_CHUNK);
+      } catch {
+        /* closed */
+      }
+      try {
+        controller.close();
+      } catch {
+        /* closed */
+      }
+    }
+    subscribers.clear();
+  }
+
   /**
    * Start the cleanup interval
    */
@@ -54,16 +76,9 @@ export class StreamRegistry {
       this.cleanupInterval = null;
     }
 
-    // Close all subscribers and clear streams
+    // Send [DONE] to all subscribers and clear streams
     for (const buffer of this.streams.values()) {
-      for (const controller of buffer.subscribers) {
-        try {
-          controller.close();
-        } catch {
-          // Controller may already be closed
-        }
-      }
-      buffer.subscribers.clear();
+      StreamRegistry.closeSubscribers(buffer.subscribers);
     }
     this.streams.clear();
     logger.info("StreamRegistry shutdown");
@@ -73,18 +88,11 @@ export class StreamRegistry {
    * Create a new stream buffer. Cancels existing stream for same chatId.
    */
   createStream(chatId: string): StreamBuffer {
-    // Cancel existing stream if present
+    // Cancel existing stream if present — send [DONE] so clients exit cleanly
     const existing = this.streams.get(chatId);
     if (existing) {
       existing.active = false;
-      for (const controller of existing.subscribers) {
-        try {
-          controller.close();
-        } catch {
-          // Controller may already be closed
-        }
-      }
-      existing.subscribers.clear();
+      StreamRegistry.closeSubscribers(existing.subscribers);
     }
 
     const now = Date.now();
@@ -145,11 +153,11 @@ export class StreamRegistry {
 
   /**
    * Subscribe a controller to a stream. Replays all buffered events immediately.
-   * Returns false if stream doesn't exist.
+   * Returns false if stream doesn't exist or is already finished.
    */
   subscribe(chatId: string, controller: StreamController): boolean {
     const buffer = this.streams.get(chatId);
-    if (!buffer) {
+    if (!buffer || !buffer.active) {
       return false;
     }
 
@@ -182,7 +190,10 @@ export class StreamRegistry {
   }
 
   /**
-   * Mark stream as finished. Closes all subscribers but keeps buffer for replay.
+   * Mark stream as finished. Sends [DONE] sentinel to all subscribers, then closes them.
+   * Buffer is retained until TTL cleanup but not replayable after finish — the AI SDK's
+   * resumeStream() creates a new message on full replay, causing duplicates. Late
+   * reconnectors get 204 and rely on page reload for data consistency.
    */
   finishStream(chatId: string): void {
     const buffer = this.streams.get(chatId);
@@ -190,26 +201,12 @@ export class StreamRegistry {
       return;
     }
 
+    // Close subscribers first so they receive [DONE] while still in the set.
+    // Setting active=false afterward prevents new subscriptions via subscribe().
+    StreamRegistry.closeSubscribers(buffer.subscribers);
     buffer.active = false;
 
-    // Close all subscribers
-    for (const controller of buffer.subscribers) {
-      try {
-        controller.close();
-      } catch {
-        // Controller may already be closed
-      }
-    }
-    buffer.subscribers.clear();
-
     logger.debug("Stream finished", { chatId, eventCount: buffer.events.length });
-  }
-
-  /**
-   * Manually trigger cleanup (for testing)
-   */
-  triggerCleanup(): void {
-    this.cleanup();
   }
 
   /**
@@ -231,14 +228,7 @@ export class StreamRegistry {
 
       // Remove stale active streams after longer TTL
       if (buffer.active && age > STALE_TTL_MS) {
-        // Close subscribers before removing
-        for (const controller of buffer.subscribers) {
-          try {
-            controller.close();
-          } catch {
-            // Controller may already be closed
-          }
-        }
+        StreamRegistry.closeSubscribers(buffer.subscribers);
         this.streams.delete(chatId);
         removed++;
       }
@@ -251,4 +241,4 @@ export class StreamRegistry {
 }
 
 // Export constants for testing
-export { FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS };
+export { CLEANUP_INTERVAL_MS, FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS };
