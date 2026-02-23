@@ -5,7 +5,7 @@ signals (HTTP, cron).
 
 ## Your Role
 
-Challenge assumptions. Push back on complexity. Ask "who needs this?" and what's
+Challenge assumptions. Push back on complexity. Ask "who needs this?" and "what's
 the simplest version?" before building. Be a sparring partner, not a yes-man.
 
 ## Tech Stack
@@ -22,7 +22,7 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 # Deno/TypeScript
 deno check              # Type check
 deno task lint          # Lint
-deno task test $file    # Run tests (vitest)
+deno task test $file    # Run tests (vitest, e.g. src/core/foo.test.ts)
 deno task evals run                 # Run evals (custom runner CLI)
 deno task start         # Run daemon
 
@@ -61,6 +61,13 @@ go build                # Build
 
 ## Gotchas
 
+Only consult the gotcha relevant to your current task — don't defensively
+check all of these.
+
+**TS2589 (deep type instantiation)?** Check: `Omit<>` on Zod `strictObject`
+types, `z.toJSONSchema()` without intermediate parse, `generateObject` with
+discriminated unions, or `deno check` with shared `z.lazy()` entry points.
+
 ### Zod v4
 
 - `z.object()` strips unknown keys by default — removing fields from a schema
@@ -94,6 +101,11 @@ go build                # Build
 
 ### Deno
 
+**Which `deno.json` to edit?** Adding a deno task or top-level config → root
+`deno.json`. Adding an `@atlas/*` import map entry → root `deno.json` AND the
+package-level `deno.json` (root handles runtime, package-level handles
+`deno check`). Adding a dependency → `package.json` not `deno.json`.
+
 - `deno check` with multiple entry points sharing recursive `z.lazy()` types
   can trigger TS2589 — check files separately
 - deno.json import map only maps root (`@atlas/pkg` → `mod.ts`) — subpath
@@ -101,9 +113,9 @@ go build                # Build
 - Package-level deno.json needs explicit import map entries for cross-package
   `@atlas/*` deps — root deno.json handles runtime, but `deno check` within
   package scope needs them
-- `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite` (FFI) — web client
-  and test code must use subpath exports (e.g. `@atlas/core/session/types`) to
-  avoid vitest/browser failures
+- [web-client, tests] `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite`
+  (FFI) — use subpath exports (e.g. `@atlas/core/session/types`) to avoid
+  vitest/browser failures
 - Deno workspace resolution reads both `deno.json` AND `package.json`
   workspaces — both must stay in sync or you get "Could not find package.json
   for workspace member" errors
@@ -113,7 +125,7 @@ go build                # Build
   explicit `package.json` dep — adding them creates duplicate resolution paths
 - gunshi `required: true` on CLI args still produces `string | undefined` at the
   type level — add a runtime guard even for required args
-- `deno check` cannot parse `.svelte` files — use
+- [web-client] `deno check` cannot parse `.svelte` files — use
   `npx svelte-check --threshold error` for Svelte type checking
 
 ### TypeScript
@@ -126,33 +138,35 @@ go build                # Build
 - Adding a variant to a discriminated union requires updating all exhaustive
   handlers in the same commit — splitting them creates a broken intermediate
   state
-- `.svelte.ts` files have looser `JSON.parse` inference (returns any-ish) —
-  plain `.ts` files enforce `unknown`, so extracted code needs explicit Zod
-  parsing for `JSON.parse` results
+- [web-client] `.svelte.ts` files have looser `JSON.parse` inference (returns
+  any-ish) — plain `.ts` files enforce `unknown`, so extracted code needs
+  explicit Zod parsing for `JSON.parse` results
+
+### Worker Context (src/core)
+
+Worker-executed code actions can't read Context properties unless explicitly
+serialized in `WorkerRequest.contextData` AND reconstructed in
+`function-executor.worker.ts` — adding a Context field requires changes in 4
+places: types.ts interface, fsm-engine.ts context building, worker-executor.ts
+serialization, worker reconstruction.
+
+### LLM Output Schemas
+
+Keep LLM output format simple (flat field lists) and convert to JSON Schema in
+code — more reliable than asking LLMs to produce JSON Schema directly.
 
 ## Code Philosophy
 
-**Do:**
+Explicit over implicit. Simple over complex. Flat over nested.
 
-- Explicit over implicit, simple over complex, flat over nested
-- Parse, don't validate - Zod at boundaries, trust types internally
-- Make impossible states impossible - discriminated unions over optional props
+- Parse, don't validate — Zod at boundaries, trust types internally
+- Make impossible states impossible — discriminated unions over optional props
 - Infer over annotate, `satisfies` when you want inference with validation
-- Colocate until extraction earns itself
-- Fail fast, recover gracefully
-
-**Don't:**
-
-- Abstract prematurely - rule of three, then extract
-- Add "just in case" code or unrequested features - YAGNI
-- Add backwards compatibility unless explicitly asked
-- Write code that's hard to delete
-
-**Before adding complexity, ask:**
-
-- Is this solving a problem we have today?
-- What's the simplest thing that works?
-- What can I delete instead of add?
+- Colocate until extraction earns itself. Rule of three, then extract.
+- No "just in case" code or unrequested features — YAGNI
+- No backwards compatibility unless explicitly asked
+- Before adding complexity: is this solving a problem we have today? What can I
+  delete instead of add?
 
 ## Test Quality
 
@@ -193,62 +207,19 @@ git push -u origin feature/rescue-branch
 gh pr create
 ```
 
-## Project Structure
+## Config & Architecture
 
-```
-apps/
-  atlasd/           # Daemon - HTTP API, workspace lifecycle
-  atlas-operator/   # K8s operator (Go)
-  bounce/           # Auth service (Go)
-  gist/             # File service (Go)
-  web-client/       # Svelte web UI
-packages/
-  @atlas/config     # YAML config loading + Zod schemas
-  @atlas/core       # Core types, artifacts, errors
-  @atlas/logger     # Structured logging
-  @atlas/mcp        # MCP client implementation
-  @atlas/signals    # Signal types and routing
-  @atlas/storage    # Persistence layer
-src/                  # atlasd internals (not a separate app)
-  core/             # Workspace runtime (fsm-engine, sessions)
-  cli/              # CLI commands
-  services/         # Daemon services
-```
-
-## Config Files
-
-- `atlas.yml` - Platform-wide settings (loaded from workspace directory,
-  optional)
-- `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
-- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
-  options
-
-## Architecture
-
-See `docs/ARCHITECTURE.md` for component details and data flow.
-
-Quick mental model:
-
-1. Signal arrives (HTTP/SSE/cron)
-2. Daemon routes to workspace runtime
-3. Workspace spawns session
-4. Session supervisor plans execution
-5. Agents execute with MCP tool access
-6. Results returned via SSE stream
-
-**Worker context:** Worker-executed code actions can't read Context properties
-unless explicitly serialized in `WorkerRequest.contextData` AND reconstructed in
-`function-executor.worker.ts` — adding a Context field requires changes in 4
-places: types.ts interface, fsm-engine.ts context building, worker-executor.ts
-serialization, worker reconstruction.
-
-**LLM output format:** Keep LLM output format simple (flat field lists) and
-convert to JSON Schema in code — more reliable than asking LLMs to produce JSON
-Schema directly.
+- `atlas.yml` — platform-wide settings (optional), `workspace.yml` — per-workspace
+  config (agents, signals, MCP servers)
+- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` — example atlas.yml with all options
+- `docs/ARCHITECTURE.md` — component details and data flow
+- `src/` is atlasd internals, not a separate app
 
 ## Local Development with CLI
 
-Daemon runs on `localhost:8080`. Auto-restarts on code changes.
+Daemon runs on `localhost:8080`. Auto-restarts on TypeScript code changes.
+Changes to `deno.json` or `workspace.yml` require manual restart
+(`daemon stop` then `daemon start`).
 
 ```bash
 # Check and see if the daemon is already running
