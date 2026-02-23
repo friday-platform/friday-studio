@@ -147,8 +147,7 @@
     "npm:prom-client@^15.1.3": "15.1.3",
     "npm:proper-lockfile@^4.1.2": "4.1.2",
     "npm:react@^19.2.4": "19.2.4",
-    "npm:svelte-check@^4.4.0": "4.4.1_svelte@5.53.2__acorn@8.16.0_typescript@5.9.3",
-    "npm:svelte-check@^4.4.1": "4.4.1_svelte@5.53.2__acorn@8.16.0_typescript@5.9.3",
+    "npm:svelte-check@^4.4.3": "4.4.3_svelte@5.53.2__acorn@8.16.0_typescript@5.9.3",
     "npm:svelte-eslint-parser@^1.4.1": "1.4.1_svelte@5.53.2__acorn@8.16.0_postcss@8.5.6",
     "npm:svelte@^5.53.2": "5.53.2_acorn@8.16.0",
     "npm:turndown@7.2.2": "7.2.2",
@@ -5059,8 +5058,8 @@
     "supports-preserve-symlinks-flag@1.0.0": {
       "integrity": "sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w=="
     },
-    "svelte-check@4.4.1_svelte@5.53.2__acorn@8.16.0_typescript@5.9.3": {
-      "integrity": "sha512-y1bBT0CRCMMfdjyqX1e5zCygLgEEr4KJV1qP6GSUReHl90bmcQaAWjZygHPfQ8K63f1eR8IuivuZMwmCg3zT2Q==",
+    "svelte-check@4.4.3_svelte@5.53.2__acorn@8.16.0_typescript@5.9.3": {
+      "integrity": "sha512-4HtdEv2hOoLCEsSXI+RDELk9okP/4sImWa7X02OjMFFOWeSdFF3NFy3vqpw0z+eH9C88J9vxZfUXz/Uv2A1ANw==",
       "dependencies": [
         "@jridgewell/trace-mapping",
         "chokidar@4.0.3",
@@ -5556,7 +5555,7 @@
             "npm:nanoid@^5.1.6",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.8.1",
-            "npm:svelte-check@^4.4.0",
+            "npm:svelte-check@^4.4.3",
             "npm:svelte-eslint-parser@^1.4.1",
             "npm:svelte@^5.53.2",
             "npm:typescript-eslint@^8.56.0",
@@ -5605,7 +5604,7 @@
             "npm:prettier-plugin-svelte@^3.5.0",
             "npm:prettier@^3.8.1",
             "npm:prom-client@^15.1.3",
-            "npm:svelte-check@^4.4.1",
+            "npm:svelte-check@^4.4.3",
             "npm:svelte@^5.53.2",
             "npm:typescript-eslint@^8.56.0",
             "npm:typescript@^5.9.3",
@@ -5684,7 +5683,7 @@
             "npm:papaparse@^5.5.3",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.8.1",
-            "npm:svelte-check@^4.4.0",
+            "npm:svelte-check@^4.4.3",
             "npm:svelte-eslint-parser@^1.4.1",
             "npm:svelte@^5.53.2",
             "npm:typescript-eslint@^8.56.0",
