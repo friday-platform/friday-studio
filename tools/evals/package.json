@@ -15,7 +15,7 @@
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "ai": "^5.0.137",
     "dotenv": "17.3.1",
-    "gunshi": "^0.28.2",
+    "gunshi": "^0.29.2",
     "papaparse": "^5.5.3",
     "zod": "^4.3.5"
   },

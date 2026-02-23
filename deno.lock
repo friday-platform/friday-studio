@@ -114,7 +114,7 @@
     "npm:globals@^17.1.0": "17.3.0",
     "npm:globals@^17.3.0": "17.3.0",
     "npm:gsap@^3.14.2": "3.14.2",
-    "npm:gunshi@~0.28.2": "0.28.2",
+    "npm:gunshi@~0.29.2": "0.29.2",
     "npm:hono-openapi@^1.2.0": "1.2.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.12.0_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.1.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.6_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.1.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.6__@standard-schema+spec@1.1.0__openapi-types@12.1.3__zod@4.3.6__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.12.0_openapi-types@12.1.3_zod@4.3.6",
     "npm:hono@4.12.0": "4.12.0",
     "npm:hono@^4.10.4": "4.12.0",
@@ -3759,8 +3759,8 @@
     "gsap@3.14.2": {
       "integrity": "sha512-P8/mMxVLU7o4+55+1TCnQrPmgjPKnwkzkXOK1asnR9Jg2lna4tEY5qBJjMmAaOBDDZWtlRjBXjLa0w53G/uBLA=="
     },
-    "gunshi@0.28.2": {
-      "integrity": "sha512-rq8DXscwKVFlfRk1duOuWdMIT+jc43IUaJGs2+bJciWWgg6S78PkFhDU1SsyOv78DZ8UX8R0f947dv4onzYAvA=="
+    "gunshi@0.29.2": {
+      "integrity": "sha512-tjyVt1vWWOnVUlY+kSqr7evRzl5xVq1ltzILkm7150zBL7VCHYX3OIUrkVOqx8N4fni+yuPrwBRPBl+2FW+C0w=="
     },
     "has-flag@4.0.0": {
       "integrity": "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="
@@ -5980,7 +5980,7 @@
             "npm:@jsr/std__assert@^1.0.14",
             "npm:ai@^5.0.137",
             "npm:dotenv@17.3.1",
-            "npm:gunshi@~0.28.2",
+            "npm:gunshi@~0.29.2",
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
