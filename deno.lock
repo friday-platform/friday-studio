@@ -75,7 +75,7 @@
     "npm:@opentelemetry/sdk-logs@0.212": "0.212.0_@opentelemetry+api@1.9.0",
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.40.0",
-    "npm:@sentry/deno@^10.39.0": "10.40.0",
+    "npm:@sentry/deno@^10.40.0": "10.40.0",
     "npm:@sentry/sveltekit@^10.39.0": "10.40.0_@sveltejs+kit@2.53.0__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.53.3____acorn@8.16.0___vite@7.3.1____@types+node@25.3.0____picomatch@4.0.3___@types+node@25.3.0__svelte@5.53.3___acorn@8.16.0__typescript@5.9.3__vite@7.3.1___@types+node@25.3.0___picomatch@4.0.3__acorn@8.16.0__@types+node@25.3.0_vite@7.3.1__@types+node@25.3.0__picomatch@4.0.3_svelte@5.53.3__acorn@8.16.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.53.3___acorn@8.16.0__vite@7.3.1___@types+node@25.3.0___picomatch@4.0.3__@types+node@25.3.0_typescript@5.9.3_@types+node@25.3.0",
     "npm:@socotra/modelcontextprotocol-sdk@1.21.0": "1.21.0_zod@4.3.6_ajv@8.18.0_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.3.6_ajv@8.18.0_express@5.2.1",
@@ -6236,7 +6236,7 @@
       "packages/sentry": {
         "packageJson": {
           "dependencies": [
-            "npm:@sentry/deno@^10.39.0"
+            "npm:@sentry/deno@^10.40.0"
           ]
         }
       },
