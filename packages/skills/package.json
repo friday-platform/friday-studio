@@ -4,7 +4,7 @@
   "exports": { ".": "./src/mod.ts", "./schemas": "./src/schemas.ts" },
   "dependencies": {
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
-    "ai": "^5.0.137",
+    "ai": "^5.0.138",
     "ulid": "^3.0.2",
     "vitest": "^4.0.17",
     "zod": "^4.3.5"
