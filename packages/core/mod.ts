@@ -131,6 +131,8 @@ export {
 } from "./src/types/outline-ref.ts";
 export {
   createErrorCause,
+  getErrorDisplayMessage,
   isAPIErrorCause,
+  parseAPICallError,
   throwWithCause,
 } from "./src/utils/error-helpers.ts";

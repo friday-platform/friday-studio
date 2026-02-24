@@ -7,7 +7,9 @@ import {
   repairToolCall,
 } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import { createErrorCause, getErrorDisplayMessage, isAPIErrorCause } from "@atlas/core";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { CoreMessage, StopCondition, Tool } from "ai";
 import { generateText, hasToolCall, stepCountIs } from "ai";
@@ -90,12 +92,25 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         toolResults: assembledToolResults,
       } satisfies AgentExecutionSuccess<string, FSMLLMOutput>;
     } catch (error) {
+      const toolCount = params.tools ? Object.keys(params.tools).length : 0;
+      const errorCause = createErrorCause(error);
+      const reason = isAPIErrorCause(errorCause)
+        ? getErrorDisplayMessage(errorCause)
+        : stringifyError(error);
+
+      logger.error(`LLM call failed: ${reason}`, {
+        errorCause,
+        model: modelId,
+        toolCount,
+        agentId: params.agentId,
+      });
+
       return {
         agentId: params.agentId,
         timestamp: new Date().toISOString(),
         input: params.prompt,
         ok: false,
-        error: { reason: stringifyError(error) },
+        error: { reason },
         durationMs: Date.now() - startMs,
       } satisfies AgentExecutionError<string>;
     }

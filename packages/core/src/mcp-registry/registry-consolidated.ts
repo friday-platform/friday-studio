@@ -4,12 +4,16 @@ import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
 /**
  * Google Workspace service definitions.
  * All services use workspace-mcp with OAuth credentials injected at runtime.
+ *
+ * Each service has its own MCP URL via `urlEnvKey` (e.g. GOOGLE_GMAIL_MCP_URL).
+ * Server-side `--tools` filtering replaces client-side allowTools lists.
  */
 const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-calendar",
     name: "Google Calendar",
     urlDomains: ["calendar.google.com"],
+    urlEnvKey: "GOOGLE_CALENDAR_MCP_URL",
     description:
       "Full Google Calendar management via OAuth - list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
     constraints:
@@ -19,6 +23,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-gmail",
     name: "Gmail",
     urlDomains: ["mail.google.com"],
+    urlEnvKey: "GOOGLE_GMAIL_MCP_URL",
     description:
       "Read and manage Gmail — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
@@ -28,6 +33,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-drive",
     name: "Google Drive",
     urlDomains: ["drive.google.com"],
+    urlEnvKey: "GOOGLE_DRIVE_MCP_URL",
     description:
       "Full Google Drive management via OAuth - search files, list folders, create/update files, manage sharing and permissions, get download URLs",
     constraints:
@@ -37,6 +43,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-docs",
     name: "Google Docs",
     urlDomains: ["docs.google.com"],
+    urlEnvKey: "GOOGLE_DOCS_MCP_URL",
     description:
       "Full Google Docs management via OAuth - search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
     constraints:
@@ -46,6 +53,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-sheets",
     name: "Google Sheets",
     urlDomains: ["docs.google.com"],
+    urlEnvKey: "GOOGLE_SHEETS_MCP_URL",
     description:
       "Full Google Sheets management via OAuth — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
     constraints:
@@ -53,19 +61,12 @@ const GOOGLE_WORKSPACE_SERVICES = [
   },
 ];
 
-/**
- * Get Google Workspace MCP URL from environment.
- * Falls back to localhost for local development.
- */
-function getGoogleWorkspaceMcpUrl(): string {
-  return process.env.GOOGLE_WORKSPACE_MCP_URL || "http://localhost:8000/mcp";
-}
-
 function createGoogleWorkspaceEntry(
   spec: (typeof GOOGLE_WORKSPACE_SERVICES)[number],
 ): MCPServerMetadata {
   // Token env var: google-calendar -> GOOGLE_CALENDAR_ACCESS_TOKEN
   const tokenEnvKey = `${spec.id.toUpperCase().replace(/-/g, "_")}_ACCESS_TOKEN`;
+  const url = process.env[spec.urlEnvKey] || "http://localhost:8000/mcp";
 
   return {
     id: spec.id,
@@ -76,7 +77,7 @@ function createGoogleWorkspaceEntry(
     source: "static",
     securityRating: "high",
     configTemplate: {
-      transport: { type: "http", url: getGoogleWorkspaceMcpUrl() },
+      transport: { type: "http", url },
       auth: { type: "bearer", token_env: tokenEnvKey },
       env: { [tokenEnvKey]: { from: "link", provider: spec.id, key: "access_token" } },
       client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },

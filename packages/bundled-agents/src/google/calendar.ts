@@ -106,7 +106,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   // MCP config for Google Calendar via workspace-mcp HTTP transport
   mcp: {
     "google-calendar": {
-      transport: { type: "http", url: env.GOOGLE_WORKSPACE_MCP_URL || "http://localhost:8000/mcp" },
+      transport: { type: "http", url: env.GOOGLE_CALENDAR_MCP_URL || "http://localhost:8000/mcp" },
       auth: { type: "bearer", token_env: "GOOGLE_CALENDAR_ACCESS_TOKEN" },
       env: {
         GOOGLE_CALENDAR_ACCESS_TOKEN: {
