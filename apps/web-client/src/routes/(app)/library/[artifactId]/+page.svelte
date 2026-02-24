@@ -7,7 +7,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { toast } from "$lib/components/notification/notification.svelte";
   import BasicTable from "$lib/components/primitives/basic-table.svelte";
-  import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
+  import MarkdownRendered from "$lib/components/primitives/markdown-rendered.svelte";
   import Schedule from "$lib/components/primitives/schedule.svelte";
   import WebSearch from "$lib/components/primitives/web-search.svelte";
   import { parseFileContents, type ParsedContent } from "$lib/modules/artifacts/file-utils";
@@ -19,8 +19,12 @@
     openInDownloads,
   } from "$lib/utils/files.svelte";
   import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
+  import Markdown from "svelte-exmarkdown";
+  import { gfmPlugin } from "svelte-exmarkdown/gfm";
   import { z } from "zod";
   import type { PageData } from "./$types";
+
+  const plugins = [gfmPlugin()];
 
   let { data }: { data: PageData } = $props();
 
@@ -150,7 +154,9 @@
         <pre class="code"><code>{summaryJson}</code></pre>
       {:else}
         <div class="summary">
-          <MarkdownContent content={artifact.data} />
+          <MarkdownRendered>
+            <Markdown md={artifact.data} {plugins} />
+          </MarkdownRendered>
         </div>
       {/if}
     {:else if artifact.type === "workspace-plan"}
@@ -195,7 +201,9 @@
         <div class="file-content">
           {#if parsedContent.type === "markdown"}
             <div class="markdown">
-              <MarkdownContent content={parsedContent.content} />
+              <MarkdownRendered>
+                <Markdown md={parsedContent.content} {plugins} />
+              </MarkdownRendered>
             </div>
           {:else if parsedContent.type === "csv"}
             <BasicTable headers={parsedContent.headers} rows={parsedContent.rows} />

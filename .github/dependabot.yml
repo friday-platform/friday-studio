@@ -61,6 +61,11 @@ updates:
       # See: https://github.com/porsager/postgres/issues/1143
       - dependency-name: "postgres"
         versions: [">= 3.4.8"]
+      # vite-plugin-svelte v7 requires Vite 8 (Rolldown) — hard API deps on
+      # optimizeDeps.rolldownOptions and transformWithOxc. Pinned to ~6.2.4 until
+      # Vite 8 reaches stable. See PR #2164 for context.
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -476,6 +481,10 @@ updates:
       - "npm"
       - "friday-website"
     rebase-strategy: "auto"
+    ignore:
+      # vite-plugin-svelte v7 requires Vite 8 (Rolldown). See PR #2164.
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date (for friday-website)
   - package-ecosystem: "docker"
