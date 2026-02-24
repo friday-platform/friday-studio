@@ -12,9 +12,9 @@
  */
 
 import type { Logger } from "@atlas/logger";
+import type { KVStorage } from "@atlas/storage/kv";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { CronExpressionParser } from "cron-parser";
-import type { KVStorage } from "../../../src/core/storage/kv-storage.ts";
 
 export interface TimerInfo {
   workspaceId: string;

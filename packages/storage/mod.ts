@@ -11,8 +11,28 @@
 
 export const STORAGE_VERSION = "1.0.0";
 
+// KV storage implementations
+export { DenoKVStorage } from "./src/deno-kv-storage.ts";
+export type {
+  AtomicOperation,
+  KVEntry,
+  KVStorage,
+  KVStorageConfig,
+} from "./src/kv-storage.ts";
+// KV storage interface, factory, and error types
+export {
+  createKVStorage,
+  KVConnectionError,
+  KVStorageError,
+  KVTransactionError,
+} from "./src/kv-storage.ts";
+export type { LibraryStorageConfig } from "./src/library-storage-adapter.ts";
+
+// Library storage adapter
+export { LibraryStorageAdapter } from "./src/library-storage-adapter.ts";
 // Memory storage utilities
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
+export { MemoryKVStorage } from "./src/memory-kv-storage.ts";
 
 // General storage interface
 export interface StorageAdapter {
@@ -45,9 +65,9 @@ export class MemoryStorage implements StorageAdapter {
   }
 }
 
+// Re-export from @atlas/config (canonical home) for backwards compatibility
+export type { ConfigurationAdapter } from "@atlas/config";
 export { FilesystemConfigAdapter } from "./src/adapters/config/fs.ts";
-// Export configuration adapters
-export type { ConfigurationAdapter } from "./src/adapters/config/mod.ts";
 // Export template adapters
 export type {
   Template,

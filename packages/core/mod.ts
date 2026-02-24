@@ -6,8 +6,6 @@
 
 // Workspace functionality moved to @atlas/workspace package
 
-// Core types
-export type { IWorkspaceSession } from "../../src/types/core.ts";
 // Export LLM agent conversion types and functions
 export type { LLMOutput } from "./src/agent-conversion/from-llm.ts";
 export {
@@ -122,6 +120,8 @@ export type {
   NetworkErrorCause,
   UnknownErrorCause,
 } from "./src/types/error-causes.ts";
+// Core types
+export type { IWorkspaceSession, IWorkspaceSignal } from "./src/types/legacy.ts";
 // Outline Reference schemas for standardized agent outline updates
 export {
   type OutlineRef,

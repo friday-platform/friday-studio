@@ -1,5 +1,9 @@
 {
   "name": "@atlas/logger",
   "version": "1.0.0",
-  "exports": { ".": "./mod.ts", "./console": "./src/console-only.ts" }
+  "exports": {
+    ".": "./mod.ts",
+    "./console": "./src/console-only.ts",
+    "./telemetry": "./src/telemetry.ts"
+  }
 }

@@ -53,9 +53,9 @@ runs:
         # Set component-specific variables
         case "$component" in
           binary)
-            entry_point="src/cli.tsx"
+            entry_point="apps/atlas-cli/src/cli.tsx"
             output_name="atlas"
-            compile_args="--include=src --include=packages/workspace-builder/mcp-tools/codegen.worker.ts"
+            compile_args="--include=apps/atlas-cli --include=packages/workspace-builder/mcp-tools/codegen.worker.ts"
             ;;
           web-app)
             # Web app uses different build process
@@ -82,7 +82,7 @@ runs:
         [ "$platform" = "windows" ] && output_name="${output_name}.exe"
 
         # Replace version placeholders in source before compilation
-        VERSION_FILE="src/utils/version.ts"
+        VERSION_FILE="packages/utils/src/version.ts"
         BACKUP_FILE="${VERSION_FILE}.bak"
 
         # Backup original file

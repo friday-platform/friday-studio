@@ -17,13 +17,9 @@ import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
-import {
-  createRegistryStorage,
-  type RegistryStorageAdapter,
-  StorageConfigs,
-} from "../../../src/core/storage/index.ts";
-import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generator.ts";
-import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
+import { generateUniqueWorkspaceName } from "./id-generator.ts";
+import type { WorkspaceRuntime } from "./runtime.ts";
+import { createRegistryStorage, type RegistryStorageAdapter, StorageConfigs } from "./storage.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 

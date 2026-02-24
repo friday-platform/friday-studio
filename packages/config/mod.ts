@@ -12,6 +12,8 @@ export * from "./src/atlas.ts";
 export * from "./src/base.ts";
 // Configuration loader
 export * from "./src/config-loader.ts";
+// Configuration adapter interface
+export type { ConfigurationAdapter } from "./src/configuration-adapter.ts";
 
 // Job specification schemas
 export * from "./src/jobs.ts";

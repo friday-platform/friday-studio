@@ -15,11 +15,8 @@ import { ChatStorage } from "@atlas/core/chat/storage";
 import { logger } from "@atlas/logger";
 import { Hono } from "hono";
 import { z } from "zod";
-import {
-  generateSlackChatId,
-  initializePlatformChat,
-} from "../../../../src/core/platform-utils.ts";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
+import { generateSlackChatId, initializePlatformChat } from "../../src/platform-utils.ts";
 import { postSlackMessage } from "../../src/services/slack-client.ts";
 import { getSlackTokenByTeamId } from "../../src/services/slack-credentials.ts";
 

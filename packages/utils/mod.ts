@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export { ReleaseChannel } from "./src/release-channel.ts";
+export { getAtlasVersion, getVersionInfo } from "./src/version.ts";
+
 const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 
 /**

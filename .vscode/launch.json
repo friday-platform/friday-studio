@@ -8,7 +8,7 @@
       "request": "launch",
       "name": "Atlas Daemon",
       "type": "node",
-      "program": "${workspaceFolder}/src/cli.tsx",
+      "program": "${workspaceFolder}/apps/atlas-cli/src/cli.tsx",
       "args": ["daemon", "start"],
       "cwd": "${workspaceFolder}",
       "env": { "OTEL_DENO": "true", "OTEL_EXPORTER_OTLP_ENDPOINT": "disabled" },

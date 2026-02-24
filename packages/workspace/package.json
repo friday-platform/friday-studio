@@ -2,14 +2,27 @@
   "name": "@atlas/workspace",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts", "./manager": "./src/manager.ts", "./types": "./src/types.ts" },
+  "exports": {
+    ".": "./mod.ts",
+    "./manager": "./src/manager.ts",
+    "./storage": "./src/storage.ts",
+    "./types": "./src/types.ts"
+  },
   "main": "./mod.ts",
   "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/analytics": "workspace:*",
     "@atlas/config": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "@atlas/document-store": "workspace:*",
     "@atlas/fs-watch": "workspace:*",
+    "@atlas/fsm-engine": "workspace:*",
+    "@atlas/hallucination": "workspace:*",
+    "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/system": "workspace:*",
+    "@atlas/utils": "workspace:*",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "zod": "^4.3.5"

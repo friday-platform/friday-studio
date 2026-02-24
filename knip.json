@@ -1,10 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
-    ".": {
-      "entry": ["mod.ts!", "src/cli.tsx!", "src/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!"]
-    },
+    ".": { "project": ["*.ts!"] },
     "packages/agent-sdk": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
@@ -62,6 +59,7 @@
       "entry": ["src/**/*.test.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
+    "apps/atlas-cli": { "entry": ["src/cli.tsx!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlas-auth-ui": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!"],

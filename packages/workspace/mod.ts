@@ -26,6 +26,16 @@ export {
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
 } from "./src/manager.ts";
+// Runtime
+export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
+// Storage factories and registry adapter
+export {
+  createKVStorage,
+  createLibraryStorage,
+  createRegistryStorage,
+  RegistryStorageAdapter,
+  StorageConfigs,
+} from "./src/storage.ts";
 // Export all types and schemas
 export type {
   WorkspaceEntry,

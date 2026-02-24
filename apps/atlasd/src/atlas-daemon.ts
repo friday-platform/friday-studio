@@ -17,8 +17,17 @@ import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { flush as flushSentry } from "@atlas/sentry";
+import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "@atlas/workspace";
+import {
+  createKVStorage,
+  createLibraryStorage,
+  createRegistryStorage,
+  StorageConfigs,
+  validateMCPEnvironmentForWorkspace,
+  WorkspaceManager,
+  WorkspaceRuntime,
+} from "@atlas/workspace";
 import type {
   WorkspaceSignalRegistrar,
   WorkspaceSignalTriggerCallback,
@@ -26,16 +35,6 @@ import type {
 import { StreamableHTTPTransport } from "@atlas-vendor/hono-mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
-import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
-import {
-  createKVStorage,
-  createLibraryStorage,
-  createRegistryStorage,
-  StorageConfigs,
-} from "../../../src/core/storage/index.ts";
-import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import { AtlasMetrics } from "../../../src/utils/metrics.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -61,11 +60,13 @@ import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
+import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
 import { createApp } from "./factory.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import { StreamRegistry } from "./stream-registry.ts";
+import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
 
 export interface AtlasDaemonOptions {

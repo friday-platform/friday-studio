@@ -20,12 +20,12 @@ import {
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
+import { AtlasTelemetry } from "@atlas/logger/telemetry";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
 import { type RetryOptions, retry } from "@std/async/retry";
 import type { Tool } from "ai";
 import { z } from "zod";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 // Retry configuration for MCP connections
 // Shared across both HTTP and stdio transports for consistency

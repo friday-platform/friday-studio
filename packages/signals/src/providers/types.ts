@@ -2,6 +2,8 @@
  * Provider system for loading and managing external integrations
  */
 
+import type { MaybePromise } from "@atlas/utils";
+
 export interface IProvider {
   id: string;
   type: ProviderType;
@@ -76,7 +78,7 @@ export interface IProviderRegistry {
   register(provider: IProvider): void;
   get(id: string): IProvider | undefined;
   getByType(type: ProviderType): IProvider[];
-  loadFromConfig(config: ProviderConfig): Promise<IProvider>;
+  loadFromConfig(config: ProviderConfig): MaybePromise<IProvider>;
 }
 
 // Serializable provider config

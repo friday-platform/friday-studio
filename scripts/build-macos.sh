@@ -5,7 +5,7 @@
 VERSION="0.0.1-localbuild"
 BINARY_NAME="atlas"
 DIST_DIR="./dist"
-VERSION_FILE="src/utils/version.ts"
+VERSION_FILE="packages/utils/src/version.ts"
 BACKUP_FILE="${VERSION_FILE}.bak"
 
 # --- Cleanup Function ---

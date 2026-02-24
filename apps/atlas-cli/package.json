@@ -1,0 +1,30 @@
+{
+  "name": "@atlas/cli",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/cli.tsx",
+  "exports": { ".": "./src/cli.tsx" },
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/client": "workspace:*",
+    "@atlas/config": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/oapi-client": "workspace:*",
+    "@atlas/sentry": "workspace:*",
+    "@atlas/storage": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@inkjs/ui": "^2.0.0",
+    "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
+    "@types/react": "^19.2.14",
+    "ai": "^5.0.137",
+    "ink": "^6.8.0",
+    "js-levenshtein": "^1.1.6",
+    "nanoid": "^5.1.6",
+    "react": "^19.2.4",
+    "yargs": "^18.0.0",
+    "zod": "^4.3.5"
+  }
+}

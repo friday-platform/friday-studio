@@ -4,8 +4,8 @@
 
 import type { MergedConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
+import type { WorkspaceRuntime } from "@atlas/workspace";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { WorkspaceRuntime } from "../../../../src/core/workspace-runtime.ts";
 
 /**
  * Provides access to workspace runtimes

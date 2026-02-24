@@ -6,11 +6,11 @@ import { fail, isErrnoException, type Result, stringifyError, success } from "@a
 import { getAtlasHome } from "@atlas/utils/paths.server";
 
 import { z } from "zod";
-import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
 import {
   ReasoningResultStatus,
   type ReasoningResultStatusType,
 } from "../constants/supervisor-status.ts";
+import type { IWorkspaceSignal } from "../types/legacy.ts";
 import { withExclusiveLock } from "../utils/file-lock.ts";
 
 const logger = createLogger({ component: "session-history-storage" });

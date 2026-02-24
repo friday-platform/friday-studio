@@ -10,8 +10,8 @@ import {
   WorkspaceConfigSchema,
   type WorkspaceSignalConfigSchema,
 } from "@atlas/config";
-import type { ConfigurationAdapter } from "@atlas/storage";
 import { z } from "zod";
+import type { ConfigurationAdapter } from "./configuration-adapter.ts";
 
 /**
  * Configuration loader v2 with improved type safety

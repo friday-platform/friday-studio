@@ -36,10 +36,10 @@ deno compile \
   --allow-ffi \
   --unstable-broadcast-channel \
   --unstable-worker-options \
-  --include=src \
+  --include=apps/atlas-cli \
   --include=examples \
   --include=packages \
   --output "$OUTPUT" \
-  ./src/cli.tsx
+  ./apps/atlas-cli/src/cli.tsx
 
 echo "✅ Compilation complete: ${OUTPUT}"

@@ -4,6 +4,10 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": { "@atlas/workspace": "workspace:*", "cron-parser": "^5.5.0" },
+  "dependencies": {
+    "@atlas/storage": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "cron-parser": "^5.5.0"
+  },
   "devDependencies": {}
 }

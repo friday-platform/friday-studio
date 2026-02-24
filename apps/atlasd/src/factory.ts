@@ -1,11 +1,10 @@
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
-import type { WorkspaceManager } from "@atlas/workspace";
+import type { LibraryStorageAdapter } from "@atlas/storage";
+import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
-import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 

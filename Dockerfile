@@ -28,6 +28,7 @@ RUN addgroup -g 266 -S atlas && \
 # Copy package files first for better caching
 COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json ./apps/atlasd/
+COPY apps/atlas-cli/deno.json ./apps/atlas-cli/
 COPY packages/ ./packages/
 
 # Copy source code
@@ -39,7 +40,7 @@ RUN deno install
 # Compile the Atlas CLI to a single binary for optimal performance
 # OTEL_DENO=true must be set at compile time - the config is baked into the binary
 RUN OTEL_DENO=true deno compile \
-    --include=src \
+    --include=apps/atlas-cli \
     --include=packages \
     --allow-all \
     --no-check \
@@ -49,7 +50,7 @@ RUN OTEL_DENO=true deno compile \
     --unstable-worker-options \
     --unstable-kv \
     --unstable-raw-imports \
-    src/cli.tsx
+    apps/atlas-cli/src/cli.tsx
 
 # Stage 2: Daemon runtime
 FROM denoland/deno:alpine-2.6.10 AS daemon

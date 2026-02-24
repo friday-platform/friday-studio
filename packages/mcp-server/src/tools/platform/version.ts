@@ -1,5 +1,5 @@
+import { getVersionInfo } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getVersionInfo } from "../../../../../src/utils/version.ts";
 import { createSuccessResponse } from "../utils.ts";
 
 export function registerVersionTool(server: McpServer) {

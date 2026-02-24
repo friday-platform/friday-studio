@@ -4,5 +4,9 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": { "@atlas/fs-watch": "workspace:*" }
+  "dependencies": {
+    "@atlas/fs-watch": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/utils": "workspace:*"
+  }
 }

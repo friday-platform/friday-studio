@@ -58,6 +58,7 @@ Where to start reading depends on what you're doing:
 
 ```
 apps/
+  atlas-cli/           CLI — HTTP client to daemon
   atlasd/              Daemon — HTTP API, workspace lifecycle
   web-client/          Svelte web UI (primary deployment target)
   bounce/              Auth service (Go)
@@ -73,24 +74,17 @@ packages/
   @atlas/core          Core types, agent registry, orchestration
   @atlas/fsm-engine    FSM execution engine (YAML → state machines)
   @atlas/mcp           MCP client management
-  @atlas/signals       Signal types and routing
+  @atlas/signals       Signal types, routing, providers
   @atlas/storage       Persistence layer
-  @atlas/workspace     Workspace lifecycle management
+  @atlas/workspace     Workspace runtime, lifecycle management, registry
   @atlas/agent-sdk     SDK for building agents
   @atlas/llm           LLM provider abstraction
-  @atlas/logger        Structured logging
+  @atlas/logger        Structured logging + telemetry
   …and ~18 more
-
-src/                   atlasd daemon internals (not a separate app)
-  core/                Workspace runtime, FSM events, agent helpers
-  cli/                 CLI commands (prompt, chat, daemon, workspace)
-  services/            Daemon background services
 ```
 
 The `apps/` directory contains deployable services. The `packages/` directory
-contains internal TypeScript packages used across apps. `src/` is special — it
-contains the daemon's internal implementation, colocated at the repo root because
-`atlasd` is the primary application.
+contains internal TypeScript packages used across apps.
 
 ## The Pipeline
 
@@ -148,7 +142,7 @@ losing workspace definitions — it re-discovers them from storage on boot.
 
 ### Workspace Runtime
 
-The workspace runtime (`src/core/workspace-runtime.ts`) is the execution
+The workspace runtime (`packages/workspace/src/runtime.ts`) is the execution
 environment for a single workspace. It manages:
 
 - **FSM engines** — One per workflow defined in the workspace.

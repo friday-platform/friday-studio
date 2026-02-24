@@ -11,6 +11,9 @@
     "@atlas/sentry": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/cron": "workspace:*",
+    "@atlas/fsm-engine": "workspace:*",
+    "@atlas/hallucination": "workspace:*",
+    "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp-server": "workspace:*",
     "@atlas/schemas": "workspace:*",
@@ -29,6 +32,7 @@
     "hono": "^4.12.2",
     "hono-openapi": "^1.2.0",
     "jszip": "^3.10.1",
+    "ai": "^5.0.137",
     "zod": "^4.3.5"
   },
   "devDependencies": { "@libpdf/core": "^0.2.10", "vitest": "^4.0.18" }

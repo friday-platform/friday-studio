@@ -129,6 +129,10 @@ package-level `deno.json` (root handles runtime, package-level handles
   type level — add a runtime guard even for required args
 - [web-client] `deno check` cannot parse `.svelte` files — use
   `npx svelte-check --threshold error` for Svelte type checking
+- When moving code INTO a package it previously imported from (e.g.,
+  `telemetry.ts` with `import from "@atlas/logger"` moving into `@atlas/logger`),
+  the package import must become a relative import — self-barrel imports cause
+  circular resolution
 
 ### TypeScript
 
@@ -197,6 +201,10 @@ use `git add <specific-files> && git commit -m "msg"`, never `git add .` or
 `git add -A`. Do NOT use `git commit -- <files> -m` — `--` terminates option
 parsing and git treats `-m` as a pathspec.
 
+**lint-staged in shared worktrees:** lint-staged's stash/restore cycle corrupts
+commits — it stashes ALL uncommitted changes (including other agents') then
+restores them into staging. Use `--no-stash` or worktree isolation per agent.
+
 `git diff HEAD~1` includes uncommitted working tree changes — use
 `git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.
 
@@ -213,11 +221,54 @@ gh pr create
 
 ## Config & Architecture
 
-- `atlas.yml` — platform-wide settings (optional), `workspace.yml` — per-workspace
-  config (agents, signals, MCP servers)
-- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` — example atlas.yml with all options
-- `docs/ARCHITECTURE.md` — component details and data flow
-- `src/` is atlasd internals, not a separate app
+```
+apps/
+  atlas-cli/        # CLI - HTTP client to daemon
+  atlasd/           # Daemon - HTTP API, workspace lifecycle
+  atlas-operator/   # K8s operator (Go)
+  bounce/           # Auth service (Go)
+  gist/             # File service (Go)
+  web-client/       # Svelte web UI
+packages/
+  @atlas/config     # YAML config loading + Zod schemas
+  @atlas/core       # Core types, artifacts, errors
+  @atlas/logger     # Structured logging + telemetry
+  @atlas/mcp        # MCP client implementation
+  @atlas/signals    # Signal types, routing, providers
+  @atlas/storage    # Persistence layer
+  @atlas/workspace  # Workspace runtime, management, registry
+```
+
+## Config Files
+
+- `atlas.yml` - Platform-wide settings (loaded from workspace directory,
+  optional)
+- `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
+- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
+  options
+
+## Architecture
+
+See `docs/ARCHITECTURE.md` for component details and data flow.
+
+Quick mental model:
+
+1. Signal arrives (HTTP/SSE/cron)
+2. Daemon routes to workspace runtime
+3. Workspace spawns session
+4. Session supervisor plans execution
+5. Agents execute with MCP tool access
+6. Results returned via SSE stream
+
+**Worker context:** Worker-executed code actions can't read Context properties
+unless explicitly serialized in `WorkerRequest.contextData` AND reconstructed in
+`function-executor.worker.ts` — adding a Context field requires changes in 4
+places: types.ts interface, fsm-engine.ts context building, worker-executor.ts
+serialization, worker reconstruction.
+
+**LLM output format:** Keep LLM output format simple (flat field lists) and
+convert to JSON Schema in code — more reliable than asking LLMs to produce JSON
+Schema directly.
 
 ## Local Development with CLI
 
