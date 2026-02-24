@@ -1,7 +1,25 @@
-import { describe, expect, it } from "vitest";
-import type { Agent, JobWithDAG, Signal, WorkspaceBlueprint } from "../types.ts";
+import { describe, expect, it, vi } from "vitest";
+import type { Agent, ClassifiedDAGStep, JobWithDAG, Signal, WorkspaceBlueprint } from "../types.ts";
 import { SIGNAL_DOCUMENT_ID } from "../types.ts";
-import { buildMappingPrompt, generatePrepareMappings } from "./mappings.ts";
+
+// ---------------------------------------------------------------------------
+// Hoisted mocks — must come before module imports
+// ---------------------------------------------------------------------------
+
+const mockRegistry = vi.hoisted(() =>
+  vi.fn((): Record<string, { inputJsonSchema?: Record<string, unknown> }> => ({})),
+);
+vi.mock("@atlas/bundled-agents/registry", () => ({
+  get bundledAgentsRegistry() {
+    return mockRegistry();
+  },
+}));
+
+import {
+  buildMappingPrompt,
+  generatePrepareMappings,
+  resolveConsumerInputSchema,
+} from "./mappings.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,6 +80,18 @@ function makeAgent(overrides: Partial<Agent> & { id: string }): Agent {
     description: overrides.description ?? `Agent ${overrides.id}`,
     capabilities: overrides.capabilities ?? [],
     configuration: overrides.configuration,
+  };
+}
+
+function makeClassifiedStep(
+  overrides: Partial<ClassifiedDAGStep> & { id: string; agentId: string },
+): ClassifiedDAGStep {
+  return {
+    description: overrides.description ?? `Step ${overrides.id}`,
+    depends_on: overrides.depends_on ?? [],
+    executionType: overrides.executionType ?? "llm",
+    executionRef: overrides.executionRef ?? overrides.agentId,
+    ...overrides,
   };
 }
 
@@ -249,5 +279,85 @@ describe("generatePrepareMappings — signal mappings", () => {
     expect(result).toHaveLength(2);
     expect(result.map((m) => m.consumerStepId)).toEqual(["fetch-a", "fetch-b"]);
     expect(result.every((m) => m.documentId === SIGNAL_DOCUMENT_ID)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveConsumerInputSchema — registry lookup via executionRef
+// ---------------------------------------------------------------------------
+
+describe("resolveConsumerInputSchema", () => {
+  it("looks up bundled agent input schema via executionRef, not agentId", () => {
+    const inputSchema = {
+      type: "object" as const,
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    };
+    mockRegistry.mockReturnValue({ email: { inputJsonSchema: inputSchema } });
+
+    // agentId is the planner ID ("send-notification"), executionRef is the bundled key ("email")
+    const step = makeClassifiedStep({
+      id: "notify",
+      agentId: "send-notification",
+      executionType: "bundled",
+      executionRef: "email",
+    });
+    const job = makeJob([step] as JobWithDAG["steps"]);
+    const blueprint = makeBlueprint({ jobs: [job] });
+
+    const result = resolveConsumerInputSchema(blueprint, "notify");
+
+    expect(result).toBeDefined();
+    expect(result).toMatchObject({ properties: { query: { type: "string" } } });
+  });
+
+  it("returns undefined when step is an LLM agent (no registry entry)", () => {
+    mockRegistry.mockReturnValue({});
+
+    const step = makeClassifiedStep({
+      id: "analyze",
+      agentId: "data-cruncher",
+      executionType: "llm",
+      executionRef: "data-cruncher",
+    });
+    const job = makeJob([step] as JobWithDAG["steps"]);
+    const blueprint = makeBlueprint({ jobs: [job] });
+
+    const result = resolveConsumerInputSchema(blueprint, "analyze");
+
+    expect(result).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildMappingPrompt — bundled agent with divergent planner ID (bug #3 verification)
+// ---------------------------------------------------------------------------
+
+describe("buildMappingPrompt — bundled agent identity", () => {
+  it("includes consumer agent description when agentId is a planner ID", () => {
+    // Bug #3: Before the stamp fix, agentId was the bundled ID (e.g., "email")
+    // which didn't match the agents array (keyed by planner ID). Now agentId
+    // is preserved as the planner ID, so the lookup works.
+    const upstream = makeStep({ id: "fetch", agentId: "fetcher", description: "Fetch data" });
+    const consumer = makeStep({
+      id: "notify",
+      agentId: "send-notification",
+      description: "Send email notification",
+      depends_on: ["fetch"],
+    });
+    const job = makeJob([upstream, consumer]);
+    const agents = [
+      makeAgent({ id: "fetcher", name: "Data Fetcher", description: "Fetches data" }),
+      makeAgent({
+        id: "send-notification",
+        name: "Email Notifier",
+        description: "Sends email notifications to stakeholders",
+      }),
+    ];
+
+    const prompt = buildMappingPrompt(consumer, upstream, job, agents);
+
+    expect(prompt).toContain("Email Notifier");
+    expect(prompt).toContain("Sends email notifications to stakeholders");
   });
 });

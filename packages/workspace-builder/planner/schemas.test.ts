@@ -30,7 +30,25 @@ vi.mock("@atlas/bundled-agents/registry", () => ({
   },
 }));
 
+import type { ClassifiedDAGStep } from "../types.ts";
 import { generateOutputSchemas } from "./schemas.ts";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Create a ClassifiedDAGStep with sensible defaults. */
+function makeStep(
+  overrides: Partial<ClassifiedDAGStep> & { id: string; agentId: string },
+): ClassifiedDAGStep {
+  return {
+    description: "step description",
+    depends_on: [],
+    executionType: "llm",
+    executionRef: overrides.agentId,
+    ...overrides,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -42,8 +60,8 @@ describe("generateOutputSchemas", () => {
   });
 
   describe("bundled agent resolution", () => {
-    it("resolves agent by bundledId when step.agentId differs from agent.id", async () => {
-      // Agent has planner ID "csv-data-analyst" but bundledId "data-analyst"
+    it("uses executionRef for registry lookup when agentId is planner ID", async () => {
+      // Agent keeps planner ID — step.executionRef points to bundled registry key
       const agents = [
         {
           id: "csv-data-analyst",
@@ -54,9 +72,15 @@ describe("generateOutputSchemas", () => {
         },
       ];
 
-      // Post-stamp: step.agentId is "data-analyst" (the bundled ID)
+      // Post-stamp: agentId preserved as planner ID, executionRef = bundled key
       const steps = [
-        { id: "s1", agentId: "data-analyst", description: "Analyze data", depends_on: [] },
+        makeStep({
+          id: "s1",
+          agentId: "csv-data-analyst",
+          executionType: "bundled",
+          executionRef: "data-analyst",
+          description: "Analyze data",
+        }),
       ];
 
       const bundledSchema = {
@@ -65,25 +89,28 @@ describe("generateOutputSchemas", () => {
         required: ["result"],
       };
 
-      // Registry has an entry for "data-analyst" with an output schema
       mockRegistry.mockReturnValue({ "data-analyst": { outputJsonSchema: bundledSchema } });
 
       const result = await generateOutputSchemas(steps, agents);
 
       expect(result.get("s1")).toEqual(bundledSchema);
-      // No LLM call needed — resolved from registry
       expect(mockGenerateObject).not.toHaveBeenCalled();
     });
 
-    it("resolves agent by primary id when step.agentId matches agent.id", async () => {
+    it("resolves LLM agent by agentId directly", async () => {
       const agents = [
         { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
       const steps = [
-        { id: "s1", agentId: "reporter", description: "Write report", depends_on: [] },
+        makeStep({
+          id: "s1",
+          agentId: "reporter",
+          executionType: "llm",
+          executionRef: "reporter",
+          description: "Write report",
+        }),
       ];
 
-      // No bundled registry entry — falls through to LLM
       mockRegistry.mockReturnValue({});
 
       mockGenerateObject.mockResolvedValueOnce({
@@ -96,7 +123,6 @@ describe("generateOutputSchemas", () => {
       const result = await generateOutputSchemas(steps, agents);
 
       expect(result.has("s1")).toBe(true);
-      // LLM was called exactly once with the agent's name/description
       expect(mockGenerateObject).toHaveBeenCalledTimes(1);
       const call = mockGenerateObject.mock.calls[0];
       expect(call).toBeDefined();
@@ -106,48 +132,17 @@ describe("generateOutputSchemas", () => {
       expect(userMessage?.content).toContain("Reports findings");
     });
 
-    it("does not overwrite primary id when bundledId collides", async () => {
-      // Two agents: one has id "data-analyst", the other has bundledId "data-analyst"
-      const agents = [
-        { id: "data-analyst", name: "Primary Analyst", description: "Primary", capabilities: [] },
-        {
-          id: "csv-analyst",
-          name: "CSV Analyst",
-          description: "CSV",
-          capabilities: [],
-          bundledId: "data-analyst",
-        },
-      ];
-      const steps = [{ id: "s1", agentId: "data-analyst", description: "Analyze", depends_on: [] }];
-
-      mockRegistry.mockReturnValue({});
-      mockGenerateObject.mockResolvedValueOnce({
-        object: {
-          structure: "single_object",
-          fields: [{ name: "output", type: "string", description: "Output" }],
-        },
-      });
-
-      const result = await generateOutputSchemas(steps, agents);
-
-      expect(result.has("s1")).toBe(true);
-      // Should resolve to "Primary Analyst" (primary key wins), not "CSV Analyst"
-      expect(mockGenerateObject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({ content: expect.stringContaining("Primary Analyst") }),
-          ]),
-        }),
-      );
-    });
-
     it("skips steps with no matching agent", async () => {
       const agents = [
         { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
-      // Step references an agent that doesn't exist in the agents array
       const steps = [
-        { id: "s1", agentId: "unknown-agent", description: "Mystery", depends_on: [] },
+        makeStep({
+          id: "s1",
+          agentId: "unknown-agent",
+          executionRef: "unknown-agent",
+          description: "Mystery",
+        }),
       ];
 
       mockRegistry.mockReturnValue({});
@@ -164,7 +159,14 @@ describe("generateOutputSchemas", () => {
       const agents = [
         { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
       ];
-      const steps = [{ id: "s1", agentId: "writer", description: "Write article", depends_on: [] }];
+      const steps = [
+        makeStep({
+          id: "s1",
+          agentId: "writer",
+          executionRef: "writer",
+          description: "Write article",
+        }),
+      ];
 
       mockRegistry.mockReturnValue({});
       mockGenerateObject.mockResolvedValueOnce({
@@ -199,7 +201,14 @@ describe("generateOutputSchemas", () => {
           capabilities: ["research"],
         },
       ];
-      const steps = [{ id: "s1", agentId: "searcher", description: "Search news", depends_on: [] }];
+      const steps = [
+        makeStep({
+          id: "s1",
+          agentId: "searcher",
+          executionRef: "searcher",
+          description: "Search news",
+        }),
+      ];
 
       mockRegistry.mockReturnValue({});
       mockGenerateObject.mockResolvedValueOnce({
@@ -239,7 +248,9 @@ describe("generateOutputSchemas", () => {
       const agents = [
         { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
       ];
-      const steps = [{ id: "s1", agentId: "writer", description: "Write", depends_on: [] }];
+      const steps = [
+        makeStep({ id: "s1", agentId: "writer", executionRef: "writer", description: "Write" }),
+      ];
 
       mockRegistry.mockReturnValue({});
       mockGenerateObject
@@ -263,7 +274,9 @@ describe("generateOutputSchemas", () => {
       const agents = [
         { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
       ];
-      const steps = [{ id: "s1", agentId: "writer", description: "Write", depends_on: [] }];
+      const steps = [
+        makeStep({ id: "s1", agentId: "writer", executionRef: "writer", description: "Write" }),
+      ];
 
       mockRegistry.mockReturnValue({});
       mockGenerateObject

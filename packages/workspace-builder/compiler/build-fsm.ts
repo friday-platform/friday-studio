@@ -230,7 +230,7 @@ function buildStates(builder: FSMBuilder, ctx: CompilerContext): void {
     const contract = ctx.contractsByStep.get(step.id);
     if (step.executionType === "bundled") {
       builder.onEntry(
-        agentAction(step.agentId, {
+        agentAction(step.executionRef, {
           outputTo: contract?.documentId,
           outputType: contract?.documentType,
           prompt: step.description,

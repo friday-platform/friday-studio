@@ -35,6 +35,7 @@ describe("lookupOutputSchema", () => {
           {
             id: "step-analyze",
             agentId: "data-analyst",
+            executionRef: "data-analyst",
             description: "Analyze",
             depends_on: [],
             executionType: "bundled",
@@ -42,6 +43,7 @@ describe("lookupOutputSchema", () => {
           {
             id: "step-custom",
             agentId: "custom-llm",
+            executionRef: "custom-llm",
             description: "Custom",
             depends_on: ["step-analyze"],
             executionType: "llm",

@@ -26,20 +26,23 @@
   ],
   "agents": [
     {
-      "id": "research",
+      "id": "web-researcher",
       "name": "Web Researcher",
+      "bundledId": "research",
       "description": "Searches the web for current information on the given topic",
       "capabilities": ["research"]
     },
     {
-      "id": "data-analyst",
+      "id": "topic-data-analyst",
       "name": "Data Analyst",
+      "bundledId": "data-analyst",
       "description": "Analyzes any structured data related to the research topic",
       "capabilities": ["data-analyst"]
     },
     {
-      "id": "get-summary",
+      "id": "briefing-summarizer",
       "name": "Briefing Summarizer",
+      "bundledId": "get-summary",
       "description": "Consolidates web research and data analysis into a single briefing document",
       "capabilities": ["get-summary"]
     }
@@ -53,21 +56,24 @@
       "steps": [
         {
           "id": "search-web",
-          "agentId": "research",
+          "agentId": "web-researcher",
+          "executionRef": "research",
           "description": "Search the web for recent information and context on the topic",
           "depends_on": [],
           "executionType": "bundled"
         },
         {
           "id": "analyze-data",
-          "agentId": "data-analyst",
+          "agentId": "topic-data-analyst",
+          "executionRef": "data-analyst",
           "description": "Analyze any structured data related to the research topic",
           "depends_on": [],
           "executionType": "bundled"
         },
         {
           "id": "summarize-findings",
-          "agentId": "get-summary",
+          "agentId": "briefing-summarizer",
+          "executionRef": "get-summary",
           "description": "Consolidate findings from web research and data analysis into a briefing",
           "depends_on": ["search-web", "analyze-data"],
           "executionType": "bundled"

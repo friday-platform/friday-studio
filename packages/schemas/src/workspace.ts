@@ -77,13 +77,36 @@ export const DAGStepSchema = z.strictObject({
 });
 export type DAGStep = z.infer<typeof DAGStepSchema>;
 
-export const ClassifiedDAGStepSchema = DAGStepSchema.extend({
+/**
+ * Inner schema for classified DAG steps (post stamp-execution-types).
+ * Separated from the preprocess wrapper so `z.infer` resolves cleanly.
+ */
+const ClassifiedDAGStepInnerSchema = DAGStepSchema.extend({
   executionType: z
     .enum(["bundled", "llm"])
     .describe("How this step executes: bundled agent or LLM agent"),
+  executionRef: z
+    .string()
+    .describe("Execution target — bundled registry key or agent ID for LLM agents"),
   tools: z.array(z.string()).optional().describe("Tool names available to this step"),
 });
-export type ClassifiedDAGStep = z.infer<typeof ClassifiedDAGStepSchema>;
+
+/**
+ * Classified DAG step schema with v2 migration support.
+ * Old v2 blueprints (pre-2026-02-20) have `agentId` but no `executionRef`.
+ * The preprocess step backfills `executionRef` from `agentId` for those artifacts.
+ */
+// `as Record<string, unknown>` exception: z.preprocess receives `unknown` and
+// there's no Zod-native way to narrow inside the callback. The typeof/null/in
+// guards provide runtime safety; the inner schema validates immediately after.
+export const ClassifiedDAGStepSchema = z.preprocess((data) => {
+  if (typeof data === "object" && data !== null && "agentId" in data && !("executionRef" in data)) {
+    const obj = data as Record<string, unknown>;
+    return { ...obj, executionRef: obj.agentId };
+  }
+  return data;
+}, ClassifiedDAGStepInnerSchema);
+export type ClassifiedDAGStep = z.infer<typeof ClassifiedDAGStepInnerSchema>;
 
 // ---------------------------------------------------------------------------
 // Document Contract

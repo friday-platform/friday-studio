@@ -27,8 +27,9 @@ import { ValidationExecutor } from "./validation-executor.ts";
 /**
  * Resolve the consumer agent's input JSON schema from the bundled agent registry.
  * Returns undefined for LLM agents (no input schema validation).
+ * @internal Exported for direct unit testing of the executionRef lookup.
  */
-function resolveConsumerInputSchema(
+export function resolveConsumerInputSchema(
   plan: WorkspaceBlueprint,
   consumerStepId: string,
 ): ValidatedJSONSchema | undefined {
@@ -37,7 +38,7 @@ function resolveConsumerInputSchema(
     const step = job.steps.find((s) => s.id === consumerStepId);
     if (!step) continue;
 
-    const registryEntry = bundledAgentsRegistry[step.agentId];
+    const registryEntry = bundledAgentsRegistry[step.executionRef];
     if (registryEntry?.inputJsonSchema) {
       return JSONSchemaSchema.parse(registryEntry.inputJsonSchema);
     }

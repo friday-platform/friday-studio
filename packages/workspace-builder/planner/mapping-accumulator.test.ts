@@ -70,6 +70,7 @@ const plan: WorkspaceBlueprint = {
         {
           id: "step-source",
           agentId: "source-llm",
+          executionRef: "source-llm",
           description: "Source",
           depends_on: [],
           executionType: "llm",
@@ -77,6 +78,7 @@ const plan: WorkspaceBlueprint = {
         {
           id: "step-consumer",
           agentId: "consumer-llm",
+          executionRef: "consumer-llm",
           description: "Consumer",
           depends_on: ["step-source"],
           executionType: "llm",
@@ -315,6 +317,7 @@ const fanInPlan: WorkspaceBlueprint = {
         {
           id: "step-source",
           agentId: "source-llm",
+          executionRef: "source-llm",
           description: "Source",
           depends_on: [],
           executionType: "llm",
@@ -322,6 +325,7 @@ const fanInPlan: WorkspaceBlueprint = {
         {
           id: "step-tax",
           agentId: "tax-llm",
+          executionRef: "tax-llm",
           description: "Tax config",
           depends_on: [],
           executionType: "llm",
@@ -329,6 +333,7 @@ const fanInPlan: WorkspaceBlueprint = {
         {
           id: "step-consumer",
           agentId: "consumer-llm",
+          executionRef: "consumer-llm",
           description: "Consumer",
           depends_on: ["step-source", "step-tax"],
           executionType: "llm",

@@ -33,14 +33,16 @@
   ],
   "agents": [
     {
-      "id": "data-analyst",
+      "id": "csv-data-analyst",
       "name": "Data Analyst",
+      "bundledId": "data-analyst",
       "description": "Analyzes tabular data using SQL queries to answer questions and produce actionable insights",
       "capabilities": ["data-analyst"]
     },
     {
-      "id": "email",
+      "id": "csv-email-reporter",
       "name": "Email Reporter",
+      "bundledId": "email",
       "description": "Composes and sends an email report with the analysis results",
       "capabilities": ["email"]
     }
@@ -54,14 +56,16 @@
       "steps": [
         {
           "id": "analyze-csv",
-          "agentId": "data-analyst",
+          "agentId": "csv-data-analyst",
+          "executionRef": "data-analyst",
           "description": "Run SQL analysis on the uploaded CSV data to answer the user's question",
           "depends_on": [],
           "executionType": "bundled"
         },
         {
           "id": "send-report",
-          "agentId": "email",
+          "agentId": "csv-email-reporter",
+          "executionRef": "email",
           "description": "Email the analysis summary and key findings to the specified recipient",
           "depends_on": ["analyze-csv"],
           "executionType": "bundled"

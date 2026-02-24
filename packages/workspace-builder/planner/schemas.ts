@@ -6,7 +6,7 @@ import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
-import type { Agent, DAGStep } from "../types.ts";
+import type { Agent, ClassifiedDAGStep } from "../types.ts";
 
 const logger = createLogger({ component: "proto-schemas" });
 
@@ -149,25 +149,18 @@ function fieldsToJSONSchema(output: z.infer<typeof OutputFieldSchema>): Validate
  * @returns Map keyed by step ID → JSON Schema
  */
 export async function generateOutputSchemas(
-  steps: DAGStep[],
+  steps: ClassifiedDAGStep[],
   agents: Agent[],
 ): Promise<Map<string, ValidatedJSONSchema>> {
   const agentMap = new Map(agents.map((a) => [a.id, a]));
-  // Secondary index: bundled IDs → agent (for post-stamp step.agentId lookups)
-  for (const agent of agents) {
-    if (agent.bundledId && !agentMap.has(agent.bundledId)) {
-      agentMap.set(agent.bundledId, agent);
-    }
-  }
   const schemas = new Map<string, ValidatedJSONSchema>();
 
-  const llmSteps: Array<{ step: DAGStep; agent: Agent }> = [];
+  const llmSteps: Array<{ step: ClassifiedDAGStep; agent: Agent }> = [];
 
   // Resolve bundled agents synchronously
   for (const step of steps) {
     const agent = agentMap.get(step.agentId);
-    const registryKey = agent?.bundledId ?? step.agentId;
-    const registryEntry = bundledAgentsRegistry[registryKey];
+    const registryEntry = bundledAgentsRegistry[step.executionRef];
     if (registryEntry?.outputJsonSchema) {
       schemas.set(step.id, registryEntry.outputJsonSchema);
       continue;

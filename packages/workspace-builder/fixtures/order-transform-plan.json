@@ -50,6 +50,7 @@
         {
           "id": "fetch-rates",
           "agentId": "rate-fetcher",
+          "executionRef": "rate-fetcher",
           "description": "Fetch current tax rates for the order's region",
           "depends_on": [],
           "executionType": "llm"
@@ -57,13 +58,15 @@
         {
           "id": "process-order",
           "agentId": "order-processor",
+          "executionRef": "order-processor",
           "description": "Extract and validate order details from the incoming data",
           "depends_on": ["fetch-rates"],
           "executionType": "llm"
         },
         {
           "id": "send-receipt",
-          "agentId": "email",
+          "agentId": "receipt-sender",
+          "executionRef": "receipt-sender",
           "description": "Send receipt email with subtotal, tax, and total to the customer",
           "depends_on": ["process-order"],
           "executionType": "bundled"

@@ -467,29 +467,16 @@ describe("buildBlueprint", () => {
         { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
 
-      // Post-stamp: steps use bundled IDs (stampExecutionTypes rewrites agentId)
-      const stamped = [
+      // Pre-stamp: LLM-generated DAG steps use planner IDs (stamp adds executionType/executionRef)
+      const rawDag = [
         {
           id: "stamp-job",
           name: "Job",
           title: "Job",
           triggerSignalId: "daily-check",
           steps: [
-            {
-              id: "analyze",
-              agentId: "data-analyst",
-              description: "Analyze",
-              depends_on: [],
-              executionType: "bundled",
-            },
-            {
-              id: "report",
-              agentId: "reporter",
-              description: "Report",
-              depends_on: ["analyze"],
-              executionType: "llm",
-              tools: [],
-            },
+            { id: "analyze", agentId: "csv-data-analyst", description: "Analyze", depends_on: [] },
+            { id: "report", agentId: "reporter", description: "Report", depends_on: ["analyze"] },
           ],
           documentContracts: [],
           prepareMappings: [],
@@ -508,7 +495,7 @@ describe("buildBlueprint", () => {
         configRequirements: [],
       });
       mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
-      mockGenerateDAGSteps.mockResolvedValue(stamped);
+      mockGenerateDAGSteps.mockResolvedValue(rawDag);
       mockEnrichAgentsWithPipelineContext.mockResolvedValue({ agents: bundledAgents, entries: [] });
       // generateOutputSchemas is mocked — verify it receives post-stamp steps + original agents
       mockGenerateOutputSchemas.mockResolvedValue(
@@ -521,10 +508,12 @@ describe("buildBlueprint", () => {
 
       const result = await buildBlueprint("Analyze CSV", baseOpts());
 
-      // generateOutputSchemas received post-stamp steps (agentId: "data-analyst")
-      // alongside agents keyed by planner ID ("csv-data-analyst")
+      // generateOutputSchemas received post-stamp steps with preserved planner ID
+      // and executionRef pointing to bundled registry key
       expect(mockGenerateOutputSchemas).toHaveBeenCalledWith(
-        expect.arrayContaining([expect.objectContaining({ agentId: "data-analyst" })]),
+        expect.arrayContaining([
+          expect.objectContaining({ agentId: "csv-data-analyst", executionRef: "data-analyst" }),
+        ]),
         expect.arrayContaining([
           expect.objectContaining({ id: "csv-data-analyst", bundledId: "data-analyst" }),
         ]),

@@ -101,8 +101,20 @@ const twoStepContracts: DocumentContract[] = [
 ];
 
 const twoStepSteps: EnhancedTaskStep[] = [
-  { agentId: "agent-0", description: "Step 0", executionType: "agent", capabilities: [] },
-  { agentId: "agent-1", description: "Step 1", executionType: "agent", capabilities: [] },
+  {
+    agentId: "planner-fetcher",
+    executionRef: "agent-0",
+    description: "Step 0",
+    executionType: "agent",
+    capabilities: [],
+  },
+  {
+    agentId: "planner-notifier",
+    executionRef: "agent-1",
+    description: "Step 1",
+    executionType: "agent",
+    capabilities: [],
+  },
 ];
 
 const baseContext = {

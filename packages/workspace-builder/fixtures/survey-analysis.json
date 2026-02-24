@@ -54,6 +54,7 @@
         {
           "id": "run-analysis",
           "agentId": "data-analyst",
+          "executionRef": "data-analyst",
           "description": "Run SQL queries to group responses by theme and calculate frequencies",
           "depends_on": [],
           "executionType": "bundled"
@@ -61,6 +62,7 @@
         {
           "id": "write-insights",
           "agentId": "get-summary",
+          "executionRef": "get-summary",
           "description": "Write a narrative summary of the top themes and actionable insights",
           "depends_on": ["run-analysis"],
           "executionType": "bundled"
@@ -68,6 +70,7 @@
         {
           "id": "send-report",
           "agentId": "email",
+          "executionRef": "email",
           "description": "Email the insights report to stakeholders",
           "depends_on": ["write-insights"],
           "executionType": "bundled"

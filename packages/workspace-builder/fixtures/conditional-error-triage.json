@@ -46,6 +46,7 @@
         {
           "id": "analyze-errors",
           "agentId": "data-analyst",
+          "executionRef": "data-analyst",
           "description": "Analyze error logs, compute trends, and determine severity level",
           "depends_on": [],
           "executionType": "bundled"
@@ -53,6 +54,7 @@
         {
           "id": "alert-critical",
           "agentId": "slack",
+          "executionRef": "slack",
           "description": "Post critical error summary to #incidents Slack channel",
           "depends_on": ["analyze-errors"],
           "executionType": "bundled"
@@ -60,6 +62,7 @@
         {
           "id": "report-routine",
           "agentId": "email",
+          "executionRef": "email",
           "description": "Send routine error trend report via email",
           "depends_on": ["analyze-errors"],
           "executionType": "bundled"

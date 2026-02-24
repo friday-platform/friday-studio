@@ -46,6 +46,7 @@
         {
           "id": "search-competitors",
           "agentId": "research",
+          "executionRef": "research",
           "description": "Search for recent news about each competitor in the watch list",
           "depends_on": [],
           "executionType": "bundled"
@@ -53,6 +54,7 @@
         {
           "id": "write-briefing",
           "agentId": "get-summary",
+          "executionRef": "get-summary",
           "description": "Consolidate findings into a structured briefing with sections per competitor",
           "depends_on": ["search-competitors"],
           "executionType": "bundled"
@@ -60,6 +62,7 @@
         {
           "id": "send-briefing",
           "agentId": "email",
+          "executionRef": "email",
           "description": "Email the briefing to the workspace owner",
           "depends_on": ["write-briefing"],
           "executionType": "bundled"

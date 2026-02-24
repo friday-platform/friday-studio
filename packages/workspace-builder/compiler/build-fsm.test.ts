@@ -46,8 +46,22 @@ describe("buildFSMFromPlan — validation", () => {
       title: "Cycle",
       triggerSignalId: "test",
       steps: [
-        { id: "a", agentId: "x", description: "A", depends_on: ["b"], executionType: "bundled" },
-        { id: "b", agentId: "x", description: "B", depends_on: ["a"], executionType: "bundled" },
+        {
+          id: "a",
+          agentId: "x",
+          description: "A",
+          depends_on: ["b"],
+          executionType: "bundled",
+          executionRef: "x",
+        },
+        {
+          id: "b",
+          agentId: "x",
+          description: "B",
+          depends_on: ["a"],
+          executionType: "bundled",
+          executionRef: "x",
+        },
       ],
       documentContracts: [],
       prepareMappings: [],
@@ -65,15 +79,30 @@ describe("buildFSMFromPlan — validation", () => {
       title: "Cycle",
       triggerSignalId: "test",
       steps: [
-        { id: "root", agentId: "x", description: "Root", depends_on: [], executionType: "bundled" },
+        {
+          id: "root",
+          agentId: "x",
+          description: "Root",
+          depends_on: [],
+          executionType: "bundled",
+          executionRef: "x",
+        },
         {
           id: "a",
           agentId: "x",
           description: "A",
           depends_on: ["root", "b"],
           executionType: "bundled",
+          executionRef: "x",
         },
-        { id: "b", agentId: "x", description: "B", depends_on: ["a"], executionType: "bundled" },
+        {
+          id: "b",
+          agentId: "x",
+          description: "B",
+          depends_on: ["a"],
+          executionType: "bundled",
+          executionRef: "x",
+        },
       ],
       documentContracts: [],
       prepareMappings: [],
@@ -91,13 +120,21 @@ describe("buildFSMFromPlan — validation", () => {
       title: "Missing",
       triggerSignalId: "test",
       steps: [
-        { id: "a", agentId: "x", description: "A", depends_on: [], executionType: "bundled" },
+        {
+          id: "a",
+          agentId: "x",
+          description: "A",
+          depends_on: [],
+          executionType: "bundled",
+          executionRef: "x",
+        },
         {
           id: "b",
           agentId: "x",
           description: "B",
           depends_on: ["nonexistent"],
           executionType: "bundled",
+          executionRef: "x",
         },
       ],
       documentContracts: [],
@@ -116,8 +153,22 @@ describe("buildFSMFromPlan — validation", () => {
       title: "Dupe",
       triggerSignalId: "test",
       steps: [
-        { id: "a", agentId: "x", description: "A1", depends_on: [], executionType: "bundled" },
-        { id: "a", agentId: "y", description: "A2", depends_on: [], executionType: "bundled" },
+        {
+          id: "a",
+          agentId: "x",
+          description: "A1",
+          depends_on: [],
+          executionType: "bundled",
+          executionRef: "x",
+        },
+        {
+          id: "a",
+          agentId: "y",
+          description: "A2",
+          depends_on: [],
+          executionType: "bundled",
+          executionRef: "y",
+        },
       ],
       documentContracts: [],
       prepareMappings: [],
@@ -533,6 +584,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Fetch data",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "fetcher",
         },
         {
           id: "notify",
@@ -540,6 +592,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Send notification",
           depends_on: ["fetch"],
           executionType: "bundled",
+          executionRef: "notifier",
         },
       ],
       documentContracts: [
@@ -587,6 +640,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "A",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "agent-a",
         },
         {
           id: "step-b",
@@ -594,6 +648,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "B",
           depends_on: ["step-a"],
           executionType: "bundled",
+          executionRef: "agent-b",
         },
       ],
       documentContracts: [],
@@ -626,6 +681,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -633,6 +689,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -691,6 +748,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -698,6 +756,7 @@ describe("buildFSMFromPlan — warnings", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [],
@@ -739,6 +798,7 @@ describe("buildFSMFromPlan — array path code generation", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -746,6 +806,7 @@ describe("buildFSMFromPlan — array path code generation", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -839,6 +900,7 @@ describe("buildFSMFromPlan — array projection deduplication", () => {
           description: "Fetch PRs",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "fetcher",
         },
         {
           id: "categorize",
@@ -846,6 +908,7 @@ describe("buildFSMFromPlan — array projection deduplication", () => {
           description: "Categorize PRs",
           depends_on: ["fetch"],
           executionType: "bundled",
+          executionRef: "categorizer",
         },
       ],
       documentContracts: [
@@ -911,6 +974,7 @@ describe("buildFSMFromPlan — array projection deduplication", () => {
           description: "Fetch",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "fetcher",
         },
         {
           id: "consume",
@@ -918,6 +982,7 @@ describe("buildFSMFromPlan — array projection deduplication", () => {
           description: "Consume",
           depends_on: ["fetch"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1020,10 +1085,11 @@ describe("buildFSMFromPlan — execution action prompt", () => {
       steps: [
         {
           id: "step-a",
-          agentId: "agent-a",
+          agentId: "planner-a",
           description: "A",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "bundled-a",
         },
       ],
       documentContracts: [],
@@ -1038,7 +1104,7 @@ describe("buildFSMFromPlan — execution action prompt", () => {
       .filter((a) => a.type === "agent");
 
     expect(agentActions).toHaveLength(1);
-    expect(agentActions[0]).toMatchObject({ agentId: "agent-a" });
+    expect(agentActions[0]).toMatchObject({ agentId: "bundled-a" });
     expect(agentActions[0]).not.toHaveProperty("outputType");
   });
 });
@@ -1131,6 +1197,7 @@ describe("buildFSMFromPlan — transform codegen", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1138,6 +1205,7 @@ describe("buildFSMFromPlan — transform codegen", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1323,6 +1391,7 @@ describe("buildFSMFromPlan — transform codegen snapshots", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1330,6 +1399,7 @@ describe("buildFSMFromPlan — transform codegen snapshots", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1493,6 +1563,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1500,6 +1571,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1552,6 +1624,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1559,6 +1632,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1613,6 +1687,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1620,6 +1695,7 @@ describe("buildFSMFromPlan — invalid path filtering", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1713,6 +1789,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Analyze data",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "analyst",
         },
         {
           id: "report",
@@ -1720,6 +1797,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Send report",
           depends_on: ["analyze"],
           executionType: "bundled",
+          executionRef: "reporter",
         },
       ],
       documentContracts: [
@@ -1798,6 +1876,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Produce",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "producer",
         },
         {
           id: "consume",
@@ -1805,6 +1884,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Consume",
           depends_on: ["produce"],
           executionType: "bundled",
+          executionRef: "consumer",
         },
       ],
       documentContracts: [
@@ -1861,6 +1941,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Fetch emails",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "fetcher",
         },
         {
           id: "summarize",
@@ -1868,6 +1949,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Summarize emails",
           depends_on: ["fetch"],
           executionType: "bundled",
+          executionRef: "summarizer",
         },
       ],
       documentContracts: [
@@ -1931,6 +2013,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Analyze",
           depends_on: [],
           executionType: "bundled",
+          executionRef: "analyst",
         },
         {
           id: "report",
@@ -1938,6 +2021,7 @@ describe("buildFSMFromPlan — permissive schemas", () => {
           description: "Report",
           depends_on: ["analyze"],
           executionType: "bundled",
+          executionRef: "reporter",
         },
       ],
       documentContracts: [
@@ -2016,6 +2100,7 @@ describe("buildFSMFromPlan — signal prepare mappings", () => {
           description: "Process signal data",
           depends_on: [],
           executionType: "llm",
+          executionRef: "processor",
         },
       ],
       documentContracts: [
@@ -2062,6 +2147,7 @@ describe("buildFSMFromPlan — signal prepare mappings", () => {
           description: "Ingest signal data",
           depends_on: [],
           executionType: "llm",
+          executionRef: "ingester",
         },
         {
           id: "transform",
@@ -2069,6 +2155,7 @@ describe("buildFSMFromPlan — signal prepare mappings", () => {
           description: "Transform data",
           depends_on: ["ingest"],
           executionType: "llm",
+          executionRef: "transformer",
         },
       ],
       documentContracts: [

@@ -46,6 +46,7 @@
         {
           "id": "read-inbox",
           "agentId": "email",
+          "executionRef": "email",
           "description": "Fetch unread emails from the last 24 hours",
           "depends_on": [],
           "executionType": "bundled"
@@ -53,6 +54,7 @@
         {
           "id": "summarize-inbox",
           "agentId": "get-summary",
+          "executionRef": "get-summary",
           "description": "Summarize the emails, grouping by urgency and topic",
           "depends_on": ["read-inbox"],
           "executionType": "bundled"
@@ -60,6 +62,7 @@
         {
           "id": "post-to-slack",
           "agentId": "slack",
+          "executionRef": "slack",
           "description": "Post the digest to the #daily-updates Slack channel",
           "depends_on": ["summarize-inbox"],
           "executionType": "bundled"

@@ -162,4 +162,59 @@ describe("enrichAgentsWithPipelineContext", () => {
     expect(entries).toHaveLength(0);
     expect(infer).not.toHaveBeenCalled();
   });
+
+  it("enriches bundled agent when step.agentId matches planner ID (not bundled ID)", async () => {
+    const infer = vi
+      .fn()
+      .mockResolvedValue("Include full CSV row data with headers, not just row counts.");
+
+    // Agent has planner ID "csv-data-analyst" with bundledId "data-analyst"
+    const agents = [
+      makeAgent({
+        id: "csv-data-analyst",
+        description: "Analyzes CSV files",
+        capabilities: ["data-analysis"],
+      }),
+      makeAgent({ id: "reporter", description: "Reports findings" }),
+    ];
+
+    // Post-stamp: step.agentId is the planner ID (preserved by stampExecutionTypes)
+    const jobs = [
+      makeJob({
+        id: "csv-job",
+        steps: [
+          {
+            id: "analyze",
+            agentId: "csv-data-analyst",
+            description: "Analyze CSV data",
+            depends_on: [],
+          },
+          {
+            id: "report",
+            agentId: "reporter",
+            description: "Generate report",
+            depends_on: ["analyze"],
+          },
+        ],
+      }),
+    ];
+
+    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+    });
+
+    // Bundled agent receives enrichment because step.agentId matches agent.id
+    expect(enriched[0]?.description).toBe(
+      "Analyzes CSV files\n\nDOWNSTREAM DATA REQUIREMENTS:\nInclude full CSV row data with headers, not just row counts.",
+    );
+    expect(entries).toEqual([
+      {
+        agentId: "csv-data-analyst",
+        originalDescription: "Analyzes CSV files",
+        enrichedDescription: enriched[0]?.description,
+        downstreamSteps: ["report"],
+      },
+    ]);
+    expect(infer).toHaveBeenCalledOnce();
+  });
 });

@@ -198,7 +198,8 @@ export function buildMCPServerConfigs(
  * executor pipeline expects. Bridges new planner → old executor.
  *
  * Classified steps carry metadata from stampExecutionTypes():
- * - agentId resolved to bundledId for bundled agents
+ * - agentId preserved as planner-assigned ID
+ * - executionRef carries the bundled registry key (or agentId for LLM agents)
  * - executionType set to "bundled" or "llm"
  */
 function blueprintToTaskPlan(
@@ -213,6 +214,7 @@ function blueprintToTaskPlan(
     const agent = agentMap.get(step.agentId);
     return {
       agentId: step.agentId,
+      executionRef: step.executionRef,
       description: step.description,
       executionType: step.executionType === "llm" ? "llm" : "agent",
       capabilities: agent?.capabilities ?? [],

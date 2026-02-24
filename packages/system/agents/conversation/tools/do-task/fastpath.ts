@@ -52,12 +52,7 @@ export function isFastpathEligible(
  */
 export function buildFastpathDAGStep(agent: Agent, intent: string): DAGStep {
   const slug = agent.name.replace(/\s+/g, "-");
-  return {
-    id: `${slug}-step`,
-    agentId: agent.bundledId ?? agent.name,
-    description: intent,
-    depends_on: [],
-  };
+  return { id: `${slug}-step`, agentId: agent.id, description: intent, depends_on: [] };
 }
 
 /**
@@ -69,7 +64,8 @@ export function buildFastpathDAGStep(agent: Agent, intent: string): DAGStep {
  */
 export function buildFastpathStep(agent: Agent, intent: string): EnhancedTaskStep {
   return {
-    agentId: agent.bundledId ?? agent.name,
+    agentId: agent.id,
+    executionRef: agent.bundledId ?? agent.id,
     description: intent,
     executionType: agent.bundledId ? "agent" : "llm",
     capabilities: agent.capabilities,

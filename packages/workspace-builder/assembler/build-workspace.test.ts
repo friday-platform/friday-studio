@@ -98,7 +98,9 @@ describe("buildWorkspaceYaml — HTTP signal with mixed agent types", () => {
         config: { path: `/webhooks/${s.id}` },
       } satisfies SignalConfig,
     })),
-    agents: basePhase1.agents.map((a, i) => (i === 0 ? { ...a } : { ...a, bundledId: a.id })),
+    agents: basePhase1.agents.map(({ bundledId: _, ...rest }, i) =>
+      i === 0 ? rest : { ...rest, bundledId: rest.id },
+    ),
   };
 
   it("maps HTTP signal with path config", () => {

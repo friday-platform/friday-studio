@@ -67,6 +67,7 @@ function buildTransformPlan(): WorkspaceBlueprint {
           {
             id: "process-order",
             agentId: "order-agent",
+            executionRef: "order-agent",
             description: "Extract and validate order details",
             depends_on: [],
             executionType: "bundled",
@@ -74,6 +75,7 @@ function buildTransformPlan(): WorkspaceBlueprint {
           {
             id: "send-invoice",
             agentId: "invoice-agent",
+            executionRef: "invoice-agent",
             description: "Send invoice email with computed totals",
             depends_on: ["process-order"],
             executionType: "bundled",
@@ -201,6 +203,7 @@ function buildCrossDocTransformPlan(): WorkspaceBlueprint {
           {
             id: "fetch-rates",
             agentId: "rate-agent",
+            executionRef: "rate-agent",
             description: "Fetch current tax rates",
             depends_on: [],
             executionType: "bundled",
@@ -208,6 +211,7 @@ function buildCrossDocTransformPlan(): WorkspaceBlueprint {
           {
             id: "process-order",
             agentId: "order-agent",
+            executionRef: "order-agent",
             description: "Process order details",
             depends_on: ["fetch-rates"],
             executionType: "bundled",
@@ -215,6 +219,7 @@ function buildCrossDocTransformPlan(): WorkspaceBlueprint {
           {
             id: "generate-receipt",
             agentId: "receipt-agent",
+            executionRef: "receipt-agent",
             description: "Generate receipt with tax calculations",
             depends_on: ["process-order"],
             executionType: "bundled",

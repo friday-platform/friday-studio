@@ -58,6 +58,7 @@
         {
           "id": "read-ticket",
           "agentId": "ticket-reader",
+          "executionRef": "ticket-reader",
           "description": "Read the assigned ticket and extract the task description, acceptance criteria, and relevant context",
           "depends_on": [],
           "executionType": "llm",
@@ -66,6 +67,7 @@
         {
           "id": "implement-changes",
           "agentId": "claude-code",
+          "executionRef": "claude-code",
           "description": "Implement the code changes described in the ticket within the specified repository",
           "depends_on": ["read-ticket"],
           "executionType": "bundled"
@@ -73,6 +75,7 @@
         {
           "id": "update-ticket",
           "agentId": "ticket-updater",
+          "executionRef": "ticket-updater",
           "description": "Update the ticket with the implementation results, files changed, and completion status",
           "depends_on": ["implement-changes"],
           "executionType": "llm",

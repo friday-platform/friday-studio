@@ -378,7 +378,8 @@ describe("createDoTaskTool fastpath wiring", () => {
             steps: [
               {
                 id: "step-1",
-                agentId: "research",
+                agentId: "a1",
+                executionRef: "research",
                 description: "Research",
                 depends_on: [],
                 executionType: "bundled",
@@ -480,7 +481,8 @@ describe("createDoTaskTool fastpath wiring", () => {
             steps: [
               {
                 id: "step-1",
-                agentId: "research",
+                agentId: "a1",
+                executionRef: "research",
                 description: "Research",
                 depends_on: [],
                 executionType: "bundled",

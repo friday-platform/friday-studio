@@ -27,10 +27,15 @@ export interface ClassifiedJobWithDAG {
 }
 
 /**
- * Stamp each DAG step with `executionType` and `tools` based on its agent's
- * classification. Bundled agents get `executionType: "bundled"` with their
- * `agentId` resolved to the registered bundled ID. LLM agents get
- * `executionType: "llm"` with tools populated from MCP server IDs.
+ * Stamp each DAG step with execution metadata based on its agent's classification.
+ *
+ * Two-field identity model:
+ * - `agentId` — preserved as the planner-assigned ID, used for schema/mapping lookups
+ * - `executionRef` — execution target (bundled registry key for bundled agents,
+ *   same as agentId for LLM agents)
+ *
+ * Bundled agents: `executionType: "bundled"`, `executionRef` = `agent.bundledId`
+ * LLM agents: `executionType: "llm"`, `executionRef` = `step.agentId`, `tools` from MCP servers
  *
  * @param jobs - Jobs with raw DAGStep arrays (from the dag generation phase)
  * @param agents - Classified agents (post-classifyAgents, with bundledId/mcpServers set)
@@ -45,13 +50,14 @@ export function stampExecutionTypes(jobs: JobWithDAG[], agents: Agent[]): Classi
       const agent = agentMap.get(step.agentId);
 
       if (agent?.bundledId) {
-        return { ...step, agentId: agent.bundledId, executionType: "bundled" };
+        return { ...step, executionType: "bundled", executionRef: agent.bundledId };
       }
 
       const mcpServerIds = agent?.mcpServers?.map((s) => s.serverId);
       return {
         ...step,
         executionType: "llm",
+        executionRef: step.agentId,
         ...(mcpServerIds && mcpServerIds.length > 0 ? { tools: mcpServerIds } : {}),
       };
     }),

@@ -52,6 +52,7 @@
         {
           "id": "fetch-prs",
           "agentId": "research",
+          "executionRef": "research",
           "description": "Fetch all merged PRs from the last week",
           "depends_on": [],
           "executionType": "bundled"
@@ -59,6 +60,7 @@
         {
           "id": "analyze-commits",
           "agentId": "data-analyst",
+          "executionRef": "data-analyst",
           "description": "Analyze commit history and categorize changes",
           "depends_on": [],
           "executionType": "bundled"
@@ -66,6 +68,7 @@
         {
           "id": "write-notes",
           "agentId": "get-summary",
+          "executionRef": "get-summary",
           "description": "Consolidate PR and commit data into release notes grouped by features, improvements, and fixes",
           "depends_on": ["fetch-prs", "analyze-commits"],
           "executionType": "bundled"
@@ -73,6 +76,7 @@
         {
           "id": "announce-release",
           "agentId": "slack",
+          "executionRef": "slack",
           "description": "Post release notes to the #releases channel",
           "depends_on": ["write-notes"],
           "executionType": "bundled"

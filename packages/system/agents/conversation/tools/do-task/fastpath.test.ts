@@ -95,20 +95,21 @@ describe("isFastpathEligible", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildFastpathDAGStep", () => {
-  test("bundled agent produces correct DAGStep", () => {
+  test("bundled agent uses agent.id for agentId (planner identity)", () => {
     const agent = makeAgent({ name: "Research", bundledId: "research" });
     const result = buildFastpathDAGStep(agent, "find me some info");
 
     expect(result).toEqual({
       id: "Research-step",
-      agentId: "research",
+      agentId: "test-agent",
       description: "find me some info",
       depends_on: [],
     });
   });
 
-  test("LLM agent uses name as agentId", () => {
+  test("LLM agent uses agent.id for agentId (planner identity)", () => {
     const agent = makeAgent({
+      id: "gmail-helper",
       name: "Gmail Helper",
       mcpServers: [{ serverId: "google-gmail", name: "Gmail" }],
     });
@@ -116,7 +117,7 @@ describe("buildFastpathDAGStep", () => {
 
     expect(result).toEqual({
       id: "Gmail-Helper-step",
-      agentId: "Gmail Helper",
+      agentId: "gmail-helper",
       description: "check my email",
       depends_on: [],
     });
@@ -128,7 +129,7 @@ describe("buildFastpathDAGStep", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildFastpathStep", () => {
-  test("bundled agent produces executionType 'agent'", () => {
+  test("bundled agent: agentId is planner identity, executionRef is bundledId", () => {
     const agent = makeAgent({
       name: "Research",
       bundledId: "research",
@@ -138,7 +139,8 @@ describe("buildFastpathStep", () => {
     const result = buildFastpathStep(agent, "find me some info");
 
     expect(result).toMatchObject({
-      agentId: "research",
+      agentId: "test-agent",
+      executionRef: "research",
       description: "find me some info",
       executionType: "agent",
       capabilities: ["web-search"],
@@ -146,8 +148,9 @@ describe("buildFastpathStep", () => {
     });
   });
 
-  test("LLM agent produces executionType 'llm' with name as agentId", () => {
+  test("LLM agent: agentId is planner identity, executionRef falls back to agent.id", () => {
     const agent = makeAgent({
+      id: "gmail-helper",
       name: "Gmail Helper",
       description: "Manages email",
       capabilities: ["email"],
@@ -156,7 +159,8 @@ describe("buildFastpathStep", () => {
     const result = buildFastpathStep(agent, "check my email");
 
     expect(result).toMatchObject({
-      agentId: "Gmail Helper",
+      agentId: "gmail-helper",
+      executionRef: "gmail-helper",
       description: "check my email",
       executionType: "llm",
       capabilities: ["email"],
@@ -173,7 +177,7 @@ describe("buildFastpathContract", () => {
   test("produces contract with matching producerStepId and documentId 'result'", () => {
     const dagStep: DAGStep = {
       id: "Research-step",
-      agentId: "research",
+      agentId: "test-agent",
       description: "find info",
       depends_on: [],
     };
@@ -197,7 +201,7 @@ describe("buildFastpathFSM", () => {
     const agent = makeAgent({ name: "Research", bundledId: "research" });
     const dagStep: DAGStep = {
       id: "Research-step",
-      agentId: "research",
+      agentId: "test-agent",
       description: "find info",
       depends_on: [],
     };
@@ -234,6 +238,7 @@ describe("buildFastpathFSM", () => {
 
   test("LLM agent FSM has 3 states with llm action and MCP tools", () => {
     const agent = makeAgent({
+      id: "gmail-helper",
       name: "Gmail Helper",
       mcpServers: [
         { serverId: "google-gmail", name: "Gmail" },
@@ -242,7 +247,7 @@ describe("buildFastpathFSM", () => {
     });
     const dagStep: DAGStep = {
       id: "Gmail-Helper-step",
-      agentId: "Gmail Helper",
+      agentId: "gmail-helper",
       description: "check email",
       depends_on: [],
     };
@@ -326,7 +331,7 @@ describe("buildFastpathFSM", () => {
     const bundledAgent = makeAgent({ name: "Research", bundledId: "research" });
     const bundledDag: DAGStep = {
       id: "Research-step",
-      agentId: "research",
+      agentId: "test-agent",
       description: "find info",
       depends_on: [],
     };
@@ -335,12 +340,13 @@ describe("buildFastpathFSM", () => {
     expect(bundledEntry?.[0]).toHaveProperty("outputTo", "result");
 
     const llmAgent = makeAgent({
+      id: "gmail-agent",
       name: "Gmail",
       mcpServers: [{ serverId: "google-gmail", name: "Gmail" }],
     });
     const llmDag: DAGStep = {
       id: "Gmail-step",
-      agentId: "Gmail",
+      agentId: "gmail-agent",
       description: "check email",
       depends_on: [],
     };

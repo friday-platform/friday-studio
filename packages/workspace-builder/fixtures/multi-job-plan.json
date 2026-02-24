@@ -54,6 +54,7 @@
         {
           "id": "fetch-data",
           "agentId": "data-fetcher",
+          "executionRef": "data-fetcher",
           "description": "Fetch latest data from external API",
           "depends_on": [],
           "executionType": "llm"
@@ -61,13 +62,15 @@
         {
           "id": "analyze-data",
           "agentId": "data-analyst",
+          "executionRef": "data-analyst",
           "description": "Analyze fetched data for trends",
           "depends_on": ["fetch-data"],
           "executionType": "bundled"
         },
         {
           "id": "send-notification",
-          "agentId": "slack",
+          "agentId": "notifier",
+          "executionRef": "notifier",
           "description": "Send analysis summary notification",
           "depends_on": ["analyze-data"],
           "executionType": "bundled"
@@ -137,13 +140,15 @@
         {
           "id": "parse-payload",
           "agentId": "data-analyst",
+          "executionRef": "data-analyst",
           "description": "Parse and validate the incoming webhook payload",
           "depends_on": [],
           "executionType": "bundled"
         },
         {
           "id": "send-response",
-          "agentId": "slack",
+          "agentId": "notifier",
+          "executionRef": "notifier",
           "description": "Send acknowledgement notification",
           "depends_on": ["parse-payload"],
           "executionType": "bundled"

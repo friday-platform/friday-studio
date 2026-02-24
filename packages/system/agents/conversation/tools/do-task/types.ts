@@ -7,6 +7,8 @@ import type { MCPServerResult } from "../../../fsm-workspace-creator/enrichers/m
 /** A single step in an enhanced task plan. */
 export interface EnhancedTaskStep {
   agentId?: string;
+  /** Execution target — bundled registry key or agentId for LLM agents. */
+  executionRef: string;
   description: string;
   executionType: "agent" | "llm";
   capabilities: string[];

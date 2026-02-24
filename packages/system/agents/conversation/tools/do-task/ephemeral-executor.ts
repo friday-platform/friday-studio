@@ -88,13 +88,12 @@ export async function executeTaskViaFSMDirect(
     const docStore = new InMemoryDocumentStore();
     const scope = { workspaceId: context.workspaceId };
 
-    // 2. Build stepByAgentId lookup
-    const stepByAgentId = new Map<string, { index: number; step: EnhancedTaskStep }>();
+    // 2. Build step lookup keyed by executionRef (matches action.agentId at runtime)
+    const stepByExecutionRef = new Map<string, { index: number; step: EnhancedTaskStep }>();
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       if (step) {
-        const agentId = step.agentId || `llm-step-${i}`;
-        stepByAgentId.set(agentId, { index: i, step });
+        stepByExecutionRef.set(step.executionRef, { index: i, step });
       }
     }
 
@@ -126,7 +125,7 @@ export async function executeTaskViaFSMDirect(
         throw new Error("Task cancelled");
       }
 
-      const stepInfo = stepByAgentId.get(agentId);
+      const stepInfo = stepByExecutionRef.get(agentId);
 
       // Track current step for error reporting
       if (stepInfo) {
@@ -286,7 +285,7 @@ export async function executeTaskViaFSMDirect(
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       if (!step) continue;
-      const agentId = step.agentId || `llm-step-${i}`;
+      const executionRef = step.executionRef;
 
       // Look up the document ID from the contract for this step
       const dagStep = dagSteps[i];
@@ -298,14 +297,14 @@ export async function executeTaskViaFSMDirect(
       if (resultData) {
         results.push({
           step: i,
-          agent: agentId,
+          agent: executionRef,
           success: !("error" in resultData && resultData.error),
           output: resultData,
         });
       } else {
         // Fallback: scan engine documents for any matching result
         const fallbackDoc = engine.documents.find(
-          (d) => d.id === docId || d.id === `${agentId.replaceAll("-", "_")}_result`,
+          (d) => d.id === docId || d.id === `${executionRef.replaceAll("-", "_")}_result`,
         );
         if (fallbackDoc) {
           const output =
@@ -314,21 +313,21 @@ export async function executeTaskViaFSMDirect(
               : {};
           results.push({
             step: i,
-            agent: agentId,
+            agent: executionRef,
             success: !("error" in output && output.error),
             output,
           });
         } else {
           logger.warn("No result found for step", {
             step: i,
-            agentId,
+            executionRef,
             dagStepId: dagStep?.id,
             expectedDocId: docId,
             availableResultKeys: Object.keys(engineResults),
           });
           results.push({
             step: i,
-            agent: agentId,
+            agent: executionRef,
             success: false,
             error: "No result found for step",
           });
@@ -359,7 +358,6 @@ export async function executeTaskViaFSMDirect(
     for (let i = 0; i < currentStepIndex; i++) {
       const step = steps[i];
       if (!step) continue;
-      const agentId = step.agentId || `llm-step-${i}`;
       const dagStep = dagSteps[i];
       const docId = dagStep ? stepDocumentId.get(dagStep.id) : undefined;
       const resultData = docId ? engineResults[docId] : undefined;
@@ -367,7 +365,7 @@ export async function executeTaskViaFSMDirect(
       if (resultData) {
         partialResults.push({
           step: i,
-          agent: agentId,
+          agent: step.executionRef || `llm-step-${i}`,
           success: !("error" in resultData && resultData.error),
           output: resultData,
         });
@@ -378,7 +376,7 @@ export async function executeTaskViaFSMDirect(
     // Append the failed step
     partialResults.push({
       step: currentStepIndex,
-      agent: steps[currentStepIndex]?.agentId || "unknown",
+      agent: steps[currentStepIndex]?.executionRef ?? "unknown",
       success: false,
       error: error instanceof Error ? error.message : String(error),
     });

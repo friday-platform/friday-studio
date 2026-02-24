@@ -55,6 +55,7 @@
         {
           "id": "fetch-transcript",
           "agentId": "fathom-get-transcript",
+          "executionRef": "fathom-get-transcript",
           "description": "Fetch the meeting transcript from Fathom",
           "depends_on": [],
           "executionType": "bundled"
@@ -62,6 +63,7 @@
         {
           "id": "summarize-notes",
           "agentId": "get-summary",
+          "executionRef": "get-summary",
           "description": "Create a summary with key decisions, action items, and owners",
           "depends_on": ["fetch-transcript"],
           "executionType": "bundled"
@@ -69,6 +71,7 @@
         {
           "id": "post-notes",
           "agentId": "slack",
+          "executionRef": "slack",
           "description": "Post the meeting summary to the designated Slack channel",
           "depends_on": ["summarize-notes"],
           "executionType": "bundled"

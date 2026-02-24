@@ -62,6 +62,7 @@ function buildPlan(): WorkspaceBlueprint {
           {
             id: "process-order",
             agentId: "order-agent",
+            executionRef: "order-agent",
             description: "Extract order details",
             depends_on: [],
             executionType: "bundled",
@@ -69,6 +70,7 @@ function buildPlan(): WorkspaceBlueprint {
           {
             id: "send-invoice",
             agentId: "invoice-agent",
+            executionRef: "invoice-agent",
             description: "Send invoice with totals",
             depends_on: ["process-order"],
             executionType: "bundled",
