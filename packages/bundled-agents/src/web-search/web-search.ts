@@ -179,19 +179,11 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
   displayName: "Web Search",
   version: "2.0.0",
   description:
-    "Web research with cross-referenced, cited sources. Use for: news/daily digests, company/person/product research, competitive intelligence, market analysis, fact-checking, or any question needing current web information.",
+    "Web research engine that executes multi-query searches, cross-references sources, and produces cited research artifacts. USE FOR: news/daily digests, company/person/product research, competitive intelligence, market analysis, fact-checking, or any question needing current web information.",
+  constraints:
+    "Web search and synthesis only. Cannot interact with web pages (no clicking, form filling, or JS rendering). For page interaction or scraping JS-rendered content, use the playwright MCP server.",
   outputSchema: ResearchOutputSchema,
   expertise: {
-    domains: [
-      "research",
-      "news",
-      "daily-digest",
-      "company-research",
-      "competitive-intelligence",
-      "market-analysis",
-      "fact-checking",
-      "web-search",
-    ],
     examples: [
       "I'm evaluating cloud providers for our startup. Research AWS, GCP, and Azure's serverless offerings, pricing models, and cold start performance as of 2024.",
       "I'm writing a technical blog post about Rust's ownership model. Find authoritative documentation, common misconceptions from community discussions, and recent improvements.",

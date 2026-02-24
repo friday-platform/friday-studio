@@ -111,8 +111,7 @@ function deriveRegistryEntry(agent: AtlasAgent) {
     description: metadata.description,
     version: metadata.version,
 
-    // Classification (derived from expertise)
-    capabilities: metadata.expertise.domains,
+    // Classification
     examples: metadata.expertise.examples,
 
     // Configuration (derived from environment config)
@@ -140,7 +139,7 @@ function deriveRegistryEntry(agent: AtlasAgent) {
  * @example
  * ```typescript
  * const slackAgent = bundledAgentsRegistry["slack"];
- * console.log(slackAgent.capabilities); // ["slack", "slack-posting", "slack-notifications"]
+ * console.log(slackAgent.examples); // ["Post update to #general: ..."]
  * console.log(slackAgent.outputJsonSchema); // JSON Schema from SlackOutputSchema
  * ```
  */

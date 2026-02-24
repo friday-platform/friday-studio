@@ -9,6 +9,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { stringifyError } from "@atlas/utils";
 import {
   buildFSMFromPlan,
@@ -47,7 +49,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
     "Compiles FSM definitions from v2 workspace blueprints using deterministic compilation. " +
     "Creates workspace.yml with validated FSM definitions for each job. No LLM calls.",
 
-  expertise: { domains: ["FSM compilation", "Workspace assembly", "State machines"], examples: [] },
+  expertise: { examples: [] },
 
   inputSchema: FSMCreatorInputSchema,
 
@@ -116,11 +118,23 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         data: { toolName: "FSM Creator", content: "Assembling workspace configuration" },
       });
 
+      // Load dynamic MCP servers for assembly (agents may reference KV-registered servers)
+      let dynamicServers: MCPServerMetadata[] | undefined;
+      try {
+        const adapter = await getMCPRegistryAdapter();
+        dynamicServers = await adapter.list();
+      } catch (error) {
+        logger.warn("Failed to load dynamic MCP servers for assembly", {
+          error: stringifyError(error),
+        });
+      }
+
       const workspaceYml = buildWorkspaceYaml(
         { workspace: blueprint.workspace, signals: blueprint.signals, agents: blueprint.agents },
         blueprint,
         fsms,
         blueprint.credentialBindings,
+        dynamicServers,
       );
 
       // 4. Write to disk

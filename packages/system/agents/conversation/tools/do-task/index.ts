@@ -5,6 +5,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import { GlobalMCPServerPool } from "@atlas/core";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -149,20 +150,32 @@ async function storeTaskArtifact(
 /**
  * Build MCP server configs from blueprint agents using the MCP server registry.
  * Applies credential bindings from the pipeline's credential resolution step.
+ *
+ * @param agents - Blueprint agents with mcpServers references
+ * @param bindings - Credential bindings to apply to server env entries
+ * @param dynamicServers - Optional runtime-registered MCP servers from KV (not in the static registry)
  */
-function buildMCPServerConfigs(agents: Agent[], bindings: CredentialBinding[]): MCPServerResult[] {
+export function buildMCPServerConfigs(
+  agents: Agent[],
+  bindings: CredentialBinding[],
+  dynamicServers?: MCPServerMetadata[],
+): MCPServerResult[] {
   const seen = new Set<string>();
   const results: MCPServerResult[] = [];
+
+  const dynamicById = new Map<string, MCPServerMetadata>();
+  for (const server of dynamicServers ?? []) {
+    dynamicById.set(server.id, server);
+  }
 
   for (const agent of agents) {
     if (!agent.mcpServers) continue;
     for (const { serverId } of agent.mcpServers) {
       if (seen.has(serverId)) continue;
       seen.add(serverId);
-      const serverMeta = mcpServersRegistry.servers[serverId];
+      const serverMeta = mcpServersRegistry.servers[serverId] ?? dynamicById.get(serverId);
       if (!serverMeta) continue;
       const config = structuredClone(serverMeta.configTemplate);
-      // Apply credential bindings to env entries
       if (config.env) {
         for (const binding of bindings) {
           if (binding.targetType !== "mcp" || binding.targetId !== serverId) continue;
@@ -202,22 +215,25 @@ function blueprintToTaskPlan(
       agentId: step.agentId,
       description: step.description,
       executionType: step.executionType === "llm" ? "llm" : "agent",
-      needs: agent?.needs ?? [],
+      capabilities: agent?.capabilities ?? [],
       friendlyDescription: friendlyDescriptions[i],
     };
   });
 
-  // Aggregate needs
-  const allNeeds = new Set<string>();
+  const allCapabilities = new Set<string>();
   for (const step of steps) {
-    for (const need of step.needs) {
-      allNeeds.add(need);
+    for (const capability of step.capabilities) {
+      allCapabilities.add(capability);
     }
   }
 
-  const mcpServers = buildMCPServerConfigs(blueprint.agents, result.credentials.bindings);
+  const mcpServers = buildMCPServerConfigs(
+    blueprint.agents,
+    result.credentials.bindings,
+    result.dynamicServers,
+  );
 
-  return { steps, needs: Array.from(allNeeds), mcpServers };
+  return { steps, capabilities: Array.from(allCapabilities), mcpServers };
 }
 
 /**
@@ -261,13 +277,14 @@ export function createDoTaskTool(
 
   return tool({
     name: "do_task",
-    description:
-      "Execute a task using appropriate agents. Use for ad-hoc tasks " +
-      "not covered by configured workspace automations.",
+    description: `Execute a task end-to-end, including compound multi-step tasks. A planner internally orchestrates agents across services — never decompose a task into multiple do_task calls. One user goal = one do_task call, always.`,
     inputSchema: jsonSchema<{ intent: string }>({
       type: "object",
       properties: {
-        intent: { type: "string", description: "What the user wants to accomplish. Be specific." },
+        intent: {
+          type: "string",
+          description: `The user's full goal as a single statement. Include all steps and services even if they seem sequential. Examples: 'Research TypeScript features and email a summary to the team', 'Check calendar for conflicts and post available slots to Slack'.`,
+        },
       },
       required: ["intent"],
     }),
@@ -284,7 +301,11 @@ export function createDoTaskTool(
         emitProgress({ type: "planning" });
 
         const planResult = await generatePlan(intent, { mode: "task", abortSignal });
-        const classifyResult = await classifyAgents(planResult.agents);
+
+        // Reuse dynamic servers already fetched during planning (avoids redundant KV lookup)
+        const dynamicServers = planResult.dynamicServers;
+
+        const classifyResult = await classifyAgents(planResult.agents, { dynamicServers });
         const planMs = Date.now();
 
         if (isFastpathEligible(planResult, classifyResult)) {
@@ -356,7 +377,7 @@ export function createDoTaskTool(
           const fsmDefinition = buildFastpathFSM(agent, dagStep, intent, session.datetime);
           const fastpathStep = buildFastpathStep(agent, intent);
           const contract = buildFastpathContract(dagStep);
-          const mcpServers = buildMCPServerConfigs([agent], credentialBindings);
+          const mcpServers = buildMCPServerConfigs([agent], credentialBindings, dynamicServers);
 
           emitProgress({ type: "preparing", stepCount: 1 });
 
@@ -505,13 +526,16 @@ export function createDoTaskTool(
           throw err;
         }
 
-        // Bail on blocking clarifications (ambiguous agents / no match)
+        // Bail on blocking clarifications (unknown capability, mixed types, or multiple bundled)
         const blockingClarifications = blueprintResult.clarifications.filter(
-          (c) => c.issue.type === "no-match",
+          (c) =>
+            c.issue.type === "unknown-capability" ||
+            c.issue.type === "mixed-bundled-mcp" ||
+            c.issue.type === "multiple-bundled",
         );
         if (blockingClarifications.length > 0) {
           const msgs = blockingClarifications.map(
-            (c) => `Agent "${c.agentName}" need "${c.need}": no matching capability`,
+            (c) => `Agent "${c.agentName}" capability "${c.capability}": no matching capability`,
           );
           return { success: false, error: `Cannot plan task: ${msgs.join("; ")}` };
         }

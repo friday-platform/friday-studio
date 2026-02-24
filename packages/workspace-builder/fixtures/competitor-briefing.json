@@ -21,19 +21,19 @@
       "id": "research",
       "name": "Competitor Researcher",
       "description": "Searches the web for recent news about a list of competitors",
-      "needs": ["web-search"]
+      "capabilities": ["research"]
     },
     {
       "id": "get-summary",
       "name": "Briefing Writer",
       "description": "Consolidates competitor news into a structured briefing with source links",
-      "needs": ["summarization"]
+      "capabilities": ["get-summary"]
     },
     {
       "id": "email",
       "name": "Briefing Sender",
       "description": "Sends the competitor briefing email to the user",
-      "needs": ["email", "sendgrid"]
+      "capabilities": ["email"]
     }
   ],
   "jobs": [

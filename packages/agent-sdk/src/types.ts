@@ -92,10 +92,6 @@ export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 /** Agent expertise - used for discovery & task matching */
 export const AgentExpertiseSchema = z.object({
-  domains: z
-    .array(z.string())
-    .min(1)
-    .meta({ description: "Domains of expertise.", examples: ["Slack", "Web Research"] }),
   examples: z.array(z.string()).meta({ description: "Example prompts for users" }),
 });
 
@@ -300,15 +296,11 @@ export type AgentSessionState = z.infer<typeof AgentSessionStateSchema>;
 
 /** Agent registry - used by AtlasAgentsMCPServer for agent management */
 export interface AgentRegistry {
-  listAgents(filters?: { domains?: string[]; tags?: string[] }): Promise<AgentMetadata[]>;
+  listAgents(): Promise<AgentMetadata[]>;
 
   getAgent(id: string): Promise<AtlasAgent | undefined>;
 
   registerAgent(agent: AtlasAgent): Promise<void>;
-
-  searchAgents(query: string): Promise<AgentMetadata[]>;
-
-  getAgentsByDomain(domain: string): Promise<AgentMetadata[]>;
 }
 
 /** workspace.yml agent configuration */

@@ -45,7 +45,7 @@ export const AgentSchema = z.strictObject({
   id: z.string().describe("Kebab-case identifier. Example: 'note-analyzer'"),
   name: z.string().describe("Human-readable agent name"),
   description: z.string().describe("What this agent accomplishes and how it works"),
-  needs: z.array(z.string()).describe("High-level capabilities this agent requires"),
+  capabilities: z.array(z.string()).describe("High-level capabilities this agent requires"),
   configuration: z
     .record(z.string(), z.unknown())
     .optional()
@@ -178,6 +178,14 @@ export type JobWithDAG = z.infer<typeof JobWithDAGSchema>;
 // Credential Binding
 // ---------------------------------------------------------------------------
 
+/**
+ * Workspace-level credential binding. Uses generic `targetId` for both MCP servers and agents.
+ *
+ * Note: `@atlas/core/artifacts/primitives` defines a discriminated union variant
+ * with `serverId` (MCP) and `agentId` (agent) fields. Both schemas represent
+ * the same concept at different pipeline stages — workspace configs use `targetId`,
+ * the planner/enricher stage uses the discriminated fields.
+ */
 export const CredentialBindingSchema = z.strictObject({
   targetType: z
     .enum(["mcp", "agent"])

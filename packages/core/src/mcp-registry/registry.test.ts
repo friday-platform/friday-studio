@@ -9,10 +9,6 @@ describe("mcpServersRegistry", () => {
       expect(server.id).toEqual(id);
       expect(server.name).toBeDefined();
 
-      // Classification
-      expect(server.domains).toBeDefined();
-      expect(server.domains.length > 0).toBe(true);
-
       // Config
       expect(server.configTemplate).toBeDefined();
       expect(server.configTemplate.transport).toBeDefined();

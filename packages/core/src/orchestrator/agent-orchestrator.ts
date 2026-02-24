@@ -7,7 +7,6 @@
 
 import {
   type AgentExecutionError,
-  type AgentMetadata,
   type AgentResult,
   AgentResultSchema,
   type AtlasUIMessageChunk,
@@ -80,7 +79,6 @@ type MCPExecutionResult = z.infer<typeof MCPExecutionResultSchema>;
 
 export interface IAgentOrchestrator {
   initialize(): void;
-  discoverAgents(): Promise<AgentMetadata[]>;
   executeAgent(
     agentId: string,
     prompt: string,
@@ -121,74 +119,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       mcpServerPool: config.mcpServerPool,
       daemonUrl: config.daemonUrl,
     };
-  }
-
-  /** Queries MCP server for agent:// resources. */
-  async discoverAgents(): Promise<AgentMetadata[]> {
-    const discoverySessionId = `discovery-${Date.now()}`;
-
-    try {
-      const mcpSetup = await this.getOrCreateSessionClient(discoverySessionId);
-
-      // Query MCP server for available resources (agents register as resources)
-      const resources = await mcpSetup.client.listResources();
-
-      const agents: AgentMetadata[] = [];
-
-      // Parse agent metadata from MCP resources (KISS)
-      for (const resource of resources.resources) {
-        if (!resource.uri.startsWith("agent://")) continue;
-        try {
-          const agentId = resource.uri.replace("agent://", "");
-          const meta = resource.metadata as
-            | { expertise?: { domains?: string[]; capabilities?: string[]; examples?: string[] } }
-            | undefined;
-          const expertise = meta?.expertise
-            ? {
-                domains: meta.expertise.domains?.length ? meta.expertise.domains : ["general"],
-                examples: meta.expertise.examples ?? [],
-              }
-            : { domains: ["general"], examples: [] };
-          const agentMetadata: AgentMetadata = {
-            id: agentId,
-            version: "0.0.0",
-            description: resource.description || "",
-            expertise,
-            displayName: resource.name,
-          };
-          agents.push(agentMetadata);
-        } catch (parseError) {
-          this.logger.warn("Failed to parse agent metadata from resource", {
-            resource,
-            error: parseError,
-          });
-        }
-      }
-
-      this.logger.debug("Discovered agents via MCP", { agentCount: agents.length });
-      return agents;
-    } catch (error) {
-      const errorCause = createErrorCause(error);
-      this.logger.error("Failed to discover agents", { error: error, errorCause });
-
-      // Return empty array if no agents can be discovered
-      return [];
-    } finally {
-      // Clean up discovery session immediately after use
-      const setup = this.mcpSessions.get(discoverySessionId);
-      if (setup) {
-        try {
-          await setup.transport.close();
-          this.mcpSessions.delete(discoverySessionId);
-          this.logger.debug("Cleaned up discovery session", { discoverySessionId });
-        } catch (closeError) {
-          this.logger.warn("Failed to close discovery session transport", {
-            discoverySessionId,
-            error: closeError,
-          });
-        }
-      }
-    }
   }
 
   /** Used by daemon to prevent workspace shutdown while agents are running. */

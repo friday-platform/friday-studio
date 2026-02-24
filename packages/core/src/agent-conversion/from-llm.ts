@@ -44,7 +44,7 @@ export function convertLLMToAgent(
     version: "1.0.0",
     description: config.description,
     outputSchema: LLMOutputSchema,
-    expertise: { domains: ["general"], examples: [] },
+    expertise: { examples: [] },
     handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection

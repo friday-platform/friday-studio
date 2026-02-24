@@ -21,19 +21,19 @@
       "id": "email",
       "name": "Email Reader",
       "description": "Reads unread emails from the last 24 hours",
-      "needs": ["email", "gmail"]
+      "capabilities": ["google-gmail"]
     },
     {
       "id": "get-summary",
       "name": "Inbox Summarizer",
       "description": "Summarizes email subjects and highlights urgent items",
-      "needs": ["summarization"]
+      "capabilities": ["get-summary"]
     },
     {
       "id": "slack",
       "name": "Slack Poster",
       "description": "Posts the daily inbox summary to a designated Slack channel",
-      "needs": ["slack"]
+      "capabilities": ["slack"]
     }
   ],
   "jobs": [

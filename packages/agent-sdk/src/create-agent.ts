@@ -119,7 +119,7 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
  *   displayName: "Planner",
  *   version: "1.0.0",
  *   description: "Plans workspaces",
- *   expertise: { domains: ["planning"], examples: [] },
+ *   expertise: { examples: [] },
  *   handler: async (input, { logger }) => {
  *     if (!input) return err("No input provided");
  *     return ok({ planSummary: "...", artifactId: "..." });

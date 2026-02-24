@@ -322,10 +322,12 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   id: "data-analyst",
   displayName: "Data Analyst",
   version: "1.0.0",
-  description: "Analyzes tabular data to answer questions and produce actionable insights",
+  description:
+    "READ-ONLY analytical engine for uploaded database artifacts. Attaches .db files, runs exploratory SQL via DuckDB subprocess, produces summary + data artifacts. USE FOR: analyzing uploaded CSV/database artifacts — revenue trends, statistical summaries, data exploration.",
+  constraints:
+    "READ-ONLY. Cannot INSERT, UPDATE, or DELETE. Cannot write to workspace resource tables. Operates on uploaded database artifacts only. For CRUD on workspace resource tables, use no capability — resource_read and resource_write are built-in.",
   outputSchema: DataAnalystOutputSchema,
   expertise: {
-    domains: ["data-analysis", "sql", "reporting"],
     examples: [
       "Analyze Q4 revenue trends from this sales data",
       "What are the top performing campaigns in this dataset?",

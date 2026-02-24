@@ -40,7 +40,6 @@ const LLMExtractionResultSchema = z.discriminatedUnion("success", [
       .describe("Kebab-case server ID"),
     name: z.string().min(1).max(100).describe("Human-readable display name"),
     description: z.string().min(1).max(200).describe("One-sentence description"),
-    domains: z.array(z.string().min(1).max(50)).min(1).max(10).describe("1-10 keyword domains"),
     // Transport-specific (conditionally required based on template)
     url: z.httpUrl().optional().describe("HTTP endpoint URL"),
     command: z.string().optional().describe("CLI command (e.g., npx, uvx)"),
@@ -76,11 +75,10 @@ const EXTRACTION_PROMPT = `You extract MCP server connection info from user inpu
 2. **id**: Kebab-case identifier (max 64 chars)
 3. **name**: Human-readable display name
 4. **description**: One sentence explaining the server
-5. **domains**: 1-5 keyword categories
-6. **url**: HTTP endpoint (for http-* templates)
-7. **command**: CLI command (for stdio-* templates)
-8. **args**: CLI arguments array (for stdio-* templates)
-9. **tokenEnvVar**: Environment variable NAME for auth token (not the value)
+5. **url**: HTTP endpoint (for http-* templates)
+6. **command**: CLI command (for stdio-* templates)
+7. **args**: CLI arguments array (for stdio-* templates)
+8. **tokenEnvVar**: Environment variable NAME for auth token (not the value)
 
 ## Template Selection
 - http-oauth: HTTP URL + mentions SSO, OAuth, "sign in", workspace login
@@ -91,7 +89,6 @@ const EXTRACTION_PROMPT = `You extract MCP server connection info from user inpu
 
 ## Rules
 - id: lowercase, hyphens only, max 64 chars
-- domains: lowercase keywords like "calendar", "email", "github"
 - tokenEnvVar: SCREAMING_CASE (e.g., "ACME_API_KEY")
 
 ## FAIL when
@@ -158,7 +155,6 @@ export async function extractAndHydrate(
     id: extracted.id,
     name: extracted.name,
     description: extracted.description,
-    domains: extracted.domains,
     url: extracted.url,
     command: extracted.command,
     args: extracted.args,

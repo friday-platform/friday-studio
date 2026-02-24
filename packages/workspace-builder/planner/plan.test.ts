@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockGenerateObject = vi.hoisted(() => vi.fn());
+const mockAdapterList = vi.hoisted(() => vi.fn());
 
 vi.mock("ai", () => ({ generateObject: mockGenerateObject }));
 
@@ -12,6 +13,22 @@ vi.mock("@atlas/agent-sdk", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, repairJson: vi.fn((text: string) => text) };
 });
+
+vi.mock("@atlas/bundled-agents", () => ({
+  bundledAgents: [
+    { metadata: { id: "slack" } },
+    { metadata: { id: "research" } },
+    { metadata: { id: "data-analyst" } },
+  ],
+}));
+
+vi.mock("@atlas/core/mcp-registry/registry-consolidated", () => ({
+  mcpServersRegistry: { servers: { github: { id: "github" }, notion: { id: "notion" } } },
+}));
+
+vi.mock("@atlas/core/mcp-registry/storage", () => ({
+  getMCPRegistryAdapter: vi.fn(() => Promise.resolve({ list: mockAdapterList })),
+}));
 
 vi.mock("@atlas/llm", () => ({
   getDefaultProviderOpts: vi.fn(() => ({})),
@@ -34,11 +51,94 @@ vi.mock("../../system/agents/conversation/link-context.ts", () => ({
   formatIntegrationsSection: vi.fn(() => ""),
 }));
 
-import { generatePlan, toKebabCase } from "./plan.ts";
+import { generatePlan, getCapabilityIds, toKebabCase } from "./plan.ts";
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("getCapabilityIds", () => {
+  beforeEach(() => {
+    mockAdapterList.mockReset();
+  });
+
+  it("merges bundled agent IDs and static MCP server IDs", async () => {
+    mockAdapterList.mockResolvedValueOnce([]);
+
+    const { ids } = await getCapabilityIds();
+
+    expect(ids).toContain("slack");
+    expect(ids).toContain("research");
+    expect(ids).toContain("data-analyst");
+    expect(ids).toContain("github");
+    expect(ids).toContain("notion");
+  });
+
+  it("includes dynamic MCP server IDs", async () => {
+    mockAdapterList.mockResolvedValueOnce([{ id: "custom-crm" }]);
+
+    const { ids } = await getCapabilityIds();
+
+    expect(ids).toContain("custom-crm");
+  });
+
+  it("deduplicates — static takes precedence over dynamic", async () => {
+    // "github" exists in static MCP servers, also returned as dynamic
+    mockAdapterList.mockResolvedValueOnce([{ id: "github" }, { id: "custom-tool" }]);
+
+    const { ids } = await getCapabilityIds();
+
+    const githubCount = ids.filter((id) => id === "github").length;
+    expect(githubCount).toBe(1);
+    expect(ids).toContain("custom-tool");
+  });
+
+  it("returns dynamic server metadata", async () => {
+    const dynamic = [{ id: "custom-crm", name: "Custom CRM" }];
+    mockAdapterList.mockResolvedValueOnce(dynamic);
+
+    const { dynamicServers } = await getCapabilityIds();
+
+    expect(dynamicServers).toEqual(dynamic);
+  });
+
+  it("falls back to static-only when dynamic storage fails", async () => {
+    mockAdapterList.mockRejectedValueOnce(new Error("KV unavailable"));
+
+    const { ids, dynamicServers } = await getCapabilityIds();
+
+    // Should still have static IDs
+    expect(ids).toContain("slack");
+    expect(ids).toContain("github");
+    expect(ids.length).toBe(5); // 3 bundled + 2 MCP
+    expect(dynamicServers).toEqual([]);
+  });
+
+  it("throws when bundled agents and MCP registries are both empty", async () => {
+    // Temporarily replace the mocked module internals with empty registries.
+    // The vi.mock for @atlas/bundled-agents returns a fixed array and
+    // @atlas/core/mcp-registry/registry-consolidated returns a fixed object,
+    // so we re-mock them for this test only.
+    const { bundledAgents } = await import("@atlas/bundled-agents");
+    const { mcpServersRegistry } = await import("@atlas/core/mcp-registry/registry-consolidated");
+
+    const originalBundled = [...bundledAgents];
+    const originalServers = { ...mcpServersRegistry.servers };
+
+    bundledAgents.length = 0;
+    for (const key of Object.keys(mcpServersRegistry.servers)) {
+      delete mcpServersRegistry.servers[key];
+    }
+    mockAdapterList.mockResolvedValueOnce([]);
+
+    try {
+      await expect(getCapabilityIds()).rejects.toThrow("No capability IDs found");
+    } finally {
+      bundledAgents.push(...originalBundled);
+      Object.assign(mcpServersRegistry.servers, originalServers);
+    }
+  });
+});
 
 describe("toKebabCase", () => {
   it.each([
@@ -74,6 +174,8 @@ describe("toKebabCase", () => {
 describe("generatePlan — mode parameter", () => {
   beforeEach(() => {
     mockGenerateObject.mockReset();
+    mockAdapterList.mockReset();
+    mockAdapterList.mockResolvedValue([]);
   });
 
   it("task mode returns empty signals and kebab-cased agent IDs", async () => {
@@ -82,7 +184,11 @@ describe("generatePlan — mode parameter", () => {
         plan: {
           workspace: { name: "Test Task", purpose: "Analyze a CSV" },
           agents: [
-            { name: "Data Analyst", description: "Analyzes CSV data", needs: ["data-analysis"] },
+            {
+              name: "Data Analyst",
+              description: "Analyzes CSV data",
+              capabilities: ["data-analyst"],
+            },
           ],
         },
       },
@@ -133,7 +239,7 @@ describe("generatePlan — mode parameter", () => {
       object: {
         plan: {
           workspace: { name: "Bad Plan", purpose: "Test" },
-          agents: [{ name: "&&&", description: "All special chars", needs: [] }],
+          agents: [{ name: "&&&", description: "All special chars", capabilities: [] }],
         },
       },
     });
@@ -157,7 +263,9 @@ describe("generatePlan — mode parameter", () => {
               displayLabel: "Every Friday at 9am",
             },
           ],
-          agents: [{ name: "PR Reader", description: "Reads merged PRs", needs: ["github"] }],
+          agents: [
+            { name: "PR Reader", description: "Reads merged PRs", capabilities: ["github"] },
+          ],
         },
       },
     });
@@ -194,6 +302,27 @@ describe("generatePlan — mode parameter", () => {
       expect.objectContaining({
         messages: expect.arrayContaining([
           expect.objectContaining({ content: expect.stringContaining("triggered ad-hoc") }),
+        ]),
+      }),
+    );
+  });
+
+  it("system prompt includes capability selection framing", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: { plan: { workspace: { name: "Test", purpose: "Test" }, agents: [] } },
+    });
+
+    await generatePlan("do something", { mode: "task" });
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining(
+              "Select capability IDs from the Capabilities section below",
+            ),
+          }),
         ]),
       }),
     );

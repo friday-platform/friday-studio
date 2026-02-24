@@ -26,6 +26,8 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { createLogger } from "@atlas/logger";
 import { isFastpathEligible } from "../../../../packages/system/agents/conversation/tools/do-task/fastpath.ts";
 import { buildBlueprint } from "../../../../packages/workspace-builder/planner/build-blueprint.ts";
@@ -46,6 +48,16 @@ await loadCredentials();
 
 const adapter = new AgentContextAdapter();
 const logger = createLogger({ name: "fastpath-eval" });
+
+async function fetchDynamicServers(): Promise<MCPServerMetadata[]> {
+  try {
+    const adapter = await getMCPRegistryAdapter();
+    return await adapter.list();
+  } catch {
+    logger.warn("Failed to load dynamic MCP servers, classification will use static only");
+    return [];
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,7 +154,8 @@ async function runPlanningPhase(input: string): Promise<RoutingResult> {
   const start = Date.now();
 
   const plan = await generatePlan(input, { mode: "task" });
-  const classifyResult = await classifyAgents(plan.agents);
+  const dynamicServers = await fetchDynamicServers();
+  const classifyResult = await classifyAgents(plan.agents, { dynamicServers });
   const eligible = isFastpathEligible(plan, classifyResult);
 
   const planningMs = Date.now() - start;
@@ -172,7 +185,8 @@ async function runSpeedupComparison(input: string): Promise<SpeedupResult> {
   // Run fastpath timing (plan + classify only)
   const fpStart = Date.now();
   const plan = await generatePlan(input, { mode: "task" });
-  const classifyResult = await classifyAgents(plan.agents);
+  const dynamicServers = await fetchDynamicServers();
+  const classifyResult = await classifyAgents(plan.agents, { dynamicServers });
   const fastpathMs = Date.now() - fpStart;
 
   const agentName = plan.agents[0]?.name ?? "unknown";

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { parse } from "@std/yaml";
 import { describe, expect, it } from "vitest";
 import { buildFSMFromPlan } from "../compiler/build-fsm.ts";
@@ -392,5 +393,115 @@ describe("buildWorkspaceYaml — credential bindings", () => {
       }),
     ];
     expect(() => buildAndParse(phase1WithBundled, phase3, fsms, bindings)).not.toThrow();
+  });
+});
+
+describe("buildWorkspaceYaml — dynamic MCP servers", () => {
+  const { phase1: basePhase1, phase3, fsms } = loadFixtureData("email-inbox-summary");
+
+  const firstAgent = basePhase1.agents[0];
+  if (!firstAgent) throw new Error("fixture missing agents");
+
+  const scheduleSignalConfig = {
+    provider: "schedule",
+    config: { schedule: "0 9 * * *", timezone: "America/Denver" },
+  } satisfies SignalConfig;
+
+  const dynamicServer: MCPServerMetadata = {
+    id: "custom-crm",
+    name: "Custom CRM",
+    securityRating: "unverified",
+    source: "web",
+    configTemplate: {
+      transport: { type: "stdio", command: "npx", args: ["-y", "custom-crm-mcp"] },
+      env: { CRM_KEY: "placeholder" },
+    },
+  };
+
+  const phase1WithDynamic: Phase1Output = {
+    ...basePhase1,
+    signals: basePhase1.signals.map((s) => ({ ...s, signalConfig: scheduleSignalConfig })),
+    agents: [
+      { ...firstAgent, mcpServers: [{ serverId: "custom-crm", name: "Custom CRM" }] },
+      ...basePhase1.agents.slice(1).map((a) => ({ ...a, bundledId: a.id })),
+    ],
+  };
+
+  it("resolves dynamic MCP server config instead of throwing", () => {
+    const config = buildAndParse(phase1WithDynamic, phase3, fsms, undefined, [dynamicServer]);
+
+    expect(config.tools).toMatchObject({
+      mcp: {
+        servers: {
+          "custom-crm": {
+            transport: { type: "stdio", command: "npx", args: ["-y", "custom-crm-mcp"] },
+          },
+        },
+      },
+    });
+  });
+
+  it("prefers static registry over dynamic server with same ID", () => {
+    const dynamicGmail: MCPServerMetadata = {
+      id: "google-gmail",
+      name: "Dynamic Gmail",
+      securityRating: "unverified",
+      source: "web",
+      configTemplate: {
+        transport: { type: "stdio", command: "npx", args: ["-y", "dynamic-gmail-mcp"] },
+      },
+    };
+
+    const phase1WithGmail: Phase1Output = {
+      ...basePhase1,
+      signals: basePhase1.signals.map((s) => ({ ...s, signalConfig: scheduleSignalConfig })),
+      agents: [
+        { ...firstAgent, mcpServers: [{ serverId: "google-gmail", name: "Gmail" }] },
+        ...basePhase1.agents.slice(1).map((a) => ({ ...a, bundledId: a.id })),
+      ],
+    };
+
+    // Should use the static registry config (which has transport), not the dynamic one
+    const config = buildAndParse(phase1WithGmail, phase3, fsms, undefined, [dynamicGmail]);
+
+    expect(config.tools).toMatchObject({
+      mcp: { servers: { "google-gmail": { transport: expect.anything() } } },
+    });
+  });
+
+  it("applies credential bindings to dynamic MCP server", () => {
+    const bindings: CredentialBinding[] = [
+      makeBinding({
+        targetType: "mcp",
+        targetId: "custom-crm",
+        field: "CRM_KEY",
+        credentialId: "cred_crm_123",
+        key: "api_key",
+      }),
+    ];
+    const config = buildAndParse(phase1WithDynamic, phase3, fsms, bindings, [dynamicServer]);
+
+    expect(config.tools).toMatchObject({
+      mcp: {
+        servers: {
+          "custom-crm": { env: { CRM_KEY: { from: "link", id: "cred_crm_123", key: "api_key" } } },
+        },
+      },
+    });
+  });
+
+  it("throws when server ID not in static or dynamic registry", () => {
+    const phase1WithUnknown: Phase1Output = {
+      ...basePhase1,
+      signals: basePhase1.signals.map((s) => ({ ...s, signalConfig: scheduleSignalConfig })),
+      agents: [
+        { ...firstAgent, mcpServers: [{ serverId: "totally-unknown", name: "Unknown" }] },
+        ...basePhase1.agents.slice(1).map((a) => ({ ...a, bundledId: a.id })),
+      ],
+    };
+
+    expect(() =>
+      buildWorkspaceYaml(phase1WithUnknown, phase3, fsms, undefined, [dynamicServer]),
+    ).toThrow('MCP server "totally-unknown" not found in registry');
   });
 });

@@ -27,15 +27,13 @@ export const MCPSourceSchema = z.enum(["agents", "static", "web"]);
 export type MCPSource = z.infer<typeof MCPSourceSchema>;
 
 /**
- * Enhanced MCP server metadata with domains and required config
+ * Enhanced MCP server metadata with required config
  * Uses the official MCPServerConfigSchema from @atlas/agent-sdk for configTemplate
  */
 export const MCPServerMetadataSchema = z.object({
   // Identity
   id: z.string(),
   name: z.string(),
-  /** Semantic keywords for capability matching (e.g., "calendar", "gcal") */
-  domains: z.array(z.string()),
   /** URL domains for URL-to-MCP mapping (e.g., "linear.app", "github.com") */
   urlDomains: z.array(z.string()).optional(),
 

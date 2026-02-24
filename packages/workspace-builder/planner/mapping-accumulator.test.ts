@@ -47,12 +47,17 @@ const plan: WorkspaceBlueprint = {
   workspace: { name: "test", purpose: "testing" },
   signals: [],
   agents: [
-    { id: "source-llm", name: "Source Agent", description: "Produces data", needs: ["source"] },
+    {
+      id: "source-llm",
+      name: "Source Agent",
+      description: "Produces data",
+      capabilities: ["source"],
+    },
     {
       id: "consumer-llm",
       name: "Consumer Agent",
       description: "Consumes data",
-      needs: ["consumer"],
+      capabilities: ["consumer"],
     },
   ],
   jobs: [
@@ -286,13 +291,18 @@ const fanInPlan: WorkspaceBlueprint = {
   workspace: { name: "test", purpose: "testing" },
   signals: [],
   agents: [
-    { id: "source-llm", name: "Source Agent", description: "Produces data", needs: ["source"] },
-    { id: "tax-llm", name: "Tax Agent", description: "Tax config", needs: ["tax"] },
+    {
+      id: "source-llm",
+      name: "Source Agent",
+      description: "Produces data",
+      capabilities: ["source"],
+    },
+    { id: "tax-llm", name: "Tax Agent", description: "Tax config", capabilities: ["tax"] },
     {
       id: "consumer-llm",
       name: "Consumer Agent",
       description: "Consumes data",
-      needs: ["consumer"],
+      capabilities: ["consumer"],
     },
   ],
   jobs: [

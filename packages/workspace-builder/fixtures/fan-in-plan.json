@@ -29,19 +29,19 @@
       "id": "research",
       "name": "Web Researcher",
       "description": "Searches the web for current information on the given topic",
-      "needs": ["web-search"]
+      "capabilities": ["research"]
     },
     {
       "id": "data-analyst",
       "name": "Data Analyst",
       "description": "Analyzes any structured data related to the research topic",
-      "needs": ["data-analysis", "sql"]
+      "capabilities": ["data-analyst"]
     },
     {
       "id": "get-summary",
       "name": "Briefing Summarizer",
       "description": "Consolidates web research and data analysis into a single briefing document",
-      "needs": ["summaries", "summarization"]
+      "capabilities": ["get-summary"]
     }
   ],
   "jobs": [

@@ -80,6 +80,7 @@ export async function executeTaskViaFSMDirect(
   }
 
   let orchestrator: AgentOrchestrator | undefined;
+  let engine: ReturnType<typeof createEngine> | undefined;
   let currentStepIndex = 0;
 
   try {
@@ -200,7 +201,7 @@ export async function executeTaskViaFSMDirect(
     };
 
     // 5. Create FSM engine
-    const engine = createEngine(fsmDefinition, {
+    engine = createEngine(fsmDefinition, {
       documentStore: docStore,
       llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
       scope,
@@ -343,18 +344,46 @@ export async function executeTaskViaFSMDirect(
     return execResult;
   } catch (error) {
     logger.error("FSM execution failed", { error, step: currentStepIndex });
-    return {
+
+    // Harvest results from steps that succeeded before the failure
+    const partialResults: ExecutionResult["results"] = [];
+    const engineResults = engine?.results ?? {};
+    const dagSteps = context.dagSteps ?? [];
+    const stepDocumentId = new Map<string, string>();
+    if (context.documentContracts) {
+      for (const contract of context.documentContracts) {
+        stepDocumentId.set(contract.producerStepId, contract.documentId);
+      }
+    }
+
+    for (let i = 0; i < currentStepIndex; i++) {
+      const step = steps[i];
+      if (!step) continue;
+      const agentId = step.agentId || `llm-step-${i}`;
+      const dagStep = dagSteps[i];
+      const docId = dagStep ? stepDocumentId.get(dagStep.id) : undefined;
+      const resultData = docId ? engineResults[docId] : undefined;
+
+      if (resultData) {
+        partialResults.push({
+          step: i,
+          agent: agentId,
+          success: !("error" in resultData && resultData.error),
+          output: resultData,
+        });
+      }
+      // If no result data found, skip — step may not have committed
+    }
+
+    // Append the failed step
+    partialResults.push({
+      step: currentStepIndex,
+      agent: steps[currentStepIndex]?.agentId || "unknown",
       success: false,
-      failedStep: currentStepIndex,
-      results: [
-        {
-          step: currentStepIndex,
-          agent: steps[currentStepIndex]?.agentId || "unknown",
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      ],
-    };
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return { success: false, failedStep: currentStepIndex, results: partialResults };
   } finally {
     // Always cleanup orchestrator (MCP pool cleanup done by caller)
     if (orchestrator) {

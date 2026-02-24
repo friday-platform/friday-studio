@@ -81,6 +81,8 @@ discriminated unions, or `deno check` with shared `z.lazy()` entry points.
 - Zod discriminated unions cause deep type instantiation with AI SDK's
   `generateObject` generic — split into per-type schemas
 - `z.record()` requires two args (key schema, value schema) — v3 accepted one
+- `z.enum()` requires `[string, ...string[]]` (non-empty tuple) — destructure
+  `[first, ...rest]` to satisfy the type
 
 ### AI SDK (Vercel) v5
 
@@ -138,6 +140,8 @@ package-level `deno.json` (root handles runtime, package-level handles
 - Adding a variant to a discriminated union requires updating all exhaustive
   handlers in the same commit — splitting them creates a broken intermediate
   state
+- Schema field renames cascade to hand-written interfaces mirroring the shape —
+  grep for the old field name in type annotations, not just property access
 - [web-client] `.svelte.ts` files have looser `JSON.parse` inference (returns
   any-ish) — plain `.ts` files enforce `unknown`, so extracted code needs
   explicit Zod parsing for `JSON.parse` results

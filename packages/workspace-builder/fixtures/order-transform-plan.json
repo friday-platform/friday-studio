@@ -25,19 +25,19 @@
       "id": "rate-fetcher",
       "name": "Rate Fetcher",
       "description": "Fetches current tax rates for the customer's region",
-      "needs": ["tax-rates"]
+      "capabilities": []
     },
     {
       "id": "order-processor",
       "name": "Order Processor",
       "description": "Processes and validates order data, producing structured line items",
-      "needs": ["order-processing"]
+      "capabilities": []
     },
     {
       "id": "receipt-sender",
       "name": "Receipt Sender",
       "description": "Sends a receipt email with computed totals to the customer",
-      "needs": ["email"]
+      "capabilities": ["email"]
     }
   ],
   "jobs": [
@@ -52,8 +52,7 @@
           "agentId": "rate-fetcher",
           "description": "Fetch current tax rates for the order's region",
           "depends_on": [],
-          "executionType": "llm",
-          "tools": ["webfetch"]
+          "executionType": "llm"
         },
         {
           "id": "process-order",
@@ -64,11 +63,10 @@
         },
         {
           "id": "send-receipt",
-          "agentId": "receipt-sender",
+          "agentId": "email",
           "description": "Send receipt email with subtotal, tax, and total to the customer",
           "depends_on": ["process-order"],
-          "executionType": "llm",
-          "tools": ["sendgrid"]
+          "executionType": "bundled"
         }
       ],
       "documentContracts": [

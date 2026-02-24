@@ -1,5 +1,9 @@
 import { repairJson } from "@atlas/agent-sdk";
+import { bundledAgents } from "@atlas/bundled-agents";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
@@ -99,17 +103,11 @@ Examples:
 - Bad: "Slack Searcher" + "Summarizer" + "Slack Poster" (same service + needless summarizer)
 - Bad: ONE "Research + Email Agent" (mixes different services)
 
-### Agent needs
+### Agent capabilities
 
-The \`needs\` array lists external integrations (e.g., calendar, email, discord, sheets).
-Use keywords from the available integrations list. Include ALL services the agent uses.
+Select capability IDs from the Capabilities section below. Use an empty array when built-in capabilities are sufficient.
 
-**IMPORTANT - Distinguish these capabilities:**
-- "research" = web search for external information (news, company info, market data)
-- "code-analysis" or "coding" = analyzing code repositories, debugging, finding root causes in codebases
-
-Use "code-analysis" or "coding" when the task involves reading/analyzing source code, stack traces, or identifying bugs.
-Use "research" only when searching the web for information external to the codebase.
+Each ID maps to a bundled agent or MCP server integration. Include ALL services the agent uses.
 
 ### Agent configuration
 
@@ -180,7 +178,7 @@ Each signal must have a signalType:
 Generate structured plan with:
 - workspace: name and purpose
 - signals: trigger descriptions with rationale
-- agents: purpose, approach, needs, configuration`;
+- agents: purpose, approach, capabilities, configuration`;
 
 const TASK_PROMPT_SECTION = `
 ## Context
@@ -192,7 +190,7 @@ Focus on selecting the right agents and their capabilities to accomplish the tas
 
 Generate structured plan with:
 - workspace: name and purpose
-- agents: purpose, approach, needs, configuration`;
+- agents: purpose, approach, capabilities, configuration`;
 
 /**
  * Build the system prompt for the given planning mode.
@@ -279,41 +277,92 @@ const SignalSchema = z.object({
   ),
 });
 
-const AgentSchema = z.object({
-  name: z
-    .string()
-    .describe("Human-readable agent name. Example: 'Nike Website Monitor' or 'Discord Notifier'"),
-  description: z
-    .string()
-    .describe(
-      "What this agent accomplishes and how it works. 1-2 sentences. Example: 'Monitors Nike.com product catalog by scraping product pages and comparing against known items to identify new shoe releases'",
-    ),
-  needs: z
-    .array(z.string())
-    .describe(
-      "What this agent needs beyond built-in capabilities (webfetch, artifacts). Use [] if built-in capabilities are enough. File ops, bash, and csv require explicit MCP config. List service integrations (e.g., slack, github, email) or specialized capabilities. IMPORTANT: Use 'data-analysis' or 'sql' for analyzing datasets, database artifacts, CSV files, or producing reports from tabular data. Use 'code-analysis' or 'coding' for analyzing code/debugging/root-cause analysis. Use 'research' ONLY for web search of external information (NEVER for analyzing private data or artifacts).",
-    ),
-  configuration: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe(
-      "ONLY user-specific values that must not be lost. Examples: {channel: '#sneaker-drops', email: 'alerts@company.com', targets: ['Nike.com', 'Adidas.com']}. DO NOT include URLs with paths, field names, intervals (already in signal), or implementation details.",
-    ),
-});
+// ---------------------------------------------------------------------------
+// Dynamic capability IDs — built from bundled agents + MCP server registries
+// ---------------------------------------------------------------------------
 
-/** Workspace mode: includes signals array in the schema. */
-const WorkspacePlanSchema = z.object({
-  plan: z.object({
-    workspace: WorkspaceSchema,
-    signals: z.array(SignalSchema),
-    agents: z.array(AgentSchema),
-  }),
-});
+/**
+ * Collect capability IDs from bundled agents, static MCP servers, and dynamic
+ * MCP servers. Static IDs take precedence (deduped via Set).
+ *
+ * @returns Non-empty tuple suitable for `z.enum()` and dynamic server metadata for prompt rendering.
+ */
+export async function getCapabilityIds(): Promise<{
+  ids: [string, ...string[]];
+  dynamicServers: MCPServerMetadata[];
+}> {
+  const staticIds = [
+    ...bundledAgents.map((a) => a.metadata.id),
+    ...Object.keys(mcpServersRegistry.servers),
+  ];
 
-/** Task mode: no signals — agents only. */
-const TaskPlanSchema = z.object({
-  plan: z.object({ workspace: WorkspaceSchema, agents: z.array(AgentSchema) }),
-});
+  let dynamicServers: MCPServerMetadata[] = [];
+  try {
+    const adapter = await getMCPRegistryAdapter();
+    dynamicServers = await adapter.list();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("Failed to load dynamic MCP servers for capability IDs, using static only", {
+      error: message,
+    });
+  }
+
+  const dynamicIds = dynamicServers.map((s) => s.id);
+
+  // Static first so Set dedup keeps static over dynamic
+  const deduped = [...new Set([...staticIds, ...dynamicIds])];
+  const [first, ...rest] = deduped;
+  if (!first) {
+    throw new Error("No capability IDs found — bundled agents and MCP registries are both empty");
+  }
+  return { ids: [first, ...rest], dynamicServers };
+}
+
+/**
+ * Build the AgentSchema with capabilities constrained to known IDs.
+ */
+function buildAgentSchema(capabilityIds: [string, ...string[]]) {
+  return z.object({
+    name: z
+      .string()
+      .describe("Human-readable agent name. Example: 'Nike Website Monitor' or 'Discord Notifier'"),
+    description: z
+      .string()
+      .describe(
+        "What this agent accomplishes and how it works. 1-2 sentences. Example: 'Monitors Nike.com product catalog by scraping product pages and comparing against known items to identify new shoe releases'",
+      ),
+    capabilities: z
+      .array(z.enum(capabilityIds))
+      .describe(
+        "IDs from the Capabilities section. Use empty array when built-in capabilities are sufficient.",
+      ),
+    configuration: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "ONLY user-specific values that must not be lost. Examples: {channel: '#sneaker-drops', email: 'alerts@company.com', targets: ['Nike.com', 'Adidas.com']}. DO NOT include URLs with paths, field names, intervals (already in signal), or implementation details.",
+      ),
+  });
+}
+
+/**
+ * Build plan schemas using dynamic capability IDs.
+ */
+function buildPlanSchemas(capabilityIds: [string, ...string[]]) {
+  const agentSchema = buildAgentSchema(capabilityIds);
+  return {
+    workspace: z.object({
+      plan: z.object({
+        workspace: WorkspaceSchema,
+        signals: z.array(SignalSchema),
+        agents: z.array(agentSchema),
+      }),
+    }),
+    task: z.object({
+      plan: z.object({ workspace: WorkspaceSchema, agents: z.array(agentSchema) }),
+    }),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Return type
@@ -323,6 +372,8 @@ export interface Phase1Result {
   workspace: { name: string; purpose: string; details?: Array<{ label: string; value: string }> };
   signals: Signal[];
   agents: Agent[];
+  /** Dynamic MCP servers fetched during planning — pass downstream to avoid redundant KV lookups. */
+  dynamicServers: MCPServerMetadata[];
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +416,13 @@ export async function generatePlan(
 ): Promise<Phase1Result> {
   const mode = options?.mode ?? "workspace";
 
-  const linkSummary = await fetchLinkSummary(logger);
+  const [capabilityResult, linkSummary] = await Promise.all([
+    getCapabilityIds(),
+    fetchLinkSummary(logger),
+  ]);
+
+  const { ids: capabilityIds, dynamicServers } = capabilityResult;
+  const schemas = buildPlanSchemas(capabilityIds);
   const integrationsXml = linkSummary
     ? formatIntegrationsSection(linkSummary)
     : "<integrations><!-- No OAuth services connected --></integrations>";
@@ -375,7 +432,7 @@ export async function generatePlan(
   if (mode === "task") {
     const result = await generateObject({
       model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-      schema: TaskPlanSchema,
+      schema: schemas.task,
       experimental_repairText: repairJson,
       messages: [
         {
@@ -385,7 +442,7 @@ export async function generatePlan(
         },
         {
           role: "system",
-          content: `## Capabilities\n\n${getCapabilitiesSection()}\n\n## User's Connected Services\n\n${integrationsXml}`,
+          content: `## Capabilities\n\n${getCapabilitiesSection(dynamicServers)}\n\n## User's Connected Services\n\n${integrationsXml}`,
         },
         { role: "system", content: `Current date: ${getTodaysDate()}` },
         { role: "user", content: userMessage },
@@ -395,12 +452,17 @@ export async function generatePlan(
     });
 
     const plan = result.object.plan;
-    return { workspace: plan.workspace, signals: [], agents: assignKebabIds(plan.agents) };
+    return {
+      workspace: plan.workspace,
+      signals: [],
+      agents: assignKebabIds(plan.agents),
+      dynamicServers,
+    };
   }
 
   const result = await generateObject({
     model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-    schema: WorkspacePlanSchema,
+    schema: schemas.workspace,
     experimental_repairText: repairJson,
     messages: [
       {
@@ -410,7 +472,7 @@ export async function generatePlan(
       },
       {
         role: "system",
-        content: `## Capabilities\n\n${getCapabilitiesSection()}\n\n## User's Connected Services\n\n${integrationsXml}`,
+        content: `## Capabilities\n\n${getCapabilitiesSection(dynamicServers)}\n\n## User's Connected Services\n\n${integrationsXml}`,
       },
       { role: "system", content: `Current date: ${getTodaysDate()}` },
       { role: "user", content: userMessage },
@@ -424,5 +486,6 @@ export async function generatePlan(
     workspace: phase1.workspace,
     signals: assignKebabIds(phase1.signals),
     agents: assignKebabIds(phase1.agents),
+    dynamicServers,
   };
 }

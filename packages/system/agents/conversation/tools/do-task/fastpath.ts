@@ -39,6 +39,7 @@ export function isFastpathEligible(
 
   if (agent.bundledId) return true;
   if (agent.mcpServers && agent.mcpServers.length > 0) return true;
+  if (agent.capabilities.length === 0) return true;
 
   return false;
 }
@@ -71,7 +72,7 @@ export function buildFastpathStep(agent: Agent, intent: string): EnhancedTaskSte
     agentId: agent.bundledId ?? agent.name,
     description: intent,
     executionType: agent.bundledId ? "agent" : "llm",
-    needs: agent.needs,
+    capabilities: agent.capabilities,
     friendlyDescription: agent.description,
   };
 }

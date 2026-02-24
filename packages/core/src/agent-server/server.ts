@@ -203,7 +203,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       toolName,
       agentId: agent.id,
       displayName: agent.displayName,
-      domains: agent.expertise.domains,
       capabilities: agent.expertise,
       hasStructuredInput: !!agent.inputSchema,
     });

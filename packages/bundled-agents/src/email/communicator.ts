@@ -34,12 +34,11 @@ export const emailAgent = createAgent<string, EmailOutput>({
   displayName: "Email",
   version: "1.0.0",
   description:
-    "Compose and send email notifications via SendGrid. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
+    "Send emails via SendGrid API. Composes HTML email from provided data/context with template support and file attachments. USE FOR: sending notification emails, status updates, reports, or alerts.",
   constraints:
-    "Recipients restricted to authenticated user's email or same organization domain. External recipients are automatically redirected to sender. Single recipient only - no CC, BCC, or multi-send supported.",
+    "SEND ONLY via SendGrid. Cannot read, search, or access any email inbox. For reading Gmail, use the google-gmail MCP server. Recipients restricted to authenticated user's email or same organization domain. Single recipient only — no CC, BCC, or multi-send.",
   outputSchema: EmailOutputSchema,
   expertise: {
-    domains: ["email", "notifications", "sendgrid", "messaging"],
     examples: [
       "Send me an email summary of today's meeting notes",
       "Email me a reminder about the 2pm deadline",

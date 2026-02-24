@@ -4,6 +4,10 @@ import { z } from "zod";
  * Credential binding resolved during workspace planning.
  * Each binding maps one MCP server or agent field to one resolved credential.
  * Created by workspace-planner, applied by fsm-workspace-creator.
+ *
+ * Note: `@atlas/schemas/workspace` defines a flat variant with generic `targetId`.
+ * Both schemas represent the same concept — planner uses `serverId`/`agentId` fields,
+ * workspace configs use `targetId`.
  */
 const MCPCredentialBindingSchema = z.object({
   targetType: z.literal("mcp"),
@@ -111,10 +115,10 @@ export const WorkspacePlanSchema = z.object({
         .describe(
           "What this agent accomplishes and how it works. 1-2 sentences. Example: 'Monitors Nike.com product catalog by scraping product pages and comparing against known items to identify new shoe releases'",
         ),
-      needs: z
+      capabilities: z
         .array(z.string())
         .describe(
-          "High-level capabilities this agent requires. Use generic categories ('web-access', 'notifications', 'data-storage', 'email') unless referring to specific brands/services ('google-calendar', 'slack', 'discord', 'github').",
+          "Capability IDs from the bundled agents or MCP servers registry. Empty array when built-in tools suffice.",
         ),
       configuration: z
         .record(z.string(), z.unknown())

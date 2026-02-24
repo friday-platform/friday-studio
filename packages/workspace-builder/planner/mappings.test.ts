@@ -60,7 +60,7 @@ function makeAgent(overrides: Partial<Agent> & { id: string }): Agent {
     id: overrides.id,
     name: overrides.name ?? "Test Agent",
     description: overrides.description ?? `Agent ${overrides.id}`,
-    needs: overrides.needs ?? [],
+    capabilities: overrides.capabilities ?? [],
     configuration: overrides.configuration,
   };
 }

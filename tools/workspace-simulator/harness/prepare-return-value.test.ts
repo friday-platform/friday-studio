@@ -43,13 +43,13 @@ function buildPlan(): WorkspaceBlueprint {
         id: "order-agent",
         name: "Order Processor",
         description: "Processes order data",
-        needs: ["orders"],
+        capabilities: ["orders"],
       },
       {
         id: "invoice-agent",
         name: "Invoice Sender",
         description: "Sends invoices",
-        needs: ["email"],
+        capabilities: ["email"],
       },
     ],
     jobs: [

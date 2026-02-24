@@ -9,7 +9,6 @@ const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-calendar",
     name: "Google Calendar",
-    domains: ["google-calendar", "calendar", "gcal", "events", "schedule"],
     urlDomains: ["calendar.google.com"],
     description:
       "Full Google Calendar management via OAuth - list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
@@ -19,17 +18,15 @@ const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-gmail",
     name: "Gmail",
-    domains: ["google-gmail", "gmail", "email", "inbox"],
     urlDomains: ["mail.google.com"],
     description:
-      "Full Gmail management via OAuth - search messages, read content and attachments, send emails, create drafts, manage labels and filters, batch operations",
+      "Read and manage Gmail — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
-      "Requires OAuth. Use for reading inbox, searching messages, sending emails, creating drafts, managing labels/filters. For simple notifications without OAuth, use bundled email agent instead.",
+      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead.",
   },
   {
     id: "google-drive",
     name: "Google Drive",
-    domains: ["google-drive", "drive", "gdrive", "files", "storage"],
     urlDomains: ["drive.google.com"],
     description:
       "Full Google Drive management via OAuth - search files, list folders, create/update files, manage sharing and permissions, get download URLs",
@@ -39,7 +36,6 @@ const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-docs",
     name: "Google Docs",
-    domains: ["google-docs", "docs", "documents"],
     urlDomains: ["docs.google.com"],
     description:
       "Full Google Docs management via OAuth - search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
@@ -49,12 +45,11 @@ const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-sheets",
     name: "Google Sheets",
-    domains: ["google-sheets", "sheets", "spreadsheet", "spreadsheets"],
     urlDomains: ["docs.google.com"],
     description:
-      "Full Google Sheets management via OAuth - list spreadsheets, read/write values, create sheets, format cells, conditional formatting",
+      "Full Google Sheets management via OAuth — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
     constraints:
-      "Requires OAuth. Use for spreadsheet data, formulas, formatting, and conditional formatting.",
+      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead.",
   },
 ];
 
@@ -75,7 +70,6 @@ function createGoogleWorkspaceEntry(
   return {
     id: spec.id,
     name: spec.name,
-    domains: [...spec.domains],
     urlDomains: [...spec.urlDomains],
     description: spec.description,
     constraints: spec.constraints,
@@ -100,14 +94,17 @@ const googleWorkspaceEntries = Object.fromEntries(
 /**
  * Consolidated MCP servers registry
  * Merges data from both blessedMCPServers and mcpServersRegistry
- * with enhanced metadata including domains and requiredConfig
+ * with enhanced metadata including requiredConfig
  */
 export const mcpServersRegistry: MCPServersRegistry = {
   servers: {
     github: {
       id: "github",
       name: "GitHub",
-      domains: ["github"],
+      description:
+        "GitHub API via MCP — read and manage repositories, pull requests, issues, commits, code search, and reviews. USE FOR: listing merged PRs, reading issue threads, searching code, creating issues, commenting on PRs, reviewing repository activity.",
+      constraints:
+        "GitHub API operations only. Cannot clone repos, edit code files, run builds, or execute shell commands. For codebase work (cloning, editing files, running tests, debugging code), use the claude-code agent.",
       urlDomains: ["github.com", "githubusercontent.com"],
       source: "static",
       securityRating: "high",
@@ -123,7 +120,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     hubspot: {
       id: "hubspot",
       name: "HubSpot",
-      domains: ["hubspot"],
+      description:
+        "HubSpot CRM via MCP — manage contacts, companies, deals, tickets, and marketing campaigns. Read and update CRM records, track sales pipelines, and automate marketing workflows.",
+      constraints: "Requires OAuth. CRM and marketing operations only.",
       urlDomains: ["hubspot.com", "app.hubspot.com"],
       source: "static",
       securityRating: "high",
@@ -139,7 +138,10 @@ export const mcpServersRegistry: MCPServersRegistry = {
     azure: {
       id: "azure",
       name: "Azure Services",
-      domains: ["azure"],
+      description:
+        "Azure cloud management — subscriptions, resource groups, Key Vault, Storage, SQL, Cosmos DB, and monitoring. Read and manage Azure infrastructure resources.",
+      constraints:
+        "Requires Azure service principal credentials. Infrastructure management only — not for deploying code or running builds.",
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -181,7 +183,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     stripe: {
       id: "stripe",
       name: "Stripe Payments",
-      domains: ["stripe"],
+      description:
+        "Stripe payment processing — manage customers, invoices, subscriptions, and account info. Read billing data and create payment records.",
+      constraints: "Requires Stripe API secret key. Financial data operations only.",
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -211,7 +215,10 @@ export const mcpServersRegistry: MCPServersRegistry = {
     playwright: {
       id: "playwright",
       name: "Playwright Browser Automation",
-      domains: ["playwright", "browser", "web-scraping", "scraping"],
+      description:
+        "Browser automation via Playwright — navigate pages, click elements, fill forms, take screenshots, extract text from JS-rendered content.",
+      constraints:
+        "For general web research (searching for information), use the bundled research agent. Use Playwright for page interaction, form filling, JS-rendered scraping, and browser automation.",
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -227,7 +234,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     time: {
       id: "time",
       name: "Time & Timezone",
-      domains: ["timekeeping", "timezone-conversion"],
+      description:
+        "Time and timezone utilities — get current time in any timezone, convert between timezones. Useful when tasks need precise time-aware scheduling or coordination across regions.",
+      constraints: "Read-only time queries. No scheduling or calendar operations.",
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -238,7 +247,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     weather: {
       id: "weather",
       name: "Weather Data Service",
-      domains: ["weather"],
+      description:
+        "Weather forecasts and conditions — get hourly and daily weather data for any location via AccuWeather.",
+      constraints: "Requires AccuWeather API key. Read-only weather data.",
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -254,7 +265,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "google-genai-toolbox": {
       id: "google-genai-toolbox",
       name: "Google GenAI Toolbox",
-      domains: ["google-genai"],
+      description:
+        "Google GenAI Toolbox — load custom tool definitions from a YAML config, execute database queries, and manage tool schemas. For custom AI tool pipelines on Google Cloud.",
+      constraints: "Requires toolbox config YAML. Custom tool execution only.",
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -278,7 +291,10 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "google-analytics": {
       id: "google-analytics",
       name: "Google Analytics 4",
-      domains: ["google-analytics"],
+      description:
+        "Google Analytics 4 reporting — run analytics reports, get page views, active users, and traffic data for websites and apps.",
+      constraints:
+        "Requires Google service account credentials and GA4 property ID. Read-only analytics data.",
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -313,7 +329,10 @@ export const mcpServersRegistry: MCPServersRegistry = {
     auth0: {
       id: "auth0",
       name: "Auth0 Identity Management",
-      domains: ["auth0"],
+      description:
+        "Auth0 identity management — list and inspect applications, view authentication logs, and read tenant settings. Monitor auth health and debug login issues.",
+      constraints:
+        "Read-only identity management. Cannot modify auth configurations or user accounts.",
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -332,7 +351,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     linear: {
       id: "linear",
       name: "Linear Project Management",
-      domains: ["linear"],
+      description:
+        "Linear project management — read and manage issues, projects, cycles, and teams. Create issues, update status, track sprints, and search across the workspace.",
+      constraints: "Requires OAuth. Project management operations only.",
       urlDomains: ["linear.app"],
       source: "static",
       securityRating: "high",
@@ -348,7 +369,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     atlassian: {
       id: "atlassian",
       name: "Atlassian (Jira & Confluence)",
-      domains: ["jira", "atlassian", "confluence"],
+      description:
+        "Jira and Confluence via Atlassian MCP — manage Jira issues, boards, and sprints; read and edit Confluence pages and spaces.",
+      constraints: "Requires OAuth. Jira and Confluence operations only.",
       urlDomains: ["atlassian.net", "atlassian.com", "jira.com", "confluence.com"],
       source: "static",
       securityRating: "high",
@@ -370,7 +393,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     trello: {
       id: "trello",
       name: "Trello Board Management",
-      domains: ["trello"],
+      description:
+        "Trello board management — list boards, get cards and lists, create cards, and update card details. Lightweight project tracking and task management.",
+      constraints: "Requires Trello API key and token. Board and card operations only.",
       urlDomains: ["trello.com"],
       source: "static",
       securityRating: "medium",
@@ -396,7 +421,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     notion: {
       id: "notion",
       name: "Notion Workspace",
-      domains: ["notion"],
+      description:
+        "Notion workspace management — read and edit pages, databases, and blocks. Search content, create pages, and manage workspace structure.",
+      constraints: "Requires OAuth. Notion workspace operations only.",
       urlDomains: ["notion.so", "notion.site"],
       source: "static",
       securityRating: "high",
@@ -412,7 +439,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     rss: {
       id: "rss",
       name: "RSS Feed Reader",
-      domains: ["rss"],
+      description:
+        "RSS feed reader — fetch and parse RSS/Atom feeds from any URL. Monitor news, blogs, and content updates.",
+      constraints: "Read-only feed fetching. No authentication required.",
       source: "static",
       securityRating: "low",
       configTemplate: {
@@ -426,7 +455,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     posthog: {
       id: "posthog",
       name: "PostHog Analytics & Feature Flags",
-      domains: ["posthog"],
+      description:
+        "PostHog product analytics and feature flags — query events, view dashboards, manage feature flags, and analyze user behavior.",
+      constraints: "Requires OAuth. Analytics and feature flag operations only.",
       urlDomains: ["posthog.com", "app.posthog.com", "eu.posthog.com", "us.posthog.com"],
       source: "static",
       securityRating: "high",
@@ -440,7 +471,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
     sentry: {
       id: "sentry",
       name: "Sentry Error Tracking",
-      domains: ["sentry"],
+      description:
+        "Sentry error tracking — search issues, view error details and stack traces, analyze performance traces, and manage issue status. Debug production errors and monitor application health.",
+      constraints: "Requires OAuth. Error tracking and performance monitoring only.",
       urlDomains: ["sentry.io", "sentry.dev"],
       source: "static",
       securityRating: "high",
@@ -456,7 +489,10 @@ export const mcpServersRegistry: MCPServersRegistry = {
     discord: {
       id: "discord",
       name: "Discord Bot Integration",
-      domains: ["discord", "chat", "messaging", "community"],
+      description:
+        "Discord bot integration — list servers, read messages, send messages, and get server info. Communicate via Discord channels and manage bot interactions.",
+      constraints:
+        "Requires Discord bot token with Message Content Intent. Bot-level access only — cannot manage server settings or roles.",
       urlDomains: ["discord.com", "discord.gg"],
       source: "static",
       securityRating: "medium",
@@ -490,29 +526,3 @@ export const mcpServersRegistry: MCPServersRegistry = {
   },
   metadata: { version: "2.0.0", lastUpdated: "2025-01-27" },
 };
-
-let _cachedIntegrationsPrompt: string | null = null;
-
-/**
- * Returns a formatted string of available integrations for use in LLM prompts.
- * Lists each server with its recognized keywords (domains).
- *
- * Example output:
- * - Google Calendar: google-calendar, calendar, gcal
- * - Slack: slack
- *
- * Scaling: ~40 chars per server, ~800 chars for 20 servers.
- * For 100+ servers, consider semantic search or category-based injection.
- *
- * @returns List of integration names with their keywords
- */
-export function getAvailableIntegrationsPrompt(): string {
-  if (_cachedIntegrationsPrompt) return _cachedIntegrationsPrompt;
-  const lines: string[] = [];
-  for (const server of Object.values(mcpServersRegistry.servers)) {
-    lines.push(`- ${server.name}: ${server.domains.join(", ")}`);
-  }
-  lines.sort((a, b) => a.localeCompare(b));
-  _cachedIntegrationsPrompt = lines.join("\n");
-  return _cachedIntegrationsPrompt;
-}

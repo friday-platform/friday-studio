@@ -33,19 +33,19 @@
       "id": "ticket-reader",
       "name": "Ticket Reader",
       "description": "Reads and parses a support ticket to extract the requested changes and acceptance criteria",
-      "needs": ["ticket-system-access", "text-extraction"]
+      "capabilities": ["linear"]
     },
     {
       "id": "claude-code",
       "name": "Code Implementer",
       "description": "Implements the code changes described in the ticket using Claude Code with sandboxed filesystem access",
-      "needs": ["code-generation", "file-operations"]
+      "capabilities": ["claude-code"]
     },
     {
       "id": "ticket-updater",
       "name": "Ticket Updater",
       "description": "Updates the ticket with implementation results and status",
-      "needs": ["ticket-system-access", "status-reporting"]
+      "capabilities": ["linear"]
     }
   ],
   "jobs": [

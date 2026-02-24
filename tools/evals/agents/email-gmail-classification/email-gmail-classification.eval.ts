@@ -36,7 +36,7 @@ const adapter = new AgentContextAdapter();
 
 /** Structured result from the full classification pipeline. */
 interface ClassificationPipelineResult {
-  plan: { agents: { id: string; name: string; needs: string[] }[] };
+  plan: { agents: { id: string; name: string; capabilities: string[] }[] };
   classification: {
     agentId: string;
     agentName: string;
@@ -72,10 +72,12 @@ async function runClassificationPipeline(
   const plan = WorkspacePlanSchema.parse(artifactResponse.data.artifact.data.data);
 
   const classified: ClassifiedAgent[] = classifyAgents(plan);
-  const mcpServers: MCPServerResult[] = await generateMCPServers(plan.agents, plan.credentials);
+  const mcpServers: MCPServerResult[] = generateMCPServers(plan.agents, plan.credentials);
 
   return {
-    plan: { agents: plan.agents.map((a) => ({ id: a.id, name: a.name, needs: a.needs })) },
+    plan: {
+      agents: plan.agents.map((a) => ({ id: a.id, name: a.name, capabilities: a.capabilities })),
+    },
     classification: classified.map((c) => ({
       agentId: c.id,
       agentName: c.name,

@@ -49,7 +49,7 @@ describe("generateOutputSchemas", () => {
           id: "csv-data-analyst",
           name: "CSV Data Analyst",
           description: "Analyzes CSV data",
-          needs: ["data-analysis"],
+          capabilities: ["data-analysis"],
           bundledId: "data-analyst",
         },
       ];
@@ -77,7 +77,7 @@ describe("generateOutputSchemas", () => {
 
     it("resolves agent by primary id when step.agentId matches agent.id", async () => {
       const agents = [
-        { id: "reporter", name: "Reporter", description: "Reports findings", needs: [] },
+        { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
       const steps = [
         { id: "s1", agentId: "reporter", description: "Write report", depends_on: [] },
@@ -109,12 +109,12 @@ describe("generateOutputSchemas", () => {
     it("does not overwrite primary id when bundledId collides", async () => {
       // Two agents: one has id "data-analyst", the other has bundledId "data-analyst"
       const agents = [
-        { id: "data-analyst", name: "Primary Analyst", description: "Primary", needs: [] },
+        { id: "data-analyst", name: "Primary Analyst", description: "Primary", capabilities: [] },
         {
           id: "csv-analyst",
           name: "CSV Analyst",
           description: "CSV",
-          needs: [],
+          capabilities: [],
           bundledId: "data-analyst",
         },
       ];
@@ -143,7 +143,7 @@ describe("generateOutputSchemas", () => {
 
     it("skips steps with no matching agent", async () => {
       const agents = [
-        { id: "reporter", name: "Reporter", description: "Reports findings", needs: [] },
+        { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
       // Step references an agent that doesn't exist in the agents array
       const steps = [
@@ -161,7 +161,9 @@ describe("generateOutputSchemas", () => {
 
   describe("LLM schema generation", () => {
     it("generates single_object schema via LLM", async () => {
-      const agents = [{ id: "writer", name: "Writer", description: "Writes content", needs: [] }];
+      const agents = [
+        { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
+      ];
       const steps = [{ id: "s1", agentId: "writer", description: "Write article", depends_on: [] }];
 
       mockRegistry.mockReturnValue({});
@@ -190,7 +192,12 @@ describe("generateOutputSchemas", () => {
 
     it("generates array_of_objects schema via LLM", async () => {
       const agents = [
-        { id: "searcher", name: "Searcher", description: "Searches things", needs: ["research"] },
+        {
+          id: "searcher",
+          name: "Searcher",
+          description: "Searches things",
+          capabilities: ["research"],
+        },
       ];
       const steps = [{ id: "s1", agentId: "searcher", description: "Search news", depends_on: [] }];
 
@@ -229,7 +236,9 @@ describe("generateOutputSchemas", () => {
 
     // Assumes MAX_RETRIES = 3 (unexported const in schemas.ts)
     it("retries on failure up to MAX_RETRIES", async () => {
-      const agents = [{ id: "writer", name: "Writer", description: "Writes content", needs: [] }];
+      const agents = [
+        { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
+      ];
       const steps = [{ id: "s1", agentId: "writer", description: "Write", depends_on: [] }];
 
       mockRegistry.mockReturnValue({});
@@ -251,7 +260,9 @@ describe("generateOutputSchemas", () => {
 
     // Assumes MAX_RETRIES = 3 (unexported const in schemas.ts)
     it("throws after exhausting retries", async () => {
-      const agents = [{ id: "writer", name: "Writer", description: "Writes content", needs: [] }];
+      const agents = [
+        { id: "writer", name: "Writer", description: "Writes content", capabilities: [] },
+      ];
       const steps = [{ id: "s1", agentId: "writer", description: "Write", depends_on: [] }];
 
       mockRegistry.mockReturnValue({});

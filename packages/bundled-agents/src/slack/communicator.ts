@@ -40,10 +40,11 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
   displayName: "Slack",
   version: "1.0.0",
   description:
-    "Post messages to Slack channels and DMs; search message history across channels, threads, and conversations; manage channels and users via slack-mcp-server",
+    "Post messages to Slack channels and DMs via slack-mcp-server. Reads artifacts and formats them as Slack mrkdwn before posting. USE FOR: sending Slack messages, posting artifacts/summaries to channels, channel notifications.",
+  constraints:
+    "Requires Slack OAuth token. Posts and reads via slack-mcp-server only. Cannot send email — use the email agent or google-gmail MCP server for email.",
   outputSchema: SlackOutputSchema,
   expertise: {
-    domains: ["slack", "slack-posting", "slack-notifications", "notifications", "messaging"],
     examples: [
       "Post update to #general: Shipping v1.2 today",
       "Send this artifact to #product: {{artifact_id}}",

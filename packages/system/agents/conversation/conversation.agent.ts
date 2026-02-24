@@ -21,6 +21,8 @@ import { client, parseResult } from "@atlas/client/v2";
 import { OutlineRefsResultSchema } from "@atlas/core";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { getDefaultProviderOpts, registry, smallLLM, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
@@ -228,7 +230,7 @@ function getSystemPrompt(
   agentsSection?: string,
   integrationsSection?: string,
   skillsSection?: string,
-  supportedDomainsSection?: string,
+  capabilitiesSection?: string,
   userIdentitySection?: string,
 ): string {
   let prompt = SYSTEM_PROMPT;
@@ -259,8 +261,8 @@ function getSystemPrompt(
     prompt = `${prompt}\n\n${skillsSection}`;
   }
 
-  if (supportedDomainsSection) {
-    prompt = `${prompt}\n\n${supportedDomainsSection}`;
+  if (capabilitiesSection) {
+    prompt = `${prompt}\n\n${capabilitiesSection}`;
   }
 
   // User identity at end - context about who is being served
@@ -333,7 +335,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
   description: "Interactive conversation agent for workspace collaboration",
   // Expose /agents endpoint as an MCP server for tool access
 
-  expertise: { domains: ["conversation"], examples: [] },
+  expertise: { examples: [] },
   useWorkspaceSkills: true,
 
   /**
@@ -551,10 +553,19 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           { workspaces, jobsByWorkspace, signalsByWorkspace },
           linkSummary,
           userIdentitySection,
+          dynamicServers,
         ] = await Promise.all([
           fetchWorkspaceContext(logger),
           fetchLinkSummary(logger),
           fetchUserIdentitySection(logger),
+          getMCPRegistryAdapter()
+            .then((adapter) => adapter.list())
+            .catch((error): MCPServerMetadata[] => {
+              logger.warn("Failed to load dynamic MCP servers for capabilities section", {
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return [];
+            }),
         ]);
 
         // Format sections from fetched data
@@ -568,8 +579,8 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           ? formatIntegrationsSection(linkSummary)
           : undefined;
 
-        // Generate capabilities section from bundled agents + MCP registry
-        const supportedDomainsSection = getCapabilitiesSection();
+        // Generate capabilities section from bundled agents + MCP registry + dynamic servers
+        const capabilitiesSection = getCapabilitiesSection(dynamicServers);
 
         // Create link auth tool if Link is available with provider-constrained enum
         const connectServiceTool: AtlasTools = {};
@@ -736,7 +747,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           agentsSection,
           integrationsSection,
           skillsSection,
-          supportedDomainsSection,
+          capabilitiesSection,
           userIdentitySection,
         );
 
@@ -848,7 +859,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                     agentsSection,
                     integrationsSection,
                     skillsSection,
-                    supportedDomainsSection,
+                    capabilitiesSection,
                     userIdentitySection,
                   ),
                 },

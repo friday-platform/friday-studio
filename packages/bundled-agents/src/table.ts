@@ -30,10 +30,11 @@ export const tableAgent = createAgent<string, TableAgentResult>({
   displayName: "Table Generator",
   version: "1.0.0",
   description:
-    "Generate structured tables with headers and rows from natural language descriptions",
+    "Generates a static table artifact from LLM knowledge. USE FOR: comparison charts, reference tables, structured lists for presentation.",
+  constraints:
+    "Generates from LLM knowledge only. Cannot query databases or read files. For tables from actual data, use data-analyst (artifacts) or no capability with resource_read (workspace tables).",
   outputSchema: TableOutputSchema,
   expertise: {
-    domains: ["data", "tables", "visualization"],
     examples: [
       "Create a table of the top 5 programming languages with columns for name, year created, and creator",
       "Generate a comparison table of cloud providers with pricing and features",

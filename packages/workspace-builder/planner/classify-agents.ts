@@ -1,37 +1,30 @@
 /**
- * Classifies Phase 1 agents as bundled or LLM-based.
+ * Classifies agents via direct registry lookup.
  *
- * Three-tier resolution: direct MCP server ID match, bundled agent keyword
- * matching, then MCP server fallback. Collects clarifications for ambiguous
- * or unmatched needs and config requirements for resolved integrations.
+ * Each capability ID is looked up in the bundled agents registry and MCP
+ * servers registry. No keyword extraction or fuzzy matching — IDs are
+ * exact matches against registry keys.
  */
 
 import type { BundledAgentConfigField } from "@atlas/bundled-agents/registry";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
-import type { MCPServerMatch } from "@atlas/core/mcp-registry/deterministic-matching";
-import {
-  extractKeywordsFromNeed,
-  findFullBundledMatch,
-  findUnmatchedNeeds,
-  mapNeedToMCPServers,
-  matchBundledAgents,
-} from "@atlas/core/mcp-registry/deterministic-matching";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Agent } from "../types.ts";
 
 // ---------------------------------------------------------------------------
 // Clarification types
 // ---------------------------------------------------------------------------
 
-/** Classification issue for a single agent need. */
+/** Classification issue for a single agent. */
 export type AgentClarification = {
   agentId: string;
   agentName: string;
-  need: string;
+  capability: string;
   issue:
-    | { type: "ambiguous-bundled"; candidates: Array<{ id: string; name: string }> }
-    | { type: "ambiguous-mcp"; candidates: Array<{ serverId: string; name: string }> }
-    | { type: "no-match" };
+    | { type: "unknown-capability"; capabilityId: string }
+    | { type: "mixed-bundled-mcp" }
+    | { type: "multiple-bundled"; bundledIds: string[] };
 };
 
 /** A single required config field for an integration. */
@@ -57,71 +50,15 @@ export type ClassifyResult = {
   configRequirements: ConfigRequirement[];
 };
 
+/** Options for classifyAgents. */
+export type ClassifyOpts = {
+  /** Runtime-registered MCP servers from KV (not in the static registry). */
+  dynamicServers?: MCPServerMetadata[];
+};
+
 // ---------------------------------------------------------------------------
-// Internals
+// Config requirement extraction
 // ---------------------------------------------------------------------------
-
-const mcpServerIds = new Set(Object.keys(mcpServersRegistry.servers).map((id) => id.toLowerCase()));
-
-/**
- * Returns true when any of the agent's raw needs exactly reference an MCP
- * server ID. In that case the agent should stay as an LLM agent wired to
- * that MCP server rather than being classified as a bundled agent.
- *
- * @param needs - Original needs from the agent spec
- */
-function needsReferenceMCPServer(needs: string[]): boolean {
-  return needs.some((n) =>
-    mcpServerIds.has(
-      n
-        .toLowerCase()
-        .trim()
-        .replace(/[\s_]+/g, "-"),
-    ),
-  );
-}
-
-/**
- * Resolves MCP servers for an agent's needs and collects clarifications.
- * For each need, calls `mapNeedToMCPServers`:
- * - 1 match: collect the server
- * - 2+ matches: emit ambiguous-mcp clarification
- * - 0 matches: tracked by caller via findUnmatchedNeeds
- */
-async function resolveMCPServersWithClarifications(
-  agent: Agent,
-  needs: string[],
-): Promise<{
-  servers: Array<{ serverId: string; name: string }>;
-  clarifications: AgentClarification[];
-}> {
-  const seen = new Set<string>();
-  const servers: Array<{ serverId: string; name: string }> = [];
-  const clarifications: AgentClarification[] = [];
-
-  for (const need of needs) {
-    const matches = await mapNeedToMCPServers(need);
-    if (matches.length === 1 && matches[0]) {
-      const { serverId, name } = matches[0];
-      if (!seen.has(serverId)) {
-        seen.add(serverId);
-        servers.push({ serverId, name });
-      }
-    } else if (matches.length > 1) {
-      clarifications.push({
-        agentId: agent.id,
-        agentName: agent.name,
-        need,
-        issue: {
-          type: "ambiguous-mcp",
-          candidates: matches.map((m) => ({ serverId: m.serverId, name: m.name })),
-        },
-      });
-    }
-  }
-
-  return { servers, clarifications };
-}
 
 /**
  * Extracts config requirements for a bundled agent from the registry.
@@ -156,14 +93,16 @@ function extractBundledConfigRequirements(
 }
 
 /**
- * Extracts config requirements for an MCP server from the registry.
+ * Extracts config requirements for an MCP server.
+ * Checks static registry first, falls back to provided metadata (for dynamic servers).
  * Cross-references `requiredConfig` keys with `configTemplate.env` to detect link-type credentials.
  */
 function extractMCPConfigRequirements(
   agent: Agent,
   serverId: string,
+  dynamicById?: Map<string, MCPServerMetadata>,
 ): ConfigRequirement | undefined {
-  const serverMeta = mcpServersRegistry.servers[serverId];
+  const serverMeta = mcpServersRegistry.servers[serverId] ?? dynamicById?.get(serverId);
   if (!serverMeta?.requiredConfig?.length) return undefined;
 
   const envEntries = serverMeta.configTemplate.env ?? {};
@@ -172,13 +111,9 @@ function extractMCPConfigRequirements(
     const envDef = envEntries[field.key];
     // Check if the env entry is a link credential ref (has `from: "link"`)
     if (envDef && typeof envDef === "object" && "from" in envDef && envDef.from === "link") {
-      const linkRef = envDef as { from: "link"; provider: string; key: string };
-      return {
-        key: field.key,
-        description: field.description,
-        provider: linkRef.provider,
-        source: "link" as const,
-      };
+      const provider =
+        "provider" in envDef && typeof envDef.provider === "string" ? envDef.provider : undefined;
+      return { key: field.key, description: field.description, provider, source: "link" as const };
     }
     return { key: field.key, description: field.description, source: "env" as const };
   });
@@ -196,106 +131,115 @@ function extractMCPConfigRequirements(
 // ---------------------------------------------------------------------------
 
 /**
- * Classifies agents as bundled or MCP-backed using a three-tier approach:
+ * Classifies agents via direct registry lookup on each capability ID.
  *
- * 1. **MCP server ID guard** — if any need references an MCP server ID directly
- *    (e.g. "google-gmail"), resolve MCP servers and skip bundled matching.
- * 2. **Bundled matching** — extract keywords, match against bundled agent registry.
- *    If exactly one bundled match, set `bundledId`.
- * 3. **MCP fallback** — if still unclassified, try MCP server matching as last resort.
+ * For each capability in an agent's `capabilities` array:
+ * - Bundled agents registry hit → mark as bundled
+ * - Static MCP servers registry hit → add to mcpServers
+ * - Dynamic MCP server hit (from opts.dynamicServers) → add to mcpServers
+ * - No match → emit unknown-capability clarification
  *
- * Collects clarifications for ambiguous or unmatched needs.
+ * If an agent has both bundled and MCP capabilities, emits a
+ * mixed-bundled-mcp clarification (mutual exclusivity constraint).
  *
  * @param agents - Phase 1 agents array
+ * @param opts - Optional dynamic servers from KV registry
  * @returns Classified agents and any clarification issues found
  */
-export async function classifyAgents(agents: Agent[]): Promise<ClassifyResult> {
+export function classifyAgents(agents: Agent[], opts?: ClassifyOpts): ClassifyResult {
   const clarifications: AgentClarification[] = [];
   const configRequirements: ConfigRequirement[] = [];
 
+  const dynamicById = new Map<string, MCPServerMetadata>();
+  for (const server of opts?.dynamicServers ?? []) {
+    dynamicById.set(server.id, server);
+  }
+
   for (const agent of agents) {
-    // Tier 1: Needs reference an MCP server ID directly → resolve MCP servers, skip bundled
-    if (needsReferenceMCPServer(agent.needs)) {
-      const result = await resolveMCPServersWithClarifications(agent, agent.needs);
-      clarifications.push(...result.clarifications);
-      if (result.servers.length > 0) {
-        agent.mcpServers = result.servers;
-        for (const server of result.servers) {
-          const req = extractMCPConfigRequirements(agent, server.serverId);
-          if (req) configRequirements.push(req);
-        }
+    if (agent.capabilities.length === 0) continue;
+
+    const bundledIds: string[] = [];
+    const mcpServers: Array<{ serverId: string; name: string }> = [];
+    const unknownIds: string[] = [];
+
+    for (const capabilityId of agent.capabilities) {
+      if (bundledAgentsRegistry[capabilityId]) {
+        bundledIds.push(capabilityId);
+        continue;
       }
 
-      // Check for unmatched needs (no bundled, so pass empty array)
-      const mcpMatchesByNeed = new Map<string, MCPServerMatch[]>();
-      for (const n of agent.needs) {
-        mcpMatchesByNeed.set(n, await mapNeedToMCPServers(n));
+      const mcpServer = mcpServersRegistry.servers[capabilityId];
+      if (mcpServer) {
+        mcpServers.push({ serverId: mcpServer.id, name: mcpServer.name });
+        continue;
       }
-      const unmatched = findUnmatchedNeeds(agent.needs, [], mcpMatchesByNeed);
-      for (const need of unmatched) {
+
+      const dynamicServer = dynamicById.get(capabilityId);
+      if (dynamicServer) {
+        mcpServers.push({ serverId: dynamicServer.id, name: dynamicServer.name });
+        continue;
+      }
+
+      unknownIds.push(capabilityId);
+    }
+
+    if (bundledIds.length > 0 && mcpServers.length > 0) {
+      // Emit unknown-capability clarifications first so users see the full picture
+      for (const capabilityId of unknownIds) {
         clarifications.push({
           agentId: agent.id,
           agentName: agent.name,
-          need,
-          issue: { type: "no-match" },
+          capability: capabilityId,
+          issue: { type: "unknown-capability", capabilityId },
         });
       }
-      continue;
-    }
-
-    // Tier 2: Keyword extraction → bundled agent matching
-    // Uses findFullBundledMatch to ensure ALL needs are covered by a single
-    // bundled agent — prevents partial coverage (e.g. ["email", "gmail"] must
-    // not classify as bundled email when "gmail" isn't covered)
-    const fullMatch = findFullBundledMatch(agent.needs);
-
-    if (fullMatch) {
-      agent.bundledId = fullMatch.agentId;
-      const req = extractBundledConfigRequirements(agent, fullMatch.agentId);
-      if (req) configRequirements.push(req);
-      continue;
-    }
-
-    // Check for ambiguous matches to report clarifications
-    const bundledMatches = matchBundledAgents(agent.needs.flatMap(extractKeywordsFromNeed));
-
-    if (bundledMatches.length > 1) {
-      // Ambiguous bundled — report per-agent, not per-need
       clarifications.push({
         agentId: agent.id,
         agentName: agent.name,
-        need: agent.needs.join(", "),
-        issue: {
-          type: "ambiguous-bundled",
-          candidates: bundledMatches.map((m) => ({ id: m.agentId, name: m.name })),
-        },
+        capability: agent.capabilities.join(", "),
+        issue: { type: "mixed-bundled-mcp" },
       });
-      // Still fall through to MCP fallback — might resolve some needs
+      continue;
     }
 
-    // Tier 3: No bundled match → try MCP server matching as fallback
-    const result = await resolveMCPServersWithClarifications(agent, agent.needs);
-    clarifications.push(...result.clarifications);
-    if (result.servers.length > 0) {
-      agent.mcpServers = result.servers;
-      for (const server of result.servers) {
-        const req = extractMCPConfigRequirements(agent, server.serverId);
+    if (bundledIds.length > 1) {
+      // Emit unknown-capability clarifications first so users see the full picture
+      for (const capabilityId of unknownIds) {
+        clarifications.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          capability: capabilityId,
+          issue: { type: "unknown-capability", capabilityId },
+        });
+      }
+      clarifications.push({
+        agentId: agent.id,
+        agentName: agent.name,
+        capability: agent.capabilities.join(", "),
+        issue: { type: "multiple-bundled", bundledIds },
+      });
+      continue;
+    }
+
+    const singleBundled = bundledIds.length === 1 ? bundledIds[0] : undefined;
+    if (singleBundled) {
+      agent.bundledId = singleBundled;
+      const req = extractBundledConfigRequirements(agent, singleBundled);
+      if (req) configRequirements.push(req);
+    } else if (mcpServers.length > 0) {
+      agent.mcpServers = mcpServers;
+      for (const server of mcpServers) {
+        const req = extractMCPConfigRequirements(agent, server.serverId, dynamicById);
         if (req) configRequirements.push(req);
       }
     }
 
-    // Check for fully unmatched needs
-    const mcpMatchesByNeed = new Map<string, Awaited<ReturnType<typeof mapNeedToMCPServers>>>();
-    for (const n of agent.needs) {
-      mcpMatchesByNeed.set(n, await mapNeedToMCPServers(n));
-    }
-    const unmatched = findUnmatchedNeeds(agent.needs, bundledMatches, mcpMatchesByNeed);
-    for (const need of unmatched) {
+    for (const capabilityId of unknownIds) {
       clarifications.push({
         agentId: agent.id,
         agentName: agent.name,
-        need,
-        issue: { type: "no-match" },
+        capability: capabilityId,
+        issue: { type: "unknown-capability", capabilityId },
       });
     }
   }
@@ -352,18 +296,16 @@ export function formatClarifications(clarifications: AgentClarification[]): stri
   for (const [agentId, issues] of byAgent) {
     lines.push(`  ${agentId}:`);
     for (const issue of issues) {
-      if (issue.issue.type === "no-match") {
-        lines.push(`    need "${issue.need}" — no matching integration found`);
-      } else if (issue.issue.type === "ambiguous-bundled") {
-        lines.push(`    needs "${issue.need}" — ambiguous, multiple bundled agents match:`);
-        for (const c of issue.issue.candidates) {
-          lines.push(`      - ${c.id}: ${c.name}`);
-        }
-      } else {
-        lines.push(`    need "${issue.need}" — ambiguous, multiple MCP servers match:`);
-        for (const c of issue.issue.candidates) {
-          lines.push(`      - ${c.serverId}: ${c.name}`);
-        }
+      if (issue.issue.type === "unknown-capability") {
+        lines.push(`    capability "${issue.issue.capabilityId}" — not found in any registry`);
+      } else if (issue.issue.type === "mixed-bundled-mcp") {
+        lines.push(
+          `    capabilities "${issue.capability}" — mixes bundled agent and MCP server IDs`,
+        );
+      } else if (issue.issue.type === "multiple-bundled") {
+        lines.push(
+          `    capabilities "${issue.capability}" — uses multiple bundled agents (${issue.issue.bundledIds.join(", ")}), split into separate agents`,
+        );
       }
     }
   }

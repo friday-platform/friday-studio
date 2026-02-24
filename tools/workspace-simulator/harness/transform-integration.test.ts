@@ -48,13 +48,13 @@ function buildTransformPlan(): WorkspaceBlueprint {
         id: "order-agent",
         name: "Order Processor",
         description: "Processes order data and produces structured output",
-        needs: ["order-processing"],
+        capabilities: ["order-processing"],
       },
       {
         id: "invoice-agent",
         name: "Invoice Sender",
         description: "Sends invoice with computed totals",
-        needs: ["email"],
+        capabilities: ["email"],
       },
     ],
     jobs: [
@@ -176,19 +176,19 @@ function buildCrossDocTransformPlan(): WorkspaceBlueprint {
         id: "rate-agent",
         name: "Rate Fetcher",
         description: "Fetches current tax rates",
-        needs: ["tax-rates"],
+        capabilities: ["tax-rates"],
       },
       {
         id: "order-agent",
         name: "Order Processor",
         description: "Processes order data",
-        needs: ["orders"],
+        capabilities: ["orders"],
       },
       {
         id: "receipt-agent",
         name: "Receipt Generator",
         description: "Generates receipt with computed totals",
-        needs: ["receipts"],
+        capabilities: ["receipts"],
       },
     ],
     jobs: [

@@ -225,7 +225,7 @@ describe("compareRuns", () => {
   });
 
   it("includes metadata.result in improved/regressed entries", () => {
-    const agentResult = { agents: [{ name: "Slack Agent", needs: ["slack"] }] };
+    const agentResult = { agents: [{ name: "Slack Agent", capabilities: ["slack"] }] };
     const before = [
       failing(
         "eval/a",

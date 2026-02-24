@@ -30,19 +30,19 @@
       "id": "fathom-get-transcript",
       "name": "Transcript Fetcher",
       "description": "Fetches the meeting transcript from Fathom",
-      "needs": ["fathom"]
+      "capabilities": ["fathom-get-transcript"]
     },
     {
       "id": "get-summary",
       "name": "Notes Summarizer",
       "description": "Summarizes the transcript into notes with action items",
-      "needs": ["summarization"]
+      "capabilities": ["get-summary"]
     },
     {
       "id": "slack",
       "name": "Notes Distributor",
       "description": "Posts the meeting summary and action items to the team Slack channel",
-      "needs": ["slack"]
+      "capabilities": ["slack"]
     }
   ],
   "jobs": [

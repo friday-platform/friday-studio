@@ -65,7 +65,7 @@ export const workspacePlannerAgent = createAgent<
   version: "1.0.0",
   description:
     "Call when user requests workspace creation or modification. Analyzes requirements and generates a detailed workspace plan as an artifact. Returns planSummary and artifactId. For modifications, include existing artifactId to create a revision.",
-  expertise: { domains: ["Atlas workspaces", "automation planning"], examples: [] },
+  expertise: { examples: [] },
   inputSchema: WorkspacePlannerInputSchema,
 
   handler: async (input, { logger, session, abortSignal }) => {

@@ -29,19 +29,19 @@
       "id": "data-fetcher",
       "name": "Data Fetcher",
       "description": "Fetches data from external APIs",
-      "needs": ["http"]
+      "capabilities": []
     },
     {
       "id": "data-analyst",
       "name": "Data Analyst",
       "description": "Analyzes fetched data and produces summaries",
-      "needs": ["data-analysis"]
+      "capabilities": ["data-analyst"]
     },
     {
       "id": "notifier",
       "name": "Notifier",
       "description": "Sends notifications via Slack or email",
-      "needs": ["slack", "email"]
+      "capabilities": ["slack"]
     }
   ],
   "jobs": [
@@ -56,8 +56,7 @@
           "agentId": "data-fetcher",
           "description": "Fetch latest data from external API",
           "depends_on": [],
-          "executionType": "llm",
-          "tools": ["webfetch"]
+          "executionType": "llm"
         },
         {
           "id": "analyze-data",
@@ -68,11 +67,10 @@
         },
         {
           "id": "send-notification",
-          "agentId": "notifier",
+          "agentId": "slack",
           "description": "Send analysis summary notification",
           "depends_on": ["analyze-data"],
-          "executionType": "llm",
-          "tools": ["slack", "sendgrid"]
+          "executionType": "bundled"
         }
       ],
       "documentContracts": [
@@ -145,11 +143,10 @@
         },
         {
           "id": "send-response",
-          "agentId": "notifier",
+          "agentId": "slack",
           "description": "Send acknowledgement notification",
           "depends_on": ["parse-payload"],
-          "executionType": "llm",
-          "tools": ["slack", "sendgrid"]
+          "executionType": "bundled"
         }
       ],
       "documentContracts": [

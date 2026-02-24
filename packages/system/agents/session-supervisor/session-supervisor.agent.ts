@@ -67,10 +67,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
   version: "1.0.0",
   description:
     "Optimizes context for agent execution based on agent needs and token constraints. Internal platform agent, not exposed to users.",
-  expertise: {
-    domains: ["context optimization", "token management", "relevance scoring"],
-    examples: [],
-  },
+  expertise: { examples: [] },
   inputSchema: SupervisorInputSchema,
   handler: async (input, { logger, stream, abortSignal }) => {
     try {

@@ -115,7 +115,7 @@
     "**/$lib/build-info"
   ],
   "ignoreDependencies": [],
-  "ignoreBinaries": ["svelte-kit"],
+  "ignoreBinaries": ["svelte-kit", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",

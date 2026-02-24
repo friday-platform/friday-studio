@@ -10,8 +10,12 @@ import { daemonFactory } from "../src/factory.ts";
  * Extends MCPServerMetadataSchema with stricter validation for user input:
  * - id: lowercase alphanumeric with dashes, max 64 chars
  * - name: 1-100 chars
- * - domains: 1-10 items
  * - source: excludes "static" (reserved for blessed registry)
+ *
+ * Breaking change (improve-agent-selection): `domains` field removed from
+ * MCPServerMetadataSchema. Use `urlDomains` for URL-to-server mapping.
+ * Zod v4 strips unknown keys silently — clients sending `domains` won't error
+ * but the field is ignored. Web client verified clean (no `domains` usage).
  */
 const CreateEntrySchema = z.object({
   entry: MCPServerMetadataSchema.extend({
@@ -21,7 +25,6 @@ const CreateEntrySchema = z.object({
       .regex(/^[a-z0-9-]+$/)
       .max(64),
     name: z.string().min(1).max(100),
-    domains: z.array(z.string()).min(1).max(10),
     source: z.enum(["web", "agents"]), // "static" reserved for blessed registry
   }),
 });

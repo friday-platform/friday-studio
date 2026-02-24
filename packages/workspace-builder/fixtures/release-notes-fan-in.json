@@ -21,25 +21,25 @@
       "id": "research",
       "name": "PR Fetcher",
       "description": "Fetches merged PRs from GitHub for the current week",
-      "needs": ["web-search", "github"]
+      "capabilities": ["github"]
     },
     {
       "id": "data-analyst",
       "name": "Commit Analyzer",
       "description": "Analyzes commit history and code changes for the week",
-      "needs": ["data-analysis"]
+      "capabilities": ["data-analyst"]
     },
     {
       "id": "get-summary",
       "name": "Release Notes Writer",
       "description": "Consolidates PR and commit data into formatted release notes",
-      "needs": ["summarization"]
+      "capabilities": ["get-summary"]
     },
     {
       "id": "slack",
       "name": "Release Announcer",
       "description": "Posts release notes to the #releases Slack channel",
-      "needs": ["slack"]
+      "capabilities": ["slack"]
     }
   ],
   "jobs": [

@@ -21,7 +21,6 @@ export type ExtractedValues = {
   id: string;
   name: string;
   description: string;
-  domains: string[];
   url?: string;
   command?: string;
   args?: string[];
@@ -90,11 +89,6 @@ function toEnvKey(id: string, suffix: string): string {
  * - stdio-apikey: CLI command with env var from Link
  * - stdio-none: CLI command with no auth (utilities)
  */
-function ensureIdInDomains(id: string, domains: string[]): string[] {
-  const normalized = new Set(domains.map((d) => d.toLowerCase()));
-  normalized.add(id.toLowerCase());
-  return [...normalized];
-}
 
 /**
  * Build registry entry with common fields. Templates only specify what varies.
@@ -108,7 +102,6 @@ function buildRegistry(
     id: v.id,
     name: v.name,
     description: v.description,
-    domains: ensureIdInDomains(v.id, v.domains),
     configTemplate,
     ...(requiredConfig && { requiredConfig }),
   };

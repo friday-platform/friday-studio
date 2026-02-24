@@ -29,19 +29,19 @@
       "id": "data-analyst",
       "name": "Survey Analyzer",
       "description": "Analyzes survey responses using SQL to identify themes and patterns",
-      "needs": ["data-analysis", "sql"]
+      "capabilities": ["data-analyst"]
     },
     {
       "id": "get-summary",
       "name": "Insights Writer",
       "description": "Writes up the top insights and patterns from the analysis",
-      "needs": ["summarization"]
+      "capabilities": ["get-summary"]
     },
     {
       "id": "email",
       "name": "Report Sender",
       "description": "Sends the analysis report via email",
-      "needs": ["email", "sendgrid"]
+      "capabilities": ["email"]
     }
   ],
   "jobs": [

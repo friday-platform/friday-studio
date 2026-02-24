@@ -86,7 +86,7 @@ export interface paths {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Get agent expertise
-     * @description Returns expertise information for a specific agent including domains, capabilities, and example prompts
+     * @description Returns expertise information for a specific agent including example prompts
      */
     get: operations["getApiAgents:idExpertise"];
     put?: never;
@@ -386,7 +386,7 @@ export interface operations {
               version?: string;
               /** @enum {string} */
               category: "system" | "bundled" | "sdk" | "yaml";
-              expertise?: { domains: string[]; capabilities: string[]; examples: string[] };
+              expertise?: { examples: string[] };
               metadata?: { [key: string]: unknown };
             }[];
             total: number;
@@ -423,7 +423,7 @@ export interface operations {
             version?: string;
             /** @enum {string} */
             category: "system" | "bundled" | "sdk" | "yaml";
-            expertise?: { domains: string[]; capabilities: string[]; examples: string[] };
+            expertise?: { examples: string[] };
             metadata?: { [key: string]: unknown };
           };
         };
@@ -456,13 +456,7 @@ export interface operations {
       200: {
         headers: { [name: string]: unknown };
         content: {
-          "application/json": {
-            agentId: string;
-            domains: string[];
-            capabilities: string[];
-            examples: string[];
-            recommendedFor?: string[];
-          };
+          "application/json": { agentId: string; examples: string[]; recommendedFor?: string[] };
         };
       };
       /** @description Agent expertise not found */

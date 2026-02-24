@@ -32,10 +32,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
   version: "1.0.0",
   description:
     "Distills corpus material from artifacts into a reusable skill definition. Takes artifact IDs as input, uses LLM to extract patterns and preferences, saves result as a skill-draft artifact.",
-  expertise: {
-    domains: ["skill extraction", "knowledge distillation", "pattern recognition"],
-    examples: [],
-  },
+  expertise: { examples: [] },
   inputSchema: SkillDistillerInputSchema,
   useWorkspaceSkills: true,
 

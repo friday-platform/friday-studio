@@ -5,7 +5,7 @@
  * based on whether operations target the same or different external services.
  *
  * Each case runs in both "task" and "workspace" modes and asserts on
- * agent count and duplicate needs detection.
+ * agent count and duplicate capabilities detection.
  */
 
 import {
@@ -88,13 +88,13 @@ const cases: PlannerCase[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Detects duplicate `needs` arrays across agents.
- * Normalize each agent's needs (sort + join), flag any key appearing > 1 time.
+ * Detects duplicate `capabilities` arrays across agents.
+ * Normalize each agent's capabilities (sort + join), flag any key appearing > 1 time.
  */
-function hasDuplicateNeeds(agents: Array<{ needs: string[] }>): boolean {
+function hasDuplicateCapabilities(agents: Array<{ capabilities: string[] }>): boolean {
   const seen = new Set<string>();
   for (const agent of agents) {
-    const key = [...agent.needs].sort().join(",");
+    const key = [...agent.capabilities].sort().join(",");
     if (key === "") continue;
     if (seen.has(key)) return true;
     seen.add(key);
@@ -137,7 +137,7 @@ export const evals: EvalRegistration[] = cases.flatMap((testCase) =>
           const max = testCase.maxAgentCount ?? testCase.expectedAgentCount;
           const count = result.agents.length;
           const countInRange = count >= testCase.expectedAgentCount && count <= max;
-          const duplicates = hasDuplicateNeeds(result.agents);
+          const duplicates = hasDuplicateCapabilities(result.agents);
           const range =
             max > testCase.expectedAgentCount
               ? `${testCase.expectedAgentCount}-${max}`
@@ -145,11 +145,11 @@ export const evals: EvalRegistration[] = cases.flatMap((testCase) =>
           return [
             createScore("agent-count", countInRange ? 1 : 0, `expected ${range}, got ${count}`),
             createScore(
-              "no-duplicate-needs",
+              "no-duplicate-capabilities",
               duplicates ? 0 : 1,
               duplicates
-                ? "duplicate needs detected across agents"
-                : "all agents have distinct needs",
+                ? "duplicate capabilities detected across agents"
+                : "all agents have distinct capabilities",
             ),
           ];
         },

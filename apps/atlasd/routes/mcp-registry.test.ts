@@ -32,7 +32,6 @@ function createTestEntry(
   return {
     id: `test-${suffix}`,
     name: `Test Server ${suffix}`,
-    domains: [`test-domain-${suffix}`],
     source: "web",
     securityRating: "medium",
     configTemplate: { transport: { type: "stdio", command: "echo", args: ["hello"] } },
@@ -42,9 +41,7 @@ function createTestEntry(
 
 /** Schema for successful create response */
 const CreateResponseSchema = z.object({
-  server: z
-    .object({ id: z.string(), name: z.string(), domains: z.array(z.string()), source: z.string() })
-    .passthrough(),
+  server: z.object({ id: z.string(), name: z.string(), source: z.string() }).passthrough(),
 });
 
 /** Schema for error response */
@@ -62,7 +59,6 @@ const ServerResponseSchema = z
     id: z.string(),
     name: z.string(),
     source: z.string().optional(),
-    domains: z.array(z.string()),
     configTemplate: z
       .object({ transport: z.object({ type: z.string() }).passthrough() })
       .passthrough(),
@@ -133,25 +129,6 @@ describe("MCP Registry Routes", () => {
     const invalidEntry = {
       ...createTestEntry("invalid"),
       id: "INVALID_ID_WITH_CAPS", // Invalid: must match /^[a-z0-9-]+$/
-    };
-
-    const res = await mcpRegistryRouter.request("/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entry: invalidEntry }),
-    });
-
-    expect(res.status).toEqual(400);
-  });
-
-  it("POST / validates entry schema (rejects missing domains)", async () => {
-    const invalidEntry = {
-      id: "test-no-domains",
-      name: "Test Server",
-      domains: [], // Invalid: min 1
-      source: "web",
-      securityRating: "medium",
-      configTemplate: { transport: { type: "stdio", command: "echo" } },
     };
 
     const res = await mcpRegistryRouter.request("/", {

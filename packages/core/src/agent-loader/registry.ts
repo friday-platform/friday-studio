@@ -118,24 +118,15 @@ export class AgentRegistry {
   }
 
   /**
-   * List agents with optional filtering.
+   * List all agents.
    * System agents are excluded unless this is a system workspace registry.
    */
-  async listAgents(filters?: { domains?: string[] }): Promise<AgentMetadata[]> {
+  async listAgents(): Promise<AgentMetadata[]> {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    let agents = Array.from(this.registeredAgents.values());
-
-    if (filters?.domains && filters.domains.length > 0) {
-      agents = agents.filter((agent) => {
-        const agentDomains = agent.metadata.expertise.domains;
-        return agentDomains.some((domain) => filters.domains?.includes(domain));
-      });
-    }
-
-    return agents.map((agent) => agent.metadata);
+    return Array.from(this.registeredAgents.values()).map((agent) => agent.metadata);
   }
 
   /** Check if an agent exists */
@@ -174,29 +165,5 @@ export class AgentRegistry {
       bundledAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "bundled").length,
       sdkAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "sdk").length,
     };
-  }
-
-  /** Search agents by query string */
-  async searchAgents(query: string): Promise<AgentMetadata[]> {
-    const agents = await this.listAgents();
-    const lowercaseQuery = query.toLowerCase();
-
-    return agents.filter((agent) => {
-      const searchText = [
-        agent.id,
-        agent.displayName,
-        agent.description,
-        ...agent.expertise.domains,
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return searchText.includes(lowercaseQuery);
-    });
-  }
-
-  /** Get agents by domain */
-  async getAgentsByDomain(domain: string): Promise<AgentMetadata[]> {
-    return await this.listAgents({ domains: [domain] });
   }
 }

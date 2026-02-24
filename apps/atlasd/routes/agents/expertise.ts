@@ -10,8 +10,7 @@ getAgentExpertise.get(
   describeRoute({
     tags: ["Agents"],
     summary: "Get agent expertise",
-    description:
-      "Returns expertise information for a specific agent including domains, capabilities, and example prompts",
+    description: "Returns expertise information for a specific agent including example prompts",
     responses: {
       200: {
         description: "Successfully retrieved agent expertise",

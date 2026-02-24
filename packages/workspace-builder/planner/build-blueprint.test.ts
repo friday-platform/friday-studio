@@ -77,17 +77,29 @@ const PLAN_RESULT = {
     },
   ],
   agents: [
-    { id: "researcher", name: "Researcher", description: "Researches things", needs: ["research"] },
-    { id: "reporter", name: "Reporter", description: "Reports findings", needs: [] },
+    {
+      id: "researcher",
+      name: "Researcher",
+      description: "Researches things",
+      capabilities: ["research"],
+    },
+    { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
   ],
+  dynamicServers: [],
 };
 
 const TASK_PLAN_RESULT = {
   workspace: { name: "Task", purpose: "Do a thing" },
   signals: [],
   agents: [
-    { id: "analyst", name: "Analyst", description: "Analyzes data", needs: ["data-analysis"] },
+    {
+      id: "analyst",
+      name: "Analyst",
+      description: "Analyzes data",
+      capabilities: ["data-analysis"],
+    },
   ],
+  dynamicServers: [],
 };
 
 const CLASSIFY_RESULT = { agents: PLAN_RESULT.agents, clarifications: [], configRequirements: [] };
@@ -256,7 +268,7 @@ describe("buildBlueprint", () => {
   });
 
   describe("soft issues", () => {
-    it("returns clarifications in result when classification is ambiguous", async () => {
+    it("returns clarifications in result when classification has unknown capability", async () => {
       setupSuccessfulPipeline();
       mockClassifyAgents.mockResolvedValue({
         agents: PLAN_RESULT.agents,
@@ -264,8 +276,8 @@ describe("buildBlueprint", () => {
           {
             agentId: "researcher",
             agentName: "Researcher",
-            need: "obscure-tool",
-            issue: { type: "no-match" },
+            capability: "obscure-tool",
+            issue: { type: "unknown-capability", capabilityId: "obscure-tool" },
           },
         ],
         configRequirements: [],
@@ -277,8 +289,8 @@ describe("buildBlueprint", () => {
       expect(result.clarifications[0]).toStrictEqual({
         agentId: "researcher",
         agentName: "Researcher",
-        need: "obscure-tool",
-        issue: { type: "no-match" },
+        capability: "obscure-tool",
+        issue: { type: "unknown-capability", capabilityId: "obscure-tool" },
       });
     });
 
@@ -449,10 +461,10 @@ describe("buildBlueprint", () => {
           id: "csv-data-analyst",
           name: "CSV Data Analyst",
           description: "Analyzes CSV data",
-          needs: ["data-analysis"],
+          capabilities: ["data-analysis"],
           bundledId: "data-analyst",
         },
-        { id: "reporter", name: "Reporter", description: "Reports findings", needs: [] },
+        { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
       ];
 
       // Post-stamp: steps use bundled IDs (stampExecutionTypes rewrites agentId)
@@ -488,6 +500,7 @@ describe("buildBlueprint", () => {
         workspace: { name: "Test", purpose: "Test" },
         signals: PLAN_RESULT.signals,
         agents: bundledAgents,
+        dynamicServers: [],
       });
       mockClassifyAgents.mockResolvedValue({
         agents: bundledAgents,
@@ -578,8 +591,8 @@ describe("buildBlueprint", () => {
         {
           agentId: "researcher",
           agentName: "Researcher",
-          need: "obscure-tool",
-          issue: { type: "no-match" as const },
+          capability: "obscure-tool",
+          issue: { type: "unknown-capability" as const, capabilityId: "obscure-tool" },
         },
       ];
 

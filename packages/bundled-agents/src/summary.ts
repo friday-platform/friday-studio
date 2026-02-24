@@ -25,12 +25,12 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
   id: "get-summary",
   displayName: "Summarizer",
   version: "1.0.0",
-  description: "Create a summary of the provided content",
+  description:
+    "Summarizes provided content into a formatted artifact with citations preserved. USE FOR: condensing long-form content, creating TLDRs, producing summary artifacts for downstream agents.",
+  constraints:
+    "Summarizes content provided in the prompt only. Cannot fetch external content or query databases. For web research, use the research agent.",
   outputSchema: SummaryOutputSchema,
-  expertise: {
-    domains: ["summaries", "summarization", "tldr"],
-    examples: ["Create a summary of the provided content", "Summarize this content"],
-  },
+  expertise: { examples: ["Create a summary of the provided content", "Summarize this content"] },
   handler: async (prompt, { tools, logger, abortSignal, stream }) => {
     const system = `
       You are a summary creator that creates user-friendly summaries based on the provided prompt. Always create an artifact with a type equal to 'summary' of the provided content.

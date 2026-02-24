@@ -9,14 +9,14 @@ export interface EnhancedTaskStep {
   agentId?: string;
   description: string;
   executionType: "agent" | "llm";
-  needs: string[];
+  capabilities: string[];
   friendlyDescription?: string;
 }
 
-/** Full task plan with aggregated needs and MCP server configs. */
+/** Full task plan with aggregated capabilities and MCP server configs. */
 export interface EnhancedTaskPlan {
   steps: EnhancedTaskStep[];
-  needs: string[];
+  capabilities: string[];
   mcpServers: MCPServerResult[];
 }
 

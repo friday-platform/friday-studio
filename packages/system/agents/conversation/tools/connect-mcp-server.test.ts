@@ -69,7 +69,6 @@ describe("connect-mcp-server", () => {
       id: "test-service",
       name: "Test Service",
       description: "A test service",
-      domains: ["test", "demo"],
       url: "https://api.test.com/mcp",
       command: "npx",
       args: ["-y", "@test/mcp-server"],
@@ -93,8 +92,6 @@ describe("connect-mcp-server", () => {
         // Registry structure
         expect(result.registry.id).toEqual("test-service");
         expect(result.registry.name).toEqual("Test Service");
-        // Domains should include the server ID for reliable matching
-        expect(result.registry.domains.sort()).toEqual(["demo", "test", "test-service"]);
         expect(result.registry.configTemplate.transport).toMatchObject({
           type: "http",
           url: "https://api.test.com/mcp",
@@ -213,7 +210,6 @@ describe("connect-mcp-server", () => {
         id: "google-calendar",
         name: "Google Calendar",
         description: "Calendar",
-        domains: ["calendar"],
         url: "https://cal.example.com/mcp",
       });
       expect(result.registry.configTemplate.auth?.token_env).toEqual(
@@ -226,7 +222,6 @@ describe("connect-mcp-server", () => {
         id: "linear",
         name: "Linear",
         description: "Linear",
-        domains: ["linear"],
         url: "https://linear.example.com/mcp",
       });
       expect(result.registry.configTemplate.auth?.token_env).toEqual("LINEAR_ACCESS_TOKEN");
@@ -237,7 +232,6 @@ describe("connect-mcp-server", () => {
         id: "google-gen-ai",
         name: "Google Gen AI",
         description: "AI",
-        domains: ["ai"],
         url: "https://ai.example.com/mcp",
       });
       expect(result.registry.configTemplate.auth?.token_env).toEqual("GOOGLE_GEN_AI_ACCESS_TOKEN");
@@ -251,7 +245,6 @@ describe("connect-mcp-server", () => {
           id: "no-url",
           name: "No URL",
           description: "Missing URL",
-          domains: ["test"],
         }),
       ).toThrow("HTTP template requires URL");
     });
@@ -262,19 +255,13 @@ describe("connect-mcp-server", () => {
           id: "no-url",
           name: "No URL",
           description: "Missing URL",
-          domains: ["test"],
         }),
       ).toThrow("HTTP template requires URL");
     });
 
     it("http-none throws when URL is missing", () => {
       expect(() =>
-        CONFIG_TEMPLATES["http-none"]({
-          id: "no-url",
-          name: "No URL",
-          description: "Missing URL",
-          domains: ["test"],
-        }),
+        CONFIG_TEMPLATES["http-none"]({ id: "no-url", name: "No URL", description: "Missing URL" }),
       ).toThrow("HTTP template requires URL");
     });
 
@@ -284,7 +271,6 @@ describe("connect-mcp-server", () => {
           id: "no-cmd",
           name: "No Command",
           description: "Missing command",
-          domains: ["test"],
         }),
       ).toThrow("stdio template requires command");
     });
@@ -295,7 +281,6 @@ describe("connect-mcp-server", () => {
           id: "no-cmd",
           name: "No Command",
           description: "Missing command",
-          domains: ["test"],
         }),
       ).toThrow("stdio template requires command");
     });

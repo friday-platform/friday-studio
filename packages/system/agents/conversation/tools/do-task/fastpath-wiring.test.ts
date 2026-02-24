@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGeneratePlan = vi.hoisted(() => vi.fn());
 const mockClassifyAgents = vi.hoisted(() => vi.fn());
+const mockMCPRegistryList = vi.hoisted(() => vi.fn());
 const mockResolveCredentials = vi.hoisted(() => vi.fn());
 const mockCheckEnvironmentReadiness = vi.hoisted(() => vi.fn());
 const mockBuildBlueprint = vi.hoisted(() => vi.fn());
@@ -68,12 +69,18 @@ vi.mock("@atlas/core/mcp-registry/registry-consolidated", () => ({
   mcpServersRegistry: { servers: {} },
 }));
 
+vi.mock("@atlas/core/mcp-registry/storage", () => ({
+  getMCPRegistryAdapter: vi.fn(() => ({ list: mockMCPRegistryList })),
+}));
+
 // GlobalMCPToolProvider is used with `new` — mock must be a class
+const mockMCPToolProviderCtor = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/fsm-engine", () => {
   const MockProvider = vi.fn(function (this: void) {
     // no-op — `this: void` prevents biome converting to arrow (non-constructable)
   });
-  return { GlobalMCPToolProvider: MockProvider };
+  mockMCPToolProviderCtor.mockImplementation(MockProvider);
+  return { GlobalMCPToolProvider: mockMCPToolProviderCtor };
 });
 
 const mockLoggerInstance = vi.hoisted(() => {
@@ -109,7 +116,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     id: "test-agent",
     name: "Test Agent",
     description: "A test agent",
-    needs: ["testing"],
+    capabilities: ["testing"],
     bundledId: "research",
     ...overrides,
   };
@@ -135,8 +142,8 @@ const baseSession = {
   daemonUrl: "http://localhost:8080",
 };
 
-function makePlanResult(agents: Agent[]) {
-  return { workspace: { name: "Test", purpose: "Test" }, signals: [], agents };
+function makePlanResult(agents: Agent[], dynamicServers: unknown[] = []) {
+  return { workspace: { name: "Test", purpose: "Test" }, signals: [], agents, dynamicServers };
 }
 
 function makeClassifyResult(
@@ -144,7 +151,7 @@ function makeClassifyResult(
     clarifications?: Array<{
       agentId: string;
       agentName: string;
-      need: string;
+      capability: string;
       issue: { type: string };
     }>;
     configRequirements?: Array<{
@@ -215,8 +222,9 @@ function getExecute(abortSignal?: AbortSignal) {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Default: storeTaskArtifact succeeds
+  // Default: storeTaskArtifact succeeds, dynamic registry returns empty
   mockSmallLLM.mockResolvedValue("Task completed");
+  mockMCPRegistryList.mockResolvedValue([]);
   mockParseResult.mockResolvedValue({ ok: true, data: { artifact: { id: "art-1" } } });
   mockDispose.mockResolvedValue(undefined);
 });
@@ -576,6 +584,63 @@ describe("createDoTaskTool fastpath wiring", () => {
     expect(result.error).toContain("dag");
     expect(result.error).toContain("DAG generation failed");
     expect(mockExecuteTaskViaFSMDirect).not.toHaveBeenCalled();
+  });
+
+  it("classifyAgents receives dynamic servers from plan result", async () => {
+    const dynamicServer = {
+      id: "custom-crm",
+      name: "Custom CRM",
+      description: "A dynamic CRM server",
+      configTemplate: { transport: { type: "stdio", command: "npx", args: [] }, env: {} },
+    };
+
+    const agent = makeAgent({ bundledId: "research" });
+    mockGeneratePlan.mockResolvedValue(makePlanResult([agent], [dynamicServer]));
+    mockClassifyAgents.mockReturnValue(makeClassifyResult());
+    mockExecuteTaskViaFSMDirect.mockResolvedValue(makeExecResult());
+
+    const execute = getExecute();
+    await execute({ intent: "use dynamic tool" });
+
+    expect(mockClassifyAgents).toHaveBeenCalledOnce();
+    const [, opts] = mockClassifyAgents.mock.calls[0] as [unknown, { dynamicServers: unknown[] }];
+    expect(opts).toHaveProperty("dynamicServers");
+    expect(opts.dynamicServers).toEqual([dynamicServer]);
+  });
+
+  it("fastpath passes dynamic servers to buildMCPServerConfigs", async () => {
+    const dynamicServer = {
+      id: "custom-crm",
+      name: "Custom CRM",
+      securityRating: "unverified",
+      source: "web",
+      configTemplate: {
+        transport: { type: "stdio", command: "npx", args: ["-y", "crm-mcp"] },
+        env: { CRM_KEY: "placeholder" },
+      },
+    };
+
+    const agent = makeAgent({
+      bundledId: undefined,
+      name: "CRM Agent",
+      mcpServers: [{ serverId: "custom-crm", name: "CRM" }],
+    });
+    mockGeneratePlan.mockResolvedValue(makePlanResult([agent], [dynamicServer]));
+    mockClassifyAgents.mockResolvedValue(makeClassifyResult());
+    mockExecuteTaskViaFSMDirect.mockResolvedValue(makeExecResult());
+
+    const execute = getExecute();
+    await execute({ intent: "update CRM contact" });
+
+    expect(mockExecuteTaskViaFSMDirect).toHaveBeenCalledOnce();
+
+    // GlobalMCPToolProvider receives config map as 3rd constructor arg
+    expect(mockMCPToolProviderCtor).toHaveBeenCalledOnce();
+    const configMap = mockMCPToolProviderCtor.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(configMap).toHaveProperty("custom-crm");
+    expect(configMap["custom-crm"]).toMatchObject({
+      transport: { type: "stdio", command: "npx", args: ["-y", "crm-mcp"] },
+    });
   });
 
   it("pre-aborted signal returns cancelled without calling generatePlan", async () => {

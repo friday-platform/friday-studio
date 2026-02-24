@@ -1,16 +1,16 @@
 /**
  * Email vs Gmail Classification Pipeline Tests
  *
- * Tests the EXACT production classification pipeline:
+ * Tests the production classification pipeline with exact registry IDs:
  *   WorkspacePlan → classifyAgents() → generateMCPServers()
  *
- * Uses realistic WorkspacePlan fixtures that mimic LLM-generated plans,
- * then runs the same classifyAgents() and generateMCPServers() functions
- * that production uses.
+ * With capabilities constrained to exact registry IDs, email vs Gmail
+ * disambiguation is structural: "email" → bundled agent registry,
+ * "google-gmail" → MCP servers registry. No keyword matching means no
+ * ambiguity.
  *
- * Background: Sentry ATLAS-29X — bundled email agent (compose-only, SendGrid)
- * is selected for Gmail retrieval tasks due to substring matching bug in
- * extractKeywordsFromNeed().
+ * Background: Sentry ATLAS-29X — now structurally impossible since "email"
+ * and "google-gmail" are distinct IDs in different registries.
  */
 
 import type { WorkspacePlan } from "@atlas/core/artifacts";
@@ -22,7 +22,6 @@ import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal valid plan shell — tests only care about agents */
 function makePlan(agents: WorkspacePlan["agents"]): WorkspacePlan {
   return {
     workspace: { name: "test", purpose: "test" },
@@ -65,451 +64,197 @@ function classifyAndSnapshot(plan: WorkspacePlan): ClassificationSnapshot[] {
   }));
 }
 
-function mcpServers(plan: WorkspacePlan) {
-  return generateMCPServers(plan.agents);
-}
-
-async function mcpServerIds(plan: WorkspacePlan): Promise<string[]> {
-  const servers = await mcpServers(plan);
+function mcpServerIds(plan: WorkspacePlan): string[] {
+  const servers = generateMCPServers(plan.agents);
   return servers.map((s) => s.id);
 }
 
 // ---------------------------------------------------------------------------
-// Suite 1: Compose/send scenarios → bundled email is correct
+// Bundled email (send-only via SendGrid)
 // ---------------------------------------------------------------------------
 
-describe("Bundled Email (Send/Compose) — should classify as bundled", () => {
-  it('needs: ["email"] → bundled email', () => {
+describe("Bundled Email — registry lookup", () => {
+  it('capabilities: ["email"] → bundled email', () => {
     const plan = makePlan([
       {
         id: "notifier",
         name: "Email Notifier",
         description: "Sends email notification",
-        needs: ["email"],
+        capabilities: ["email"],
       },
     ]);
-    const result = classifyAndSnapshot(plan);
-    expect(result).toEqual([
+    expect(classifyAndSnapshot(plan)).toEqual([
       { agentId: "notifier", kind: "bundled", bundledId: "email", mcpTools: undefined },
     ]);
   });
 
-  it('needs: ["notifications"] → LLM (ambiguous: both email and slack claim "notifications")', () => {
+  it('capabilities: ["email"] generates no MCP servers', () => {
     const plan = makePlan([
-      {
-        id: "notifier",
-        name: "Notifier",
-        description: "Sends notifications",
-        needs: ["notifications"],
-      },
+      { id: "sender", name: "Email Sender", description: "Sends email", capabilities: ["email"] },
     ]);
-    const result = classifyAndSnapshot(plan);
-    // Both email and slack bundled agents have "notifications" capability
-    // → matchBundledAgents returns 2 matches → ambiguous → falls to LLM
-    expect(result).toEqual([
-      { agentId: "notifier", kind: "llm", bundledId: undefined, mcpTools: ["notifications"] },
-    ]);
-  });
-
-  it('needs: ["email"] generates no gmail MCP server', async () => {
-    const plan = makePlan([
-      { id: "sender", name: "Email Sender", description: "Sends email", needs: ["email"] },
-    ]);
-    const servers = await mcpServerIds(plan);
-    expect(servers).not.toContain("google-gmail");
-  });
-
-  it("investor briefing plan: email agent → bundled, calendar → bundled", () => {
-    const plan = makePlan([
-      {
-        id: "calendar-reader",
-        name: "Calendar Reader",
-        description: "Reads calendar events",
-        needs: ["google-calendar"],
-      },
-      {
-        id: "researcher",
-        name: "Researcher",
-        description: "Researches companies",
-        needs: ["research"],
-      },
-      {
-        id: "email-sender",
-        name: "Email Sender",
-        description: "Sends briefing email",
-        needs: ["email"],
-        configuration: { recipient: "vc@example.com" },
-      },
-    ]);
-    const result = classifyAndSnapshot(plan);
-    expect(result).toEqual([
-      {
-        agentId: "calendar-reader",
-        kind: "bundled",
-        bundledId: "google-calendar",
-        mcpTools: undefined,
-      },
-      { agentId: "researcher", kind: "bundled", bundledId: "research", mcpTools: undefined },
-      { agentId: "email-sender", kind: "bundled", bundledId: "email", mcpTools: undefined },
-    ]);
+    const servers = mcpServerIds(plan);
+    expect(servers).toHaveLength(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Suite 2: Inbox access scenarios → should route to google-gmail MCP
+// Gmail MCP (full inbox access via OAuth)
 // ---------------------------------------------------------------------------
 
-describe("Gmail MCP (Read/Search Inbox) — classification results", () => {
-  it('needs: ["gmail"] → llm + google-gmail MCP', () => {
+describe("Gmail MCP — registry lookup", () => {
+  it('capabilities: ["google-gmail"] → LLM with MCP', () => {
     const plan = makePlan([
       {
         id: "inbox-reader",
         name: "Inbox Reader",
         description: "Reads Gmail inbox",
-        needs: ["gmail"],
+        capabilities: ["google-gmail"],
       },
     ]);
     const result = classifyAndSnapshot(plan);
-
     expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toContain("gmail");
+    expect(result[0]?.mcpTools).toEqual(["google-gmail"]);
   });
 
-  it('needs: ["google-gmail"] → llm + google-gmail MCP', () => {
-    const plan = makePlan([
-      {
-        id: "inbox-searcher",
-        name: "Inbox Searcher",
-        description: "Searches Gmail for invoices",
-        needs: ["google-gmail"],
-      },
-    ]);
-    const result = classifyAndSnapshot(plan);
-
-    expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toContain("google-gmail");
-  });
-
-  it('needs: ["google-gmail"] — generates google-gmail MCP server with valid config', async () => {
+  it('capabilities: ["google-gmail"] generates google-gmail MCP server', () => {
     const plan = makePlan([
       {
         id: "inbox-reader",
         name: "Inbox Reader",
         description: "Reads inbox",
-        needs: ["google-gmail"],
+        capabilities: ["google-gmail"],
       },
     ]);
-    const servers = await mcpServers(plan);
-
-    // Both classifyAgents and generateMCPServers use findFullBundledMatch,
-    // so they agree: "google-gmail" is NOT bundled → MCP server generated
-    expect(servers.length).toBeGreaterThan(0);
-    const gmail = servers.find((s) => s.id === "google-gmail");
-    expect(gmail).toBeDefined();
-    expect(gmail?.config).toBeDefined();
-  });
-
-  it('needs: ["inbox"] — CURRENT: llm (correct for inbox access)', () => {
-    const plan = makePlan([
-      {
-        id: "inbox-monitor",
-        name: "Inbox Monitor",
-        description: "Monitors email inbox",
-        needs: ["inbox"],
-      },
-    ]);
-    const result = classifyAndSnapshot(plan);
-
-    // "inbox" is NOT a bundled email capability, so it falls through to LLM
-    // This is actually correct behavior — it would get google-gmail MCP
-    expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toEqual(["inbox"]);
-  });
-
-  it('needs: ["inbox"] generates google-gmail MCP server (correct)', async () => {
-    const plan = makePlan([
-      {
-        id: "inbox-monitor",
-        name: "Inbox Monitor",
-        description: "Monitors inbox",
-        needs: ["inbox"],
-      },
-    ]);
-    const servers = await mcpServerIds(plan);
-
-    // "inbox" is a domain of google-gmail MCP → correctly matched
+    const servers = mcpServerIds(plan);
     expect(servers).toContain("google-gmail");
   });
 });
 
 // ---------------------------------------------------------------------------
-// Suite 3: Mixed workflows — both bundled email AND Gmail in same plan
+// Mixed workflows — both bundled email AND Gmail in same plan
 // ---------------------------------------------------------------------------
 
 describe("Mixed Workflows — read inbox + send email", () => {
-  it("gmail reader + email sender: reader → LLM, sender → bundled email", () => {
+  it("google-gmail reader + email sender: reader → LLM, sender → bundled", () => {
     const plan = makePlan([
       {
         id: "gmail-reader",
         name: "Gmail Reader",
-        description: "Reads Gmail for meeting invites",
-        needs: ["gmail"],
+        description: "Reads Gmail",
+        capabilities: ["google-gmail"],
       },
       {
         id: "email-sender",
         name: "Email Sender",
-        description: "Sends summary email",
-        needs: ["email"],
+        description: "Sends email",
+        capabilities: ["email"],
       },
     ]);
     const result = classifyAndSnapshot(plan);
 
-    // Gmail reader → LLM + google-gmail MCP
     expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toContain("gmail");
+    expect(result[0]?.mcpTools).toEqual(["google-gmail"]);
 
-    // Email sender → bundled email
     expect(result[1]?.kind).toBe("bundled");
     expect(result[1]?.bundledId).toBe("email");
   });
 
-  it("google-gmail reader + email sender: reader → LLM, sender → bundled email", () => {
+  it("investor briefing: calendar + research (bundled) + email (bundled)", () => {
     const plan = makePlan([
       {
-        id: "gmail-reader",
-        name: "Gmail Reader",
-        description: "Searches Gmail for client emails",
-        needs: ["google-gmail"],
+        id: "cal-reader",
+        name: "Calendar Reader",
+        description: "Reads events",
+        capabilities: ["google-calendar"],
+      },
+      {
+        id: "researcher",
+        name: "Researcher",
+        description: "Researches companies",
+        capabilities: ["research"],
       },
       {
         id: "email-sender",
-        name: "Summary Sender",
-        description: "Emails summary",
-        needs: ["email"],
+        name: "Email Sender",
+        description: "Sends briefing",
+        capabilities: ["email"],
       },
     ]);
     const result = classifyAndSnapshot(plan);
-
-    // google-gmail reader → LLM
-    expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toContain("google-gmail");
-
-    // Email sender → bundled email
-    expect(result[1]?.kind).toBe("bundled");
-    expect(result[1]?.bundledId).toBe("email");
-  });
-
-  it("inbox reader + email sender: reader correct, sender correct", () => {
-    const plan = makePlan([
-      {
-        id: "inbox-reader",
-        name: "Inbox Reader",
-        description: "Reads inbox for client emails",
-        needs: ["inbox"],
-      },
-      {
-        id: "email-sender",
-        name: "Summary Sender",
-        description: "Emails summary",
-        needs: ["email"],
-      },
+    expect(result).toEqual([
+      { agentId: "cal-reader", kind: "bundled", bundledId: "google-calendar", mcpTools: undefined },
+      { agentId: "researcher", kind: "bundled", bundledId: "research", mcpTools: undefined },
+      { agentId: "email-sender", kind: "bundled", bundledId: "email", mcpTools: undefined },
     ]);
-    const result = classifyAndSnapshot(plan);
-
-    // "inbox" correctly falls through to LLM (not a bundled capability)
-    expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toEqual(["inbox"]);
-
-    // "email" correctly matched as bundled
-    expect(result[1]?.kind).toBe("bundled");
-    expect(result[1]?.bundledId).toBe("email");
   });
 
-  it("calendar + gmail reader + email sender: triple routing", () => {
+  it("triple routing: calendar (bundled) + gmail (MCP) + email (bundled)", () => {
     const plan = makePlan([
       {
-        id: "calendar-reader",
-        name: "Calendar Reader",
-        description: "Reads Google Calendar events",
-        needs: ["google-calendar"],
-      },
-      {
-        id: "gmail-reader",
-        name: "Gmail Reader",
-        description: "Reads unread Gmail messages",
-        needs: ["gmail"],
-      },
-      {
-        id: "digest-sender",
-        name: "Digest Sender",
-        description: "Sends weekly digest email",
-        needs: ["email"],
-      },
-    ]);
-    const result = classifyAndSnapshot(plan);
-
-    // Calendar: correctly bundled
-    expect(result[0]?.kind).toBe("bundled");
-    expect(result[0]?.bundledId).toBe("google-calendar");
-
-    // Gmail reader → LLM + google-gmail MCP
-    expect(result[1]?.kind).toBe("llm");
-    expect(result[1]?.mcpTools).toContain("gmail");
-
-    // Email sender: correctly bundled
-    expect(result[2]?.kind).toBe("bundled");
-    expect(result[2]?.bundledId).toBe("email");
-  });
-
-  it('single agent needs: ["email", "gmail"] → LLM + generates google-gmail MCP', async () => {
-    const plan = makePlan([
-      {
-        id: "email-manager",
-        name: "Email Manager",
-        description: "Reads inbox and sends replies",
-        needs: ["email", "gmail"],
-      },
-    ]);
-    // Partial coverage: bundled email covers "email" but not "gmail" → falls to LLM
-    expect(classifyAndSnapshot(plan)[0]?.kind).toBe("llm");
-    const servers = await mcpServerIds(plan);
-    expect(servers).toContain("google-gmail");
-  });
-
-  it("triple routing MCP server generation — consistent after fix", async () => {
-    const plan = makePlan([
-      {
-        id: "calendar-reader",
-        name: "Calendar Reader",
+        id: "cal-reader",
+        name: "Calendar",
         description: "Reads calendar",
-        needs: ["google-calendar"],
+        capabilities: ["google-calendar"],
       },
-      { id: "gmail-reader", name: "Gmail Reader", description: "Reads Gmail", needs: ["gmail"] },
-      { id: "digest-sender", name: "Digest Sender", description: "Sends email", needs: ["email"] },
+      {
+        id: "gmail-reader",
+        name: "Gmail",
+        description: "Reads Gmail",
+        capabilities: ["google-gmail"],
+      },
+      { id: "digest-sender", name: "Digest", description: "Sends email", capabilities: ["email"] },
     ]);
-    const servers = await mcpServerIds(plan);
+    const result = classifyAndSnapshot(plan);
+    expect(result[0]?.kind).toBe("bundled");
+    expect(result[1]?.kind).toBe("llm");
+    expect(result[2]?.kind).toBe("bundled");
 
-    // generateMCPServers now uses extractKeywordsFromNeed (same as classifyAgents):
-    // "google-calendar" → extracts "calendar" → matches bundled → no MCP
-    // "gmail" → no bundled match → MCP generated (google-gmail)
-    // "email" → matches bundled email → no MCP
-    expect(servers).not.toContain("google-calendar");
-    expect(servers).toContain("google-gmail");
-    expect(servers).toHaveLength(1);
+    const servers = mcpServerIds(plan);
+    expect(servers).toEqual(["google-gmail"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Suite 4: Sentry ATLAS-29X exact reproduction
+// Sentry ATLAS-29X — structurally impossible with registry lookup
 // ---------------------------------------------------------------------------
 
-describe("Sentry ATLAS-29X — cron-triggered Gmail inbox polling", () => {
-  it("exact scenario: 15-min cron polling Gmail inbox", () => {
-    // This is the exact plan shape from the Sentry issue
+describe("Sentry ATLAS-29X — structurally prevented", () => {
+  it("email and google-gmail are in different registries — no cross-contamination", () => {
     const plan = makePlan([
       {
         id: "gmail-checker",
         name: "Gmail Checker",
-        description: "Checks Gmail inbox for new messages from the sales team every 15 minutes",
-        needs: ["gmail"],
+        description: "Checks Gmail",
+        capabilities: ["google-gmail"],
       },
       {
         id: "slack-notifier",
         name: "Slack Notifier",
-        description: "Sends Slack notification when relevant emails found",
-        needs: ["slack"],
+        description: "Notifies Slack",
+        capabilities: ["slack"],
       },
     ]);
     const result = classifyAndSnapshot(plan);
 
-    // Gmail checker → LLM with google-gmail MCP (no longer intercepted by bundled email)
+    // google-gmail → MCP (not bundled email)
     expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toContain("gmail");
+    expect(result[0]?.mcpTools).toEqual(["google-gmail"]);
 
-    // Slack: correctly bundled
+    // slack → bundled
     expect(result[1]?.kind).toBe("bundled");
     expect(result[1]?.bundledId).toBe("slack");
   });
 
-  it("ATLAS-29X: google-gmail MCP server correctly generated", async () => {
+  it("google-gmail generates MCP server, not bundled email", () => {
     const plan = makePlan([
       {
         id: "gmail-checker",
         name: "Gmail Checker",
-        description: "Polls Gmail inbox",
-        needs: ["gmail"],
-      },
-      {
-        id: "slack-notifier",
-        name: "Slack Notifier",
-        description: "Notifies via Slack",
-        needs: ["slack"],
+        description: "Polls Gmail",
+        capabilities: ["google-gmail"],
       },
     ]);
-    const servers = await mcpServerIds(plan);
-
-    // "gmail" no longer matches bundled email → MCP server generated
+    const servers = mcpServerIds(plan);
     expect(servers).toContain("google-gmail");
-  });
-
-  it('workaround: needs: ["inbox"] correctly routes to gmail MCP', () => {
-    // This demonstrates that "inbox" (not a bundled capability) works correctly
-    const plan = makePlan([
-      {
-        id: "inbox-checker",
-        name: "Inbox Checker",
-        description: "Polls inbox for new messages",
-        needs: ["inbox"],
-      },
-    ]);
-    const result = classifyAndSnapshot(plan);
-
-    // "inbox" is NOT in bundled email capabilities → falls through to LLM
-    expect(result[0]?.kind).toBe("llm");
-    expect(result[0]?.mcpTools).toEqual(["inbox"]);
-  });
-
-  it('workaround: "inbox" generates google-gmail MCP', async () => {
-    const plan = makePlan([
-      { id: "inbox-checker", name: "Inbox Checker", description: "Polls inbox", needs: ["inbox"] },
-    ]);
-    const servers = await mcpServerIds(plan);
-    expect(servers).toContain("google-gmail");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Suite 5: The substring matching problem — root cause demonstration
-// ---------------------------------------------------------------------------
-
-describe("Root cause: substring matching in extractKeywordsFromNeed", () => {
-  it("gmail → LLM (no longer a bundled email capability)", () => {
-    const plan = makePlan([{ id: "a", name: "A", description: "A", needs: ["gmail"] }]);
-    // "gmail" removed from email agent capabilities → falls through to LLM
-    expect(classifyAndSnapshot(plan)[0]?.kind).toBe("llm");
-  });
-
-  it("google-gmail → LLM (substring 'gmail' no longer matches bundled)", () => {
-    const plan = makePlan([{ id: "a", name: "A", description: "A", needs: ["google-gmail"] }]);
-    // extractKeywordsFromNeed("google-gmail") → includes("gmail") → ["gmail"]
-    // matchBundledAgents(["gmail"]) → no match (gmail removed from email agent)
-    expect(classifyAndSnapshot(plan)[0]?.kind).toBe("llm");
-  });
-
-  it("inbox → NOT bundled (not in email agent capabilities)", () => {
-    const plan = makePlan([{ id: "a", name: "A", description: "A", needs: ["inbox"] }]);
-    // "inbox" is not a capability of any bundled agent → falls through
-    expect(classifyAndSnapshot(plan)[0]?.kind).toBe("llm");
-  });
-
-  it("email → bundled email (correct)", () => {
-    const plan = makePlan([{ id: "a", name: "A", description: "A", needs: ["email"] }]);
-    expect(classifyAndSnapshot(plan)[0]?.bundledId).toBe("email");
-  });
-
-  it("google-calendar → bundled google-calendar (correct, no substring issue)", () => {
-    const plan = makePlan([{ id: "a", name: "A", description: "A", needs: ["google-calendar"] }]);
-    // "google-calendar" includes "calendar" → extracts "calendar" → matches google-calendar bundled
-    expect(classifyAndSnapshot(plan)[0]?.bundledId).toBe("google-calendar");
   });
 });

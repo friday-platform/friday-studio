@@ -57,10 +57,12 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
   id: "fathom-get-transcript",
   displayName: "Fathom Get Transcript",
   version: "1.0.0",
-  description: "Get the latest meeting from Fathom AI and retrieve its transcript",
+  description:
+    "Fetches the latest meeting recording from Fathom AI and retrieves its full transcript with speaker attribution and timestamps. USE FOR: getting meeting transcripts, reviewing what was discussed in meetings.",
+  constraints:
+    "Fathom AI meetings only. Retrieves the single most recent meeting transcript. Cannot search by date or meeting title. For calendar events and scheduling, use google-calendar.",
   outputSchema: FathomOutputSchema,
   expertise: {
-    domains: ["fathom", "meetings", "transcripts"],
     examples: [
       "Get the transcript of my latest Fathom meeting",
       "Show me the most recent meeting transcript",

@@ -21,19 +21,19 @@
       "id": "data-analyst",
       "name": "Error Trend Analyzer",
       "description": "Analyzes error logs to identify frequency trends and severity",
-      "needs": ["data-analysis", "sql"]
+      "capabilities": ["data-analyst"]
     },
     {
       "id": "slack",
       "name": "Critical Alert Poster",
       "description": "Posts critical error alerts to the #incidents channel",
-      "needs": ["slack"]
+      "capabilities": ["slack"]
     },
     {
       "id": "email",
       "name": "Routine Report Sender",
       "description": "Emails a routine error trend report for non-critical patterns",
-      "needs": ["email", "sendgrid"]
+      "capabilities": ["email"]
     }
   ],
   "jobs": [

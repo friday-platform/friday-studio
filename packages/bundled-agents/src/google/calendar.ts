@@ -79,10 +79,11 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   displayName: "Google Calendar",
   version: "1.0.0",
   description:
-    "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
+    "Full Google Calendar management via google-calendar MCP. Lists calendars, searches/gets events, creates events with attendees and Google Meet, modifies and deletes events. USE FOR: calendar queries, event creation, scheduling, meeting management.",
+  constraints:
+    "Google Calendar only. Requires OAuth token. Cannot access other calendar providers. For meeting transcripts, use fathom-get-transcript.",
   outputSchema: GoogleCalendarOutputSchema,
   expertise: {
-    domains: ["calendar", "schedule", "meetings", "events", "availability", "scheduling"],
     examples: [
       "Get all of my events for today",
       "Create a meeting with john@example.com tomorrow at 2pm for 1 hour",

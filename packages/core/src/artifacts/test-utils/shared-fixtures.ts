@@ -45,7 +45,7 @@ export function createWorkspacePlanInput(
             id: "test-agent",
             name: "Test Agent",
             description: "A test agent for testing",
-            needs: ["web-access"],
+            capabilities: ["web-access"],
           },
         ],
         jobs: [

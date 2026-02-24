@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { extname } from "node:path";
 
 const BINARY_EXTENSIONS = new Set([
   ".lock",
@@ -22,7 +23,7 @@ const BINARY_EXTENSIONS = new Set([
  */
 async function trimWhitespace(files) {
   for (const file of files) {
-    const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
+    const ext = extname(file).toLowerCase();
     if (BINARY_EXTENSIONS.has(ext)) continue;
 
     try {
@@ -41,12 +42,20 @@ async function trimWhitespace(files) {
 }
 
 /**
- * @filename: lint-staged.config.js
+ * lint-staged config — runs fmt and lint on only the staged files.
  * @type {import('lint-staged').Configuration}
  */
 export default {
   "**/*": async (files) => {
     await trimWhitespace(files);
-    return ["deno task fmt", "deno task lint"];
+    // Return empty — formatting/linting handled by the specific globs below
+    return [];
   },
+  "*.{ts,tsx,js,jsx,json,jsonc,css,md}": [
+    "deno run -A npm:@biomejs/biome format --write --files-ignore-unknown=true --no-errors-on-unmatched",
+    "deno run -A npm:@biomejs/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched",
+  ],
+  "*.{ts,tsx,js,jsx}": "deno lint --fix",
+  "apps/web-client/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
+  "apps/atlas-auth-ui/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
 };

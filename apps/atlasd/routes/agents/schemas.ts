@@ -8,13 +8,7 @@ export const agentMetadataSchema = z.object({
   description: z.string().optional(),
   version: z.string().optional(),
   category: z.enum(["system", "bundled", "sdk", "yaml"]),
-  expertise: z
-    .object({
-      domains: z.array(z.string()),
-      capabilities: z.array(z.string()),
-      examples: z.array(z.string()),
-    })
-    .optional(),
+  expertise: z.object({ examples: z.array(z.string()) }).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -25,8 +19,6 @@ export const agentListResponseSchema = z.object({
 
 export const agentExpertiseSchema = z.object({
   agentId: z.string(),
-  domains: z.array(z.string()),
-  capabilities: z.array(z.string()),
   examples: z.array(z.string()),
   recommendedFor: z.array(z.string()).optional(),
 });

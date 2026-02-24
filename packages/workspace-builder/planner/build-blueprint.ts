@@ -7,6 +7,7 @@
  */
 
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Logger } from "@atlas/logger";
 import type { CredentialBinding } from "@atlas/schemas/workspace";
 import type { DocumentContract, WorkspaceBlueprint } from "../types.ts";
@@ -79,6 +80,8 @@ export type BlueprintResult = {
   clarifications: AgentClarification[];
   credentials: { bindings: CredentialBinding[]; unresolved: UnresolvedCredential[] };
   readiness: ReadinessResult;
+  /** Runtime-registered MCP servers from KV used during classification. */
+  dynamicServers: MCPServerMetadata[];
 };
 
 // ---------------------------------------------------------------------------
@@ -154,13 +157,16 @@ export async function buildBlueprint(
         }),
       });
 
+  // Reuse dynamic servers already fetched during planning (avoids redundant KV lookup)
+  const dynamicServers = phase1.dynamicServers;
+
   // -- classify ------------------------------------------------------------
   const { clarifications, configRequirements } = precomputed
     ? precomputed.classified
-    : await runStep("classify", () => classifyAgents(phase1.agents), {
+    : await runStep("classify", () => classifyAgents(phase1.agents, { dynamicServers }), {
         logger,
         abortSignal,
-        inputs: { agentCount: phase1.agents.length },
+        inputs: { agentCount: phase1.agents.length, dynamicServerCount: dynamicServers.length },
         logOutputs: (r) => ({
           clarifications: r.clarifications.length,
           configRequirements: r.configRequirements.length,
@@ -350,5 +356,6 @@ export async function buildBlueprint(
     clarifications,
     credentials: { bindings: credentialBindings, unresolved: unresolvedCredentials },
     readiness,
+    dynamicServers,
   };
 }

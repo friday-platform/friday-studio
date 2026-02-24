@@ -16,13 +16,13 @@ describe("lookupOutputSchema", () => {
         id: "data-analyst",
         name: "Data Analyst",
         description: "Analyzes data",
-        needs: ["data-analysis"],
+        capabilities: ["data-analysis"],
       },
       {
         id: "custom-llm",
         name: "Custom Agent",
         description: "Does custom stuff",
-        needs: ["custom"],
+        capabilities: ["custom"],
       },
     ],
     jobs: [

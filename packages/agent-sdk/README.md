@@ -41,8 +41,6 @@ export const githubAgent = createAgent({
   description: "GitHub operations expert",
 
   expertise: {
-    domains: ["github", "vcs", "security"],
-    capabilities: ["scan repositories", "review PRs", "manage issues"],
     examples: ["scan my repo for vulnerabilities", "review PR #123"]
   },
 
@@ -222,8 +220,6 @@ export const myAgent = createAgent({
   description: "Does something specific",
 
   expertise: {
-    domains: ["my-domain"],
-    capabilities: ["capability-1", "capability-2"],
     examples: ["do this thing", "do that thing"],
   },
 
@@ -243,8 +239,6 @@ export const slackAgent = createAgent({
   description: "Slack messaging expert",
 
   expertise: {
-    domains: ["messaging", "communication"],
-    capabilities: ["send messages", "manage channels"],
     examples: ["send a message to #general"]
   },
 

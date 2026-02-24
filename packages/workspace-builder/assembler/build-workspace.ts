@@ -2,6 +2,7 @@
 
 import type { MCPServerConfig, WorkspaceAgentConfig, WorkspaceConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { FSMDefinition } from "@atlas/fsm-engine";
 import { stringify } from "@std/yaml";
 import type { Agent, CredentialBinding, Signal, WorkspaceBlueprint } from "../types.ts";
@@ -19,6 +20,7 @@ export interface Phase1Output {
  * @param phase3 - Phase 3 output with jobs, steps, contracts, mappings
  * @param fsms - Compiled FSM definitions (one per job)
  * @param bindings - Optional credential bindings to inject into MCP server and agent env blocks
+ * @param dynamicServers - Optional runtime-registered MCP servers from KV (not in the static registry)
  * @returns YAML string that passes WorkspaceConfigSchema validation
  */
 export function buildWorkspaceYaml(
@@ -26,10 +28,11 @@ export function buildWorkspaceYaml(
   phase3: WorkspaceBlueprint,
   fsms: FSMDefinition[],
   bindings?: CredentialBinding[],
+  dynamicServers?: MCPServerMetadata[],
 ): string {
   const fsmByJobId = new Map(fsms.map((f) => [f.id, f]));
 
-  const mcpServerConfigs = buildMCPServers(phase1.agents, bindings);
+  const mcpServerConfigs = buildMCPServers(phase1.agents, bindings, dynamicServers);
 
   const config: WorkspaceConfig = {
     version: "1.0",
@@ -75,14 +78,20 @@ function buildSignals(signals: Signal[]): NonNullable<WorkspaceConfig["signals"]
 function buildMCPServers(
   agents: Agent[],
   bindings?: CredentialBinding[],
+  dynamicServers?: MCPServerMetadata[],
 ): Record<string, MCPServerConfig> {
   const result: Record<string, MCPServerConfig> = {};
+
+  const dynamicById = new Map<string, MCPServerMetadata>();
+  for (const server of dynamicServers ?? []) {
+    dynamicById.set(server.id, server);
+  }
 
   for (const agent of agents) {
     if (!agent.mcpServers) continue;
     for (const { serverId } of agent.mcpServers) {
       if (result[serverId]) continue;
-      const serverMeta = mcpServersRegistry.servers[serverId];
+      const serverMeta = mcpServersRegistry.servers[serverId] ?? dynamicById.get(serverId);
       if (!serverMeta) {
         throw new Error(`MCP server "${serverId}" not found in registry`);
       }

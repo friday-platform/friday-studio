@@ -164,19 +164,11 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
   displayName: "Claude Code",
   version: "1.0.0",
   description:
-    "Execute coding tasks, analyze codebases, debug issues, and identify root causes using Claude API with sandboxed filesystem access",
+    "Execute coding tasks in a sandboxed environment via Claude Code SDK. Clones repos, reads/writes files, runs commands, analyzes codebases, and debugs issues. USE FOR: code generation, code changes, codebase analysis, debugging, root cause analysis.",
+  constraints:
+    "Runs in isolated sandbox. Requires Anthropic API key and GitHub token. Cannot access workspace resource tables or artifacts directly. For reading GitHub data (PRs, issues, commits, repos), use the github MCP server. For data analysis, use data-analyst.",
   outputSchema: ClaudeCodeOutputSchema,
   expertise: {
-    domains: [
-      "code-generation",
-      "coding",
-      "file-operations",
-      "development",
-      "programming",
-      "code-analysis",
-      "debugging",
-      "root-cause-analysis",
-    ],
     examples: [
       "Write a TypeScript function to parse JSON",
       "Read and analyze the package.json file",

@@ -29,10 +29,11 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
   displayName: "CSV Filter Sampler",
   version: "1.0.0",
   description:
-    "Read and filter CSV files using natural language queries, randomly sample N records, return structured JSON artifact",
+    "Reads CSV artifact files, filters rows using natural language criteria via SQL, and returns N random samples as a structured JSON artifact. USE FOR: filtering uploaded CSV data and sampling records for downstream processing.",
+  constraints:
+    "Operates on CSV file artifacts only. Cannot write or modify the source CSV. Cannot query databases or workspace resource tables. For full SQL analytics on database artifacts, use data-analyst.",
   outputSchema: CsvFilterSamplerOutputSchema,
   expertise: {
-    domains: ["csv", "filtering", "sampling"],
     examples: [
       "Read artifact 17602586-f090-11f0-b0d1-33569426ac3c and filter for United States contacts with decision-making titles, sample 3",
       "Filter artifact abc123 for qualified prospects in the enterprise segment, select 5 random samples",

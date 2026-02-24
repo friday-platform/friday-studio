@@ -18,7 +18,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     id: "test-agent",
     name: "Test Agent",
     description: "A test agent",
-    needs: ["testing"],
+    capabilities: ["testing"],
     ...overrides,
   };
 }
@@ -58,8 +58,8 @@ describe("isFastpathEligible", () => {
           {
             agentId: "test-agent",
             agentName: "Test Agent",
-            need: "something",
-            issue: { type: "no-match" as const },
+            capability: "something",
+            issue: { type: "unknown-capability" as const, capabilityId: "something" },
           },
         ],
       },
@@ -76,6 +76,12 @@ describe("isFastpathEligible", () => {
       plan: { agents: [makeAgent({ mcpServers: [] })] },
       classifyResult: { clarifications: noClarifications },
       expected: false,
+    },
+    {
+      name: "single agent with empty capabilities (built-in tools only)",
+      plan: { agents: [makeAgent({ capabilities: [] })] },
+      classifyResult: { clarifications: noClarifications },
+      expected: true,
     },
   ];
 
@@ -127,7 +133,7 @@ describe("buildFastpathStep", () => {
       name: "Research",
       bundledId: "research",
       description: "A research agent",
-      needs: ["web-search"],
+      capabilities: ["web-search"],
     });
     const result = buildFastpathStep(agent, "find me some info");
 
@@ -135,7 +141,7 @@ describe("buildFastpathStep", () => {
       agentId: "research",
       description: "find me some info",
       executionType: "agent",
-      needs: ["web-search"],
+      capabilities: ["web-search"],
       friendlyDescription: "A research agent",
     });
   });
@@ -144,7 +150,7 @@ describe("buildFastpathStep", () => {
     const agent = makeAgent({
       name: "Gmail Helper",
       description: "Manages email",
-      needs: ["email"],
+      capabilities: ["email"],
       mcpServers: [{ serverId: "google-gmail", name: "Gmail" }],
     });
     const result = buildFastpathStep(agent, "check my email");
@@ -153,7 +159,7 @@ describe("buildFastpathStep", () => {
       agentId: "Gmail Helper",
       description: "check my email",
       executionType: "llm",
-      needs: ["email"],
+      capabilities: ["email"],
       friendlyDescription: "Manages email",
     });
   });
@@ -293,6 +299,27 @@ describe("buildFastpathFSM", () => {
       prompt: expect.stringContaining("## Context Facts"),
     });
     expect(entry?.[0]).toMatchObject({ prompt: expect.stringContaining("Task: check my email") });
+  });
+
+  test("empty-capabilities agent produces LLM action with empty tools", () => {
+    const agent = makeAgent({ name: "General", capabilities: [] });
+    const dagStep = buildFastpathDAGStep(agent, "do something simple");
+    const fsm = buildFastpathFSM(agent, dagStep, "do something simple");
+    const stepState = stateName(dagStep.id);
+
+    expect(Object.keys(fsm.states)).toHaveLength(3);
+
+    const entry = fsm.states[stepState]?.entry;
+    expect(entry).toHaveLength(2);
+    expect(entry?.[0]).toMatchObject({
+      type: "llm",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      prompt: "Task: do something simple",
+      tools: [],
+      outputTo: "result",
+    });
+    expect(entry?.[1]).toMatchObject({ type: "emit", event: "ADVANCE" });
   });
 
   test("outputTo is always 'result' for both agent types", () => {
