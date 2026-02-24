@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import {
   MAX_FILE_SIZE,
@@ -12,7 +13,7 @@ import { black, PDF } from "@libpdf/core";
 import JSZip from "jszip";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { artifactsApp } from "./artifacts.ts";
+import { artifactsApp, resolveFileType } from "./artifacts.ts";
 
 // Configure storage to use a temp directory before any imports that might use ArtifactStorage
 const tempDir = makeTempDir();
@@ -92,6 +93,104 @@ function createTestFile(content: string | ArrayBuffer, name: string, type: strin
  */
 function createLargeBuffer(size: number): ArrayBuffer {
   return new ArrayBuffer(size);
+}
+
+const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/**
+ * Generate a valid PDF with sufficient text to pass the empty content threshold.
+ * Returns ArrayBuffer for File constructor compatibility.
+ */
+async function createValidPdf(text: string): Promise<ArrayBuffer> {
+  const pdf = PDF.create();
+  pdf.addPage({ size: "letter" });
+  const page = pdf.getPage(0);
+  if (!page) throw new Error("Failed to get page");
+
+  // Pad text to ensure it passes the 15 char empty threshold
+  const paddedText = text.padEnd(20, ".");
+
+  page.drawText(paddedText, { x: 50, y: 350, size: 12, color: black });
+
+  const bytes = await pdf.save();
+  return new Uint8Array(bytes).buffer;
+}
+
+async function createValidDocx(bodyXml: string): Promise<ArrayBuffer> {
+  const zip = new JSZip();
+  zip.file(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+  );
+  zip.file(
+    "word/document.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`,
+  );
+  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return new Uint8Array(bytes).buffer;
+}
+
+async function createValidPptx(slideTexts: string[]): Promise<ArrayBuffer> {
+  const zip = new JSZip();
+  const overrides = slideTexts
+    .map(
+      (_, i) =>
+        `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+    )
+    .join("\n  ");
+  zip.file(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  ${overrides}
+</Types>`,
+  );
+  const sldIdEntries = slideTexts
+    .map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`)
+    .join("\n    ");
+  zip.file(
+    "ppt/presentation.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="${P_NS}" xmlns:r="${R_NS}" xmlns:a="${A_NS}">
+  <p:sldIdLst>${sldIdEntries}</p:sldIdLst>
+</p:presentation>`,
+  );
+  const relEntries = slideTexts
+    .map(
+      (_, i) =>
+        `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
+    )
+    .join("\n  ");
+  zip.file(
+    "ppt/_rels/presentation.xml.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${relEntries}
+</Relationships>`,
+  );
+  for (let i = 0; i < slideTexts.length; i++) {
+    zip.file(
+      `ppt/slides/slide${i + 1}.xml`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">
+  <p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${slideTexts[i]}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>
+</p:sld>`,
+    );
+  }
+  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return new Uint8Array(bytes).buffer;
 }
 
 describe("Upload endpoint", () => {
@@ -201,7 +300,7 @@ describe("Upload endpoint", () => {
 
   it("rejects binary files detected by magic bytes (non-PDF)", async () => {
     // ZIP magic bytes disguised with .txt extension
-    // This tests that binary detection catches files even when extension passes
+    // This tests that content-based detection catches files even when extension passes
     const zipMagicBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
     const file = createTestFile(zipMagicBytes.buffer, "sneaky.txt", "text/plain");
     const formData = new FormData();
@@ -211,10 +310,8 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(500);
     const body = await response.json();
-    assertErrorResponse(
-      body,
-      "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
-    );
+    const { error } = z.object({ error: z.string() }).parse(body);
+    expect(error).toContain("not a supported format");
   });
 
   it("uses extension fallback when MIME type empty", async () => {
@@ -903,25 +1000,6 @@ describe("Export endpoint", () => {
 });
 
 describe("PDF upload integration", () => {
-  /**
-   * Generate a valid PDF with sufficient text to pass the empty content threshold.
-   * Returns ArrayBuffer for File constructor compatibility.
-   */
-  async function createValidPdf(text: string): Promise<ArrayBuffer> {
-    const pdf = PDF.create();
-    pdf.addPage({ size: "letter" });
-    const page = pdf.getPage(0);
-    if (!page) throw new Error("Failed to get page");
-
-    // Pad text to ensure it passes the 15 char empty threshold
-    const paddedText = text.padEnd(20, ".");
-
-    page.drawText(paddedText, { x: 50, y: 350, size: 12, color: black });
-
-    const bytes = await pdf.save();
-    return new Uint8Array(bytes).buffer;
-  }
-
   it("returns 201 with artifact for valid PDF upload", async () => {
     const pdfBytes = await createValidPdf("Integration test document content");
     const file = new File([pdfBytes], "report.pdf", { type: "application/pdf" });
@@ -1011,28 +1089,6 @@ describe("PDF upload integration", () => {
 });
 
 describe("DOCX upload integration", () => {
-  const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-  async function createValidDocx(bodyXml: string): Promise<ArrayBuffer> {
-    const zip = new JSZip();
-    zip.file(
-      "[Content_Types].xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`,
-    );
-    zip.file(
-      "word/document.xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`,
-    );
-    const bytes = await zip.generateAsync({ type: "uint8array" });
-    return bytes.buffer.slice(0) as ArrayBuffer;
-  }
-
   it("returns 201 with artifact for valid DOCX upload", async () => {
     const docxBytes = await createValidDocx(
       `<w:p><w:r><w:t>Integration test document content for DOCX upload.</w:t></w:r></w:p>`,
@@ -1098,72 +1154,6 @@ describe("DOCX upload integration", () => {
 });
 
 describe("PPTX upload integration", () => {
-  const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
-  const P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
-  const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-
-  async function createValidPptx(slideTexts: string[]): Promise<ArrayBuffer> {
-    const zip = new JSZip();
-
-    const overrides = slideTexts
-      .map(
-        (_, i) =>
-          `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
-      )
-      .join("\n  ");
-
-    zip.file(
-      "[Content_Types].xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-  ${overrides}
-</Types>`,
-    );
-
-    const sldIdEntries = slideTexts
-      .map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`)
-      .join("\n    ");
-
-    zip.file(
-      "ppt/presentation.xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:p="${P_NS}" xmlns:r="${R_NS}" xmlns:a="${A_NS}">
-  <p:sldIdLst>${sldIdEntries}</p:sldIdLst>
-</p:presentation>`,
-    );
-
-    const relEntries = slideTexts
-      .map(
-        (_, i) =>
-          `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
-      )
-      .join("\n  ");
-
-    zip.file(
-      "ppt/_rels/presentation.xml.rels",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  ${relEntries}
-</Relationships>`,
-    );
-
-    for (let i = 0; i < slideTexts.length; i++) {
-      zip.file(
-        `ppt/slides/slide${i + 1}.xml`,
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">
-  <p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${slideTexts[i]}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>
-</p:sld>`,
-      );
-    }
-
-    const bytes = await zip.generateAsync({ type: "uint8array" });
-    return bytes.buffer.slice(0) as ArrayBuffer;
-  }
-
   it("returns 201 with artifact for valid PPTX upload", async () => {
     const pptxBytes = await createValidPptx(["Slide one content", "Slide two content"]);
     const file = new File([pptxBytes], "deck.pptx", {
@@ -1252,31 +1242,6 @@ describe("Legacy format rejection", () => {
     expect(response.status).toEqual(415);
     const body = await response.json();
     assertErrorResponse(body, "Legacy .ppt format not supported. Save as .pptx and re-upload.");
-  });
-});
-
-describe("Mismatched extension rejection", () => {
-  it("rejects a ZIP file with .docx extension that is not a real DOCX", async () => {
-    // Build a valid ZIP that is NOT a DOCX (no word/document.xml)
-    const zip = new JSZip();
-    zip.file(
-      "[Content_Types].xml",
-      `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`,
-    );
-    zip.file("random/data.txt", "this is not a DOCX");
-    const bytes = await zip.generateAsync({ type: "uint8array" });
-    const file = new File([bytes.buffer.slice(0) as ArrayBuffer], "fake.docx", {
-      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    });
-    const formData = new FormData();
-    formData.set("file", file);
-
-    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
-
-    // Should get a user-facing error, not a 500 stacktrace
-    expect(response.status).toEqual(500);
-    const body = await response.json();
-    assertErrorResponse(body, "This DOCX file appears to be corrupted or invalid.");
   });
 });
 
@@ -1398,6 +1363,289 @@ describe("Image upload integration", () => {
 
     // The stored path should have .png extension, not .md
     expect(artifact.data.data.path).toMatch(/\.png$/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content-based file routing integration tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Content-based file routing", () => {
+  it("routes PDF content with .docx extension to PDF converter", async () => {
+    const pdfBytes = await createValidPdf("PDF content routed correctly despite docx extension");
+    const file = new File([pdfBytes], "misnamed.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+
+    // Verify the content was extracted via PDF converter (contains page markers)
+    const getResponse = await artifactsApp.request(`/${body.artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const detail = ArtifactWithContentsSchema.parse(await getResponse.json());
+    expect(detail.contents).toContain("PDF content routed correctly");
+  });
+
+  it("routes DOCX content with .pdf extension to DOCX converter", async () => {
+    const docxBytes = await createValidDocx(
+      `<w:p><w:r><w:t>DOCX content routed correctly despite pdf extension</w:t></w:r></w:p>`,
+    );
+    const file = new File([docxBytes], "misnamed.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+
+    const getResponse = await artifactsApp.request(`/${body.artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const detail = ArtifactWithContentsSchema.parse(await getResponse.json());
+    expect(detail.contents).toContain("DOCX content routed correctly");
+  });
+
+  it("routes PPTX content with .pdf extension to PPTX converter", async () => {
+    const pptxBytes = await createValidPptx(["PPTX slide routed correctly despite pdf extension"]);
+    const file = new File([pptxBytes], "misnamed.pdf", { type: "application/pdf" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+
+    const getResponse = await artifactsApp.request(`/${body.artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const detail = ArtifactWithContentsSchema.parse(await getResponse.json());
+    expect(detail.contents).toContain("PPTX slide routed correctly");
+  });
+
+  it("rejects plain ZIP with .docx extension (no OOXML markers)", async () => {
+    const zip = new JSZip();
+    zip.file("random/stuff.txt", "not an office file");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = new File([new Uint8Array(bytes).buffer], "fake.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    const { error } = z.object({ error: z.string() }).parse(body);
+    expect(error).toContain("not a supported format");
+  });
+
+  it("routes PNG content with .txt extension to image storage", async () => {
+    const file = new File([TINY_PNG.buffer], "misnamed.txt", { type: "text/plain" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const { artifact } = FileArtifactResponseSchema.parse(await response.json());
+    expect(artifact.data.type).toEqual("file");
+    expect(artifact.data.data.mimeType).toEqual("image/png");
+    // Persisted path should use resolved extension .png, not original .txt
+    expect(artifact.data.data.path).toMatch(/\.png$/);
+  });
+
+  it("routes DOCX content with .txt extension to DOCX converter", async () => {
+    const docxBytes = await createValidDocx(
+      `<w:p><w:r><w:t>DOCX content routed correctly despite txt extension</w:t></w:r></w:p>`,
+    );
+    const file = new File([docxBytes], "misnamed.txt", { type: "text/plain" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+
+    const getResponse = await artifactsApp.request(`/${body.artifact.id}`, { method: "GET" });
+    expect(getResponse.status).toEqual(200);
+    const detail = ArtifactWithContentsSchema.parse(await getResponse.json());
+    expect(detail.contents).toContain("DOCX content routed correctly");
+  });
+
+  it("rejects XLSX content with .docx extension (no converter)", async () => {
+    // Build a minimal XLSX (has xl/workbook.xml, not word/document.xml)
+    const zip = new JSZip();
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+</Types>`,
+    );
+    zip.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8"?><workbook/>`);
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = new File([new Uint8Array(bytes).buffer], "data.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    const { error } = z.object({ error: z.string() }).parse(body);
+    expect(error).toContain("not a supported format");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveFileType() unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveFileType", () => {
+  it.each([
+    { mime: "application/pdf", ext: "pdf", label: "PDF" },
+    { mime: "image/png", ext: "png", label: "PNG" },
+    { mime: "image/jpeg", ext: "jpg", label: "JPEG" },
+    { mime: "image/webp", ext: "webp", label: "WebP" },
+    { mime: "image/gif", ext: "gif", label: "GIF" },
+    {
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ext: "docx",
+      label: "OOXML DOCX",
+    },
+    {
+      mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ext: "pptx",
+      label: "OOXML PPTX",
+    },
+  ])("returns detected.mime directly for $label", async ({ mime, ext }) => {
+    const result = await resolveFileType(
+      { mime, ext },
+      join(tempDir, "unused.bin"),
+      "irrelevant.txt",
+    );
+    expect(result).toBe(mime);
+  });
+
+  it("returns undefined for unsupported detected MIME", async () => {
+    const result = await resolveFileType(
+      { mime: "audio/mpeg", ext: "mp3" },
+      join(tempDir, "unused.bin"),
+      "song.mp3",
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("returns DOCX MIME when ZIP contains word/document.xml", async () => {
+    const zip = new JSZip();
+    zip.file("word/document.xml", "<document/>");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const filePath = join(tempDir, "docx-peek-test.zip");
+    await writeFile(filePath, bytes);
+
+    const result = await resolveFileType(
+      { mime: "application/zip", ext: "zip" },
+      filePath,
+      "report.docx",
+    );
+    expect(result).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  });
+
+  it("returns PPTX MIME when ZIP contains ppt/presentation.xml", async () => {
+    const zip = new JSZip();
+    zip.file("ppt/presentation.xml", "<presentation/>");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const filePath = join(tempDir, "pptx-peek-test.zip");
+    await writeFile(filePath, bytes);
+
+    const result = await resolveFileType(
+      { mime: "application/zip", ext: "zip" },
+      filePath,
+      "deck.pptx",
+    );
+    expect(result).toBe(
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
+  });
+
+  it("returns undefined when ZIP has no OOXML markers", async () => {
+    const zip = new JSZip();
+    zip.file("random/data.txt", "not an office file");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const filePath = join(tempDir, "plain-zip-test.zip");
+    await writeFile(filePath, bytes);
+
+    const result = await resolveFileType(
+      { mime: "application/zip", ext: "zip" },
+      filePath,
+      "archive.docx",
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when ZIP file is corrupt/unreadable", async () => {
+    const filePath = join(tempDir, "corrupt-zip-test.zip");
+    await writeFile(filePath, new Uint8Array([0x00, 0x01, 0x02, 0x03]));
+
+    const result = await resolveFileType(
+      { mime: "application/zip", ext: "zip" },
+      filePath,
+      "bad.docx",
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for ZIP exceeding MAX_OFFICE_SIZE without reading", async () => {
+    // Write a valid DOCX (with word/document.xml) padded to exceed MAX_OFFICE_SIZE.
+    // If the stat guard is removed, JSZip would find the OOXML marker and return
+    // DOCX MIME — making this test fail, which proves the guard is load-bearing.
+    const docxBytes = new Uint8Array(await createValidDocx("<w:p/>"));
+    const oversized = new Uint8Array(MAX_OFFICE_SIZE + 1);
+    oversized.set(docxBytes);
+    const filePath = join(tempDir, "oversized-zip-test.zip");
+    await writeFile(filePath, oversized);
+
+    const result = await resolveFileType(
+      { mime: "application/zip", ext: "zip" },
+      filePath,
+      "huge.docx",
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("falls back to extension mapping when detected is undefined (.csv)", async () => {
+    const result = await resolveFileType(undefined, join(tempDir, "unused.bin"), "data.csv");
+    expect(result).toBe("text/csv");
+  });
+
+  it("falls back to extension mapping when detected is undefined (.txt)", async () => {
+    const result = await resolveFileType(undefined, join(tempDir, "unused.bin"), "notes.txt");
+    expect(result).toBe("text/plain");
+  });
+
+  it("falls back to extension mapping when detected is undefined (.json)", async () => {
+    const result = await resolveFileType(undefined, join(tempDir, "unused.bin"), "config.json");
+    expect(result).toBe("application/json");
+  });
+
+  it("returns undefined when detected is undefined and extension is unknown", async () => {
+    const result = await resolveFileType(undefined, join(tempDir, "unused.bin"), "file.xyz");
+    expect(result).toBeUndefined();
   });
 });
 

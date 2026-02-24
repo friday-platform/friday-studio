@@ -19,6 +19,7 @@ import {
   USER_FACING_ERROR_CODES,
 } from "@atlas/core/artifacts/converters";
 import {
+  EXTENSION_TO_MIME,
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isImageMimeType,
@@ -37,6 +38,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
+import JSZip from "jszip";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { getCurrentUserId } from "./me/adapter.ts";
@@ -44,28 +46,13 @@ import { getCurrentUserId } from "./me/adapter.ts";
 const logger = createLogger({ name: "artifacts-upload" });
 const analytics = createAnalyticsClient();
 
-/** Binary MIME types allowed through magic-byte detection (documents are converted; images stored as-is). */
-const ALLOWED_BINARY_MIMES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-]);
-
-/** Office extensions that may be detected as application/zip by file-type. */
-const OFFICE_EXTENSIONS = new Set([".docx", ".pptx"]);
+/** Reverse map: MIME type -> canonical extension (first match wins). */
+const MIME_TO_EXTENSION = new Map<string, string>();
+for (const [ext, mime] of EXTENSION_TO_MIME) {
+  if (!MIME_TO_EXTENSION.has(mime)) MIME_TO_EXTENSION.set(mime, ext);
+}
 
 type ValidationResult = { valid: true; mimeType: string } | { valid: false; error: string };
-
-/**
- * Check if uploaded file is a CSV using the canonical extension-to-MIME mapping.
- */
-function isCsvFile(filename: string): boolean {
-  return getValidatedMimeType(filename) === "text/csv";
-}
 
 /**
  * Check if uploaded file is a PDF using the canonical extension-to-MIME mapping.
@@ -92,6 +79,63 @@ function isPptxFile(filename: string): boolean {
     getValidatedMimeType(filename) ===
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
   );
+}
+
+/** MIME types that file-type detects specifically (not as generic application/zip). */
+const SPECIFIC_BINARY_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+/**
+ * Resolve file content type using magic bytes first, extension as fallback.
+ *
+ * Resolution priority:
+ * 1. file-type magic bytes -> specific MIME (PDF, PNG, JPEG, DOCX, PPTX, etc.)
+ * 2. file-type returns application/zip -> JSZip peek for OOXML markers
+ * 3. file-type returns undefined (text formats) -> extension-based mapping
+ *
+ * Returns undefined when neither magic bytes nor extension produce a supported MIME.
+ */
+export async function resolveFileType(
+  detected: { mime: string; ext: string } | undefined,
+  filePath: string,
+  fileName: string,
+): Promise<string | undefined> {
+  if (!detected) {
+    return getValidatedMimeType(fileName);
+  }
+
+  if (SPECIFIC_BINARY_MIMES.has(detected.mime)) {
+    return detected.mime;
+  }
+
+  if (detected.mime === "application/zip") {
+    try {
+      const fileStat = await stat(filePath);
+      if (fileStat.size > MAX_OFFICE_SIZE) {
+        return undefined;
+      }
+      const buffer = await readFile(filePath);
+      const zip = await JSZip.loadAsync(buffer);
+      if (zip.file("word/document.xml")) {
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      }
+      if (zip.file("ppt/presentation.xml")) {
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      }
+    } catch {
+      // Corrupt or unreadable ZIP
+    }
+    return undefined;
+  }
+
+  return undefined;
 }
 
 /**
@@ -310,21 +354,29 @@ export async function createArtifactFromFile(opts: {
     return { ok: false as const, error: legacyError };
   }
 
-  // Reject binary files based on magic bytes (extension check may have passed)
-  // Exceptions: PDFs and OOXML files are allowed — they get converted to markdown later
+  // Resolve actual content type: magic bytes first, extension fallback for text formats
   const detected = await fileTypeFromFile(filePath);
-  if (detected) {
-    const isAllowed =
-      ALLOWED_BINARY_MIMES.has(detected.mime) ||
-      (detected.mime === "application/zip" && OFFICE_EXTENSIONS.has(ext));
-    if (!isAllowed) {
-      await rm(filePath, { force: true });
-      return {
-        ok: false as const,
-        error:
-          "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
-      };
-    }
+  const resolvedMime = await resolveFileType(detected, filePath, fileName);
+
+  // Log mismatch when resolved type differs from extension-implied type
+  const extensionMime = getValidatedMimeType(fileName);
+  if (resolvedMime && extensionMime && resolvedMime !== extensionMime) {
+    logger.warn("File content type differs from extension", {
+      fileName,
+      extension: ext,
+      detectedMime: detected?.mime,
+      resolvedMime,
+    });
+  }
+
+  // Reject binary files with no supported converter
+  if (detected && !resolvedMime) {
+    await rm(filePath, { force: true });
+    const detectedLabel = (detected.ext ?? "unknown").toUpperCase();
+    return {
+      ok: false as const,
+      error: `Detected ${detectedLabel} content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF`,
+    };
   }
 
   // Cortex adapter uploads to remote storage — local files are transient, use /tmp.
@@ -335,7 +387,10 @@ export async function createArtifactFromFile(opts: {
     : join(getAtlasHome(), "uploads", "artifacts");
   await mkdir(artifactsDir, { recursive: true });
 
-  if (isCsvFile(fileName)) {
+  // Derive resolved extension for persisted file paths
+  const resolvedExt = resolvedMime ? (MIME_TO_EXTENSION.get(resolvedMime) ?? ext) : ext;
+
+  if (resolvedMime === "text/csv") {
     const dbPath = join(artifactsDir, `${crypto.randomUUID()}.db`);
     try {
       const tableName = sanitizeTableName(fileName);
@@ -385,7 +440,7 @@ export async function createArtifactFromFile(opts: {
     }
   }
 
-  if (isPdfFile(fileName)) {
+  if (resolvedMime === "application/pdf") {
     return convertBinaryToMarkdown({
       filePath,
       fileName,
@@ -402,7 +457,7 @@ export async function createArtifactFromFile(opts: {
     });
   }
 
-  if (isDocxFile(fileName)) {
+  if (resolvedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     return convertBinaryToMarkdown({
       filePath,
       fileName,
@@ -416,7 +471,9 @@ export async function createArtifactFromFile(opts: {
     });
   }
 
-  if (isPptxFile(fileName)) {
+  if (
+    resolvedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
     return convertBinaryToMarkdown({
       filePath,
       fileName,
@@ -434,8 +491,7 @@ export async function createArtifactFromFile(opts: {
   }
 
   // Image files — store as-is, no conversion, no LLM summarization
-  const detectedMime = getValidatedMimeType(fileName);
-  if (detectedMime && isImageMimeType(detectedMime)) {
+  if (resolvedMime && isImageMimeType(resolvedMime)) {
     try {
       const { size } = await stat(filePath);
       if (size > MAX_IMAGE_SIZE) {
@@ -443,7 +499,7 @@ export async function createArtifactFromFile(opts: {
         return { ok: false as const, error: "Image files must be under 5MB." };
       }
 
-      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${extname(fileName)}`);
+      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
       await copyFile(filePath, persistedImagePath);
 
       const result = await ArtifactStorage.create({
@@ -486,7 +542,7 @@ export async function createArtifactFromFile(opts: {
   }
 
   // Non-CSV file artifact — copy to staging dir (persistent for local, /tmp for Cortex)
-  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${extname(fileName) || ".txt"}`);
+  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt || ".txt"}`);
   try {
     await copyFile(filePath, persistedPath);
 
