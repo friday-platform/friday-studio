@@ -67,6 +67,7 @@
     "@std/media-types": "jsr:@std/media-types@^1.1.0",
     "@std/tar": "jsr:@std/tar@^0.1.9",
     "@std/testing": "jsr:@std/testing@^1.0.16",
+    "@std/yaml": "jsr:@std/yaml@^1",
     "cookie": "npm:cookie@^1.0.2",
     "@sendgrid/helpers": "npm:@sendgrid/helpers@^8.0.0",
     "hono/client": "npm:hono@^4.10.4/client",

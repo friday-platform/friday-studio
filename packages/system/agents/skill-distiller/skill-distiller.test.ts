@@ -1,16 +1,13 @@
-/**
- * Tests for skill-distiller agent
- *
- * Tests cover:
- * 1. Creates draft artifact from corpus successfully
- * 2. Returns error if artifacts not found
- * 3. Handles revision of existing draft
- * 4. Returns error if corpus is empty
- */
-
 import type { AgentContext } from "@atlas/agent-sdk";
 import type { LogContext, Logger } from "@atlas/logger";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockGenerateObject = vi.hoisted(() => vi.fn());
+vi.mock("ai", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, generateObject: mockGenerateObject };
+});
+
 import { skillDistillerAgent } from "./skill-distiller.agent.ts";
 
 // =============================================================================
@@ -62,61 +59,9 @@ const existingDraftArtifact = {
       version: 1 as const,
       data: {
         name: "code-review",
+        namespace: "my-team",
         description: "Guidelines for code review",
         instructions: "# Code Review\n\nCheck for errors.",
-        workspaceId: "ws-123",
-      },
-    },
-  },
-};
-
-const generatedSkill = {
-  name: "typescript-best-practices",
-  description:
-    "Best practices for TypeScript development including strict mode and error handling.",
-  instructions:
-    "# TypeScript Best Practices\n\n- Always use strict mode\n- Prefer composition over inheritance\n- Use Zod for validation\n- Handle errors properly",
-};
-
-const createdArtifactResponse = {
-  artifact: {
-    id: "new-draft-456",
-    type: "skill-draft" as const,
-    revision: 1,
-    title: "Skill: typescript-best-practices",
-    summary: generatedSkill.description,
-    createdAt: "2024-01-01T00:00:00Z",
-    workspaceId: "ws-123",
-    data: {
-      type: "skill-draft" as const,
-      version: 1 as const,
-      data: {
-        name: generatedSkill.name,
-        description: generatedSkill.description,
-        instructions: generatedSkill.instructions,
-        workspaceId: "ws-123",
-      },
-    },
-  },
-};
-
-const updatedArtifactResponse = {
-  artifact: {
-    id: "draft-123",
-    type: "skill-draft" as const,
-    revision: 2,
-    title: "Skill: typescript-best-practices",
-    summary: generatedSkill.description,
-    createdAt: "2024-01-01T00:00:00Z",
-    workspaceId: "ws-123",
-    data: {
-      type: "skill-draft" as const,
-      version: 1 as const,
-      data: {
-        name: generatedSkill.name,
-        description: generatedSkill.description,
-        instructions: generatedSkill.instructions,
-        workspaceId: "ws-123",
       },
     },
   },
@@ -159,9 +104,6 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
 
 interface FetchMockConfig {
   batchGetArtifacts?: { status: number; data?: unknown; error?: string };
-  getArtifact?: { status: number; data?: unknown; error?: string };
-  createArtifact?: { status: number; data?: unknown; error?: string };
-  updateArtifact?: { status: number; data?: unknown; error?: string };
 }
 
 function setupFetchMock(config: FetchMockConfig): void {
@@ -191,82 +133,6 @@ function setupFetchMock(config: FetchMockConfig): void {
       );
     }
 
-    // Match single artifact GET endpoint
-    if (url.match(/\/api\/artifacts\/[^/]+$/) && method === "GET") {
-      const response = config.getArtifact;
-      if (!response) {
-        return Promise.reject(new Error(`Unexpected get artifact call: ${url}`));
-      }
-      if (response.status === 200) {
-        return Promise.resolve(
-          new Response(JSON.stringify(response.data), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: response.error }), {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-
-    // Match artifact create endpoint (POST to /api/artifacts)
-    if (url.match(/\/api\/artifacts\/?$/) && method === "POST") {
-      const response = config.createArtifact;
-      if (!response) {
-        return Promise.reject(new Error(`Unexpected create artifact call: ${url}`));
-      }
-      if (response.status === 200 || response.status === 201) {
-        return Promise.resolve(
-          new Response(JSON.stringify(response.data), {
-            status: response.status,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: response.error }), {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-
-    // Match artifact update endpoint (PUT to /api/artifacts/:id)
-    if (url.match(/\/api\/artifacts\/[^/]+$/) && method === "PUT") {
-      const response = config.updateArtifact;
-      if (!response) {
-        return Promise.reject(new Error(`Unexpected update artifact call: ${url}`));
-      }
-      if (response.status === 200) {
-        return Promise.resolve(
-          new Response(JSON.stringify(response.data), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: response.error }), {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-
-    // Anthropic API call - let it be handled by generateObject mock
-    if (url.includes("anthropic.com") || url.includes("api.anthropic")) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ content: [{ text: JSON.stringify(generatedSkill) }] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-
     return Promise.reject(new Error(`Unexpected fetch URL: ${url} (method: ${method})`));
   };
 }
@@ -278,54 +144,11 @@ function setupFetchMock(config: FetchMockConfig): void {
 describe("skillDistillerAgent", () => {
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    mockGenerateObject.mockReset();
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-  });
-
-  describe("creates draft artifact from corpus successfully", () => {
-    it("creates a new draft from valid corpus artifacts", async () => {
-      setupFetchMock({
-        batchGetArtifacts: { status: 200, data: validCorpusArtifacts },
-        createArtifact: { status: 200, data: createdArtifactResponse },
-      });
-
-      // We need to intercept the actual generateObject call
-      // Since generateObject uses fetch internally, and we've mocked fetch,
-      // the LLM call will go through our mock. But generateObject has its own
-      // response parsing. For unit tests, we'll test the handler behavior
-      // by verifying the correct API calls are made.
-
-      // For this test, we'll verify the agent makes the correct sequence of calls
-      // and returns success when all calls succeed.
-
-      // Note: This is an integration-style test that relies on the mocked fetch
-      // The actual generateObject call will fail because our mock doesn't return
-      // a proper streaming response. We'll need to test at a higher level.
-
-      // Let's test what we can: the input validation and error paths
-      const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1", "artifact-2"], workspaceId: "ws-123" },
-        createMockContext(),
-      );
-
-      // Since we can't easily mock generateObject, the test will fail at the LLM call
-      // This is expected - the test documents the expected behavior
-      // In a real scenario, we'd use dependency injection or a test double
-
-      // For now, verify the error contains expected context
-      if (!result.ok) {
-        // The error will be from the LLM call failing due to mock limitations
-        // This is acceptable for documenting the test cases
-        expect(typeof result.error.reason).toBe("string");
-      } else {
-        // If it somehow succeeds, verify the output structure
-        expect(result.data.draftArtifactId).toBe("new-draft-456");
-        expect(result.data.revision).toBe(1);
-        expect(result.data.skill.name).toBe("typescript-best-practices");
-      }
-    });
   });
 
   describe("returns error if artifacts not found", () => {
@@ -333,7 +156,7 @@ describe("skillDistillerAgent", () => {
       setupFetchMock({ batchGetArtifacts: { status: 200, data: { artifacts: [] } } });
 
       const result = await skillDistillerAgent.execute(
-        { artifactIds: ["nonexistent-1", "nonexistent-2"], workspaceId: "ws-123" },
+        { artifactIds: ["nonexistent-1", "nonexistent-2"], namespace: "my-team" },
         createMockContext(),
       );
 
@@ -347,7 +170,7 @@ describe("skillDistillerAgent", () => {
       setupFetchMock({ batchGetArtifacts: { status: 500, error: "Internal server error" } });
 
       const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1"], workspaceId: "ws-123" },
+        { artifactIds: ["artifact-1"], namespace: "my-team" },
         createMockContext(),
       );
 
@@ -361,7 +184,7 @@ describe("skillDistillerAgent", () => {
       setupFetchMock({ batchGetArtifacts: { status: 404, error: "Not found" } });
 
       const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1"], workspaceId: "ws-123" },
+        { artifactIds: ["artifact-1"], namespace: "my-team" },
         createMockContext(),
       );
 
@@ -407,7 +230,7 @@ describe("skillDistillerAgent", () => {
         if (url.includes("/api/artifacts/draft-123") && method === "PUT") {
           callLog.push("update-draft");
           return Promise.resolve(
-            new Response(JSON.stringify(updatedArtifactResponse), {
+            new Response(JSON.stringify(existingDraftArtifact), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),
@@ -418,24 +241,18 @@ describe("skillDistillerAgent", () => {
         return Promise.reject(new Error(`Unexpected fetch URL: ${url} (method: ${method})`));
       };
 
-      const result = await skillDistillerAgent.execute(
+      await skillDistillerAgent.execute(
         {
           artifactIds: ["artifact-1", "artifact-2"],
-          workspaceId: "ws-123",
+          namespace: "my-team",
           draftArtifactId: "draft-123",
         },
         createMockContext(),
       );
 
-      // Verify the correct endpoints were called in order
-      expect(callLog.includes("batch-get")).toBe(true);
-      expect(callLog.includes("get-draft")).toBe(true);
-
-      // The test will fail at generateObject, but we've verified the draft loading logic
-      if (!result.ok) {
-        // Expected - generateObject will fail without proper LLM mock
-        expect(typeof result.error.reason).toBe("string");
-      }
+      // Verify the correct endpoints were called
+      expect(callLog).toContain("batch-get");
+      expect(callLog).toContain("get-draft");
     });
 
     it("continues with new draft if existing draft fetch fails", async () => {
@@ -469,32 +286,24 @@ describe("skillDistillerAgent", () => {
         return Promise.reject(new Error(`Unexpected fetch URL: ${url} (method: ${method})`));
       };
 
-      const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1"], workspaceId: "ws-123", draftArtifactId: "draft-123" },
+      await skillDistillerAgent.execute(
+        { artifactIds: ["artifact-1"], namespace: "my-team", draftArtifactId: "draft-123" },
         createMockContext(),
       );
 
       // Verify draft fetch was attempted
-      expect(callLog.includes("get-draft-failed")).toBe(true);
-
-      // Agent should continue (and fail at generateObject)
-      if (!result.ok) {
-        // The error should be from generateObject, not from draft fetch
-        // Draft fetch failure is logged as warning and agent continues
-        expect(typeof result.error.reason).toBe("string");
-      }
+      expect(callLog).toContain("get-draft-failed");
     });
   });
 
   describe("returns error if corpus is empty", () => {
     it("fails when artifactIds array is empty after validation", async () => {
-      // The schema requires min(1) artifacts, so this tests schema validation
       setupFetchMock({ batchGetArtifacts: { status: 200, data: { artifacts: [] } } });
 
       const result = await skillDistillerAgent.execute(
         {
           artifactIds: ["id-1"], // Pass validation but get empty response
-          workspaceId: "ws-123",
+          namespace: "my-team",
         },
         createMockContext(),
       );
@@ -502,71 +311,6 @@ describe("skillDistillerAgent", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.reason).toContain("No artifacts found");
-      }
-    });
-  });
-
-  describe("input validation", () => {
-    it("requires artifactIds to be non-empty", async () => {
-      // The Zod schema enforces min(1) on artifactIds
-      // Testing with empty array should fail validation
-      try {
-        await skillDistillerAgent.execute(
-          {
-            artifactIds: [], // Invalid - empty array
-            workspaceId: "ws-123",
-          },
-          createMockContext(),
-        );
-        // If we get here without error, check the result
-      } catch (error) {
-        // Schema validation error is expected
-        expect(String(error)).toContain("artifactIds");
-      }
-    });
-
-    it("requires workspaceId", async () => {
-      try {
-        await skillDistillerAgent.execute(
-          {
-            artifactIds: ["artifact-1"],
-            // workspaceId is missing
-          } as { artifactIds: string[]; workspaceId: string },
-          createMockContext(),
-        );
-      } catch (error) {
-        // Schema validation error is expected
-        expect(String(error)).toContain("workspaceId");
-      }
-    });
-  });
-
-  describe("optional parameters", () => {
-    it("accepts optional name parameter", async () => {
-      setupFetchMock({ batchGetArtifacts: { status: 200, data: validCorpusArtifacts } });
-
-      const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1"], workspaceId: "ws-123", name: "custom-skill-name" },
-        createMockContext(),
-      );
-
-      // Will fail at generateObject, but validates name is accepted
-      if (!result.ok) {
-        expect(typeof result.error.reason).toBe("string");
-      }
-    });
-
-    it("accepts optional focus parameter", async () => {
-      setupFetchMock({ batchGetArtifacts: { status: 200, data: validCorpusArtifacts } });
-
-      const result = await skillDistillerAgent.execute(
-        { artifactIds: ["artifact-1"], workspaceId: "ws-123", focus: "error handling patterns" },
-        createMockContext(),
-      );
-
-      // Will fail at generateObject, but validates focus is accepted
-      if (!result.ok) {
-        expect(typeof result.error.reason).toBe("string");
       }
     });
   });

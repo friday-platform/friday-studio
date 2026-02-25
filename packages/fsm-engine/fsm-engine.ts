@@ -884,286 +884,282 @@ export class FSMEngine {
             outputTo: action.outputTo,
           });
 
-          // Fetch workspace skills for injection
-          const workspaceId = sig._context?.workspaceId;
           let skills: SkillSummary[] = [];
-          if (workspaceId) {
-            const skillsResult = await SkillStorage.list(workspaceId);
-            if (!skillsResult.ok) {
-              logger.error("Failed to fetch workspace skills", {
-                workspaceId,
-                error: skillsResult.error,
-              });
-            }
-            skills = skillsResult.ok ? skillsResult.data : [];
-            logger.debug("Workspace skills query result", {
-              workspaceId,
-              ok: skillsResult.ok,
-              skillCount: skills.length,
-              skillNames: skills.map((s) => s.name),
-            });
-          } else {
-            logger.debug("Skipping skill injection - no workspaceId in signal context", {
-              hasContext: !!sig._context,
-              signalType: sig.type,
-            });
+          const skillsResult = await SkillStorage.list();
+          if (!skillsResult.ok) {
+            logger.error("Failed to fetch skills", { error: skillsResult.error });
           }
+          skills = skillsResult.ok ? skillsResult.data : [];
+          logger.debug("Skills query result", {
+            ok: skillsResult.ok,
+            skillCount: skills.length,
+            skillNames: skills.map((s) => s.name),
+          });
 
           // Build base tools from action definition
           const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
 
-          // Add load_skill tool if workspace has skills
-          if (skills.length > 0 && workspaceId) {
+          let cleanupSkills: (() => Promise<void>) | undefined;
+          if (skills.length > 0) {
             // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
-            baseTools.load_skill = createLoadSkillTool(workspaceId) as Tool;
+            const { tool: loadSkill, cleanup } = createLoadSkillTool();
+            baseTools.load_skill = loadSkill as Tool;
+            cleanupSkills = cleanup;
           }
 
-          // Inject failStep tool for explicit failure signaling
-          const failStepTool = tool({
-            description:
-              "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
-            inputSchema: FailInputSchema,
-            execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
-          });
+          try {
+            // Inject failStep tool for explicit failure signaling
+            const failStepTool = tool({
+              description:
+                "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
+              inputSchema: FailInputSchema,
+              execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
+            });
 
-          const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
+            const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
 
-          // Check if outputTo document type has a structured schema (properties defined)
-          // If so, inject a `complete` tool to capture structured output
-          let capturedCompleteOutput: Record<string, unknown> | undefined;
-          let completeToolInjected = false;
+            // Check if outputTo document type has a structured schema (properties defined)
+            // If so, inject a `complete` tool to capture structured output
+            let capturedCompleteOutput: Record<string, unknown> | undefined;
+            let completeToolInjected = false;
 
-          if (action.outputTo) {
-            // Determine document type name for schema lookup:
-            // 1. action.outputType takes precedence (explicit mapping)
-            // 2. Fall back to document.type if document exists
-            const outputDoc = documents.get(action.outputTo);
-            const docTypeName = action.outputType ?? outputDoc?.type;
+            if (action.outputTo) {
+              // Determine document type name for schema lookup:
+              // 1. action.outputType takes precedence (explicit mapping)
+              // 2. Fall back to document.type if document exists
+              const outputDoc = documents.get(action.outputTo);
+              const docTypeName = action.outputType ?? outputDoc?.type;
 
-            if (docTypeName) {
-              const jsonSchema = this._definition.documentTypes?.[docTypeName];
+              if (docTypeName) {
+                const jsonSchema = this._definition.documentTypes?.[docTypeName];
 
-              // Only inject complete tool if schema has properties defined (not just catch-all)
-              if (hasDefinedSchema(jsonSchema)) {
-                const compiledSchema = this._compiledSchemas.get(docTypeName);
-                if (compiledSchema) {
-                  completeToolInjected = true;
+                // Only inject complete tool if schema has properties defined (not just catch-all)
+                if (hasDefinedSchema(jsonSchema)) {
+                  const compiledSchema = this._compiledSchemas.get(docTypeName);
+                  if (compiledSchema) {
+                    completeToolInjected = true;
 
-                  // Create tool object directly (same pattern as buildTools at line 1118)
-                  // This avoids type inference issues with the tool() helper
-                  tools.complete = {
-                    description:
-                      "Call this to complete the task and store results. You MUST call this when finished.",
-                    inputSchema: compiledSchema,
-                    execute: () => ({ success: true }),
-                  };
+                    // Create tool object directly (same pattern as buildTools at line 1118)
+                    // This avoids type inference issues with the tool() helper
+                    tools.complete = {
+                      description:
+                        "Call this to complete the task and store results. You MUST call this when finished.",
+                      inputSchema: compiledSchema,
+                      execute: () => ({ success: true }),
+                    };
 
-                  logger.debug("Injected complete tool for structured output", {
-                    docType: docTypeName,
-                    outputTo: action.outputTo,
-                  });
+                    logger.debug("Injected complete tool for structured output", {
+                      docType: docTypeName,
+                      outputTo: action.outputTo,
+                    });
+                  }
                 }
               }
             }
-          }
 
-          // Build prompt with curated input from prepare function, skills, and image resolution
-          let { prompt: contextPrompt, images } = await this.buildContextPrompt(
-            action.prompt,
-            prepareResult,
-            skills,
-          );
+            // Build prompt with curated input from prepare function, skills, and image resolution
+            let { prompt: contextPrompt, images } = await this.buildContextPrompt(
+              action.prompt,
+              prepareResult,
+              skills,
+            );
 
-          if (completeToolInjected) {
-            contextPrompt +=
-              "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
-              "If you cannot complete this task, call the failStep tool with a reason.";
-          } else {
-            contextPrompt +=
-              "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
-          }
+            if (completeToolInjected) {
+              contextPrompt +=
+                "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
+                "If you cannot complete this task, call the failStep tool with a reason.";
+            } else {
+              contextPrompt +=
+                "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
+            }
 
-          // Build agentId for the LLM action
-          const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
+            // Build agentId for the LLM action
+            const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
 
-          // When images are present, assemble a messages array with mixed content.
-          // Otherwise, use the prompt-only path for backward compatibility.
-          const messages: CoreMessage[] | undefined =
-            images.length > 0
-              ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
-              : undefined;
+            // When images are present, assemble a messages array with mixed content.
+            // Otherwise, use the prompt-only path for backward compatibility.
+            const messages: CoreMessage[] | undefined =
+              images.length > 0
+                ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
+                : undefined;
 
-          let result = await this.options.llmProvider.call({
-            agentId: llmAgentId,
-            model: action.model,
-            prompt: contextPrompt,
-            messages,
-            tools,
-            toolChoice: "auto", // Let LLM decide when to stop calling tools
-            stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-          });
+            let result = await this.options.llmProvider.call({
+              agentId: llmAgentId,
+              model: action.model,
+              prompt: contextPrompt,
+              messages,
+              tools,
+              toolChoice: "auto", // Let LLM decide when to stop calling tools
+              stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+            });
 
-          // Check for adapter-level errors (network, API, etc.)
-          if (!result.ok) {
-            throw new Error(`LLM call failed: ${result.error.reason}`);
-          }
+            // Check for adapter-level errors (network, API, etc.)
+            if (!result.ok) {
+              throw new Error(`LLM call failed: ${result.error.reason}`);
+            }
 
-          // Emit tool events for UI visibility
-          this.emitToolEvents(result, action, sig, currentState);
+            // Emit tool events for UI visibility
+            this.emitToolEvents(result, action, sig, currentState);
 
-          // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
-          const failArgs = findFailStepToolArgs(result);
-          if (failArgs) {
-            throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
-          }
+            // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
+            const failArgs = findFailStepToolArgs(result);
+            if (failArgs) {
+              throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
+            }
 
-          // Check if LLM called complete tool - capture the structured output.
-          // The adapter already extracts complete args into result.data, but we
-          // also check toolCalls for backward compatibility with mock providers.
-          if (completeToolInjected) {
-            capturedCompleteOutput = findCompleteToolArgs(result);
-          }
+            // Check if LLM called complete tool - capture the structured output.
+            // The adapter already extracts complete args into result.data, but we
+            // also check toolCalls for backward compatibility with mock providers.
+            if (completeToolInjected) {
+              capturedCompleteOutput = findCompleteToolArgs(result);
+            }
 
-          // Validate output if validator provided
-          if (this.options.validateOutput) {
-            const trace = buildLLMActionTrace(result, action.model, contextPrompt);
+            // Validate output if validator provided
+            if (this.options.validateOutput) {
+              const trace = buildLLMActionTrace(result, action.model, contextPrompt);
 
-            const validation = await this.options.validateOutput(trace);
-            // Note: If validator throws, error propagates and aborts the action (fail-closed)
+              const validation = await this.options.validateOutput(trace);
+              // Note: If validator throws, error propagates and aborts the action (fail-closed)
 
-            if (!validation.valid) {
-              logger.warn("LLM action failed validation, retrying with feedback", {
-                state: currentState,
-                model: action.model,
-                feedback: validation.feedback,
-              });
-
-              const retryPrompt =
-                `${contextPrompt}\n\n` +
-                `<validation-feedback>\n${
-                  validation.feedback ?? "Output failed validation."
-                }\n</validation-feedback>\n` +
-                `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
-
-              // Rebuild messages with retry prompt, preserving image parts from the original call
-              const retryMessages: CoreMessage[] | undefined =
-                images.length > 0
-                  ? [{ role: "user", content: [{ type: "text", text: retryPrompt }, ...images] }]
-                  : undefined;
-
-              result = await this.options.llmProvider.call({
-                agentId: llmAgentId,
-                model: action.model,
-                prompt: retryPrompt,
-                messages: retryMessages,
-                tools,
-                toolChoice: "auto", // Let LLM decide when to stop calling tools
-                stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-              });
-
-              // Check for adapter-level errors on retry
-              if (!result.ok) {
-                throw new Error(`LLM call failed on retry: ${result.error.reason}`);
-              }
-
-              // Emit tool events for UI visibility (retry call)
-              this.emitToolEvents(result, action, sig, currentState);
-
-              // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
-              const retryFailArgs = findFailStepToolArgs(result);
-              if (retryFailArgs) {
-                throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
-              }
-
-              // Check if LLM called complete tool on retry
-              if (completeToolInjected) {
-                capturedCompleteOutput = findCompleteToolArgs(result);
-              }
-
-              const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
-
-              // Merge original call's tool results into the retry trace so the
-              // validator can see all fetched data, even if the retry LLM didn't
-              // re-issue the same tool calls.
-              if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
-                retryTrace.toolResults = trace.toolResults;
-                retryTrace.toolCalls = trace.toolCalls;
-              }
-
-              const retryValidation = await this.options.validateOutput(retryTrace);
-
-              if (!retryValidation.valid) {
-                logger.error("LLM action failed validation after retry", {
+              if (!validation.valid) {
+                logger.warn("LLM action failed validation, retrying with feedback", {
                   state: currentState,
                   model: action.model,
-                  feedback: retryValidation.feedback,
+                  feedback: validation.feedback,
                 });
-                throw new Error(
-                  `LLM action failed validation after retry: ${
-                    retryValidation.feedback ?? "no feedback"
-                  }`,
-                );
+
+                const retryPrompt =
+                  `${contextPrompt}\n\n` +
+                  `<validation-feedback>\n${
+                    validation.feedback ?? "Output failed validation."
+                  }\n</validation-feedback>\n` +
+                  `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
+
+                // Rebuild messages with retry prompt, preserving image parts from the original call
+                const retryMessages: CoreMessage[] | undefined =
+                  images.length > 0
+                    ? [{ role: "user", content: [{ type: "text", text: retryPrompt }, ...images] }]
+                    : undefined;
+
+                result = await this.options.llmProvider.call({
+                  agentId: llmAgentId,
+                  model: action.model,
+                  prompt: retryPrompt,
+                  messages: retryMessages,
+                  tools,
+                  toolChoice: "auto", // Let LLM decide when to stop calling tools
+                  stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+                });
+
+                // Check for adapter-level errors on retry
+                if (!result.ok) {
+                  throw new Error(`LLM call failed on retry: ${result.error.reason}`);
+                }
+
+                // Emit tool events for UI visibility (retry call)
+                this.emitToolEvents(result, action, sig, currentState);
+
+                // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
+                const retryFailArgs = findFailStepToolArgs(result);
+                if (retryFailArgs) {
+                  throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
+                }
+
+                // Check if LLM called complete tool on retry
+                if (completeToolInjected) {
+                  capturedCompleteOutput = findCompleteToolArgs(result);
+                }
+
+                const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
+
+                // Merge original call's tool results into the retry trace so the
+                // validator can see all fetched data, even if the retry LLM didn't
+                // re-issue the same tool calls.
+                if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
+                  retryTrace.toolResults = trace.toolResults;
+                  retryTrace.toolCalls = trace.toolCalls;
+                }
+
+                const retryValidation = await this.options.validateOutput(retryTrace);
+
+                if (!retryValidation.valid) {
+                  logger.error("LLM action failed validation after retry", {
+                    state: currentState,
+                    model: action.model,
+                    feedback: retryValidation.feedback,
+                  });
+                  throw new Error(
+                    `LLM action failed validation after retry: ${
+                      retryValidation.feedback ?? "no feedback"
+                    }`,
+                  );
+                }
+
+                logger.info("LLM action passed validation on retry", {
+                  state: currentState,
+                  model: action.model,
+                });
+              }
+            }
+
+            if (action.outputTo) {
+              const outputDoc = documents.get(action.outputTo);
+              const newDocType = action.outputType ?? "LLMResult";
+              // Use captured complete output if available, otherwise fall back to result.data
+              // result.data is { response: string } for text output, or structured for complete tool
+              const dataToStore = capturedCompleteOutput ?? result.data;
+
+              if (capturedCompleteOutput) {
+                logger.debug("Storing structured output from complete tool", {
+                  outputTo: action.outputTo,
+                  hasData: Object.keys(capturedCompleteOutput).length > 0,
+                });
               }
 
-              logger.info("LLM action passed validation on retry", {
-                state: currentState,
-                model: action.model,
-              });
-            }
-          }
+              // Dual-write: results accumulator (replace semantics)
+              if (results && dataToStore) {
+                const parsed = z.record(z.string(), z.unknown()).safeParse(dataToStore);
+                if (parsed.success) {
+                  results.set(action.outputTo, parsed.data);
+                }
+              }
 
-          if (action.outputTo) {
-            const outputDoc = documents.get(action.outputTo);
-            const newDocType = action.outputType ?? "LLMResult";
-            // Use captured complete output if available, otherwise fall back to result.data
-            // result.data is { response: string } for text output, or structured for complete tool
-            const dataToStore = capturedCompleteOutput ?? result.data;
-
-            if (capturedCompleteOutput) {
-              logger.debug("Storing structured output from complete tool", {
-                outputTo: action.outputTo,
-                hasData: Object.keys(capturedCompleteOutput).length > 0,
-              });
-            }
-
-            // Dual-write: results accumulator (replace semantics)
-            if (results && dataToStore) {
-              const parsed = z.record(z.string(), z.unknown()).safeParse(dataToStore);
-              if (parsed.success) {
-                results.set(action.outputTo, parsed.data);
+              // Dual-write: documents (backward compat)
+              if (outputDoc) {
+                outputDoc.data = { ...outputDoc.data, ...dataToStore };
+              } else {
+                documents.set(action.outputTo, {
+                  id: action.outputTo,
+                  type: newDocType,
+                  data: dataToStore,
+                });
               }
             }
 
-            // Dual-write: documents (backward compat)
-            if (outputDoc) {
-              outputDoc.data = { ...outputDoc.data, ...dataToStore };
-            } else {
-              documents.set(action.outputTo, {
-                id: action.outputTo,
-                type: newDocType,
-                data: dataToStore,
-              });
+            // Capture LLM result for session history side-channel
+            if (result.ok) {
+              const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+              }));
+              // Structured output = args from the "complete" tool call (the actual
+              // result the agent declared). Falls back to result.data (LLM text)
+              // when no complete tool call exists. Mirrors workspace-runtime logic.
+              const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
+              llmResultData = {
+                toolCalls,
+                reasoning: result.reasoning,
+                output: completeCall?.args ?? result.data,
+              };
             }
-          }
 
-          // Capture LLM result for session history side-channel
-          if (result.ok) {
-            const toolCalls = (result.toolCalls ?? []).map((tc) => ({
-              toolName: tc.toolName,
-              args: tc.input,
-            }));
-            // Structured output = args from the "complete" tool call (the actual
-            // result the agent declared). Falls back to result.data (LLM text)
-            // when no complete tool call exists. Mirrors workspace-runtime logic.
-            const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-            llmResultData = {
-              toolCalls,
-              reasoning: result.reasoning,
-              output: completeCall?.args ?? result.data,
-            };
+            logger.debug("LLM action completed", {
+              model: action.model,
+              outputTo: action.outputTo,
+            });
+          } finally {
+            cleanupSkills?.();
           }
-
-          logger.debug("LLM action completed", { model: action.model, outputTo: action.outputTo });
           break;
         }
 
@@ -1406,9 +1402,12 @@ export class FSMEngine {
       prompt = `${prompt}\n\nInput:\n${JSON.stringify(expanded, null, 2)}`;
     }
 
-    // Append available skills if any exist
     if (skills.length > 0) {
-      prompt = `${prompt}\n\n${formatAvailableSkills(skills)}`;
+      const namedSkills = skills.map((s) => ({
+        name: `@${s.namespace}/${s.name}`,
+        description: s.description,
+      }));
+      prompt = `${prompt}\n\n${formatAvailableSkills(namedSkills)}`;
     }
 
     return { prompt, images };

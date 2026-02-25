@@ -23,6 +23,8 @@ export * from "./src/mcp.ts";
 export * from "./src/notifications.ts";
 // Signal schemas with tagged unions
 export * from "./src/signals.ts";
+// Skill schemas
+export * from "./src/skills.ts";
 // Supervisor defaults
 export {
   type SupervisorDefaults,

@@ -1,3 +1,4 @@
+import { NamespaceSchema, SkillNameSchema } from "@atlas/config";
 import { z } from "zod";
 
 /**
@@ -43,8 +44,6 @@ export type CredentialBinding = z.infer<typeof CredentialBindingSchema>;
  */
 const SignalTypeSchema = z.enum(["schedule", "http", "fs-watch"]);
 
-/** Workspace plan data schema */
-/** Workspace plan data schema - prose descriptions of workspace structure */
 /** User-provided detail for UI display */
 const DetailSchema = z.object({
   label: z.string().describe("Human-readable label (e.g., 'GitHub Repository', 'Slack Channel')"),
@@ -248,28 +247,12 @@ export const WebSearchDataSchema = z.object({
 });
 export type WebSearchData = z.infer<typeof WebSearchDataSchema>;
 
-/**
- * Name validation per Agent Skills spec.
- * Must be lowercase alphanumeric with single hyphens, no leading/trailing hyphens.
- * Duplicated from @atlas/skills/schemas to avoid circular import issues.
- */
-const SkillNameSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: "Name must be lowercase alphanumeric with single hyphens, no leading/trailing hyphens",
-  });
-
-/**
- * Skill draft data schema - mirrors CreateSkillInputSchema from @atlas/skills.
- * Validation rules kept in sync with CreateSkillInputSchema.
- */
+/** Mirrors PublishSkillInputSchema — keep validation rules in sync */
 export const SkillDraftSchema = z.object({
   name: SkillNameSchema,
+  namespace: NamespaceSchema,
   description: z.string().min(1).max(1024),
   instructions: z.string().min(1),
-  workspaceId: z.string().min(1),
 });
 export type SkillDraft = z.infer<typeof SkillDraftSchema>;
 

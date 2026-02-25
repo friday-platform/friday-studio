@@ -12,8 +12,13 @@ import {
 
 const BASE_URL = "https://cortex.example.com";
 
+interface StoredObject {
+  blob: string;
+  metadata: CortexSkillMetadata;
+}
+
 interface MockStore {
-  objects: Map<string, { blob: string; metadata: CortexSkillMetadata }>;
+  objects: Map<string, StoredObject>;
   nextObjectId: number;
 }
 
@@ -23,6 +28,7 @@ function createMockStore(): MockStore {
 
 /**
  * Create a mock fetch that simulates the Cortex API.
+ * Supports metadata queries with `metadata.key=value` filtering.
  */
 function createMockFetch(store: MockStore): typeof fetch {
   return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -54,23 +60,7 @@ function createMockFetch(store: MockStore): typeof fetch {
       if (!obj) {
         return Promise.resolve(new Response("Not found", { status: 404 }));
       }
-      const metadata = JSON.parse(init?.body as string) as CortexSkillMetadata;
-      obj.metadata = metadata;
-      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    }
-
-    // PUT /objects/:id - update blob
-    const updateBlobMatch = path.match(/^\/objects\/([^/]+)$/);
-    if (method === "PUT" && updateBlobMatch) {
-      const objectId = updateBlobMatch[1];
-      if (!objectId) {
-        return Promise.resolve(new Response("Invalid object ID", { status: 400 }));
-      }
-      const obj = store.objects.get(objectId);
-      if (!obj) {
-        return Promise.resolve(new Response("Not found", { status: 404 }));
-      }
-      obj.blob = (init?.body as string) ?? "";
+      obj.metadata = JSON.parse(init?.body as string) as CortexSkillMetadata;
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     }
 
@@ -108,13 +98,20 @@ function createMockFetch(store: MockStore): typeof fetch {
         let matches = true;
 
         for (const [key, value] of params.entries()) {
-          if (key === "metadata.skill_id" && obj.metadata.skill_id !== value) matches = false;
-          if (key === "metadata.name" && obj.metadata.name !== value) matches = false;
-          if (key === "metadata.workspace_id" && obj.metadata.workspace_id !== value)
+          if (!key.startsWith("metadata.")) continue;
+          const field = key.replace("metadata.", "") as keyof CortexSkillMetadata;
+          const metaValue = obj.metadata[field];
+          if (metaValue === undefined) {
             matches = false;
+          } else if (typeof metaValue === "number") {
+            if (metaValue !== Number(value)) matches = false;
+          } else if (String(metaValue) !== value) {
+            matches = false;
+          }
         }
 
-        if (matches && obj.metadata.skill_id) {
+        // Only include objects that have been fully initialized (have metadata set)
+        if (matches && obj.metadata.type) {
           results.push({ id, metadata: obj.metadata });
         }
       }
@@ -166,287 +163,366 @@ afterEach(() => {
 // =============================================================================
 
 describe("CortexSkillAdapter", () => {
-  describe("create()", () => {
-    it("uploads blob and sets metadata", async () => {
-      const result = await adapter.create("user-1", {
-        name: "test-skill",
-        description: "A test skill",
-        instructions: "Do the thing",
-        workspaceId: "ws-123",
+  describe("publish", () => {
+    it("publishes a skill with version 1", async () => {
+      const result = await adapter.publish("atlas", "code-review", "user-1", {
+        description: "Reviews code",
+        instructions: "Review the code.",
       });
-
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-
-      expect(result.data.name).toBe("test-skill");
-      expect(result.data.description).toBe("A test skill");
-      expect(result.data.instructions).toBe("Do the thing");
-      expect(result.data.workspaceId).toBe("ws-123");
-      expect(result.data.createdBy).toBe("user-1");
-      expect(typeof result.data.id).toBe("string");
-      expect(result.data.id.length > 0).toBe(true);
-
-      // Verify store has the object
-      expect(store.objects.size).toBe(1);
-      const [entry] = store.objects.values();
-      expect(entry?.blob).toBe("Do the thing");
-      expect(entry?.metadata.name).toBe("test-skill");
+      expect(result.data.version).toBe(1);
+      expect(result.data.id).toBeTruthy();
     });
 
-    it("sets timestamps on creation", async () => {
-      const before = new Date();
-      const result = await adapter.create("user-1", {
-        name: "timestamped",
-        description: "Test",
-        instructions: "x",
-        workspaceId: "ws-1",
+    it("auto-increments version on republish", async () => {
+      await adapter.publish("atlas", "code-review", "user-1", {
+        description: "v1",
+        instructions: "First version.",
       });
-      const after = new Date();
+      const v2 = await adapter.publish("atlas", "code-review", "user-1", {
+        description: "v2",
+        instructions: "Second version.",
+      });
+      expect(v2.ok).toBe(true);
+      if (!v2.ok) return;
+      expect(v2.data.version).toBe(2);
 
+      const v3 = await adapter.publish("atlas", "code-review", "user-1", {
+        description: "v3",
+        instructions: "Third version.",
+      });
+      expect(v3.ok).toBe(true);
+      if (!v3.ok) return;
+      expect(v3.data.version).toBe(3);
+    });
+
+    it("versions are independent per namespace+name", async () => {
+      await adapter.publish("atlas", "skill-a", "user-1", { description: "A", instructions: "." });
+      const b = await adapter.publish("atlas", "skill-b", "user-1", {
+        description: "B",
+        instructions: ".",
+      });
+      expect(b.ok).toBe(true);
+      if (!b.ok) return;
+      expect(b.data.version).toBe(1);
+    });
+
+    it("stores frontmatter when provided", async () => {
+      await adapter.publish("atlas", "with-fm", "user-1", {
+        description: "Has frontmatter",
+        instructions: "Do things.",
+        frontmatter: { "allowed-tools": "Read, Grep", context: "fork" },
+      });
+      const result = await adapter.get("atlas", "with-fm");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      expect(result.data?.frontmatter["allowed-tools"]).toBe("Read, Grep");
+    });
 
-      expect(result.data.createdAt >= before).toBe(true);
-      expect(result.data.createdAt <= after).toBe(true);
-      expect(result.data.updatedAt.getTime()).toBe(result.data.createdAt.getTime());
+    it("stores archive as separate linked blob", async () => {
+      const archive = new Uint8Array([1, 2, 3, 4]);
+      await adapter.publish("atlas", "with-archive", "user-1", {
+        description: "Has archive",
+        instructions: ".",
+        archive,
+      });
+
+      // Primary blob + archive blob = 2 objects with metadata.type set
+      const skillObjects = [...store.objects.values()].filter((o) => o.metadata.type);
+      expect(skillObjects.length).toBe(2);
+
+      const primary = skillObjects.find((o) => o.metadata.type === "skill");
+      const archiveObj = skillObjects.find((o) => o.metadata.type === "archive");
+      expect(primary).toBeTruthy();
+      expect(archiveObj).toBeTruthy();
+      expect(primary?.metadata.skill_id).toBe(archiveObj?.metadata.skill_id);
+
+      // Verify archive round-trips through get()
+      const result = await adapter.get("atlas", "with-archive");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.archive).toEqual(archive);
+    });
+
+    it("sets is_latest=true on first publish", async () => {
+      await adapter.publish("atlas", "new-skill", "user-1", {
+        description: "First",
+        instructions: ".",
+      });
+      const skillObjs = [...store.objects.values()].filter((o) => o.metadata.type === "skill");
+      expect(skillObjs.length).toBe(1);
+      expect(skillObjs[0]?.metadata.is_latest).toBe(true);
+    });
+
+    it("swaps is_latest on republish", async () => {
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: "First.",
+      });
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: "Second.",
+      });
+
+      const skillObjs = [...store.objects.values()].filter((o) => o.metadata.type === "skill");
+      expect(skillObjs.length).toBe(2);
+
+      const v1 = skillObjs.find((o) => o.metadata.version === 1);
+      const v2 = skillObjs.find((o) => o.metadata.version === 2);
+      expect(v1?.metadata.is_latest).toBe(false);
+      expect(v2?.metadata.is_latest).toBe(true);
+    });
+
+    it("sets is_latest=false on archive blobs", async () => {
+      await adapter.publish("atlas", "with-archive", "user-1", {
+        description: "Has archive",
+        instructions: ".",
+        archive: new Uint8Array([1, 2, 3]),
+      });
+      const archiveObjs = [...store.objects.values()].filter((o) => o.metadata.type === "archive");
+      expect(archiveObjs.length).toBe(1);
+      expect(archiveObjs[0]?.metadata.is_latest).toBe(false);
+    });
+
+    it("handles archives larger than 65KB without crashing", async () => {
+      // String.fromCharCode(...arr) crashes when arr exceeds ~65K elements
+      const size = 100_000;
+      const archive = new Uint8Array(size);
+      for (let i = 0; i < size; i++) archive[i] = i % 256;
+
+      const result = await adapter.publish("atlas", "big-archive", "user-1", {
+        description: "Large archive",
+        instructions: ".",
+        archive,
+      });
+      expect(result.ok).toBe(true);
+
+      const loaded = await adapter.get("atlas", "big-archive");
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) return;
+      expect(loaded.data?.archive).toEqual(archive);
     });
   });
 
-  describe("getByName()", () => {
-    it("queries by name and workspace_id", async () => {
-      // Create a skill first
-      const createResult = await adapter.create("user-1", {
-        name: "findable",
-        description: "Can be found",
-        instructions: "Instructions here",
-        workspaceId: "ws-abc",
+  describe("get", () => {
+    it("returns latest version when version omitted", async () => {
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: "First.",
       });
-      expect(createResult.ok).toBe(true);
-
-      // Query by name and workspace
-      const result = await adapter.getByName("findable", "ws-abc");
-
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: "Second.",
+      });
+      const result = await adapter.get("atlas", "my-skill");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data?.name).toBe("findable");
-      expect(result.data?.description).toBe("Can be found");
-      expect(result.data?.instructions).toBe("Instructions here");
-      expect(result.data?.workspaceId).toBe("ws-abc");
+      expect(result.data?.version).toBe(2);
+      expect(result.data?.description).toBe("v2");
     });
 
-    it("returns null for non-existent skill", async () => {
-      const result = await adapter.getByName("nonexistent", "ws-1");
+    it("returns specific version when provided", async () => {
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: "First.",
+      });
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: "Second.",
+      });
+      const result = await adapter.get("atlas", "my-skill", 1);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.version).toBe(1);
+      expect(result.data?.description).toBe("v1");
+    });
 
+    it("returns null for nonexistent skill", async () => {
+      const result = await adapter.get("atlas", "missing");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data).toBe(null);
     });
 
-    it("does not return skill from different workspace", async () => {
-      await adapter.create("user-1", {
-        name: "isolated",
-        description: "Test",
-        instructions: "x",
-        workspaceId: "ws-a",
+    it("returns null for nonexistent version", async () => {
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: ".",
       });
-
-      const result = await adapter.getByName("isolated", "ws-b");
-
+      const result = await adapter.get("atlas", "my-skill", 99);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data).toBe(null);
     });
+
+    it("falls back to version ordering when is_latest is missing", async () => {
+      // Simulate race window: publish two versions then manually clear is_latest
+      await adapter.publish("atlas", "race-skill", "user-1", {
+        description: "v1",
+        instructions: "First.",
+      });
+      await adapter.publish("atlas", "race-skill", "user-1", {
+        description: "v2",
+        instructions: "Second.",
+      });
+
+      // Clear is_latest on all skill objects (simulates mid-swap state)
+      for (const obj of store.objects.values()) {
+        if (obj.metadata.type === "skill") {
+          obj.metadata.is_latest = false;
+        }
+      }
+
+      const result = await adapter.get("atlas", "race-skill");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.version).toBe(2);
+      expect(result.data?.description).toBe("v2");
+    });
+
+    it("populates all skill fields", async () => {
+      await adapter.publish("atlas", "full-skill", "user-1", {
+        description: "Full skill",
+        instructions: "Do all the things.",
+        frontmatter: { context: "fork" },
+      });
+      const result = await adapter.get("atlas", "full-skill");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const skill = result.data;
+      expect(skill).not.toBe(null);
+      if (!skill) return;
+
+      expect(skill.namespace).toBe("atlas");
+      expect(skill.name).toBe("full-skill");
+      expect(skill.version).toBe(1);
+      expect(skill.description).toBe("Full skill");
+      expect(skill.instructions).toBe("Do all the things.");
+      expect(skill.frontmatter).toEqual({ context: "fork" });
+      expect(skill.createdBy).toBe("user-1");
+      expect(skill.createdAt).toBeInstanceOf(Date);
+      expect(skill.archive).toBe(null);
+    });
   });
 
-  describe("list()", () => {
-    it("returns summaries for workspace", async () => {
-      // Create skills in same workspace
-      await adapter.create("user-1", {
-        name: "skill-a",
-        description: "First skill",
-        instructions: "a",
-        workspaceId: "ws-list",
+  describe("list", () => {
+    it("returns one summary per namespace+name with latest version", async () => {
+      await adapter.publish("atlas", "skill-a", "user-1", {
+        description: "A v1",
+        instructions: ".",
       });
-      await adapter.create("user-1", {
-        name: "skill-b",
-        description: "Second skill",
-        instructions: "b",
-        workspaceId: "ws-list",
+      await adapter.publish("atlas", "skill-a", "user-1", {
+        description: "A v2",
+        instructions: ".",
       });
-      // Create skill in different workspace
-      await adapter.create("user-1", {
-        name: "skill-c",
-        description: "Other workspace",
-        instructions: "c",
-        workspaceId: "ws-other",
-      });
-
-      const result = await adapter.list("ws-list");
-
+      await adapter.publish("atlas", "skill-b", "user-1", { description: "B", instructions: "." });
+      const result = await adapter.list();
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data.length).toBe(2);
-
-      const names = result.data.map((s) => s.name).sort();
-      expect(names).toEqual(["skill-a", "skill-b"]);
-
-      // Verify summaries have name and description only
-      for (const summary of result.data) {
-        expect(typeof summary.name).toBe("string");
-        expect(typeof summary.description).toBe("string");
-      }
+      const a = result.data.find((s) => s.name === "skill-a");
+      expect(a?.latestVersion).toBe(2);
+      expect(a?.description).toBe("A v2");
     });
 
-    it("returns empty array for workspace with no skills", async () => {
-      const result = await adapter.list("empty-workspace");
+    it("filters by namespace", async () => {
+      await adapter.publish("atlas", "skill-a", "user-1", { description: "A", instructions: "." });
+      await adapter.publish("acme", "skill-b", "user-1", { description: "B", instructions: "." });
+      const result = await adapter.list("atlas");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.length).toBe(1);
+      expect(result.data[0]?.namespace).toBe("atlas");
+    });
 
+    it("filters by query text", async () => {
+      await adapter.publish("atlas", "code-review", "user-1", {
+        description: "Reviews code for issues",
+        instructions: ".",
+      });
+      await adapter.publish("atlas", "deploy", "user-1", {
+        description: "Deploys stuff",
+        instructions: ".",
+      });
+      const result = await adapter.list(undefined, "review");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.length).toBe(1);
+      expect(result.data[0]?.name).toBe("code-review");
+    });
+
+    it("returns empty array when no skills exist", async () => {
+      const result = await adapter.list("empty-ns");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data).toEqual([]);
     });
   });
 
-  describe("update()", () => {
-    it("creates new blob when instructions change", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "updatable",
-        description: "Original",
-        instructions: "Original instructions",
-        workspaceId: "ws-1",
+  describe("listVersions", () => {
+    it("returns all versions sorted descending", async () => {
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: ".",
       });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
-
-      const result = await adapter.update(createResult.data.id, {
-        instructions: "Updated instructions",
+      await adapter.publish("atlas", "my-skill", "user-2", {
+        description: "v2",
+        instructions: ".",
       });
-
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v3",
+        instructions: ".",
+      });
+      const result = await adapter.listVersions("atlas", "my-skill");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data.instructions).toBe("Updated instructions");
-      expect(result.data.name).toBe("updatable"); // unchanged
+      expect(result.data.length).toBe(3);
+      expect(result.data[0]?.version).toBe(3);
+      expect(result.data[1]?.version).toBe(2);
+      expect(result.data[2]?.version).toBe(1);
+      expect(result.data[1]?.createdBy).toBe("user-2");
     });
 
-    it("updates metadata fields", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "meta-update",
-        description: "Original desc",
-        instructions: "x",
-        workspaceId: "ws-1",
-      });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
-
-      const result = await adapter.update(createResult.data.id, {
-        description: "Updated description",
-      });
-
+    it("returns empty array for nonexistent skill", async () => {
+      const result = await adapter.listVersions("atlas", "missing");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data.description).toBe("Updated description");
-      expect(result.data.instructions).toBe("x"); // unchanged
-    });
-
-    it("updates updatedAt timestamp", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "timestamp-test",
-        description: "Test",
-        instructions: "x",
-        workspaceId: "ws-1",
-      });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
-
-      const originalUpdatedAt = createResult.data.updatedAt;
-
-      // Small delay to ensure timestamp differs
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      const updateResult = await adapter.update(createResult.data.id, { description: "Changed" });
-
-      expect(updateResult.ok).toBe(true);
-      if (!updateResult.ok) return;
-      expect(updateResult.data.updatedAt > originalUpdatedAt).toBe(true);
-    });
-
-    it("returns error for non-existent skill", async () => {
-      const result = await adapter.update("nonexistent-id", { description: "New" });
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.includes("not found") || result.error.includes("Not found")).toBe(true);
+      expect(result.data).toEqual([]);
     });
   });
 
-  describe("delete()", () => {
-    it("removes object from store", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "deletable",
-        description: "Will be deleted",
-        instructions: "x",
-        workspaceId: "ws-1",
+  describe("deleteVersion", () => {
+    it("removes both primary and archive blobs", async () => {
+      const archive = new Uint8Array([1, 2, 3]);
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: ".",
+        archive,
       });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
-
-      expect(store.objects.size).toBe(1);
-
-      const deleteResult = await adapter.delete(createResult.data.id);
-      expect(deleteResult.ok).toBe(true);
-
-      // Verify object is gone
-      expect(store.objects.size).toBe(0);
-    });
-
-    it("get returns null after delete", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "check-deleted",
-        description: "Test",
-        instructions: "x",
-        workspaceId: "ws-1",
+      await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: ".",
       });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
 
-      await adapter.delete(createResult.data.id);
+      const del = await adapter.deleteVersion("atlas", "my-skill", 1);
+      expect(del.ok).toBe(true);
 
-      const getResult = await adapter.get(createResult.data.id);
-      expect(getResult.ok).toBe(true);
-      if (!getResult.ok) return;
-      expect(getResult.data).toBe(null);
+      const v1 = await adapter.get("atlas", "my-skill", 1);
+      expect(v1.ok).toBe(true);
+      if (!v1.ok) return;
+      expect(v1.data).toBe(null);
+
+      // v2 still exists
+      const v2 = await adapter.get("atlas", "my-skill", 2);
+      expect(v2.ok).toBe(true);
+      if (!v2.ok) return;
+      expect(v2.data?.version).toBe(2);
     });
 
-    it("succeeds even if skill does not exist", async () => {
-      const result = await adapter.delete("nonexistent-id");
+    it("does not error when deleting nonexistent version", async () => {
+      const result = await adapter.deleteVersion("atlas", "missing", 1);
       expect(result.ok).toBe(true);
-    });
-  });
-
-  describe("get()", () => {
-    it("retrieves skill by id", async () => {
-      const createResult = await adapter.create("user-1", {
-        name: "get-by-id",
-        description: "Test",
-        instructions: "Content",
-        workspaceId: "ws-1",
-      });
-      expect(createResult.ok).toBe(true);
-      if (!createResult.ok) return;
-
-      const result = await adapter.get(createResult.data.id);
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.data?.name).toBe("get-by-id");
-      expect(result.data?.instructions).toBe("Content");
-    });
-
-    it("returns null for non-existent id", async () => {
-      const result = await adapter.get("nonexistent-id");
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.data).toBe(null);
     });
   });
 
@@ -454,11 +530,9 @@ describe("CortexSkillAdapter", () => {
     it("fails when ATLAS_KEY is not set", async () => {
       delete process.env.ATLAS_KEY;
 
-      const result = await adapter.create("user-1", {
-        name: "no-auth",
+      const result = await adapter.publish("atlas", "no-auth", "user-1", {
         description: "Test",
         instructions: "x",
-        workspaceId: "ws-1",
       });
 
       expect(result.ok).toBe(false);

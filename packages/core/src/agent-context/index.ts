@@ -1,13 +1,12 @@
-/**
- * Agent Context Builder Factory
- *
- * Creates a function for building complete agent execution contexts,
- * including MCP tools and environment variables.
- */
-
 import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type {
+  GlobalSkillRefConfig,
+  InlineSkillConfig,
+  MCPServerConfig,
+  SkillEntry,
+  WorkspaceConfig,
+} from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
@@ -21,21 +20,14 @@ interface AgentContextBuilderDeps {
   mcpServerPool: GlobalMCPServerPool;
   logger: Logger;
   server?: Server;
-  hasActiveSSE?: () => boolean; // Add SSE check
+  hasActiveSSE?: () => boolean;
 }
 
-/**
- * Create an agent context builder function
- */
 export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
   const { mcpServerPool, logger } = deps;
 
-  // Create factory functions
   const validateEnvironment = createEnvironmentContext(logger);
 
-  /**
-   * Build full agent execution context
-   */
   return async function buildAgentContext(
     agent: AtlasAgent,
     sessionData: AgentSessionData & { streamId?: string },
@@ -49,8 +41,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       streamId: sessionData.streamId,
     });
 
-    // 1. Fetch all tools directly from MCP servers
     let allTools: Record<string, AtlasTool> = {};
+    let skillEntries: SkillEntry[] = [];
     let releaseMCPTools = () => {};
     agentLogger.debug("Building agent context", {
       agentId: agent.metadata.id,
@@ -65,6 +57,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         logger,
       );
       allTools = fetched.tools;
+      skillEntries = fetched.skillEntries;
       releaseMCPTools = fetched.release;
 
       agentLogger.info("Pre-fetched tools", { toolCount: Object.keys(allTools).length });
@@ -74,33 +67,46 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       allTools = {};
     }
 
-    // 2. Build environment context with validated variables
     const envContext = await validateEnvironment(
       sessionData.workspaceId,
       agent.metadata.id,
       agent.environmentConfig,
     );
 
-    // 3. Enrich prompt with workspace skills (if agent opts in)
     let enrichedPrompt = prompt;
+    let cleanupSkills: (() => Promise<void>) | undefined;
 
     if (agent.useWorkspaceSkills) {
-      const skillsResult = await SkillStorage.list(sessionData.workspaceId);
-      const skills = skillsResult.ok ? skillsResult.data : [];
+      const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
+      const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
 
-      if (skills.length > 0) {
-        // Add workspace-scoped load_skill tool only if one doesn't already exist.
+      const globalResult = await SkillStorage.list();
+      const globalSummaries = globalResult.ok ? globalResult.data : [];
+
+      const availableSkills = [
+        ...inlineSkills.map((s) => ({ name: s.name, description: s.description })),
+        ...globalSummaries.map((s) => ({
+          name: `@${s.namespace}/${s.name}`,
+          description: s.description,
+        })),
+      ];
+
+      if (availableSkills.length > 0) {
+        // Add load_skill tool only if one doesn't already exist.
         // This preserves any unified or specialized load_skill tool (e.g., conversation agent's
         // unified tool that checks hardcoded skills first).
         if (!allTools.load_skill) {
-          allTools.load_skill = createLoadSkillTool(sessionData.workspaceId);
+          const { tool: loadSkill, cleanup } = createLoadSkillTool({
+            inlineSkills,
+            skillEntries: globalRefs,
+          });
+          allTools.load_skill = loadSkill;
+          cleanupSkills = cleanup;
         }
-        // Append available skills to prompt
-        enrichedPrompt = `${enrichedPrompt}\n\n${formatAvailableSkills(skills)}`;
+        enrichedPrompt = `${enrichedPrompt}\n\n${formatAvailableSkills(availableSkills)}`;
       }
     }
 
-    // 4. Create stream emitter based on context
     let streamEmitter = overrides?.stream;
     if (!streamEmitter) {
       if (deps.server && sessionData.streamId) {
@@ -132,20 +138,29 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       tools: overrides?.tools || allTools,
     };
 
-    return { context, enrichedPrompt, releaseMCPTools };
+    const release = releaseMCPTools;
+    return {
+      context,
+      enrichedPrompt,
+      releaseMCPTools: () => {
+        release();
+        cleanupSkills?.();
+      },
+    };
   };
 }
 
 /**
  * Fetch all tools directly from MCP servers
- * Merges workspace, platform, and agent servers with proper precedence
+ * Merges workspace, platform, and agent servers with proper precedence.
+ * Also returns workspace skill entries for load_skill tool configuration.
  */
 async function fetchAllTools(
   workspaceId: string,
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   mcpServerPool: GlobalMCPServerPool,
   logger: Logger,
-): Promise<{ tools: Record<string, AtlasTool>; release: () => void }> {
+): Promise<{ tools: Record<string, AtlasTool>; skillEntries: SkillEntry[]; release: () => void }> {
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
@@ -192,9 +207,11 @@ async function fetchAllTools(
   const serverIds = Object.keys(allServerConfigs);
   const release = () => mcpServerPool.releaseMCPManager(allServerConfigs);
 
+  const skillEntries = workspaceConfig.skills ?? [];
+
   try {
     const tools = await mcpManager.getToolsForServers(serverIds);
-    return { tools, release };
+    return { tools, skillEntries, release };
   } catch (error) {
     // Release immediately on fetch failure — no tools to keep alive
     release();

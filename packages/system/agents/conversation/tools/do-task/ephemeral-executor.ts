@@ -85,7 +85,6 @@ export async function executeTaskViaFSMDirect(
   let currentStepIndex = 0;
 
   try {
-    // 1. Create in-memory document store for FSM
     const docStore = new InMemoryDocumentStore();
     const scope = { workspaceId: context.workspaceId };
 
@@ -98,10 +97,9 @@ export async function executeTaskViaFSMDirect(
       }
     }
 
-    // 3. Create unique task session ID to isolate from parent conversation
+    // Isolate from parent conversation to avoid session cross-talk
     const taskSessionId = `${context.sessionId}-task-${crypto.randomUUID().slice(0, 8)}`;
 
-    // 4. Create shared AgentOrchestrator with isolated MCP pool
     const agentsServerUrl = context.daemonUrl || "http://localhost:8080";
     orchestrator = new AgentOrchestrator(
       {
@@ -113,7 +111,6 @@ export async function executeTaskViaFSMDirect(
       logger.child({ component: "TaskFSMOrchestrator" }),
     );
 
-    // 4. Create agent executor callback
     const agentExecutor = async (
       action: AgentAction,
       fsmContext: Context,
@@ -211,7 +208,6 @@ export async function executeTaskViaFSMDirect(
     await engine.initialize();
     logger.debug("FSM engine initialized");
 
-    // 6. Execute FSM by sending trigger signal
     const triggerSignalType = "adhoc-trigger";
 
     // Build state-to-step lookup using DAG step IDs (state "step_retrieve_users" → index 0)
@@ -263,7 +259,6 @@ export async function executeTaskViaFSMDirect(
       { sessionId: context.sessionId, workspaceId: context.workspaceId, onEvent },
     );
 
-    // 7. Collect results from FSM results accumulator
     const engineResults = engine.results;
     logger.debug("FSM execution completed", {
       resultKeys: Object.keys(engineResults),

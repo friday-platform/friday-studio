@@ -37,14 +37,17 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
   useWorkspaceSkills: true,
 
   handler: async (input, { logger, stream, session, abortSignal }) => {
+    // TODO: read defaultNamespace from workspace config instead of hardcoding "atlas".
+    // All agent-created skills currently share the same namespace regardless of workspace.
+    const namespace = input.namespace ?? "atlas";
+
     logger.info("Starting skill distillation", {
       artifactCount: input.artifactIds.length,
-      workspaceId: input.workspaceId,
+      namespace,
       draftArtifactId: input.draftArtifactId,
     });
 
     try {
-      // Step 1: Load corpus from artifacts
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Skill Distiller", content: "Loading corpus material" },
@@ -67,7 +70,6 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
 
       logger.info("Loaded corpus artifacts", { count: corpusResponse.data.artifacts.length });
 
-      // Step 2: Load existing draft if revising
       let existingDraft: SkillDraft | null = null;
       if (input.draftArtifactId) {
         stream?.emit({
@@ -92,13 +94,11 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
         }
       }
 
-      // Step 3: Generate skill via LLM
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Skill Distiller", content: "Analyzing patterns and extracting skill" },
       });
 
-      // Format corpus for the prompt
       const corpusContent = corpusResponse.data.artifacts
         .map((artifact, idx) => {
           const content =
@@ -149,7 +149,6 @@ Update this draft based on the corpus material. Preserve what works, improve wha
 
       const skill = result.object;
 
-      // Step 4: Save as draft artifact
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Skill Distiller", content: "Saving skill draft" },
@@ -157,9 +156,9 @@ Update this draft based on the corpus material. Preserve what works, improve wha
 
       const draftData: SkillDraft = {
         name: skill.name,
+        namespace,
         description: skill.description,
         instructions: skill.instructions,
-        workspaceId: input.workspaceId,
       };
 
       if (existingDraft && input.draftArtifactId) {
@@ -192,6 +191,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
           revision: updateResponse.data.artifact.revision,
           skill: {
             name: skill.name,
+            namespace,
             description: skill.description,
             instructions: skill.instructions,
           },
@@ -225,6 +225,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
           revision: 1,
           skill: {
             name: skill.name,
+            namespace,
             description: skill.description,
             instructions: skill.instructions,
           },

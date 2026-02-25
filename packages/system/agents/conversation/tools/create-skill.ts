@@ -1,6 +1,7 @@
 import { client, parseResult } from "@atlas/client/v2";
+import { SkillDraftSchema } from "@atlas/core/artifacts";
 import { createLogger } from "@atlas/logger";
-import { CreateSkillInputSchema, SkillStorage } from "@atlas/skills";
+import { SkillStorage } from "@atlas/skills";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -14,7 +15,6 @@ export const createSkillTool = tool({
     createdBy: z.string().describe("User ID who approved this skill"),
   }),
   execute: async ({ artifactId, createdBy }) => {
-    // 1. Load the draft artifact by ID
     const result = await parseResult(
       client.artifactsStorage[":id"].$get({ param: { id: artifactId }, query: {} }),
     );
@@ -29,7 +29,6 @@ export const createSkillTool = tool({
 
     const artifact = result.data.artifact;
 
-    // 2. Validate it's a skill-draft type
     if (artifact.type !== "skill-draft") {
       logger.error("Artifact is not a skill draft", { artifactId, type: artifact.type });
       return {
@@ -38,8 +37,7 @@ export const createSkillTool = tool({
       };
     }
 
-    // 3. Parse and validate the skill input
-    const parseResult_ = CreateSkillInputSchema.safeParse(artifact.data.data);
+    const parseResult_ = SkillDraftSchema.safeParse(artifact.data.data);
     if (!parseResult_.success) {
       logger.error("Invalid skill draft data", { artifactId, issues: parseResult_.error.issues });
       return {
@@ -48,22 +46,27 @@ export const createSkillTool = tool({
       };
     }
 
-    const skillInput = parseResult_.data;
+    const draft = parseResult_.data;
 
-    // 4. Create the skill in storage
-    const createResult = await SkillStorage.create(createdBy, skillInput);
+    // TODO: draft.namespace defaults to "atlas" — read defaultNamespace from workspace config
+    // to isolate agent-created skills per workspace when multi-tenant support arrives.
+    const publishResult = await SkillStorage.publish(draft.namespace, draft.name, createdBy, {
+      description: draft.description,
+      instructions: draft.instructions,
+    });
 
-    if (!createResult.ok) {
-      logger.error("Failed to create skill", { artifactId, error: createResult.error });
-      return { success: false, error: `Failed to create skill: ${createResult.error}` };
+    if (!publishResult.ok) {
+      logger.error("Failed to publish skill", { artifactId, error: publishResult.error });
+      return { success: false, error: `Failed to publish skill: ${publishResult.error}` };
     }
 
-    const skill = createResult.data;
+    const { id, version } = publishResult.data;
 
-    // 5. Log and return the result
-    logger.info("Skill created from draft", {
-      skillId: skill.id,
-      skillName: skill.name,
+    logger.info("Skill published from draft", {
+      skillId: id,
+      namespace: draft.namespace,
+      name: draft.name,
+      version,
       artifactId,
       createdBy,
     });
@@ -71,11 +74,11 @@ export const createSkillTool = tool({
     return {
       success: true,
       skill: {
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        workspaceId: skill.workspaceId,
-        createdAt: skill.createdAt.toISOString(),
+        id,
+        namespace: draft.namespace,
+        name: draft.name,
+        version,
+        description: draft.description,
       },
     };
   },

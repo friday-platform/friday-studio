@@ -50,6 +50,7 @@ export function convertLLMToAgent(
     description: config.description,
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
+    useWorkspaceSkills: true,
     handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection

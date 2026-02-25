@@ -1,12 +1,3 @@
-/**
- * Conversation Agent - SDK Architecture Implementation
- *
- * Interactive conversation agent for workspace collaboration with:
- * - Persistent conversation history via daemon storage
- * - Direct agent invocation for workspace-planner, fsm-workspace-creator, and skill-distiller
- * - Real-time streaming responses
- * - Task tracking with todos
- */
 import process from "node:process";
 import type {
   AgentContext,
@@ -204,7 +195,7 @@ function buildSkillsSection(
     (s) => `<skill name="${s.id}">${s.description}</skill>`,
   );
   const workspaceEntries = workspaceSkills.map(
-    (s) => `<skill name="${s.name}">${s.description}</skill>`,
+    (s) => `<skill name="@${s.namespace}/${s.name}">${s.description}</skill>`,
   );
 
   const allEntries = [...hardcodedEntries, ...workspaceEntries];
@@ -345,16 +336,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
   useWorkspaceSkills: true,
 
   /**
-   * Main conversation handler that processes user prompts with streaming responses.
-   * Manages conversation history persistence, tool execution, and real-time event streaming.
-   *
-   * NOTE: The conversation agent works a bit differently than other agents. Rather than using
-   * the prompt that triggers the signal, the message history is loaded in its entirety from
-   * the chat history db, rather than using the signal input prompt.
-   *
-   * @param prompt - NOT USED - see the note above.
-   * @param context - Execution context with session, logger, and available tools
-   * @returns Conversation response with text, reasoning, execution flow, and tool calls
+   * NOTE: prompt param is unused — message history is loaded from chat DB instead.
    */
   handler: async (_, { session, logger, tools, stream, abortSignal, telemetry }) => {
     if (!session.streamId) {
@@ -392,6 +374,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
     let interceptedApiError: unknown = null;
     let finalText: string | undefined;
     let finalFinishReason: string | undefined;
+    let cleanupSkills: (() => Promise<void>) | undefined;
 
     const persistStreamMessage = createUIMessageStream<AtlasUIMessage>({
       originalMessages: messages,
@@ -521,7 +504,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
             description: skillDistillerAgent.metadata.description,
             inputSchema: jsonSchema<{
               artifactIds: string[];
-              workspaceId: string;
+              namespace?: string;
               name?: string;
               focus?: string;
               draftArtifactId?: string;
@@ -533,17 +516,20 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                   items: { type: "string" },
                   description: "Artifact IDs containing corpus material",
                 },
-                workspaceId: { type: "string", description: "Target workspace for the skill" },
+                namespace: {
+                  type: "string",
+                  description: "Target namespace for the skill (falls back to 'atlas')",
+                },
                 name: { type: "string", description: "Suggested skill name" },
                 focus: { type: "string", description: "What aspect to emphasize" },
                 draftArtifactId: { type: "string", description: "Existing draft to revise" },
               },
-              required: ["artifactIds", "workspaceId"],
+              required: ["artifactIds"],
             }),
             execute: (input) => {
               logger.debug("Executing skill-distiller directly", {
                 artifactCount: input.artifactIds.length,
-                workspaceId: input.workspaceId,
+                namespace: input.namespace,
               });
               return skillDistillerAgent.execute(input, agentContext);
             },
@@ -673,12 +659,10 @@ export const conversationAgent = createAgent<string, ConversationResult>({
 
         const workspaceId = session.workspaceId || "atlas-conversation";
 
-        // Fetch workspace skills and combine with hardcoded skills
-        const workspaceSkillsResult = await SkillStorage.list(workspaceId);
-        const workspaceSkills = workspaceSkillsResult.ok ? workspaceSkillsResult.data : [];
-        const skillsSection = buildSkillsSection(skills, workspaceSkills);
+        const globalSkillsResult = await SkillStorage.list();
+        const globalSkills = globalSkillsResult.ok ? globalSkillsResult.data : [];
+        const skillsSection = buildSkillsSection(skills, globalSkills);
 
-        // Create do_task tool with writer closure for progress
         const doTaskTool = createDoTaskTool(
           writer,
           {
@@ -693,7 +677,9 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           abortSignal,
         );
 
-        const loadSkillTool = createLoadSkillTool(workspaceId, { hardcodedSkills: skills });
+        const loadSkillResult = createLoadSkillTool({ hardcodedSkills: skills });
+        const loadSkillTool = loadSkillResult.tool;
+        cleanupSkills = loadSkillResult.cleanup;
 
         const allTools = {
           ...filteredTools,
@@ -1091,16 +1077,20 @@ export const conversationAgent = createAgent<string, ConversationResult>({
      * Even though this doesn't return a value, it *must* be awaited otherwise
      * the pipe will break before the LLM has a chance to respond.
      */
-    await pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
-      logger.error("pipeUIMessageStream failed", { error: pipeError });
+    try {
+      await pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
+        logger.error("pipeUIMessageStream failed", { error: pipeError });
 
-      const apiError = parseAPICallError(pipeError);
-      if (apiError) {
-        interceptedApiError = apiError;
-      }
+        const apiError = parseAPICallError(pipeError);
+        if (apiError) {
+          interceptedApiError = apiError;
+        }
 
-      throw pipeError;
-    });
+        throw pipeError;
+      });
+    } finally {
+      cleanupSkills?.();
+    }
 
     return ok({ text: finalText });
   },

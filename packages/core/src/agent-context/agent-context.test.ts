@@ -5,8 +5,7 @@
  * 1. Adds load_skill tool when skills exist AND agent.useWorkspaceSkills is true
  * 2. Appends <available_skills> to prompt when agent opts in
  * 3. Works correctly with empty skills list
- * 4. Skills from wrong workspace not included
- * 5. Skills NOT injected when agent.useWorkspaceSkills is false (default)
+ * 4. Skills NOT injected when agent.useWorkspaceSkills is false (default)
  */
 
 import { rmSync } from "node:fs";
@@ -14,13 +13,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { SkillStorage } from "@atlas/skills";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
 import { createAgentContextBuilder } from "./index.ts";
-
-// Store original methods for restoration
-const originalList = SkillStorage.list.bind(SkillStorage);
 
 // Mock logger
 const mockLogger = {
@@ -70,6 +66,8 @@ describe("buildAgentContext skill injection", () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+
     // Create temp database for skills
     tempDbPath = join(tmpdir(), `skills-test-${Date.now()}.db`);
     tempAdapter = new LocalSkillAdapter(tempDbPath);
@@ -80,8 +78,7 @@ describe("buildAgentContext skill injection", () => {
   });
 
   afterEach(() => {
-    // Restore original SkillStorage.list
-    SkillStorage.list = originalList;
+    vi.restoreAllMocks();
 
     // Restore fetch
     globalThis.fetch = originalFetch;
@@ -98,15 +95,13 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-with-skills";
 
     // Create a skill in the temp database
-    await tempAdapter.create("user-1", {
-      name: "my-skill",
+    await tempAdapter.publish("atlas", "my-skill", "user-1", {
       description: "A useful skill",
       instructions: "Do the thing",
-      workspaceId,
     });
 
     // Stub SkillStorage.list to use temp adapter
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,
@@ -127,15 +122,13 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-with-skills-2";
 
     // Create a skill
-    await tempAdapter.create("user-1", {
-      name: "debug-helper",
+    await tempAdapter.publish("atlas", "debug-helper", "user-1", {
       description: "Helps with debugging",
       instructions: "Use this for debugging",
-      workspaceId,
     });
 
     // Stub SkillStorage.list
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,
@@ -151,7 +144,7 @@ describe("buildAgentContext skill injection", () => {
     // Prompt should contain <available_skills> section
     expect(enrichedPrompt).toContain("<available_skills>");
     expect(enrichedPrompt).toContain("</available_skills>");
-    expect(enrichedPrompt).toContain('name="debug-helper"');
+    expect(enrichedPrompt).toContain("@atlas/debug-helper");
     expect(enrichedPrompt).toContain("Helps with debugging");
     // Original prompt should still be present
     expect(enrichedPrompt).toContain("Original prompt");
@@ -160,8 +153,8 @@ describe("buildAgentContext skill injection", () => {
   it("works correctly with empty skills list", async () => {
     const workspaceId = "ws-no-skills";
 
-    // No skills created for this workspace - list returns empty array
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    // No skills created — list returns empty array
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,
@@ -182,73 +175,16 @@ describe("buildAgentContext skill injection", () => {
     expect(enrichedPrompt).toBe("Hello world");
   });
 
-  it("skills from wrong workspace not included", async () => {
-    const workspace1 = "ws-1";
-    const workspace2 = "ws-2";
-
-    // Create skill in workspace 1
-    await tempAdapter.create("user-1", {
-      name: "ws1-skill",
-      description: "Skill for workspace 1",
-      instructions: "Instructions for ws1",
-      workspaceId: workspace1,
-    });
-
-    // Create skill in workspace 2
-    await tempAdapter.create("user-1", {
-      name: "ws2-skill",
-      description: "Skill for workspace 2",
-      instructions: "Instructions for ws2",
-      workspaceId: workspace2,
-    });
-
-    // Stub SkillStorage.list
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
-
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
-
-    // Build context for workspace 1
-    const { enrichedPrompt: prompt1 } = await buildAgentContext(
-      createTestAgent({ useWorkspaceSkills: true }),
-      createTestSessionData(workspace1),
-      "Test prompt",
-    );
-
-    // Should contain ws1 skill, not ws2 skill
-    expect(prompt1).toContain("ws1-skill");
-    expect(prompt1).toContain("Skill for workspace 1");
-    expect(prompt1.includes("ws2-skill")).toBe(false);
-    expect(prompt1.includes("Skill for workspace 2")).toBe(false);
-
-    // Build context for workspace 2
-    const { enrichedPrompt: prompt2 } = await buildAgentContext(
-      createTestAgent({ useWorkspaceSkills: true }),
-      createTestSessionData(workspace2),
-      "Test prompt",
-    );
-
-    // Should contain ws2 skill, not ws1 skill
-    expect(prompt2).toContain("ws2-skill");
-    expect(prompt2).toContain("Skill for workspace 2");
-    expect(prompt2.includes("ws1-skill")).toBe(false);
-    expect(prompt2.includes("Skill for workspace 1")).toBe(false);
-  });
-
   it("load_skill tool is scoped to correct workspace", async () => {
     const workspaceId = "ws-tool-scope";
 
-    await tempAdapter.create("user-1", {
-      name: "scoped-skill",
+    await tempAdapter.publish("atlas", "scoped-skill", "user-1", {
       description: "Test scoping",
       instructions: "Scoped instructions",
-      workspaceId,
     });
 
     // Stub SkillStorage methods
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,
@@ -279,7 +215,7 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-error";
 
     // Stub SkillStorage.list to return an error
-    SkillStorage.list = () => Promise.resolve({ ok: false, error: "Database error" });
+    vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: false, error: "Database error" });
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,
@@ -304,15 +240,13 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-existing-tool";
 
     // Create a skill so the injection code path runs
-    await tempAdapter.create("user-1", {
-      name: "test-skill",
+    await tempAdapter.publish("atlas", "test-skill", "user-1", {
       description: "Test skill",
       instructions: "Test instructions",
-      workspaceId,
     });
 
     // Stub SkillStorage.list
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     // Create a mock "unified" load_skill tool with a distinctive description
     const unifiedLoadSkillTool = {
@@ -353,15 +287,13 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-opt-out";
 
     // Create a skill in the temp database
-    await tempAdapter.create("user-1", {
-      name: "ignored-skill",
+    await tempAdapter.publish("atlas", "ignored-skill", "user-1", {
       description: "This skill should be ignored",
       instructions: "Agent did not opt in",
-      workspaceId,
     });
 
     // Stub SkillStorage.list to use temp adapter
-    SkillStorage.list = (wsId: string) => tempAdapter.list(wsId);
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       mcpServerPool: mockMcpServerPool,

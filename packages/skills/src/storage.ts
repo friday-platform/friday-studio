@@ -3,25 +3,31 @@ import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
 import { CortexSkillAdapter } from "./cortex-adapter.ts";
 import { LocalSkillAdapter } from "./local-adapter.ts";
-import type { CreateSkillInput, Skill, SkillSummary } from "./schemas.ts";
+import type { PublishSkillInput, Skill, SkillSummary, VersionInfo } from "./schemas.ts";
 
 const logger = createLogger({ name: "skill-storage" });
 
 export interface SkillStorageAdapter {
-  create(createdBy: string, input: CreateSkillInput): Promise<Result<Skill, string>>;
-  update(id: string, input: Partial<CreateSkillInput>): Promise<Result<Skill, string>>;
-  get(id: string): Promise<Result<Skill | null, string>>;
-  getByName(name: string, workspaceId: string): Promise<Result<Skill | null, string>>;
-  list(workspaceId: string): Promise<Result<SkillSummary[], string>>;
-  delete(id: string): Promise<Result<void, string>>;
+  publish(
+    namespace: string,
+    name: string,
+    createdBy: string,
+    input: PublishSkillInput,
+  ): Promise<Result<{ id: string; version: number }, string>>;
+  get(namespace: string, name: string, version?: number): Promise<Result<Skill | null, string>>;
+  list(namespace?: string, query?: string): Promise<Result<SkillSummary[], string>>;
+  listVersions(namespace: string, name: string): Promise<Result<VersionInfo[], string>>;
+  deleteVersion(namespace: string, name: string, version: number): Promise<Result<void, string>>;
 }
 
 function createSkillStorageAdapter(): SkillStorageAdapter {
   const adapterType = process.env.SKILL_STORAGE_ADAPTER || "local";
   switch (adapterType) {
-    case "local":
-      logger.info("Using LocalSkillAdapter");
-      return new LocalSkillAdapter();
+    case "local": {
+      const dbPath = process.env.SKILL_LOCAL_DB_PATH;
+      logger.info("Using LocalSkillAdapter", { dbPath });
+      return new LocalSkillAdapter(dbPath);
+    }
     case "cortex": {
       const cortexUrl = process.env.CORTEX_URL;
       if (!cortexUrl) {
@@ -46,26 +52,13 @@ function getStorage(): SkillStorageAdapter {
 
 /**
  * Lazily-initialized skill storage adapter.
- * Uses a Proxy to defer adapter creation until first method call,
- * allowing tests to configure environment variables before initialization.
+ * Defers adapter creation until first method call, allowing tests to
+ * configure environment variables before initialization.
  */
-export const SkillStorage: SkillStorageAdapter = new Proxy({} as SkillStorageAdapter, {
-  get(_target, prop: keyof SkillStorageAdapter) {
-    const storage = getStorage();
-    const value = storage[prop];
-    // Bind methods to the storage instance so `this` works correctly
-    if (typeof value === "function") {
-      return value.bind(storage);
-    }
-    return value;
-  },
-  set(_target, prop: keyof SkillStorageAdapter, value: unknown) {
-    if (typeof value !== "function") {
-      throw new Error(`SkillStorage.${prop} can only be set to a function`);
-    }
-    const storage = getStorage();
-    // Safe to use Object.assign for method replacement (testing/mocking)
-    Object.assign(storage, { [prop]: value });
-    return true;
-  },
-});
+export const SkillStorage: SkillStorageAdapter = {
+  publish: (...args) => getStorage().publish(...args),
+  get: (...args) => getStorage().get(...args),
+  list: (...args) => getStorage().list(...args),
+  listVersions: (...args) => getStorage().listVersions(...args),
+  deleteVersion: (...args) => getStorage().deleteVersion(...args),
+};

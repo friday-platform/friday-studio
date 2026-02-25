@@ -1,15 +1,23 @@
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
-export type { CreateLoadSkillToolOptions, HardcodedSkill } from "./load-skill-tool.ts";
+export type {
+  CreateLoadSkillToolOptions,
+  HardcodedSkill,
+  LoadSkillToolResult,
+} from "./load-skill-tool.ts";
 export { createLoadSkillTool } from "./load-skill-tool.ts";
-export type { CreateSkillInput, Skill, SkillSummary } from "./schemas.ts";
 // Schemas and types
+export type { PublishSkillInput, Skill, SkillSummary, VersionInfo } from "./schemas.ts";
 export {
-  CreateSkillInputSchema,
+  PublishSkillInputSchema,
+  SkillDbRowSchema,
   SkillNameSchema,
   SkillSchema,
   SkillSummarySchema,
+  VersionInfoSchema,
 } from "./schemas.ts";
+export type { SkillFrontmatter } from "./skill-md-parser.ts";
+export { parseSkillMd, SkillFrontmatterSchema } from "./skill-md-parser.ts";
 // Storage
 export type { SkillStorageAdapter } from "./storage.ts";
 export { SkillStorage } from "./storage.ts";

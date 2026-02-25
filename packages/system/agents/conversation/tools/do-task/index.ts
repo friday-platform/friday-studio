@@ -299,7 +299,6 @@ export function createDoTaskTool(
       const startMs = Date.now();
 
       try {
-        // 1. Run plan + classify directly (shared first two pipeline steps)
         emitProgress({ type: "planning" });
 
         const planResult = await generatePlan(intent, { mode: "task", abortSignal });
@@ -584,7 +583,7 @@ export function createDoTaskTool(
         );
         const totalSteps = plan.steps.length;
 
-        // Compile FSM deterministically (no LLM, no retries)
+        // Deterministic compilation — no LLM, no retries
         emitProgress({ type: "preparing", stepCount: totalSteps });
 
         const compiled = buildFSMFromPlan(classifiedJob);
@@ -600,7 +599,8 @@ export function createDoTaskTool(
         }
         const fsmDefinition = compiled.value.fsm;
 
-        // Create MCP pool and provider
+        // Always create the pool - bundled agents (like google-calendar) need it
+        // for their embedded MCP configs even when plan.mcpServers is empty
         const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
         const mcpServerConfigs: Record<string, MCPServerConfig> = {};
         for (const server of plan.mcpServers) {

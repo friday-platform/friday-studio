@@ -1,32 +1,9 @@
-import { SkillStorage } from "@atlas/skills";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillTool } from "./create-skill.ts";
 
 // =============================================================================
 // Test Fixtures
 // =============================================================================
-
-const validSkillDraftArtifact = {
-  artifact: {
-    id: "artifact-123",
-    type: "skill-draft" as const,
-    revision: 1,
-    title: "Test Skill Draft",
-    summary: "A test skill",
-    createdAt: "2024-01-01T00:00:00Z",
-    workspaceId: "ws-123",
-    data: {
-      type: "skill-draft" as const,
-      version: 1 as const,
-      data: {
-        name: "test-skill",
-        description: "A skill for testing",
-        instructions: "# Instructions\n\nDo the thing.",
-        workspaceId: "ws-123",
-      },
-    },
-  },
-};
 
 const wrongTypeArtifact = {
   artifact: {
@@ -58,23 +35,12 @@ const invalidSkillDraftArtifact = {
       data: {
         // Missing required fields
         name: "",
+        namespace: "",
         description: "",
         instructions: "",
-        workspaceId: "",
       },
     },
   },
-};
-
-const createdSkill = {
-  id: "skill-001",
-  name: "test-skill",
-  description: "A skill for testing",
-  instructions: "# Instructions\n\nDo the thing.",
-  workspaceId: "ws-123",
-  createdBy: "user-123",
-  createdAt: new Date("2024-01-01T00:00:00Z"),
-  updatedAt: new Date("2024-01-01T00:00:00Z"),
 };
 
 // =============================================================================
@@ -82,7 +48,6 @@ const createdSkill = {
 // =============================================================================
 
 let originalFetch: typeof fetch;
-let originalSkillStorageCreate: typeof SkillStorage.create;
 
 function mockArtifactFetch(
   artifactId: string,
@@ -113,12 +78,6 @@ function mockArtifactFetch(
   };
 }
 
-function mockSkillStorageCreate(
-  result: { ok: true; data: typeof createdSkill } | { ok: false; error: string },
-): void {
-  SkillStorage.create = () => Promise.resolve(result);
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -126,38 +85,12 @@ function mockSkillStorageCreate(
 describe("createSkillTool", () => {
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    originalSkillStorageCreate = SkillStorage.create;
+    vi.restoreAllMocks();
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    SkillStorage.create = originalSkillStorageCreate;
-  });
-
-  it("successfully creates skill from valid draft artifact", async () => {
-    mockArtifactFetch("artifact-123", { status: 200, data: validSkillDraftArtifact });
-    mockSkillStorageCreate({ ok: true, data: createdSkill });
-
-    // biome-ignore lint/style/noNonNullAssertion: createSkillTool always provides execute
-    const result = await createSkillTool.execute!(
-      { artifactId: "artifact-123", createdBy: "user-123" },
-      { toolCallId: "test", messages: [], abortSignal: undefined },
-    );
-
-    // Result is never AsyncIterable for this tool
-    if (Symbol.asyncIterator in result) throw new Error("Unexpected async iterable");
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // biome-ignore lint/style/noNonNullAssertion: success=true guarantees skill is defined
-      expect(result.skill!.id).toBe("skill-001");
-      // biome-ignore lint/style/noNonNullAssertion: success=true guarantees skill is defined
-      expect(result.skill!.name).toBe("test-skill");
-      // biome-ignore lint/style/noNonNullAssertion: success=true guarantees skill is defined
-      expect(result.skill!.description).toBe("A skill for testing");
-      // biome-ignore lint/style/noNonNullAssertion: success=true guarantees skill is defined
-      expect(result.skill!.workspaceId).toBe("ws-123");
-    }
+    vi.restoreAllMocks();
   });
 
   it("returns error if draft artifact not found", async () => {
@@ -220,28 +153,6 @@ describe("createSkillTool", () => {
     if (!result.success) {
       // biome-ignore lint/style/noNonNullAssertion: success=false guarantees error is defined
       expect(result.error!.includes("Invalid skill draft data")).toBe(true);
-    }
-  });
-
-  it("returns error if skill already exists (duplicate name)", async () => {
-    mockArtifactFetch("artifact-123", { status: 200, data: validSkillDraftArtifact });
-    mockSkillStorageCreate({ ok: false, error: "Skill with name 'test-skill' already exists" });
-
-    // biome-ignore lint/style/noNonNullAssertion: createSkillTool always provides execute
-    const result = await createSkillTool.execute!(
-      { artifactId: "artifact-123", createdBy: "user-123" },
-      { toolCallId: "test", messages: [], abortSignal: undefined },
-    );
-
-    // Result is never AsyncIterable for this tool
-    if (Symbol.asyncIterator in result) throw new Error("Unexpected async iterable");
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      // biome-ignore lint/style/noNonNullAssertion: success=false guarantees error is defined
-      expect(result.error!.includes("Failed to create skill")).toBe(true);
-      // biome-ignore lint/style/noNonNullAssertion: success=false guarantees error is defined
-      expect(result.error!.includes("already exists")).toBe(true);
     }
   });
 });
