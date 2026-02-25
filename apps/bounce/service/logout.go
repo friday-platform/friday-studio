@@ -20,7 +20,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 
 	DeleteTempestTokenCookie(&cfg, w)
 
-	// Redirect to the web app home page
-	redirectURL := strings.TrimRight(cfg.RedirectURI, "/") + "/"
+	// Redirect to the auth UI login page
+	redirectURL := strings.TrimRight(cfg.AuthUIURL, "/") + "/"
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
