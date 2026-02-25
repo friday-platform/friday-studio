@@ -16,13 +16,17 @@ function applyContext(scope: Sentry.Scope, context?: CaptureContext): void {
   if (context.agentId) scope.setTag("agentId", context.agentId);
   if (context.agentName) scope.setTag("agentName", context.agentName);
   scope.setExtras(context);
+}
 
-  // Custom fingerprinting: group all errors from the same session into one issue.
-  // This prevents a single root cause from creating multiple Sentry issues
-  // as the error propagates through layers (agent → session → workspace).
-  if (context.sessionId) {
-    scope.setFingerprint([context.sessionId]);
+function fingerprintForException(error: unknown): string[] {
+  if (error instanceof Error) {
+    return ["{{ default }}", error.name];
   }
+  return ["{{ default }}"];
+}
+
+function fingerprintForMessage(message: string): string[] {
+  return [message];
 }
 
 export function captureException(error: unknown, context?: CaptureContext): void {
@@ -30,6 +34,7 @@ export function captureException(error: unknown, context?: CaptureContext): void
   try {
     Sentry.withScope((scope) => {
       applyContext(scope, context);
+      scope.setFingerprint(fingerprintForException(error));
       Sentry.captureException(error);
     });
   } catch {
@@ -46,6 +51,7 @@ export function captureMessage(
   try {
     Sentry.withScope((scope) => {
       applyContext(scope, context);
+      scope.setFingerprint(fingerprintForMessage(message));
       Sentry.captureMessage(message, level);
     });
   } catch {

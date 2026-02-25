@@ -737,7 +737,7 @@ export class WorkspaceRuntime {
       } else {
         logger.error("Signal processing failed", {
           sessionId: session.id,
-          error: session.error.message,
+          error: session.error,
           currentState: job.engine.state,
           jobName: job.name,
         });

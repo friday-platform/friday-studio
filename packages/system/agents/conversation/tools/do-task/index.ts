@@ -519,7 +519,7 @@ export function createDoTaskTool(
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
           if (err instanceof PipelineError) {
-            logger.error("Pipeline failed", { phase: err.phase, error: err.cause.message });
+            logger.error("Pipeline failed", { phase: err.phase, error: err.cause });
             return {
               success: false,
               error: `Planning failed at "${err.phase}": ${err.cause.message}`,
@@ -721,15 +721,15 @@ export function createDoTaskTool(
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         if (error instanceof PipelineError) {
-          logger.error("Pipeline failed", { phase: error.phase, error: error.cause.message });
+          logger.error("Pipeline failed", { phase: error.phase, error: error.cause });
           return {
             success: false,
             error: `Planning failed at "${error.phase}": ${error.cause.message}`,
           };
         }
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error("do_task failed", { error: message });
-        return { success: false, error: `Task failed: ${message}` };
+        const errorObj = error instanceof Error ? error : new Error(String(error));
+        logger.error("do_task failed", { error: errorObj });
+        return { success: false, error: `Task failed: ${errorObj.message}` };
       }
     },
   });
