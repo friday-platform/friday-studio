@@ -168,7 +168,7 @@ describe("POST /create — credential resolution", () => {
   });
 
   test("strips foreign id-only refs and imports workspace without them", async () => {
-    const { app } = createImportTestApp();
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     // Credential ID belongs to another user — Link returns 404
@@ -199,6 +199,12 @@ describe("POST /create — credential resolution", () => {
     // Should report what was stripped
     expect(body.strippedCredentials).toEqual(["mcp:github:GITHUB_TOKEN"]);
 
+    // Env validation skipped because credentials were stripped
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+
     // The written config should NOT contain the foreign credential ref
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
     expect(getWrittenRef("github", "GITHUB_TOKEN")).toBeUndefined();
@@ -206,7 +212,7 @@ describe("POST /create — credential resolution", () => {
   });
 
   test("strips foreign id-only refs from agent-level env vars", async () => {
-    const { app } = createImportTestApp();
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     mockFetchLinkCredential.mockRejectedValue(new LinkCredentialNotFoundError("cred_foreign"));
@@ -233,6 +239,12 @@ describe("POST /create — credential resolution", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
     expect(body.strippedCredentials).toEqual(["agent:summarizer:API_KEY"]);
+
+    // Env validation skipped because credentials were stripped
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
 
     // The written config should strip the env var but preserve the agent
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
@@ -586,8 +598,11 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    // Workspace should be created
-    expect(mockRegisterWorkspace).toHaveBeenCalled();
+    // Workspace should be created with env validation skipped
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
     // requires_setup should be set in the returned workspace metadata
     const workspace = body.workspace as Record<string, unknown>;
     const metadata = workspace.metadata as Record<string, unknown>;
@@ -1084,7 +1099,11 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    expect(mockRegisterWorkspace).toHaveBeenCalled();
+    // Env validation skipped because slack is unresolved
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
     // requires_setup should be set because slack is unresolved
     const workspace = body.workspace as Record<string, unknown>;
     const metadata = workspace.metadata as Record<string, unknown>;

@@ -298,14 +298,18 @@ const workspacesRoutes = daemonFactory
         // Register workspace with manager
         const ctx = c.get("app");
         const manager = ctx.daemon.getWorkspaceManager();
+        const hasUnresolvedCredentials =
+          unresolvedProviders.length > 0 ||
+          (strippedCredentialPaths !== undefined && strippedCredentialPaths.length > 0);
         const { workspace, created } = await manager.registerWorkspace(workspacePath, {
           name: finalWorkspaceName,
           description: validatedConfig.workspace.description,
           createdBy: userId,
+          skipEnvValidation: hasUnresolvedCredentials,
         });
 
-        // Set requires_setup flag if any providers couldn't be resolved
-        if (unresolvedProviders.length > 0 && created) {
+        // Set requires_setup flag if any credentials are missing or were stripped
+        if (hasUnresolvedCredentials && created) {
           await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
             metadata: { ...workspace.metadata, requires_setup: true },
           });

@@ -196,7 +196,13 @@ export class WorkspaceManager {
    */
   async registerWorkspace(
     workspacePath: string,
-    options?: { name?: string; description?: string; tags?: string[]; createdBy?: string },
+    options?: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      createdBy?: string;
+      skipEnvValidation?: boolean;
+    },
   ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
     const absolutePath = await Deno.realPath(workspacePath);
 
@@ -219,8 +225,12 @@ export class WorkspaceManager {
       throw error;
     }
 
-    // Validate that all "auto" env vars are available before allowing registration
-    validateMCPEnvironmentForWorkspace(config, absolutePath);
+    // Validate that all "auto" env vars are available before allowing registration.
+    // Skip during import when credentials are unresolved — the route sets
+    // requires_setup so the user is prompted to connect them post-creation.
+    if (!options?.skipEnvValidation) {
+      validateMCPEnvironmentForWorkspace(config, absolutePath);
+    }
 
     // Determine config filename and ephemeral status
     const persistentPath = join(absolutePath, "workspace.yml");

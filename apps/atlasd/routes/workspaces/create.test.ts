@@ -208,7 +208,7 @@ describe("POST /create — requires_setup flag", () => {
   });
 
   test("sets requires_setup: true when credentials cannot be resolved", async () => {
-    const { app, updateWorkspaceStatus } = createTestApp();
+    const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
     const { CredentialNotFoundError } = await import(
@@ -226,6 +226,12 @@ describe("POST /create — requires_setup flag", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
+    // Env validation skipped because credentials are unresolved
+    expect(registerWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+
     // requires_setup should be set via updateWorkspaceStatus
     expect(updateWorkspaceStatus).toHaveBeenCalledWith(
       "ws-new-id",
@@ -235,7 +241,7 @@ describe("POST /create — requires_setup flag", () => {
   });
 
   test("does not set requires_setup when all credentials resolve", async () => {
-    const { app, updateWorkspaceStatus } = createTestApp();
+    const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([{ id: "cred-1", label: "My GitHub" }]);
@@ -249,6 +255,12 @@ describe("POST /create — requires_setup flag", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
+
+    // Env validation NOT skipped when all credentials resolve
+    expect(registerWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: false }),
+    );
 
     // updateWorkspaceStatus should NOT have been called with requires_setup
     expect(updateWorkspaceStatus).not.toHaveBeenCalled();
@@ -274,7 +286,7 @@ describe("POST /create — requires_setup flag", () => {
   });
 
   test("partial resolution: resolves what it can, sets requires_setup for the rest", async () => {
-    const { app, updateWorkspaceStatus } = createTestApp();
+    const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
     const { CredentialNotFoundError } = await import(
@@ -295,6 +307,12 @@ describe("POST /create — requires_setup flag", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
+
+    // Env validation skipped because slack is unresolved
+    expect(registerWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
 
     // Partially resolved — still needs setup
     expect(updateWorkspaceStatus).toHaveBeenCalledWith(

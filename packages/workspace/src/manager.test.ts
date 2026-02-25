@@ -2,9 +2,14 @@
  * Tests for workspace manager utilities
  */
 
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { MergedConfig } from "@atlas/config";
-import { describe, expect, it } from "vitest";
-import { validateMCPEnvironmentForWorkspace } from "./manager.ts";
+import { createKVStorage } from "@atlas/storage";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./manager.ts";
+import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
 describe("validateMCPEnvironmentForWorkspace", () => {
   const createConfig = (
@@ -116,5 +121,57 @@ describe("validateMCPEnvironmentForWorkspace", () => {
 
     // Should NOT throw - no MCP servers to validate
     validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent");
+  });
+});
+
+describe("WorkspaceManager.registerWorkspace — skipEnvValidation", () => {
+  // Workspace YAML with a dangling auth.token_env (no env mapping for GH_TOKEN).
+  // This is the exact shape produced by importing a workspace whose GitHub
+  // credential was stripped because it belonged to a different user.
+  const workspaceYaml = `
+version: "1.0"
+workspace:
+  name: test-dangling-token
+tools:
+  mcp:
+    servers:
+      github:
+        transport:
+          type: http
+          url: "https://api.githubcopilot.com/mcp"
+        auth:
+          type: bearer
+          token_env: GH_TOKEN
+        env: {}
+`;
+
+  let tempDir: string;
+  let manager: WorkspaceManager;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
+    await writeFile(join(tempDir, "workspace.yml"), workspaceYaml);
+
+    const kv = await createKVStorage({ type: "memory" });
+    const registry = new RegistryStorageAdapter(kv);
+    await registry.initialize();
+    manager = new WorkspaceManager(registry);
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("throws on dangling auth.token_env without skipEnvValidation", async () => {
+    await expect(manager.registerWorkspace(tempDir)).rejects.toThrow("GH_TOKEN");
+  });
+
+  it("succeeds with skipEnvValidation: true despite dangling auth.token_env", async () => {
+    const { workspace, created } = await manager.registerWorkspace(tempDir, {
+      skipEnvValidation: true,
+    });
+
+    expect(created).toBe(true);
+    expect(workspace.name).toBe("test-dangling-token");
   });
 });
