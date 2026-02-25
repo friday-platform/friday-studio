@@ -37,9 +37,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
   useWorkspaceSkills: true,
 
   handler: async (input, { logger, stream, session, abortSignal }) => {
-    // TODO: read defaultNamespace from workspace config instead of hardcoding "atlas".
-    // All agent-created skills currently share the same namespace regardless of workspace.
-    const namespace = input.namespace ?? "atlas";
+    const namespace = input.namespace ?? "friday";
 
     logger.info("Starting skill distillation", {
       artifactCount: input.artifactIds.length,

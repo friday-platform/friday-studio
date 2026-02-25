@@ -48,8 +48,6 @@ export const createSkillTool = tool({
 
     const draft = parseResult_.data;
 
-    // TODO: draft.namespace defaults to "atlas" — read defaultNamespace from workspace config
-    // to isolate agent-created skills per workspace when multi-tenant support arrives.
     const publishResult = await SkillStorage.publish(draft.namespace, draft.name, createdBy, {
       description: draft.description,
       instructions: draft.instructions,
