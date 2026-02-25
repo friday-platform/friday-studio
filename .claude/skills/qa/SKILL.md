@@ -1,16 +1,24 @@
 ---
 name: qa
 description: >
-  QA testing for Friday. Plan test cases interactively for inflight features,
-  run smoke tests against the live product, or autonomously QA+fix with
-  escalation. Triggers on: "qa this feature", "smoke test", "verify this works",
-  "test the release", "qa and fix", "run my test plan", "run QA".
+  Plans, runs, and fixes QA test cases for Friday. Supports three modes: plan
+  (interactive test case development), run (execute cases and report), and fix
+  (run + autonomous fix loop with escalation). Covers API, CLI, and browser
+  testing via claude-in-chrome. Triggers on: "qa this feature", "smoke test",
+  "verify this works", "test the release", "qa and fix", "run my test plan".
 argument-hint: "<feature-or-plan-doc> | run <plan-doc|smoke> | fix <plan-doc>"
 ---
 
 # QA
 
 Three modes: **plan** test cases, **run** them, or **run + fix** autonomously.
+
+## Supporting Files
+
+- [references/report-template.md](references/report-template.md) — report
+  structure for run/fix mode output
+- [references/fix-loop-protocol.md](references/fix-loop-protocol.md) — full
+  fix loop protocol with fixer teammate prompt and escalation rules
 
 ## First: Load Product Context
 
@@ -64,7 +72,8 @@ brainstorming skill — one question at a time, validate incrementally.
    - **Expect** — what "good" looks like, described naturally
    - **If broken** — breadcrumbs for investigation (log commands, endpoints,
      files to check)
-4. **Write the plan doc** to `docs/qa/plans/<feature>-cases.md`
+4. **Write the plan doc** to `docs/qa/plans/<feature>-cases.md` (create directory
+   if missing)
 5. **Suggest smoke candidates** — which cases are durable enough for the smoke
    matrix at `docs/qa/smoke-matrix.md`
 6. **Update the product map** — if you discovered new routes, endpoints, or
@@ -108,17 +117,18 @@ Execute test cases and produce a report. No fixing, no interruptions.
 
 1. **Load cases** — read the plan doc or `docs/qa/smoke-matrix.md`
 2. **Verify prerequisites** — run the environment check above
-3. **Load tools** — load the playwriter skill for UI cases, use atlas CLI for
-   daemon interaction, curl for API probing. If any cases involve flagged
-   features, enable the flags per the `feature-flags` skill before testing.
+3. **Load tools** — use claude-in-chrome for UI cases (navigate, click, fill,
+   take screenshots), atlas CLI for daemon interaction, curl for API
+   probing. If any cases involve flagged features, enable the flags per the
+   `feature-flags` skill before testing.
 4. **Execute cases** sequentially (cases may reference earlier results). For each
    case:
    - Execute the trigger
    - Evaluate the expected outcome
    - Capture diagnostic context (API responses, CLI output, screenshots)
    - Record pass/fail/skip
-5. **Write report** to `docs/qa/reports/YYYY-MM-DD-<topic>.md` using the
-   template in `references/report-template.md`
+5. **Write report** to `docs/qa/reports/YYYY-MM-DD-<topic>.md` (create directory
+   if missing) using the template in `references/report-template.md`
 6. **Print terminal summary** — pass/fail/skip counts, list of failures
 
 ## Mode: Fix

@@ -11,7 +11,7 @@ Refer to `docs/product-map.md` for ports, routes, and CLI commands.
 **Verify**: Returns running status with PID and uptime
 
 ### API responsiveness
-**Trigger**: `curl http://localhost:8080/api/health`
+**Trigger**: `curl http://localhost:8080/health`
 **Verify**: Returns 200
 
 ### User identity

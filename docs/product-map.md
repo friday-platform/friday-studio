@@ -38,9 +38,12 @@ start it automatically.
 
 Base: `http://localhost:8080/api`
 
-### Health & Identity
+### Health (root-level, not under /api)
 
-- `GET /health` — daemon health check
+- `GET /health` — daemon health check (`http://localhost:8080/health`)
+
+### Identity
+
 - `GET /me` — current user identity
 
 ### Chat
