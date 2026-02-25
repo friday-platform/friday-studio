@@ -15,6 +15,7 @@ import {
   type HallucinationDetectorConfig,
   SupervisionLevel,
 } from "@atlas/hallucination";
+import { buildTemporalFacts, type DatetimeContext } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 
 /**
@@ -99,17 +100,6 @@ export function buildFinalAgentPrompt(
 }
 
 /**
- * Datetime context from client session
- */
-interface DatetimeContext {
-  timezone: string;
-  timestamp: string;
-  localDate: string;
-  localTime: string;
-  timezoneOffset: string;
-}
-
-/**
  * Build agent prompt with context (extracted from SessionSupervisor lines 1347-1446)
  *
  * Includes:
@@ -136,7 +126,7 @@ export async function buildAgentPrompt(
   const sections: string[] = [];
 
   // Add facts section (current date/time/etc)
-  sections.push(buildFactsSection(signalDatetime));
+  sections.push(buildTemporalFacts(signalDatetime));
 
   // Format documents for prompt - these are the FSM's business domain documents
   if (documents.length > 0) {
@@ -161,40 +151,6 @@ export async function buildAgentPrompt(
   }
 
   return sections.join("\n\n");
-}
-
-/**
- * Build a facts section with current context information
- * Uses client datetime if provided, otherwise falls back to server time
- * Extracted from SessionSupervisor lines 2040-2077
- */
-function buildFactsSection(datetime?: DatetimeContext): string {
-  // Use client datetime if provided
-  if (datetime) {
-    return `## Context Facts\n- Current Date: ${datetime.localDate}\n- Current Time: ${datetime.localTime} (${datetime.timezone})\n- Timestamp: ${datetime.timestamp}\n- Timezone Offset: ${datetime.timezoneOffset}`;
-  }
-
-  // Fallback to server time
-  const now = new Date();
-
-  const facts: string[] = [
-    `Current Date: ${now.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })}`,
-    `Current Time: ${now.toLocaleTimeString("en-US", {
-      hour12: true,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      timeZoneName: "short",
-    })}`,
-    `Timestamp: ${now.toISOString()}`,
-  ];
-
-  return `## Context Facts\n${facts.map((fact) => `- ${fact}`).join("\n")}`;
 }
 
 /**

@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
-import { getTodaysDate, stringifyError } from "@atlas/utils";
+import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import { stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
 import { generateText, tool } from "ai";
@@ -125,7 +125,7 @@ CONTENT GUIDELINES (for composeEmail):
           content: compositionSystem,
           providerOptions: getDefaultProviderOpts("anthropic"),
         },
-        { role: "system", content: `Today's date: ${getTodaysDate()}` },
+        temporalGroundingMessage(),
         { role: "user", content: prompt },
       ],
       abortSignal,

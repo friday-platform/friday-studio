@@ -4,9 +4,8 @@ import { JSONSchemaSchema } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
-import { getTodaysDate } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { getCapabilitiesSection } from "../../system/agents/conversation/capabilities.ts";
@@ -444,7 +443,7 @@ export async function generatePlan(
           role: "system",
           content: `## Capabilities\n\n${getCapabilitiesSection(dynamicServers)}\n\n## User's Connected Services\n\n${integrationsXml}`,
         },
-        { role: "system", content: `Current date: ${getTodaysDate()}` },
+        temporalGroundingMessage(),
         { role: "user", content: userMessage },
       ],
       maxOutputTokens: 10_240,
@@ -474,7 +473,7 @@ export async function generatePlan(
         role: "system",
         content: `## Capabilities\n\n${getCapabilitiesSection(dynamicServers)}\n\n## User's Connected Services\n\n${integrationsXml}`,
       },
-      { role: "system", content: `Current date: ${getTodaysDate()}` },
+      temporalGroundingMessage(),
       { role: "user", content: userMessage },
     ],
     maxOutputTokens: 10_240,

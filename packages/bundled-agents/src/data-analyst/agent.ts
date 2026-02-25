@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
-import { registry, traceModel } from "@atlas/llm";
+import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
@@ -235,6 +235,7 @@ async function runAnalysisLoop(
     model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     messages: [
       { role: "system", content: analysisPrompt },
+      temporalGroundingMessage(),
       { role: "user", content: question },
     ],
     tools: { execute_sql: executeSqlTool, save_results: saveResultsTool },

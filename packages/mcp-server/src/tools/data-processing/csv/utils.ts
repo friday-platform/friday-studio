@@ -3,8 +3,7 @@
  */
 
 import { repairToolCall } from "@atlas/agent-sdk";
-import { registry, traceModel } from "@atlas/llm";
-import { getTodaysDate } from "@atlas/utils";
+import { buildTemporalFacts, registry, traceModel } from "@atlas/llm";
 import { generateText } from "ai";
 import type { ToolContext } from "../../types.ts";
 import type { OperationResult, ParsedCsvFilesMap } from "./operations.ts";
@@ -62,7 +61,8 @@ Provide a concise summary:
 2. For each file: name, row count, column count, brief description of columns
 3. For read-only: note that artifacts contain unchanged data
 
-Current datetime (UTC): ${getTodaysDate()}`;
+
+${buildTemporalFacts()}`;
 }
 
 /**

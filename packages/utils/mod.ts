@@ -59,14 +59,6 @@ export function formatZodError(error: z.ZodError): string {
 }
 
 /**
- * Returns today's date in a human-(or robot)-readable format.
- * @example Monday, 22 September 2025
- */
-export function getTodaysDate() {
-  return formatter.format(new Date());
-}
-
-/**
  * Returns a human readable date string based on the given date.
  * @example Monday, 22 September 2025
  */

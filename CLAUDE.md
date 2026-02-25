@@ -5,7 +5,7 @@ signals (HTTP, cron).
 
 ## Your Role
 
-Challenge assumptions. Push back on complexity. Ask "who needs this?" and "what's
+Challenge assumptions. Push back on complexity. Ask "who needs this?" and what's
 the simplest version?" before building. Be a sparring partner, not a yes-man.
 
 ## Tech Stack
@@ -22,7 +22,7 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 # Deno/TypeScript
 deno check              # Type check
 deno task lint          # Lint
-deno task test $file    # Run tests (vitest, e.g. src/core/foo.test.ts)
+deno task test $file    # Run tests (vitest)
 deno task evals run                 # Run evals (custom runner CLI)
 deno task start         # Run daemon
 
@@ -61,13 +61,6 @@ go build                # Build
 
 ## Gotchas
 
-Only consult the gotcha relevant to your current task — don't defensively
-check all of these.
-
-**TS2589 (deep type instantiation)?** Check: `Omit<>` on Zod `strictObject`
-types, `z.toJSONSchema()` without intermediate parse, `generateObject` with
-discriminated unions, or `deno check` with shared `z.lazy()` entry points.
-
 ### Zod v4
 
 - `z.object()` strips unknown keys by default — removing fields from a schema
@@ -81,8 +74,6 @@ discriminated unions, or `deno check` with shared `z.lazy()` entry points.
 - Zod discriminated unions cause deep type instantiation with AI SDK's
   `generateObject` generic — split into per-type schemas
 - `z.record()` requires two args (key schema, value schema) — v3 accepted one
-- `z.enum()` requires `[string, ...string[]]` (non-empty tuple) — destructure
-  `[first, ...rest]` to satisfy the type
 
 ### AI SDK (Vercel) v5
 
@@ -103,11 +94,6 @@ discriminated unions, or `deno check` with shared `z.lazy()` entry points.
 
 ### Deno
 
-**Which `deno.json` to edit?** Adding a deno task or top-level config → root
-`deno.json`. Adding an `@atlas/*` import map entry → root `deno.json` AND the
-package-level `deno.json` (root handles runtime, package-level handles
-`deno check`). Adding a dependency → `package.json` not `deno.json`.
-
 - `deno check` with multiple entry points sharing recursive `z.lazy()` types
   can trigger TS2589 — check files separately
 - deno.json import map only maps root (`@atlas/pkg` → `mod.ts`) — subpath
@@ -115,9 +101,9 @@ package-level `deno.json` (root handles runtime, package-level handles
 - Package-level deno.json needs explicit import map entries for cross-package
   `@atlas/*` deps — root deno.json handles runtime, but `deno check` within
   package scope needs them
-- [web-client, tests] `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite`
-  (FFI) — use subpath exports (e.g. `@atlas/core/session/types`) to avoid
-  vitest/browser failures
+- `@atlas/core` barrel import (`mod.ts`) pulls `@db/sqlite` (FFI) — web client
+  and test code must use subpath exports (e.g. `@atlas/core/session/types`) to
+  avoid vitest/browser failures
 - Deno workspace resolution reads both `deno.json` AND `package.json`
   workspaces — both must stay in sync or you get "Could not find package.json
   for workspace member" errors
@@ -127,12 +113,8 @@ package-level `deno.json` (root handles runtime, package-level handles
   explicit `package.json` dep — adding them creates duplicate resolution paths
 - gunshi `required: true` on CLI args still produces `string | undefined` at the
   type level — add a runtime guard even for required args
-- [web-client] `deno check` cannot parse `.svelte` files — use
+- `deno check` cannot parse `.svelte` files — use
   `npx svelte-check --threshold error` for Svelte type checking
-- When moving code INTO a package it previously imported from (e.g.,
-  `telemetry.ts` with `import from "@atlas/logger"` moving into `@atlas/logger`),
-  the package import must become a relative import — self-barrel imports cause
-  circular resolution
 
 ### TypeScript
 
@@ -144,37 +126,33 @@ package-level `deno.json` (root handles runtime, package-level handles
 - Adding a variant to a discriminated union requires updating all exhaustive
   handlers in the same commit — splitting them creates a broken intermediate
   state
-- Schema field renames cascade to hand-written interfaces mirroring the shape —
-  grep for the old field name in type annotations, not just property access
-- [web-client] `.svelte.ts` files have looser `JSON.parse` inference (returns
-  any-ish) — plain `.ts` files enforce `unknown`, so extracted code needs
-  explicit Zod parsing for `JSON.parse` results
-
-### Worker Context (src/core)
-
-Worker-executed code actions can't read Context properties unless explicitly
-serialized in `WorkerRequest.contextData` AND reconstructed in
-`function-executor.worker.ts` — adding a Context field requires changes in 4
-places: types.ts interface, fsm-engine.ts context building, worker-executor.ts
-serialization, worker reconstruction.
-
-### LLM Output Schemas
-
-Keep LLM output format simple (flat field lists) and convert to JSON Schema in
-code — more reliable than asking LLMs to produce JSON Schema directly.
+- `.svelte.ts` files have looser `JSON.parse` inference (returns any-ish) —
+  plain `.ts` files enforce `unknown`, so extracted code needs explicit Zod
+  parsing for `JSON.parse` results
 
 ## Code Philosophy
 
-Explicit over implicit. Simple over complex. Flat over nested.
+**Do:**
 
-- Parse, don't validate — Zod at boundaries, trust types internally
-- Make impossible states impossible — discriminated unions over optional props
+- Explicit over implicit, simple over complex, flat over nested
+- Parse, don't validate - Zod at boundaries, trust types internally
+- Make impossible states impossible - discriminated unions over optional props
 - Infer over annotate, `satisfies` when you want inference with validation
-- Colocate until extraction earns itself. Rule of three, then extract.
-- No "just in case" code or unrequested features — YAGNI
-- No backwards compatibility unless explicitly asked
-- Before adding complexity: is this solving a problem we have today? What can I
-  delete instead of add?
+- Colocate until extraction earns itself
+- Fail fast, recover gracefully
+
+**Don't:**
+
+- Abstract prematurely - rule of three, then extract
+- Add "just in case" code or unrequested features - YAGNI
+- Add backwards compatibility unless explicitly asked
+- Write code that's hard to delete
+
+**Before adding complexity, ask:**
+
+- Is this solving a problem we have today?
+- What's the simplest thing that works?
+- What can I delete instead of add?
 
 ## Test Quality
 
@@ -201,10 +179,6 @@ use `git add <specific-files> && git commit -m "msg"`, never `git add .` or
 `git add -A`. Do NOT use `git commit -- <files> -m` — `--` terminates option
 parsing and git treats `-m` as a pathspec.
 
-**lint-staged in shared worktrees:** lint-staged's stash/restore cycle corrupts
-commits — it stashes ALL uncommitted changes (including other agents') then
-restores them into staging. Use `--no-stash` or worktree isolation per agent.
-
 `git diff HEAD~1` includes uncommitted working tree changes — use
 `git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.
 
@@ -219,11 +193,10 @@ git push -u origin feature/rescue-branch
 gh pr create
 ```
 
-## Config & Architecture
+## Project Structure
 
 ```
 apps/
-  atlas-cli/        # CLI - HTTP client to daemon
   atlasd/           # Daemon - HTTP API, workspace lifecycle
   atlas-operator/   # K8s operator (Go)
   bounce/           # Auth service (Go)
@@ -232,11 +205,14 @@ apps/
 packages/
   @atlas/config     # YAML config loading + Zod schemas
   @atlas/core       # Core types, artifacts, errors
-  @atlas/logger     # Structured logging + telemetry
+  @atlas/logger     # Structured logging
   @atlas/mcp        # MCP client implementation
-  @atlas/signals    # Signal types, routing, providers
+  @atlas/signals    # Signal types and routing
   @atlas/storage    # Persistence layer
-  @atlas/workspace  # Workspace runtime, management, registry
+src/                  # atlasd internals (not a separate app)
+  core/             # Workspace runtime (fsm-engine, sessions)
+  cli/              # CLI commands
+  services/         # Daemon services
 ```
 
 ## Config Files
@@ -272,9 +248,7 @@ Schema directly.
 
 ## Local Development with CLI
 
-Daemon runs on `localhost:8080`. Auto-restarts on TypeScript code changes.
-Changes to `deno.json` or `workspace.yml` require manual restart
-(`daemon stop` then `daemon start`).
+Daemon runs on `localhost:8080`. Auto-restarts on code changes.
 
 ```bash
 # Check and see if the daemon is already running

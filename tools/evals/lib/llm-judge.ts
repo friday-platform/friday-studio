@@ -6,8 +6,7 @@
  */
 
 import { repairJson } from "@atlas/agent-sdk";
-import { registry, traceModel } from "@atlas/llm";
-import { getTodaysDate } from "@atlas/utils";
+import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createScore, type Score } from "./scoring.ts";
@@ -39,7 +38,7 @@ Score 0 = completely fails to meet criteria
 Score 1 = fully meets criteria
 Use decimal values (e.g., 0.7, 0.85) for partial matches.`,
       },
-      { role: "system", content: `Today: ${getTodaysDate()}` },
+      temporalGroundingMessage(),
       {
         role: "user",
         content: `<criteria>${criteria}</criteria>

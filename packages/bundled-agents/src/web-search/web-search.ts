@@ -1,8 +1,7 @@
 import process from "node:process";
 import { createAgent, createFailTool, err, ok, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, smallLLM, traceModel } from "@atlas/llm";
-import { getTodaysDate } from "@atlas/utils";
+import { registry, smallLLM, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { generateObject, generateText, tool } from "ai";
 import { Parallel } from "parallel-web";
 import { z } from "zod";
@@ -164,7 +163,7 @@ ${excerpts}`;
         - NEVER include a sources/references section at the end of the report,
         - ALWAYS include each source in the sources array with siteName, pageTitle, and full url`,
       },
-      { role: "system", content: `Today: ${getTodaysDate()}` },
+      temporalGroundingMessage(),
       { role: "user", content: `Question: ${originalPrompt}\n\nSources:\n${context}` },
     ],
     temperature: 0.3,
@@ -231,7 +230,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
         model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
         messages: [
           { role: "system", content: QUERY_ANALYSIS_PROMPT },
-          { role: "system", content: `Today's date: ${getTodaysDate()}` },
+          temporalGroundingMessage(),
           { role: "user", content: prompt },
         ],
         tools: {

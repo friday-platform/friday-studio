@@ -23,7 +23,13 @@ import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import { getDefaultProviderOpts, registry, smallLLM, traceModel } from "@atlas/llm";
+import {
+  buildTemporalFacts,
+  getDefaultProviderOpts,
+  registry,
+  smallLLM,
+  traceModel,
+} from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
@@ -751,9 +757,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           userIdentitySection,
         );
 
-        const datetimeMessage = session.datetime
-          ? `## Context Facts\n- Current Date: ${session.datetime.localDate}\n- Current Time: ${session.datetime.localTime} (${session.datetime.timezone})\n- Timestamp: ${session.datetime.timestamp}\n- Timezone Offset: ${session.datetime.timezoneOffset}`
-          : `Current datetime (UTC): ${new Date().toISOString()}`;
+        const datetimeMessage = buildTemporalFacts(session.datetime);
 
         // Capture system prompt context on first turn (fire-and-forget)
         // Must happen after datetimeMessage is defined to capture actual messages sent to LLM
@@ -863,12 +867,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                     userIdentitySection,
                   ),
                 },
-                {
-                  role: ROLE_SYSTEM,
-                  content: session.datetime
-                    ? `## Context Facts\n- Current Date: ${session.datetime.localDate}\n- Current Time: ${session.datetime.localTime} (${session.datetime.timezone})\n- Timestamp: ${session.datetime.timestamp}\n- Timezone Offset: ${session.datetime.timezoneOffset}`
-                    : `Current datetime (UTC): ${new Date().toISOString()}`,
-                },
+                { role: ROLE_SYSTEM, content: buildTemporalFacts(session.datetime) },
                 // Add scratchpad context as third system message if it exists
                 ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
                 // Notify model about excluded content-filtered messages

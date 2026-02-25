@@ -6,6 +6,11 @@ import type { ValidProvider } from "./src/util.ts";
 export { createAnthropicWithOptions } from "./src/anthropic.ts";
 export { createGoogleWithOptions } from "./src/google.ts";
 export { createGroqWithOptions } from "./src/groq.ts";
+export {
+  buildTemporalFacts,
+  type DatetimeContext,
+  temporalGroundingMessage,
+} from "./src/grounding.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
 export { pruneMessages } from "./src/prune-messages.ts";
 export { registry } from "./src/registry.ts";

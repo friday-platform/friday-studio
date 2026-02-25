@@ -13,7 +13,7 @@
 
 import type { AgentResult, ToolResult } from "@atlas/agent-sdk";
 import { repairJson } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
 import { generateObject } from "ai";
@@ -299,6 +299,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
         content: buildValidationPrompt(),
         providerOptions: getDefaultProviderOpts("anthropic"),
       },
+      temporalGroundingMessage(),
       { role: "user", content: buildValidationInput(result) },
     ];
 

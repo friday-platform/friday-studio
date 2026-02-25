@@ -6,9 +6,14 @@ import {
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
-import { getDefaultProviderOpts, registry, traceModel, validateProvider } from "@atlas/llm";
+import {
+  getDefaultProviderOpts,
+  registry,
+  temporalGroundingMessage,
+  traceModel,
+  validateProvider,
+} from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { getTodaysDate } from "@atlas/utils";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { throwWithCause } from "../utils/error-helpers.ts";
@@ -67,7 +72,7 @@ export function convertLLMToAgent(
               content: systemPrompt,
               providerOptions: getDefaultProviderOpts(provider),
             },
-            { role: "system", content: `Today's date: ${getTodaysDate()}` },
+            temporalGroundingMessage(),
             { role: "user", content: prompt },
           ],
           tools: filteredTools,

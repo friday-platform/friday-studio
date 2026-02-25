@@ -378,6 +378,51 @@ describe("LLM prompt: input-only from prepare result", () => {
     expect(prompt).not.toContain("agent-art-456");
   });
 
+  it("prompt includes temporal grounding before base prompt", async () => {
+    const fsm: FSMDefinition = {
+      id: "llm-datetime-test",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  prompt: "Scan today's calendar",
+                  model: "test-model",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const { engine, capturedPrompts } = await createLLMEngine(fsm);
+    await engine.signal({ type: "START" });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0];
+    if (!prompt) throw new Error("Expected captured prompt");
+
+    // Context Facts section with temporal grounding appears before the base prompt
+    expect(prompt).toMatch(/^## Context Facts/);
+    expect(prompt).toContain("Current Date:");
+    expect(prompt).toContain("Current Time:");
+    expect(prompt).toContain("Timestamp:");
+
+    // Base prompt follows the facts section
+    expect(prompt).toContain("Scan today's calendar");
+    expect(prompt.indexOf("## Context Facts")).toBeLessThan(
+      prompt.indexOf("Scan today's calendar"),
+    );
+  });
+
   it("prompt has no Input section when no prepare result", async () => {
     const fsm: FSMDefinition = {
       id: "llm-no-input-test",

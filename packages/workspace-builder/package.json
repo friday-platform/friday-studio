@@ -8,7 +8,6 @@
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/schemas": "workspace:*",
-    "@atlas/utils": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^5.0.138",
     "cron-parser": "^5.5.0",

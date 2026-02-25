@@ -16,6 +16,7 @@ import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
+import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
@@ -1368,7 +1369,10 @@ export class FSMEngine {
     prepareResult?: PrepareResult,
     skills: SkillSummary[] = [],
   ): Promise<{ prompt: string; images: ImagePart[] }> {
-    let prompt = basePrompt;
+    // Ground the LLM temporally at invocation time
+    const factsSection = buildTemporalFacts();
+
+    let prompt = `${factsSection}\n\n${basePrompt}`;
     const images: ImagePart[] = [];
 
     // Inject curated input from prepare function (replaces old Available Documents)

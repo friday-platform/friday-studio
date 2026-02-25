@@ -32,16 +32,8 @@ export type TaskProgressEvent =
   | { type: "step-start"; stepIndex: number; totalSteps: number; description: string }
   | { type: "step-complete"; stepIndex: number; success: boolean };
 
-/**
- * Datetime context from client session
- */
-export interface DatetimeContext {
-  timezone: string;
-  timestamp: string;
-  localDate: string;
-  localTime: string;
-  timezoneOffset: string;
-}
+import type { DatetimeContext } from "@atlas/llm";
+export type { DatetimeContext };
 
 /**
  * Execution context with progress callback and cancellation.

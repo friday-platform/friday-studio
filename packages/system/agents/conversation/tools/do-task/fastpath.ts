@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
+import { buildTemporalFacts } from "@atlas/llm";
 import type {
   Agent,
   AgentClarification,
@@ -97,9 +98,7 @@ export function buildFastpathContract(dagStep: DAGStep): DocumentContract {
  * @param datetime - Optional datetime context from the session
  */
 function buildGroundedPrompt(intent: string, datetime?: DatetimeContext): string {
-  const datetimeSection = datetime
-    ? `## Context Facts\n- Current Date: ${datetime.localDate}\n- Current Time: ${datetime.localTime} (${datetime.timezone})\n- Timestamp: ${datetime.timestamp}\n- Timezone Offset: ${datetime.timezoneOffset}\n\n`
-    : "";
+  const datetimeSection = datetime ? buildTemporalFacts(datetime) + "\n\n" : "";
   return `${datetimeSection}Task: ${intent}`;
 }
 

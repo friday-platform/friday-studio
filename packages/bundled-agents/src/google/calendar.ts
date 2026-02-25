@@ -11,7 +11,13 @@ import {
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry, smallLLM, traceModel } from "@atlas/llm";
+import {
+  getDefaultProviderOpts,
+  registry,
+  smallLLM,
+  temporalGroundingMessage,
+  traceModel,
+} from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -181,6 +187,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         abortSignal,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
+          temporalGroundingMessage(),
           { role: "user", content: prompt },
         ],
         tools: { ...tools, fail: failTool },

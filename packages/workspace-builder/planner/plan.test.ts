@@ -34,13 +34,15 @@ vi.mock("@atlas/llm", () => ({
   getDefaultProviderOpts: vi.fn(() => ({})),
   registry: { languageModel: vi.fn(() => "mock-model") },
   traceModel: vi.fn((m: unknown) => m),
+  temporalGroundingMessage: vi.fn(() => ({
+    role: "system",
+    content: "## Context Facts\n- Current Date: Tuesday, February 11, 2026",
+  })),
 }));
 
 vi.mock("@atlas/logger", () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
 }));
-
-vi.mock("@atlas/utils", () => ({ getTodaysDate: vi.fn(() => "2026-02-11") }));
 
 vi.mock("../../system/agents/conversation/capabilities.ts", () => ({
   getCapabilitiesSection: vi.fn(() => "mock capabilities"),
