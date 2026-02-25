@@ -72,6 +72,12 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(ConfigCtxMiddleware(s.cfg))
 	r.Use(middleware.RealIP)
 	r.Use(httplog.RequestLogger(s.Logger, []string{"/healthz"}))
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httplog.LogEntrySetFields(r.Context(), map[string]any{"userAgent": r.UserAgent()})
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(middleware.Heartbeat("/healthz"))
 
 	// Parse the RSA keys
