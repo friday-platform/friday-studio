@@ -509,7 +509,7 @@
   }
 
   .footer {
-    background-color: var(--accent-1);
+    background-color: var(--color-surface-2);
     inset-block-end: 0;
     margin-inline: var(--size-2) 0;
     margin-block: auto 0;
