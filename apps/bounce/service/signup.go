@@ -209,7 +209,8 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /signup/email/verify?t=<token> — redirects to auth-ui confirmation page.
-// Does NOT consume the token. Scanners follow GET links but won't POST.
+// Does NOT consume the token. GET-to-POST split blocks most scanners;
+// auth-ui bot gate (bot-gate.svelte.ts) handles scanners that execute JS.
 func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	cfg, err := ConfigFromContext(r.Context())
 	if err != nil {
@@ -224,6 +225,8 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setBotGateCookie(w, cfg, token)
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	http.Redirect(w, r, cfg.AuthUIURL+"/confirm-email?t="+url.QueryEscape(token), http.StatusTemporaryRedirect)
 }
 
@@ -247,6 +250,18 @@ func verifyEmailSignupPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("Could not retrieve config", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Server-side bot gate: reject if the timing cookie from the GET redirect
+	// is missing or too recent.
+	if err := validateBotGateCookie(r, cfg, req.Payload.Token); err != nil {
+		log.Warn("Bot gate cookie check failed", "error", err)
+		RecordAuth("email", "failure")
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "Please use the link from your email",
+			"code":  "verification_failed",
+		})
 		return
 	}
 

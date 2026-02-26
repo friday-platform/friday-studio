@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -196,6 +200,93 @@ func DeleteTempestTokenCookie(cfg *Config, w http.ResponseWriter) {
 		Secure:   secureFlag,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+const botGateCookieBaseName = "bot_gate"
+
+// Must match GATE_DELAY_MS in apps/atlas-auth-ui/src/lib/bot-gate.svelte.ts.
+const (
+	botGateMinAge = 3 * time.Second
+	botGateMaxAge = 15 * time.Minute
+)
+
+// botGateCookieName returns __Host-bot_gate for production and bot_gate for
+// localhost. __Host- prefix requires Secure, Path=/, and no Domain attribute,
+// which prevents subdomain cookie tossing. Localhost falls back to the plain
+// name since __Host- requires a secure origin.
+func botGateCookieName(cookieDomain string) string {
+	if strings.HasSuffix(cookieDomain, "localhost") {
+		return botGateCookieBaseName
+	}
+	return "__Host-" + botGateCookieBaseName
+}
+
+// botGateMAC computes HMAC-SHA256(secret+"-botgate", "timestamp:" || SHA256(token)).
+// The "-botgate" key suffix provides domain separation from other HMAC uses of
+// SignupHMACSecret (e.g. OTP generation). The ":" delimiter prevents ambiguity
+// between the variable-length timestamp and the fixed-length token hash.
+func botGateMAC(secret, token string, tsMs int64) string {
+	tokenHash := sha256.Sum256([]byte(token))
+	h := hmac.New(sha256.New, []byte(secret+"-botgate"))
+	_, _ = fmt.Fprintf(h, "%d:", tsMs) //nolint:gosec // G705: writing to hmac.Hash, not http.ResponseWriter
+	h.Write(tokenHash[:])
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// setBotGateCookie sets an HMAC-signed timing cookie during the GET redirect.
+// The POST handler validates this to detect scanners that skip the GET or
+// click faster than a human can.
+func setBotGateCookie(w http.ResponseWriter, cfg Config, token string) {
+	secureFlag := !strings.HasSuffix(cfg.CookieDomain, "localhost")
+	tsMs := time.Now().UnixMilli()
+	mac := botGateMAC(cfg.SignupHMACSecret, token, tsMs)
+	cookie := &http.Cookie{
+		Name:     botGateCookieName(cfg.CookieDomain),
+		Value:    fmt.Sprintf("%d:%s", tsMs, mac),
+		Path:     "/",
+		MaxAge:   900,
+		HttpOnly: true,
+		Secure:   secureFlag,
+		SameSite: http.SameSiteLaxMode,
+	}
+	// __Host- prefix requires no Domain attribute. On localhost we still need
+	// Domain for cross-port cookie sharing during development.
+	if !secureFlag {
+		cookie.Domain = cfg.CookieDomain
+	}
+	http.SetCookie(w, cookie)
+}
+
+// validateBotGateCookie checks the timing cookie from the GET redirect.
+// Missing = scanner skipped the GET. Bad HMAC = forged cookie or different
+// token. Too young = scanner clicked faster than the gate allows.
+// Too old = stale/replayed cookie.
+func validateBotGateCookie(r *http.Request, cfg Config, token string) error {
+	name := botGateCookieName(cfg.CookieDomain)
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return fmt.Errorf("missing %s cookie", name)
+	}
+	parts := strings.SplitN(cookie.Value, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid %s cookie format", name)
+	}
+	tsMs, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s cookie timestamp", name)
+	}
+	expectedMAC := botGateMAC(cfg.SignupHMACSecret, token, tsMs)
+	if !hmac.Equal([]byte(parts[1]), []byte(expectedMAC)) {
+		return fmt.Errorf("invalid %s cookie signature", name)
+	}
+	age := time.Since(time.UnixMilli(tsMs))
+	if age < botGateMinAge {
+		return fmt.Errorf("POST arrived %v after GET, minimum %v", age, botGateMinAge)
+	}
+	if age > botGateMaxAge {
+		return fmt.Errorf("cookie expired: age %v exceeds %v", age, botGateMaxAge)
+	}
+	return nil
 }
 
 type SessionConfig struct {

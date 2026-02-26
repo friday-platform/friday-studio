@@ -1,6 +1,7 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
+  import { createBotGate } from "$lib/bot-gate.svelte";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import Logo from "$lib/components/logo.svelte";
@@ -11,8 +12,16 @@
   let submitted = $state(false);
   let errorMessage = $state("");
 
+  const gate = createBotGate();
+
+  $effect(() => {
+    if (gate.blocked) {
+      trackEvent(GA4.BOT_GATE_BLOCKED, { source: "confirm_email" });
+    }
+  });
+
   async function verify() {
-    if (submitted || !token) return;
+    if (submitted || !token || !gate.ready) return;
 
     submitted = true;
     errorMessage = "";
@@ -50,6 +59,7 @@
 <svelte:head>
   <title>Verify your email | Friday</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
 </svelte:head>
 
 <main>
@@ -57,31 +67,46 @@
 
   <section>
     <div class="details">
-      <div class="title">
-        <Logo />
+      {#if errorMessage}
+        <div class="title">
+          <Logo />
 
-        {#if errorMessage}
           <h1>Verification failed</h1>
           <p>{errorMessage}</p>
-        {:else}
-          <h1>Verify your email</h1>
-          <p>Click the button below to confirm your email address and complete signup.</p>
-        {/if}
-      </div>
+        </div>
 
-      {#if errorMessage}
+        <a href="/signup-retry">Try signing up again</a>
+      {:else if gate.blocked}
+        <div class="title">
+          <Logo />
+
+          <h1>Automated browser detected</h1>
+          <p>Please open this link in a regular browser to continue.</p>
+        </div>
+
         <a href="/signup-retry">Try signing up again</a>
       {:else if token}
+        <div class="title">
+          <Logo />
+
+          <h1>Verify your email</h1>
+          <p>Click the button below to confirm your email address and complete signup.</p>
+        </div>
+
         <div class="action">
           <Button type="button" disabled={submitted} onclick={verify}>
-            {submitted ? "Verifying..." : "Verify my email"}
+            {submitted ? "Verifying..." : !gate.ready ? "Preparing..." : "Verify my email"}
           </Button>
         </div>
       {:else}
-        <p class="details-foot">
-          Invalid verification link.
-          <a href="/signup-retry">Try signing up again</a>
-        </p>
+        <div class="title">
+          <Logo />
+
+          <h1>Invalid verification link</h1>
+          <p>This link is missing or malformed.</p>
+        </div>
+
+        <a href="/signup-retry">Try signing up again</a>
       {/if}
     </div>
 
@@ -152,12 +177,6 @@
       gap: var(--size-8);
       justify-content: center;
       text-align: center;
-
-      .details-foot {
-        color: var(--text-3);
-        font-size: var(--font-size-2);
-        font-weight: var(--font-weight-5);
-      }
 
       .action {
         inline-size: var(--size-72);

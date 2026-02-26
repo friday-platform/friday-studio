@@ -1,6 +1,7 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
+  import { createBotGate } from "$lib/bot-gate.svelte";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import Logo from "$lib/components/logo.svelte";
@@ -12,8 +13,16 @@
   let submitted = $state(false);
   let error: { message: string; code: string } | null = $state(null);
 
+  const gate = createBotGate();
+
+  $effect(() => {
+    if (gate.blocked) {
+      trackEvent(GA4.BOT_GATE_BLOCKED, { source: "confirm_login" });
+    }
+  });
+
   async function handleVerify() {
-    if (submitted || !otp) return;
+    if (submitted || !otp || !gate.ready) return;
 
     submitted = true;
     error = null;
@@ -53,6 +62,7 @@
 <svelte:head>
   <title>Continue to Friday</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
 </svelte:head>
 
 <main>
@@ -77,6 +87,15 @@
         </div>
 
         <a href="/" class="retry-link">Request a new magic link</a>
+      {:else if gate.blocked}
+        <div class="title">
+          <Logo />
+
+          <h1>Automated browser detected</h1>
+          <p>Please open this link in a regular browser to continue.</p>
+        </div>
+
+        <a href="/" class="retry-link">Request a new magic link</a>
       {:else if otp}
         <div class="title">
           <Logo />
@@ -86,7 +105,7 @@
         </div>
 
         <Button type="button" disabled={submitted} onclick={handleVerify}>
-          {submitted ? "Continuing..." : "Continue to Friday"}
+          {submitted ? "Continuing..." : !gate.ready ? "Preparing..." : "Continue to Friday"}
         </Button>
       {:else}
         <div class="title">

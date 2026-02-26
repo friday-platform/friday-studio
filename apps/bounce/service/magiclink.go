@@ -128,7 +128,8 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /magiclink/verify?otp=<token> — redirects to auth-ui confirmation page.
-// Does NOT consume the token. Scanners follow GET links but won't POST.
+// Does NOT consume the token. GET-to-POST split blocks most scanners;
+// auth-ui bot gate (bot-gate.svelte.ts) handles scanners that execute JS.
 func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	cfg, err := ConfigFromContext(r.Context())
 	if err != nil {
@@ -142,6 +143,9 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, cfg.AuthUIURL+"/", http.StatusTemporaryRedirect)
 		return
 	}
+
+	setBotGateCookie(w, cfg, otp)
+	w.Header().Set("Referrer-Policy", "no-referrer")
 
 	redirect := cfg.AuthUIURL + "/confirm-login?otp=" + url.QueryEscape(otp)
 	if ref := r.URL.Query().Get("original_referrer"); ref != "" {
@@ -172,6 +176,18 @@ func verifyMagicLinkPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("error getting config from context", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Server-side bot gate: reject if the timing cookie from the GET redirect
+	// is missing or too recent.
+	if err := validateBotGateCookie(r, cfg, req.Payload.OTP); err != nil {
+		log.Warn("Bot gate cookie check failed", "error", err)
+		RecordAuth("magiclink", "failure")
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "Please use the link from your email",
+			"code":  "verification_failed",
+		})
 		return
 	}
 

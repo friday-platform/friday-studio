@@ -74,7 +74,13 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(httplog.RequestLogger(s.Logger, []string{"/healthz"}))
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httplog.LogEntrySetFields(r.Context(), map[string]any{"userAgent": r.UserAgent()})
+			httplog.LogEntrySetFields(r.Context(), map[string]any{
+				"userAgent":    r.UserAgent(),
+				"secFetchDest": r.Header.Get("Sec-Fetch-Dest"),
+				"secFetchMode": r.Header.Get("Sec-Fetch-Mode"),
+				"secFetchSite": r.Header.Get("Sec-Fetch-Site"),
+				"secFetchUser": r.Header.Get("Sec-Fetch-User"),
+			})
 			next.ServeHTTP(w, r)
 		})
 	})
