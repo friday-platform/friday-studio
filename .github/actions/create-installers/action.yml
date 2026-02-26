@@ -107,7 +107,7 @@ runs:
     - name: Setup Deno
       uses: denoland/setup-deno@v2
       with:
-        deno-version: v2.6.8
+        deno-version: v2.7.1
 
     - name: Prepare installer
       shell: bash
