@@ -32,7 +32,7 @@
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.40.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "@sveltejs/kit": "^2.53.1",
+    "@sveltejs/kit": "^2.53.2",
     "@tanstack/query-core": "^5.90.20",
     "@tanstack/svelte-query": "^6.0.18",
     "@tanstack/svelte-table": "9.0.0-alpha.10",
