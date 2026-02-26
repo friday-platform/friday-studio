@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -202,89 +201,64 @@ func DeleteTempestTokenCookie(cfg *Config, w http.ResponseWriter) {
 	})
 }
 
-const botGateCookieBaseName = "bot_gate"
+const mlSessionCookieBaseName = "ml_session"
 
-// Must match GATE_DELAY_MS in apps/atlas-auth-ui/src/lib/bot-gate.svelte.ts.
-const (
-	botGateMinAge = 3 * time.Second
-	botGateMaxAge = 15 * time.Minute
-)
-
-// botGateCookieName returns __Host-bot_gate for production and bot_gate for
-// localhost. __Host- prefix requires Secure, Path=/, and no Domain attribute,
-// which prevents subdomain cookie tossing. Localhost falls back to the plain
-// name since __Host- requires a secure origin.
-func botGateCookieName(cookieDomain string) string {
+// mlSessionCookieName returns __Host-ml_session for production and ml_session
+// for localhost. __Host- prefix requires Secure, Path=/, and no Domain
+// attribute, preventing subdomain cookie tossing.
+func mlSessionCookieName(cookieDomain string) string {
 	if strings.HasSuffix(cookieDomain, "localhost") {
-		return botGateCookieBaseName
+		return mlSessionCookieBaseName
 	}
-	return "__Host-" + botGateCookieBaseName
+	return "__Host-" + mlSessionCookieBaseName
 }
 
-// botGateMAC computes HMAC-SHA256(secret+"-botgate", "timestamp:" || SHA256(token)).
-// The "-botgate" key suffix provides domain separation from other HMAC uses of
-// SignupHMACSecret (e.g. OTP generation). The ":" delimiter prevents ambiguity
-// between the variable-length timestamp and the fixed-length token hash.
-func botGateMAC(secret, token string, tsMs int64) string {
+// mlSessionMAC computes HMAC-SHA256(secret+"-mlsession", SHA256(token)).
+// The "-mlsession" key suffix provides domain separation from other HMAC uses
+// of SignupHMACSecret (e.g. OTP generation).
+func mlSessionMAC(secret, token string) string {
 	tokenHash := sha256.Sum256([]byte(token))
-	h := hmac.New(sha256.New, []byte(secret+"-botgate"))
-	_, _ = fmt.Fprintf(h, "%d:", tsMs) //nolint:gosec // G705: writing to hmac.Hash, not http.ResponseWriter
+	h := hmac.New(sha256.New, []byte(secret+"-mlsession"))
 	h.Write(tokenHash[:])
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// setBotGateCookie sets an HMAC-signed timing cookie during the GET redirect.
-// The POST handler validates this to detect scanners that skip the GET or
-// click faster than a human can.
-func setBotGateCookie(w http.ResponseWriter, cfg Config, token string) {
+// setMLSessionCookie sets an HMAC cookie when the user requests a magic link
+// or signup email. The verify POST handler checks this cookie to confirm the
+// same browser that requested the link is the one completing verification.
+// Scanners that follow GET links from emails never call POST /magiclink or
+// POST /signup/email, so they never receive this cookie.
+func setMLSessionCookie(w http.ResponseWriter, cfg Config, token string) {
 	secureFlag := !strings.HasSuffix(cfg.CookieDomain, "localhost")
-	tsMs := time.Now().UnixMilli()
-	mac := botGateMAC(cfg.SignupHMACSecret, token, tsMs)
+	mac := mlSessionMAC(cfg.SignupHMACSecret, token)
 	cookie := &http.Cookie{
-		Name:     botGateCookieName(cfg.CookieDomain),
-		Value:    fmt.Sprintf("%d:%s", tsMs, mac),
+		Name:     mlSessionCookieName(cfg.CookieDomain),
+		Value:    mac,
 		Path:     "/",
-		MaxAge:   900,
+		MaxAge:   900, // 15 minutes, matches OTP expiry
 		HttpOnly: true,
 		Secure:   secureFlag,
 		SameSite: http.SameSiteLaxMode,
 	}
-	// __Host- prefix requires no Domain attribute. On localhost we still need
-	// Domain for cross-port cookie sharing during development.
 	if !secureFlag {
 		cookie.Domain = cfg.CookieDomain
 	}
 	http.SetCookie(w, cookie)
 }
 
-// validateBotGateCookie checks the timing cookie from the GET redirect.
-// Missing = scanner skipped the GET. Bad HMAC = forged cookie or different
-// token. Too young = scanner clicked faster than the gate allows.
-// Too old = stale/replayed cookie.
-func validateBotGateCookie(r *http.Request, cfg Config, token string) error {
-	name := botGateCookieName(cfg.CookieDomain)
+// validateMLSessionCookie checks that the browser presenting a token for
+// verification is the same one that originally requested the magic link or
+// signup email. Missing cookie = scanner that only followed the email link.
+// Bad HMAC = forged cookie or different token.
+func validateMLSessionCookie(r *http.Request, cfg Config, token string) error {
+	name := mlSessionCookieName(cfg.CookieDomain)
 	cookie, err := r.Cookie(name)
 	if err != nil {
 		return fmt.Errorf("missing %s cookie", name)
 	}
-	parts := strings.SplitN(cookie.Value, ":", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid %s cookie format", name)
-	}
-	tsMs, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid %s cookie timestamp", name)
-	}
-	expectedMAC := botGateMAC(cfg.SignupHMACSecret, token, tsMs)
-	if !hmac.Equal([]byte(parts[1]), []byte(expectedMAC)) {
+	expectedMAC := mlSessionMAC(cfg.SignupHMACSecret, token)
+	if !hmac.Equal([]byte(cookie.Value), []byte(expectedMAC)) {
 		return fmt.Errorf("invalid %s cookie signature", name)
-	}
-	age := time.Since(time.UnixMilli(tsMs))
-	if age < botGateMinAge {
-		return fmt.Errorf("POST arrived %v after GET, minimum %v", age, botGateMinAge)
-	}
-	if age > botGateMaxAge {
-		return fmt.Errorf("cookie expired: age %v exceeds %v", age, botGateMaxAge)
 	}
 	return nil
 }

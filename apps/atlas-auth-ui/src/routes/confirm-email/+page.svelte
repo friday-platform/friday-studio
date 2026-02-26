@@ -1,7 +1,6 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { page } from "$app/state";
-  import { createBotGate } from "$lib/bot-gate.svelte";
   import Button from "$lib/components/button.svelte";
   import Decal from "$lib/components/decal.svelte";
   import Logo from "$lib/components/logo.svelte";
@@ -12,16 +11,8 @@
   let submitted = $state(false);
   let errorMessage = $state("");
 
-  const gate = createBotGate();
-
-  $effect(() => {
-    if (gate.blocked) {
-      trackEvent(GA4.BOT_GATE_BLOCKED, { source: "confirm_email" });
-    }
-  });
-
   async function verify() {
-    if (submitted || !token || !gate.ready) return;
+    if (submitted || !token) return;
 
     submitted = true;
     errorMessage = "";
@@ -76,15 +67,6 @@
         </div>
 
         <a href="/signup-retry">Try signing up again</a>
-      {:else if gate.blocked}
-        <div class="title">
-          <Logo />
-
-          <h1>Automated browser detected</h1>
-          <p>Please open this link in a regular browser to continue.</p>
-        </div>
-
-        <a href="/signup-retry">Try signing up again</a>
       {:else if token}
         <div class="title">
           <Logo />
@@ -95,7 +77,7 @@
 
         <div class="action">
           <Button type="button" disabled={submitted} onclick={verify}>
-            {submitted ? "Verifying..." : !gate.ready ? "Preparing..." : "Verify my email"}
+            {submitted ? "Verifying..." : "Verify my email"}
           </Button>
         </div>
       {:else}

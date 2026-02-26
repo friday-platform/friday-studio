@@ -69,9 +69,10 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Deduplicate: if a valid unexpired link already exists, don't send another
-	_, err = queries.ValidMagicLinkOTPByAuthUserID(r.Context(), pgtype.Text{String: user.ID, Valid: true})
+	existingOTP, err := queries.ValidMagicLinkOTPByAuthUserID(r.Context(), pgtype.Text{String: user.ID, Valid: true})
 	if err == nil {
 		log.Info("valid magic link already exists for user", "user_id", user.ID, "email", user.Email)
+		setMLSessionCookie(w, cfg, existingOTP.Token)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -124,12 +125,12 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	RecordEmailSent("magiclink")
+	setMLSessionCookie(w, cfg, otp.String())
 	w.WriteHeader(http.StatusOK)
 }
 
 // GET /magiclink/verify?otp=<token> — redirects to auth-ui confirmation page.
-// Does NOT consume the token. GET-to-POST split blocks most scanners;
-// auth-ui bot gate (bot-gate.svelte.ts) handles scanners that execute JS.
+// Does NOT consume the token. GET-to-POST split blocks most scanners.
 func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	cfg, err := ConfigFromContext(r.Context())
 	if err != nil {
@@ -144,7 +145,6 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setBotGateCookie(w, cfg, otp)
 	w.Header().Set("Referrer-Policy", "no-referrer")
 
 	redirect := cfg.AuthUIURL + "/confirm-login?otp=" + url.QueryEscape(otp)
@@ -179,10 +179,11 @@ func verifyMagicLinkPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Server-side bot gate: reject if the timing cookie from the GET redirect
-	// is missing or too recent.
-	if err := validateBotGateCookie(r, cfg, req.Payload.OTP); err != nil {
-		log.Warn("Bot gate cookie check failed", "error", err)
+	// Session binding: verify the browser that requested the magic link is the
+	// one completing verification. Scanners follow GET links from emails but
+	// never call POST /magiclink, so they lack this cookie.
+	if err := validateMLSessionCookie(r, cfg, req.Payload.OTP); err != nil {
+		log.Warn("ML session cookie check failed", "error", err)
 		RecordAuth("magiclink", "failure")
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error": "Please use the link from your email",

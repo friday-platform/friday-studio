@@ -28,9 +28,6 @@ export const GA4 = {
   CONFIRM_LOGIN_VERIFY_SUCCESS: "confirm_login_verify_success",
   CONFIRM_LOGIN_VERIFY_ERROR: "confirm_login_verify_error",
 
-  // Auth UI - Bot Gate
-  BOT_GATE_BLOCKED: "bot_gate_blocked",
-
   // Auth UI - Signup Retry
   SIGNUP_RETRY_SUBMIT: "signup_retry_submit",
   SIGNUP_RETRY_SUCCESS: "signup_retry_success",
