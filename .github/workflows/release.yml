@@ -209,7 +209,7 @@ jobs:
         shell: bash
 
       - name: Upload final artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-amd64-packages
           path: |
@@ -276,7 +276,7 @@ jobs:
         shell: bash
 
       - name: Upload final artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-arm64-packages
           path: |
@@ -336,7 +336,7 @@ jobs:
 #         shell: bash
 #!
 #       - name: Upload final artifacts
-#         uses: actions/upload-artifact@v6
+#         uses: actions/upload-artifact@v7
 #         with:
 #           name: darwin-amd64-packages
 #           path: |
@@ -396,7 +396,7 @@ jobs:
         shell: bash
 
       - name: Upload final artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: darwin-arm64-packages
           path: |
@@ -446,7 +446,7 @@ jobs:
         shell: bash
 
       - name: Upload final artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-packages
           path: |
