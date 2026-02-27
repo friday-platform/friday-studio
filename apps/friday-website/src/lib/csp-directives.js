@@ -5,7 +5,10 @@
 
 export const REPORT_ENDPOINT = "https://dm35suqd.uriports.com/reports";
 
-/** @param {{ dev: boolean }} options */
+/**
+ * @param {{ dev: boolean }} options
+ * @returns {Record<string, string[] | true>}
+ */
 export function makeDirectives({ dev }) {
   return {
     "default-src": ["self"],

@@ -98,7 +98,7 @@ export function buildFastpathContract(dagStep: DAGStep): DocumentContract {
  * @param datetime - Optional datetime context from the session
  */
 function buildGroundedPrompt(intent: string, datetime?: DatetimeContext): string {
-  const datetimeSection = datetime ? buildTemporalFacts(datetime) + "\n\n" : "";
+  const datetimeSection = datetime ? `${buildTemporalFacts(datetime)}\n\n` : "";
   return `${datetimeSection}Task: ${intent}`;
 }
 

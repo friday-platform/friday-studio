@@ -19,6 +19,34 @@ let { children } = $props();
 
 const currentYear = new Date().getFullYear();
 
+const jsonLd =
+  // biome-ignore lint/style/useTemplate: split prevents HTML parser from seeing closing script tag
+  `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://hellofriday.ai/#organization",
+        name: "Tempest Labs",
+        url: "https://hellofriday.ai",
+        logo: "https://hellofriday.ai/og-image.png",
+        sameAs: [
+          "https://www.linkedin.com/company/hello-friday-ai/",
+          "https://x.com/HelloFridayAI",
+          "https://bsky.app/profile/fridayai.bsky.social",
+          "https://discord.gg/uczJyp5FMH",
+        ],
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://hellofriday.ai/#website",
+        url: "https://hellofriday.ai",
+        name: "Friday",
+        publisher: { "@id": "https://hellofriday.ai/#organization" },
+      },
+    ],
+  })}<` + `/script>`;
+
 onMount(() => {
   if (env.PUBLIC_ANALYTICS_ENABLED !== "true") return;
 
@@ -48,8 +76,15 @@ afterNavigate(() => {
 	<title>Friday</title>
 	<meta property="og:site_name" content="Friday" />
 	<meta property="og:url" content="https://hellofriday.ai{page.url.pathname}" />
-	<meta name="twitter:card" content="summary" />
+	<meta property="og:image" content="https://hellofriday.ai/og-image.png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:image:type" content="image/png" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:image" content="https://hellofriday.ai/og-image.png" />
 	<meta property="og:locale" content="en_US" />
+	<!-- eslint-disable-next-line svelte/no-at-html-tags -- Static JSON-LD, no user input -->
+	{@html jsonLd}
 </svelte:head>
 
 {#if env.PUBLIC_ANALYTICS_ENABLED === "true"}

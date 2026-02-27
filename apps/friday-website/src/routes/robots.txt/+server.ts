@@ -1,9 +1,10 @@
 export const prerender = true;
 
 const BODY = `User-agent: *
-Disallow:
+Allow: /
 
 Sitemap: https://hellofriday.ai/sitemap.xml
+Sitemap: https://docs.hellofriday.ai/sitemap.xml
 `;
 
 export function GET() {

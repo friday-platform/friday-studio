@@ -159,7 +159,7 @@ export async function executeTaskViaFSMDirect(
       // Prompt precedence: action.prompt > step.description > fallback
       // Matches workspace-runtime.ts buildFinalAgentPrompt behavior
       const taskDescription = action.prompt || stepInfo?.step.description || "Execute task step";
-      const datetimeSection = context.datetime ? buildTemporalFacts(context.datetime) + "\n\n" : "";
+      const datetimeSection = context.datetime ? `${buildTemporalFacts(context.datetime)}\n\n` : "";
       const prompt = `${datetimeSection}Task: ${taskDescription}\n\nContext:\n${contextDocs}`;
 
       // Execute agent via orchestrator

@@ -1,5 +1,19 @@
 <script>
 import Page from "$lib/components/page.svelte";
+
+const jsonLd =
+  // biome-ignore lint/style/useTemplate: split prevents HTML parser from seeing closing script tag
+  `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Introducing Friday: Always-On AI, Zero Setup Required",
+    description:
+      "Announcing the open beta of Friday, the always-on AI that builds and runs automations through conversation. Describe what you want and Friday handles the rest.",
+    image: "https://hellofriday.ai/og-image.png",
+    datePublished: "2026-02-05T00:00:00Z",
+    author: { "@type": "Organization", name: "Tempest Labs", url: "https://hellofriday.ai" },
+    publisher: { "@id": "https://hellofriday.ai/#organization" },
+  })}<` + `/script>`;
 </script>
 
 <svelte:head>
@@ -21,6 +35,8 @@ import Page from "$lib/components/page.svelte";
 		name="twitter:description"
 		content="Announcing the open beta of Friday, the always-on AI that builds and runs automations through conversation. Describe what you want and Friday handles the rest."
 	/>
+	<!-- eslint-disable-next-line svelte/no-at-html-tags -- Static JSON-LD, no user input -->
+	{@html jsonLd}
 </svelte:head>
 
 <Page>
