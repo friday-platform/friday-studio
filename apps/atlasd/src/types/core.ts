@@ -142,6 +142,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   workflows?: IWorkspaceWorkflow[];
   sources?: IWorkspaceSource[];
   status: WorkspaceSessionStatusType;
+  error?: string;
   start(): MaybePromise<void>;
   cancel(): void;
   cleanup(): void;

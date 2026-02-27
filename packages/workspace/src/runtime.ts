@@ -1054,6 +1054,7 @@ export class WorkspaceRuntime {
       id: session.id,
       workspaceId: session.workspaceId,
       status: session.status,
+      error: session.error?.message,
       signals: {
         triggers: [],
         callback: {

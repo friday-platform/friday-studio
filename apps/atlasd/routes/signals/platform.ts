@@ -124,11 +124,25 @@ async function processSlackSignal(
   }
 
   // Trigger signal - blocks until FSM completion
-  const result = await daemon.triggerWorkspaceSignal(workspaceId, signalId, {
-    ...payload,
-    chatId,
-    sessionId: chatId,
-  });
+  // Wrap in try/catch so session failures still deliver an error message to Slack
+  let sessionId: string;
+  try {
+    const result = await daemon.triggerWorkspaceSignal(workspaceId, signalId, {
+      ...payload,
+      chatId,
+      sessionId: chatId,
+    });
+    sessionId = result.sessionId;
+  } catch (error) {
+    logger.error("Signal execution failed, notifying Slack user", { error, chatId });
+    await postSlackMessage({
+      token: slackToken,
+      channel: channel_id,
+      text: "Something went wrong processing your request. Please try again later.",
+      threadTs: replyThreadTs,
+    });
+    return;
+  }
 
   // Read response from chat storage (same pattern as web UI)
   const storedChat = await ChatStorage.getChat(chatId);
@@ -156,9 +170,5 @@ async function processSlackSignal(
     threadTs: replyThreadTs,
   });
 
-  logger.info("slack_signal_processed", {
-    chatId,
-    sessionId: result.sessionId,
-    responseLength: responseText.length,
-  });
+  logger.info("slack_signal_processed", { chatId, sessionId, responseLength: responseText.length });
 }

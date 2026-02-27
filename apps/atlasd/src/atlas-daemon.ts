@@ -10,6 +10,7 @@ import {
   convertLLMToAgent,
   GlobalMCPServerPool,
   LocalSessionHistoryAdapter,
+  SessionFailedError,
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
@@ -281,13 +282,24 @@ export class AtlasDaemon {
 
         logger.info("Signal processed", { workspaceId, signalId });
       } catch (error) {
+        // Session-level failures (LLM timeout, missing OAuth, etc.) are non-fatal —
+        // the workspace runtime is fine, only this session failed. Don't destroy.
+        if (error instanceof SessionFailedError) {
+          logger.warn("Signal session failed", {
+            workspaceId,
+            signalId,
+            status: error.status,
+            error: error.message,
+          });
+          return;
+        }
+
+        // Infrastructure errors (workspace not found, runtime crash) — mark inactive and destroy
         logger.error("Failed to process signal", { error, workspaceId, signalId });
-        // Store error details and clean up immediately
         try {
           const manager = this.getWorkspaceManager();
           const workspace = await manager.find({ id: workspaceId });
 
-          // Update status with error tracking (mark as inactive)
           await manager.updateWorkspaceStatus(workspaceId, "inactive", {
             metadata: {
               ...workspace?.metadata,
@@ -304,7 +316,6 @@ export class AtlasDaemon {
             failureCount: (workspace?.metadata?.failureCount || 0) + 1,
           });
 
-          // Clean up the failed runtime immediately
           await this.destroyWorkspaceRuntime(workspaceId);
           logger.info("Cleaned up failed workspace runtime", { workspaceId });
         } catch (statusError) {
@@ -1160,6 +1171,17 @@ export class AtlasDaemon {
     }
 
     this.resetIdleTimeout(runtime.workspaceId);
+
+    // Propagate session failures so callers (MCP tools, HTTP clients) see the error.
+    // SessionFailedError lets the cron wakeup callback distinguish session-level failures
+    // (transient, don't destroy workspace) from infrastructure errors (workspace missing, etc.)
+    if (
+      session.status === "failed" ||
+      session.status === "skipped" ||
+      session.status === "cancelled"
+    ) {
+      throw new SessionFailedError(signalId, session.status, session.error);
+    }
 
     return { sessionId: session.id };
   }
