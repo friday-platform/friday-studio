@@ -2,6 +2,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 import zlib from "node:zlib";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
+import { building } from "$app/environment";
 import { directivesToHeaderString, makeDirectives, REPORT_ENDPOINT } from "$lib/csp-directives.js";
 import { httpRequestDuration } from "$lib/server/metrics";
 
@@ -243,7 +244,11 @@ export const handle: Handle = async ({ event, resolve }) => {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("text/html")) {
     // Add charset — prevents encoding-based attacks in older browsers.
-    if (!contentType.includes("charset")) {
+    // Skip during prerendering: SvelteKit's prerenderer uses strict
+    // `=== 'text/html'` to detect HTML pages and determine output filenames.
+    // Appending '; charset=utf-8' breaks that check, causing trailingSlash
+    // pages to be saved as 'dir/' instead of 'dir/index.html'.
+    if (!building && !contentType.includes("charset")) {
       response.headers.set("content-type", "text/html; charset=utf-8");
     }
     // Strip ETag — dynamic HTML responses (errors, fallbacks) are not
