@@ -31,6 +31,7 @@ import Slack from "./slack.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
 import TripleDots from "./triple-dots.svelte";
+import Unavailable from "./unavailable.svelte";
 import Workspace from "./workspace.svelte";
 
 export const Icons = {
@@ -67,5 +68,6 @@ export const Icons = {
   Trash,
   TriangleRight,
   TripleDots,
+  Unavailable,
   Workspace,
 };

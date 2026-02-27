@@ -78,7 +78,9 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
 
   const description =
     hardcodedSkills.length > 0
-      ? `${baseInstruction} Built-in skills: ${hardcodedIds.join(", ")}. Workspace skills also available.`
+      ? `${baseInstruction} Built-in skills: ${hardcodedIds.join(
+          ", ",
+        )}. Workspace skills also available.`
       : baseInstruction;
 
   const skillTool = tool({
@@ -213,7 +215,7 @@ async function resolveGlobalSkill(
     instructions: string;
     frontmatter?: Record<string, unknown>;
     skillDir?: string;
-  } = { name: skill.name, description: skill.description, instructions };
+  } = { name: skill.name ?? skillName, description: skill.description, instructions };
 
   if (Object.keys(skill.frontmatter).length > 0) {
     response.frontmatter = skill.frontmatter;

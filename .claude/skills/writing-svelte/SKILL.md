@@ -1,72 +1,58 @@
 ---
 name: writing-svelte
-description: Provides CLI tools for Svelte 5 documentation lookup and code analysis. MUST be loaded whenever creating or editing any Svelte component (.svelte) or Svelte module (.svelte.ts/.svelte.js). Executes within the svelte-file-editor agent for optimal results.
+description: Patterns and tools for writing Svelte 5 components in the web-client. Covers data fetching (Hono RPC, TanStack Query), state management (writable derived, props, effects), and component design. Load when creating or editing .svelte or .svelte.ts files.
 ---
 
 # Svelte 5 Code Writer
 
+## What Am I Doing?
+
+| Activity                        | Load                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Fetching data or calling APIs   | [references/data-fetching.md](references/data-fetching.md) — Hono client, TanStack Query, mutations    |
+| Building components with state  | [references/state-patterns.md](references/state-patterns.md) — component-owned state, effects, props    |
+| Syncing props to local state    | [references/writable-derived.md](references/writable-derived.md) — `let x = $derived(prop)` pattern     |
+| Uncertain about Svelte 5 syntax | [references/svelte-mcp-cli.md](references/svelte-mcp-cli.md) — docs lookup, autofixer via `npx`        |
+
 ## CLI Tools
 
-You have access to `@sveltejs/mcp` CLI for Svelte-specific assistance. Use these commands via `npx`:
+Use `@sveltejs/mcp` via `npx` when you need to look up Svelte 5 syntax or
+validate a component. See [references/svelte-mcp-cli.md](references/svelte-mcp-cli.md)
+for full usage.
 
-### List Documentation Sections
+- `npx @sveltejs/mcp list-sections` — list available doc topics
+- `npx @sveltejs/mcp get-documentation "<sections>"` — fetch docs for a topic
+- `npx @sveltejs/mcp svelte-autofixer <file>` — analyze a component for issues
 
-```bash
-npx @sveltejs/mcp list-sections
-```
+## Core Rules
 
-Lists all available Svelte 5 and SvelteKit documentation sections with titles and paths.
-
-### Get Documentation
-
-```bash
-npx @sveltejs/mcp get-documentation "<section1>,<section2>,..."
-```
-
-Retrieves full documentation for specified sections. Use after `list-sections` to fetch relevant docs.
-
-**Example:**
-
-```bash
-npx @sveltejs/mcp get-documentation "$state,$derived,$effect"
-```
-
-### Svelte Autofixer
-
-```bash
-npx @sveltejs/mcp svelte-autofixer "<code_or_path>" [options]
-```
-
-Analyzes Svelte code and suggests fixes for common issues.
-
-**Options:**
-
-- `--async` - Enable async Svelte mode (default: false)
-- `--svelte-version` - Target version: 4 or 5 (default: 5)
-
-**Examples:**
-
-```bash
-# Analyze inline code (escape $ as \$)
-npx @sveltejs/mcp svelte-autofixer '<script>let count = \$state(0);</script>'
-
-# Analyze a file
-npx @sveltejs/mcp svelte-autofixer ./src/lib/Component.svelte
-
-# Target Svelte 4
-npx @sveltejs/mcp svelte-autofixer ./Component.svelte --svelte-version 4
-```
-
-**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\$` to prevent shell variable substitution.
+1. **Use the Hono RPC client for all API calls** — never raw `fetch` with
+   `getAtlasDaemonUrl()`. The client at `@atlas/client/v2` provides type-safe
+   routes.
+2. **Use TanStack Query with SvelteKit load** — `+page.ts` fetches for SSR,
+   `createQuery` in the component uses `initialData` from the load. Same query
+   key ensures no double fetch. No `invalidateAll`.
+3. **Use `createMutation` for writes** — tracks `isPending`, handles
+   `onSuccess`. No manual `saving` flags.
+4. **Components own their state** — pass `value` as a prop, let the component
+   manage internal edits, receive changes via `onblur(value)` callbacks.
+5. **Use `select` in queries** — unwrap response data at the query level, not in
+   every consumer.
 
 ## Gotchas
 
 - **Template type narrowing doesn't compose with discriminated unions** — Svelte
   templates can't narrow discriminated union variants inline. Extract and narrow
   data in `<script>` before passing to template expressions.
+- **`$effect` vs `$effect.pre`** — `$effect` runs after DOM update (good for
+  measuring DOM). `$effect.pre` runs before DOM update (good for syncing state
+  before render). Prefer `$effect` unless you specifically need pre-render sync.
+- **Don't duplicate query data into `$state`** — if a value comes from
+  `createQuery`, use it directly via `$derived` or pass as a prop. Only use
+  `$state` for values the user edits that aren't managed by a child component.
 
 ## Workflow
 
-1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics
-2. **Reviewing/debugging?** Run `svelte-autofixer` on the code to detect issues
-3. **Always validate** - Run `svelte-autofixer` before finalizing any Svelte component
+1. **Uncertain about syntax?** Run `list-sections` then `get-documentation`
+2. **Reviewing/debugging?** Run `svelte-autofixer` on the file
+3. **Always validate** — run `svelte-autofixer` before finalizing any component

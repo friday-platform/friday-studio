@@ -1,12 +1,15 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  type Props = { children: Snippet; header?: Snippet; description?: Snippet };
+  type Props = { children: Snippet; prepend?: Snippet; header?: Snippet; description?: Snippet };
 
-  let { children, description, header }: Props = $props();
+  let { children, prepend, header, description }: Props = $props();
 </script>
 
 <div class="page">
+  {#if prepend}
+    {@render prepend()}
+  {/if}
   <article class="content">
     {#if header || description}
       <header>
@@ -47,7 +50,7 @@
     gap: var(--size-3);
 
     :global(h1) {
-      font-size: var(--font-size-7);
+      font-size: var(--font-size-8);
       font-weight: var(--font-weight-6);
     }
   }

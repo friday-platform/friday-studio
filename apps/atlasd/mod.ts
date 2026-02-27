@@ -11,6 +11,7 @@ export type { MCPRegistryRoutes } from "./routes/mcp-registry.ts";
 export type { MeRoutes, UserIdentity } from "./routes/me/index.ts";
 export type { SessionsRoutes } from "./routes/sessions/index.ts";
 export type { ShareRoutes } from "./routes/share.ts";
+export type { SkillsRoutes } from "./routes/skills.ts";
 export type { WorkspaceConfigRoutes } from "./routes/workspaces/config.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export * from "./src/atlas-daemon.ts";

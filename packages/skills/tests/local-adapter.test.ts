@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LocalSkillAdapter } from "../src/local-adapter.ts";
+import { toSlug } from "../src/slug.ts";
 
 describe("LocalSkillAdapter", () => {
   let adapter: LocalSkillAdapter;
@@ -191,6 +192,91 @@ describe("LocalSkillAdapter", () => {
     });
   });
 
+  describe("getById", () => {
+    it("returns the skill by id", async () => {
+      const pub = await adapter.publish("atlas", "by-id-test", "user-1", {
+        description: "Findable",
+        instructions: "Find me.",
+      });
+      expect(pub.ok).toBe(true);
+      if (!pub.ok) return;
+
+      const result = await adapter.getById(pub.data.id);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).not.toBeNull();
+      expect(result.data?.id).toBe(pub.data.id);
+      expect(result.data?.namespace).toBe("atlas");
+      expect(result.data?.name).toBe("by-id-test");
+      expect(result.data?.description).toBe("Findable");
+    });
+
+    it("returns null for nonexistent id", async () => {
+      const result = await adapter.getById("nonexistent");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toBeNull();
+    });
+  });
+
+  describe("title", () => {
+    it("round-trips through get and getById", async () => {
+      const pub = await adapter.publish("atlas", "my-skill", "user-1", {
+        title: "My Skill",
+        description: "Has a title",
+        instructions: ".",
+      });
+      expect(pub.ok).toBe(true);
+      if (!pub.ok) return;
+
+      const byName = await adapter.get("atlas", "my-skill");
+      expect(byName.ok).toBe(true);
+      if (!byName.ok) return;
+      expect(byName.data?.title).toBe("My Skill");
+
+      const byId = await adapter.getById(pub.data.id);
+      expect(byId.ok).toBe(true);
+      if (!byId.ok) return;
+      expect(byId.data?.title).toBe("My Skill");
+    });
+
+    it("defaults to null when omitted", async () => {
+      await adapter.publish("atlas", "no-title", "user-1", {
+        description: "No title",
+        instructions: ".",
+      });
+      const result = await adapter.get("atlas", "no-title");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.title).toBeNull();
+    });
+
+    it("appears in list summaries", async () => {
+      await adapter.publish("atlas", "listed-title", "user-1", {
+        title: "Listed Title",
+        description: "Check listing",
+        instructions: ".",
+      });
+      const result = await adapter.list();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const skill = result.data.find((s) => s.name === "listed-title");
+      expect(skill?.title).toBe("Listed Title");
+    });
+
+    it("includes id in list summaries", async () => {
+      await adapter.publish("atlas", "listed-id", "user-1", {
+        description: "Check id",
+        instructions: ".",
+      });
+      const result = await adapter.list();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const skill = result.data.find((s) => s.name === "listed-id");
+      expect(skill?.id).toBeTruthy();
+    });
+  });
+
   describe("listVersions", () => {
     it("returns all versions sorted descending", async () => {
       await adapter.publish("atlas", "my-skill", "user-1", {
@@ -252,6 +338,237 @@ describe("LocalSkillAdapter", () => {
     it("does not error when deleting nonexistent version", async () => {
       const result = await adapter.deleteVersion("atlas", "missing", 1);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  describe("toSlug", () => {
+    const cases = [
+      { name: "basic title", input: "My Cool Skill", expected: "my-cool-skill" },
+      { name: "extra whitespace", input: "  hello   world  ", expected: "hello-world" },
+      { name: "special characters", input: "skill@v2.0!", expected: "skill-v2-0" },
+      { name: "leading/trailing hyphens", input: "---hello---", expected: "hello" },
+      { name: "already a slug", input: "my-skill", expected: "my-skill" },
+    ] as const;
+
+    it.each(cases)("$name: $input -> $expected", ({ input, expected }) => {
+      expect(toSlug(input)).toBe(expected);
+    });
+  });
+
+  describe("publish returns name", () => {
+    it("return value includes name field", async () => {
+      const result = await adapter.publish("atlas", "test-skill", "user-1", {
+        description: "Has name in response",
+        instructions: ".",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.name).toBe("test-skill");
+    });
+
+    it("return value includes skillId", async () => {
+      const result = await adapter.publish("atlas", "test-skill", "user-1", {
+        description: "Has skillId",
+        instructions: ".",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.skillId).toBeTruthy();
+    });
+  });
+
+  describe("create", () => {
+    it("creates a draft skill with null name", async () => {
+      const result = await adapter.create("atlas", "user-1");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.skillId).toBeTruthy();
+
+      const skill = await adapter.getBySkillId(result.data.skillId);
+      expect(skill.ok).toBe(true);
+      if (!skill.ok) return;
+      expect(skill.data).not.toBeNull();
+      expect(skill.data?.name).toBeNull();
+      expect(skill.data?.description).toBe("");
+      expect(skill.data?.instructions).toBe("");
+      expect(skill.data?.version).toBe(1);
+    });
+  });
+
+  describe("getBySkillId", () => {
+    it("returns latest version for a skillId", async () => {
+      const pub1 = await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: "First.",
+      });
+      expect(pub1.ok).toBe(true);
+      if (!pub1.ok) return;
+
+      const pub2 = await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: "Second.",
+        skillId: pub1.data.skillId,
+      });
+      expect(pub2.ok).toBe(true);
+      if (!pub2.ok) return;
+
+      const result = await adapter.getBySkillId(pub1.data.skillId);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.version).toBe(2);
+      expect(result.data?.description).toBe("v2");
+    });
+
+    it("returns null for non-existent skillId", async () => {
+      const result = await adapter.getBySkillId("nonexistent");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toBeNull();
+    });
+  });
+
+  describe("skillId versioning", () => {
+    it("versions share the same skillId when published with skillId", async () => {
+      const pub1 = await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v1",
+        instructions: ".",
+      });
+      expect(pub1.ok).toBe(true);
+      if (!pub1.ok) return;
+
+      const pub2 = await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "v2",
+        instructions: ".",
+        skillId: pub1.data.skillId,
+      });
+      expect(pub2.ok).toBe(true);
+      if (!pub2.ok) return;
+
+      expect(pub2.data.skillId).toBe(pub1.data.skillId);
+      expect(pub2.data.version).toBe(2);
+    });
+
+    it("rename via publish updates all versions with same skillId", async () => {
+      const pub1 = await adapter.publish("atlas", "old-name", "user-1", {
+        description: "v1",
+        instructions: ".",
+      });
+      expect(pub1.ok).toBe(true);
+      if (!pub1.ok) return;
+
+      await adapter.publish("atlas", "new-name", "user-1", {
+        description: "v2",
+        instructions: ".",
+        skillId: pub1.data.skillId,
+      });
+
+      // Old version should now have the new name
+      const v1 = await adapter.getById(pub1.data.id);
+      expect(v1.ok).toBe(true);
+      if (!v1.ok) return;
+      expect(v1.data?.name).toBe("new-name");
+    });
+
+    it("create then publish links versions via skillId", async () => {
+      const created = await adapter.create("atlas", "user-1");
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const pub = await adapter.publish("atlas", "my-skill", "user-1", {
+        description: "Published",
+        instructions: "Do things.",
+        skillId: created.data.skillId,
+      });
+      expect(pub.ok).toBe(true);
+      if (!pub.ok) return;
+      expect(pub.data.skillId).toBe(created.data.skillId);
+      expect(pub.data.version).toBe(2); // draft was version 1
+
+      const latest = await adapter.getBySkillId(created.data.skillId);
+      expect(latest.ok).toBe(true);
+      if (!latest.ok) return;
+      expect(latest.data?.name).toBe("my-skill");
+      expect(latest.data?.description).toBe("Published");
+    });
+  });
+
+  describe("list includeAll", () => {
+    it("excludes null-name skills by default", async () => {
+      await adapter.create("atlas", "user-1");
+      await adapter.publish("atlas", "real-skill", "user-1", {
+        description: "Visible",
+        instructions: ".",
+      });
+      const result = await adapter.list();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.length).toBe(1);
+      expect(result.data[0]?.name).toBe("real-skill");
+    });
+
+    it("excludes empty-description skills by default", async () => {
+      await adapter.publish("atlas", "no-desc", "user-1", { instructions: "." });
+      await adapter.publish("atlas", "has-desc", "user-1", {
+        description: "Present",
+        instructions: ".",
+      });
+      const result = await adapter.list();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.length).toBe(1);
+      expect(result.data[0]?.name).toBe("has-desc");
+    });
+
+    it("includes all skills when includeAll is true", async () => {
+      await adapter.create("atlas", "user-1");
+      await adapter.publish("atlas", "real-skill", "user-1", {
+        description: "Visible",
+        instructions: ".",
+      });
+      const result = await adapter.list(undefined, undefined, true);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.length).toBe(2);
+    });
+
+    it("list summaries include skillId", async () => {
+      const pub = await adapter.publish("atlas", "listed-skill", "user-1", {
+        description: "Check skillId",
+        instructions: ".",
+      });
+      expect(pub.ok).toBe(true);
+      if (!pub.ok) return;
+
+      const result = await adapter.list();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const skill = result.data.find((s) => s.name === "listed-skill");
+      expect(skill?.skillId).toBe(pub.data.skillId);
+    });
+  });
+
+  describe("descriptionManual", () => {
+    it("defaults to false", async () => {
+      await adapter.publish("atlas", "auto-desc", "user-1", {
+        description: "Auto",
+        instructions: ".",
+      });
+      const result = await adapter.get("atlas", "auto-desc");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.descriptionManual).toBe(false);
+    });
+
+    it("preserves true when set", async () => {
+      await adapter.publish("atlas", "manual-desc", "user-1", {
+        description: "Manual",
+        instructions: ".",
+        descriptionManual: true,
+      });
+      const result = await adapter.get("atlas", "manual-desc");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.descriptionManual).toBe(true);
     });
   });
 });

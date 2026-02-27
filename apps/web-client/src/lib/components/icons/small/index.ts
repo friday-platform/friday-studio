@@ -12,6 +12,7 @@ import InfoCircled from "./info-circled.svelte";
 import Library from "./library.svelte";
 import Plus from "./plus.svelte";
 import Progress from "./progress.svelte";
+import Skills from "./skills.svelte";
 import Stop from "./stop.svelte";
 import ToolCall from "./tool-call.svelte";
 import TriangleDown from "./triangle-down.svelte";
@@ -32,6 +33,7 @@ export const IconSmall = {
   Library,
   Plus,
   Progress,
+  Skills,
   Stop,
   ToolCall,
   TriangleDown,

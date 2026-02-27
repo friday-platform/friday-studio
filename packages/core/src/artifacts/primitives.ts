@@ -251,6 +251,7 @@ export type WebSearchData = z.infer<typeof WebSearchDataSchema>;
 export const SkillDraftSchema = z.object({
   name: SkillNameSchema,
   namespace: NamespaceSchema,
+  title: z.string().min(1).optional(),
   description: z.string().min(1).max(1024),
   instructions: z.string().min(1),
 });

@@ -3,21 +3,31 @@ import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
 import { CortexSkillAdapter } from "./cortex-adapter.ts";
 import { LocalSkillAdapter } from "./local-adapter.ts";
-import type { PublishSkillInput, Skill, SkillSummary, VersionInfo } from "./schemas.ts";
+import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
 const logger = createLogger({ name: "skill-storage" });
 
 export interface SkillStorageAdapter {
+  create(namespace: string, createdBy: string): Promise<Result<{ skillId: string }, string>>;
   publish(
     namespace: string,
     name: string,
     createdBy: string,
     input: PublishSkillInput,
-  ): Promise<Result<{ id: string; version: number }, string>>;
+  ): Promise<Result<{ id: string; version: number; name: string; skillId: string }, string>>;
   get(namespace: string, name: string, version?: number): Promise<Result<Skill | null, string>>;
-  list(namespace?: string, query?: string): Promise<Result<SkillSummary[], string>>;
+  getById(id: string): Promise<Result<Skill | null, string>>;
+  getBySkillId(skillId: string): Promise<Result<Skill | null, string>>;
+  list(
+    namespace?: string,
+    query?: string,
+    includeAll?: boolean,
+    sort?: SkillSort,
+  ): Promise<Result<SkillSummary[], string>>;
   listVersions(namespace: string, name: string): Promise<Result<VersionInfo[], string>>;
   deleteVersion(namespace: string, name: string, version: number): Promise<Result<void, string>>;
+  setDisabled(skillId: string, disabled: boolean): Promise<Result<void, string>>;
+  deleteSkill(skillId: string): Promise<Result<void, string>>;
 }
 
 function createSkillStorageAdapter(): SkillStorageAdapter {
@@ -56,9 +66,14 @@ function getStorage(): SkillStorageAdapter {
  * configure environment variables before initialization.
  */
 export const SkillStorage: SkillStorageAdapter = {
+  create: (...args) => getStorage().create(...args),
   publish: (...args) => getStorage().publish(...args),
   get: (...args) => getStorage().get(...args),
+  getById: (...args) => getStorage().getById(...args),
+  getBySkillId: (...args) => getStorage().getBySkillId(...args),
   list: (...args) => getStorage().list(...args),
   listVersions: (...args) => getStorage().listVersions(...args),
   deleteVersion: (...args) => getStorage().deleteVersion(...args),
+  setDisabled: (...args) => getStorage().setDisabled(...args),
+  deleteSkill: (...args) => getStorage().deleteSkill(...args),
 };

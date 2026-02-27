@@ -12,19 +12,12 @@
 
 <style>
   div {
-    background: radial-gradient(
-      ellipse,
-      var(--color-surface-1) 50%,
-      color-mix(in srgb, var(--color-surface-1), transparent 100%)
-    );
     align-items: center;
-    border-radius: var(--radius-4);
     display: flex;
     gap: var(--size-3);
-    inline-size: fit-content;
-    margin-inline: var(--size-2-5);
+    inline-size: 100%;
     padding-block: var(--size-1-5);
-    padding-inline: var(--size-2-5);
+    padding-inline: var(--size-5);
     position: relative;
     z-index: var(--layer-4);
 
@@ -33,9 +26,14 @@
     user-select: none;
 
     &.fixed {
-      /* background: linear-gradient(to bottom, var(--color-surface-1) 75%, transparent); */
+      background: color-mix(in srgb, var(--color-surface-1), transparent 8%);
+      backdrop-filter: blur(8px);
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
+      margin-block-end: calc(-1 * var(--size-6));
       position: sticky;
-      inset-block-start: var(--size-2-5);
+      inset-block-start: 0;
+      padding-block: var(--size-4);
       z-index: var(--layer-2);
     }
   }

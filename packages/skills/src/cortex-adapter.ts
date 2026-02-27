@@ -2,9 +2,13 @@ import { Buffer } from "node:buffer";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { cortexRequest } from "@atlas/utils/cortex-http";
+import { customAlphabet } from "nanoid";
+
+const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 16);
+
 import { ulid } from "ulid";
 import { z } from "zod";
-import type { PublishSkillInput, Skill, SkillSummary, VersionInfo } from "./schemas.ts";
+import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 import type { SkillStorageAdapter } from "./storage.ts";
 
 const logger = createLogger({ name: "cortex-skill-storage" });
@@ -20,6 +24,7 @@ export interface CortexSkillMetadata {
   namespace: string;
   name: string;
   version: number;
+  title: string | null;
   description: string;
   frontmatter: string; // JSON-encoded
   created_by: string;
@@ -28,6 +33,8 @@ export interface CortexSkillMetadata {
   type: "skill" | "archive";
   /** True for the highest-version skill blob per (namespace, name) */
   is_latest: boolean;
+  disabled?: boolean;
+  description_manual?: boolean;
 }
 
 export interface CortexObject {
@@ -51,18 +58,52 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
     return cortexRequest<T>(this.baseUrl, method, endpoint, body, { parseJson });
   }
 
+  async create(namespace: string, createdBy: string): Promise<Result<{ skillId: string }, string>> {
+    try {
+      const skillId = nanoid();
+      const now = new Date().toISOString();
+
+      const uploadRes = await this.request<{ id: string }>("POST", "/objects", "");
+      if (!uploadRes) return fail("Failed to create skill object");
+
+      const metadata: CortexSkillMetadata = {
+        skill_id: skillId,
+        namespace,
+        name: "",
+        version: 1,
+        title: null,
+        description: "",
+        frontmatter: "{}",
+        created_by: createdBy,
+        created_at: now,
+        type: "skill",
+        is_latest: true,
+      };
+      await this.request("POST", `/objects/${uploadRes.id}/metadata`, metadata);
+
+      return success({ skillId });
+    } catch (error) {
+      logger.error("Failed to create skill", { error: stringifyError(error) });
+      return fail(stringifyError(error));
+    }
+  }
+
   async publish(
     namespace: string,
     name: string,
     createdBy: string,
     input: PublishSkillInput,
-  ): Promise<Result<{ id: string; version: number }, string>> {
+  ): Promise<Result<{ id: string; version: number; name: string; skillId: string }, string>> {
     try {
       // KNOWN RACE: concurrent publishes can compute the same version number.
       // Cortex has no server-side uniqueness constraint on (namespace, name, version).
       // Best-effort: is_latest swap ensures only one version is "latest".
       // Acceptable for single-operator use; add retry-on-conflict if publish volume grows.
+      let skillId = input.skillId;
       const currentLatest = await this.findLatestObject(namespace, name);
+      if (!skillId) {
+        skillId = currentLatest?.metadata.skill_id ?? ulid();
+      }
       const version = currentLatest ? currentLatest.metadata.version + 1 : 1;
       const id = ulid();
       const now = new Date().toISOString();
@@ -72,16 +113,18 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
 
       // is_latest=false initially — safe intermediate state during version swap
       const metadata: CortexSkillMetadata = {
-        skill_id: id,
+        skill_id: skillId,
         namespace,
         name,
         version,
-        description: input.description,
+        title: input.title ?? null,
+        description: input.description ?? "",
         frontmatter: JSON.stringify(input.frontmatter ?? {}),
         created_by: createdBy,
         created_at: now,
         type: "skill",
         is_latest: !currentLatest, // true for first version, false during swap
+        description_manual: input.descriptionManual === true ? true : undefined,
       };
       await this.request("POST", `/objects/${uploadRes.id}/metadata`, metadata);
 
@@ -91,11 +134,12 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
         if (!archiveRes) return fail("Failed to upload skill archive");
 
         const archiveMeta: CortexSkillMetadata = {
-          skill_id: id,
+          skill_id: skillId,
           namespace,
           name,
           version,
-          description: input.description,
+          title: input.title ?? null,
+          description: input.description ?? "",
           frontmatter: "{}",
           created_by: createdBy,
           created_at: now,
@@ -137,7 +181,7 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
         }
       }
 
-      return success({ id, version });
+      return success({ id, version, name, skillId });
     } catch (error) {
       logger.error("Failed to publish skill", { error: stringifyError(error) });
       return fail(stringifyError(error));
@@ -169,7 +213,38 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
     }
   }
 
-  async list(namespace?: string, query?: string): Promise<Result<SkillSummary[], string>> {
+  async getById(id: string): Promise<Result<Skill | null, string>> {
+    try {
+      const url = `/objects?metadata.type=skill&metadata.skill_id=${encodeURIComponent(id)}`;
+      const objects = await this.request<CortexObject[]>("GET", url);
+      const obj = objects?.[0];
+      if (!obj) return success(null);
+
+      const instructions = await this.request<string>(
+        "GET",
+        `/objects/${obj.id}`,
+        undefined,
+        false,
+      );
+      if (instructions === null) return fail("Failed to load skill content");
+
+      const archive = await this.loadArchive(obj.metadata.skill_id);
+      return success(this.toSkill(obj.metadata, instructions, archive));
+    } catch (error) {
+      return fail(stringifyError(error));
+    }
+  }
+
+  getBySkillId(skillId: string): Promise<Result<Skill | null, string>> {
+    return this.getById(skillId);
+  }
+
+  async list(
+    namespace?: string,
+    query?: string,
+    includeAll?: boolean,
+    sort: SkillSort = "name",
+  ): Promise<Result<SkillSummary[], string>> {
     try {
       // Filter by type=skill and is_latest=true — server-side dedup
       let url = "/objects?metadata.type=skill&metadata.is_latest=true";
@@ -181,17 +256,37 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
       if (!objects) return success([]);
 
       let summaries: SkillSummary[] = objects.map((o) => ({
+        id: o.metadata.skill_id,
+        skillId: o.metadata.skill_id,
         namespace: o.metadata.namespace,
         name: o.metadata.name,
+        title: o.metadata.title ?? null,
         description: o.metadata.description,
+        disabled: o.metadata.disabled === true,
         latestVersion: o.metadata.version,
+        createdAt: new Date(o.metadata.created_at),
       }));
+
+      if (!includeAll) {
+        summaries = summaries.filter((s) => s.name && s.description !== "" && !s.disabled);
+      }
 
       if (query) {
         const q = query.toLowerCase();
         summaries = summaries.filter(
-          (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
+          (s) =>
+            (s.name ?? "").toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
         );
+      }
+
+      if (sort === "createdAt") {
+        summaries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      } else {
+        summaries.sort((a, b) => {
+          const ns = a.namespace.localeCompare(b.namespace);
+          if (ns !== 0) return ns;
+          return (a.name ?? "").localeCompare(b.name ?? "");
+        });
       }
 
       return success(summaries);
@@ -202,7 +297,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
 
   async listVersions(namespace: string, name: string): Promise<Result<VersionInfo[], string>> {
     try {
-      const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}`;
+      const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(
+        namespace,
+      )}&metadata.name=${encodeURIComponent(name)}`;
       const objects = await this.request<CortexObject[]>("GET", url);
       if (!objects) return success([]);
 
@@ -227,7 +324,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
   ): Promise<Result<void, string>> {
     try {
       // Omits type filter to delete both skill and archive blobs for this version
-      const url = `/objects?metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}&metadata.version=${version}`;
+      const url = `/objects?metadata.namespace=${encodeURIComponent(
+        namespace,
+      )}&metadata.name=${encodeURIComponent(name)}&metadata.version=${version}`;
       const objects = await this.request<CortexObject[]>("GET", url);
       if (!objects || objects.length === 0) return success(undefined);
 
@@ -239,7 +338,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
       if (wasLatest) {
         const remaining = await this.request<CortexObject[]>(
           "GET",
-          `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}`,
+          `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(
+            namespace,
+          )}&metadata.name=${encodeURIComponent(name)}`,
         );
         const first = remaining?.[0];
         if (first) {
@@ -260,6 +361,36 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
     }
   }
 
+  async setDisabled(skillId: string, disabled: boolean): Promise<Result<void, string>> {
+    try {
+      const url = `/objects?metadata.type=skill&metadata.skill_id=${encodeURIComponent(skillId)}`;
+      const objects = await this.request<CortexObject[]>("GET", url);
+      if (!objects) return success(undefined);
+
+      await Promise.all(
+        objects.map((o) =>
+          this.request("POST", `/objects/${o.id}/metadata`, { ...o.metadata, disabled }),
+        ),
+      );
+      return success(undefined);
+    } catch (error) {
+      return fail(stringifyError(error));
+    }
+  }
+
+  async deleteSkill(skillId: string): Promise<Result<void, string>> {
+    try {
+      const url = `/objects?metadata.skill_id=${encodeURIComponent(skillId)}`;
+      const objects = await this.request<CortexObject[]>("GET", url);
+      if (!objects) return success(undefined);
+
+      await Promise.all(objects.map((o) => this.request("DELETE", `/objects/${o.id}`)));
+      return success(undefined);
+    } catch (error) {
+      return fail(stringifyError(error));
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -268,7 +399,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
    * Find the is_latest=true skill object for a (namespace, name) pair.
    */
   private async findLatestObject(namespace: string, name: string): Promise<CortexObject | null> {
-    const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}&metadata.is_latest=true`;
+    const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(
+      namespace,
+    )}&metadata.name=${encodeURIComponent(name)}&metadata.is_latest=true`;
     const objects = await this.request<CortexObject[]>("GET", url);
     return objects?.[0] ?? null;
   }
@@ -282,7 +415,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
     version?: number,
   ): Promise<CortexObject | null> {
     if (version !== undefined) {
-      const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}&metadata.version=${version}`;
+      const url = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(
+        namespace,
+      )}&metadata.name=${encodeURIComponent(name)}&metadata.version=${version}`;
       const objects = await this.request<CortexObject[]>("GET", url);
       return objects?.[0] ?? null;
     }
@@ -295,7 +430,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
       namespace,
       name,
     });
-    const fallbackUrl = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(namespace)}&metadata.name=${encodeURIComponent(name)}`;
+    const fallbackUrl = `/objects?metadata.type=skill&metadata.namespace=${encodeURIComponent(
+      namespace,
+    )}&metadata.name=${encodeURIComponent(name)}`;
     const objects = await this.request<CortexObject[]>("GET", fallbackUrl);
     if (!objects || objects.length === 0) return null;
 
@@ -328,10 +465,14 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
   private toSkill(m: CortexSkillMetadata, instructions: string, archive: Uint8Array | null): Skill {
     return {
       id: m.skill_id,
+      skillId: m.skill_id,
       namespace: m.namespace,
       name: m.name,
       version: m.version,
+      title: m.title ?? null,
       description: m.description,
+      descriptionManual: m.description_manual === true,
+      disabled: m.disabled === true,
       frontmatter: FrontmatterSchema.parse(JSON.parse(m.frontmatter)),
       instructions,
       archive: archive ? new Uint8Array(archive) : null,

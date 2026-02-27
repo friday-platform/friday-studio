@@ -330,7 +330,7 @@
     h2 {
       grid-row: 1;
       grid-column: 1 / -1;
-      font-size: var(--font-size-7);
+      font-size: var(--font-size-8);
       font-weight: var(--font-weight-6);
       line-height: var(--font-lineheight-0);
     }
@@ -522,7 +522,7 @@
     margin-block-end: var(--size-3);
 
     h2 {
-      font-size: var(--font-size-7);
+      font-size: var(--font-size-8);
       font-weight: var(--font-weight-6);
       line-height: var(--font-lineheight-0);
     }

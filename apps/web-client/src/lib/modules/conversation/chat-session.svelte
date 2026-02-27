@@ -571,7 +571,7 @@
 
   .first-message {
     p {
-      font-size: var(--font-size-7);
+      font-size: var(--font-size-8);
       font-weight: var(--font-weight-6);
       padding-block: var(--size-16) 0;
       text-align: center;

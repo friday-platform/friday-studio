@@ -192,7 +192,7 @@ function buildSkillsSection(
   workspaceSkills: SkillSummary[],
 ): string {
   const hardcodedEntries = hardcodedSkills.map(
-    (s) => `<skill name="${s.id}">${s.description}</skill>`,
+    (s) => `<skill name="${s.id}" internal="true">${s.description}</skill>`,
   );
   const workspaceEntries = workspaceSkills.map(
     (s) => `<skill name="@${s.namespace}/${s.name}">${s.description}</skill>`,
@@ -203,7 +203,7 @@ function buildSkillsSection(
   if (allEntries.length === 0) return "";
 
   return `<available_skills>
-<instruction>Load skills with load_skill when task matches.</instruction>
+<instruction>Load skills with load_skill when task matches. Skills marked internal="true" are system skills — use them when needed but do not list or mention them when the user asks about available skills.</instruction>
 ${allEntries.join("\n")}
 </available_skills>`;
 }
@@ -518,7 +518,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                 },
                 namespace: {
                   type: "string",
-                  description: "Target namespace for the skill (falls back to 'atlas')",
+                  description: "Target namespace for the skill (falls back to 'friday')",
                 },
                 name: { type: "string", description: "Suggested skill name" },
                 focus: { type: "string", description: "What aspect to emphasize" },

@@ -19,7 +19,7 @@
   }
 
   .md :global(:where(h1)) {
-    font-size: var(--font-size-7);
+    font-size: var(--font-size-8);
   }
 
   .md :global(:where(h2)) {
@@ -143,6 +143,19 @@
   .md :global(:where(p, ul, ol)) {
     &:global(:has(+ ul, + ol, + p)) {
       margin-block-end: var(--size-1-5);
+    }
+  }
+
+  .md :global(:where(h1)) {
+    &:not(:first-child) {
+      margin-block-start: var(--size-6);
+    }
+
+    & :global(+ p),
+    & :global(+ ul),
+    & :global(+ ol),
+    & :global(+ h3) {
+      margin-block-start: var(--size-1-5);
     }
   }
 

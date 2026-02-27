@@ -60,7 +60,7 @@
     border-radius: var(--radius-3);
     cursor: default;
     display: flex;
-    flex: 1 1 auto;
+    flex-shrink: 0;
     font-weight: var(--font-weight-5);
     gap: var(--size-1);
     inline-size: max-content;

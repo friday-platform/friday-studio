@@ -204,7 +204,7 @@
     padding-block: var(--size-14);
 
     h1 {
-      font-size: var(--font-size-7);
+      font-size: var(--font-size-8);
       font-weight: var(--font-weight-6);
       line-height: var(--font-lineheight-1);
       margin-block: var(--size-3) 0;

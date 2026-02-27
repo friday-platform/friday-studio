@@ -387,7 +387,7 @@
   .title {
     background: linear-gradient(to bottom, var(--color-surface-1) 30%, transparent);
     color: var(--color-text);
-    font-size: var(--font-size-7);
+    font-size: var(--font-size-8);
     font-weight: var(--font-weight-6);
     inline-size: 100%;
     line-height: var(--font-lineheight-1);

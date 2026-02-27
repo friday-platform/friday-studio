@@ -44,11 +44,12 @@
     border-radius: var(--radius-3);
     cursor: default;
     display: flex;
-    flex: 1 1 auto;
+    flex-shrink: 0;
     gap: var(--size-2);
     font-weight: var(--font-weight-5);
     inline-size: max-content;
-    margin-inline: calc(-1 * var(--size-2));
+    justify-content: start;
+    margin-inline: calc(-1 * var(--size-1)) calc(-1 * var(--size-2));
     padding-inline: var(--size-2);
     padding-block: var(--size-1);
     transition: all 150ms ease;

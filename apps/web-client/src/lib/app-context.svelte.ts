@@ -106,6 +106,13 @@ function getRouteConfig() {
       list: resolve("/sessions", {}),
       item: (sessionId: string) => resolve("/sessions/[sessionId]", { sessionId }),
     },
+    skills: {
+      list: resolve("/skills", {}),
+      item: (skillId: string, namespace?: string, name?: string) =>
+        namespace && name
+          ? resolve("/skills/[skillId]/[[namespace]]/[[name]]", { skillId, namespace, name })
+          : resolve("/skills/[skillId]", { skillId }),
+    },
     chat: { item: (chatId: string) => resolve("/chat/[chatId]", { chatId }) },
     spaces: {
       item: (spaceId: string, view?: string) =>

@@ -152,9 +152,15 @@ Update this draft based on the corpus material. Preserve what works, improve wha
         data: { toolName: "Skill Distiller", content: "Saving skill draft" },
       });
 
+      const title = skill.name
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+
       const draftData: SkillDraft = {
         name: skill.name,
         namespace,
+        title,
         description: skill.description,
         instructions: skill.instructions,
       };

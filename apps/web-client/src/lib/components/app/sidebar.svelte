@@ -16,7 +16,6 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
-  import { featureFlags } from "$lib/feature-flags";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
@@ -108,18 +107,16 @@
         </a>
       </li>
 
-      <!-- Current example, working on this next -->
-      {#if featureFlags.ENABLE_GLOBAL_SKILLS}
-        <li>
-          <a
-            href={ctx.routes.sessions.list}
-            class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
-            onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
-          >
-            Skills
-          </a>
-        </li>
-      {/if}
+      <li>
+        <a
+          href={ctx.routes.skills.list}
+          class:active={getActivePage(["(app)/skills", "(app)/skills/[skillId]"])}
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "skills" })}
+        >
+          <IconSmall.Skills />
+          Skills
+        </a>
+      </li>
     </ul>
 
     <Collapsible.Root defaultOpen>
@@ -146,16 +143,16 @@
             {/each}
           {/if}
 
-          <AddWorkspaceDialog>
-            {#snippet triggerContents()}
-              <li>
+          <li>
+            <AddWorkspaceDialog>
+              {#snippet triggerContents()}
                 <span class="as-button" aria-label="New Conversation">
                   <IconSmall.Workspace />
                   Add Space
                 </span>
-              </li>
-            {/snippet}
-          </AddWorkspaceDialog>
+              {/snippet}
+            </AddWorkspaceDialog>
+          </li>
         </ul>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -208,7 +205,13 @@
                   </a>
 
                   <div class="chat-options">
-                    <DropdownMenu.Root positioning={{ placement: "bottom" }}>
+                    <DropdownMenu.Root
+                      positioning={{
+                        placement: "right-start",
+                        gutter: 0,
+                        offset: { mainAxis: 12, crossAxis: -8 },
+                      }}
+                    >
                       <DropdownMenu.Trigger aria-label="Chat options">
                         <div class="chat-trigger">
                           <Icons.TripleDots />
@@ -231,7 +234,9 @@
                             }
                           }}
                         >
-                          <Icons.Share />
+                          {#snippet prepend()}
+                            <Icons.Share />
+                          {/snippet}
 
                           Share
                         </DropdownMenu.Item>
@@ -244,7 +249,9 @@
                                 open.set(true);
                               }}
                             >
-                              <Icons.Trash />
+                              {#snippet prepend()}
+                                <Icons.Trash />
+                              {/snippet}
                               Delete
                             </DropdownMenu.Item>
 
@@ -393,7 +400,7 @@
       inline-size: 100%;
       outline: none;
 
-      padding-inline: var(--size-2);
+      padding-inline: var(--size-2-5) var(--size-2);
       position: relative;
 
       & :global(svg) {

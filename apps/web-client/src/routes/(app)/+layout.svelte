@@ -116,7 +116,7 @@
 
 <style>
   .default {
-    --accent-1: var(--color-surface-2);
+    --accent-1: var(--yellow-1);
     --accent-2: var(--yellow-2);
     --accent-3: var(--yellow-3);
   }

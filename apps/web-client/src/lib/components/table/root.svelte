@@ -160,7 +160,7 @@
         padding-inline-start: var(--size-3);
 
         &.padded {
-          padding-inline-start: var(--size-11);
+          padding-inline-start: var(--size-2);
         }
       }
     }
@@ -183,7 +183,11 @@
       }
 
       .padded &:first-child {
-        padding-inline-start: calc(var(--size-11) + var(--cell-additional-padding, 0));
+        padding-inline-start: calc(var(--size-2) + var(--cell-additional-padding, 0));
+      }
+
+      .padded &:last-child {
+        padding-inline-end: calc(var(--size-2) + var(--cell-additional-padding, 0));
       }
 
       &:last-child {
@@ -238,13 +242,6 @@
       & :global(.cell) {
         border-color: transparent;
       }
-    }
-  }
-
-  .padded {
-    :global(.header:last-child),
-    :global(.cell:last-child) {
-      padding-inline-end: var(--size-9);
     }
   }
 

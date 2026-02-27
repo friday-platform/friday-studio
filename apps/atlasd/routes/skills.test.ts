@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 // Set up isolated test environment BEFORE importing routes
@@ -26,16 +26,24 @@ process.env.ATLAS_KEY = createTestJwt({
 
 process.env.USER_IDENTITY_ADAPTER = "local";
 
+// Mock smallLLM for auto-description tests
+const mockSmallLLM = vi.hoisted(() => vi.fn());
+vi.mock("@atlas/llm", () => ({ smallLLM: mockSmallLLM }));
+
 const { skillsRoutes } = await import("./skills.ts");
 
 // Response schemas
 const SkillResponseSchema = z.object({
   skill: z.object({
     id: z.string(),
+    skillId: z.string(),
     namespace: z.string(),
-    name: z.string(),
+    name: z.string().nullable(),
     version: z.number(),
+    title: z.string().nullable(),
     description: z.string(),
+    descriptionManual: z.boolean(),
+    disabled: z.boolean(),
     instructions: z.string(),
     frontmatter: z.record(z.string(), z.unknown()),
     createdBy: z.string(),
@@ -44,15 +52,25 @@ const SkillResponseSchema = z.object({
 });
 
 const PublishedResponseSchema = z.object({
-  published: z.object({ namespace: z.string(), name: z.string(), version: z.number() }),
+  published: z.object({
+    id: z.string(),
+    skillId: z.string(),
+    namespace: z.string(),
+    name: z.string(),
+    version: z.number(),
+  }),
 });
 
 const SkillsListSchema = z.object({
   skills: z.array(
     z.object({
+      id: z.string(),
+      skillId: z.string(),
       namespace: z.string(),
-      name: z.string(),
+      name: z.string().nullable(),
+      title: z.string().nullable(),
       description: z.string(),
+      disabled: z.boolean(),
       latestVersion: z.number(),
     }),
   ),
@@ -65,6 +83,12 @@ const VersionsListSchema = z.object({
 });
 
 const ErrorSchema = z.object({ error: z.string() });
+
+beforeEach(() => {
+  mockSmallLLM.mockReset();
+  // Default: return a generated description
+  mockSmallLLM.mockResolvedValue("Auto-generated description");
+});
 
 afterAll(() => {
   rmSync(testDir, { recursive: true, force: true });
@@ -83,6 +107,7 @@ describe("Skills API Routes - Global Catalog", () => {
         body: JSON.stringify({
           description: "Reviews code for correctness",
           instructions: "Review the code carefully.",
+          descriptionManual: true,
         }),
       });
 
@@ -98,6 +123,7 @@ describe("Skills API Routes - Global Catalog", () => {
         body: JSON.stringify({
           description: "Reviews code v2",
           instructions: "Review the code more carefully.",
+          descriptionManual: true,
         }),
       });
 
@@ -106,14 +132,14 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(body.published.version).toBe(2);
     });
 
-    it("rejects publish without description", async () => {
-      const response = await skillsRoutes.request("/@atlas/bad-skill", {
+    it("allows publish without description", async () => {
+      const response = await skillsRoutes.request("/@atlas/no-desc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions: "Do stuff" }),
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(201);
     });
 
     it("rejects publish without instructions", async () => {
@@ -296,6 +322,39 @@ describe("Skills API Routes - Global Catalog", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // TITLE FIELD
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("title field", () => {
+    it("defaults to null when not provided", async () => {
+      // code-review was published without title
+      const response = await skillsRoutes.request("/@atlas/code-review");
+      expect(response.status).toBe(200);
+
+      const body = SkillResponseSchema.parse(await response.json());
+      expect(body.skill.title).toBeNull();
+    });
+
+    it("stores and returns title when provided", async () => {
+      await skillsRoutes.request("/@atlas/titled-skill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "My Titled Skill",
+          description: "Has a title",
+          instructions: "Do titled things.",
+        }),
+      });
+
+      const response = await skillsRoutes.request("/@atlas/titled-skill");
+      expect(response.status).toBe(200);
+
+      const body = SkillResponseSchema.parse(await response.json());
+      expect(body.skill.title).toBe("My Titled Skill");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ARCHIVE EXPORT
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -305,6 +364,284 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(response.status).toBe(404);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain("No archive");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CREATE BLANK SKILL
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("POST / (create blank skill)", () => {
+    it("creates a blank skill and returns skillId", async () => {
+      const response = await skillsRoutes.request("/", { method: "POST" });
+      expect(response.status).toBe(201);
+
+      const body = z.object({ skillId: z.string() }).parse(await response.json());
+      expect(body.skillId).toBeTruthy();
+    });
+
+    it("returns 401 without auth", async () => {
+      const savedKey = process.env.ATLAS_KEY;
+      delete process.env.ATLAS_KEY;
+
+      try {
+        const response = await skillsRoutes.request("/", { method: "POST" });
+        expect(response.status).toBe(401);
+        const body = ErrorSchema.parse(await response.json());
+        expect(body.error).toBe("Unauthorized");
+      } finally {
+        process.env.ATLAS_KEY = savedKey;
+      }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET BY SKILL ID
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("GET /:skillId (get by skillId)", () => {
+    it("returns latest version by skillId", async () => {
+      // Create a blank skill, then publish to give it a name
+      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
+
+      await skillsRoutes.request("/@friday/by-id-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skillId,
+          description: "Test skill for getBySkillId",
+          instructions: "Test instructions.",
+          descriptionManual: true,
+        }),
+      });
+
+      const response = await skillsRoutes.request(`/${skillId}`);
+      expect(response.status).toBe(200);
+
+      const body = SkillResponseSchema.parse(await response.json());
+      expect(body.skill).toMatchObject({
+        skillId,
+        namespace: "friday",
+        name: "by-id-test",
+        description: "Test skill for getBySkillId",
+      });
+    });
+
+    it("returns 404 for non-existent skillId", async () => {
+      const response = await skillsRoutes.request("/01NONEXISTENT0000000000000");
+      expect(response.status).toBe(404);
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("Skill not found");
+    });
+
+    it("does not include archive blob", async () => {
+      // Use a skill we know exists from earlier tests
+      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
+
+      const response = await skillsRoutes.request(`/${skillId}`);
+      expect(response.status).toBe(200);
+      const json = (await response.json()) as { skill: Record<string, unknown> };
+      expect(json.skill).not.toHaveProperty("archive");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LIST FILTERING (includeAll)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("GET / (list filtering)", () => {
+    it("excludes unnamed skills by default", async () => {
+      // Create a blank skill (unnamed)
+      await skillsRoutes.request("/", { method: "POST" });
+
+      const response = await skillsRoutes.request("/");
+      expect(response.status).toBe(200);
+      const body = SkillsListSchema.parse(await response.json());
+
+      // All returned skills should have a name
+      for (const skill of body.skills) {
+        expect(skill.name).not.toBeNull();
+      }
+    });
+
+    it("includes unnamed skills when includeAll=true", async () => {
+      const response = await skillsRoutes.request("/?includeAll=true");
+      expect(response.status).toBe(200);
+      const body = SkillsListSchema.parse(await response.json());
+
+      // Should include at least one unnamed skill from create above
+      const unnamed = body.skills.filter((s) => s.name === null);
+      expect(unnamed.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PUBLISH WITH SKILL ID LINKAGE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("publish with skillId linkage", () => {
+    it("returns skillId in publish response", async () => {
+      const response = await skillsRoutes.request("/@atlas/code-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "Reviews code v3",
+          instructions: "Review the code even more carefully.",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = PublishedResponseSchema.parse(await response.json());
+      expect(body.published.skillId).toBeTruthy();
+    });
+
+    it("links to existing skill when skillId provided", async () => {
+      // Create a blank skill
+      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
+
+      // Publish with that skillId
+      const pubRes = await skillsRoutes.request("/@friday/linked-skill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skillId,
+          description: "Linked to existing",
+          instructions: "Test linkage.",
+          descriptionManual: true,
+        }),
+      });
+
+      expect(pubRes.status).toBe(201);
+      const pubBody = PublishedResponseSchema.parse(await pubRes.json());
+      expect(pubBody.published.skillId).toBe(skillId);
+
+      // Verify fetching by skillId returns the published version
+      const getRes = await skillsRoutes.request(`/${skillId}`);
+      expect(getRes.status).toBe(200);
+      const getBody = SkillResponseSchema.parse(await getRes.json());
+      expect(getBody.skill).toMatchObject({
+        skillId,
+        name: "linked-skill",
+        description: "Linked to existing",
+      });
+    });
+
+    it("renames all versions when publishing with skillId and new name", async () => {
+      // Create a blank skill (inserts version 1 as draft), then publish with a name
+      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
+
+      await skillsRoutes.request("/@friday/old-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skillId,
+          description: "Original name",
+          instructions: "Test rename v1.",
+        }),
+      });
+
+      // Publish again with same skillId but different name
+      await skillsRoutes.request("/@friday/new-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skillId,
+          description: "Renamed skill",
+          instructions: "Test rename v2.",
+        }),
+      });
+
+      // All versions (draft + 2 publishes) should now have the new name
+      const versionsRes = await skillsRoutes.request("/@friday/new-name/versions");
+      expect(versionsRes.status).toBe(200);
+      const versionsBody = z
+        .object({ versions: z.array(z.object({ version: z.number() })) })
+        .parse(await versionsRes.json());
+      expect(versionsBody.versions).toHaveLength(3);
+
+      // Old name should no longer resolve
+      const oldNameRes = await skillsRoutes.request("/@friday/old-name");
+      expect(oldNameRes.status).toBe(404);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AUTO-DESCRIPTION GENERATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("auto-description generation", () => {
+    it("generates description when descriptionManual is false", async () => {
+      mockSmallLLM.mockResolvedValue("LLM-generated description");
+
+      const response = await skillsRoutes.request("/@friday/auto-desc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructions: "Help users write better code.",
+          descriptionManual: false,
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      expect(mockSmallLLM).toHaveBeenCalledOnce();
+
+      // Verify the generated description was persisted
+      const getRes = await skillsRoutes.request("/@friday/auto-desc");
+      const body = SkillResponseSchema.parse(await getRes.json());
+      expect(body.skill.description).toBe("LLM-generated description");
+    });
+
+    it("generates description when descriptionManual is omitted", async () => {
+      mockSmallLLM.mockResolvedValue("Default auto description");
+
+      const response = await skillsRoutes.request("/@friday/auto-desc-omit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: "Analyze data trends." }),
+      });
+
+      expect(response.status).toBe(201);
+      expect(mockSmallLLM).toHaveBeenCalledOnce();
+
+      const getRes = await skillsRoutes.request("/@friday/auto-desc-omit");
+      const body = SkillResponseSchema.parse(await getRes.json());
+      expect(body.skill.description).toBe("Default auto description");
+    });
+
+    it("skips generation when descriptionManual is true", async () => {
+      const response = await skillsRoutes.request("/@friday/manual-desc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "My manual description",
+          instructions: "Do stuff.",
+          descriptionManual: true,
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      expect(mockSmallLLM).not.toHaveBeenCalled();
+
+      const getRes = await skillsRoutes.request("/@friday/manual-desc");
+      const body = SkillResponseSchema.parse(await getRes.json());
+      expect(body.skill.description).toBe("My manual description");
+    });
+
+    it("proceeds without description when LLM fails", async () => {
+      mockSmallLLM.mockRejectedValue(new Error("LLM unavailable"));
+
+      const response = await skillsRoutes.request("/@friday/llm-fail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: "Some instructions.", descriptionManual: false }),
+      });
+
+      expect(response.status).toBe(201);
+      expect(mockSmallLLM).toHaveBeenCalledOnce();
     });
   });
 });
