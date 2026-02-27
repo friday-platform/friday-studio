@@ -91,7 +91,7 @@ function setSecurityHeaders(headers: Headers): void {
     headers.set("x-frame-options", "DENY");
   }
   if (!headers.has("cross-origin-resource-policy")) {
-    headers.set("cross-origin-resource-policy", "same-origin");
+    headers.set("cross-origin-resource-policy", "cross-origin");
   }
   if (!headers.has("x-xss-protection")) {
     headers.set("x-xss-protection", "0");
