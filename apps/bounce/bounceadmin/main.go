@@ -32,7 +32,19 @@ func main() {
 	sessionCmd.Flags().StringVarP(&authUserID, "auth-user-id", "a", "", "Bounce auth user ID (defaults to user-id)")
 	_ = sessionCmd.MarkFlagRequired("email")
 
+	createUserCmd := &cobra.Command{
+		Use:   "create-user",
+		Short: "Create a new user in the database",
+		Run:   runCreateUser,
+	}
+	createUserCmd.Flags().StringVarP(&email, "email", "e", "", "User email (required)")
+	createUserCmd.Flags().StringVarP(&createUserName, "name", "n", "", "User full name (required)")
+	createUserCmd.Flags().StringVarP(&postgresConn, "postgres", "", "", "PostgreSQL connection string (default: POSTGRES_CONNECTION env)")
+	_ = createUserCmd.MarkFlagRequired("email")
+	_ = createUserCmd.MarkFlagRequired("name")
+
 	rootCmd.AddCommand(sessionCmd)
+	rootCmd.AddCommand(createUserCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
