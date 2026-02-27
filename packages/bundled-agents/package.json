@@ -18,7 +18,7 @@
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
-    "ai": "^5.0.139",
+    "ai": "^5.0.141",
     "parallel-web": "0.3.1",
     "vitest": "^4.0.18",
     "zod": "^4.3.5"
