@@ -62,8 +62,8 @@ require (
 	go.uber.org/zap v1.27.1
 	golang.org/x/oauth2 v0.35.0
 	google.golang.org/api v0.269.0
-	k8s.io/apimachinery v0.35.1
-	k8s.io/client-go v0.35.1
+	k8s.io/apimachinery v0.35.2
+	k8s.io/client-go v0.35.2
 )
 
 require (
