@@ -4,7 +4,7 @@ import { registry } from "./registry.ts";
 import { traceModel } from "./tracing.ts";
 
 // Default model for small/fast LLM tasks - routes through LiteLLM when configured
-const SMALL_LLM_MODEL = "groq:meta-llama/llama-4-maverick-17b-128e-instruct";
+const SMALL_LLM_MODEL = "groq:openai/gpt-oss-120b";
 
 /**
  * Fast, small LLM for progress messages and summaries.
