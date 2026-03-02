@@ -85,7 +85,7 @@
     "npm:@sveltejs/kit@^2.53.4": "2.53.4_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.53.6___acorn@8.16.0__vite@7.3.1___@types+node@25.3.2___picomatch@4.0.3__@types+node@25.3.2_svelte@5.53.6__acorn@8.16.0_typescript@5.9.3_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3_acorn@8.16.0_@types+node@25.3.2",
     "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.53.6__acorn@8.16.0_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3_@types+node@25.3.2",
     "npm:@tanstack/query-core@^5.90.20": "5.90.20",
-    "npm:@tanstack/svelte-query@^6.0.18": "6.0.18_svelte@5.53.6__acorn@8.16.0",
+    "npm:@tanstack/svelte-query@^6.1.0": "6.1.0_svelte@5.53.6__acorn@8.16.0",
     "npm:@tanstack/svelte-table@9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.53.6__acorn@8.16.0",
     "npm:@tauri-apps/api@2.10.1": "2.10.1",
     "npm:@tauri-apps/cli@^2.10.0": "2.10.0",
@@ -2456,8 +2456,8 @@
     "@tanstack/query-core@5.90.20": {
       "integrity": "sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg=="
     },
-    "@tanstack/svelte-query@6.0.18_svelte@5.53.6__acorn@8.16.0": {
-      "integrity": "sha512-iGS8osfrIVUW5pkV4Ig6pspNIMtiNjGnVTNJKDas0m/QaNDFFIKbgg74rCzcjwrTIvO38tMpzb4VUKklvAmjxw==",
+    "@tanstack/svelte-query@6.1.0_svelte@5.53.6__acorn@8.16.0": {
+      "integrity": "sha512-iKeMaBalk5NeRvp1Y2LgtG3j9HCeLcTEpfsyM+jL1wASnW/EYdCqyyotMKkOY4SNsnBpPDM5zrmstMn6tOzKFQ==",
       "dependencies": [
         "@tanstack/query-core",
         "svelte"
@@ -6323,7 +6323,7 @@
             "npm:@sveltejs/kit@^2.53.4",
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tanstack/query-core@^5.90.20",
-            "npm:@tanstack/svelte-query@^6.0.18",
+            "npm:@tanstack/svelte-query@^6.1.0",
             "npm:@tanstack/svelte-table@9.0.0-alpha.10",
             "npm:@tauri-apps/api@2.10.1",
             "npm:@tauri-apps/cli@^2.10.0",
