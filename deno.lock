@@ -128,7 +128,7 @@
     "npm:jsonrepair@^3.13.2": "3.13.2",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@5.85.0": "5.85.0_@types+node@25.3.2_typescript@5.9.3",
-    "npm:lint-staged@^16.2.7": "16.2.7",
+    "npm:lint-staged@^16.3.1": "16.3.1",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:minimatch@^10.2.4": "10.2.4",
     "npm:nanoid@5.1.6": "5.1.6",
@@ -4155,15 +4155,14 @@
         "uc.micro"
       ]
     },
-    "lint-staged@16.2.7": {
-      "integrity": "sha512-lDIj4RnYmK7/kXMya+qJsmkRFkGolciXjrsZ6PC25GdTfWOAWetR0ZbsNXRAj1EHHImRSalc+whZFg56F5DVow==",
+    "lint-staged@16.3.1": {
+      "integrity": "sha512-bqvvquXzFBAlSbluugR4KXAe4XnO/QZcKVszpkBtqLWa2KEiVy8n6Xp38OeUbv/gOJOX4Vo9u5pFt/ADvbm42Q==",
       "dependencies": [
         "commander",
         "listr2",
         "micromatch",
-        "nano-spawn",
-        "pidtree",
         "string-argv",
+        "tinyexec",
         "yaml@2.8.2"
       ],
       "bin": true
@@ -4697,9 +4696,6 @@
     "ms@2.1.3": {
       "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="
     },
-    "nano-spawn@2.0.0": {
-      "integrity": "sha512-tacvGzUY5o2D8CBh2rrwxyNojUsZNU2zjNTzKQrkgGJQTbGAfArVWXSKMBokBeeg6C7OLRGUEyoFlYbfeWQIqw=="
-    },
     "nanoid@3.3.11": {
       "integrity": "sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==",
       "bin": true
@@ -4916,10 +4912,6 @@
     },
     "picomatch@4.0.3": {
       "integrity": "sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q=="
-    },
-    "pidtree@0.6.0": {
-      "integrity": "sha512-eG2dWTVw5bzqGRztnHExczNxt5VGsE6OwTeCG3fdUf9KBsZzO3R5OIIIzWR+iZA0NtZ+RDVdaoE2dK1cn6jH4g==",
-      "bin": true
     },
     "pkce-challenge@5.0.1": {
       "integrity": "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="
@@ -6177,7 +6169,7 @@
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@vitest/coverage-v8@4.0.18",
         "npm:knip@5.85.0",
-        "npm:lint-staged@^16.2.7",
+        "npm:lint-staged@^16.3.1",
         "npm:nanoid@^5.1.6",
         "npm:vitest@^4.0.18"
       ]
