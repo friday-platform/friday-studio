@@ -1,5 +1,10 @@
 // HTML rendering utilities
-export { escapeHTML, renderTableHTML, renderWorkspacePlanHTML } from "./html.ts";
+export {
+  escapeHTML,
+  renderTableHTML,
+  renderWebSearchHTML,
+  renderWorkspacePlanHTML,
+} from "./html.ts";
 // JSON Schema validation
 export type { ValidatedJSONSchema } from "./json-schema.ts";
 export { JSONSchemaSchema } from "./json-schema.ts";

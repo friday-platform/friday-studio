@@ -5,7 +5,7 @@
  * Used by web client share functionality.
  */
 
-import type { TableData } from "./primitives.ts";
+import type { TableData, WebSearchData } from "./primitives.ts";
 
 /**
  * Escape HTML special characters to prevent XSS
@@ -93,6 +93,32 @@ export function renderTableHTML(data: TableData): string {
   parts.push(`</tbody>`);
 
   parts.push(`</table>`);
+
+  return parts.join("\n");
+}
+
+/**
+ * Render web search data to HTML.
+ * Renders escaped response text (caller handles markdown conversion)
+ * and sources as a horizontal grid of linked cards.
+ */
+export function renderWebSearchHTML(data: WebSearchData): string {
+  const parts: string[] = [];
+
+  parts.push(`<div class="web-search-response">${escapeHTML(data.response)}</div>`);
+
+  if (data.sources.length > 0) {
+    parts.push(`<div class="web-search-sources">`);
+    for (const source of data.sources) {
+      parts.push(
+        `<a href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer" class="source-card">`,
+      );
+      parts.push(`<h3>${escapeHTML(source.pageTitle)}</h3>`);
+      parts.push(`<p>${escapeHTML(source.siteName)}</p>`);
+      parts.push(`</a>`);
+    }
+    parts.push(`</div>`);
+  }
 
   return parts.join("\n");
 }

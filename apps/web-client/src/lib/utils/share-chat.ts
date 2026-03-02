@@ -9,6 +9,7 @@ import {
   type CalendarSchedule,
   type FileData,
   type TableData,
+  type WebSearchData,
 } from "@atlas/core/artifacts";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { formatMessage } from "../modules/messages/format.ts";
@@ -219,6 +220,9 @@ function renderArtifactHTML(artifact: ArtifactData): string {
       return wrapScheduleArtifact(artifact.data);
     case "file":
       return wrapFileArtifact(artifact.data);
+    case "web-search":
+      return wrapWebSearchArtifact(artifact.data);
+    // TODO: skill-draft and database types — separate issue
     default:
       return "";
   }
@@ -408,6 +412,47 @@ function wrapFileArtifact(data: FileData): string {
               <span class="collapse-text">Collapse</span>
             </span>
           </label>
+        </div>
+      </article>`;
+}
+
+/**
+ * Wraps a web-search artifact.
+ * Matches web-search.svelte: markdown response + horizontal source cards.
+ * Uses summary-style checkbox hack for expand/collapse.
+ */
+function wrapWebSearchArtifact(data: WebSearchData): string {
+  const responseHTML = markdownToHTML(data.response);
+  const searchId = `websearch-${Math.random().toString(36).slice(2, 9)}`;
+
+  const sourcesHTML =
+    data.sources.length > 0
+      ? `<div class="web-search-sources">${data.sources
+          .map(
+            (s) =>
+              `<a href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" class="source-card">` +
+              `<h3>${escapeHTML(s.pageTitle)}</h3>` +
+              `<p>${escapeHTML(s.siteName)}</p>` +
+              `</a>`,
+          )
+          .join("")}</div>`
+      : "";
+
+  return `
+      <article class="message assistant">
+        <div class="artifact-websearch">
+          <input type="checkbox" id="${searchId}" class="websearch-toggle" />
+          <header>
+            <h2>Research</h2>
+            <label for="${searchId}" class="expand-btn">
+              <span class="expand-text">Expand</span>
+              <span class="collapse-text">Collapse</span>
+            </label>
+          </header>
+          <div class="websearch-content">
+            ${responseHTML}
+            ${sourcesHTML}
+          </div>
         </div>
       </article>`;
 }
@@ -1168,6 +1213,167 @@ function getEmbeddedStyles(): string {
 
     .artifact-file .file-toggle:checked ~ .file-expand-overlay .collapse-text {
       display: inline;
+    }
+
+    /* Web search artifact - matches web-search.svelte (summary-style collapse) */
+    .artifact-websearch {
+      border: 1px solid color-mix(in srgb, var(--color-border-1) 50%, transparent);
+      border-radius: 0.5rem;
+      max-width: 80%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .artifact-websearch .websearch-toggle {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .artifact-websearch header {
+      align-items: center;
+      display: flex;
+      font-size: 0.875rem;
+      justify-content: space-between;
+      padding-top: 1.25rem;
+      padding-left: 1.25rem;
+      padding-right: 1.25rem;
+      position: relative;
+      z-index: 2;
+    }
+
+    .artifact-websearch header h2 {
+      font-weight: 450;
+      opacity: 0.5;
+    }
+
+    .artifact-websearch .expand-btn {
+      cursor: pointer;
+      opacity: 0.8;
+    }
+
+    .artifact-websearch .expand-btn:hover {
+      text-decoration: underline;
+    }
+
+    .artifact-websearch .collapse-text {
+      display: none;
+    }
+
+    .artifact-websearch .websearch-toggle:checked ~ header .expand-text {
+      display: none;
+    }
+
+    .artifact-websearch .websearch-toggle:checked ~ header .collapse-text {
+      display: inline;
+    }
+
+    .artifact-websearch .websearch-content {
+      max-height: 6rem;
+      overflow: hidden;
+      padding: 0.5rem 1.25rem 1.25rem;
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .artifact-websearch .websearch-toggle:checked ~ .websearch-content {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .artifact-websearch .websearch-content::after {
+      background: linear-gradient(
+        to top,
+        var(--color-surface-1) 0%,
+        transparent 100%
+      );
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 5rem;
+      width: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .artifact-websearch .websearch-toggle:checked ~ .websearch-content::after {
+      display: none;
+    }
+
+    .artifact-websearch .websearch-content p {
+      margin-bottom: 0.5rem;
+      opacity: 0.8;
+    }
+
+    .artifact-websearch .websearch-content ul,
+    .artifact-websearch .websearch-content ol {
+      margin-left: 1rem;
+      margin-bottom: 0.375rem;
+    }
+
+    .artifact-websearch .websearch-content li {
+      margin-bottom: 0.375rem;
+      opacity: 0.8;
+    }
+
+    .artifact-websearch .websearch-content li li {
+      opacity: 1;
+    }
+
+    .artifact-websearch .websearch-content strong {
+      font-weight: 600;
+    }
+
+    .artifact-websearch .websearch-content a {
+      color: var(--color-text);
+      font-weight: 500;
+      text-decoration: underline;
+    }
+
+    /* Source cards - horizontal grid matching web-search.svelte */
+    .web-search-sources {
+      display: grid;
+      grid-auto-flow: column;
+      align-items: stretch;
+      justify-content: start;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .web-search-sources .source-card {
+      border: 1px solid var(--color-border-1);
+      border-radius: 0.5rem;
+      color: var(--color-text);
+      display: block;
+      overflow: hidden;
+      text-decoration: none;
+      transition: background-color 0.2s ease;
+      width: 11rem;
+    }
+
+    .web-search-sources .source-card:hover {
+      background-color: var(--color-surface-2);
+    }
+
+    .web-search-sources .source-card h3 {
+      font-size: 0.8125rem;
+      font-weight: 500;
+      line-height: 1.2;
+      padding: 0.75rem 0.75rem 0;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      -webkit-line-clamp: 2;
+    }
+
+    .web-search-sources .source-card p {
+      font-size: 0.75rem;
+      opacity: 0.6;
+      padding: 0.25rem 0.75rem 0.75rem;
+      margin: 0;
     }
   `;
 }
