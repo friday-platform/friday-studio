@@ -111,8 +111,7 @@
     "npm:eslint@^10.0.2": "10.0.2",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.0": "21.3.0",
-    "npm:globals@^17.1.0": "17.3.0",
-    "npm:globals@^17.3.0": "17.3.0",
+    "npm:globals@^17.4.0": "17.4.0",
     "npm:gsap@^3.14.2": "3.14.2",
     "npm:gunshi@~0.29.2": "0.29.2",
     "npm:hono-openapi@^1.2.0": "1.2.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.12.3_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.1.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.6_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.1.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.6__@standard-schema+spec@1.1.0__openapi-types@12.1.3__zod@4.3.6__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.12.3_openapi-types@12.1.3_zod@4.3.6",
@@ -3795,8 +3794,8 @@
     "globals@16.5.0": {
       "integrity": "sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ=="
     },
-    "globals@17.3.0": {
-      "integrity": "sha512-yMqGUQVVCkD4tqjOJf3TnrvaaHDMYp4VlUSObbkIiuCPe/ofdMBFIAcBbCSRFWOnos6qRiTVStDwqPLUclaxIw=="
+    "globals@17.4.0": {
+      "integrity": "sha512-hjrNztw/VajQwOLsMNT1cbJiH2muO3OROCHnbehc8eY5JyD2gqz4AcMHPqgaOR59DjgUjYAYLeH699g/eWi2jw=="
     },
     "globalyzer@0.1.0": {
       "integrity": "sha512-40oNTM9UfG6aBmuKxk/giHn5nQ8RVz/SS4Ir6zgzOv9/qC3kKZ9v4etGTcJbEl/NyVQH7FGU7d+X1egr57Md2Q=="
@@ -6189,7 +6188,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@^10.0.2",
-            "npm:globals@^17.3.0",
+            "npm:globals@^17.4.0",
             "npm:nanoid@^5.1.6",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.8.1",
@@ -6255,7 +6254,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@^10.0.2",
-            "npm:globals@^17.1.0",
+            "npm:globals@^17.4.0",
             "npm:gsap@^3.14.2",
             "npm:prettier-plugin-svelte@^3.5.0",
             "npm:prettier@^3.8.1",
@@ -6336,7 +6335,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.15.0",
             "npm:eslint@^10.0.2",
-            "npm:globals@^17.3.0",
+            "npm:globals@^17.4.0",
             "npm:markdown-it@^14.1.1",
             "npm:papaparse@^5.5.3",
             "npm:prettier-plugin-svelte@^3.4.1",
