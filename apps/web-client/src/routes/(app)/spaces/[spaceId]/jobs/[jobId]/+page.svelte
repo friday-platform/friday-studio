@@ -1,8 +1,10 @@
 <script lang="ts">
   import { getAppContext } from "$lib/app-context.svelte";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
+  import Button from "$lib/components/button.svelte";
   import Dot from "$lib/components/dot.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
+  import RunJobDialog from "../../(components)/run-job-dialog.svelte";
   import AgentDetails from "./(components)/agent-details.svelte";
   import SignalDetails from "./(components)/signal-details.svelte";
   import type { PageData } from "./$types";
@@ -13,6 +15,8 @@
 
   const job = $derived(data.job);
   const signals = $derived(job?.signals ? Object.entries(job.signals) : []);
+
+  const jobConfig = $derived(data.workspace.config?.jobs?.[data.jobId]);
 
   // FSM agents have jobId; filter to that shape
   const agents = $derived(
@@ -56,6 +60,21 @@
 
       {#if job.description}
         <p class="description">{job.description}</p>
+      {/if}
+
+      {#if jobConfig}
+        <div class="run-job">
+          <RunJobDialog
+            jobId={data.jobId}
+            job={jobConfig}
+            signals={data.workspace.config?.signals ?? {}}
+            workspaceId={data.spaceId}
+          >
+            {#snippet triggerContents()}
+              <Button size="small">Run</Button>
+            {/snippet}
+          </RunJobDialog>
+        </div>
       {/if}
     </div>
 
@@ -113,6 +132,10 @@
     line-height: var(--font-lineheight-3);
     max-inline-size: 80ch;
     opacity: 0.6;
+  }
+
+  .run-job {
+    margin-block-start: var(--size-4);
   }
 
   section {

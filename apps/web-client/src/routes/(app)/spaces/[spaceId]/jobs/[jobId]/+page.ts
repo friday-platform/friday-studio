@@ -1,14 +1,9 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { error } from "@sveltejs/kit";
-import { featureFlags } from "$lib/feature-flags";
 import { loadWorkspaceIntegrations } from "$lib/modules/integrations/types";
 import type { PageLoad } from "./$types";
 
 export const load: PageLoad = async ({ params }) => {
-  if (!featureFlags.ENABLE_GLOBAL_JOB_VIEWS) {
-    error(404, "Not found");
-  }
-
   const [result, integrations] = await Promise.all([
     parseResult(
       client.jobs[":jobId"][":workspaceId"].$get({

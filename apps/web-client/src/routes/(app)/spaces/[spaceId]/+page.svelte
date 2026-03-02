@@ -11,7 +11,6 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import { Page } from "$lib/components/page";
-  import { featureFlags } from "$lib/feature-flags";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { listWorkspaceSessions } from "$lib/queries/sessions";
   import { formatChatDate } from "$lib/utils/date";
@@ -163,18 +162,16 @@
                     </RunJobDialog>
                   {/if}
 
-                  {#if featureFlags.ENABLE_GLOBAL_JOB_VIEWS}
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      href={resolve("/spaces/[spaceId]/jobs/[jobId]", {
-                        spaceId: workspace.id,
-                        jobId: job.id,
-                      })}
-                    >
-                      View
-                    </Button>
-                  {/if}
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    href={resolve("/spaces/[spaceId]/jobs/[jobId]", {
+                      spaceId: workspace.id,
+                      jobId: job.id,
+                    })}
+                  >
+                    View
+                  </Button>
                 </div>
               </div>
             {/each}
