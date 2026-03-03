@@ -12,6 +12,7 @@
     "@pgsql/traverse": "^17.2.4",
     "@pgsql/types": "^17.6.2",
     "@atlas/logger": "workspace:*",
+    "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@hono/zod-validator": "0.7.6",

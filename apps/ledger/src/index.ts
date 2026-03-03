@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { logger } from "@atlas/logger";
+import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
@@ -160,6 +161,8 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
     await adapter.destroy();
     logger.info("Adapter destroyed");
 
+    await flushSentry();
+
     clearTimeout(shutdownTimeout);
     logger.info("Shutdown complete");
     process.exit(0);
@@ -171,6 +174,8 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
 }
 
 if (import.meta.main) {
+  initSentry();
+
   let lifecycleAdapter: ResourceStorageAdapter;
   let adapterFactory: AdapterFactory;
 
