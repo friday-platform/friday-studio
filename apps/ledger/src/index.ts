@@ -6,9 +6,11 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
+import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import { config, readConfig } from "./config.ts";
 import { factory } from "./factory.ts";
+import { getMetrics, recordRequest } from "./metrics.ts";
 import { createPostgresAdapter, PostgresAdapter } from "./postgres-adapter.ts";
 import { createResourceRoutes } from "./routes.ts";
 import { createSQLiteAdapter } from "./sqlite-adapter.ts";
@@ -55,7 +57,9 @@ export function createApp(adapterFactory: AdapterFactory) {
     const method = c.req.method;
     const path = c.req.path;
 
-    if (path === "/health") return;
+    if (path === "/health" || path === "/metrics") return;
+
+    recordRequest(method, routePath(c), status, duration);
 
     logger.info("request", {
       method,
@@ -71,7 +75,14 @@ export function createApp(adapterFactory: AdapterFactory) {
     .createApp()
     .use(accessLogMiddleware)
     .use(trimTrailingSlash())
-    .get("/health", (c) => c.json({ status: "ok", service: "ledger" }));
+    .get("/health", (c) => c.json({ status: "ok", service: "ledger" }))
+    .get(
+      "/metrics",
+      () =>
+        new Response(getMetrics(), {
+          headers: { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" },
+        }),
+    );
 
   if (!cfg.devMode) {
     if (!cfg.jwtPublicKeyFile) {
