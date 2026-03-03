@@ -41,6 +41,7 @@
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-fs": "~2.4.5",
     "@tauri-apps/plugin-opener": "^2.5.3",
+    "@types/deno": "2.5.0",
     "@types/markdown-it": "^14.1.2",
     "@types/papaparse": "^5.5.2",
     "ai": "^5.0.142",

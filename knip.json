@@ -112,7 +112,7 @@
     "apps/atlas-installer/**",
     "**/$lib/build-info"
   ],
-  "ignoreDependencies": [],
+  "ignoreDependencies": ["@types/deno"],
   "ignoreBinaries": ["svelte-kit", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {

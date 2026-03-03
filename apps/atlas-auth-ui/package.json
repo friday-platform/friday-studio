@@ -22,6 +22,7 @@
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.41.0",
     "@sveltejs/kit": "^2.53.4",
+    "@types/deno": "2.5.0",
     "nanoid": "^5.1.6",
     "svelte": "^5.53.6",
     "zod": "^4.3.5",
