@@ -19,7 +19,7 @@
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@types/react": "^19.2.14",
-    "ai": "^5.0.141",
+    "ai": "^5.0.142",
     "ink": "^6.8.0",
     "js-levenshtein": "^1.1.6",
     "nanoid": "^5.1.6",

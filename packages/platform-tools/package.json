@@ -2,6 +2,6 @@
   "name": "@atlas/platform-tools",
   "version": "0.0.1",
   "exports": { ".": "./src/mod.ts" },
-  "dependencies": { "@atlas/ledger": "workspace:*", "ai": "^5.0.129" },
+  "dependencies": { "@atlas/ledger": "workspace:*", "ai": "^5.0.142" },
   "devDependencies": { "vitest": "^4.0.18" }
 }
