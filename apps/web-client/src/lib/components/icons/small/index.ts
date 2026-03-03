@@ -6,6 +6,7 @@ import CaretUp from "./caret-up.svelte";
 import Chat from "./chat.svelte";
 import Check from "./check.svelte";
 import Close from "./close.svelte";
+import ExternalLink from "./external-link.svelte";
 import File from "./file.svelte";
 import Folder from "./folder.svelte";
 import InfoCircled from "./info-circled.svelte";
@@ -27,6 +28,7 @@ export const IconSmall = {
   Chat,
   Check,
   Close,
+  ExternalLink,
   File,
   Folder,
   InfoCircled,

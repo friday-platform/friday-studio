@@ -1,3 +1,4 @@
+import type { ResourceDeclaration } from "@atlas/schemas/workspace";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent, JobWithDAG } from "../types.ts";
 import { enrichAgentsWithPipelineContext } from "./enrich-pipeline-context.ts";
@@ -216,5 +217,159 @@ describe("enrichAgentsWithPipelineContext", () => {
       },
     ]);
     expect(infer).toHaveBeenCalledOnce();
+  });
+});
+
+describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
+  const DOCUMENT_RESOURCE: ResourceDeclaration = {
+    type: "document",
+    slug: "grocery_list",
+    name: "Grocery List",
+    description: "Items to buy at the store",
+    schema: {
+      type: "object" as const,
+      properties: { item: { type: "string" as const }, quantity: { type: "integer" as const } },
+      required: ["item"],
+    },
+  };
+
+  const EXTERNAL_REF: ResourceDeclaration = {
+    type: "external_ref",
+    slug: "budget_sheet",
+    name: "Budget Sheet",
+    description: "External Google Sheet for budget tracking",
+    provider: "google-sheets",
+  };
+
+  it("appends document resource guidance to all agents", async () => {
+    const infer = vi.fn();
+    const agents = [
+      makeAgent({ id: "planner", description: "Plans meals" }),
+      makeAgent({ id: "shopper", description: "Creates shopping lists" }),
+    ];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [{ id: "step-0", agentId: "planner", description: "Plan meals", depends_on: [] }],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+      resources: [DOCUMENT_RESOURCE],
+    });
+
+    for (const agent of enriched) {
+      expect(agent.description).toContain("## Workspace Resources");
+      expect(agent.description).toContain("grocery_list");
+      expect(agent.description).toContain("resource_read");
+      expect(agent.description).toContain("resource_write");
+    }
+  });
+
+  it("appends external ref guidance with provider name", async () => {
+    const infer = vi.fn();
+    const agents = [makeAgent({ id: "syncer", description: "Syncs data" })];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [{ id: "step-0", agentId: "syncer", description: "Sync data", depends_on: [] }],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+      resources: [EXTERNAL_REF],
+    });
+
+    expect(enriched[0]?.description).toContain("## Workspace Resources");
+    expect(enriched[0]?.description).toContain("budget_sheet");
+    expect(enriched[0]?.description).toContain("google-sheets");
+  });
+
+  it("combines document and external ref resources", async () => {
+    const infer = vi.fn();
+    const agents = [makeAgent({ id: "agent", description: "Does things" })];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [{ id: "step-0", agentId: "agent", description: "Do things", depends_on: [] }],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+      resources: [DOCUMENT_RESOURCE, EXTERNAL_REF],
+    });
+
+    const desc = enriched[0]?.description ?? "";
+    expect(desc).toContain("grocery_list");
+    expect(desc).toContain("budget_sheet");
+  });
+
+  it("does not add resource section when resources array is empty", async () => {
+    const infer = vi.fn();
+    const agents = [makeAgent({ id: "agent", description: "Does things" })];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [{ id: "step-0", agentId: "agent", description: "Do things", depends_on: [] }],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+      resources: [],
+    });
+
+    expect(enriched[0]?.description).not.toContain("## Workspace Resources");
+  });
+
+  it("does not add resource section when resources not provided", async () => {
+    const infer = vi.fn();
+    const agents = [makeAgent({ id: "agent", description: "Does things" })];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [{ id: "step-0", agentId: "agent", description: "Do things", depends_on: [] }],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, { infer });
+
+    expect(enriched[0]?.description).not.toContain("## Workspace Resources");
+  });
+
+  it("works alongside downstream data requirements", async () => {
+    const infer = vi.fn().mockResolvedValue("Include full recipe details, not just titles.");
+    const agents = [
+      makeAgent({ id: "fetcher", description: "Fetches recipes" }),
+      makeAgent({ id: "saver", description: "Saves to grocery list" }),
+    ];
+    const jobs = [
+      makeJob({
+        id: "job",
+        steps: [
+          { id: "step-0", agentId: "fetcher", description: "Fetch recipes", depends_on: [] },
+          {
+            id: "step-1",
+            agentId: "saver",
+            description: "Save grocery items",
+            depends_on: ["step-0"],
+          },
+        ],
+      }),
+    ];
+
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
+      infer,
+      resources: [DOCUMENT_RESOURCE],
+    });
+
+    const fetcherDesc = enriched[0]?.description ?? "";
+    // Has both downstream requirements AND resource section
+    expect(fetcherDesc).toContain("DOWNSTREAM DATA REQUIREMENTS:");
+    expect(fetcherDesc).toContain("## Workspace Resources");
+    expect(fetcherDesc).toContain("grocery_list");
   });
 });

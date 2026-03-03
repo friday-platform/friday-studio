@@ -11,6 +11,7 @@ import { Database } from "@db/sqlite";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
+import { discoverDataSources } from "./discovery.ts";
 import { buildAnalysisPrompt } from "./prompts.ts";
 import { buildSchemaContext, type LoadedTableInfo } from "./schema.ts";
 import {
@@ -22,36 +23,7 @@ import {
   type SavedResults,
 } from "./sql-tools.ts";
 
-/** Standard UUID regex - matches both lowercase and uppercase */
-const ARTIFACT_ID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-
-/**
- * Extracts unique UUID-formatted artifact IDs from prompt.
- * Returns empty array if none found. Deduplicates to avoid attaching the same database twice.
- */
-function extractArtifactIds(prompt: string): string[] {
-  const matches = prompt.match(ARTIFACT_ID_REGEX) ?? [];
-  return [...new Set(matches.map((id) => id.toLowerCase()))];
-}
-
-/**
- * Extracts the analysis question by removing artifact ID references.
- * Cleans up common patterns like 'Analyze artifact <id>' prefixes.
- */
-function extractQuestion(prompt: string): string {
-  return prompt
-    .replace(ARTIFACT_ID_REGEX, "")
-    .replace(/analyze\s+artifacts?\s*/gi, "")
-    .replace(/and\s+\./g, ".")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Fetches and validates artifacts for analysis.
- * Only accepts "database" artifacts (SQLite files converted from CSV at upload time).
- * Throws descriptive errors for missing or invalid artifacts.
- */
+/** Fetches artifacts by ID. Only accepts "database" type; throws on missing or wrong type. */
 async function fetchAndValidateArtifacts(
   artifactIds: string[],
   logger: Logger,
@@ -66,7 +38,6 @@ async function fetchAndValidateArtifacts(
     throw new Error(`Failed to fetch artifacts: ${result.error}`);
   }
 
-  // Build lookup map from array
   const artifactMap = new Map(result.data.map((a) => [a.id, a]));
 
   const results: Artifact[] = [];
@@ -96,33 +67,21 @@ async function fetchAndValidateArtifacts(
   return results;
 }
 
-/**
- * Escapes single quotes for SQLite ATTACH DATABASE path.
- */
+/** Escapes single quotes for SQLite ATTACH DATABASE path. */
 function escapeSqlitePath(path: string): string {
   return path.replace(/'/g, "''");
 }
 
-/**
- * Result of loading artifacts into the database.
- */
 interface LoadArtifactsResult {
-  /** Loaded table information */
   tables: LoadedTableInfo[];
-  /** Database attachments for DuckDB CLI queries */
   databases: DbAttachment[];
-  /** Cleanup function to remove temp files (call when done with analysis) */
+  /** Removes temp files from Cortex downloads. Call when done with analysis. */
   cleanup: () => Promise<void>;
 }
 
 /**
- * Loads database artifacts into the SQLite coordinator for analysis.
- *
- * Uses ATTACH DATABASE for zero-copy loading:
- * - Local paths: Attached directly
- * - Cortex paths (cortex://): Downloaded to temp file first, cleaned up via cleanup()
- *
- * Returns loaded tables with full names for SQL queries and a cleanup function.
+ * ATTACHes database artifacts into SQLite for analysis.
+ * Local paths attach directly; cortex:// paths download to temp files first.
  */
 async function loadArtifactsIntoDatabase(
   artifacts: Artifact[],
@@ -134,7 +93,6 @@ async function loadArtifactsIntoDatabase(
   const tempFiles: string[] = [];
 
   for (const [i, artifact] of artifacts.entries()) {
-    // Type narrowing for TypeScript (validated upstream by fetchAndValidateArtifacts)
     if (artifact.data.type !== "database") {
       throw new Error(`Artifact ${artifact.id} is type ${artifact.data.type}, expected database`);
     }
@@ -143,9 +101,7 @@ async function loadArtifactsIntoDatabase(
     const alias = `db${i}`;
     let attachPath = path;
 
-    // Handle Cortex remote storage
     if (path.startsWith("cortex://")) {
-      // Create temp directory for this analysis session
       const tempDir = join(tmpdir(), `atlas-analysis-${crypto.randomUUID()}`);
       const downloadResult = await ArtifactStorage.downloadDatabaseFile({
         id: artifact.id,
@@ -168,16 +124,10 @@ async function loadArtifactsIntoDatabase(
       });
     }
 
-    // Collect database attachment for DuckDB CLI queries
     databases.push({ alias, path: attachPath });
-
-    // Attach the database file to SQLite for sample data reads
     db.exec(`ATTACH DATABASE '${escapeSqlitePath(attachPath)}' AS "${alias}"`);
 
-    // Full table name is alias.tableName
     const fullTableName = `${alias}."${schema.tableName}"`;
-
-    // Fetch sample data for LLM context (fast SQLite read)
     const sampleData = db
       .prepare(`SELECT * FROM ${fullTableName} LIMIT 3`)
       .all<Record<string, unknown>>();
@@ -193,12 +143,10 @@ async function loadArtifactsIntoDatabase(
     });
   }
 
-  // Cleanup function removes all temp files and their parent directories
   const cleanup = async () => {
     for (const tempPath of tempFiles) {
       try {
         await rm(tempPath, { force: true });
-        // Also try to remove the parent temp directory if empty
         const parentDir = dirname(tempPath);
         await rm(parentDir, { recursive: true, force: true });
       } catch (error) {
@@ -210,11 +158,7 @@ async function loadArtifactsIntoDatabase(
   return { tables, databases, cleanup };
 }
 
-/**
- * Runs the LLM analysis loop with SQL tools.
- * Uses generateText with tool loop, step limit, and abort handling.
- * Queries are executed via DuckDB CLI for analytical performance.
- */
+/** Runs the LLM analysis loop. Queries execute via DuckDB CLI for analytical performance. */
 async function runAnalysisLoop(
   databases: DbAttachment[],
   schemaContext: string,
@@ -251,10 +195,7 @@ async function runAnalysisLoop(
   return { summary, savedResults: getSavedResults() };
 }
 
-/**
- * Creates a summary artifact containing the analysis text.
- * Always returns an ArtifactRef; throws on creation failure.
- */
+/** Creates a summary artifact from the analysis text. Throws on failure. */
 async function createSummaryArtifact(
   summary: string,
   question: string,
@@ -277,10 +218,7 @@ async function createSummaryArtifact(
   return { id: result.data.id, type: result.data.type, summary: result.data.summary };
 }
 
-/**
- * Creates a data artifact with the saved query results as JSON.
- * Returns null if no results to save; throws on creation failure.
- */
+/** Creates a data artifact with saved query results. Returns null if no results. */
 async function createDataArtifact(
   savedResults: SavedResults | null,
   session: { workspaceId: string; streamId?: string },
@@ -336,8 +274,12 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   },
   handler: async (prompt, { session, logger, abortSignal, stream }) => {
     const startTime = performance.now();
-    const artifactIds = extractArtifactIds(prompt);
-    const question = extractQuestion(prompt);
+
+    stream?.emit({
+      type: "data-tool-progress",
+      data: { toolName: "Data Analyst", content: "Identifying data sources..." },
+    });
+    const { question, artifactIds } = await discoverDataSources(prompt, abortSignal);
 
     const db = new Database(":memory:");
     const queryLog: QueryExecution[] = [];
@@ -345,10 +287,6 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
 
     try {
       const artifacts = await fetchAndValidateArtifacts(artifactIds, logger);
-
-      // Load artifacts into database via ATTACH DATABASE
-      // - Local paths: attached directly
-      // - Cortex paths: downloaded to temp files first
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Data Analyst", content: `Loading ${artifacts.length} table(s)...` },
@@ -395,7 +333,6 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         },
       });
 
-      // 9. Log timing breakdown
       const totalDurationMs = performance.now() - startTime;
       const queryDurationMs = queryLog.reduce((sum, q) => sum + q.durationMs, 0);
       const successCount = queryLog.filter((q) => q.success).length;
@@ -414,9 +351,7 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
       logger.error("data-analyst failed", { error });
       return err(stringifyError(error));
     } finally {
-      // Close database before cleanup (must detach before deleting temp files)
       db.close();
-      // Clean up any temp files from Cortex downloads
       if (cleanup) {
         await cleanup();
       }

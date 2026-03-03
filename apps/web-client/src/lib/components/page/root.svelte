@@ -18,5 +18,9 @@
     @media (min-width: 1920px) {
       grid-template-columns: 1fr var(--size-112);
     }
+
+    > :global(:only-child) {
+      grid-column: 1 / -1;
+    }
   }
 </style>

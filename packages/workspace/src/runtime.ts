@@ -30,7 +30,7 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
-import { ArtifactStorage } from "@atlas/core/artifacts/storage";
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -48,8 +48,10 @@ import {
   type SignalWithContext,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { publishDirtyDrafts } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import {
@@ -183,6 +185,8 @@ interface WorkspaceRuntimeOptions {
     finishedAt: string;
     summary?: string;
   }) => void | Promise<void>;
+  /** Ledger storage adapter for versioned workspace resources (auto-publish) */
+  resourceStorage?: ResourceStorageAdapter;
 }
 
 interface FSMJob {
@@ -467,6 +471,7 @@ export class WorkspaceRuntime {
       mcpToolProvider,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
       artifactStorage: ArtifactStorage,
+      resourceAdapter: this.options.resourceStorage,
     };
 
     // Load engine from inline definition or file
@@ -743,6 +748,18 @@ export class WorkspaceRuntime {
         });
       }
     } finally {
+      // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
+      if (this.options.resourceStorage) {
+        try {
+          await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id);
+        } catch (publishError) {
+          logger.warn("Auto-publish at session teardown failed", {
+            sessionId: session.id,
+            error: publishError instanceof Error ? publishError.message : String(publishError),
+          });
+        }
+      }
+
       // Emit session-finish event for stream rotation and completion tracking
       if (onStreamEvent) {
         try {
@@ -901,6 +918,9 @@ export class WorkspaceRuntime {
       fsmContext,
       signal, // Use actual signal instead of synthetic one
       signal._context?.abortSignal,
+      this.options.resourceStorage,
+      this.workspace.id,
+      ArtifactStorage,
     );
 
     // Build final prompt with correct precedence: action.prompt > agentConfig.prompt > context only
@@ -955,6 +975,11 @@ export class WorkspaceRuntime {
 
     // Validate agent output (hallucination detection only runs for LLM agents)
     await validateAgentOutput(result, fsmContext, agentType);
+
+    // Auto-publish dirty resource drafts after agent turn completion
+    if (this.options.resourceStorage && workspaceId) {
+      await publishDirtyDrafts(this.options.resourceStorage, workspaceId);
+    }
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
 

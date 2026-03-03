@@ -40,6 +40,7 @@ function createJobsTestApp(options: { config?: MergedConfig | null }) {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getLedgerAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],

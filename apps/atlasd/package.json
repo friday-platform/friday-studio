@@ -10,12 +10,14 @@
     "@atlas/config": "workspace:*",
     "@atlas/sentry": "workspace:*",
     "@atlas/core": "workspace:*",
+    "@atlas/ledger": "workspace:*",
     "@atlas/cron": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp-server": "workspace:*",
+    "@atlas/resources": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/signals": "workspace:*",
     "@atlas/storage": "workspace:*",
@@ -29,11 +31,16 @@
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "file-type": "^21.3.0",
-    "hono": "^4.12.2",
+    "hono": "4.12.3",
     "hono-openapi": "^1.2.0",
     "jszip": "^3.10.1",
+    "papaparse": "^5.5.3",
     "ai": "^5.0.141",
     "zod": "^4.3.5"
   },
-  "devDependencies": { "@libpdf/core": "^0.2.10", "vitest": "^4.0.18" }
+  "devDependencies": {
+    "@libpdf/core": "^0.2.10",
+    "@std/path": "npm:@jsr/std__path@^1.1.4",
+    "vitest": "^4.0.18"
+  }
 }

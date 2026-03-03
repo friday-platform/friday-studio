@@ -11,6 +11,7 @@ import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { createLedgerClient } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import {
   buildFSMFromPlan,
@@ -24,6 +25,7 @@ import {
 import { toKebabCase } from "@std/text";
 import { z } from "zod";
 import type { FSMCreatorSuccessData } from "../../agent-types/mod.ts";
+import { provisionResources } from "./provision-resources.ts";
 
 const FSMCreatorInputSchema = z.object({
   artifactId: z.string().describe("WorkspacePlan artifact ID"),
@@ -53,7 +55,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
 
   inputSchema: FSMCreatorInputSchema,
 
-  handler: async (input, { logger, stream }) => {
+  handler: async (input, { logger, stream, session }) => {
     logger.info("Starting deterministic FSM compilation", { artifactId: input.artifactId });
 
     try {
@@ -177,6 +179,37 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
             registrationResponse.error,
           )}`,
         );
+      }
+
+      // 6. Provision resources
+      if (blueprint.resources && blueprint.resources.length > 0) {
+        stream?.emit({
+          type: "data-tool-progress",
+          data: { toolName: "FSM Creator", content: "Provisioning workspace resources" },
+        });
+
+        const ledger = createLedgerClient();
+        const provisionResult = await provisionResources(
+          ledger,
+          registrationResponse.data.id,
+          session.userId ?? "system",
+          blueprint.resources,
+        );
+
+        if (!provisionResult.ok) {
+          logger.error("Resource provisioning failed", {
+            workspaceId: registrationResponse.data.id,
+            error: provisionResult.error,
+          });
+          return err(
+            `Workspace registered but resource provisioning failed: ${provisionResult.error}`,
+          );
+        }
+
+        logger.info("Resources provisioned", {
+          workspaceId: registrationResponse.data.id,
+          resourceCount: blueprint.resources.length,
+        });
       }
 
       logger.info("Workspace compilation and registration complete", {

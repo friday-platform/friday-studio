@@ -146,13 +146,89 @@ DO NOT include:
 
 ## Writing guidelines
 
-Focus on user intent and deliver maximum clarity in minimum words.
+All user-facing copy should read like a product label — describe what the user gets, not how the system works.
 
-- Use clear, succinct prose, avoiding technical jargon.
-- Use imperatives: "Returns X" not "This function returns X"
+- Never reference internal concepts: resource tables, agents, triggers, webhooks, CRUD, schemas, JSONB, pipelines
+- Never use system narration: "Agents read and write...", "Triggers the X agent...", "Receives events from..."
+- Agent descriptions: 1 short sentence — what it does for the user. Not how it works.
+- Resource descriptions: minimal label — schema fields are shown separately
+- Field descriptions: show enum options for enums, omit for self-evident fields (title, name, id, email, url)
 - No qualifiers: "might", "should", "basically", "essentially"
 - No enterprise speak: "robust", "comprehensive", "leverage", "facilitate"
-- Precision > politeness`;
+- Precision > politeness
+
+## Persistent state (resources)
+
+Determine what persistent state this workspace needs to maintain across sessions.
+
+Resources are persistent data that survives between runs. Declare a resource when
+data must persist across separate executions — e.g., a grocery list, a contact
+database, a log of processed items, a markdown report.
+
+### Resource types
+
+**Document** (type: "document") — structured data stored as JSONB array:
+- Lists, trackers, inventories, logs, meeting notes, research briefs
+- Schema: object with scalar properties (string, integer, number, boolean)
+- Schema can include nested arrays/objects when domain is hierarchical (e.g., meetings with topics and action items)
+- Use SQL identifier format for slugs: lowercase letters, digits, underscores
+
+**Prose** (type: "prose") — markdown string content:
+- Reports, summaries, briefs that agents revise across sessions
+- No schema needed — content is a markdown string
+
+**External-ref** (type: "external_ref") — data lives in an external service:
+- Google Sheets, Notion, Airtable, GitHub, URL
+
+### Schema guidance (document type)
+
+- Use flat object with scalar properties (string, integer, number, boolean) for tabular data
+- Use nested arrays/objects when domain is hierarchical (e.g., meetings with topics and action items)
+- Use SQL identifier format for slugs: lowercase letters, digits, underscores (e.g., \`grocery_list\`, not \`grocery-list\`)
+
+### When to declare resources
+
+Declare a resource for EACH of these that applies:
+
+**Document resource** — structured data stored in the platform:
+- Workspace needs a list, log, or inventory that grows over time
+- Multiple agents or jobs need to share state
+- Data must persist between sessions (not just within a single job run)
+- User says "store in Friday" or "track in the workspace" (NOT an external service)
+- Data is naturally hierarchical (meeting notes with topics and action items) — use nested schema properties
+
+**Prose resource** — markdown content stored in the platform:
+- Agent-produced reports, summaries, briefs that are revised across sessions
+- Content is a single markdown string, not structured data
+- User says "keep notes", "maintain a report", "write a summary" without naming an external service — store as prose, not external-ref
+
+**External-ref resource** (provider present, no schema) — data lives in an external service:
+- User explicitly asks to store data in Notion, Google Sheets, Airtable, or another external service
+- User provides a URL to an existing external resource (e.g., "my Notion page at https://notion.so/abc123")
+- User says "create a new Notion database" or "put the data in a Google Sheet"
+
+A single workspace can declare BOTH document resources AND external-ref resources.
+Example: "Track my portfolio in Friday and sync a summary to Notion" = one document resource (portfolio) + one external-ref resource (Notion summary page).
+
+### External ref: linking vs. creating
+
+When declaring an external-ref resource:
+- **Linking to existing resource:** Set the \`ref\` field to the URL or ID.
+  Example: \`{provider: "notion", ref: "https://notion.so/abc123", description: "Meeting notes page. Syncs action items from calendar events."}\`
+- **Creating a new resource:** Omit the \`ref\` field. The agent will create the
+  resource on first run using the provider's MCP tools and register it via
+  resource_link_ref.
+  Example: \`{provider: "notion", description: "Reading notes database."}\`
+
+If the user provides a URL or mentions an existing resource, set \`ref\`. If they
+just say "store in Notion" without referencing something specific, omit \`ref\`.
+
+### When NOT to declare resources
+
+- Data flows from one agent to another within the same job (use document contracts)
+- Agent writes to an external service as a one-shot notification (e.g., "send a Slack message") with no persistent state
+- Data is ephemeral and only needed for a single run
+- The external service IS the persistent store — when the user links to an existing Notion page or Google Sheet, that IS where data lives. Do NOT add a document resource for data that flows through the pipeline and ends up in the external service. Example: "read bank transactions and update my Google Sheet" needs only the Google Sheets external-ref, not an additional transactions document. The agent reads, processes, and writes to the sheet in one pass.`;
 
 const WORKSPACE_PROMPT_SECTION = `
 ## Context
@@ -177,7 +253,8 @@ Each signal must have a signalType:
 Generate structured plan with:
 - workspace: name and purpose
 - signals: trigger descriptions with rationale
-- agents: purpose, approach, capabilities, configuration`;
+- agents: purpose, approach, capabilities, configuration
+- resources: persistent state declarations (empty array if none needed)`;
 
 const TASK_PROMPT_SECTION = `
 ## Context
@@ -189,7 +266,8 @@ Focus on selecting the right agents and their capabilities to accomplish the tas
 
 Generate structured plan with:
 - workspace: name and purpose
-- agents: purpose, approach, capabilities, configuration`;
+- agents: purpose, approach, capabilities, configuration
+- resources: persistent state declarations (empty array if none needed)`;
 
 /**
  * Build the system prompt for the given planning mode.
@@ -217,7 +295,7 @@ const WorkspaceSchema = z.object({
   purpose: z
     .string()
     .describe(
-      "What this workspace does and how it works. 1-3 sentences. Focus on the task mechanics, not the value proposition. No marketing speak. Example: 'Fetches merged GitHub PRs from the past week every Friday at 9am and publishes a formatted, categorized summary to Notion.'",
+      "What the user gets — 1-2 sentences, product-label voice. No implementation details (resource tables, HTTP triggers, webhooks, CRUD, on-demand). Example: 'Track tasks and store project docs in Notion.' Example: 'Weekly digest of merged PRs published to Notion.'",
     ),
   details: z
     .array(
@@ -262,18 +340,65 @@ const SignalSchema = z.object({
   displayLabel: z
     .string()
     .describe(
-      "Short badge text for UI display. Examples: 'Every Friday at 9am', 'On GitHub push', 'Every 30 min', 'Manual trigger'. Maximum 5 words.",
+      "Short badge for UI. Scheduled: 'Every Friday at 9am', 'Hourly'. External events: 'On GitHub push'. Prompt-driven (HTTP with no external integration): empty string — never 'Manual trigger' or 'Webhook'. Maximum 5 words.",
     ),
   payloadSchema: JSONSchemaSchema.optional().describe(
-    "JSON Schema for signal payload. Define if signal needs user input, file paths, or parameters. " +
+    "JSON Schema for signal payload. Define if signal needs user input or parameters. " +
       "Required: array of field names. Properties: field definitions. " +
       "Example: { type: 'object', required: ['user_input'], properties: { user_input: { type: 'string', description: 'User text input or description' } } }. " +
       "Use snake_case for field names. Omit for schedule-only triggers. " +
-      "For fields that reference uploaded files or artifacts, add format: 'artifact-ref' to the field definition. " +
-      "Use type: 'string' with format: 'artifact-ref' for single artifact fields, or type: 'array' with items: { type: 'string', format: 'artifact-ref' } for multiple artifacts. " +
-      "Example: { file: { type: 'string', format: 'artifact-ref', description: 'Uploaded CSV file' } }. " +
-      "Only use artifact-ref for fields that carry artifact/file references — NOT for plain text inputs like user_input.",
+      "Signals are pure triggers — do NOT include artifact or file references in the payload schema. " +
+      "Data discovery happens through the resource catalog, not signal payloads.",
   ),
+});
+
+const ResourceSchema = z.object({
+  type: z
+    .enum(["document", "prose", "artifact_ref", "external_ref"])
+    .describe(
+      "Resource type. 'document' for structured data (lists, trackers, inventories, hierarchical data). " +
+        "'prose' for markdown string content (reports, summaries, briefs). " +
+        "'artifact_ref' for read-only pointers to stored artifacts. " +
+        "'external_ref' for pointers to external services (Google Sheets, Notion, etc.).",
+    ),
+  slug: z
+    .string()
+    .describe(
+      "SQL identifier: lowercase letters, digits, underscores. Example: 'grocery_list', 'recipes'",
+    ),
+  name: z.string().describe("Human-readable resource name. Example: 'Grocery List'"),
+  description: z
+    .string()
+    .describe(
+      "Minimal label — schema fields are shown separately. Example: 'Project tasks.' Example: 'Weekly performance summary.' No system narration ('Agents read and write...').",
+    ),
+  schema: JSONSchemaSchema.optional().describe(
+    "JSON Schema for document structure. Required for 'document' type. " +
+      "Use flat object with scalar properties for tabular data. " +
+      "Use nested arrays/objects when domain is hierarchical. " +
+      "Example: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'integer' } }, required: ['item'] }. " +
+      "Omit for 'prose', 'artifact_ref', and 'external_ref'.",
+  ),
+  artifactId: z
+    .string()
+    .optional()
+    .describe("Artifact UUID. Required for type 'artifact_ref'. Omit for other types."),
+  provider: z
+    .string()
+    .optional()
+    .describe(
+      "External service provider. Required for type 'external_ref'. " +
+        "Values: 'google-sheets', 'notion', 'airtable', 'github', 'url'. " +
+        "Omit for other types.",
+    ),
+  ref: z
+    .string()
+    .optional()
+    .describe(
+      "URL or ID of an existing external resource to link to. " +
+        "Set when the user provides a specific URL (e.g., 'https://notion.so/abc123'). " +
+        "Omit when the agent should create a new resource on first run.",
+    ),
 });
 
 // ---------------------------------------------------------------------------
@@ -328,7 +453,7 @@ function buildAgentSchema(capabilityIds: [string, ...string[]]) {
     description: z
       .string()
       .describe(
-        "What this agent accomplishes and how it works. 1-2 sentences. Example: 'Monitors Nike.com product catalog by scraping product pages and comparing against known items to identify new shoe releases'",
+        "What the agent does for the user — 1 short sentence. No verb lists (creates, updates, retrieves). No system mechanics (CRUD, resource tables, interprets the prompt). Good: 'Manages your tasks.' Good: 'Posts a price digest to Slack.' Bad: 'Creates, updates, and retrieves tasks in the workspace.'",
       ),
     capabilities: z
       .array(z.enum(capabilityIds))
@@ -344,6 +469,13 @@ function buildAgentSchema(capabilityIds: [string, ...string[]]) {
   });
 }
 
+const resourcesField = z
+  .array(ResourceSchema)
+  .describe(
+    "Persistent state this workspace needs across sessions. " +
+      "Empty array if workspace has no mutable state needs.",
+  );
+
 /**
  * Build plan schemas using dynamic capability IDs.
  */
@@ -355,10 +487,15 @@ function buildPlanSchemas(capabilityIds: [string, ...string[]]) {
         workspace: WorkspaceSchema,
         signals: z.array(SignalSchema),
         agents: z.array(agentSchema),
+        resources: resourcesField,
       }),
     }),
     task: z.object({
-      plan: z.object({ workspace: WorkspaceSchema, agents: z.array(agentSchema) }),
+      plan: z.object({
+        workspace: WorkspaceSchema,
+        agents: z.array(agentSchema),
+        resources: resourcesField,
+      }),
     }),
   };
 }
@@ -367,10 +504,23 @@ function buildPlanSchemas(capabilityIds: [string, ...string[]]) {
 // Return type
 // ---------------------------------------------------------------------------
 
+/** Resource declaration from Phase 1 LLM output (pre-validation). */
+export interface Phase1Resource {
+  type: "document" | "prose" | "artifact_ref" | "external_ref";
+  slug: string;
+  name: string;
+  description: string;
+  schema?: Record<string, unknown>;
+  artifactId?: string;
+  provider?: string;
+  ref?: string;
+}
+
 export interface Phase1Result {
   workspace: { name: string; purpose: string; details?: Array<{ label: string; value: string }> };
   signals: Signal[];
   agents: Agent[];
+  resources: Phase1Resource[];
   /** Dynamic MCP servers fetched during planning — pass downstream to avoid redundant KV lookups. */
   dynamicServers: MCPServerMetadata[];
 }
@@ -455,6 +605,7 @@ export async function generatePlan(
       workspace: plan.workspace,
       signals: [],
       agents: assignKebabIds(plan.agents),
+      resources: plan.resources,
       dynamicServers,
     };
   }
@@ -485,6 +636,7 @@ export async function generatePlan(
     workspace: phase1.workspace,
     signals: assignKebabIds(phase1.signals),
     agents: assignKebabIds(phase1.agents),
+    resources: phase1.resources,
     dynamicServers,
   };
 }

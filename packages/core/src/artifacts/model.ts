@@ -1,5 +1,9 @@
 import { WorkspaceBlueprintSchema } from "@atlas/schemas/workspace";
 import { z } from "zod";
+
+/** Slug: lowercase alphanumeric + hyphens, with optional path segments separated by `/`. */
+const SlugSchema = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+)*$/);
+
 import {
   CalendarScheduleSchema,
   DatabaseDataSchema,
@@ -151,6 +155,8 @@ export const CreateArtifactSchema = z.object({
   summary: z.string().min(1).max(5000),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
+  slug: SlugSchema.optional(),
+  source: z.string().optional(),
 });
 
 export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
@@ -175,6 +181,8 @@ export const ArtifactSchema = z.object({
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
   revisionMessage: z.string().optional(),
+  slug: SlugSchema.optional(),
+  source: z.string().optional(),
 });
 
 export type Artifact = z.infer<typeof ArtifactSchema>;
@@ -184,3 +192,11 @@ export type Artifact = z.infer<typeof ArtifactSchema>;
  * Used when artifact file contents have been fetched alongside metadata.
  */
 export type ArtifactWithContents = Artifact & { contents?: string };
+
+/** Lightweight index entry for resource discovery within a workspace. */
+export const ResourceIndexEntrySchema = z.object({
+  slug: z.string(),
+  type: z.string(),
+  summary: z.string(),
+});
+export type ResourceIndexEntry = z.infer<typeof ResourceIndexEntrySchema>;

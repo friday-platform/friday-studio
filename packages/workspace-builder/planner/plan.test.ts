@@ -330,3 +330,199 @@ describe("generatePlan — mode parameter", () => {
     );
   });
 });
+
+describe("generatePlan — resource declarations", () => {
+  beforeEach(() => {
+    mockGenerateObject.mockReset();
+  });
+
+  it("system prompt includes persistent state section", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Test", purpose: "Test" },
+          signals: [],
+          agents: [],
+          resources: [],
+        },
+      },
+    });
+
+    await generatePlan("build a meal planner", { mode: "workspace" });
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("persistent state"),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("system prompt includes resource guidance", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Test", purpose: "Test" },
+          signals: [],
+          agents: [],
+          resources: [],
+        },
+      },
+    });
+
+    await generatePlan("build a meal planner", { mode: "workspace" });
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("Persistent state (resources)"),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("workspace mode returns resource declarations from LLM output", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Meal Planner", purpose: "Plan meals and groceries" },
+          signals: [
+            {
+              name: "Weekly Plan",
+              title: "Triggers weekly",
+              signalType: "schedule",
+              description: "Every Sunday",
+              displayLabel: "Every Sunday",
+            },
+          ],
+          agents: [{ name: "Meal Agent", description: "Plans meals", needs: [] }],
+          resources: [
+            {
+              slug: "grocery_list",
+              name: "Grocery List",
+              description: "Items to buy",
+              schema: {
+                type: "object",
+                properties: { item: { type: "string" }, quantity: { type: "integer" } },
+                required: ["item"],
+              },
+            },
+            {
+              slug: "recipes",
+              name: "Recipes",
+              description: "Saved recipes",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" }, servings: { type: "integer" } },
+                required: ["title"],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await generatePlan("Build a meal planner");
+
+    expect(result.resources).toHaveLength(2);
+    expect(result.resources[0]).toEqual(
+      expect.objectContaining({ slug: "grocery_list", name: "Grocery List" }),
+    );
+    expect(result.resources[1]).toEqual(
+      expect.objectContaining({ slug: "recipes", name: "Recipes" }),
+    );
+  });
+
+  it("returns empty resources array when LLM declares none", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Notifier", purpose: "Send notifications" },
+          signals: [
+            {
+              name: "Check",
+              title: "Periodic check",
+              signalType: "schedule",
+              description: "Every hour",
+              displayLabel: "Hourly",
+            },
+          ],
+          agents: [{ name: "Notifier", description: "Sends alerts", needs: ["slack"] }],
+          resources: [],
+        },
+      },
+    });
+
+    const result = await generatePlan("Send me Slack alerts when something happens");
+
+    expect(result.resources).toEqual([]);
+  });
+
+  it("task mode also returns resources", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Data Import", purpose: "Import data" },
+          agents: [{ name: "Importer", description: "Imports CSV", needs: ["data-analysis"] }],
+          resources: [
+            {
+              slug: "contacts",
+              name: "Contacts",
+              description: "Imported contact records",
+              schema: {
+                type: "object",
+                properties: { email: { type: "string" }, name: { type: "string" } },
+                required: ["email"],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await generatePlan("Import my contacts CSV", { mode: "task" });
+
+    expect(result.resources).toHaveLength(1);
+    expect(result.resources[0]).toEqual(
+      expect.objectContaining({ slug: "contacts", name: "Contacts" }),
+    );
+  });
+
+  it("includes external ref resources in output", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Sheet Sync", purpose: "Sync with Google Sheets" },
+          signals: [],
+          agents: [{ name: "Syncer", description: "Syncs data", needs: ["google-sheets"] }],
+          resources: [
+            {
+              slug: "budget_sheet",
+              name: "Budget Sheet",
+              description: "External Google Sheet for budget tracking",
+              provider: "google-sheets",
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await generatePlan("Sync my budget with Google Sheets", { mode: "workspace" });
+
+    expect(result.resources).toHaveLength(1);
+    expect(result.resources[0]).toEqual(
+      expect.objectContaining({
+        slug: "budget_sheet",
+        name: "Budget Sheet",
+        provider: "google-sheets",
+      }),
+    );
+  });
+});

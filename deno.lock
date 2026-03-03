@@ -38,6 +38,7 @@
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.63": "0.2.63_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.4",
     "npm:@deno/kv@0.13": "0.13.0",
+    "npm:@electric-sql/pglite@~0.2.17": "0.2.17",
     "npm:@eslint/compat@^2.0.1": "2.0.2_eslint@10.0.2",
     "npm:@eslint/compat@^2.0.2": "2.0.2_eslint@10.0.2",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.0.2",
@@ -56,6 +57,7 @@
     "npm:@jsr/std__dotenv@~0.225.5": "0.225.6",
     "npm:@jsr/std__encoding@^1.0.10": "1.0.10",
     "npm:@jsr/std__media-types@^1.1.0": "1.1.0",
+    "npm:@jsr/std__path@^1.1.4": "1.1.4",
     "npm:@jsr/std__text@^1.0.16": "1.0.17",
     "npm:@jsr/std__yaml@^1.0.10": "1.0.12",
     "npm:@jsr/std__yaml@^1.0.9": "1.0.12",
@@ -73,6 +75,8 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@opentelemetry/exporter-logs-otlp-http@0.212": "0.212.0_@opentelemetry+api@1.9.0",
     "npm:@opentelemetry/sdk-logs@0.212": "0.212.0_@opentelemetry+api@1.9.0",
+    "npm:@pgsql/traverse@^17.2.4": "17.2.4",
+    "npm:@pgsql/types@^17.6.2": "17.6.2",
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.40.0",
     "npm:@sentry/deno@^10.40.0": "10.40.0",
@@ -118,7 +122,6 @@
     "npm:hono@4.12.3": "4.12.3",
     "npm:hono@^4.10.4": "4.12.3",
     "npm:hono@^4.11.1": "4.12.3",
-    "npm:hono@^4.12.2": "4.12.3",
     "npm:immer@^11.1.4": "11.1.4",
     "npm:ink@^6.8.0": "6.8.0_@types+react@19.2.14_react@19.2.4",
     "npm:jose@6.1.3": "6.1.3",
@@ -139,6 +142,7 @@
     "npm:openapi-typescript@^7.13.0": "7.13.0_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:parallel-web@0.3.1": "0.3.1",
+    "npm:pgsql-parser@^17.9.11": "17.9.11",
     "npm:postgres@3.4.7": "3.4.7",
     "npm:postgres@^3.4.7": "3.4.7",
     "npm:prettier-plugin-svelte@^3.4.1": "3.5.0_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0",
@@ -172,6 +176,9 @@
     "npm:undici@^7.22.0": "7.22.0",
     "npm:vite-plugin-compression2@^2.5.0": "2.5.0",
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.3.2_picomatch@4.0.3",
+    "npm:vitest@*": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.3.2_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3",
+    "npm:vitest@4": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.3.2_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3",
+    "npm:vitest@4.0.18": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.3.2_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3",
     "npm:vitest@^4.0.17": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.3.2_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3",
     "npm:vitest@^4.0.18": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.3.2_vite@7.3.1__@types+node@25.3.2__picomatch@4.0.3",
     "npm:xstate@^5.28.0": "5.28.0",
@@ -398,8 +405,8 @@
         "@babel/helpers",
         "@babel/parser@7.29.0",
         "@babel/template",
-        "@babel/traverse",
-        "@babel/types",
+        "@babel/traverse@7.29.0",
+        "@babel/types@7.29.0",
         "@jridgewell/remapping",
         "convert-source-map",
         "debug",
@@ -412,7 +419,7 @@
       "integrity": "sha512-qsaF+9Qcm2Qv8SRIMMscAvG4O3lJ0F1GuMo5HR/Bp02LopNgnZBC/EkbevHFeGs4ls/oPz9v+Bsmzbkbe+0dUw==",
       "dependencies": [
         "@babel/parser@7.29.0",
-        "@babel/types",
+        "@babel/types@7.29.0",
         "@jridgewell/gen-mapping",
         "@jridgewell/trace-mapping",
         "jsesc"
@@ -434,8 +441,8 @@
     "@babel/helper-module-imports@7.28.6": {
       "integrity": "sha512-l5XkZK7r7wa9LucGw9LwZyyCUscb4x37JWTPz7swwFE/0FMQAGpiWUZn8u9DzkSBWEcK25jmvubfpw2dnAMdbw==",
       "dependencies": [
-        "@babel/traverse",
-        "@babel/types"
+        "@babel/traverse@7.29.0",
+        "@babel/types@7.29.0"
       ]
     },
     "@babel/helper-module-transforms@7.28.6_@babel+core@7.29.0": {
@@ -444,7 +451,7 @@
         "@babel/core",
         "@babel/helper-module-imports",
         "@babel/helper-validator-identifier",
-        "@babel/traverse"
+        "@babel/traverse@7.29.0"
       ]
     },
     "@babel/helper-string-parser@7.27.1": {
@@ -460,20 +467,20 @@
       "integrity": "sha512-xOBvwq86HHdB7WUDTfKfT/Vuxh7gElQ+Sfti2Cy6yIWNW05P8iUslOVcZ4/sKbE+/jQaukQAdz/gf3724kYdqw==",
       "dependencies": [
         "@babel/template",
-        "@babel/types"
+        "@babel/types@7.29.0"
       ]
     },
     "@babel/parser@7.26.9": {
       "integrity": "sha512-81NWa1njQblgZbQHxWHpxxCzNsa3ZwvFqpUg7P+NNUU6f3UU2jBEg4OlF/J6rl8+PQGh1q6/zWScd001YwcA5A==",
       "dependencies": [
-        "@babel/types"
+        "@babel/types@7.29.0"
       ],
       "bin": true
     },
     "@babel/parser@7.29.0": {
       "integrity": "sha512-IyDgFV5GeDUVX4YdF/3CPULtVGSXXMLh1xVIgdCgxApktqnQV0r7/8Nqthg+8YLGaAtdyIlo2qIdZrbCv4+7ww==",
       "dependencies": [
-        "@babel/types"
+        "@babel/types@7.29.0"
       ],
       "bin": true
     },
@@ -482,7 +489,19 @@
       "dependencies": [
         "@babel/code-frame",
         "@babel/parser@7.29.0",
-        "@babel/types"
+        "@babel/types@7.29.0"
+      ]
+    },
+    "@babel/traverse@7.28.5": {
+      "integrity": "sha512-TCCj4t55U90khlYkVV/0TfkJkAkUg3jZFA3Neb7unZT8CPok7iiRfaX0F+WnqWqt7OxhOn0uBKXCw4lbL8W0aQ==",
+      "dependencies": [
+        "@babel/code-frame",
+        "@babel/generator",
+        "@babel/helper-globals",
+        "@babel/parser@7.29.0",
+        "@babel/template",
+        "@babel/types@7.29.0",
+        "debug"
       ]
     },
     "@babel/traverse@7.29.0": {
@@ -493,8 +512,15 @@
         "@babel/helper-globals",
         "@babel/parser@7.29.0",
         "@babel/template",
-        "@babel/types",
+        "@babel/types@7.29.0",
         "debug"
+      ]
+    },
+    "@babel/types@7.28.5": {
+      "integrity": "sha512-qQ5m48eI/MFLQ5PxQj4PFaprjyCTLI37ElWMmNs0K8Lk3dVeOdNpB3ks8jc7yM5CDmVC73eMVk/trk3fgmrUpA==",
+      "dependencies": [
+        "@babel/helper-string-parser",
+        "@babel/helper-validator-identifier"
       ]
     },
     "@babel/types@7.29.0": {
@@ -592,6 +618,9 @@
         "@deno/kv-linux-x64-gnu",
         "@deno/kv-win32-x64-msvc"
       ]
+    },
+    "@electric-sql/pglite@0.2.17": {
+      "integrity": "sha512-qEpKRT2oUaWDH6tjRxLHjdzMqRUGYDnGZlKrnL4dJ77JVMcP2Hpo3NYnOSPKdZdeec57B6QPprCUFg0picx5Pw=="
     },
     "@emnapi/core@1.8.1": {
       "integrity": "sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==",
@@ -865,8 +894,8 @@
       "dependencies": [
         "@babel/generator",
         "@babel/parser@7.29.0",
-        "@babel/traverse",
-        "@babel/types",
+        "@babel/traverse@7.29.0",
+        "@babel/types@7.29.0",
         "prettier",
         "semver@7.7.4"
       ]
@@ -1121,6 +1150,24 @@
     "@jsr/std__yaml@1.0.12": {
       "integrity": "sha512-pz/BisWZWH16JvLJBwrNwUwfIsRnf9qniMrmI6Z3vIAcVRVFcA5+i4o6z6QqsMKqFzjlB66WZE+jSyujT/RvRg==",
       "tarball": "https://npm.jsr.io/~/11/@jsr/std__yaml/1.0.12.tgz"
+    },
+    "@launchql/protobufjs@7.2.6": {
+      "integrity": "sha512-vwi1nG2/heVFsIMHQU1KxTjUp5c757CTtRAZn/jutApCkFlle1iv8tzM/DHlSZJKDldxaYqnNYTg0pTyp8Bbtg==",
+      "dependencies": [
+        "@protobufjs/aspromise",
+        "@protobufjs/base64",
+        "@protobufjs/codegen",
+        "@protobufjs/eventemitter",
+        "@protobufjs/fetch",
+        "@protobufjs/float",
+        "@protobufjs/inquire",
+        "@protobufjs/path",
+        "@protobufjs/pool",
+        "@protobufjs/utf8",
+        "@types/node",
+        "long"
+      ],
+      "scripts": true
     },
     "@lezer/common@1.5.1": {
       "integrity": "sha512-6YRVG9vBkaY7p1IVxL4s44n5nUnaNnGM2/AckNgYOnxTG2kWh1vR8BMxPseWPjRNpb5VtXnMpeYAEAADoRV1Iw=="
@@ -1816,6 +1863,16 @@
       "integrity": "sha512-NxErbI1TmJEZZVvGPePjgXFZCuOzrjQuJ6YwHjcWkelReK7Uhg4QeL05zRdfTpgkH6IY/C8OjbKx5ZilQ4yDFg==",
       "os": ["win32"],
       "cpu": ["x64"]
+    },
+    "@pgsql/traverse@17.2.4": {
+      "integrity": "sha512-7dnst2U3qXXSFbS+HvVktW/C4aVKe/niaRxZ1cfhmdy9E7SMYM0OukFO7gvoZb6I3dnKm/eTfpv23JPKq5z6DA==",
+      "dependencies": [
+        "@pgsql/types",
+        "pg-proto-parser"
+      ]
+    },
+    "@pgsql/types@17.6.2": {
+      "integrity": "sha512-1UtbELdbqNdyOShhrVfSz3a1gDi0s9XXiQemx+6QqtsrXe62a6zOGU+vjb2GRfG5jeEokI1zBBcfD42enRv0Rw=="
     },
     "@polka/url@1.0.0-next.29": {
       "integrity": "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="
@@ -3093,6 +3150,9 @@
     "caniuse-lite@1.0.30001774": {
       "integrity": "sha512-DDdwPGz99nmIEv216hKSgLD+D4ikHQHjBC/seF98N9CPqRX4M5mSxT9eTV6oyisnJcuzxtZy4n17yKKQYmYQOA=="
     },
+    "case@1.6.3": {
+      "integrity": "sha512-mzDSXIPaFwVDvZAHqZ9VlbyF4yyXRuX6IvB06WvPYkqJVO24kX1PPhv9bfpKNFZyxYFmmgo03HUiD8iklmJYRQ=="
+    },
     "ccount@2.0.1": {
       "integrity": "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="
     },
@@ -4139,6 +4199,12 @@
         "type-check"
       ]
     },
+    "libpg-query@17.7.3": {
+      "integrity": "sha512-lHKBvoWRsXt/9bJxpAeFxkLu0CA6tELusqy3o1z6/DwGXSETxhKJDaNlNdrNV8msvXDLBhpg/4RE/fKKs5rYFA==",
+      "dependencies": [
+        "@pgsql/types"
+      ]
+    },
     "lie@3.3.0": {
       "integrity": "sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==",
       "dependencies": [
@@ -4230,7 +4296,7 @@
       "integrity": "sha512-E3ZJh4J3S9KfwdjZhe2afj6R9lGIN5Pher1pF39UGrXRqq/VDaGVIGN13BjHd2u8B61hArAGOnso7nBOouW3TQ==",
       "dependencies": [
         "@babel/parser@7.29.0",
-        "@babel/types",
+        "@babel/types@7.29.0",
         "source-map-js"
       ]
     },
@@ -4709,6 +4775,9 @@
     "negotiator@1.0.0": {
       "integrity": "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="
     },
+    "nested-obj@0.1.10": {
+      "integrity": "sha512-5V2kUPrBee/tmoS2p0IJ35BcaJuW1p1yXF5GP8JpXIkDoPbaYeYypAHizUeZkAUxcC7Rago7izWmEq7qa8+Mhw=="
+    },
     "node-fetch@2.7.0": {
       "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
       "dependencies": [
@@ -4890,6 +4959,20 @@
     "pg-int8@1.0.1": {
       "integrity": "sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw=="
     },
+    "pg-proto-parser@1.30.4": {
+      "integrity": "sha512-+9/n8zfYQVNRc8KGhxxNXO8NA5OKni01IPtit6+C3sLMtcRVVFCj4W0XtrEGFivNjz2qwUtFmRhG8OGMTxs6hg==",
+      "dependencies": [
+        "@babel/generator",
+        "@babel/parser@7.29.0",
+        "@babel/traverse@7.28.5",
+        "@babel/types@7.28.5",
+        "@launchql/protobufjs",
+        "case",
+        "deepmerge",
+        "nested-obj",
+        "strfy-js"
+      ]
+    },
     "pg-protocol@1.12.0": {
       "integrity": "sha512-uOANXNRACNdElMXJ0tPz6RBM0XQ61nONGAwlt8da5zs/iUOOCLBQOHSXnrC6fMsvtjxbOJrZZl5IScGv+7mpbg=="
     },
@@ -4901,6 +4984,20 @@
         "postgres-bytea",
         "postgres-date",
         "postgres-interval"
+      ]
+    },
+    "pgsql-deparser@17.17.2": {
+      "integrity": "sha512-FCjqKY3Sdmce3VUd3CxCXF0kqaZ0s4a6yIMT5UJ9vETh0cF54A8Tpqjn0qBKaPUD8xqTKeLdS+SfiwjAC64wrA==",
+      "dependencies": [
+        "@pgsql/types"
+      ]
+    },
+    "pgsql-parser@17.9.11": {
+      "integrity": "sha512-Bqp9uLvJK0Qht9PXzI6eC/Fn+lFRL+2eMvXss4D4qt7lxPLIHS8FMKYOHUQNTI3m6ylExSOdNXhx/DL5UGm3xg==",
+      "dependencies": [
+        "@pgsql/types",
+        "libpg-query",
+        "pgsql-deparser"
       ]
     },
     "picocolors@1.1.1": {
@@ -5555,6 +5652,12 @@
     "std-env@3.10.0": {
       "integrity": "sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg=="
     },
+    "strfy-js@3.2.1": {
+      "integrity": "sha512-HSw2lkUJVPZ75I+E3HM7UqHMKvBCwjRt1MIAxPPNtLFjuqCrnDVKQQGfotdj/3qHxuhB6NDQ1rYmNjVpPBiNEA==",
+      "dependencies": [
+        "minimatch@10.2.4"
+      ]
+    },
     "string-argv@0.3.2": {
       "integrity": "sha512-aqD2Q0144Z+/RqG52NeHEkZauTAUWJO8c6yTftGJKO3Tja5tUgIfmIl6kExvhtxSDP7fXB6DvzkfMpCd/F3G+Q=="
     },
@@ -6156,7 +6259,7 @@
       "npm:@sendgrid/helpers@8",
       "npm:cookie@^1.0.2",
       "npm:cron-parser@^5.5.0",
-      "npm:hono@^4.10.4",
+      "npm:hono@4.12.3",
       "npm:jose@^6.1.3",
       "npm:nanoid@^5.1.6",
       "npm:openapi-fetch@0.15"
@@ -6229,13 +6332,15 @@
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/db__sqlite@0.12",
+            "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.2.10",
             "npm:ai@^5.0.141",
             "npm:file-type@^21.3.0",
             "npm:hono-openapi@^1.2.0",
-            "npm:hono@^4.12.2",
+            "npm:hono@4.12.3",
             "npm:jszip@^3.10.1",
+            "npm:papaparse@^5.5.3",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
@@ -6266,6 +6371,33 @@
             "npm:vite-plugin-compression2@^2.5.0",
             "npm:vite@^7.3.1",
             "npm:vitest@^4.0.18"
+          ]
+        }
+      },
+      "apps/ledger": {
+        "dependencies": [
+          "jsr:@db/sqlite@0.13",
+          "jsr:@std/dotenv@~0.225.5",
+          "npm:@hono/zod-validator@~0.7.5",
+          "npm:@pgsql/traverse@^17.2.4",
+          "npm:@pgsql/types@^17.6.2",
+          "npm:@sentry/deno@^10.30.0",
+          "npm:hono@^4.11.1",
+          "npm:pgsql-parser@^17.9.11",
+          "npm:postgres@^3.4.7",
+          "npm:zod@^4.2.1"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@hono/zod-validator@0.7.6",
+            "npm:@jsr/db__sqlite@0.12",
+            "npm:@pgsql/traverse@^17.2.4",
+            "npm:@pgsql/types@^17.6.2",
+            "npm:hono@4.12.3",
+            "npm:pgsql-parser@^17.9.11",
+            "npm:postgres@3.4.7",
+            "npm:vitest@^4.0.18",
+            "npm:zod@4.3.6"
           ]
         }
       },
@@ -6409,7 +6541,7 @@
       "packages/client": {
         "packageJson": {
           "dependencies": [
-            "npm:hono@^4.12.2",
+            "npm:hono@4.12.3",
             "npm:zod@^4.3.5"
           ]
         }
@@ -6512,7 +6644,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:hono@^4.12.2",
+            "npm:hono@4.12.3",
             "npm:zod@^4.3.5"
           ]
         }
@@ -6551,6 +6683,25 @@
             "npm:hono-openapi@^1.2.0",
             "npm:openapi-fetch@0.17",
             "npm:openapi-typescript@^7.13.0"
+          ]
+        }
+      },
+      "packages/platform-tools": {
+        "packageJson": {
+          "dependencies": [
+            "npm:ai@^5.0.129",
+            "npm:vitest@^4.0.18"
+          ]
+        }
+      },
+      "packages/resources": {
+        "dependencies": [
+          "npm:hono@^4.10.4"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:hono@4.12.3",
+            "npm:vitest@^4.0.18"
           ]
         }
       },
@@ -6626,7 +6777,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@socotra/modelcontextprotocol-sdk@^1.21.0",
-            "npm:hono@^4.12.2"
+            "npm:hono@4.12.3"
           ]
         }
       },
@@ -6658,7 +6809,9 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^2.0.1",
+            "npm:@electric-sql/pglite@~0.2.17",
             "npm:@faker-js/faker@^10.3.0",
+            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:ai@^5.0.141",
             "npm:dotenv@17.3.1",

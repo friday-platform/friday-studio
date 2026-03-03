@@ -27,6 +27,14 @@ export {
 } from "./messages.ts";
 // Platform tool constants
 export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
+// Resource toolkit interface + tool constructors
+export type { ResourceToolkit } from "./resource-toolkit.ts";
+export {
+  createResourceLinkRefTool,
+  createResourceReadTool,
+  createResourceSaveTool,
+  createResourceWriteTool,
+} from "./resource-tools.ts";
 export type {
   AgentExtras,
   AgentPayload,

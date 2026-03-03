@@ -132,6 +132,41 @@ describe("generateOutputSchemas", () => {
       expect(userMessage?.content).toContain("Reports findings");
     });
 
+    it("does not overwrite primary id when bundledId collides", async () => {
+      // Two agents: one has id "data-analyst", the other has bundledId "data-analyst"
+      const agents = [
+        { id: "data-analyst", name: "Primary Analyst", description: "Primary", capabilities: [] },
+        {
+          id: "csv-analyst",
+          name: "CSV Analyst",
+          description: "CSV",
+          capabilities: [],
+          bundledId: "data-analyst",
+        },
+      ];
+      const steps = [makeStep({ id: "s1", agentId: "data-analyst", description: "Analyze" })];
+
+      mockRegistry.mockReturnValue({});
+      mockGenerateObject.mockResolvedValueOnce({
+        object: {
+          structure: "single_object",
+          fields: [{ name: "output", type: "string", description: "Output" }],
+        },
+      });
+
+      const result = await generateOutputSchemas(steps, agents);
+
+      expect(result.has("s1")).toBe(true);
+      // Should resolve to "Primary Analyst" (primary key wins), not "CSV Analyst"
+      expect(mockGenerateObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({ content: expect.stringContaining("Primary Analyst") }),
+          ]),
+        }),
+      );
+    });
+
     it("skips steps with no matching agent", async () => {
       const agents = [
         { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },

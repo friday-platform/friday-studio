@@ -112,6 +112,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       workspaceId: input.workspaceId,
       chatId: input.chatId,
       createdAt: new Date().toISOString(),
+      ...(input.source ? { source: input.source } : {}),
     };
 
     const tx = db.atomic();
@@ -357,7 +358,14 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       return fail(`Artifact ${input.id} not found`);
     }
 
-    await db.set(keys.deleted(input.id), new Date());
+    const tx = db.atomic();
+    tx.set(keys.deleted(input.id), new Date());
+
+    const result = await tx.commit();
+    if (!result.ok) {
+      return fail("Failed to delete artifact");
+    }
+
     return success(undefined);
   }
 

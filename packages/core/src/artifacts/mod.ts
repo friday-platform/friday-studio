@@ -17,6 +17,7 @@ export type {
   ArtifactType,
   ArtifactWithContents,
   CreateArtifactInput,
+  ResourceIndexEntry,
 } from "./model.ts";
 export {
   ArtifactDataInputSchema,
@@ -24,6 +25,7 @@ export {
   ArtifactSchema,
   ArtifactTypeSchema,
   CreateArtifactSchema,
+  ResourceIndexEntrySchema,
   UpdateArtifactSchema,
 } from "./model.ts";
 

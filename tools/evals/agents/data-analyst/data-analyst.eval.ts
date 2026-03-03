@@ -401,6 +401,80 @@ const cases: DataAnalystCase[] = [
     score: (r) => [createScore("error-handling", r.summary.startsWith("Error:") ? 1 : 0)],
     metadata: { shouldFail: true },
   },
+
+  // === Resource guidance injection (production path) ===
+  {
+    id: "resource-guidance-single-dataset",
+    name: "resource-guidance - single dataset via catalog",
+    inputTemplate: (id) =>
+      `How many rows are in the ad performance dataset?\n\n## Workspace Resources\n\nDatasets (read-only, query via data-analyst / DuckDB):\n- ad-performance (artifact ${id}, 10K rows): Ad performance metrics including impressions, clicks, and revenue`,
+    assert: (r) => {
+      assertEquals(
+        summaryContainsValue(r.summary, EXPECTED.rowCount, 0.001),
+        true,
+        `Expected ~${EXPECTED.rowCount.toLocaleString()} rows via resource guidance, got: ${r.summary.slice(0, 300)}`,
+      );
+    },
+    score: (r) => [
+      createScore("accuracy", summaryContainsValue(r.summary, EXPECTED.rowCount, 0.001) ? 1 : 0),
+    ],
+    metadata: { expected: EXPECTED.rowCount, inputPattern: "resource-guidance" },
+  },
+  {
+    id: "resource-guidance-implicit-reference",
+    name: "resource-guidance - implicit dataset reference",
+    inputTemplate: (id) =>
+      `What was the total revenue?\n\n## Workspace Resources\n\nDatasets (read-only, query via data-analyst / DuckDB):\n- ad-data (artifact ${id}, 10K rows): Monthly ad performance export with revenue and clicks`,
+    assert: (r) => {
+      assertEquals(
+        summaryContainsValue(r.summary, EXPECTED.totalRevenue, 0.01),
+        true,
+        `Expected ~$${EXPECTED.totalRevenue.toLocaleString()} via implicit reference, got: ${r.summary.slice(0, 300)}`,
+      );
+    },
+    score: (r) => [
+      createScore("accuracy", summaryContainsValue(r.summary, EXPECTED.totalRevenue, 0.01) ? 1 : 0),
+    ],
+    metadata: { expected: EXPECTED.totalRevenue, inputPattern: "resource-guidance-implicit" },
+  },
+  {
+    id: "resource-guidance-mixed-types",
+    name: "resource-guidance - discriminates database from file artifacts",
+    inputTemplate: (id) =>
+      `What are the top 10 manufacturers by revenue?\n\n## Workspace Resources\n\nDatasets (read-only, query via data-analyst / DuckDB):\n- ad-data (artifact ${id}, 10K rows): Ad performance data\n\nFiles (read-only, access via artifacts_get):\n- quarterly-report (artifact 99999999-fake-file-0000-000000000001): Q4 PDF report`,
+    assert: (r) => {
+      // Should succeed — discovery picked the database artifact, not the file
+      assertEquals(
+        r.summary.toLowerCase().includes("starlight"),
+        true,
+        `Expected top manufacturer ${EXPECTED.topManufacturer} via mixed resource guidance, got: ${r.summary.slice(0, 300)}`,
+      );
+    },
+    score: (r) => [
+      createScore("top-manufacturer", r.summary.toLowerCase().includes("starlight") ? 1 : 0),
+    ],
+    metadata: { inputPattern: "resource-guidance-mixed" },
+  },
+  {
+    id: "resource-guidance-document-vs-dataset",
+    name: "resource-guidance - discriminates document from dataset",
+    inputTemplate: (id) =>
+      `How many rows are in the ad performance dataset?\n\n## Workspace Resources\n\nDocuments (use resource_read for queries, resource_write for mutations):\n- grocery_list: Weekly grocery items with name, quantity, and category\n\nDatasets (read-only, query via data-analyst / DuckDB):\n- ad-performance (artifact ${id}, 10K rows): Ad performance metrics including impressions, clicks, and revenue`,
+    assert: (r) => {
+      assertEquals(
+        summaryContainsValue(r.summary, EXPECTED.rowCount, 0.001),
+        true,
+        `Expected ~${EXPECTED.rowCount.toLocaleString()} rows via dataset (not document), got: ${r.summary.slice(0, 300)}`,
+      );
+    },
+    score: (r) => [
+      createScore("accuracy", summaryContainsValue(r.summary, EXPECTED.rowCount, 0.001) ? 1 : 0),
+    ],
+    metadata: {
+      expected: EXPECTED.rowCount,
+      inputPattern: "resource-guidance-document-vs-dataset",
+    },
+  },
 ];
 
 export const evals: EvalRegistration[] = cases.map((c) =>

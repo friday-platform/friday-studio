@@ -21,14 +21,52 @@ export const workspaceCreationSkill = {
 - fsm-workspace-creator: creates workspace from artifact
 - workspace_describe: get workspace details after creation
 
+## Resources (Persistent State)
+
+Workspaces can store persistent data in two ways:
+
+**Table resources** — workspace-scoped database tables that persist between runs.
+Agents read/write them via SQL. Good for lists, logs, trackers, inventories, or
+any data that must survive across separate job runs. This is Friday's built-in
+storage — no external service needed.
+
+**External refs** — connections to external services like Google Sheets, Notion,
+Airtable. Friday can link to an existing resource the user already has, or
+create a new one in that service on first run.
+
+### When to ask about storage
+
+Ask a storage question whenever the use case involves data that persists between
+runs. Signals: "track", "log", "list", "database", "inventory", "portfolio",
+"history", "record". Even when the primary ask sounds like monitoring or alerting,
+check whether there's underlying state that needs to persist (e.g., "track my
+portfolio and alert on moves" — the portfolio holdings are persistent state).
+
+When asking, **always offer Friday's built-in table storage first**, then
+external services as an alternative. Do NOT only suggest external services.
+
+When the user mentions an external service:
+- If they provide a URL or say "I already have a [Notion database]", configure
+  an external ref linking to the existing resource.
+- If they say "store in Notion" or "put this in a Google Sheet" without
+  referencing an existing resource, configure an external ref with creation
+  intent — Friday will create the resource on first run via the service's API.
+
 ## Workflow (follow exactly)
 
 ### Step 1: Gather Requirements
 Ask about (use numbered list):
 1. Trigger: how/when should this start?
 2. Frequency: how often? (if recurring)
-3. Output: where should results go?
-4. Services: what APIs/integrations needed?
+3. Data: does this need to track or store anything over time? Suggest storing it
+   as a table in Friday (built-in, no external service needed), or connecting to
+   an external service like Google Sheets or Notion — either linking to an
+   existing resource or having Friday create a new one.
+   Example phrasing: "Do you want to store [the data] in Friday so it persists
+   between runs, or would you prefer an external service like Notion or Google
+   Sheets? I can connect to one you already have or create a new one."
+4. Output: where should results go? (email, Slack, etc.)
+5. Services: what APIs/integrations needed?
 
 ### Step 2: Generate Plan
 Call workspace-planner with complete user intent.
@@ -88,6 +126,8 @@ ALWAYS include specific values in workspace-planner intent:
 - Email: "Email to user@domain.com"
 - Schedule: "Run every 30 minutes"
 - Files: Include full paths like /Users/name/file.csv
+- Resources: describe what data to store and its structure
+  (e.g., "Track grocery items with name, quantity, category, and purchased status")
 
 ## Environment Variables After Creation
 

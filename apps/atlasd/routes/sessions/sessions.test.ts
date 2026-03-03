@@ -153,6 +153,7 @@ function createTestApp(options: {
     sessionStreamRegistry: registry,
     sessionHistoryAdapter: adapter,
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
+    getLedgerAdapter: vi.fn() as unknown as AppContext["getLedgerAdapter"],
   };
 
   const app = new Hono<AppVariables>();

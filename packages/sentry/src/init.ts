@@ -29,6 +29,11 @@ export function initSentry(): void {
       release: `atlas@${release}`,
       tracesSampleRate: 1.0,
       sendDefaultPii: true,
+      // Disable denoServeIntegration — its monitorStream() calls reader.releaseLock()
+      // after observing reader.closed, which throws in Deno's streams implementation.
+      // This crashes the daemon on every SSE response teardown.
+      // Re-enable when @sentry/deno fixes: https://github.com/getsentry/sentry-javascript/issues
+      integrations: (defaults) => defaults.filter((i) => i.name !== "DenoServe"),
     });
 
     initialized = true;

@@ -128,66 +128,39 @@ ${signal.displayLabel ? `Display label: ${signal.displayLabel}` : ""}`,
 }
 
 // ---------------------------------------------------------------------------
-// Artifact-ref format injection
+// Artifact-ref format injection (DEPRECATED)
 // ---------------------------------------------------------------------------
 
 /**
- * File/artifact reference keywords matched against property descriptions (lowercase).
- */
-const ARTIFACT_REF_KEYWORDS = [
-  "uploaded file",
-  "uploaded csv",
-  "uploaded document",
-  "uploaded image",
-  "uploaded spreadsheet",
-  "file to analyze",
-  "file to process",
-  "file upload",
-  "artifact",
-];
-
-/**
- * Scans a JSON Schema's top-level string properties and adds
- * `format: "artifact-ref"` to any whose key or description suggests a
- * file/artifact reference. Deterministic post-processing that compensates
- * for the LLM not reliably emitting the format annotation.
+ * @deprecated Signals no longer carry artifact UUIDs. The data-analyst discovers
+ * data through the resource catalog. This function is a no-op retained for
+ * backwards compatibility with existing workspace YAMLs.
  *
- * @param schema - JSON Schema object to scan
- * @returns Schema with artifact-ref annotations (deep-cloned if modified), or original if unchanged
+ * @param schema - JSON Schema object (returned unchanged)
+ * @returns The original schema unchanged
  */
-export function injectArtifactRefFormat(schema: ValidatedJSONSchema): ValidatedJSONSchema {
-  if (!schema.properties) return schema;
+function injectArtifactRefFormat(schema: ValidatedJSONSchema): ValidatedJSONSchema {
+  if (schema.properties) {
+    const hasRefFields = Object.values(schema.properties).some((prop) => {
+      if (!prop || typeof prop !== "object") return false;
+      const desc = typeof prop.description === "string" ? prop.description.toLowerCase() : "";
+      return (
+        prop.format === "artifact-ref" ||
+        desc.includes("uploaded file") ||
+        desc.includes("artifact")
+      );
+    });
 
-  let changed = false;
-  const patched = { ...schema.properties };
-
-  for (const [key, prop] of Object.entries(patched)) {
-    if (!prop || typeof prop !== "object") continue;
-    if (prop.format === "artifact-ref") continue;
-
-    const type = prop.type;
-    const desc = typeof prop.description === "string" ? prop.description.toLowerCase() : "";
-
-    const isFileField =
-      ARTIFACT_REF_KEYWORDS.some((kw) => desc.includes(kw)) || /(?:^|_)file(?:$|_)/i.test(key);
-
-    if (!isFileField) continue;
-
-    if (type === "string") {
-      patched[key] = { ...prop, format: "artifact-ref" };
-      changed = true;
-    } else if (
-      type === "array" &&
-      prop.items &&
-      typeof prop.items === "object" &&
-      prop.items.type === "string"
-    ) {
-      patched[key] = { ...prop, items: { ...prop.items, format: "artifact-ref" } };
-      changed = true;
+    if (hasRefFields) {
+      logger.warn(
+        "format: artifact-ref is deprecated — signals should be pure triggers. " +
+          "Data discovery now uses the resource catalog.",
+        { schemaProperties: Object.keys(schema.properties) },
+      );
     }
   }
 
-  return changed ? { ...schema, properties: patched } : schema;
+  return schema;
 }
 
 // ---------------------------------------------------------------------------

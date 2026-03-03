@@ -18,7 +18,7 @@ import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { createArtifactFromFile, streamToFile } from "./artifacts.ts";
+import { createArtifactFromFile, replaceArtifactFromFile, streamToFile } from "./artifacts.ts";
 
 const logger = createLogger({ name: "chunked-upload" });
 
@@ -33,6 +33,8 @@ interface UploadSession {
   totalChunks: number;
   completedChunks: Set<number>;
   chatId?: string;
+  workspaceId?: string;
+  artifactId?: string;
   tempDir: string;
   createdAt: number;
   status: "uploading" | "completing" | "completed" | "failed";
@@ -127,6 +129,8 @@ const InitUploadBody = z.object({
   fileName: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(MAX_FILE_SIZE),
   chatId: z.string().optional(),
+  workspaceId: z.string().optional(),
+  artifactId: z.string().optional(),
 });
 
 const ChunkParams = z.object({
@@ -145,7 +149,7 @@ export const chunkedUploadApp = daemonFactory
 
   /** Start a chunked upload session */
   .post("/init", zValidator("json", InitUploadBody), async (c) => {
-    const { fileName, fileSize, chatId } = c.req.valid("json");
+    const { fileName, fileSize, chatId, workspaceId, artifactId } = c.req.valid("json");
 
     // Legacy format check — reject .doc/.ppt with helpful message before MIME check
     const ext = extname(fileName).toLowerCase();
@@ -174,6 +178,12 @@ export const chunkedUploadApp = daemonFactory
     if (chatId && isInvalidChatId(chatId)) {
       return c.json({ error: "Invalid chatId" }, 400);
     }
+    if (artifactId && isInvalidChatId(artifactId)) {
+      return c.json({ error: "Invalid artifactId" }, 400);
+    }
+    if (workspaceId && isInvalidChatId(workspaceId)) {
+      return c.json({ error: "Invalid workspaceId" }, 400);
+    }
 
     const uploadId = crypto.randomUUID();
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
@@ -188,6 +198,8 @@ export const chunkedUploadApp = daemonFactory
       totalChunks,
       completedChunks: new Set(),
       chatId,
+      workspaceId,
+      artifactId,
       tempDir,
       createdAt: Date.now(),
       status: "uploading",
@@ -359,11 +371,18 @@ async function assembleAndConvert(uploadId: string, session: UploadSession): Pro
       return;
     }
 
-    const result = await createArtifactFromFile({
-      filePath: assembledPath,
-      fileName: session.fileName,
-      chatId: session.chatId,
-    });
+    const result = session.artifactId
+      ? await replaceArtifactFromFile({
+          artifactId: session.artifactId,
+          filePath: assembledPath,
+          fileName: session.fileName,
+        })
+      : await createArtifactFromFile({
+          filePath: assembledPath,
+          fileName: session.fileName,
+          chatId: session.chatId,
+          workspaceId: session.workspaceId,
+        });
 
     if (!result.ok) {
       session.status = "failed";

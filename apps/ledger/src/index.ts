@@ -1,0 +1,212 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import process from "node:process";
+import { logger } from "@atlas/logger";
+import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getConnInfo } from "hono/deno";
+import { HTTPException } from "hono/http-exception";
+import { jwt } from "hono/jwt";
+import { trimTrailingSlash } from "hono/trailing-slash";
+import { config, readConfig } from "./config.ts";
+import { factory } from "./factory.ts";
+import { createPostgresAdapter, PostgresAdapter } from "./postgres-adapter.ts";
+import { createResourceRoutes } from "./routes.ts";
+import { createSQLiteAdapter } from "./sqlite-adapter.ts";
+import { ClientError, type ResourceStorageAdapter } from "./types.ts";
+
+/**
+ * Factory function that produces a per-request adapter.
+ * SQLite: returns the shared instance (no per-request state).
+ * Postgres: creates a lightweight adapter scoped to the request's userId for RLS.
+ */
+export type AdapterFactory = (userId: string) => ResourceStorageAdapter;
+
+/**
+ * Creates the Ledger application with a dependency-injected adapter factory.
+ * The factory is called per-request with the authenticated userId.
+ */
+export function createApp(adapterFactory: AdapterFactory) {
+  const cfg = readConfig();
+
+  /** Extracts userId from JWT payload. In dev mode, falls back to 'dev'. */
+  const tenancyMiddleware = factory.createMiddleware(async (c, next) => {
+    if (cfg.devMode) {
+      c.set("userId", "dev");
+      await next();
+      return;
+    }
+
+    const payload = c.get("jwtPayload");
+    const userId = payload?.user_metadata?.tempest_user_id;
+    if (!userId) {
+      logger.error("JWT missing tempest_user_id", { path: c.req.path, sub: payload?.sub });
+      return c.json({ error: "missing_user_id" }, 401);
+    }
+    c.set("userId", userId);
+    await next();
+  });
+
+  /** Logs requests with method, path, status, and duration. */
+  const accessLogMiddleware = factory.createMiddleware(async (c, next) => {
+    const start = Date.now();
+    await next();
+    const duration = Date.now() - start;
+    const status = c.res.status;
+    const method = c.req.method;
+    const path = c.req.path;
+
+    if (path === "/health") return;
+
+    logger.info("request", {
+      method,
+      path,
+      status,
+      durationMs: duration,
+      userId: c.get("userId"),
+      sourceIp: c.env ? getConnInfo(c).remote.address : undefined,
+    });
+  });
+
+  const baseApp = factory
+    .createApp()
+    .use(accessLogMiddleware)
+    .use(trimTrailingSlash())
+    .get("/health", (c) => c.json({ status: "ok", service: "ledger" }));
+
+  if (!cfg.devMode) {
+    if (!cfg.jwtPublicKeyFile) {
+      throw new Error("JWT_PUBLIC_KEY_FILE required");
+    }
+    const publicKeyPem = readFileSync(cfg.jwtPublicKeyFile, "utf-8").trim();
+    const jwtMiddleware = jwt({ alg: "RS256", secret: publicKeyPem });
+
+    baseApp.onError((err, c) => {
+      if (err instanceof HTTPException && err.status === 401) {
+        logger.error("JWT verification failed", {
+          path: c.req.path,
+          error: err.cause instanceof Error ? err.cause.message : err.message,
+          sourceIp: c.env ? getConnInfo(c).remote.address : undefined,
+        });
+        return err.getResponse();
+      }
+      throw err;
+    });
+
+    baseApp.use("/v1/*", jwtMiddleware);
+  }
+
+  const adapterMiddleware = factory.createMiddleware(async (c, next) => {
+    c.set("adapter", adapterFactory(c.get("userId")));
+    await next();
+  });
+
+  baseApp.use("/v1/*", tenancyMiddleware);
+  baseApp.use("/v1/*", adapterMiddleware);
+
+  const app = baseApp
+    .get("/v1/skill", async (c) => {
+      const adapter = c.get("adapter");
+      const skill = await adapter.getSkill();
+      return c.text(skill);
+    })
+    .route("/v1/resources", createResourceRoutes())
+    .onError((err, c) => {
+      if (err instanceof HTTPException) throw err;
+
+      if (err instanceof ClientError) {
+        return c.json({ error: err.message }, err.status);
+      }
+
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      logger.error("Unhandled route error", { path: c.req.path, error: detail });
+      return c.json({ error: "Internal server error" }, 500);
+    });
+
+  return app;
+}
+
+let server: Deno.HttpServer | null = null;
+let isShuttingDown = false;
+
+/** Graceful shutdown — stops server, destroys adapter, exits. */
+async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info("Received signal, shutting down gracefully", { signal });
+
+  const shutdownTimeout = setTimeout(() => {
+    logger.error("Shutdown timeout, forcing exit");
+    process.exit(1);
+  }, 25000);
+
+  try {
+    if (server) {
+      await server.shutdown();
+      logger.info("HTTP server stopped");
+    }
+
+    await adapter.destroy();
+    logger.info("Adapter destroyed");
+
+    clearTimeout(shutdownTimeout);
+    logger.info("Shutdown complete");
+    process.exit(0);
+  } catch (error) {
+    clearTimeout(shutdownTimeout);
+    logger.error("Error during shutdown", { error });
+    process.exit(1);
+  }
+}
+
+if (import.meta.main) {
+  let lifecycleAdapter: ResourceStorageAdapter;
+  let adapterFactory: AdapterFactory;
+
+  if (config.postgresConnection) {
+    const pgAdapter = createPostgresAdapter(config.postgresConnection, config.postgresPool);
+    await pgAdapter.init();
+    lifecycleAdapter = pgAdapter;
+    adapterFactory = (userId) => new PostgresAdapter(pgAdapter.sql, userId);
+    logger.info("Ledger started with Postgres adapter", {
+      postgres: config.postgresConnection.split("@")[1]?.split("/")[0] ?? "configured",
+      pool: config.postgresPool,
+    });
+  } else {
+    if (!config.devMode) {
+      logger.warn("POSTGRES_CONNECTION not set — falling back to SQLite");
+    }
+    const dbPath = config.sqlitePath ?? join(getAtlasHome(), "ledger.db");
+    const sqliteAdapter = await createSQLiteAdapter(dbPath);
+    await sqliteAdapter.init();
+    lifecycleAdapter = sqliteAdapter;
+    adapterFactory = () => sqliteAdapter;
+    logger.info("Ledger started with SQLite adapter", { path: dbPath });
+  }
+
+  const app = createApp(adapterFactory);
+  logger.info("Ledger service starting", { port: config.port });
+
+  Deno.addSignalListener("SIGINT", () => shutdown("SIGINT", lifecycleAdapter));
+  Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM", lifecycleAdapter));
+
+  server = Deno.serve({ port: config.port, onListen: () => {}, handler: app.fetch });
+}
+
+export type {
+  GetResourceOptions,
+  MutateResult,
+  ProvisionInput,
+  PublishResult,
+  QueryResult,
+  ResourceMetadata,
+  ResourceStorageAdapter,
+  ResourceVersion,
+  ResourceWithData,
+} from "./types.ts";
+export {
+  ResourceMetadataSchema,
+  ResourceVersionSchema,
+  ResourceWithDataSchema,
+} from "./types.ts";
+export type LedgerApp = ReturnType<typeof createApp>;

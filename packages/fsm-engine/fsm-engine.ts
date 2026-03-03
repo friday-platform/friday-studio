@@ -9,6 +9,10 @@ import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
   ArtifactRefSchema,
+  createResourceLinkRefTool,
+  createResourceReadTool,
+  createResourceSaveTool,
+  createResourceWriteTool,
   type FailInput,
   FailInputSchema,
 } from "@atlas/agent-sdk";
@@ -16,8 +20,15 @@ import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import {
+  buildResourceGuidance,
+  enrichCatalogEntries,
+  publishDirtyDrafts,
+  toCatalogEntries,
+} from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
@@ -279,6 +290,8 @@ export interface FSMEngineOptions {
   validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
+  /** Ledger storage adapter for versioned workspace resources */
+  resourceAdapter?: ResourceStorageAdapter;
 }
 
 export class FSMEngine {
@@ -663,7 +676,12 @@ export class FSMEngine {
       await this.persistDocuments();
       await this.persistExecutionState();
 
-      // 6. Emit state transition event if callback provided and state changed
+      // 6. Auto-publish dirty resource drafts after FSM step completion
+      if (this.options.resourceAdapter && sig._context?.workspaceId) {
+        await publishDirtyDrafts(this.options.resourceAdapter, sig._context.workspaceId);
+      }
+
+      // 7. Emit state transition event if callback provided and state changed
       if (sig._context?.onEvent && previousState !== pendingState) {
         sig._context.onEvent({
           type: "data-fsm-state-transition",
@@ -907,6 +925,27 @@ export class FSMEngine {
             cleanupSkills = cleanup;
           }
 
+          // Inject Ledger resource tools when workspace has a resource adapter
+          const workspaceId = sig._context?.workspaceId;
+          if (workspaceId && this.options.resourceAdapter) {
+            baseTools.resource_read = createResourceReadTool(
+              this.options.resourceAdapter,
+              workspaceId,
+            ) as Tool;
+            baseTools.resource_write = createResourceWriteTool(
+              this.options.resourceAdapter,
+              workspaceId,
+            ) as Tool;
+            baseTools.resource_save = createResourceSaveTool(
+              this.options.resourceAdapter,
+              workspaceId,
+            ) as Tool;
+            baseTools.resource_link_ref = createResourceLinkRefTool(
+              this.options.resourceAdapter,
+              workspaceId,
+            ) as Tool;
+          }
+
           try {
             // Inject failStep tool for explicit failure signaling
             const failStepTool = tool({
@@ -963,6 +1002,37 @@ export class FSMEngine {
               prepareResult,
               skills,
             );
+
+            // Append workspace resource context so LLM knows what resources are available
+            if (workspaceId && this.options.resourceAdapter) {
+              try {
+                const metadata = await this.options.resourceAdapter.listResources(workspaceId);
+                if (metadata.length > 0) {
+                  const catalogEntries = await toCatalogEntries(
+                    metadata,
+                    this.options.resourceAdapter,
+                    workspaceId,
+                  );
+                  const entries = this.options.artifactStorage
+                    ? await enrichCatalogEntries(catalogEntries, this.options.artifactStorage)
+                    : catalogEntries.filter((e) => e.type !== "artifact_ref");
+                  const guidance = buildResourceGuidance(entries);
+                  if (guidance) {
+                    contextPrompt += `\n\n${guidance}`;
+                  }
+                  const hasDocuments = entries.some((e) => e.type === "document");
+                  if (hasDocuments) {
+                    const skillText = await this.options.resourceAdapter.getSkill();
+                    contextPrompt += `\n\n${skillText}`;
+                  }
+                }
+              } catch (err) {
+                logger.warn("Failed to build resource guidance", {
+                  workspaceId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
 
             if (completeToolInjected) {
               contextPrompt +=

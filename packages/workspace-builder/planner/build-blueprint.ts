@@ -9,7 +9,8 @@
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Logger } from "@atlas/logger";
-import type { CredentialBinding } from "@atlas/schemas/workspace";
+import type { CredentialBinding, ResourceDeclaration } from "@atlas/schemas/workspace";
+import { ResourceDeclarationSchema } from "@atlas/schemas/workspace";
 import type { DocumentContract, WorkspaceBlueprint } from "../types.ts";
 
 import type { AgentClarification, ConfigRequirement } from "./classify-agents.ts";
@@ -23,6 +24,7 @@ import { checkEnvironmentReadiness, type ReadinessResult } from "./preflight.ts"
 import { resolveCredentials, type UnresolvedCredential } from "./resolve-credentials.ts";
 import { generateOutputSchemas } from "./schemas.ts";
 import { stampExecutionTypes } from "./stamp-execution-types.ts";
+import { validateResourceSchemas } from "./validate-resource-schemas.ts";
 
 // Re-export extracted types so existing consumers keep working
 export type { CredentialBinding };
@@ -251,13 +253,26 @@ export async function buildBlueprint(
     }),
   });
 
+  // -- parse resources early (needed for enrichment and validation) --------
+  const parsedResources: ResourceDeclaration[] =
+    phase1.resources.length > 0
+      ? phase1.resources.map((r) => ResourceDeclarationSchema.parse(r))
+      : [];
+
   // -- context (pipeline enrichment) ---------------------------------------
-  await runStep("context", () => enrichAgentsWithPipelineContext(phase1.agents, jobs), {
-    logger,
-    abortSignal,
-    inputs: { agentCount: phase1.agents.length, jobCount: jobs.length },
-    logOutputs: (r) => ({ entriesCount: r.entries.length }),
-  });
+  await runStep(
+    "context",
+    () =>
+      enrichAgentsWithPipelineContext(phase1.agents, jobs, {
+        resources: parsedResources.length > 0 ? parsedResources : undefined,
+      }),
+    {
+      logger,
+      abortSignal,
+      inputs: { agentCount: phase1.agents.length, jobCount: jobs.length },
+      logOutputs: (r) => ({ entriesCount: r.entries.length }),
+    },
+  );
 
   // -- per-job: schemas, completeness gate, contracts ----------------------
   for (const job of jobs) {
@@ -322,12 +337,22 @@ export async function buildBlueprint(
     job.documentContracts = contracts;
   }
 
+  // -- resource schemas (only when resources are declared) -----------------
+  if (parsedResources.length > 0) {
+    await runStep("resource-schemas", () => validateResourceSchemas(parsedResources), {
+      logger,
+      abortSignal,
+      inputs: { resourceCount: parsedResources.length },
+    });
+  }
+
   // -- assemble blueprint (needed for mappings) ----------------------------
   const blueprint: WorkspaceBlueprint = {
     workspace: phase1.workspace,
     signals: phase1.signals,
     agents: phase1.agents,
     jobs,
+    ...(parsedResources.length > 0 ? { resources: parsedResources } : {}),
   };
 
   // -- mappings (per-job) --------------------------------------------------

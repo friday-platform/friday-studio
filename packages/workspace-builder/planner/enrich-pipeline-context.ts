@@ -11,6 +11,8 @@
 
 import { registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
+import { buildDeclarationGuidance } from "@atlas/resources/guidance";
+import type { ResourceDeclaration } from "@atlas/schemas/workspace";
 import { generateText } from "ai";
 import type { Agent, JobWithDAG } from "../types.ts";
 
@@ -77,11 +79,14 @@ type InferFn = (
 ) => Promise<string>;
 
 /**
- * Enrich agent descriptions with downstream data requirements.
+ * Enrich agent descriptions with downstream data requirements and resource context.
  *
  * For each job, finds steps with downstream consumers and appends a
  * `DOWNSTREAM DATA REQUIREMENTS:` section to the corresponding agent's
  * description. Terminal steps (no downstream consumers) are left unchanged.
+ *
+ * When resources are declared, appends a `WORKSPACE RESOURCES:` section
+ * to all agents with per-resource behavioral guidance.
  *
  * An agent appearing in multiple steps across jobs accumulates requirements
  * from all appearances.
@@ -89,12 +94,13 @@ type InferFn = (
  * @param agents - Agents to enrich (mutated in place for description field)
  * @param jobs - Jobs containing DAG steps with dependency edges
  * @param options.infer - Override the inference function (for testing)
+ * @param options.resources - Declared workspace resources for context enrichment
  * @returns The mutated agents array and enrichment entries for debug output
  */
 export async function enrichAgentsWithPipelineContext(
   agents: Agent[],
   jobs: JobWithDAG[],
-  options?: { infer?: InferFn },
+  options?: { infer?: InferFn; resources?: ResourceDeclaration[] },
 ): Promise<{ agents: Agent[]; entries: PipelineContextEntry[] }> {
   const infer = options?.infer ?? inferDownstreamDataNeeds;
 
@@ -150,6 +156,17 @@ export async function enrichAgentsWithPipelineContext(
       enrichedDescription: agent.description,
       downstreamSteps: accumulated.downstreamSteps,
     });
+  }
+
+  // Append resource context to all agents when resources are declared
+  const resources = options?.resources;
+  if (resources && resources.length > 0) {
+    const guidance = buildDeclarationGuidance(resources);
+    if (guidance) {
+      for (const agent of agents) {
+        agent.description = `${agent.description}\n\n${guidance}`;
+      }
+    }
   }
 
   return { agents, entries };

@@ -115,6 +115,7 @@ function createExportTestApp(options: {
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     getAgentRegistry: vi.fn(),
+    getLedgerAdapter: vi.fn(),
   };
 
   const app = new Hono<AppVariables>();

@@ -5,6 +5,7 @@
 
 import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { LLMAgentConfig, SystemAgentConfig, WorkspaceAgentConfig } from "@atlas/config";
+import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import {
@@ -15,35 +16,24 @@ import {
   type HallucinationDetectorConfig,
   SupervisionLevel,
 } from "@atlas/hallucination";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts, type DatetimeContext } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { buildResourceGuidance, enrichCatalogEntries, toCatalogEntries } from "@atlas/resources";
 
-/**
- * Type guard for LLM agent config
- */
 function isLLMAgent(agent: WorkspaceAgentConfig): agent is LLMAgentConfig {
   return agent.type === "llm";
 }
 
-/**
- * Type guard for System agent config
- */
 function isSystemAgent(agent: WorkspaceAgentConfig): agent is SystemAgentConfig {
   return agent.type === "system";
 }
 
-/**
- * Type guard for Atlas agent config
- */
 function isAtlasAgent(agent: WorkspaceAgentConfig): agent is AtlasAgentConfig {
   return agent.type === "atlas";
 }
 
-/**
- * Extract agent-specific config from workspace agent config.
- *
- * @internal Exported for testing
- */
+/** @internal Exported for testing. */
 export function extractAgentConfig(
   agentConfig: WorkspaceAgentConfig | undefined,
 ): Record<string, unknown> | undefined {
@@ -54,11 +44,7 @@ export function extractAgentConfig(
   return undefined;
 }
 
-/**
- * Extract agent prompt from config based on agent type.
- *
- * @internal Exported for testing
- */
+/** @internal Exported for testing. */
 export function extractAgentConfigPrompt(agentConfig: WorkspaceAgentConfig | undefined): string {
   if (!agentConfig) return "";
 
@@ -78,57 +64,37 @@ export function extractAgentConfigPrompt(agentConfig: WorkspaceAgentConfig | und
 }
 
 /**
- * Build the final prompt for an agent with correct precedence.
- *
- * Prompt precedence: action.prompt > agentConfig.prompt > context only
- *
- * @param actionPrompt - Prompt from the FSM AgentAction (highest priority)
- * @param agentConfigPrompt - Prompt from workspace.yml agent config (fallback)
- * @param documentContext - Built context from FSM documents and signal data
- * @returns Final prompt to send to the agent
- *
- * @internal Exported for testing
+ * Prompt precedence: action.prompt > agentConfig.prompt > context only.
+ * @internal Exported for testing.
  */
 export function buildFinalAgentPrompt(
   actionPrompt: string | undefined,
   agentConfigPrompt: string,
   documentContext: string,
 ): string {
-  // Prompt precedence: action.prompt > agentConfig.prompt > context only
   const taskPrompt = actionPrompt || agentConfigPrompt;
   return taskPrompt ? `${taskPrompt}\n\n${documentContext}` : documentContext;
 }
 
-/**
- * Build agent prompt with context (extracted from SessionSupervisor lines 1347-1446)
- *
- * Includes:
- * - Signal data from FSM context
- * - FSM documents (business context) with expanded artifact content
- * - Previous agent outputs (from other documents)
- * - Task description
- *
- * NOTE: Working memory integration would go here if needed, but for the initial
- * FSM integration, we're keeping this minimal.
- */
+/** Builds the context prompt from signal data, FSM documents, and workspace resources. */
 export async function buildAgentPrompt(
   _agentId: string,
   fsmContext: Context,
   signal: Signal,
   abortSignal?: AbortSignal,
+  resourceAdapter?: ResourceStorageAdapter,
+  workspaceId?: string,
+  artifactStorage?: ArtifactStorageAdapter,
 ): Promise<string> {
   const signalContext = signal.data;
   const signalDatetime = signal.data?.datetime as DatetimeContext | undefined;
 
-  // Expand artifact refs to include actual content for downstream agents
   const documents = await expandArtifactRefsInDocuments(fsmContext.documents, abortSignal);
 
   const sections: string[] = [];
 
-  // Add facts section (current date/time/etc)
   sections.push(buildTemporalFacts(signalDatetime));
 
-  // Format documents for prompt - these are the FSM's business domain documents
   if (documents.length > 0) {
     const documentsSection = documents
       .map((d) => {
@@ -143,26 +109,42 @@ export async function buildAgentPrompt(
     sections.push(`## Available Documents\n\n${documentsSection}`);
   }
 
-  // Include signal data
   if (signalContext && Object.keys(signalContext).length > 0) {
     sections.push(
       `## Signal Data\n\n\`\`\`json\n${JSON.stringify(signalContext, null, 2)}\n\`\`\``,
     );
   }
 
+  if (resourceAdapter && workspaceId) {
+    try {
+      const metadata = await resourceAdapter.listResources(workspaceId);
+      if (metadata.length > 0) {
+        const catalogEntries = await toCatalogEntries(metadata, resourceAdapter, workspaceId);
+        const entries = artifactStorage
+          ? await enrichCatalogEntries(catalogEntries, artifactStorage)
+          : catalogEntries.filter((e) => e.type !== "artifact_ref");
+        const guidance = buildResourceGuidance(entries);
+        if (guidance) {
+          sections.push(guidance);
+        }
+        const hasDocuments = entries.some((e) => e.type === "document");
+        if (hasDocuments) {
+          const skillText = await resourceAdapter.getSkill();
+          sections.push(skillText);
+        }
+      }
+    } catch (err) {
+      logger.warn("Failed to fetch workspace resources for prompt", {
+        workspaceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return sections.join("\n\n");
 }
 
-/**
- * Validate agent output (extracted from SessionSupervisor lines 1825-1938)
- *
- * Checks:
- * - Hallucination detection (referencing non-existent data) - ONLY for LLM agents
- * - Schema validation if expected schema provided
- * - Output format validation
- *
- * Throws on invalid output (FSM will abort transition)
- */
+/** Validates agent output. Throws on hallucinations, schema violations, or invalid doc refs. */
 export async function validateAgentOutput(
   result: AgentResult,
   context: Context,
@@ -170,7 +152,6 @@ export async function validateAgentOutput(
   expectedSchema?: JSONSchema,
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
 ): Promise<void> {
-  // Skip validation for error results
   if (!result.ok) {
     logger.warn("Agent returned error, skipping validation", {
       agentId: result.agentId,
@@ -179,7 +160,6 @@ export async function validateAgentOutput(
     return;
   }
 
-  // Skip validation if no data
   if (!result.data) {
     logger.warn("Agent produced no output", { agentId: result.agentId });
     return;
@@ -190,8 +170,7 @@ export async function validateAgentOutput(
     throw new Error(`Agent ${result.agentId} produced empty output`);
   }
 
-  // Only run hallucination detection for ad-hoc LLM agents
-  // System agents and SDK agents are code-based and should not be checked
+  // Only LLM agents — system/SDK agents are code-based
   if (agentType === "llm") {
     const hallucinationDetectorConfig: HallucinationDetectorConfig = {
       logger: logger.child({ component: "hallucination-detector" }),
@@ -211,7 +190,6 @@ export async function validateAgentOutput(
         issuesCount: analysis.issues.length,
       });
 
-      // Check for severe hallucinations
       const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
 
       if (isSevere) {
@@ -249,7 +227,6 @@ export async function validateAgentOutput(
     });
   }
 
-  // Validate against schema if provided
   if (expectedSchema && result.data) {
     const validation = validateJSONSchema(result.data, expectedSchema);
     if (!validation.valid) {
@@ -259,7 +236,6 @@ export async function validateAgentOutput(
     }
   }
 
-  // Check for hallucinations (agent referencing non-existent documents)
   const referencedDocIds = extractDocumentReferences(result.data);
   const existingDocIds = new Set(context.documents.map((d) => d.id));
 
@@ -272,17 +248,11 @@ export async function validateAgentOutput(
   }
 }
 
-/**
- * Extract document IDs referenced in agent output
- * Looks for patterns like "docId": "..." in JSON structures
- */
+/** Extracts document IDs referenced in agent output via JSON key patterns. */
 function extractDocumentReferences(data: unknown): string[] {
   const refs: string[] = [];
-
-  // Convert to string for pattern matching
   const json = JSON.stringify(data);
 
-  // Look for common document reference patterns
   const patterns = [
     /"docId":\s*"([^"]+)"/g,
     /"documentId":\s*"([^"]+)"/g,
@@ -299,13 +269,10 @@ function extractDocumentReferences(data: unknown): string[] {
     }
   }
 
-  return Array.from(new Set(refs)); // Deduplicate
+  return Array.from(new Set(refs));
 }
 
-/**
- * Validate data against JSON Schema
- * Simplified implementation - full version should use Zod or AJV
- */
+/** Simplified JSON Schema validator — sufficient for output gate checks. */
 function validateJSONSchema(
   data: unknown,
   schema: JSONSchema,

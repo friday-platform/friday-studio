@@ -39,6 +39,7 @@ function createTestApp() {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getLedgerAdapter: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       runtimes: new Map(),
@@ -330,6 +331,7 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
       destroyWorkspaceRuntime: vi.fn(),
       getLibraryStorage: vi.fn(),
       getAgentRegistry: vi.fn(),
+      getLedgerAdapter: vi.fn(),
       daemon: mockDaemon as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],

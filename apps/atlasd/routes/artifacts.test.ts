@@ -13,7 +13,7 @@ import { black, PDF } from "@libpdf/core";
 import JSZip from "jszip";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { artifactsApp, resolveFileType } from "./artifacts.ts";
+import { artifactsApp, replaceArtifactFromFile, resolveFileType } from "./artifacts.ts";
 
 // Configure storage to use a temp directory before any imports that might use ArtifactStorage
 const tempDir = makeTempDir();
@@ -1242,6 +1242,102 @@ describe("Legacy format rejection", () => {
     expect(response.status).toEqual(415);
     const body = await response.json();
     assertErrorResponse(body, "Legacy .ppt format not supported. Save as .pptx and re-upload.");
+  });
+});
+
+describe("Mismatched extension rejection", () => {
+  it("rejects a ZIP file with .docx extension that is not a real DOCX", async () => {
+    // Build a valid ZIP that is NOT a DOCX (no word/document.xml)
+    const zip = new JSZip();
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`,
+    );
+    zip.file("random/data.txt", "this is not a DOCX");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = new File([bytes.buffer.slice(0) as ArrayBuffer], "fake.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    // Should get a user-facing error, not a 500 stacktrace
+    expect(response.status).toEqual(500);
+    const body = await response.json();
+    assertErrorResponse(
+      body,
+      "Detected ZIP content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF",
+    );
+  });
+});
+
+describe("replaceArtifactFromFile", () => {
+  it("creates a new revision with updated content", async () => {
+    // Create initial artifact via upload
+    const file = createTestFile("original content", "notes.txt", "text/plain");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact: original } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Write replacement file to temp dir
+    const { writeFile } = await import("node:fs/promises");
+    const { join } = await import("@std/path");
+    const replacementPath = join(tempDir, "replacement.txt");
+    await writeFile(replacementPath, "replacement content", "utf-8");
+
+    // Replace the artifact
+    const result = await replaceArtifactFromFile({
+      artifactId: original.id,
+      filePath: replacementPath,
+      fileName: "updated-notes.txt",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok");
+    expect(result.artifact.id).toBe(original.id);
+    expect(result.artifact.revision).toBe(2);
+    expect(result.artifact.title).toBe("updated-notes.txt");
+  });
+
+  it("replaces CSV artifact with new CSV data", async () => {
+    // Create initial CSV artifact
+    const csvFile = createTestFile("a,b\n1,2", "data.csv", "text/csv");
+    const formData = new FormData();
+    formData.set("file", csvFile);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact: original } = ArtifactResponseSchema.parse(await uploadResponse.json());
+    expect(original.data.type).toBe("database");
+
+    // Write replacement CSV
+    const { writeFile } = await import("node:fs/promises");
+    const { join } = await import("@std/path");
+    const replacementPath = join(tempDir, "replacement.csv");
+    await writeFile(replacementPath, "x,y,z\n10,20,30\n40,50,60", "utf-8");
+
+    const result = await replaceArtifactFromFile({
+      artifactId: original.id,
+      filePath: replacementPath,
+      fileName: "updated-data.csv",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok");
+    expect(result.artifact.id).toBe(original.id);
+    expect(result.artifact.revision).toBe(2);
+    expect(result.artifact.data.type).toBe("database");
   });
 });
 

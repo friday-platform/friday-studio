@@ -74,6 +74,15 @@ go build                # Build
 - Zod discriminated unions cause deep type instantiation with AI SDK's
   `generateObject` generic — split into per-type schemas
 - `z.record()` requires two args (key schema, value schema) — v3 accepted one
+- `as const` on whole objects makes arrays readonly — incompatible with `string[]`
+  from Zod infer; annotate with target type or use targeted `as const` on
+  individual literal fields
+- `z.enum()` requires `[string, ...string[]]` (non-empty tuple) — cast needed
+  when building from dynamic arrays
+- `z.infer` on schemas containing `z.lazy()` triggers TS2589 — use explicit
+  interfaces instead
+- `z.strictObject().extend()` — adding a required field breaks ALL downstream
+  fixture/test data; coordinate changes in the same commit
 
 ### AI SDK (Vercel) v5
 
@@ -115,6 +124,11 @@ go build                # Build
   type level — add a runtime guard even for required args
 - `deno check` cannot parse `.svelte` files — use
   `npx svelte-check --threshold error` for Svelte type checking
+- `deno-lint-ignore` directives parse everything after the rule name as
+  additional rule codes — don't add inline comments (e.g.,
+  `// deno-lint-ignore require-await -- reason` breaks; put reason on line above)
+- `deno check` pulls transitive deps — type errors in unrelated packages surface
+  when checking a single file; check error file paths, not just exit code
 
 ### TypeScript
 
@@ -130,38 +144,26 @@ go build                # Build
   plain `.ts` files enforce `unknown`, so extracted code needs explicit Zod
   parsing for `JSON.parse` results
 
-## Code Philosophy
+### Vitest
 
-**Do:**
+- `vi.fn()` without type parameter produces `Mock<Procedure | Constructable>` —
+  always type mocks: `vi.fn<(arg: T) => R>()`
+- `vi.restoreAllMocks()` does not clear call history for `vi.hoisted()` mocks —
+  use `mockReset()` on each hoisted mock in `beforeEach`
+- Mocking constructable classes requires class syntax or regular functions —
+  arrow functions in `vi.fn().mockImplementation()` fail with "not a constructor"
 
-- Explicit over implicit, simple over complex, flat over nested
-- Parse, don't validate - Zod at boundaries, trust types internally
-- Make impossible states impossible - discriminated unions over optional props
-- Infer over annotate, `satisfies` when you want inference with validation
-- Colocate until extraction earns itself
-- Fail fast, recover gracefully
+### SQLite (@db/sqlite)
 
-**Don't:**
-
-- Abstract prematurely - rule of three, then extract
-- Add "just in case" code or unrequested features - YAGNI
-- Add backwards compatibility unless explicitly asked
-- Write code that's hard to delete
-
-**Before adding complexity, ask:**
-
-- Is this solving a problem we have today?
-- What's the simplest thing that works?
-- What can I delete instead of add?
+- `Database.exec()` handles multi-statement strings (semicolon-separated);
+  `prepare()` only handles single statements
+- PRAGMAs cannot be used as subqueries — `SELECT * FROM (PRAGMA x)` fails
+- `busy_timeout` is per-connection, not per-file — read-only connections need it
+  set independently
 
 ## Test Quality
 
 Use the `testing` skill for guidance.
-
-## Communication
-
-Direct and terse. Developer to developer - explain, don't sell. No buzzwords, no
-"robust" or "comprehensive". Disagree when something's wrong.
 
 ## Git Workflow
 
@@ -182,6 +184,9 @@ parsing and git treats `-m` as a pathspec.
 `git diff HEAD~1` includes uncommitted working tree changes — use
 `git show <hash>` or `git diff HEAD~1 HEAD` for clean single-commit review.
 
+`git stash` in shared worktrees is dangerous — stash pop can fail on lock file
+conflicts; use a temp branch instead.
+
 If you accidentally commit to main locally:
 
 ```bash
@@ -193,28 +198,6 @@ git push -u origin feature/rescue-branch
 gh pr create
 ```
 
-## Project Structure
-
-```
-apps/
-  atlasd/           # Daemon - HTTP API, workspace lifecycle
-  atlas-operator/   # K8s operator (Go)
-  bounce/           # Auth service (Go)
-  gist/             # File service (Go)
-  web-client/       # Svelte web UI
-packages/
-  @atlas/config     # YAML config loading + Zod schemas
-  @atlas/core       # Core types, artifacts, errors
-  @atlas/logger     # Structured logging
-  @atlas/mcp        # MCP client implementation
-  @atlas/signals    # Signal types and routing
-  @atlas/storage    # Persistence layer
-src/                  # atlasd internals (not a separate app)
-  core/             # Workspace runtime (fsm-engine, sessions)
-  cli/              # CLI commands
-  services/         # Daemon services
-```
-
 ## Config Files
 
 - `atlas.yml` - Platform-wide settings (loaded from workspace directory,
@@ -223,18 +206,7 @@ src/                  # atlasd internals (not a separate app)
 - `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
   options
 
-## Architecture
-
-See `docs/ARCHITECTURE.md` for component details and data flow.
-
-Quick mental model:
-
-1. Signal arrives (HTTP/SSE/cron)
-2. Daemon routes to workspace runtime
-3. Workspace spawns session
-4. Session supervisor plans execution
-5. Agents execute with MCP tool access
-6. Results returned via SSE stream
+## Architecture Gotchas
 
 **Worker context:** Worker-executed code actions can't read Context properties
 unless explicitly serialized in `WorkerRequest.contextData` AND reconstructed in
@@ -245,6 +217,14 @@ serialization, worker reconstruction.
 **LLM output format:** Keep LLM output format simple (flat field lists) and
 convert to JSON Schema in code — more reliable than asking LLMs to produce JSON
 Schema directly.
+
+**FSM dual execution paths:** Agent actions (`workspace-runtime.ts`) and LLM
+actions (`fsm-engine.ts`) build prompts independently — changes to one don't
+propagate to the other. Both need explicit wiring for new context.
+
+**Agent identity:** `agent.name` is display text, `agent.id` is stable
+kebab-case identifier — use `agent.id` for planner identity, never
+`agent.name`.
 
 ## Local Development with CLI
 

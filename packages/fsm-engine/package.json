@@ -6,10 +6,12 @@
   "main": "./mod.ts",
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/ledger": "workspace:*",
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
+    "@atlas/resources": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",

@@ -1,3 +1,13 @@
+/**
+ * Shared file upload utility.
+ *
+ * Handles client-side validation, simple vs chunked upload routing,
+ * progress tracking, and abort support. Used by both the chat file drop
+ * flow and workspace resource uploads.
+ *
+ * @module
+ */
+
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
@@ -66,6 +76,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
     const maxMB = Math.round(MAX_OFFICE_SIZE / (1024 * 1024));
     return { valid: false, error: `${ext.slice(1).toUpperCase()} files must be under ${maxMB}MB.` };
   }
+
   const mimeForExt = EXTENSION_TO_MIME.get(ext);
   if (mimeForExt && isImageMimeType(mimeForExt) && file.size > MAX_IMAGE_SIZE) {
     return { valid: false, error: "Image files must be under 5MB." };
@@ -89,7 +100,20 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// File Upload
+// Upload options
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UploadOptions {
+  chatId?: string;
+  workspaceId?: string;
+  artifactId?: string;
+  onProgress?: (loaded: number) => void;
+  onStatusChange?: (status: UploadStatus) => void;
+  abortSignal?: AbortSignal;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -104,9 +128,40 @@ function extractError(data: unknown, fallback: string): string {
   return parsed.success ? parsed.data.error : fallback;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Uploads a file to the server with client-side validation.
+ * Automatically picks single-request or chunked upload based on file size.
+ * Passes optional fields (workspaceId, artifactId) through
+ * to the server for artifact creation or replacement.
+ *
+ * @param file - The File to upload
+ * @param opts - Upload options (chatId, workspaceId, artifactId, callbacks)
+ * @returns Discriminated union: { artifactId: string } on success, { error: string } on failure
+ */
+export async function uploadArtifact(
+  file: File,
+  opts?: UploadOptions,
+): Promise<{ artifactId: string } | { error: string }> {
+  const validation = validateFile(file);
+  if (!validation.valid) {
+    return { error: validation.error };
+  }
+
+  if (file.size >= CHUNKED_UPLOAD_THRESHOLD) {
+    return await uploadFileChunked(file, opts);
+  }
+  return await uploadFileSimple(file, opts);
+}
+
 /**
  * Uploads a file to the server. Automatically picks single-request or chunked
  * upload based on file size.
+ *
+ * @deprecated Use uploadArtifact instead
  */
 export function uploadFile(
   file: File,
@@ -115,31 +170,32 @@ export function uploadFile(
   abortSignal?: AbortSignal,
   onStatusChange?: (status: UploadStatus) => void,
 ): Promise<{ artifactId: string } | { error: string }> {
-  if (file.size >= CHUNKED_UPLOAD_THRESHOLD) {
-    return uploadFileChunked(file, chatId, onProgress, abortSignal, onStatusChange);
-  }
-  return uploadFileSimple(file, chatId, onProgress, abortSignal);
+  return uploadArtifact(file, { chatId, onProgress, abortSignal, onStatusChange });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simple upload (XHR for progress tracking)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Single-request upload via XHR (for files below CHUNKED_UPLOAD_THRESHOLD).
  */
 function uploadFileSimple(
   file: File,
-  chatId?: string,
-  onProgress?: (loaded: number) => void,
-  abortSignal?: AbortSignal,
+  opts?: UploadOptions,
 ): Promise<{ artifactId: string } | { error: string }> {
   const formData = new FormData();
   formData.set("file", file);
-  if (chatId) formData.set("chatId", chatId);
+  if (opts?.chatId) formData.set("chatId", opts.chatId);
+  if (opts?.workspaceId) formData.set("workspaceId", opts.workspaceId);
+  if (opts?.artifactId) formData.set("artifactId", opts.artifactId);
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
 
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(event.loaded);
+      if (event.lengthComputable && opts?.onProgress) {
+        opts.onProgress(event.loaded);
       }
     };
 
@@ -177,14 +233,18 @@ function uploadFileSimple(
       resolve({ error: "Upload cancelled" });
     };
 
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", () => xhr.abort(), { once: true });
+    if (opts?.abortSignal) {
+      opts.abortSignal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
     xhr.open("POST", `${getAtlasDaemonUrl()}/api/artifacts/upload`);
     xhr.send(formData);
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chunked upload
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Chunked upload with per-chunk retry and resume support.
@@ -193,12 +253,10 @@ function uploadFileSimple(
  */
 async function uploadFileChunked(
   file: File,
-  chatId?: string,
-  onProgress?: (loaded: number) => void,
-  abortSignal?: AbortSignal,
-  onStatusChange?: (status: UploadStatus) => void,
+  opts?: UploadOptions,
 ): Promise<{ artifactId: string } | { error: string }> {
   const baseUrl = getAtlasDaemonUrl();
+  const abortSignal = opts?.abortSignal;
 
   // 1. Init session
   let initRes: Response;
@@ -206,7 +264,13 @@ async function uploadFileChunked(
     initRes = await fetch(`${baseUrl}/api/chunked-upload/init`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileName: file.name, fileSize: file.size, chatId }),
+      body: JSON.stringify({
+        fileName: file.name,
+        fileSize: file.size,
+        chatId: opts?.chatId,
+        workspaceId: opts?.workspaceId,
+        artifactId: opts?.artifactId,
+      }),
       signal: abortSignal,
     });
   } catch {
@@ -252,7 +316,7 @@ async function uploadFileChunked(
         if (res.ok) {
           uploaded = true;
           completedSet.add(i);
-          onProgress?.(Math.min((i + 1) * CHUNK_SIZE, file.size));
+          opts?.onProgress?.(Math.min((i + 1) * CHUNK_SIZE, file.size));
           break;
         }
 
@@ -324,8 +388,8 @@ async function uploadFileChunked(
     }
 
     // Signal "converting" state
-    onProgress?.(file.size);
-    onStatusChange?.("converting");
+    opts?.onProgress?.(file.size);
+    opts?.onStatusChange?.("converting");
 
     const POLL_INTERVAL_MS = 2000;
     const MAX_POLL_ATTEMPTS = 300; // 10 minutes max

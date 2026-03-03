@@ -1,0 +1,25 @@
+{
+  "name": "@atlas/ledger",
+  "version": "0.0.1",
+  "exports": "./src/index.ts",
+  "tasks": {
+    "start": "deno run --env-file --allow-all src/index.ts",
+    "dev": "DEV_MODE=true deno run --watch --allow-all src/index.ts"
+  },
+  "imports": {
+    "@atlas/logger": "../../packages/logger/mod.ts",
+    "@atlas/sentry": "../../packages/sentry/mod.ts",
+    "@atlas/utils": "../../packages/utils/mod.ts",
+    "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",
+    "@sentry/deno": "npm:@sentry/deno@^10.30.0",
+    "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.5",
+    "@pgsql/traverse": "npm:@pgsql/traverse@^17.2.4",
+    "@pgsql/types": "npm:@pgsql/types@^17.6.2",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
+    "hono": "npm:hono@^4.11.1",
+    "pgsql-parser": "npm:pgsql-parser@^17.9.11",
+    "postgres": "npm:postgres@^3.4.7",
+    "zod": "npm:zod@^4.2.1"
+  }
+}

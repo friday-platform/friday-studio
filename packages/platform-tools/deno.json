@@ -1,0 +1,6 @@
+{
+  "name": "@atlas/platform-tools",
+  "version": "0.0.1",
+  "exports": { ".": "./src/mod.ts" },
+  "imports": { "@atlas/ledger": "../../apps/ledger/src/index.ts" }
+}

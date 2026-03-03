@@ -5,6 +5,7 @@ import { dirname, extname, join } from "node:path";
 import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
+  type ArtifactDataInput,
   type ArtifactWithContents,
   CreateArtifactSchema,
   type DatabasePreview,
@@ -91,6 +92,232 @@ const SPECIFIC_BINARY_MIMES = new Set([
   "image/webp",
   "image/gif",
 ]);
+
+type ConvertedFile =
+  | { ok: true; title: string; summary: string; data: ArtifactDataInput; markdown?: string }
+  | { ok: false; error: string };
+
+/**
+ * Convert an uploaded file into artifact data without persisting the artifact.
+ * Mirrors the branching logic of `createArtifactFromFile` but returns the
+ * conversion result so the caller can use it with `ArtifactStorage.update`.
+ */
+async function convertUploadedFile(opts: {
+  filePath: string;
+  fileName: string;
+}): Promise<ConvertedFile> {
+  const { filePath, fileName } = opts;
+
+  const detected = await fileTypeFromFile(filePath);
+  const resolvedMime = await resolveFileType(detected, filePath, fileName);
+
+  // Log mismatch when resolved type differs from extension-implied type
+  const extensionMime = getValidatedMimeType(fileName);
+  if (resolvedMime && extensionMime && resolvedMime !== extensionMime) {
+    logger.warn("File content type differs from extension", {
+      fileName,
+      extension: extname(fileName).toLowerCase(),
+      detectedMime: detected?.mime,
+      resolvedMime,
+    });
+  }
+
+  if (detected && !resolvedMime) {
+    await rm(filePath, { force: true });
+    const detectedLabel = (detected.ext ?? "unknown").toUpperCase();
+    return {
+      ok: false,
+      error: `Detected ${detectedLabel} content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF`,
+    };
+  }
+
+  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
+  const artifactsDir = usingCortex
+    ? join(tmpdir(), "atlas-artifacts")
+    : join(getAtlasHome(), "uploads", "artifacts");
+  await mkdir(artifactsDir, { recursive: true });
+
+  const ext = extname(fileName).toLowerCase();
+  const resolvedExt = resolvedMime ? (MIME_TO_EXTENSION.get(resolvedMime) ?? ext) : ext;
+
+  // CSV -> SQLite
+  if (resolvedMime === "text/csv") {
+    const dbPath = join(artifactsDir, `${crypto.randomUUID()}.db`);
+    try {
+      const tableName = sanitizeTableName(fileName);
+      const { schema } = await convertCsvToSqlite(filePath, dbPath, tableName);
+      return {
+        ok: true,
+        title: fileName,
+        summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
+        data: {
+          type: "database",
+          version: 1,
+          data: { path: dbPath, sourceFileName: fileName, schema },
+        },
+      };
+    } catch (error) {
+      await unlink(dbPath).catch(() => {});
+      logger.error("Failed to convert CSV to SQLite", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false, error: "CSV conversion failed" };
+    } finally {
+      await unlink(filePath).catch(() => {});
+    }
+  }
+
+  // PDF -> markdown
+  if (resolvedMime === "application/pdf") {
+    return convertUploadedBinary({
+      filePath,
+      fileName,
+      artifactsDir,
+      converter: pdfToMarkdown,
+      formatLabel: "PDF",
+      maxSize: MAX_PDF_SIZE,
+      placeholderSummary: (md) => {
+        const pageCount = (md.match(/## Page \d+/g) ?? []).length;
+        return `PDF document, ${pageCount} page${pageCount !== 1 ? "s" : ""}`;
+      },
+    });
+  }
+
+  // DOCX -> markdown
+  if (resolvedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return convertUploadedBinary({
+      filePath,
+      fileName,
+      artifactsDir,
+      converter: docxToMarkdown,
+      formatLabel: "DOCX",
+      maxSize: MAX_OFFICE_SIZE,
+      placeholderSummary: () => "DOCX document",
+    });
+  }
+
+  // PPTX -> markdown
+  if (
+    resolvedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return convertUploadedBinary({
+      filePath,
+      fileName,
+      artifactsDir,
+      converter: pptxToMarkdown,
+      formatLabel: "PPTX",
+      maxSize: MAX_OFFICE_SIZE,
+      placeholderSummary: (md) => {
+        const slideCount = (md.match(/## Slide \d+/g) ?? []).length;
+        return `PPTX presentation, ${slideCount} slide${slideCount !== 1 ? "s" : ""}`;
+      },
+    });
+  }
+
+  // Image files — store as-is
+  if (resolvedMime && isImageMimeType(resolvedMime)) {
+    try {
+      const { size } = await stat(filePath);
+      if (size > MAX_IMAGE_SIZE) {
+        await rm(filePath, { force: true });
+        return { ok: false, error: "Image files must be under 5MB." };
+      }
+
+      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
+      await copyFile(filePath, persistedImagePath);
+      await unlink(filePath).catch(() => {});
+
+      return {
+        ok: true,
+        title: fileName,
+        summary: `Image: ${fileName}`,
+        data: {
+          type: "file",
+          version: 1,
+          data: { path: persistedImagePath, originalName: fileName },
+        },
+      };
+    } catch (error) {
+      await unlink(filePath).catch(() => {});
+      logger.error("Failed to process image file", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false, error: "Upload failed" };
+    }
+  }
+
+  // Other text files — copy as-is
+  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt || ".txt"}`);
+  try {
+    await copyFile(filePath, persistedPath);
+    await unlink(filePath).catch(() => {});
+
+    return {
+      ok: true,
+      title: fileName,
+      summary: `Uploaded file: ${fileName}`,
+      data: { type: "file", version: 1, data: { path: persistedPath, originalName: fileName } },
+    };
+  } catch (error) {
+    await unlink(persistedPath).catch(() => {});
+    await unlink(filePath).catch(() => {});
+    logger.error("Failed to process file", { filename: fileName, error: stringifyError(error) });
+    return { ok: false, error: "Upload failed" };
+  }
+}
+
+/**
+ * Convert a binary document (PDF/DOCX/PPTX) to markdown for `convertUploadedFile`.
+ * Returns the artifact data envelope with the markdown content for LLM summarization.
+ */
+async function convertUploadedBinary(opts: {
+  filePath: string;
+  fileName: string;
+  artifactsDir: string;
+  converter: (buffer: Uint8Array, filename: string) => Promise<string>;
+  formatLabel: string;
+  maxSize: number;
+  placeholderSummary: (markdown: string) => string;
+}): Promise<ConvertedFile> {
+  const { filePath, fileName, artifactsDir, converter, formatLabel, maxSize, placeholderSummary } =
+    opts;
+  const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
+  try {
+    const { size } = await stat(filePath);
+    if (size > maxSize) {
+      await rm(filePath, { force: true });
+      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
+      return { ok: false, error: `${formatLabel} too large (max ${maxSizeMB}MB)` };
+    }
+
+    const buffer = await readFile(filePath);
+    const markdown = await converter(buffer, fileName);
+    await writeFile(mdPath, markdown, "utf-8");
+
+    const summary = placeholderSummary(markdown);
+
+    return {
+      ok: true,
+      title: fileName,
+      summary,
+      data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+      markdown,
+    };
+  } catch (error) {
+    await unlink(mdPath).catch(() => {});
+    const isUserFacing = error instanceof ConverterError && USER_FACING_ERROR_CODES.has(error.code);
+    const message = error instanceof Error ? error.message : "";
+    logger.error(`Failed to convert ${formatLabel} to markdown`, {
+      filename: fileName,
+      error: stringifyError(error),
+    });
+    return { ok: false, error: isUserFacing ? message : `${formatLabel} conversion failed` };
+  } finally {
+    await unlink(filePath).catch(() => {});
+  }
+}
 
 /**
  * Resolve file content type using magic bytes first, extension as fallback.
@@ -223,74 +450,65 @@ async function emitArtifactCreatedEvent(artifactId: string, artifactType: string
 }
 
 /**
- * Shared handler for binary-to-markdown conversion (PDF, DOCX, PPTX).
- * Handles: size check, read, convert, persist, LLM summary, cleanup.
+ * Given a validated file already on disk, create an artifact.
+ * Delegates to `convertUploadedFile` for format detection and conversion,
+ * then persists via `ArtifactStorage.create`.
  */
-async function convertBinaryToMarkdown(opts: {
+export async function createArtifactFromFile(opts: {
   filePath: string;
   fileName: string;
   chatId?: string;
-  artifactsDir: string;
-  usingCortex: boolean;
-  converter: (buffer: Uint8Array, filename: string) => Promise<string>;
-  formatLabel: string;
-  maxSize: number;
-  placeholderSummary: (markdown: string) => string;
+  workspaceId?: string;
 }) {
-  const {
-    filePath,
-    fileName,
+  const { filePath, fileName, chatId, workspaceId } = opts;
+
+  // Legacy format check — reject .doc/.ppt with helpful message
+  const ext = extname(fileName).toLowerCase();
+  const legacyError = LEGACY_FORMAT_ERRORS.get(ext);
+  if (legacyError) {
+    await rm(filePath, { force: true });
+    return { ok: false as const, error: legacyError };
+  }
+
+  const converted = await convertUploadedFile({ filePath, fileName });
+  if (!converted.ok) {
+    return { ok: false as const, error: converted.error };
+  }
+
+  const result = await ArtifactStorage.create({
+    title: converted.title,
+    summary: converted.summary,
+    data: converted.data,
     chatId,
-    artifactsDir,
-    usingCortex,
-    converter,
-    formatLabel,
-    maxSize,
-    placeholderSummary,
-  } = opts;
-  const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
-  try {
-    const { size } = await stat(filePath);
-    if (size > maxSize) {
-      await rm(filePath, { force: true });
-      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
-      return { ok: false as const, error: `${formatLabel} too large (max ${maxSizeMB}MB)` };
+    workspaceId,
+  });
+
+  if (!result.ok) {
+    logger.error("ArtifactStorage.create failed", { filename: fileName, error: result.error });
+    const fileData = converted.data.data;
+    if (typeof fileData === "object" && fileData !== null && "path" in fileData) {
+      await unlink(fileData.path).catch(() => {});
     }
+    return { ok: false as const, error: result.error };
+  }
 
-    const buffer = await readFile(filePath);
-    const markdown = await converter(buffer, fileName);
-    await writeFile(mdPath, markdown, "utf-8");
-
-    const summary = placeholderSummary(markdown);
-
-    const result = await ArtifactStorage.create({
-      title: fileName,
-      summary,
-      data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
-      chatId,
+  // Cortex uploaded the file — local copy is no longer needed
+  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
+  const fileData = converted.data.data;
+  if (usingCortex && typeof fileData === "object" && fileData !== null && "path" in fileData) {
+    await unlink(fileData.path).catch((err) => {
+      logger.debug("Failed to cleanup temp file after Cortex upload", {
+        path: fileData.path,
+        error: stringifyError(err),
+      });
     });
+  }
 
-    if (!result.ok) {
-      logger.error(`ArtifactStorage.create failed for ${formatLabel}`, {
-        filename: fileName,
-        error: result.error,
-      });
-      await unlink(mdPath).catch(() => {});
-      return { ok: false as const, error: result.error };
-    }
+  await emitArtifactCreatedEvent(result.data.id, converted.data.type, chatId);
 
-    if (usingCortex) {
-      await unlink(mdPath).catch((err) => {
-        logger.debug("Failed to cleanup temp markdown file", {
-          path: mdPath,
-          error: stringifyError(err),
-        });
-      });
-    }
-
-    await emitArtifactCreatedEvent(result.data.id, "file", chatId);
-
-    // Fire-and-forget: use small LLM to generate a content-aware summary
+  // Fire-and-forget: LLM summary for converted documents
+  if (converted.markdown) {
+    const { data, markdown } = converted;
     const artifactId = result.data.id;
     const truncated = markdown.slice(0, 2000);
     smallLLM({
@@ -302,49 +520,29 @@ async function convertBinaryToMarkdown(opts: {
       .then(async (llmSummary) => {
         const trimmed = truncateUnicode(llmSummary.trim(), 200);
         if (trimmed) {
-          await ArtifactStorage.update({
-            id: artifactId,
-            summary: trimmed,
-            data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
-          });
+          await ArtifactStorage.update({ id: artifactId, summary: trimmed, data });
         }
       })
       .catch((err) => {
-        logger.debug(`Failed to generate ${formatLabel} summary via LLM`, {
-          error: stringifyError(err),
-        });
+        logger.debug("Failed to generate document summary via LLM", { error: stringifyError(err) });
       });
-
-    return { ok: true as const, artifact: result.data };
-  } catch (error) {
-    await unlink(mdPath).catch(() => {});
-    const isUserFacing = error instanceof ConverterError && USER_FACING_ERROR_CODES.has(error.code);
-    const message = error instanceof Error ? error.message : "";
-    logger.error(`Failed to convert ${formatLabel} to markdown`, {
-      filename: fileName,
-      error: stringifyError(error),
-    });
-    return {
-      ok: false as const,
-      error: isUserFacing ? message : `${formatLabel} conversion failed`,
-    };
-  } finally {
-    await unlink(filePath).catch(() => {});
   }
+
+  return { ok: true as const, artifact: result.data };
 }
 
 /**
- * Given a validated file already on disk, create an artifact.
- * - CSV files are converted to SQLite databases (source CSV is deleted).
- * - Other files become file artifacts (kept at filePath).
- * Handles cleanup on error.
+ * Replace an existing artifact's content with a new file.
+ * Converts the file via `convertUploadedFile`, then creates a new revision
+ * via `ArtifactStorage.update`. The artifact's workspace association
+ * is preserved by the storage layer (update only touches data/title/summary).
  */
-export async function createArtifactFromFile(opts: {
+export async function replaceArtifactFromFile(opts: {
+  artifactId: string;
   filePath: string;
   fileName: string;
-  chatId?: string;
 }) {
-  const { filePath, fileName, chatId } = opts;
+  const { artifactId, filePath, fileName } = opts;
 
   // Legacy format check — reject .doc/.ppt with helpful message
   const ext = extname(fileName).toLowerCase();
@@ -354,232 +552,69 @@ export async function createArtifactFromFile(opts: {
     return { ok: false as const, error: legacyError };
   }
 
-  // Resolve actual content type: magic bytes first, extension fallback for text formats
-  const detected = await fileTypeFromFile(filePath);
-  const resolvedMime = await resolveFileType(detected, filePath, fileName);
-
-  // Log mismatch when resolved type differs from extension-implied type
-  const extensionMime = getValidatedMimeType(fileName);
-  if (resolvedMime && extensionMime && resolvedMime !== extensionMime) {
-    logger.warn("File content type differs from extension", {
-      fileName,
-      extension: ext,
-      detectedMime: detected?.mime,
-      resolvedMime,
-    });
+  const converted = await convertUploadedFile({ filePath, fileName });
+  if (!converted.ok) {
+    return { ok: false as const, error: converted.error };
   }
 
-  // Reject binary files with no supported converter
-  if (detected && !resolvedMime) {
-    await rm(filePath, { force: true });
-    const detectedLabel = (detected.ext ?? "unknown").toUpperCase();
-    return {
-      ok: false as const,
-      error: `Detected ${detectedLabel} content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF`,
-    };
-  }
+  const result = await ArtifactStorage.update({
+    id: artifactId,
+    title: converted.title,
+    summary: converted.summary,
+    data: converted.data,
+  });
 
-  // Cortex adapter uploads to remote storage — local files are transient, use /tmp.
-  // Local adapter keeps files on the PVC as permanent storage.
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const artifactsDir = usingCortex
-    ? join(tmpdir(), "atlas-artifacts")
-    : join(getAtlasHome(), "uploads", "artifacts");
-  await mkdir(artifactsDir, { recursive: true });
-
-  // Derive resolved extension for persisted file paths
-  const resolvedExt = resolvedMime ? (MIME_TO_EXTENSION.get(resolvedMime) ?? ext) : ext;
-
-  if (resolvedMime === "text/csv") {
-    const dbPath = join(artifactsDir, `${crypto.randomUUID()}.db`);
-    try {
-      const tableName = sanitizeTableName(fileName);
-      const { schema } = await convertCsvToSqlite(filePath, dbPath, tableName);
-
-      const result = await ArtifactStorage.create({
-        title: fileName,
-        summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
-        data: {
-          type: "database",
-          version: 1,
-          data: { path: dbPath, sourceFileName: fileName, schema },
-        },
-        chatId,
-      });
-
-      if (!result.ok) {
-        logger.error("ArtifactStorage.create failed for CSV", {
-          filename: fileName,
-          error: result.error,
-        });
-        await unlink(dbPath).catch(() => {});
-        return { ok: false as const, error: result.error };
-      }
-
-      // Cortex uploaded the file — local copy is no longer needed
-      if (usingCortex) {
-        await unlink(dbPath).catch((err) => {
-          logger.debug("Failed to cleanup temp database file", {
-            path: dbPath,
-            error: stringifyError(err),
-          });
-        });
-      }
-
-      await emitArtifactCreatedEvent(result.data.id, "database", chatId);
-      return { ok: true as const, artifact: result.data };
-    } catch (error) {
-      await unlink(dbPath).catch(() => {});
-      logger.error("Failed to convert CSV to SQLite", {
-        filename: fileName,
-        error: stringifyError(error),
-      });
-      return { ok: false as const, error: "CSV conversion failed" };
-    } finally {
-      await unlink(filePath).catch(() => {});
-    }
-  }
-
-  if (resolvedMime === "application/pdf") {
-    return convertBinaryToMarkdown({
-      filePath,
-      fileName,
-      chatId,
-      artifactsDir,
-      usingCortex,
-      converter: pdfToMarkdown,
-      formatLabel: "PDF",
-      maxSize: MAX_PDF_SIZE,
-      placeholderSummary: (md) => {
-        const pageCount = (md.match(/## Page \d+/g) ?? []).length;
-        return `PDF document, ${pageCount} page${pageCount !== 1 ? "s" : ""}`;
-      },
-    });
-  }
-
-  if (resolvedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    return convertBinaryToMarkdown({
-      filePath,
-      fileName,
-      chatId,
-      artifactsDir,
-      usingCortex,
-      converter: docxToMarkdown,
-      formatLabel: "DOCX",
-      maxSize: MAX_OFFICE_SIZE,
-      placeholderSummary: () => "DOCX document",
-    });
-  }
-
-  if (
-    resolvedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  ) {
-    return convertBinaryToMarkdown({
-      filePath,
-      fileName,
-      chatId,
-      artifactsDir,
-      usingCortex,
-      converter: pptxToMarkdown,
-      formatLabel: "PPTX",
-      maxSize: MAX_OFFICE_SIZE,
-      placeholderSummary: (md) => {
-        const slideCount = (md.match(/## Slide \d+/g) ?? []).length;
-        return `PPTX presentation, ${slideCount} slide${slideCount !== 1 ? "s" : ""}`;
-      },
-    });
-  }
-
-  // Image files — store as-is, no conversion, no LLM summarization
-  if (resolvedMime && isImageMimeType(resolvedMime)) {
-    try {
-      const { size } = await stat(filePath);
-      if (size > MAX_IMAGE_SIZE) {
-        await rm(filePath, { force: true });
-        return { ok: false as const, error: "Image files must be under 5MB." };
-      }
-
-      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
-      await copyFile(filePath, persistedImagePath);
-
-      const result = await ArtifactStorage.create({
-        title: fileName,
-        summary: `Image: ${fileName}`,
-        data: {
-          type: "file",
-          version: 1,
-          data: { path: persistedImagePath, originalName: fileName },
-        },
-        chatId,
-      });
-
-      if (!result.ok) {
-        await unlink(persistedImagePath).catch(() => {});
-        await unlink(filePath).catch(() => {});
-        return { ok: false as const, error: result.error };
-      }
-
-      await unlink(filePath).catch(() => {});
-      if (usingCortex) {
-        await unlink(persistedImagePath).catch((err) => {
-          logger.debug("Failed to cleanup temp image file", {
-            path: persistedImagePath,
-            error: stringifyError(err),
-          });
-        });
-      }
-
-      await emitArtifactCreatedEvent(result.data.id, "file", chatId);
-      return { ok: true as const, artifact: result.data };
-    } catch (error) {
-      await unlink(filePath).catch(() => {});
-      logger.error("Failed to create image artifact", {
-        filename: fileName,
-        error: stringifyError(error),
-      });
-      return { ok: false as const, error: "Upload failed" };
-    }
-  }
-
-  // Non-CSV file artifact — copy to staging dir (persistent for local, /tmp for Cortex)
-  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt || ".txt"}`);
-  try {
-    await copyFile(filePath, persistedPath);
-
-    const result = await ArtifactStorage.create({
-      title: fileName,
-      summary: `Uploaded file: ${fileName}`,
-      data: { type: "file", version: 1, data: { path: persistedPath, originalName: fileName } },
-      chatId,
-    });
-
-    if (!result.ok) {
-      await unlink(persistedPath).catch(() => {});
-      await unlink(filePath).catch(() => {});
-      return { ok: false as const, error: result.error };
-    }
-
-    await unlink(filePath).catch(() => {});
-    if (usingCortex) {
-      await unlink(persistedPath).catch((err) => {
-        logger.debug("Failed to cleanup temp artifact file", {
-          path: persistedPath,
-          error: stringifyError(err),
-        });
-      });
-    }
-
-    await emitArtifactCreatedEvent(result.data.id, "file", chatId);
-    return { ok: true as const, artifact: result.data };
-  } catch (error) {
-    await unlink(persistedPath).catch(() => {});
-    await unlink(filePath).catch(() => {});
-    logger.error("Failed to create file artifact", {
+  if (!result.ok) {
+    logger.error("ArtifactStorage.update failed for replace", {
+      artifactId,
       filename: fileName,
-      error: stringifyError(error),
+      error: result.error,
     });
-    return { ok: false as const, error: "Upload failed" };
+    const replaceData = converted.data.data;
+    if (typeof replaceData === "object" && replaceData !== null && "path" in replaceData) {
+      await unlink(replaceData.path).catch(() => {});
+    }
+    return { ok: false as const, error: result.error };
   }
+
+  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
+  const replaceCleanupData = converted.data.data;
+  if (
+    usingCortex &&
+    typeof replaceCleanupData === "object" &&
+    replaceCleanupData !== null &&
+    "path" in replaceCleanupData
+  ) {
+    await unlink(replaceCleanupData.path).catch((err) => {
+      logger.debug("Failed to cleanup temp file after Cortex upload", {
+        path: replaceCleanupData.path,
+        error: stringifyError(err),
+      });
+    });
+  }
+
+  // Fire-and-forget: LLM summary for converted documents
+  if (converted.markdown) {
+    const { data, markdown } = converted;
+    const truncated = markdown.slice(0, 2000);
+    smallLLM({
+      system:
+        "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
+      prompt: truncated,
+      maxOutputTokens: 60,
+    })
+      .then(async (llmSummary) => {
+        const trimmed = truncateUnicode(llmSummary.trim(), 200);
+        if (trimmed) {
+          await ArtifactStorage.update({ id: artifactId, summary: trimmed, data });
+        }
+      })
+      .catch((err) => {
+        logger.debug("Failed to generate document summary via LLM", { error: stringifyError(err) });
+      });
+  }
+
+  return { ok: true as const, artifact: result.data };
 }
 
 const GetArtifactQuery = z.object({ revision: z.coerce.number().int().positive().optional() });
@@ -947,10 +982,18 @@ const artifactsApp = daemonFactory
     }
 
     const chatId = formData.get("chatId")?.toString() || undefined;
+    const workspaceId = formData.get("workspaceId")?.toString() || undefined;
+    const artifactId = formData.get("artifactId")?.toString() || undefined;
 
-    // Path traversal defense - chatId is used in storage path
+    // Path traversal defense - these values are used in storage lookups
     if (chatId && isInvalidChatId(chatId)) {
       return c.json({ error: "Invalid chatId" }, 400);
+    }
+    if (artifactId && isInvalidChatId(artifactId)) {
+      return c.json({ error: "Invalid artifactId" }, 400);
+    }
+    if (workspaceId && isInvalidChatId(workspaceId)) {
+      return c.json({ error: "Invalid workspaceId" }, 400);
     }
 
     // Legacy format check — reject .doc/.ppt with helpful message
@@ -1005,7 +1048,20 @@ const artifactsApp = daemonFactory
       return c.json({ error: "Upload failed" }, 500);
     }
 
-    const result = await createArtifactFromFile({ filePath, fileName: file.name, chatId });
+    if (artifactId) {
+      const result = await replaceArtifactFromFile({ artifactId, filePath, fileName: file.name });
+      if (!result.ok) {
+        return c.json({ error: result.error }, 500);
+      }
+      return c.json({ artifact: result.artifact }, 201);
+    }
+
+    const result = await createArtifactFromFile({
+      filePath,
+      fileName: file.name,
+      chatId,
+      workspaceId,
+    });
     if (!result.ok) {
       return c.json({ error: result.error }, 500);
     }

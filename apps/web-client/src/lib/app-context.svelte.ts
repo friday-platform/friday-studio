@@ -1,6 +1,6 @@
 import type { UserIdentity } from "@atlas/atlasd";
 import { resolve } from "$app/paths";
-import { uploadFile, validateFile } from "$lib/utils/upload";
+import { uploadArtifact, validateFile } from "$lib/utils/upload";
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 
@@ -165,7 +165,6 @@ export function getAppContext() {
  */
 export function handleFileDrop(appCtx: AppContext, files: File[], chatId?: string): void {
   for (const file of files) {
-    // Client-side validation first
     const validation = validateFile(file);
     if (!validation.valid) {
       appCtx.stagedFiles.add({
@@ -178,10 +177,7 @@ export function handleFileDrop(appCtx: AppContext, files: File[], chatId?: strin
       continue;
     }
 
-    // Create abort controller for this upload
     const abortController = new AbortController();
-
-    // Add as uploading
     const tempId = appCtx.stagedFiles.add({
       name: file.name,
       size: file.size,
@@ -190,17 +186,16 @@ export function handleFileDrop(appCtx: AppContext, files: File[], chatId?: strin
       abortController,
     });
 
-    // Progress callback updates loaded bytes
-    const onProgress = (loaded: number) => {
-      appCtx.stagedFiles.update(tempId, { loaded });
-    };
-
-    const onStatusChange = (status: StagedFile["status"]) => {
-      appCtx.stagedFiles.update(tempId, { status });
-    };
-
-    // Upload immediately (fire and forget - all uploads run in parallel)
-    uploadFile(file, chatId, onProgress, abortController.signal, onStatusChange).then((result) => {
+    uploadArtifact(file, {
+      chatId,
+      onProgress: (loaded) => {
+        appCtx.stagedFiles.update(tempId, { loaded });
+      },
+      onStatusChange: (status) => {
+        appCtx.stagedFiles.update(tempId, { status });
+      },
+      abortSignal: abortController.signal,
+    }).then((result) => {
       if ("artifactId" in result) {
         appCtx.stagedFiles.update(tempId, { artifactId: result.artifactId, status: "ready" });
       } else if (result.error !== "Upload cancelled") {

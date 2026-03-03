@@ -7,8 +7,17 @@
  * 3. If neither exists, returns context only
  */
 
-import { describe, expect, it } from "vitest";
-import { buildFinalAgentPrompt, extractAgentConfigPrompt } from "./agent-helpers.ts";
+import type { ResourceMetadata, ResourceStorageAdapter } from "@atlas/ledger";
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildAgentPrompt,
+  buildFinalAgentPrompt,
+  extractAgentConfigPrompt,
+} from "./agent-helpers.ts";
+
+vi.mock("@atlas/fsm-engine", () => ({
+  expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
+}));
 
 describe("extractAgentConfigPrompt", () => {
   it("returns empty string for undefined config", () => {
@@ -212,6 +221,188 @@ describe("buildFinalAgentPrompt", () => {
       expect(result).toContain("## Context Facts");
       expect(result).toContain("## Available Documents");
       expect(result).toContain("task-plan");
+    });
+  });
+});
+
+/** Create a mock ResourceStorageAdapter with listResources pre-configured */
+function createMockAdapter(resources: ResourceMetadata[]): ResourceStorageAdapter {
+  return {
+    init: vi.fn<() => Promise<void>>(),
+    destroy: vi.fn<() => Promise<void>>(),
+    provision: vi.fn(),
+    query: vi.fn(),
+    mutate: vi.fn(),
+    publish: vi.fn(),
+    replaceVersion: vi.fn(),
+    listResources: vi.fn<() => Promise<ResourceMetadata[]>>().mockResolvedValue(resources),
+    getResource: vi.fn().mockResolvedValue(null),
+    deleteResource: vi.fn<() => Promise<void>>(),
+    linkRef: vi.fn(),
+    resetDraft: vi.fn<() => Promise<void>>(),
+    publishAllDirty: vi.fn<(workspaceId: string) => Promise<number>>().mockResolvedValue(0),
+    getSkill: vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValue("# Resource Data Access (SQLite)\n\nMock skill text"),
+  };
+}
+
+describe("buildAgentPrompt", () => {
+  const minimalContext = { documents: [], state: "idle", results: {} };
+  const minimalSignal = { type: "test" };
+
+  describe("resources section", () => {
+    const meta = { id: "res-1", userId: "local", workspaceId: "ws-123", currentVersion: 1 };
+
+    it("renders workspace resources section with documents", async () => {
+      const adapter = createMockAdapter([
+        {
+          ...meta,
+          slug: "grocery_list",
+          type: "document",
+          name: "Grocery List",
+          description: "Tracks items to purchase with quantities and units",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          ...meta,
+          slug: "recipes",
+          type: "document",
+          name: "Recipes",
+          description: "Collection of saved recipes",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+
+      const result = await buildAgentPrompt(
+        "agent-1",
+        minimalContext,
+        minimalSignal,
+        undefined,
+        adapter,
+        "ws-123",
+      );
+
+      expect(result).toContain("## Workspace Resources");
+      expect(result).toContain("resource_read for queries");
+      expect(result).toContain("resource_write for mutations");
+      expect(result).toContain("Documents (use resource_read for queries");
+      expect(result).toContain(
+        "- grocery_list: Tracks items to purchase with quantities and units",
+      );
+      expect(result).toContain("- recipes: Collection of saved recipes");
+      expect(result).toContain("# Resource Data Access (SQLite)");
+    });
+
+    it("renders document resources", async () => {
+      const adapter = createMockAdapter([
+        {
+          ...meta,
+          slug: "meal_plans",
+          type: "document",
+          name: "Meal Plans",
+          description: "Imported meal schedule from uploaded CSV",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+
+      const result = await buildAgentPrompt(
+        "agent-1",
+        minimalContext,
+        minimalSignal,
+        undefined,
+        adapter,
+        "ws-123",
+      );
+
+      expect(result).toContain("- meal_plans: Imported meal schedule from uploaded CSV");
+    });
+
+    it("skips non-document resource types in guidance", async () => {
+      const adapter = createMockAdapter([
+        {
+          ...meta,
+          slug: "contacts",
+          type: "external_ref",
+          name: "Contacts",
+          description: "Access via google-sheets MCP tools",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+
+      const result = await buildAgentPrompt(
+        "agent-1",
+        minimalContext,
+        minimalSignal,
+        undefined,
+        adapter,
+        "ws-123",
+      );
+
+      // Non-document types are filtered out — ResourceMetadata lacks provider/ref fields
+      expect(result).not.toContain("## Workspace Resources");
+    });
+
+    it("does not render resources section when adapter is undefined", async () => {
+      const result = await buildAgentPrompt("agent-1", minimalContext, minimalSignal);
+
+      expect(result).not.toContain("## Workspace Resources");
+    });
+
+    it("does not render resources section when no resources exist", async () => {
+      const adapter = createMockAdapter([]);
+
+      const result = await buildAgentPrompt(
+        "agent-1",
+        minimalContext,
+        minimalSignal,
+        undefined,
+        adapter,
+        "ws-123",
+      );
+
+      expect(result).not.toContain("## Workspace Resources");
+    });
+
+    it("renders only document resources from mixed types", async () => {
+      const adapter = createMockAdapter([
+        {
+          ...meta,
+          slug: "grocery_list",
+          type: "document",
+          name: "Grocery List",
+          description: "Items to buy",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          ...meta,
+          slug: "contacts",
+          type: "external_ref",
+          name: "Contacts",
+          description: "Google Sheets contacts",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+
+      const result = await buildAgentPrompt(
+        "agent-1",
+        minimalContext,
+        minimalSignal,
+        undefined,
+        adapter,
+        "ws-123",
+      );
+
+      expect(result).toContain("Documents (use resource_read for queries");
+      expect(result).toContain("- grocery_list: Items to buy");
+      // External refs are filtered — ResourceMetadata lacks provider/ref
+      expect(result).not.toContain("External Resources:");
     });
   });
 });

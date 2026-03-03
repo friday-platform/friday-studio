@@ -15,8 +15,10 @@ import {
   wrapAtlasAgent,
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
+import { createLedgerClient } from "@atlas/resources/ledger-client";
 import { flush as flushSentry } from "@atlas/sentry";
 import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -49,6 +51,7 @@ import { configRoutes } from "../routes/config.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
+import { ledgerRoutes } from "../routes/ledger.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
@@ -113,6 +116,7 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  private resourceStorage: ResourceStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
@@ -178,6 +182,7 @@ export class AtlasDaemon {
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getLibraryStorage: this.getLibraryStorage.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
+      getLedgerAdapter: this.getLedgerAdapter.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
@@ -252,6 +257,13 @@ export class AtlasDaemon {
     // Initialize Global MCP Server Pool
     logger.info("Initializing Global MCP Server Pool...");
     this.mcpServerPool = new GlobalMCPServerPool(logger);
+
+    // Initialize Ledger client for versioned resource storage (auto-publish, resource tools)
+    try {
+      this.resourceStorage = createLedgerClient();
+    } catch {
+      logger.warn("Ledger client not initialized (LEDGER_URL not set)");
+    }
 
     // Initialize agent registry with bundled agents
     logger.info("Initializing agent registry...");
@@ -574,6 +586,16 @@ export class AtlasDaemon {
   }
 
   /**
+   * Get Ledger resource storage adapter
+   */
+  public getLedgerAdapter(): ResourceStorageAdapter {
+    if (!this.resourceStorage) {
+      throw new Error("Ledger adapter not initialized (LEDGER_URL not set)");
+    }
+    return this.resourceStorage;
+  }
+
+  /**
    * Get shared agent registry instance
    */
   public getAgentRegistry(): AgentRegistryType {
@@ -634,6 +656,7 @@ export class AtlasDaemon {
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
+    this.app.route("/api/ledger", ledgerRoutes);
     this.app.route("/api/link", linkRoutes);
     this.app.route("/api/mcp-registry", mcpRegistryRouter);
     this.app.route("/api/me", meRoutes);
@@ -1003,6 +1026,7 @@ export class AtlasDaemon {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
           mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
+          resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),

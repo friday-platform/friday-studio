@@ -1,4 +1,5 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
@@ -13,6 +14,11 @@ vi.mock("@atlas/client/v2", () => ({
     return result;
   },
 }));
+
+vi.mock("@atlas/skills", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@atlas/skills")>();
+  return { ...actual, SkillStorage: { list: () => Promise.resolve({ ok: true, data: [] }) } };
+});
 
 /** Convert simple mock data into the AgentResult envelope the engine expects. */
 function mockLLMEnvelope(
@@ -457,5 +463,176 @@ describe("LLM prompt: input-only from prepare result", () => {
 
     expect(prompt).not.toContain("Input:\n");
     expect(prompt).not.toContain("Available Documents:");
+  });
+});
+
+describe("LLM prompt: workspace resource context", () => {
+  /** Creates a ResourceStorageAdapter with all methods stubbed. */
+  function createMockResourceAdapter(
+    overrides: Partial<ResourceStorageAdapter> = {},
+  ): ResourceStorageAdapter {
+    return {
+      init: vi.fn(),
+      destroy: vi.fn(),
+      provision: vi.fn(),
+      query: vi.fn(),
+      mutate: vi.fn(),
+      publish: vi.fn<ResourceStorageAdapter["publish"]>().mockResolvedValue({ version: null }),
+      replaceVersion: vi.fn(),
+      listResources: vi.fn<ResourceStorageAdapter["listResources"]>().mockResolvedValue([]),
+      getResource: vi.fn<ResourceStorageAdapter["getResource"]>().mockResolvedValue(null),
+      deleteResource: vi.fn(),
+      linkRef: vi.fn(),
+      resetDraft: vi.fn(),
+      publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue(0),
+      getSkill: vi.fn<ResourceStorageAdapter["getSkill"]>().mockResolvedValue(""),
+      ...overrides,
+    };
+  }
+
+  it("includes resource tables in prompt when resourceAdapter is provided", async () => {
+    const fsm: FSMDefinition = {
+      id: "llm-resource-ctx-test",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  prompt: "Update the application status",
+                  model: "test-model",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test-ws", sessionId: "test-session" };
+    const capturedPrompts: string[] = [];
+
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        capturedPrompts.push(params.prompt);
+        return Promise.resolve(mockLLMEnvelope(params.agentId, params.prompt));
+      },
+    };
+
+    const mockResourceAdapter = createMockResourceAdapter({
+      listResources: vi.fn<ResourceStorageAdapter["listResources"]>().mockResolvedValue([
+        {
+          slug: "job_postings",
+          type: "document",
+          name: "Job Postings",
+          description: "Job applications",
+          id: "r1",
+          userId: "u1",
+          workspaceId: "test-ws",
+          currentVersion: 1,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        },
+        {
+          slug: "contacts",
+          type: "document",
+          name: "Contacts",
+          description: "Contact list",
+          id: "r2",
+          userId: "u1",
+          workspaceId: "test-ws",
+          currentVersion: 1,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        },
+      ]),
+      getSkill: vi
+        .fn<ResourceStorageAdapter["getSkill"]>()
+        .mockResolvedValue("# Resource Data Access (SQLite)\n\nMock skill text"),
+    });
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      resourceAdapter: mockResourceAdapter,
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" }, { sessionId: "test-session", workspaceId: "test-ws" });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0];
+    if (!prompt) throw new Error("Expected captured prompt");
+
+    expect(prompt).toContain("## Workspace Resources");
+    expect(prompt).toContain("resource_read for queries");
+    expect(prompt).toContain("resource_write for mutations");
+    expect(prompt).toContain("- job_postings: Job applications");
+    expect(prompt).toContain("- contacts: Contact list");
+    expect(prompt).toContain("# Resource Data Access (SQLite)");
+    expect(mockResourceAdapter.getSkill).toHaveBeenCalledOnce();
+  });
+
+  it("omits resource section when no resources exist", async () => {
+    const fsm: FSMDefinition = {
+      id: "llm-no-resources-test",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  prompt: "Do a thing",
+                  model: "test-model",
+                  outputTo: "result",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test-ws", sessionId: "test-session" };
+    const capturedPrompts: string[] = [];
+
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        capturedPrompts.push(params.prompt);
+        return Promise.resolve(mockLLMEnvelope(params.agentId, params.prompt));
+      },
+    };
+
+    const mockResourceAdapter = createMockResourceAdapter();
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      resourceAdapter: mockResourceAdapter,
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" }, { sessionId: "test-session", workspaceId: "test-ws" });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0];
+    if (!prompt) throw new Error("Expected captured prompt");
+
+    expect(prompt).not.toContain("## Workspace Resources");
   });
 });

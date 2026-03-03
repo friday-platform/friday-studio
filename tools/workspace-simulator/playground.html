@@ -1081,10 +1081,49 @@
   .schema-field-required { color: var(--color-red); font-weight: 700; }
   .schema-type-string { color: var(--color-green); }
   .schema-type-number { color: var(--color-orange); }
+  .schema-type-integer { color: var(--color-orange); }
   .schema-type-boolean { color: var(--color-yellow); }
   .schema-type-array { color: var(--color-purple); }
   .schema-type-object { color: var(--color-blue); }
   .schema-type-unknown { color: var(--color-text-dim); }
+
+  /* ------------------------------------------------------------------ */
+  /* Resource badges                                                     */
+  /* ------------------------------------------------------------------ */
+  .badge-table {
+    background: color-mix(in srgb, var(--color-green) 8%, var(--color-surface-1));
+    color: var(--color-green);
+  }
+  .badge-external {
+    background: color-mix(in srgb, var(--color-purple) 8%, var(--color-surface-1));
+    color: var(--color-purple);
+  }
+
+  .resource-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-top: var(--size-2);
+  }
+
+  .resource-table th {
+    text-align: left;
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-5);
+    font-size: var(--font-size-1);
+  }
+
+  .resource-table td {
+    padding: var(--size-2) var(--size-3);
+    border-bottom: var(--size-px) solid var(--color-border-1);
+    color: var(--color-text);
+  }
+
+  .resource-table tr:hover td {
+    background: var(--color-highlight-1);
+  }
 
   /* ------------------------------------------------------------------ */
   /* DAG step description                                                */
@@ -1143,6 +1182,11 @@
     <details id="phase3-panel">
       <summary>Phase 3: Contracts & Mappings</summary>
       <div class="phase-content" id="phase3-content"></div>
+    </details>
+
+    <details id="resources-panel">
+      <summary>Resources</summary>
+      <div class="phase-content" id="resources-content"></div>
     </details>
 
     <details id="workspace-yml-panel">
@@ -1283,6 +1327,7 @@ async function loadRun(slug) {
   if (artifacts['phase3.json']) {
     renderPhase2(artifacts['phase3.json']);
     renderPhase3(artifacts['phase3.json']);
+    renderResources(artifacts['phase3.json']);
   }
   if (artifacts['workspace.yml']) {
     renderWorkspaceYml(artifacts['workspace.yml']);
@@ -1385,6 +1430,7 @@ function handleSSEEvent(type, data) {
       if (data.name === 'phase3.json') {
         renderPhase2(data.data);
         renderPhase3(data.data);
+        renderResources(data.data);
         // phase3.json contains signals + agents — render phase1 from it
         renderWorkspaceOverview();
         renderPhase1(data.data);
@@ -1443,6 +1489,7 @@ function clearAll() {
   $('#phase1-content').innerHTML = '';
   $('#phase2-content').innerHTML = '';
   $('#phase3-content').innerHTML = '';
+  $('#resources-content').innerHTML = '';
   $('#workspace-yml-content').innerHTML = '';
   $('#fsm-svg-container').innerHTML = '';
   $('#actions-list').innerHTML = '';
@@ -1454,6 +1501,7 @@ function clearAll() {
   $('#phase1-panel').removeAttribute('open');
   $('#phase2-panel').removeAttribute('open');
   $('#phase3-panel').removeAttribute('open');
+  $('#resources-panel').removeAttribute('open');
   $('#workspace-yml-panel').removeAttribute('open');
 }
 
@@ -1801,6 +1849,74 @@ function renderPhase3(plan) {
 
   el.innerHTML = html;
   $('#phase3-panel').open = true;
+}
+
+// ---------------------------------------------------------------------------
+// Resources
+// ---------------------------------------------------------------------------
+
+function renderResources(plan) {
+  const el = $('#resources-content');
+  const resources = plan.resources || [];
+
+  if (resources.length === 0) {
+    el.innerHTML = '<div class="card-desc" style="padding:var(--size-2)">No resources declared</div>';
+    return;
+  }
+
+  const tableResources = resources.filter(r => 'schema' in r);
+  const externalRefs = resources.filter(r => 'provider' in r && !('schema' in r));
+
+  let html = '';
+
+  if (tableResources.length > 0) {
+    html += '<div class="section-label">Table Resources</div>';
+    html += '<table class="resource-table"><thead><tr>';
+    html += '<th>Slug</th><th>Name</th><th>Description</th><th>Columns</th>';
+    html += '</tr></thead><tbody>';
+    for (const r of tableResources) {
+      html += '<tr>';
+      html += `<td style="color:var(--accent);font-family:var(--font-mono)">${esc(r.slug)}</td>`;
+      html += `<td>${esc(r.name)}</td>`;
+      html += `<td class="card-desc">${esc(r.description || '')}</td>`;
+      html += `<td>${renderResourceColumns(r.schema)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+
+  if (externalRefs.length > 0) {
+    html += '<div class="section-label" style="margin-top:16px">External References</div>';
+    html += '<table class="resource-table"><thead><tr>';
+    html += '<th>Slug</th><th>Name</th><th>Provider</th><th>Ref</th>';
+    html += '</tr></thead><tbody>';
+    for (const r of externalRefs) {
+      html += '<tr>';
+      html += `<td style="color:var(--accent);font-family:var(--font-mono)">${esc(r.slug)}</td>`;
+      html += `<td>${esc(r.name)}</td>`;
+      html += `<td><span class="badge badge-external">${esc(r.provider)}</span></td>`;
+      html += `<td class="card-desc">${esc(r.ref || 'unregistered')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderResourceColumns(schema) {
+  if (!schema?.properties) return '<span class="card-desc">-</span>';
+  const required = new Set(schema.required || []);
+  const parts = [];
+  for (const [name, prop] of Object.entries(schema.properties)) {
+    const isReq = required.has(name);
+    const type = prop.type || 'unknown';
+    const typeClass = `schema-type-${type}`;
+    parts.push(
+      `<span class="schema-field"><span class="schema-field-name">${esc(name)}</span>${isReq ? '<span class="schema-field-required">*</span>' : ''}:<span class="${typeClass}">${esc(type)}</span></span>`
+    );
+  }
+  return parts.join(', ');
 }
 
 // ---------------------------------------------------------------------------

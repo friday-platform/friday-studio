@@ -30,18 +30,12 @@ export function withUserContext<T>(
   userId: string,
   fn: (tx: Sql) => T | Promise<T>,
 ): Promise<T> {
-  // Use sql.begin which handles transactions automatically
-  // The generic type must match what the callback returns
   return sql.begin(async (tx) => {
-    // Set role to authenticated for RLS policy enforcement
-    // Using LOCAL scope ensures it only applies to this transaction
-    await tx`SET LOCAL ROLE authenticated`;
-
-    // Set session variable for RLS policy
-    // Must come AFTER SET LOCAL ROLE
+    // Order matters: set_config first (as connection owner), then drop to
+    // authenticated. After role change, set_config is no longer callable
+    // (EXECUTE revoked from PUBLIC in ledger migration).
     await tx`SELECT set_config('request.user_id', ${userId}, true)`;
-
-    // Execute user function with transaction client
+    await tx`SET LOCAL ROLE authenticated`;
     return fn(tx);
   }) as Promise<T>;
 }

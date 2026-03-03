@@ -141,6 +141,8 @@ try {
   console.log(`\n  Workspace: ${plan.workspace.name}`);
   console.log(`  Signals:   ${plan.signals.map((s) => s.id).join(", ")}`);
   console.log(`  Agents:    ${plan.agents.map((a) => a.id).join(", ")}`);
+  const resourceSlugs = (plan.resources ?? []).map((r) => r.slug);
+  console.log(`  Resources: ${resourceSlugs.length > 0 ? resourceSlugs.join(", ") : "none"}`);
   console.log(`  Jobs:      ${plan.jobs.length}`);
   for (const job of plan.jobs) {
     console.log(
@@ -377,6 +379,8 @@ function writeSummary(
   lines.push(`Purpose: ${plan.workspace.purpose}`);
   lines.push(`Signals: ${plan.signals.length}`);
   lines.push(`Agents: ${plan.agents.length}`);
+  const resSlugs = (plan.resources ?? []).map((r) => r.slug);
+  lines.push(`Resources: ${resSlugs.length > 0 ? resSlugs.join(", ") : "none"}`);
   lines.push(`Jobs: ${plan.jobs.length}`);
   lines.push("");
 

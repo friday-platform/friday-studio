@@ -85,6 +85,7 @@ const PLAN_RESULT = {
     },
     { id: "reporter", name: "Reporter", description: "Reports findings", capabilities: [] },
   ],
+  resources: [],
   dynamicServers: [],
 };
 
@@ -99,6 +100,7 @@ const TASK_PLAN_RESULT = {
       capabilities: ["data-analysis"],
     },
   ],
+  resources: [],
   dynamicServers: [],
 };
 
@@ -195,6 +197,52 @@ describe("buildBlueprint", () => {
       expect(result.credentials.bindings).toStrictEqual([]);
       expect(result.credentials.unresolved).toStrictEqual([]);
       expect(result.readiness.ready).toBe(true);
+    });
+  });
+
+  describe("resources", () => {
+    it("passes declared resources through to the blueprint", async () => {
+      const planWithResources = {
+        ...PLAN_RESULT,
+        resources: [
+          {
+            type: "document",
+            slug: "grocery_list",
+            name: "Grocery List",
+            description: "Items to buy",
+            schema: {
+              type: "object",
+              properties: { item: { type: "string" }, quantity: { type: "integer" } },
+              required: ["item"],
+            },
+          },
+        ],
+      };
+      mockGeneratePlan.mockResolvedValue(planWithResources);
+      mockClassifyAgents.mockResolvedValue(CLASSIFY_RESULT);
+      mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
+      mockGenerateDAGSteps.mockResolvedValue(JOBS);
+      mockEnrichAgentsWithPipelineContext.mockResolvedValue({
+        agents: PLAN_RESULT.agents,
+        entries: [],
+      });
+      mockGenerateOutputSchemas.mockResolvedValue(SCHEMA_MAP);
+      mockGeneratePrepareMappings.mockResolvedValue(MAPPINGS);
+
+      const result = await buildBlueprint("Build a meal planner", baseOpts());
+
+      expect(result.blueprint.resources).toHaveLength(1);
+      expect(result.blueprint.resources?.[0]).toEqual(
+        expect.objectContaining({ slug: "grocery_list", name: "Grocery List" }),
+      );
+    });
+
+    it("omits resources from blueprint when plan declares none", async () => {
+      setupSuccessfulPipeline();
+
+      const result = await buildBlueprint("Send me alerts", baseOpts());
+
+      expect(result.blueprint.resources).toBeUndefined();
     });
   });
 
@@ -487,6 +535,7 @@ describe("buildBlueprint", () => {
         workspace: { name: "Test", purpose: "Test" },
         signals: PLAN_RESULT.signals,
         agents: bundledAgents,
+        resources: [],
         dynamicServers: [],
       });
       mockClassifyAgents.mockResolvedValue({

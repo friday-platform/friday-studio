@@ -554,6 +554,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         workspaceId: input.workspaceId,
         chatId: input.chatId,
         createdAt: metadata.created_at,
+        ...(input.source ? { source: input.source } : {}),
       };
 
       return success(artifact);

@@ -179,6 +179,7 @@ function createTestApp() {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getLedgerAdapter: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],

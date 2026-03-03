@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
@@ -27,6 +27,7 @@ import { stringify } from "@std/yaml";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { getCurrentUser } from "../me/adapter.ts";
+import { resourceRoutes } from "./resources.ts";
 import {
   addWorkspaceBatchSchema,
   addWorkspaceSchema,
@@ -1030,7 +1031,7 @@ const workspacesRoutes = daemonFactory
           }
 
           try {
-            await Deno.rename(workspacePath, targetPath);
+            await rename(workspacePath, targetPath);
             logger.info("Moved workspace to unregistered", {
               workspaceId,
               oldPath: workspacePath,
@@ -1054,6 +1055,9 @@ const workspacesRoutes = daemonFactory
       }
     },
   );
+
+// Mount resource sub-router (separate from the chain to avoid TS2589 deep instantiation)
+workspacesRoutes.route("/:workspaceId/resources", resourceRoutes);
 
 export { workspacesRoutes };
 export type WorkspaceRoutes = typeof workspacesRoutes;

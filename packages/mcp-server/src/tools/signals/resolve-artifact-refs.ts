@@ -1,13 +1,15 @@
 /**
  * Resolve and validate artifact references in signal payloads.
  *
- * Signal schemas can declare `format: "artifact-ref"` on string fields
- * (or `items: { format: "artifact-ref" }` on array fields) to indicate
- * that the value should be an artifact ID from the current chat.
- *
- * This function validates LLM-provided IDs against actual chat artifacts
- * and auto-fills omitted fields when unambiguous.
+ * @deprecated The `format: "artifact-ref"` pipeline is deprecated. Signals are
+ * now pure triggers — the data-analyst discovers data through the resource
+ * catalog. These functions are retained as no-ops for backwards compatibility
+ * with existing workspace YAMLs.
  */
+
+import { createLogger } from "@atlas/logger";
+
+const logger = createLogger({ component: "resolve-artifact-refs" });
 
 type ArtifactRefResult =
   | { success: true; payload: Record<string, unknown> }
@@ -47,112 +49,23 @@ export function hasArtifactRefFields(schema: Record<string, unknown>): boolean {
 }
 
 /**
- * Resolve artifact-ref fields in a signal payload against chat artifacts.
+ * @deprecated Passes payload through unchanged. The artifact-ref resolution
+ * pipeline is deprecated — signals are pure triggers, and data discovery
+ * happens through the resource catalog.
  *
- * Only walks top-level `properties` in the schema. Nested object properties
- * are intentionally not resolved (pass through as-is).
+ * Logs a deprecation warning when artifact-ref fields are encountered.
  */
 export function resolveArtifactRefs(
   schema: Record<string, unknown>,
   payload: Record<string, unknown>,
-  artifacts: Array<{ id: string; [key: string]: unknown }>,
+  _artifacts: Array<{ id: string; [key: string]: unknown }>,
 ): ArtifactRefResult {
-  const properties = schema.properties as Record<string, SchemaProperty> | undefined;
-  if (!properties) {
-    return { success: true, payload };
+  if (hasArtifactRefFields(schema)) {
+    logger.warn(
+      "resolveArtifactRefs is deprecated — artifact-ref fields are no longer resolved. " +
+        "Signals should be pure triggers. Data discovery uses the resource catalog.",
+    );
   }
 
-  const resolved = { ...payload };
-  const artifactIds = artifacts.map((a) => a.id);
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((r): r is string => typeof r === "string")
-    : [];
-
-  for (const [field, prop] of Object.entries(properties)) {
-    const isSingleRef = prop.format === "artifact-ref";
-    const isArrayRef =
-      prop.type === "array" &&
-      typeof prop.items === "object" &&
-      prop.items !== null &&
-      prop.items.format === "artifact-ref";
-
-    if (!isSingleRef && !isArrayRef) continue;
-
-    const value = resolved[field];
-
-    if (isSingleRef) {
-      if (value !== undefined && value !== null) {
-        // LLM provided a value -- validate it
-        if (typeof value !== "string") {
-          return { success: false, error: `Field '${field}' must be a string artifact ID` };
-        }
-        const cleaned = stripArtifactIdPrefix(value);
-        if (!artifactIds.includes(cleaned)) {
-          return {
-            success: false,
-            error: `Field '${field}': artifact ID '${value}' not found in chat. Valid artifact IDs: ${artifactIds.join(", ") || "(none)"}`,
-          };
-        }
-        // Replace with cleaned ID (strips any hallucinated prefix)
-        resolved[field] = cleaned;
-      } else if (required.includes(field)) {
-        // LLM omitted a required field -- auto-fill
-        if (artifacts.length === 0) {
-          return {
-            success: false,
-            error: `Field '${field}' requires an artifact reference, but no artifacts are attached to this chat`,
-          };
-        }
-        if (artifacts.length > 1) {
-          return {
-            success: false,
-            error: `Field '${field}' requires a single artifact reference, but ${artifacts.length} artifacts are attached. Specify one of: ${artifactIds.join(", ")}`,
-          };
-        }
-        const [artifact] = artifacts;
-        if (artifact) resolved[field] = artifact.id;
-      }
-      // Optional field omitted -- leave it alone
-    }
-
-    if (isArrayRef) {
-      if (value !== undefined && value !== null) {
-        // LLM provided a value -- validate each element
-        if (!Array.isArray(value)) {
-          return { success: false, error: `Field '${field}' must be an array of artifact IDs` };
-        }
-        const cleanedItems: string[] = [];
-        for (const item of value) {
-          if (typeof item !== "string") {
-            return {
-              success: false,
-              error: `Field '${field}': expected string artifact ID, got ${typeof item}`,
-            };
-          }
-          const cleaned = stripArtifactIdPrefix(item);
-          if (!artifactIds.includes(cleaned)) {
-            return {
-              success: false,
-              error: `Field '${field}': artifact ID '${item}' not found in chat. Valid artifact IDs: ${artifactIds.join(", ") || "(none)"}`,
-            };
-          }
-          cleanedItems.push(cleaned);
-        }
-        // Replace with cleaned IDs (strips any hallucinated prefixes)
-        resolved[field] = cleanedItems;
-      } else if (required.includes(field)) {
-        // LLM omitted a required array field -- auto-fill with all artifacts
-        if (artifacts.length === 0) {
-          return {
-            success: false,
-            error: `Field '${field}' requires artifact references, but no artifacts are attached to this chat`,
-          };
-        }
-        resolved[field] = artifactIds;
-      }
-      // Optional array field omitted -- leave it alone
-    }
-  }
-
-  return { success: true, payload: resolved };
+  return { success: true, payload };
 }

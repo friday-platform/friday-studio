@@ -1,0 +1,24 @@
+{
+  "name": "@atlas/ledger",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Resource storage service for Atlas",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "deno run --env-file --allow-all src/index.ts",
+    "dev": "DEV_MODE=true deno run --env-file --watch --allow-all src/index.ts"
+  },
+  "dependencies": {
+    "@pgsql/traverse": "^17.2.4",
+    "@pgsql/types": "^17.6.2",
+    "@atlas/logger": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
+    "@hono/zod-validator": "0.7.6",
+    "hono": "4.12.3",
+    "pgsql-parser": "^17.9.11",
+    "postgres": "3.4.7",
+    "zod": "4.3.6"
+  },
+  "devDependencies": { "vitest": "^4.0.18" }
+}

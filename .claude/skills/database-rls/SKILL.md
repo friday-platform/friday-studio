@@ -1,9 +1,11 @@
 ---
 name: database-rls
 description: >
-  Row-Level Security patterns, checklists, and anti-patterns for user-scoped
-  database tables. Load when touching migrations, SQL, repository/adapter files,
-  or any code that queries user-scoped tables. Prevents privilege escalation.
+  Covers Row-Level Security patterns, checklists, and anti-patterns for
+  user-scoped database tables. Activates when touching migrations, SQL,
+  repository/adapter files, or any code that queries user-scoped tables.
+  Prevents privilege escalation via withUserContext enforcement and RESTRICTIVE
+  policy baselines.
 user-invocable: false
 ---
 
@@ -12,6 +14,9 @@ user-invocable: false
 Load this skill when writing or reviewing code that touches database tables with
 user-scoped data — migrations, `*-repository.ts`, `*-adapter.ts`,
 `*-storage*.ts`, or Go service files with SQL.
+
+For schema design (tables, constraints, indexes, JSONB, soft delete) see the
+`database-schema` skill.
 
 ## Contents
 

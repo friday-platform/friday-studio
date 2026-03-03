@@ -24,8 +24,8 @@ const rows = await sql<CredentialRow[]>`
 **How it works** (`src/adapters/rls.ts`):
 
 1. Starts a transaction
-2. Sets `SET LOCAL ROLE authenticated` (activates RLS policies)
-3. Sets `request.user_id` via `set_config(..., true)` (transaction-local scope)
+2. Sets `request.user_id` via `set_config(..., true)` (as connection owner)
+3. Sets `SET LOCAL ROLE authenticated` (activates RLS policies, drops privileges)
 4. RLS policies filter rows by `current_setting('request.user_id', true)`
 
 Transaction-local scope prevents the session variable from leaking to other

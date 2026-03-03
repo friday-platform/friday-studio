@@ -368,6 +368,23 @@ updates:
       - dependency-name: "denoland/deno"
         versions: ["2.6.8"]
 
+  # Keep Docker dependencies up to date (for ledger service)
+  - package-ecosystem: "docker"
+    directory: "/apps/ledger"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
   # Keep Docker dependencies up to date (for signal-gateway)
   - package-ecosystem: "docker"
     directory: "/apps/signal-gateway"

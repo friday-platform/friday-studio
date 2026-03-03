@@ -1,21 +1,23 @@
 <script lang="ts">
-  import type { CredentialBinding } from "@atlas/core/artifacts";
+  import type { ResourceDeclaration } from "@atlas/schemas/workspace";
   import Button from "$lib/components/button.svelte";
-  import GlobeIcon from "$lib/components/icons/globe.svelte";
-  import Anthropic from "$lib/components/icons/integrations/anthropic.svelte";
-  import AtlassianIcon from "$lib/components/icons/integrations/atlassian.svelte";
-  import GithubIcon from "$lib/components/icons/integrations/github.svelte";
-  import LinearIcon from "$lib/components/icons/integrations/linear.svelte";
-  import NotionIcon from "$lib/components/icons/integrations/notion.svelte";
-  import PosthogIcon from "$lib/components/icons/integrations/posthog.svelte";
-  import SentryIcon from "$lib/components/icons/integrations/sentry.svelte";
-  import SlackIcon from "$lib/components/icons/integrations/slack-color.svelte";
+  import { Collapsible } from "$lib/components/collapsible";
+  import CaretRight from "$lib/components/icons/small/caret-right.svelte";
+  import ExternalLinkIcon from "$lib/components/icons/small/external-link.svelte";
+  import FileIcon from "$lib/components/icons/small/file.svelte";
+  import Tooltip from "$lib/components/tooltip.svelte";
+  import { getProviderIcon } from "$lib/utils/provider-detection";
+  import { transformResourcesForDisplay } from "./workspace-plan-resources.svelte.ts";
+
+  /** Narrowed credential type — only fields the plan card UI reads. */
+  type PlanCredential = { provider: string; label?: string; credentialId: string };
 
   /** Common shape that both v1 WorkspacePlan and v2 WorkspaceBlueprint satisfy. */
   type PlanCardData = {
     workspace: { name: string; purpose: string; details?: Array<{ label: string; value: string }> };
     signals: Array<{ id: string; name: string; signalType: string; displayLabel?: string }>;
-    credentials?: CredentialBinding[];
+    credentials?: PlanCredential[];
+    resources?: ResourceDeclaration[];
   };
 
   type Props = {
@@ -26,32 +28,12 @@
   };
   let { workspacePlan, hideControls = false, onApprove, onTest }: Props = $props();
 
-  // Map signal types to display labels
   const signalTypeLabels: Record<string, string> = { schedule: "Schedule", http: "Webhook" };
 
-  // Map provider names to icon components
-  const providerIcons: Record<string, typeof GithubIcon> = {
-    anthropic: Anthropic,
-    github: GithubIcon,
-    slack: SlackIcon,
-    notion: NotionIcon,
-    linear: LinearIcon,
-    atlassian: AtlassianIcon,
-    jira: AtlassianIcon,
-    sentry: SentryIcon,
-    posthog: PosthogIcon,
-  };
-
-  function getProviderIcon(provider: string) {
-    const normalized = provider.toLowerCase();
-    return providerIcons[normalized] ?? GlobeIcon;
-  }
-
-  // Get unique credentials by provider + label combination for display
   const uniqueCredentials = $derived.by(() => {
     const credentials = workspacePlan.credentials ?? [];
     const seen = new Set<string>();
-    const result: CredentialBinding[] = [];
+    const result: PlanCredential[] = [];
 
     for (const cred of credentials) {
       const key = `${cred.provider}:${cred.label ?? ""}`;
@@ -62,6 +44,12 @@
     }
 
     return result;
+  });
+
+  const resourceDisplay = $derived.by(() => {
+    const resources = workspacePlan.resources;
+    if (!resources || resources.length === 0) return null;
+    return transformResourcesForDisplay(resources);
   });
 </script>
 
@@ -91,6 +79,112 @@
             <dd>{detail.value}</dd>
           {/each}
         </dl>
+      </section>
+    {/if}
+
+    {#if resourceDisplay}
+      <section class="resources">
+        <h3>Resources</h3>
+
+        <ul>
+          {#each resourceDisplay.items as item (item.name)}
+            {#if item.kind === "structured"}
+              <li class="resource-card">
+                <Collapsible.Root>
+                  <Collapsible.Trigger size="grow">
+                    {#snippet children(open)}
+                      <div class="card-row">
+                        <div class="card-info">
+                          <span class="resource-name">{item.name}</span>
+                          <span class="resource-description" class:truncate={!open}>
+                            {item.description}
+                          </span>
+                        </div>
+                        <span class="caret" class:open>
+                          <CaretRight />
+                        </span>
+                      </div>
+                    {/snippet}
+                  </Collapsible.Trigger>
+                  <Collapsible.Content animate>
+                    <ul class="field-list">
+                      {#each item.columns as col (col.name)}
+                        <li>
+                          <span class="field-name">{col.name}</span>
+                          {#if col.description}
+                            <span class="field-desc">{col.description}</span>
+                          {/if}
+                        </li>
+                      {/each}
+                      {#if item.nested}
+                        {#each item.nested as nested (nested.name)}
+                          <li class="nested-group">
+                            {nested.name}
+                            <ul>
+                              {#each nested.columns as col (col.name)}
+                                <li>
+                                  <span class="field-name">{col.name}</span>
+                                  {#if col.description}
+                                    <span class="field-desc">{col.description}</span>
+                                  {/if}
+                                </li>
+                              {/each}
+                            </ul>
+                          </li>
+                        {/each}
+                      {/if}
+                    </ul>
+                  </Collapsible.Content>
+                </Collapsible.Root>
+              </li>
+            {:else if item.kind === "document"}
+              <li class="resource-card">
+                <div class="card-row">
+                  <FileIcon />
+                  <div class="card-info">
+                    <span class="resource-name">{item.name}</span>
+                    <span class="resource-description">{item.description}</span>
+                  </div>
+                </div>
+              </li>
+            {:else if item.kind === "external"}
+              {@const IconComponent = getProviderIcon(item.provider)}
+              {#if item.ref}
+                <li class="resource-card clickable">
+                  <a href={item.ref} target="_blank" rel="noopener noreferrer" class="card-link">
+                    <div class="card-row">
+                      <IconComponent />
+                      <span class="resource-name">{item.name}</span>
+                      <span class="external-link">
+                        <ExternalLinkIcon />
+                      </span>
+                    </div>
+                    <span class="resource-description truncate external-desc">
+                      {item.description}
+                    </span>
+                  </a>
+                </li>
+              {:else}
+                <li class="resource-card">
+                  <div class="card-row">
+                    <IconComponent />
+                    <span class="resource-name">{item.name}</span>
+                    <Tooltip as="span" label="An agent will create this when the job first runs">
+                      <span class="status-badge">Pending</span>
+                    </Tooltip>
+                  </div>
+                  <span class="resource-description truncate external-desc">
+                    {item.description}
+                  </span>
+                </li>
+              {/if}
+            {/if}
+          {/each}
+        </ul>
+
+        {#if resourceDisplay.overflow > 0}
+          <p class="overflow-label">+ {resourceDisplay.overflow} more resources</p>
+        {/if}
       </section>
     {/if}
 
@@ -206,6 +300,172 @@
     dt {
       line-height: var(--font-lineheight-1);
       opacity: 0.6;
+    }
+  }
+
+  .resources {
+    ul {
+      align-items: start;
+      display: grid;
+      gap: var(--size-2);
+      grid-template-columns: repeat(2, minmax(0, var(--size-72)));
+      padding-block-start: var(--size-2);
+    }
+
+    .resource-card {
+      border: var(--size-px) solid var(--color-border-1);
+      border-radius: var(--radius-2-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--size-0-5);
+      padding: var(--size-3);
+    }
+
+    .card-row {
+      align-items: flex-start;
+      display: flex;
+      gap: var(--size-2);
+      text-align: start;
+
+      > :global(svg) {
+        block-size: var(--size-4);
+        flex: none;
+        inline-size: var(--size-4);
+        margin-block-start: var(--size-0-5);
+      }
+    }
+
+    .card-info {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: var(--size-0-5);
+      min-inline-size: 0;
+    }
+
+    .resource-name {
+      font-size: var(--font-size-2);
+      font-weight: var(--font-weight-5);
+    }
+
+    .card-row > .resource-name {
+      flex: 1;
+    }
+
+    .card-link {
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: var(--size-0-5);
+      text-decoration: none;
+    }
+
+    .clickable {
+      cursor: pointer;
+    }
+
+    .external-link {
+      align-items: center;
+      color: currentcolor;
+      display: flex;
+      flex: none;
+      margin-block-start: var(--size-0-5);
+      opacity: 0.4;
+      transition: opacity 150ms ease;
+
+      :global(svg) {
+        block-size: var(--size-3-5);
+        inline-size: var(--size-3-5);
+      }
+
+      &:hover {
+        opacity: 0.8;
+      }
+    }
+
+    .status-badge {
+      border: var(--size-px) solid var(--color-border-1);
+      border-radius: var(--radius-2);
+      color: var(--text-3);
+      flex: none;
+      font-size: var(--font-size-1);
+      opacity: 0.6;
+      padding: 0 var(--size-1);
+      white-space: nowrap;
+    }
+
+    .resource-description {
+      font-size: var(--font-size-2);
+      opacity: 0.6;
+
+      &.truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      &.external-desc {
+        padding-inline-start: calc(var(--size-4) + var(--size-2));
+      }
+    }
+
+    .caret {
+      align-items: center;
+      display: flex;
+      flex: none;
+      margin-block-start: var(--size-0-5);
+      transition: transform 150ms ease;
+
+      :global(svg) {
+        block-size: var(--size-4);
+        inline-size: var(--size-4);
+        opacity: 0.4;
+      }
+
+      &.open {
+        transform: rotate(90deg);
+      }
+    }
+
+    .field-list {
+      border-block-start: var(--size-px) solid var(--color-border-1);
+      display: flex;
+      flex-direction: column;
+      gap: var(--size-2);
+      margin-block-start: var(--size-3);
+      padding-block-start: var(--size-3);
+
+      li {
+        display: flex;
+        flex-direction: column;
+        font-size: var(--font-size-2);
+        padding-inline-start: var(--size-1);
+      }
+
+      .field-name {
+        font-weight: var(--font-weight-5);
+        opacity: 0.8;
+      }
+
+      .field-desc {
+        opacity: 0.5;
+      }
+    }
+
+    .nested-group {
+      font-weight: var(--font-weight-5);
+
+      ul {
+        gap: var(--size-1);
+        padding-block-start: var(--size-1);
+        padding-inline-start: var(--size-3);
+      }
+    }
+
+    .overflow-label {
+      font-size: var(--font-size-2);
+      opacity: 0.6;
+      padding-block-start: var(--size-2);
     }
   }
 

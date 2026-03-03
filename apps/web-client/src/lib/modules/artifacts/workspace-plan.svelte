@@ -20,7 +20,12 @@
     if (parsed.type !== "workspace-plan") return undefined;
     if (parsed.version === 1) return parsed.data;
     // v2 WorkspaceBlueprint — map to the common plan card shape
-    return { workspace: parsed.data.workspace, signals: parsed.data.signals };
+    return {
+      workspace: parsed.data.workspace,
+      signals: parsed.data.signals,
+      credentials: parsed.data.credentialBindings,
+      resources: parsed.data.resources,
+    };
   }
 
   let planData = $state<Parameters<typeof WorkspacePlanDetails>[1]["workspacePlan"]>();
