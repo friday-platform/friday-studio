@@ -20,7 +20,7 @@
     "@atlas/analytics": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
-    "@sentry/sveltekit": "^10.40.0",
+    "@sentry/sveltekit": "^10.41.0",
     "@sveltejs/kit": "^2.53.4",
     "nanoid": "^5.1.6",
     "svelte": "^5.53.6",
