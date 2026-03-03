@@ -38,7 +38,7 @@
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.63": "0.2.63_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.4",
     "npm:@deno/kv@0.13": "0.13.0",
-    "npm:@electric-sql/pglite@~0.2.17": "0.2.17",
+    "npm:@electric-sql/pglite@~0.3.15": "0.3.15",
     "npm:@eslint/compat@^2.0.1": "2.0.2_eslint@10.0.2",
     "npm:@eslint/compat@^2.0.2": "2.0.2_eslint@10.0.2",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.0.2",
@@ -619,8 +619,8 @@
         "@deno/kv-win32-x64-msvc"
       ]
     },
-    "@electric-sql/pglite@0.2.17": {
-      "integrity": "sha512-qEpKRT2oUaWDH6tjRxLHjdzMqRUGYDnGZlKrnL4dJ77JVMcP2Hpo3NYnOSPKdZdeec57B6QPprCUFg0picx5Pw=="
+    "@electric-sql/pglite@0.3.15": {
+      "integrity": "sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ=="
     },
     "@emnapi/core@1.8.1": {
       "integrity": "sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==",
@@ -6809,7 +6809,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^2.0.1",
-            "npm:@electric-sql/pglite@~0.2.17",
+            "npm:@electric-sql/pglite@~0.3.15",
             "npm:@faker-js/faker@^10.3.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",
