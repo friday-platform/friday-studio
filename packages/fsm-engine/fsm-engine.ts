@@ -676,12 +676,7 @@ export class FSMEngine {
       await this.persistDocuments();
       await this.persistExecutionState();
 
-      // 6. Auto-publish dirty resource drafts after FSM step completion
-      if (this.options.resourceAdapter && sig._context?.workspaceId) {
-        await publishDirtyDrafts(this.options.resourceAdapter, sig._context.workspaceId);
-      }
-
-      // 7. Emit state transition event if callback provided and state changed
+      // 6. Emit state transition event if callback provided and state changed
       if (sig._context?.onEvent && previousState !== pendingState) {
         sig._context.onEvent({
           type: "data-fsm-state-transition",
@@ -1229,6 +1224,14 @@ export class FSMEngine {
             });
           } finally {
             cleanupSkills?.();
+
+            // Publish dirty drafts after LLM actions that have resource tools.
+            // Agent actions are covered by runtime.ts:executeAgent(), but LLM
+            // actions execute entirely within the FSM engine and need their own
+            // publish hook to avoid orphaning drafts until session teardown.
+            if (workspaceId && this.options.resourceAdapter) {
+              await publishDirtyDrafts(this.options.resourceAdapter, workspaceId);
+            }
           }
           break;
         }
