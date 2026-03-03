@@ -26,6 +26,8 @@ export class SessionEventStream {
   private readonly adapter: SessionHistoryAdapter;
   private readonly events: SessionStreamEvent[] = [];
   private readonly subscribers = new Set<StreamController>();
+  private pendingWriteCount = 0;
+  private flushResolvers: Array<() => void> = [];
   private active = true;
 
   constructor(sessionId: string, adapter: SessionHistoryAdapter) {
@@ -40,13 +42,22 @@ export class SessionEventStream {
   emit(event: SessionStreamEvent): void {
     this.events.push(event);
     this.broadcast(event);
-    this.adapter.appendEvent(this.sessionId, event).catch((err) => {
-      logger.warn("Failed to persist session event", {
-        sessionId: this.sessionId,
-        eventType: event.type,
-        error: String(err),
+    this.pendingWriteCount++;
+    this.adapter
+      .appendEvent(this.sessionId, event)
+      .catch((err) => {
+        logger.warn("Failed to persist session event", {
+          sessionId: this.sessionId,
+          eventType: event.type,
+          error: String(err),
+        });
+      })
+      .finally(() => {
+        this.pendingWriteCount--;
+        if (this.pendingWriteCount === 0) {
+          for (const resolve of this.flushResolvers.splice(0)) resolve();
+        }
       });
-    });
   }
 
   /**
@@ -89,12 +100,19 @@ export class SessionEventStream {
     this.subscribers.delete(controller);
   }
 
+  /** Await all pending fire-and-forget writes from emit(). */
+  flush(): Promise<void> {
+    if (this.pendingWriteCount === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => this.flushResolvers.push(resolve));
+  }
+
   /**
    * Finalize the session: persist all events + summary, close all subscribers.
    */
   async finalize(summary: SessionSummary): Promise<void> {
     this.active = false;
 
+    await this.flush();
     await this.adapter.save(this.sessionId, [...this.events], summary);
 
     for (const controller of this.subscribers) {

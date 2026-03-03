@@ -1,4 +1,4 @@
-import type { SessionHistoryAdapter } from "@atlas/core";
+import type { SessionHistoryAdapter, SessionStreamEvent } from "@atlas/core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 
@@ -27,8 +27,8 @@ beforeEach(() => {
   registry.start();
 });
 
-afterEach(() => {
-  registry.shutdown();
+afterEach(async () => {
+  await registry.shutdown();
   vi.useRealTimers();
 });
 
@@ -113,29 +113,50 @@ describe("TTL cleanup", () => {
     });
 
     // Advance past finalized TTL (5 min + 1 min cleanup interval)
-    vi.advanceTimersByTime(6 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
 
     expect(registry.get("sess-1")).toBeUndefined();
   });
 
-  test("does NOT evict active streams before 30 minutes", () => {
+  test("does NOT evict active streams before 30 minutes", async () => {
     const adapter = mockAdapter();
     registry.create("sess-1", adapter);
 
     // Advance 10 minutes
-    vi.advanceTimersByTime(10 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
 
     expect(registry.get("sess-1")).toBeDefined();
   });
 
-  test("evicts stale active streams after 30 minutes", () => {
+  test("evicts stale active streams after 30 minutes", async () => {
     const adapter = mockAdapter();
     registry.create("sess-1", adapter);
 
     // Advance past stale TTL (31 minutes)
-    vi.advanceTimersByTime(31 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
 
     expect(registry.get("sess-1")).toBeUndefined();
+  });
+
+  test("flushes pending writes before evicting stale streams", async () => {
+    const adapter = mockAdapter();
+    const stream = registry.create("sess-1", adapter);
+
+    const event: SessionStreamEvent = {
+      type: "session:start",
+      sessionId: "sess-1",
+      workspaceId: "ws-1",
+      jobName: "job",
+      task: "task",
+      timestamp: "2026-01-01T00:00:00Z",
+    };
+    stream.emit(event);
+
+    // Advance past stale TTL — cleanup should flush before deleting
+    await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
+
+    expect(registry.get("sess-1")).toBeUndefined();
+    expect(adapter.appendEvent).toHaveBeenCalledOnce();
   });
 });
 
@@ -144,14 +165,56 @@ describe("TTL cleanup", () => {
 // ---------------------------------------------------------------------------
 
 describe("shutdown", () => {
-  test("clears all streams", () => {
+  test("clears all streams", async () => {
     const adapter = mockAdapter();
     registry.create("sess-1", adapter);
     registry.create("sess-2", adapter);
 
-    registry.shutdown();
+    await registry.shutdown();
 
     expect(registry.get("sess-1")).toBeUndefined();
     expect(registry.get("sess-2")).toBeUndefined();
+  });
+
+  test("awaits pending writes before clearing streams", async () => {
+    vi.useRealTimers(); // need real async for deferred promises
+
+    const callOrder: string[] = [];
+    let resolveWrite!: () => void;
+    const adapter = mockAdapter();
+    adapter.appendEvent = vi.fn<SessionHistoryAdapter["appendEvent"]>().mockImplementation(() => {
+      return new Promise<void>((r) => {
+        resolveWrite = () => {
+          callOrder.push("write-resolved");
+          r();
+        };
+      });
+    });
+
+    const event: SessionStreamEvent = {
+      type: "session:start",
+      sessionId: "sess-1",
+      workspaceId: "ws-1",
+      jobName: "job",
+      task: "task",
+      timestamp: "2026-01-01T00:00:00Z",
+    };
+
+    const stream = registry.create("sess-1", adapter);
+    stream.emit(event);
+
+    expect(adapter.appendEvent).toHaveBeenCalledOnce();
+
+    const shutdownDone = registry.shutdown().then(() => callOrder.push("shutdown-done"));
+
+    // shutdown should be blocked — write hasn't resolved yet
+    await Promise.resolve();
+    expect(callOrder).toHaveLength(0);
+
+    resolveWrite();
+    await shutdownDone;
+
+    expect(callOrder).toEqual(["write-resolved", "shutdown-done"]);
+    expect(registry.get("sess-1")).toBeUndefined();
   });
 });

@@ -40,12 +40,13 @@ export class SessionStreamRegistry {
     logger.info("SessionStreamRegistry started");
   }
 
-  /** Shutdown: clear all streams, stop cleanup. */
-  shutdown(): void {
+  /** Shutdown: flush pending writes, clear all streams, stop cleanup. */
+  async shutdown(): Promise<void> {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
+    await Promise.allSettled([...this.streams.values()].map((entry) => entry.stream.flush()));
     this.streams.clear();
     logger.info("SessionStreamRegistry shutdown");
   }
@@ -78,27 +79,34 @@ export class SessionStreamRegistry {
   }
 
   /** Remove finalized streams after TTL, stale active streams after longer TTL. */
-  private cleanup(): void {
+  private async cleanup(): Promise<void> {
     const now = Date.now();
-    let removed = 0;
+    const toEvict: string[] = [];
 
     for (const [sessionId, entry] of this.streams) {
       const age = now - entry.lastActivityAt;
 
       if (!entry.stream.isActive() && age > FINALIZED_TTL_MS) {
-        this.streams.delete(sessionId);
-        removed++;
+        toEvict.push(sessionId);
         continue;
       }
 
       if (entry.stream.isActive() && age > STALE_TTL_MS) {
-        this.streams.delete(sessionId);
-        removed++;
+        toEvict.push(sessionId);
       }
     }
 
-    if (removed > 0) {
-      logger.debug("SessionStreamRegistry cleanup", { removed, remaining: this.streams.size });
+    if (toEvict.length > 0) {
+      await Promise.allSettled(
+        toEvict.map((id) => this.streams.get(id)?.stream.flush() ?? Promise.resolve()),
+      );
+      for (const id of toEvict) {
+        this.streams.delete(id);
+      }
+      logger.debug("SessionStreamRegistry cleanup", {
+        removed: toEvict.length,
+        remaining: this.streams.size,
+      });
     }
   }
 }

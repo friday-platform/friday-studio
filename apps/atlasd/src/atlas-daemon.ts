@@ -1539,11 +1539,11 @@ export class AtlasDaemon {
     );
     await Promise.all(shutdownPromises);
 
-    // Shutdown StreamRegistry
+    // Shutdown StreamRegistry (sync — in-memory only, no pending I/O)
     this.streamRegistry?.shutdown();
 
     // Shutdown SessionStreamRegistry
-    this.sessionStreamRegistry?.shutdown();
+    await this.sessionStreamRegistry?.shutdown();
 
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {

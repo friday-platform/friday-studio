@@ -188,7 +188,7 @@ describe("Session History v2 Routes", () => {
   });
 
   afterEach(async () => {
-    registry.shutdown();
+    await registry.shutdown();
     await rm(testDir, { recursive: true, force: true });
   });
 

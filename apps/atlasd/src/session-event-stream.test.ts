@@ -318,6 +318,107 @@ describe("finalize", () => {
 });
 
 // ---------------------------------------------------------------------------
+// flush
+// ---------------------------------------------------------------------------
+
+describe("flush", () => {
+  test("awaits all pending appendEvent writes", async () => {
+    const callOrder: string[] = [];
+    let resolveWrite!: () => void;
+    const adapter = mockAdapter();
+    adapter.appendEvent = vi.fn<SessionHistoryAdapter["appendEvent"]>().mockImplementation(() => {
+      return new Promise<void>((r) => {
+        resolveWrite = () => {
+          callOrder.push("write-resolved");
+          r();
+        };
+      });
+    });
+
+    const stream = new SessionEventStream("sess-1", adapter);
+    stream.emit(sessionStart());
+
+    const flushDone = stream.flush().then(() => callOrder.push("flush-done"));
+
+    // flush should be blocked on the pending write
+    await Promise.resolve(); // tick microtasks
+    expect(callOrder).toHaveLength(0);
+
+    resolveWrite();
+    await flushDone;
+
+    expect(callOrder).toEqual(["write-resolved", "flush-done"]);
+  });
+
+  test("tolerates rejected appendEvent writes", async () => {
+    const adapter = mockAdapter();
+    adapter.appendEvent = vi
+      .fn<SessionHistoryAdapter["appendEvent"]>()
+      .mockRejectedValue(new Error("disk full"));
+
+    const stream = new SessionEventStream("sess-1", adapter);
+    stream.emit(sessionStart());
+
+    // flush should resolve even though the write rejected
+    await expect(stream.flush()).resolves.toBeUndefined();
+  });
+
+  test("clears pendingWrites after draining", async () => {
+    const adapter = mockAdapter();
+    const stream = new SessionEventStream("sess-1", adapter);
+    stream.emit(sessionStart());
+    stream.emit(stepStart());
+
+    await stream.flush();
+
+    // Second flush is a no-op (nothing pending)
+    await stream.flush();
+
+    // appendEvent was only called for the two original emits
+    expect(adapter.appendEvent).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// finalize flush ordering
+// ---------------------------------------------------------------------------
+
+describe("finalize flush ordering", () => {
+  test("awaits pending writes before calling save", async () => {
+    const callOrder: string[] = [];
+    let resolveWrite!: () => void;
+    const adapter = mockAdapter();
+
+    adapter.appendEvent = vi.fn<SessionHistoryAdapter["appendEvent"]>().mockImplementation(() => {
+      return new Promise<void>((r) => {
+        resolveWrite = () => {
+          callOrder.push("appendEvent-resolved");
+          r();
+        };
+      });
+    });
+    adapter.save = vi.fn<SessionHistoryAdapter["save"]>().mockImplementation(() => {
+      callOrder.push("save-called");
+      return Promise.resolve();
+    });
+
+    const stream = new SessionEventStream("sess-1", adapter);
+    stream.emit(sessionStart());
+
+    const finalizeDone = stream.finalize(summary());
+
+    // save should NOT have been called yet (write still pending)
+    expect(callOrder).not.toContain("save-called");
+
+    resolveWrite();
+    await finalizeDone;
+
+    // appendEvent resolves first, then save
+    expect(callOrder).toEqual(["appendEvent-resolved", "save-called"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isActive / getBufferedEvents
 // ---------------------------------------------------------------------------
 
