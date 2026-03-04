@@ -145,7 +145,8 @@
     "npm:openapi-typescript@^7.13.0": "7.13.0_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:parallel-web@0.3.1": "0.3.1",
-    "npm:pgsql-parser@^17.9.11": "17.9.11",
+    "npm:pgsql-parser@^17.9.11": "17.9.12",
+    "npm:pgsql-parser@^17.9.12": "17.9.12",
     "npm:postgres@3.4.7": "3.4.7",
     "npm:postgres@^3.4.7": "3.4.7",
     "npm:prettier-plugin-svelte@^3.4.1": "3.5.0_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0",
@@ -1867,6 +1868,9 @@
       "integrity": "sha512-NxErbI1TmJEZZVvGPePjgXFZCuOzrjQuJ6YwHjcWkelReK7Uhg4QeL05zRdfTpgkH6IY/C8OjbKx5ZilQ4yDFg==",
       "os": ["win32"],
       "cpu": ["x64"]
+    },
+    "@pgsql/quotes@17.1.0": {
+      "integrity": "sha512-J/H+LcrENBpYgL45WW6aTjb5Yk4tX4+AmB2/k8KZa+Zh3wiCtqmNIag+HZz5HmWaF6EZK9ZGC95NBD1fs+rUvg=="
     },
     "@pgsql/traverse@17.2.4": {
       "integrity": "sha512-7dnst2U3qXXSFbS+HvVktW/C4aVKe/niaRxZ1cfhmdy9E7SMYM0OukFO7gvoZb6I3dnKm/eTfpv23JPKq5z6DA==",
@@ -4993,14 +4997,15 @@
         "postgres-interval"
       ]
     },
-    "pgsql-deparser@17.17.2": {
-      "integrity": "sha512-FCjqKY3Sdmce3VUd3CxCXF0kqaZ0s4a6yIMT5UJ9vETh0cF54A8Tpqjn0qBKaPUD8xqTKeLdS+SfiwjAC64wrA==",
+    "pgsql-deparser@17.18.0": {
+      "integrity": "sha512-LFjdKKYHVo8lUPbOVfO6dRm5L28hBrfqnBrX3DhiC97k6Hsbi+7LXzvL30gahLUbN5dLai9MvsJ8Gbg/7joD1Q==",
       "dependencies": [
+        "@pgsql/quotes",
         "@pgsql/types"
       ]
     },
-    "pgsql-parser@17.9.11": {
-      "integrity": "sha512-Bqp9uLvJK0Qht9PXzI6eC/Fn+lFRL+2eMvXss4D4qt7lxPLIHS8FMKYOHUQNTI3m6ylExSOdNXhx/DL5UGm3xg==",
+    "pgsql-parser@17.9.12": {
+      "integrity": "sha512-dsC9DuTSjrYQCsZq74WZwP7obWv58Z1x/PmZZWNE0L+DnM2wAsWSZAyLQVU0U1IvD3y+7fZDVIx9bibLx0sEpQ==",
       "dependencies": [
         "@pgsql/types",
         "libpg-query",
@@ -6403,7 +6408,7 @@
             "npm:@pgsql/traverse@^17.2.4",
             "npm:@pgsql/types@^17.6.2",
             "npm:hono@4.12.3",
-            "npm:pgsql-parser@^17.9.11",
+            "npm:pgsql-parser@^17.9.12",
             "npm:postgres@3.4.7",
             "npm:vitest@^4.0.18",
             "npm:zod@4.3.6"
