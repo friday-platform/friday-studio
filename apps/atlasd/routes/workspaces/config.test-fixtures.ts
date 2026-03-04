@@ -131,13 +131,18 @@ export async function assert404WorkspaceNotFound(
   app: ReturnType<typeof createTestApp>["app"],
   path: string,
   method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
+  requestBody?: Record<string, unknown>,
 ): Promise<void> {
   const { expect } = await import("vitest");
 
   const requestInit: RequestInit =
     method === "GET"
       ? {}
-      : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) };
+      : {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody ?? {}),
+        };
 
   const response = await app.request(path, requestInit);
 

@@ -3,7 +3,13 @@
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
 
   type Props = {
-    skillDraft: { name: string; description: string; instructions: string; workspaceId: string };
+    skillDraft: {
+      name: string;
+      namespace: string;
+      title?: string;
+      description: string;
+      instructions: string;
+    };
   };
 
   let { skillDraft }: Props = $props();

@@ -106,7 +106,7 @@ export class AtlasDaemon {
   public sseStreams: Map<string, { createdAt: number; lastActivity: number; lastEmit: number }> =
     new Map();
   // Private properties
-  private idleTimeouts: Map<string, number> = new Map();
+  private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
@@ -120,8 +120,8 @@ export class AtlasDaemon {
   public streamRegistry!: StreamRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
-  private sseHealthCheckInterval: number | null = null;
-  private agentSessionCleanupInterval: number | null = null;
+  private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Store per-session MCP servers and transports
   private agentSessions = new Map<
     string,
@@ -149,7 +149,7 @@ export class AtlasDaemon {
       lastUsed: number;
     }
   >();
-  private platformSessionCleanupInterval: number | null = null;
+  private platformSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Platform session limits
   private readonly MAX_PLATFORM_SESSIONS = 100;
   private readonly PLATFORM_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes

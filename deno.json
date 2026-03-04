@@ -25,7 +25,8 @@
     "apps/atlas-installer",
     "packages/vendor/**",
     "apps/web-client/src-tauri/**",
-    "opensrc"
+    "opensrc",
+    "types"
   ],
   "unstable": ["worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",
@@ -47,6 +48,7 @@
     "fmt": "deno run -A npm:@biomejs/biome format --write && deno task -f '@atlas/web-client' fmt && deno task -f '@atlas/auth-ui' fmt",
     "fmt:check": "deno run -A npm:@biomejs/biome format && deno task -f '@atlas/web-client' fmt:check && deno task -f '@atlas/auth-ui' fmt:check",
     "biome": "deno run -A npm:@biomejs/biome",
+    "typecheck": "deno check && deno task -r check",
     "lint": "deno lint --fix && deno run -A npm:@biomejs/biome check --write",
     "lint:check": "deno lint && deno run -A npm:@biomejs/biome check --max-diagnostics=200",
     "clean": "deno run -A scripts/clean.ts",
@@ -83,6 +85,7 @@
     "@atlas/resources/types": "./packages/resources/src/types.ts"
   },
   "allowScripts": [
+    "npm:@launchql/protobufjs@7.2.6",
     "npm:@sentry/cli@2.58.4",
     "npm:@sentry/cli@2.58.5",
     "npm:better-sqlite3@12.6.2",

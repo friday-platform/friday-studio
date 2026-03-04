@@ -1,5 +1,3 @@
-/// <reference lib="deno.unstable" />
-
 /**
  * Deno KV Storage Implementation
  *

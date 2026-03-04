@@ -28,6 +28,7 @@ import {
 import { createLogger } from "@atlas/logger";
 import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
+import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -287,10 +288,14 @@ const UpdateCredentialInputSchema = z.object({
  * 2. Provider lookup logic depends on current credential state
  * 3. Different error response format (credential_not_found, provider_mismatch)
  */
-async function handleUpdateCredential(c: Context<AppVariables>) {
+async function handleUpdateCredential(
+  c: Context<AppVariables>,
+  body: z.infer<typeof UpdateCredentialInputSchema>,
+) {
   const workspaceId = c.req.param("workspaceId");
   const path = c.req.param("path");
   const ctx = c.get("app");
+  const { credentialId: newCredentialId } = body;
 
   try {
     const manager = ctx.getWorkspaceManager();
@@ -308,21 +313,6 @@ async function handleUpdateCredential(c: Context<AppVariables>) {
         403,
       );
     }
-
-    const body = await c.req.json();
-    const parseResult = UpdateCredentialInputSchema.safeParse(body);
-    if (!parseResult.success) {
-      return c.json(
-        {
-          success: false,
-          error: "validation",
-          message: "Invalid input",
-          issues: parseResult.error.issues,
-        },
-        400,
-      );
-    }
-    const { credentialId: newCredentialId } = parseResult.data;
 
     const config = await manager.getWorkspaceConfig(workspace.id);
     if (!config) {
@@ -539,18 +529,19 @@ function mapMutationError(c: Context, error: MutationError, conflictMessage: str
  * Handles the common pattern:
  * 1. Get workspace from manager (404 if not found)
  * 2. Check system workspace (403 if true)
- * 3. Parse body with Zod schema (400 if invalid, skipped if no schema)
- * 4. Apply mutation with onBeforeWrite callback for history storage
- *    (history stored only after validation succeeds)
- * 5. Destroy runtime if active
- * 6. Return success response with configurable status code
+ * 3. Apply mutation with onBeforeWrite callback for history storage
+ * 4. Destroy runtime if active
+ * 5. Return success response with configurable status code
+ *
+ * Body validation is handled by zValidator middleware which runs before
+ * the handler. Validated input is passed as a parameter.
  *
  * @param handlerConfig - Configuration for this mutation handler
  * @returns Hono handler function
  */
 function createMutationHandler<TSchema extends z.ZodType, TParams>(
   handlerConfig: MutationHandlerConfigWithSchema<TSchema, TParams>,
-): (c: Context<AppVariables>) => Promise<Response>;
+): (c: Context<AppVariables>, input: z.infer<TSchema>) => Promise<Response>;
 function createMutationHandler<TParams>(
   handlerConfig: MutationHandlerConfigWithoutSchema<TParams>,
 ): (c: Context<AppVariables>) => Promise<Response>;
@@ -559,7 +550,7 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
     | MutationHandlerConfigWithSchema<TSchema, TParams>
     | MutationHandlerConfigWithoutSchema<TParams>,
 ) {
-  return async (c: Context<AppVariables>) => {
+  return async (c: Context<AppVariables>, input?: z.infer<TSchema>) => {
     const workspaceId = c.req.param("workspaceId");
     const ctx = c.get("app");
 
@@ -582,39 +573,15 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         );
       }
 
-      // 3. Parse input (if schema provided)
-      let input: z.infer<TSchema> | undefined;
-      if (handlerConfig.schema) {
-        const body = await c.req.json();
-        const parseResult = handlerConfig.schema.safeParse(body);
-        if (!parseResult.success) {
-          return c.json(
-            {
-              success: false,
-              error: "validation",
-              message: "Invalid input",
-              issues: parseResult.error.issues,
-            },
-            400,
-          );
-        }
-        input = parseResult.data;
-      } else {
-        input = undefined;
-      }
-
       // Extract route params
       const params = handlerConfig.extractParams(c);
 
-      // 4. Load current config for history (before mutation modifies disk)
+      // Load current config for history (before mutation modifies disk)
       const currentConfig = await manager.getWorkspaceConfig(workspace.id);
 
-      // 5. Apply mutation with onBeforeWrite callback for history storage
-      // History is stored AFTER validation succeeds but BEFORE disk write
-      // Note: The implementation uses a union type internally, but callers see
-      // properly typed overloads. The cast here is safe because:
-      // - With schema: input is z.infer<TSchema> (from safeParse)
-      // - Without schema: input is undefined (set explicitly above)
+      // 3. Apply mutation with onBeforeWrite callback for history storage
+      // Note: The cast is safe — with-schema input comes from zValidator,
+      // without-schema input is undefined (DELETE handlers).
       const mutationFn = (
         handlerConfig.buildMutation as (
           input: z.infer<TSchema> | undefined,
@@ -782,19 +749,29 @@ const configRoutes = daemonFactory
   // Signals - read + full CRUD
   .get("/signals", handleListSignals)
   .get("/signals/:signalId", handleGetSignal)
-  .put("/signals/:signalId", handleUpdateSignal)
-  .patch("/signals/:signalId", handlePatchSignal)
+  .put("/signals/:signalId", zValidator("json", WorkspaceSignalConfigSchema), (c) =>
+    handleUpdateSignal(c, c.req.valid("json")),
+  )
+  .patch("/signals/:signalId", zValidator("json", SignalConfigPatchSchema), (c) =>
+    handlePatchSignal(c, c.req.valid("json")),
+  )
   .delete("/signals/:signalId", handleDeleteSignal)
-  .post("/signals", handleCreateSignal)
+  .post("/signals", zValidator("json", CreateSignalInputSchema), (c) =>
+    handleCreateSignal(c, c.req.valid("json")),
+  )
   // Agents - read + UPDATE ONLY (no create/delete - wired into FSM states)
   .get("/agents", handleListAgents)
   .get("/agents/:agentId", handleGetAgent)
-  .put("/agents/:agentId", handleUpdateAgent)
+  .put("/agents/:agentId", zValidator("json", FSMAgentUpdateSchema), (c) =>
+    handleUpdateAgent(c, c.req.valid("json")),
+  )
   .post("/agents", handleAgentMethodNotAllowed)
   .delete("/agents/:agentId", handleAgentDeleteMethodNotAllowed)
   // Credentials - read + update (with Link validation)
   .get("/credentials", handleListCredentials)
-  .put("/credentials/:path", handleUpdateCredential);
+  .put("/credentials/:path", zValidator("json", UpdateCredentialInputSchema), (c) =>
+    handleUpdateCredential(c, c.req.valid("json")),
+  );
 
 export { configRoutes };
 export type WorkspaceConfigRoutes = typeof configRoutes;

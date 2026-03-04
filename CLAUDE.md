@@ -20,7 +20,7 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 
 ```bash
 # Deno/TypeScript
-deno check              # Type check
+deno task typecheck       # Type check (deno check + svelte-check)
 deno task lint          # Lint
 deno task test $file    # Run tests (vitest)
 deno task evals run                 # Run evals (custom runner CLI)
@@ -122,13 +122,16 @@ go build                # Build
   explicit `package.json` dep — adding them creates duplicate resolution paths
 - gunshi `required: true` on CLI args still produces `string | undefined` at the
   type level — add a runtime guard even for required args
-- `deno check` cannot parse `.svelte` files — use
-  `npx svelte-check --threshold error` for Svelte type checking
+- `deno check` cannot parse `.svelte` files — `deno task typecheck` handles
+  this by running `deno check` then `deno task -r check` for svelte-check
 - `deno-lint-ignore` directives parse everything after the rule name as
   additional rule codes — don't add inline comments (e.g.,
   `// deno-lint-ignore require-await -- reason` breaks; put reason on line above)
 - `deno check` pulls transitive deps — type errors in unrelated packages surface
   when checking a single file; check error file paths, not just exit code
+- `@types/deno` only covers the `Deno.*` namespace — it doesn't augment DOM
+  interfaces like `WorkerOptions` or `ReadableStream` that Deno extends at
+  runtime; use separate `.d.ts` augmentations (see `types/deno-compat.d.ts`)
 
 ### TypeScript
 

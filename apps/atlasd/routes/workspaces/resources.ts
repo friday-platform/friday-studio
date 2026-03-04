@@ -8,6 +8,7 @@ import { createLogger, logger } from "@atlas/logger";
 import { enrichCatalogEntries, toCatalogEntries } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { zValidator } from "@hono/zod-validator";
 import Papa from "papaparse";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
@@ -96,7 +97,9 @@ const resourceRoutes = daemonFactory
       }
 
       const columns = getTabularColumns(schema);
-      const rows = Array.isArray(resource.version.data) ? resource.version.data : [];
+      const rows = z
+        .array(z.record(z.string(), z.unknown()))
+        .parse(Array.isArray(resource.version.data) ? resource.version.data : []);
       return c.json({
         format: "tabular" as const,
         columns,
@@ -314,14 +317,10 @@ const resourceRoutes = daemonFactory
     }
   })
   // Create an external_ref resource from a URL
-  .post("/link", async (c) => {
+  .post("/link", zValidator("json", LinkBodySchema), async (c) => {
     const workspaceId = requireParam(c, "workspaceId");
     try {
-      const parsed = LinkBodySchema.safeParse(await c.req.json());
-      if (!parsed.success) {
-        return c.json({ error: parsed.error.message }, 400);
-      }
-      const { url, name, provider, description } = parsed.data;
+      const { url, name, provider, description } = c.req.valid("json");
       const ctx = c.get("app");
       const ledger = ctx.getLedgerAdapter();
 

@@ -124,7 +124,7 @@ describe("PUT /config/credentials/:path", () => {
 
       expect(response.status).toBe(400);
       const body = (await response.json()) as JsonBody;
-      expect(body).toMatchObject({ success: false, error: "validation" });
+      expect(body).toHaveProperty("success", false);
     });
   });
 

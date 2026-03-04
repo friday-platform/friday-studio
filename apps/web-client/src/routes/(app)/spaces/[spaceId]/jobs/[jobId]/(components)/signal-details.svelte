@@ -67,20 +67,28 @@
 
     if (modeSwitch || sched.mode === "manual") {
       // Mode switch or manual mode → PUT with full signal (provider may change)
-      let payload: Record<string, unknown>;
       if (sched.mode === "manual") {
-        payload = { ...signal, provider: "http", config: { path: `/webhooks/${signalId}` } };
+        const payload = {
+          description: signal.description,
+          title: signal.title,
+          provider: "http" as const,
+          config: { path: `/webhooks/${signalId}` },
+        };
+        result = await parseResult(
+          configClient.signals[":signalId"].$put({ param: { signalId }, json: payload }),
+        );
       } else {
         const cron = buildCron(sched);
-        payload = {
-          ...signal,
-          provider: "schedule",
+        const payload = {
+          description: signal.description,
+          title: signal.title,
+          provider: "schedule" as const,
           config: { schedule: cron, timezone: sched.timezone },
         };
+        result = await parseResult(
+          configClient.signals[":signalId"].$put({ param: { signalId }, json: payload }),
+        );
       }
-      result = await parseResult(
-        configClient.signals[":signalId"].$put({ param: { signalId }, json: payload }),
-      );
     } else {
       // Schedule tweak → PATCH config only (preserves title, schema, description)
       const cron = buildCron(sched);

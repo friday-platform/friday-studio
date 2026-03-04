@@ -1,8 +1,9 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult, type InferResponseType } from "@atlas/client/v2";
+  import type { Color } from "@atlas/utils";
   import { useQueryClient } from "@tanstack/svelte-query";
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import { getAppContext } from "$lib/app-context.svelte";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { Dialog } from "$lib/components/dialog";
@@ -21,6 +22,24 @@
   let queryClient = useQueryClient();
 
   const appCtx = getAppContext();
+
+  const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
+
+  async function handleUpdateColor(color: Color) {
+    const res = await parseResult(
+      client.workspace[":workspaceId"].metadata.$patch({
+        param: { workspaceId: workspace.id },
+        json: { color },
+      }),
+    );
+
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["spaces"], refetchType: "all" });
+      await invalidateAll();
+    } else {
+      toast({ title: "Failed to update color", error: true });
+    }
+  }
 
   async function handleExportWorkspace() {
     if (!workspace) return;

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "lib": ["dom", "dom.iterable"],
-    "types": ["./reset.d.ts"],
+    "types": ["./reset.d.ts", "./types/deno-compat.d.ts"],
     "noImplicitAny": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,

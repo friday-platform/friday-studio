@@ -18,14 +18,14 @@ interface PooledMCPManager {
   serverConfigs: Map<string, MCPServerConfig>;
   refCount: number;
   lastUsed: number;
-  cleanupTimer?: number;
+  cleanupTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class GlobalMCPServerPool {
   private pooledManagers = new Map<string, PooledMCPManager>();
   private logger: Logger;
   private cleanupInterval = 5 * 60 * 1000; // 5 minutes
-  private cleanupTimer?: number;
+  private cleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(logger: Logger) {
     this.logger = logger;

@@ -1054,10 +1054,8 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to delete workspace: ${stringifyError(error)}` }, 500);
       }
     },
-  );
-
-// Mount resource sub-router (separate from the chain to avoid TS2589 deep instantiation)
-workspacesRoutes.route("/:workspaceId/resources", resourceRoutes);
+  )
+  .route("/:workspaceId/resources", resourceRoutes);
 
 export { workspacesRoutes };
 export type WorkspaceRoutes = typeof workspacesRoutes;

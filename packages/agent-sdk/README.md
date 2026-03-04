@@ -352,7 +352,7 @@ deno test
 ### Type Checking
 
 ```bash
-deno check src/index.ts
+deno task check
 ```
 
 ### Linting

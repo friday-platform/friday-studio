@@ -17,7 +17,7 @@ deno task atlas daemon status   # Check if daemon is running
 deno task atlas prompt "test"   # Send a test prompt
 
 # Develop
-deno check                      # Type check
+deno task typecheck               # Type check (deno check + svelte-check)
 deno task lint                  # Lint
 deno task test $file            # Run specific test
 deno task fmt                   # Format

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { OutputEntry } from "./types";
+  import type { Intent } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { message }: { message: OutputEntry } = $props();
+  const { message }: { message: Intent } = $props();
 
   const content = $derived(message.content ?? "Working");
 </script>

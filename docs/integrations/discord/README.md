@@ -442,7 +442,7 @@ packages/config/src/
 
 ```bash
 # Type check
-deno check apps/atlasd/src/discord/**/*.ts
+deno task check
 
 # Lint
 deno task lint

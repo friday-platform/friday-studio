@@ -18,7 +18,8 @@
     "src/**/*.js",
     "src/**/*.svelte",
     ".svelte-kit/ambient.d.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "../../types/deno-compat.d.ts"
   ],
   "exclude": ["node_modules", "build", "dist", ".svelte-kit/types"]
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias

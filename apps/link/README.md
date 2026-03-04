@@ -293,7 +293,7 @@ filesystem for local development; production uses Cypher service with Postgres.
 
 ```bash
 # Type check
-deno check src/**/*.ts
+deno task check
 
 # Lint
 deno lint

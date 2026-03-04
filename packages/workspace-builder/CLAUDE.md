@@ -7,7 +7,7 @@ workspace.yml (pure).
 
 ```bash
 deno task test packages/workspace-builder/          # run tests
-deno check packages/workspace-builder/mod.ts        # type check
+deno task check                                      # type check
 ```
 
 ## Package Rules

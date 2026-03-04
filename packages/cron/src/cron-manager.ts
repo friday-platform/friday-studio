@@ -62,7 +62,7 @@ export class CronManager {
   public isRunning = false;
 
   // Timer reliability via interval checking
-  private checkInterval?: number;
+  private checkInterval?: ReturnType<typeof setInterval>;
   private readonly CHECK_INTERVAL_MS = 30000; // Check every 30 seconds
 
   constructor(storage: KVStorage, logger: Logger) {

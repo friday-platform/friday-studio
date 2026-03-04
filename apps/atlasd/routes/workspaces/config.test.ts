@@ -42,21 +42,38 @@ describe("Workspace not found (404)", () => {
     "/config/credentials",
   ] as const;
 
+  // Mutation endpoints need valid bodies — zValidator rejects invalid input
+  // before the handler can check workspace existence.
   const mutationEndpoints = [
-    { method: "PUT" as const, path: "/config/signals/webhook" },
+    {
+      method: "PUT" as const,
+      path: "/config/signals/webhook",
+      body: { provider: "http", description: "test", config: { path: "/test" } },
+    },
     { method: "DELETE" as const, path: "/config/signals/webhook" },
-    { method: "POST" as const, path: "/config/signals" },
-    { method: "PUT" as const, path: "/config/agents/planner" },
-  ] as const;
+    {
+      method: "POST" as const,
+      path: "/config/signals",
+      body: {
+        signalId: "new",
+        signal: { provider: "http", description: "test", config: { path: "/test" } },
+      },
+    },
+    {
+      method: "PUT" as const,
+      path: "/config/agents/planner",
+      body: { type: "llm", prompt: "test" },
+    },
+  ];
 
   test.each(getEndpoints)("GET %s returns 404", async (path) => {
     const { app } = createTestApp({ workspace: null });
     await assert404WorkspaceNotFound(app, `/ws-unknown${path}`);
   });
 
-  test.each(mutationEndpoints)("$method $path returns 404", async ({ method, path }) => {
+  test.each(mutationEndpoints)("$method $path returns 404", async ({ method, path, body }) => {
     const { app } = createTestApp({ workspace: null });
-    await assert404WorkspaceNotFound(app, `/ws-unknown${path}`, method);
+    await assert404WorkspaceNotFound(app, `/ws-unknown${path}`, method, body);
   });
 });
 
@@ -111,8 +128,8 @@ describe("Validation error (400)", () => {
 
     expect(response.status).toBe(400);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({ error: "validation" });
-    expect(body).toHaveProperty("issues");
+    expect(body).toHaveProperty("success", false);
+    expect(body).toHaveProperty("error");
   });
 });
 
@@ -125,24 +142,39 @@ describe("System workspace protection", () => {
     const workspace = createMockWorkspace({ metadata: { system: true } });
     const { app } = createTestApp({ workspace });
 
-    // Test all mutation endpoints
+    // Valid bodies required — zValidator rejects invalid input before handler runs.
     const mutations = [
-      { method: "PUT", path: "/ws-test-id/config/signals/any" },
-      { method: "DELETE", path: "/ws-test-id/config/signals/any" },
-      { method: "POST", path: "/ws-test-id/config/signals" },
-      { method: "PUT", path: "/ws-test-id/config/agents/any" },
+      {
+        method: "PUT",
+        path: "/ws-test-id/config/signals/any",
+        body: { provider: "http", description: "test", config: { path: "/test" } },
+      },
+      { method: "DELETE", path: "/ws-test-id/config/signals/any", body: {} },
+      {
+        method: "POST",
+        path: "/ws-test-id/config/signals",
+        body: {
+          signalId: "new",
+          signal: { provider: "http", description: "test", config: { path: "/test" } },
+        },
+      },
+      {
+        method: "PUT",
+        path: "/ws-test-id/config/agents/any",
+        body: { type: "llm", prompt: "test" },
+      },
     ];
 
-    for (const { method, path } of mutations) {
+    for (const { method, path, body } of mutations) {
       const response = await app.request(path, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
 
       expect(response.status).toBe(403);
-      const body = (await response.json()) as JsonBody;
-      expect(body).toMatchObject({ error: "forbidden" });
+      const json = (await response.json()) as JsonBody;
+      expect(json).toMatchObject({ error: "forbidden" });
     }
   });
 });

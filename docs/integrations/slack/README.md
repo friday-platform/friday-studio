@@ -469,7 +469,7 @@ deno task test packages/slack/
 ### Type Checking
 
 ```bash
-deno check apps/atlasd/mod.ts
+deno task check
 ```
 
 ### Linting

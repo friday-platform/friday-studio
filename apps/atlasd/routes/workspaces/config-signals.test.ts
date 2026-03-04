@@ -205,7 +205,7 @@ describe("POST /config/signals", () => {
 
     expect(response.status).toBe(400);
     const body = (await response.json()) as JsonBody;
-    expect(body.error).toBe("validation");
+    expect(body.success).toBe(false);
   });
 
   test("returns 409 conflict when signal already exists", async () => {

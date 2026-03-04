@@ -41,7 +41,7 @@ deno task start                       # Start service (port 3100)
 deno task dev                         # Dev mode (watch + auto-restart)
 deno task test                        # Run tests
 deno task test tests/oauth.test.ts    # Run specific test
-deno check src/**/*.ts                # Type check
+deno task check                       # Type check
 ```
 
 ## Gotchas

@@ -31,8 +31,9 @@
           Session ID
         </DropdownMenu.Item>
         <DropdownMenu.Item
+          disabled={!session.workspaceId}
           onclick={() => {
-            if (!session) return;
+            if (!session?.workspaceId) return;
             trackEvent(GA4.COPY_WORKSPACE_ID, { workspace_id: session.workspaceId });
             navigator.clipboard.writeText(session.workspaceId);
           }}

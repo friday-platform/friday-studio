@@ -99,7 +99,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private config: Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">> &
     Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
   private logger: Logger;
-  private sessionCleanupInterval?: number;
+  private sessionCleanupInterval?: ReturnType<typeof setInterval>;
   /** Keyed by `${sessionId}:${agentId}` - handles multi-workspace scenarios */
   private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
   private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
