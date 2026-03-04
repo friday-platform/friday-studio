@@ -245,21 +245,6 @@
 </div>
 
 <style>
-  .agent-row-container + .agent-row-container {
-    border-block-start: var(--size-px) solid var(--color-border-1);
-    transition: border-color 250ms ease;
-  }
-
-  /* Hide border when the row above is hovered */
-  .agent-row-container:has(.agent-row:hover:not(:disabled)) + .agent-row-container {
-    border-color: transparent;
-  }
-
-  /* Hide own border when hovered */
-  .agent-row-container:has(.agent-row:hover:not(:disabled)) {
-    border-color: transparent;
-  }
-
   .agent-row {
     align-items: flex-start;
     background: none;

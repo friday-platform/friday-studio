@@ -42,11 +42,4 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .status {
-    color: var(--yellow-2, #b58900);
-    flex-shrink: 0;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-  }
 </style>

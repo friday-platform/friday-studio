@@ -15,6 +15,9 @@ importers:
       '@melt-ui/svelte':
         specifier: ^0.86.6
         version: 0.86.6(svelte@5.53.6)
+      '@types/deno':
+        specifier: 2.5.0
+        version: 2.5.0
       gsap:
         specifier: ^3.14.2
         version: 3.14.2
@@ -558,6 +561,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/deno@2.5.0':
+    resolution: {integrity: sha512-g8JS38vmc0S87jKsFzre+0ZyMOUDHPVokEJymSCRlL57h6f/FdKPWBXgdFh3Z8Ees9sz11qt9VWELU9Y9ZkiVw==}
 
   '@types/esrecurse@4.3.1':
     resolution: {integrity: sha512-xJBAbDifo5hpffDBuHl0Y8ywswbiAp/Wi7Y/GtAgSlZyIABppyurxVueOPE8LUQOxdlgi6Zqce7uoEpqNTeiUw==}
@@ -1707,6 +1713,8 @@ snapshots:
   '@types/cookie@0.6.0': {}
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/deno@2.5.0': {}
 
   '@types/esrecurse@4.3.1': {}
 
