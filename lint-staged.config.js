@@ -55,7 +55,11 @@ export default {
     "deno run -A npm:@biomejs/biome format --write --files-ignore-unknown=true --no-errors-on-unmatched",
     "deno run -A npm:@biomejs/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched",
   ],
-  "*.{ts,tsx,js,jsx}": "deno lint --fix",
+  "*.{ts,tsx,js,jsx}": (files) => {
+    const filtered = files.filter((f) => !f.endsWith(".svelte.ts") && !f.endsWith(".svelte.js"));
+    if (filtered.length === 0) return [];
+    return [`deno lint --fix ${filtered.join(" ")}`];
+  },
   "apps/web-client/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
   "apps/atlas-auth-ui/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
 };

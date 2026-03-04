@@ -194,6 +194,7 @@ svg {
   --size-96: calc(24rem * var(--size-scale));
   --size-112: calc(28rem * var(--size-scale));
   --size-128: calc(32rem * var(--size-scale));
+  --size-144: calc(36rem * var(--size-scale));
   --size-150: calc(37.5rem * var(--size-scale));
   --size-160: calc(40rem * var(--size-scale));
   --size-216: calc(54rem * var(--size-scale));

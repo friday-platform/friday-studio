@@ -1,16 +1,32 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import type { HTMLAttributes } from "svelte/elements";
 
-  type Props = { children: Snippet; prepend?: Snippet; header?: Snippet; description?: Snippet };
+  type Props = {
+    children: Snippet;
+    prepend?: Snippet;
+    header?: Snippet;
+    description?: Snippet;
+    padded?: boolean;
+    scrollable?: boolean;
+  };
 
-  let { children, prepend, header, description }: Props = $props();
+  let {
+    children,
+    prepend,
+    header,
+    description,
+    padded = true,
+    scrollable = true,
+    ...props
+  }: Props & HTMLAttributes<HTMLDivElement> = $props();
 </script>
 
-<div class="page">
+<div class="page" class:scrollable {...props}>
   {#if prepend}
     {@render prepend()}
   {/if}
-  <article class="content">
+  <div class="content" class:padded>
     {#if header || description}
       <header>
         {#if header}
@@ -25,23 +41,37 @@
     {/if}
 
     {@render children()}
-  </article>
+  </div>
 </div>
 
 <style>
+  .page {
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .scrollable {
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+
   .content {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: var(--size-10);
-    padding-block: var(--size-12);
-    padding-inline: var(--size-14);
-  }
+    overflow: hidden;
 
-  .page {
-    overflow: auto;
-    padding-inline: 0 var(--size-14);
-    scrollbar-width: thin;
+    &.padded {
+      padding-block: var(--size-12);
+      padding-inline: var(--size-14);
+    }
+
+    .scrollable & {
+      overflow: visible;
+    }
   }
 
   .title {

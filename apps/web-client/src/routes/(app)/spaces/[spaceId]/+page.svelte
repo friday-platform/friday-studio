@@ -15,6 +15,7 @@
   import ResourcesSection from "$lib/modules/spaces/resources-section.svelte";
   import { listWorkspaceSessions } from "$lib/queries/sessions";
   import { formatChatDate } from "$lib/utils/date";
+  import NewChat from "./(components)/new-chat.svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
   import Setup from "./(components)/setup.svelte";
   import ShareActions from "./(components)/share-actions.svelte";
@@ -51,8 +52,6 @@
       return result.data;
     },
   }));
-  const apiJobs = $derived(jobsQuery.data ?? []);
-  const jobsError = $derived(jobsQuery.isError);
 
   $effect(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -117,10 +116,10 @@
         {/if}
       {/snippet}
 
-      {#if apiJobs.length > 0}
+      {#if jobsQuery.data?.length}
         <section class="jobs">
           <div class="jobs-grid">
-            {#each apiJobs as job (job.id)}
+            {#each jobsQuery.data as job (job.id)}
               {@const jobConfig = getJobConfig(job.id)}
 
               <div class="job-card">
@@ -177,11 +176,13 @@
             {/each}
           </div>
         </section>
-      {:else if jobsError}
+      {:else if jobsQuery.isError}
         <p class="jobs-error">Failed to load jobs.</p>
       {/if}
 
       <ResourcesSection workspaceId={workspace.id} />
+
+      <NewChat workspaceId={workspace.id} />
     </Page.Content>
 
     <Page.Sidebar>

@@ -1,10 +1,16 @@
 <script lang="ts">
-  import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { getConversationContext } from "$lib/modules/conversation/context.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { formatOutlineDate } from "$lib/utils/date";
   import OutlineItemDescription from "./outline-item-description.svelte";
 
-  let { messages }: { messages: AtlasUIMessage[] } = $props();
+  const conversation = getConversationContext();
+
+  const messages = $derived(
+    conversation.chat.messages
+      .filter((msg) => msg.role === "assistant")
+      .filter((msg) => msg.parts.some((part) => part.type === "data-outline-update")),
+  );
 </script>
 
 {#if messages.length > 0}

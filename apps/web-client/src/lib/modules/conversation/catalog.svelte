@@ -1,5 +1,6 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
+  import { getConversationContext } from "$lib/modules/conversation/context.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
 
   type UseCase = {
@@ -10,7 +11,7 @@
     category: "productivity" | "research" | "development" | "analysis" | "monitor";
   };
 
-  let { onclick }: { onclick: (item: UseCase) => void } = $props();
+  const conversation = getConversationContext();
 
   let useCases: UseCase[] = [
     {
@@ -142,8 +143,9 @@
       <button
         onclick={() => {
           trackEvent(GA4.USE_CASE_SELECTED, { title: item.title });
+          conversation.message = item.prompt;
 
-          onclick(item);
+          conversation.shouldScrollToStart = true;
         }}
       >
         <article>
@@ -177,6 +179,9 @@
   section {
     margin-inline: auto;
     max-inline-size: var(--size-216);
+    padding-block: var(--size-16) 0;
+    position: relative;
+    z-index: var(--layer-2);
 
     > h2 {
       font-size: var(--font-size-4);

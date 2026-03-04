@@ -12,11 +12,18 @@
   .wrapper {
     block-size: 100%;
     display: grid;
-    grid-template-columns: 2fr minmax(var(--size-80), 1fr);
     inline-size: 100%;
 
-    @media (min-width: 1920px) {
-      grid-template-columns: 1fr var(--size-112);
+    &:global(:has([data-friday-page-sidebar])) {
+      grid-template-columns: 1fr var(--size-80);
+
+      @media (min-width: 1156px) {
+        grid-template-columns: 1fr var(--size-96);
+      }
+
+      @media (min-width: 1920px) {
+        grid-template-columns: 1fr var(--size-112);
+      }
     }
 
     > :global(:only-child) {

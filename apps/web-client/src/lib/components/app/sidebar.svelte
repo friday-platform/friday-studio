@@ -16,6 +16,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import { featureFlags } from "$lib/feature-flags";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
@@ -130,15 +131,31 @@
         <ul class="section-list">
           {#if query.isSuccess}
             {#each query.data as space (space.id)}
+              {@const active = getActiveParam("spaceId", space.id)}
               <li>
                 <a
                   href={ctx.routes.spaces.item(space.id)}
-                  class:active={getActiveParam("spaceId", space.id)}
+                  class:active
                   onclick={() => trackEvent(GA4.SPACE_CLICK, { space_id: space.id })}
                 >
                   <Dot color={space.metadata?.color} />
                   <span class="text">{space.name}</span>
                 </a>
+
+                {#if active}
+                  <ul class="sub-nav">
+                    {#if featureFlags.ENABLE_WORKSPACE_NAV_CONVERSATIONS}
+                      <li>
+                        <a
+                          href={ctx.routes.spaces.item(space.id, "chat")}
+                          class:active={getActivePage(["chat/[[chatId]]"])}
+                        >
+                          Conversations
+                        </a>
+                      </li>
+                    {/if}
+                  </ul>
+                {/if}
               </li>
             {/each}
           {/if}
@@ -174,7 +191,8 @@
           <ul class="section-list">
             <li>
               <button
-                class:active={getActivePage(["chat/[[chatId]]"]) && !("chatId" in page.params)}
+                class:active={getActivePage(["(app)/chat/[[chatId]]"]) &&
+                  !("chatId" in page.params)}
                 onclick={() => {
                   trackEvent(GA4.NEW_CHAT_CLICK, { source: "sidebar" });
                   goto("/chat");
@@ -191,7 +209,8 @@
                 <li class="chat-row">
                   <a
                     class="sidebar-item"
-                    class:active={currentChatId === chat.id}
+                    class:active={getActivePage(["(app)/chat/[[chatId]]"]) &&
+                      currentChatId === chat.id}
                     href="/chat/{chat.id}"
                     onclick={(e) => {
                       if (currentChatId === chat.id) {
@@ -399,7 +418,6 @@
       gap: var(--size-1);
       inline-size: 100%;
       outline: none;
-
       padding-inline: var(--size-2-5) var(--size-2);
       position: relative;
 
@@ -430,6 +448,28 @@
     }
   }
 
+  .sub-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-0-5);
+    margin-block-start: var(--size-0-5);
+
+    a {
+      font-weight: var(--font-weight-4);
+      padding-inline-start: var(--size-7);
+
+      &.active,
+      &:focus-visible {
+        background-color: unset;
+        text-decoration: underline;
+
+        @media (prefers-color-scheme: dark) {
+          background-color: unset;
+        }
+      }
+    }
+  }
+
   .section-trigger {
     block-size: var(--size-4);
     display: flex;
@@ -451,16 +491,6 @@
 
   .section-list {
     padding-block-end: var(--size-2);
-
-    a {
-      padding-inline: var(--size-2-5) var(--size-2);
-
-      span {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    }
   }
 
   .chat-row {

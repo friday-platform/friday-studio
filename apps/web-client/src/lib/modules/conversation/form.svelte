@@ -1,32 +1,64 @@
 <script lang="ts">
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
+  import { ALLOWED_EXTENSION_LIST, getValidatedMimeType } from "@atlas/core/artifacts/file-upload";
   import { getAppContext, handleFileDrop, isFileInProgress } from "$lib/app-context.svelte";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import Textarea from "$lib/components/textarea.svelte";
+  import { getConversationContext } from "$lib/modules/conversation/context.svelte";
   import { formatFileSize } from "$lib/utils/files.svelte";
 
-  type Props = {
-    isDisabled: boolean;
-    message: string;
-    textareaAdditionalSize?: number;
-    status: "submitted" | "streaming" | "ready" | "error";
-    chatId?: string;
-    onSubmit: (message: string) => void;
-    onStop: () => void;
-  };
   const appCtx = getAppContext();
+  const conversation = getConversationContext();
 
-  let {
-    isDisabled,
-    message = $bindable(""),
-    textareaAdditionalSize = $bindable(1),
-    status,
-    chatId,
-    onSubmit,
-    onStop,
-  }: Props = $props();
+  const isDisabled = $derived(
+    Array.from(appCtx.stagedFiles.state.values()).some((f) => isFileInProgress(f)),
+  );
+
+  function handleSubmit() {
+    if (isDisabled) return;
+
+    const text = conversation.message;
+    if (!text.trim()) return;
+
+    const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some((f) =>
+      isFileInProgress(f),
+    );
+    if (hasUploadingFiles) return;
+
+    const readyFiles = Array.from(appCtx.stagedFiles.state.values()).filter(
+      (f) => f.status === "ready" && f.artifactId,
+    );
+
+    trackEvent(GA4.MESSAGE_SEND, { is_new: false });
+
+    // Clear stale timestamp before sendMessage so Progress mounts fresh
+    conversation.turnStartedAt = null;
+
+    if (readyFiles.length > 0) {
+      conversation.chat.sendMessage({
+        parts: [
+          { type: "text", text },
+          {
+            type: "data-artifact-attached",
+            data: {
+              artifactIds: readyFiles.map((f) => f.artifactId).filter((f) => f !== undefined),
+              filenames: readyFiles.map((f) => f.name),
+              mimeTypes: readyFiles.map(
+                (f) => getValidatedMimeType(f.name) ?? "application/octet-stream",
+              ),
+            },
+          },
+        ],
+      });
+    } else {
+      conversation.chat.sendMessage({ text });
+    }
+
+    conversation.message = "";
+    appCtx.stagedFiles.clear();
+    conversation.resetScroll();
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -37,14 +69,9 @@
       e.currentTarget?.requestSubmit();
     }
   }}
-  onsubmit={async (e) => {
+  onsubmit={(e) => {
     e.preventDefault();
-
-    if (isDisabled) return;
-
-    onSubmit(message);
-
-    message = "";
+    handleSubmit();
   }}
 >
   {#if appCtx.stagedFiles.state.size > 0}
@@ -98,9 +125,9 @@
   <Textarea
     name="message"
     placeholder="Type here..."
-    bind:value={message}
+    bind:value={conversation.message}
     onResize={(value) => {
-      textareaAdditionalSize = value - 40;
+      conversation.textareaAdditionalSize = value - 40;
     }}
   />
 
@@ -116,7 +143,7 @@
             const files = e.currentTarget.files;
             if (files?.length) {
               trackEvent(GA4.FILE_ATTACH, { file_count: files.length });
-              handleFileDrop(appCtx, Array.from(files), chatId);
+              handleFileDrop(appCtx, Array.from(files), conversation.chatId);
             }
           }}
         />
@@ -135,13 +162,13 @@
     </div>
 
     <div class="form-action">
-      {#if status === "streaming" || status === "submitted"}
+      {#if conversation.chat.status === "streaming" || conversation.chat.status === "submitted"}
         <button
           class="stop-process"
           type="button"
           onclick={(e) => {
             e.preventDefault();
-            onStop();
+            conversation.handleStop();
           }}
         >
           <IconSmall.Stop />
@@ -157,6 +184,8 @@
     </div>
   </div>
 </form>
+
+<span class="disclaimer">Friday can make mistakes. Please double-check responses</span>
 
 <style>
   form {
@@ -249,6 +278,16 @@
       font-weight: var(--font-weight-5);
       gap: var(--size-1);
     }
+  }
+
+  .disclaimer {
+    display: block;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-4-5);
+    margin-block: var(--size-3) 0;
+    opacity: 0.6;
+    text-align: center;
+    text-wrap-style: balance;
   }
 
   .staged-files {
