@@ -16,7 +16,7 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
-  import { featureFlags } from "$lib/feature-flags";
+  import { getFeatureFlags } from "$lib/feature-flags.svelte";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
@@ -26,6 +26,7 @@
   import NavigationControls from "./navigation-controls.svelte";
   import Usage from "./usage.svelte";
 
+  const featureFlags = getFeatureFlags();
   const ctx = getAppContext();
   const queryClient = useQueryClient();
 

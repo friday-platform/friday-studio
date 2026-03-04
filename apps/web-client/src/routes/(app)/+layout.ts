@@ -2,7 +2,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { ColorSchema, type Color } from "@atlas/utils";
 import type { LayoutLoad } from "./$types";
 
-export const load: LayoutLoad = async ({ params }) => {
+export const load: LayoutLoad = async ({ params, data }) => {
   const res = await parseResult(client.me.index.$get());
   const user = res.ok ? res.data.user : null;
 
@@ -26,5 +26,5 @@ export const load: LayoutLoad = async ({ params }) => {
     }
   }
 
-  return { user, color };
+  return { user, color, featureFlags: data.featureFlags };
 };

@@ -8,12 +8,13 @@
   import { IconSmall } from "$lib/components/icons/small";
   import { MarkdownEditor } from "$lib/components/markdown-editor";
   import { Page } from "$lib/components/page";
-  import { featureFlags } from "$lib/feature-flags";
+  import { getFeatureFlags } from "$lib/feature-flags.svelte";
   import { deleteSkill, disableSkill, getSkillById, publishSkill } from "$lib/queries/skills";
   import { toSlug } from "$lib/utils/slug";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
+  const featureFlags = getFeatureFlags();
   const appCtx = getAppContext();
   const queryClient = useQueryClient();
 

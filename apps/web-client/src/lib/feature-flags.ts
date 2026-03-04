@@ -1,5 +1,4 @@
 export interface FeatureFlags {
-  ENABLE_WORKSPACE_SKILLS: boolean;
   ENABLE_WORKSPACE_PAGE_ACTIVITY: boolean;
   ENABLE_WORKSPACE_PAGE_LIBRARY: boolean;
   ENABLE_WORKSPACE_PAGE_CONVERSATIONS: boolean;
@@ -16,7 +15,6 @@ export interface FeatureFlags {
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
-  ENABLE_WORKSPACE_SKILLS: false,
   ENABLE_WORKSPACE_PAGE_ACTIVITY: false,
   ENABLE_WORKSPACE_PAGE_LIBRARY: false,
   ENABLE_WORKSPACE_PAGE_CONVERSATIONS: false,
@@ -32,10 +30,31 @@ const DEFAULT_FLAGS: FeatureFlags = {
   ENABLE_SKILL_REFERENCES: false,
 };
 
-function buildFeatureFlags(): FeatureFlags {
-  const overrides = Object.fromEntries(__FEATURE_FLAGS__.map((f) => [f, true]));
-  return Object.freeze({ ...DEFAULT_FLAGS, ...overrides }) as FeatureFlags;
+function isFeatureFlagKey(key: string): key is keyof FeatureFlags {
+  return key in DEFAULT_FLAGS;
 }
 
-/** Singleton — safe to import from load functions, components, anywhere. */
-export const featureFlags: FeatureFlags = buildFeatureFlags();
+/** Parse `ff:<FLAG>=true|false` cookies from a raw Cookie header. */
+export function parseCookieOverrides(cookieHeader: string): Partial<FeatureFlags> {
+  const cookies = cookieHeader.split(";").map((c) => c.trim());
+  const overrides: Partial<FeatureFlags> = {};
+  for (const key of Object.keys(DEFAULT_FLAGS)) {
+    if (!isFeatureFlagKey(key)) continue;
+    const cookie = cookies.find((c) => c.startsWith(`ff:${key}=`));
+    if (cookie) {
+      overrides[key] = cookie.split("=")[1] === "true";
+    }
+  }
+  return overrides;
+}
+
+/** Build a frozen FeatureFlags object from env overrides + cookie overrides. */
+export function buildFeatureFlags(cookieOverrides: Partial<FeatureFlags> = {}): FeatureFlags {
+  const envOverrides: Partial<FeatureFlags> = {};
+  for (const flag of __FEATURE_FLAGS__) {
+    if (isFeatureFlagKey(flag)) {
+      envOverrides[flag] = true;
+    }
+  }
+  return Object.freeze({ ...DEFAULT_FLAGS, ...envOverrides, ...cookieOverrides });
+}

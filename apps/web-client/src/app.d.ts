@@ -8,7 +8,9 @@ import type { RowData } from "@tanstack/svelte-table";
 declare global {
   namespace App {
     // interface Error {}
-    // interface Locals {}
+    interface Locals {
+      featureFlags: import("./lib/feature-flags.ts").FeatureFlags;
+    }
     // interface PageData {}
     // interface PageState {}
     // interface Platform {}

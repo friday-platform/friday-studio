@@ -13,7 +13,8 @@
     "src/routes/**/+page.ts",
     "src/routes/**/+layout.ts",
     "src/routes/**/+page.server.ts",
-    "src/routes/**/+layout.server.ts"
+    "src/routes/**/+layout.server.ts",
+    "src/hooks.server.ts"
   ],
   "tasks": {
     "dev": "vite dev",

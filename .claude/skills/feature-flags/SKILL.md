@@ -13,9 +13,11 @@ main without being visible to users. Once the feature is ready, remove the flag.
 
 | What | File |
 |------|------|
-| Flag interface + defaults | `apps/web-client/src/lib/feature-flags.ts` — `FeatureFlags` interface, `DEFAULT_FLAGS`, and `featureFlags` singleton |
+| Flag interface + defaults | `apps/web-client/src/lib/feature-flags.ts` — `FeatureFlags` interface, `DEFAULT_FLAGS`, `buildFeatureFlags()` |
+| Svelte context | `apps/web-client/src/lib/feature-flags.svelte.ts` — `setFeatureFlagsContext()` / `getFeatureFlags()` |
 | Build-time injection | `apps/web-client/vite.config.ts` — parses `FEATURE_FLAGS` env var into `__FEATURE_FLAGS__` global |
 | Global type declaration | `apps/web-client/src/app.d.ts` — declares `__FEATURE_FLAGS__: string[]` |
+| Server-side cookie overrides | `apps/web-client/src/hooks.server.ts` — reads `ff:*` cookies per-request for SSR |
 
 ## Overriding Flags During Development
 
@@ -33,29 +35,44 @@ FEATURE_FLAGS=ENABLE_WORKSPACE_NAV_ACTIVITY,ENABLE_WORKSPACE_NAV_RESOURCES,ENABL
 Flags not listed remain `false`. No env var = all flags off (production
 defaults).
 
+### Cookie Overrides (No Rebuild Required)
+
+On deployed dev instances or local dev, you can override individual flags via
+`document.cookie` in the browser console — no env var or restart needed:
+
+```js
+// Enable a flag
+document.cookie = "ff:ENABLE_WORKSPACE_NAV_RESOURCES=true; path=/";
+location.reload();
+
+// Disable a flag (even if env var enables it)
+document.cookie = "ff:ENABLE_WORKSPACE_NAV_RESOURCES=false; path=/";
+location.reload();
+
+// Remove an override (revert to build-time value)
+document.cookie = "ff:ENABLE_WORKSPACE_NAV_RESOURCES=; path=/; max-age=0";
+location.reload();
+```
+
+Cookie overrides take precedence over both `DEFAULT_FLAGS` and `FEATURE_FLAGS`
+env var. They work both server-side (via `hooks.server.ts`) and client-side, so
+SSR load functions and components both respect overrides.
+
 ## Checking Flags
 
-`featureFlags` is a plain module singleton — works in components, load functions,
-and anywhere else:
+Use the Svelte context in components (set in `+layout.svelte`, available in all
+child components):
 
 ```svelte
 <script lang="ts">
-  import { featureFlags } from "$lib/feature-flags";
+  import { getFeatureFlags } from "$lib/feature-flags.svelte";
+
+  const featureFlags = getFeatureFlags();
 </script>
 
 {#if featureFlags.ENABLE_WORKSPACE_NAV_RESOURCES}
   <NavItem href="..." label="Resources" />
 {/if}
-```
-
-```ts
-// +page.ts / +layout.ts
-import { featureFlags } from "$lib/feature-flags";
-import { redirect } from "@sveltejs/kit";
-
-export function load() {
-  if (!featureFlags.ENABLE_SOME_FLAG) throw redirect(303, "/");
-}
 ```
 
 ## Branch Review: Are Any Flags Ready to Ship?

@@ -9,11 +9,13 @@
   import AppSidebar from "$lib/components/app/sidebar.svelte";
   import KeyboardListener from "$lib/components/keyboard-listener.svelte";
   import NotificationPortal from "$lib/components/notification/portal.svelte";
+  import { setFeatureFlagsContext } from "$lib/feature-flags.svelte";
   import { setClientContext } from "$lib/modules/client/context.svelte";
   import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
   import { onDestroy, onMount } from "svelte";
 
   const { data, children } = $props();
+  setFeatureFlagsContext(data.featureFlags);
 
   const isNewChat = $derived(page.route.id === "/(app)/chat/[[chatId]]" && !page.params.chatId);
 
