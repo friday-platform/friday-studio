@@ -121,8 +121,9 @@
     "npm:gunshi@~0.29.2": "0.29.2",
     "npm:hono-openapi@^1.3.0": "1.3.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.12.3_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.1.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.6_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.1.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.6__@standard-schema+spec@1.1.0__openapi-types@12.1.3__zod@4.3.6__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.12.3_openapi-types@12.1.3_zod@4.3.6",
     "npm:hono@4.12.3": "4.12.3",
-    "npm:hono@^4.10.4": "4.12.3",
-    "npm:hono@^4.11.1": "4.12.3",
+    "npm:hono@4.12.4": "4.12.4",
+    "npm:hono@^4.10.4": "4.12.4",
+    "npm:hono@^4.11.1": "4.12.4",
     "npm:immer@^11.1.4": "11.1.4",
     "npm:ink@^6.8.0": "6.8.0_@types+react@19.2.14_react@19.2.4",
     "npm:jose@6.1.3": "6.1.3",
@@ -865,13 +866,13 @@
       "integrity": "sha512-mJ7W84Bt/rSvoIl63Ynew+UZOHAzzRAoAXb3JaWuxAkM/Lzg+ZHTCUiz77KOtn2e623WNN8LkD57Dk0szqUrIw==",
       "dependencies": [
         "@standard-schema/spec",
-        "hono"
+        "hono@4.12.3"
       ]
     },
     "@hono/zod-validator@0.7.6_hono@4.12.3_zod@4.3.6": {
       "integrity": "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==",
       "dependencies": [
-        "hono",
+        "hono@4.12.3",
         "zod"
       ]
     },
@@ -3900,16 +3901,19 @@
         "@standard-community/standard-json",
         "@standard-community/standard-openapi",
         "@types/json-schema",
-        "hono",
+        "hono@4.12.3",
         "openapi-types"
       ],
       "optionalPeers": [
         "@hono/standard-validator",
-        "hono"
+        "hono@4.12.3"
       ]
     },
     "hono@4.12.3": {
       "integrity": "sha512-SFsVSjp8sj5UumXOOFlkZOG6XS9SJDKw0TbwFeV+AJ8xlST8kxK5Z/5EYa111UY8732lK2S/xB653ceuaoGwpg=="
+    },
+    "hono@4.12.4": {
+      "integrity": "sha512-ooiZW1Xy8rQ4oELQ++otI2T9DsKpV0M6c6cO6JGx4RTfav9poFFLlet9UMXHZnoM1yG0HWGlQLswBGX3RZmHtg=="
     },
     "html-escaper@2.0.2": {
       "integrity": "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="
@@ -6431,7 +6435,7 @@
             "npm:@octokit/auth-oauth-app@^9.0.3",
             "npm:@octokit/request@^10.0.8",
             "npm:@socotra/modelcontextprotocol-sdk@1.21.0",
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:jose@6.1.3",
             "npm:nanoid@5.1.6",
             "npm:oauth4webapi@3.8.5",
