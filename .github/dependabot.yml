@@ -66,6 +66,12 @@ updates:
       # Vite 8 reaches stable. See PR #2164 for context.
       - dependency-name: "@sveltejs/vite-plugin-svelte"
         update-types: ["version-update:semver-major"]
+      # hono 4.12.4 breaks type inference: ApplyGlobalResponse refactoring
+      # collapses hc<T> client types to unknown, and Deno resolves validator
+      # peer deps to a different hono version causing branded type mismatches.
+      # See: TEM-3792, https://github.com/honojs/hono/pull/4777
+      - dependency-name: "hono"
+        versions: ["4.12.4"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -479,6 +485,9 @@ updates:
       # See: https://github.com/porsager/postgres/issues/1143
       - dependency-name: "postgres"
         versions: [">= 3.4.8"]
+      # hono 4.12.4 breaks type inference — see root npm ignore for details
+      - dependency-name: "hono"
+        versions: ["4.12.4"]
 
   # Keep npm dependencies up to date (for friday-website)
   - package-ecosystem: "npm"
