@@ -449,6 +449,55 @@ describe("LocalAdapter: List", () => {
     assertResultOk(result);
     expect(result.data.length).toEqual(0);
   });
+
+  it("listAll with includeData=false returns summaries without data", async () => {
+    const adapter = await createTestAdapter();
+
+    const a1 = await adapter.create(createSummaryArtifactInput({ title: "A1" }));
+    assertResultOk(a1);
+    const a2 = await adapter.create(createSummaryArtifactInput({ title: "A2" }));
+    assertResultOk(a2);
+
+    const result = await adapter.listAll({ includeData: false });
+
+    assertResultOk(result);
+    expect(result.data.length).toEqual(2);
+    for (const item of result.data) {
+      expect("data" in item).toEqual(false);
+      expect(item.id).toBeDefined();
+      expect(item.type).toEqual("summary");
+      expect(item.title).toBeDefined();
+    }
+  });
+
+  it("listByWorkspace with includeData=false strips data", async () => {
+    const adapter = await createTestAdapter();
+
+    await adapter.create(createSummaryArtifactInput({ workspaceId: "ws-1" }));
+    await adapter.create(createSummaryArtifactInput({ workspaceId: "ws-1" }));
+
+    const result = await adapter.listByWorkspace({ workspaceId: "ws-1", includeData: false });
+
+    assertResultOk(result);
+    expect(result.data.length).toEqual(2);
+    for (const item of result.data) {
+      expect("data" in item).toEqual(false);
+    }
+  });
+
+  it("listByChat with includeData=false strips data", async () => {
+    const adapter = await createTestAdapter();
+
+    await adapter.create(createSummaryArtifactInput({ chatId: "chat-1" }));
+
+    const result = await adapter.listByChat({ chatId: "chat-1", includeData: false });
+
+    assertResultOk(result);
+    expect(result.data.length).toEqual(1);
+    const first = result.data[0];
+    if (!first) throw new Error("expected first element");
+    expect("data" in first).toEqual(false);
+  });
 });
 
 //

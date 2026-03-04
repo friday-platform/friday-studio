@@ -1,5 +1,5 @@
 import type { Result } from "@atlas/utils";
-import type { Artifact, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
+import type { Artifact, ArtifactDataInput, ArtifactSummary, CreateArtifactInput } from "./model.ts";
 
 /**
  * Options for reading database artifact preview.
@@ -84,23 +84,34 @@ export interface ArtifactStorageAdapter {
   /**
    * List all artifacts (latest revisions only).
    * Returns up to `limit` artifacts (default: 100).
+   * When `includeData` is false, skips blob downloads and returns metadata only.
    */
-  listAll(input: { limit?: number }): Promise<Result<Artifact[], string>>;
+  listAll(input: {
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>>;
 
   /**
    * List artifacts by workspace ID (latest revisions only).
    * Returns artifacts associated with the specified workspace.
+   * When `includeData` is false, skips blob downloads and returns metadata only.
    */
   listByWorkspace(input: {
     workspaceId: string;
     limit?: number;
-  }): Promise<Result<Artifact[], string>>;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>>;
 
   /**
    * List artifacts by chat ID (latest revisions only).
    * Returns artifacts associated with the specified chat session.
+   * When `includeData` is false, skips blob downloads and returns metadata only.
    */
-  listByChat(input: { chatId: string; limit?: number }): Promise<Result<Artifact[], string>>;
+  listByChat(input: {
+    chatId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>>;
 
   // File operations
   /**

@@ -9,8 +9,14 @@ import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { decodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
-import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
-import { ArtifactDataSchema, ArtifactTypeSchema } from "./model.ts";
+import type {
+  Artifact,
+  ArtifactData,
+  ArtifactDataInput,
+  ArtifactSummary,
+  CreateArtifactInput,
+} from "./model.ts";
+import { ArtifactDataSchema, ArtifactSummarySchema, ArtifactTypeSchema } from "./model.ts";
 import type { DatabaseSchema } from "./primitives.ts";
 import type {
   ArtifactStorageAdapter,
@@ -55,6 +61,8 @@ interface CortexMetadata {
   is_latest: boolean;
   created_at: string;
   revision_message?: string;
+  slug?: string;
+  source?: string;
 }
 
 /**
@@ -539,6 +547,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         chat_id: input.chatId,
         is_latest: true,
         created_at: new Date().toISOString(),
+        slug: input.slug,
+        source: input.source,
       };
 
       await this.request("POST", `/objects/${cortexId}/metadata`, metadata);
@@ -554,7 +564,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         workspaceId: input.workspaceId,
         chatId: input.chatId,
         createdAt: metadata.created_at,
-        ...(input.source ? { source: input.source } : {}),
+        slug: input.slug,
+        source: input.source,
       };
 
       return success(artifact);
@@ -649,6 +660,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         is_latest: false, // NOT latest yet - will be updated in step 5
         created_at: new Date().toISOString(),
         revision_message: input.revisionMessage,
+        slug: currentObject.metadata.slug, // immutable after creation
+        source: currentObject.metadata.source, // immutable after creation
       };
 
       try {
@@ -835,6 +848,8 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         chatId: cortexObject.metadata.chat_id,
         createdAt: cortexObject.metadata.created_at,
         revisionMessage: cortexObject.metadata.revision_message,
+        slug: cortexObject.metadata.slug,
+        source: cortexObject.metadata.source,
       };
 
       return success(artifact);
@@ -915,21 +930,34 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   async listByWorkspace(input: {
     workspaceId: string;
     limit?: number;
-  }): Promise<Result<Artifact[], string>> {
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
     return await this.listFiltered(
       { workspace_id: input.workspaceId, is_latest: "true" },
       input.limit,
+      input.includeData,
     );
   }
 
   /** List chat artifacts (latest revisions only) */
-  async listByChat(input: { chatId: string; limit?: number }): Promise<Result<Artifact[], string>> {
-    return await this.listFiltered({ chat_id: input.chatId, is_latest: "true" }, input.limit);
+  async listByChat(input: {
+    chatId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
+    return await this.listFiltered(
+      { chat_id: input.chatId, is_latest: "true" },
+      input.limit,
+      input.includeData,
+    );
   }
 
   /** List all artifacts (latest revisions only) */
-  async listAll(input: { limit?: number }): Promise<Result<Artifact[], string>> {
-    return await this.listFiltered({ is_latest: "true" }, input.limit);
+  async listAll(input: {
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
+    return await this.listFiltered({ is_latest: "true" }, input.limit, input.includeData);
   }
 
   /**
@@ -939,11 +967,18 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
    * revisions temporarily have is_latest=false. When the is_latest=true query misses
    * artifacts, a fallback query without is_latest finds them. Results are deduplicated
    * by artifact_id, keeping the highest revision per artifact.
+   *
+   * When `includeData` is false (default true), skips blob downloads entirely and
+   * constructs artifacts from Cortex metadata alone — dramatically reducing payload
+   * size and latency for list views that only need id/type/title/createdAt.
    */
   private async listFiltered(
     filters: Record<string, string>,
     limit?: number,
-  ): Promise<Result<Artifact[], string>> {
+    includeData?: boolean,
+  ): Promise<Result<ArtifactSummary[], string>> {
+    const shouldIncludeData = includeData !== false;
+
     try {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(filters)) {
@@ -964,8 +999,11 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       // Race condition fallback: During update steps 4-5, both old and new revisions
       // have is_latest=false. Query without is_latest to find artifacts invisible
-      // to the primary query. Only runs when the primary query returned nothing —
-      // a non-empty primary result means the race window hasn't hidden anything.
+      // to the primary query. Only runs when the primary query returned nothing.
+      // Note: this only covers the case where ALL results are hidden (e.g. a single
+      // artifact mid-update). If N artifacts exist and 1 is mid-update, the primary
+      // query returns N-1 and the fallback does not fire — that partial absence is
+      // an accepted trade-off for the read path.
       const hasIsLatestFilter = "is_latest" in filters;
       if (hasIsLatestFilter && objects.length === 0) {
         try {
@@ -1015,6 +1053,47 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         return success([]);
       }
 
+      // When includeData is false, construct artifacts from metadata only — no blob downloads.
+      // Validated via ArtifactSummarySchema.safeParse — malformed metadata (e.g. non-ISO
+      // created_at from legacy data) is logged and skipped rather than returned unvalidated.
+      // created_at is always set via new Date().toISOString() in create/update, so failures
+      // here indicate data written by an older code path or manual Cortex insertion.
+      if (!shouldIncludeData) {
+        const summaries: ArtifactSummary[] = [];
+        for (const obj of objects) {
+          const result = ArtifactSummarySchema.safeParse({
+            id: obj.metadata.artifact_id,
+            type: obj.metadata.artifact_type,
+            revision: obj.metadata.revision,
+            title: obj.metadata.title,
+            summary: obj.metadata.summary,
+            workspaceId: obj.metadata.workspace_id,
+            chatId: obj.metadata.chat_id,
+            createdAt: obj.metadata.created_at,
+            revisionMessage: obj.metadata.revision_message,
+            slug: obj.metadata.slug,
+            source: obj.metadata.source,
+          });
+          if (result.success) {
+            summaries.push(result.data);
+          } else {
+            logger.warn("Failed to validate artifact summary from metadata", {
+              cortexId: obj.id,
+              artifactId: obj.metadata.artifact_id,
+              error: result.error.message,
+            });
+          }
+        }
+        if (summaries.length < objects.length) {
+          logger.warn("Some artifacts dropped during metadata-only list", {
+            total: objects.length,
+            valid: summaries.length,
+            dropped: objects.length - summaries.length,
+          });
+        }
+        return success(summaries);
+      }
+
       // Download blobs and reconstruct artifacts in parallel
       const artifacts = await Promise.all(
         objects.map(async (obj) => {
@@ -1028,7 +1107,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
             // Parse and validate artifact data
             let artifactData: ArtifactData;
             try {
-              const parsed = JSON.parse(blobContent);
+              const parsed: unknown = JSON.parse(blobContent);
               const result = ArtifactDataSchema.safeParse(parsed);
               if (!result.success) {
                 logger.warn("Invalid artifact data schema in list", {
@@ -1048,9 +1127,19 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
               return null;
             }
 
+            const typeResult = ArtifactTypeSchema.safeParse(obj.metadata.artifact_type);
+            if (!typeResult.success) {
+              logger.warn("Invalid artifact type in list", {
+                cortexId: obj.id,
+                artifactId: obj.metadata.artifact_id,
+                artifactType: obj.metadata.artifact_type,
+              });
+              return null;
+            }
+
             const artifact: Artifact = {
               id: obj.metadata.artifact_id,
-              type: ArtifactTypeSchema.parse(obj.metadata.artifact_type),
+              type: typeResult.data,
               revision: obj.metadata.revision,
               data: artifactData,
               title: obj.metadata.title,
@@ -1058,6 +1147,9 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
               workspaceId: obj.metadata.workspace_id,
               chatId: obj.metadata.chat_id,
               createdAt: obj.metadata.created_at,
+              revisionMessage: obj.metadata.revision_message,
+              slug: obj.metadata.slug,
+              source: obj.metadata.source,
             };
 
             return artifact;

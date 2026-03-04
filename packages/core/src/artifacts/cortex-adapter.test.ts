@@ -22,6 +22,8 @@ interface CortexObject {
     is_latest: boolean;
     created_at: string;
     revision_message?: string;
+    slug?: string;
+    source?: string;
   };
   created_at: string;
   updated_at: string;
@@ -96,6 +98,9 @@ function makeCortexObject(overrides: {
   workspaceId?: string;
   chatId?: string;
   artifactType?: string;
+  revisionMessage?: string;
+  slug?: string;
+  source?: string;
 }): CortexObject {
   return {
     id: overrides.id ?? `cortex-${overrides.artifactId}`,
@@ -111,6 +116,9 @@ function makeCortexObject(overrides: {
       chat_id: overrides.chatId,
       is_latest: overrides.isLatest ?? true,
       created_at: new Date().toISOString(),
+      revision_message: overrides.revisionMessage,
+      slug: overrides.slug,
+      source: overrides.source,
     },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -313,6 +321,213 @@ describe("CortexStorageAdapter: list race condition fallback", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toHaveLength(0);
+    }
+  });
+});
+
+describe("CortexStorageAdapter: full-data list includes metadata fields", () => {
+  it("listAll with default includeData returns revisionMessage, slug, and source from metadata", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const obj = makeCortexObject({
+      id: "cortex-full-1",
+      artifactId: "art-full-1",
+      revision: 2,
+      workspaceId: "ws-1",
+      revisionMessage: "updated layout",
+      slug: "weekly-report",
+      source: "planner-agent",
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([obj]);
+      }
+      // Blob download
+      if (urlStr.includes("/objects/cortex-full-1")) {
+        return new Response(SUMMARY_BLOB);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listAll({});
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      const artifact = result.data[0];
+      if (!artifact) throw new Error("expected artifact");
+      expect(artifact.revisionMessage).toBe("updated layout");
+      expect(artifact.slug).toBe("weekly-report");
+      expect(artifact.source).toBe("planner-agent");
+      // Full-data path includes data
+      expect("data" in artifact).toBe(true);
+    }
+
+    // 2 fetch calls: metadata list query + blob download. Proves full-data path ran.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("CortexStorageAdapter: includeData=false (metadata-only)", () => {
+  it("listAll skips blob downloads and returns summaries from metadata", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const obj = makeCortexObject({
+      id: "cortex-summary-1",
+      artifactId: "art-sum-1",
+      revision: 3,
+      workspaceId: "ws-1",
+      revisionMessage: "third revision",
+      slug: "my-artifact",
+      source: "test-agent",
+    });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([obj]);
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listAll({ includeData: false });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      const summary = result.data[0];
+      if (!summary) throw new Error("expected summary");
+      expect(summary.id).toBe("art-sum-1");
+      expect(summary.type).toBe("summary");
+      expect(summary.revision).toBe(3);
+      expect(summary.title).toBe("Artifact art-sum-1");
+      expect(summary.summary).toBe("Test artifact");
+      expect(summary.workspaceId).toBe("ws-1");
+      expect(summary.revisionMessage).toBe("third revision");
+      expect(summary.slug).toBe("my-artifact");
+      expect(summary.source).toBe("test-agent");
+      // Should NOT have a data property
+      expect("data" in summary).toBe(false);
+    }
+
+    // Only 1 fetch call: the metadata list query. No blob downloads.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("listByWorkspace with includeData=false skips blob downloads", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const obj1 = makeCortexObject({ artifactId: "a1", workspaceId: "ws-1" });
+    const obj2 = makeCortexObject({ artifactId: "a2", workspaceId: "ws-1" });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([obj1, obj2]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByWorkspace({ workspaceId: "ws-1", includeData: false });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(2);
+      expect(result.data.every((s) => !("data" in s))).toBe(true);
+    }
+
+    // Only list query, no blob downloads
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("listByChat with includeData=false skips blob downloads", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const obj = makeCortexObject({ artifactId: "a1", chatId: "chat-1" });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([obj]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listByChat({ chatId: "chat-1", includeData: false });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      const first = result.data[0];
+      if (!first) throw new Error("expected first element");
+      expect("data" in first).toBe(false);
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips objects with non-ISO created_at via Zod datetime validation", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "summary" });
+    const badObj = makeCortexObject({ artifactId: "bad", artifactType: "summary" });
+    // Corrupt the created_at to a non-ISO datetime string
+    badObj.metadata.created_at = "not-a-date";
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([goodObj, badObj]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listAll({ includeData: false });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("good");
+    }
+  });
+
+  it("skips objects with invalid artifact_type metadata", async () => {
+    const adapter = new CortexStorageAdapter("http://localhost:9999");
+
+    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "summary" });
+    const badObj = makeCortexObject({ artifactId: "bad", artifactType: "nonexistent-type" });
+
+    const fetchSpy = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+
+      if (urlStr.includes("/objects?")) {
+        return Response.json([goodObj, badObj]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await adapter.listAll({ includeData: false });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Only the valid one should be returned
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe("good");
     }
   });
 });

@@ -623,6 +623,10 @@ const ListArtifactsQuery = z.object({
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
   limit: z.coerce.number().int().positive().max(1000).default(100),
+  includeData: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
 });
 
 const BatchGetBody = z.object({
@@ -769,6 +773,7 @@ const artifactsApp = daemonFactory
       const result = await ArtifactStorage.listByWorkspace({
         workspaceId: query.workspaceId,
         limit: query.limit,
+        includeData: query.includeData,
       });
 
       if (!result.ok) {
@@ -779,7 +784,11 @@ const artifactsApp = daemonFactory
     }
 
     if (query.chatId) {
-      const result = await ArtifactStorage.listByChat({ chatId: query.chatId, limit: query.limit });
+      const result = await ArtifactStorage.listByChat({
+        chatId: query.chatId,
+        limit: query.limit,
+        includeData: query.includeData,
+      });
 
       if (!result.ok) {
         return c.json({ error: result.error }, 500);
@@ -789,7 +798,10 @@ const artifactsApp = daemonFactory
     }
 
     // No filter - return all artifacts
-    const result = await ArtifactStorage.listAll({ limit: query.limit });
+    const result = await ArtifactStorage.listAll({
+      limit: query.limit,
+      includeData: query.includeData,
+    });
 
     if (!result.ok) {
       return c.json({ error: result.error }, 500);

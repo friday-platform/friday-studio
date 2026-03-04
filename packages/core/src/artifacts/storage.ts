@@ -55,10 +55,11 @@ export const ArtifactStorage: ArtifactStorageAdapter = {
   }) => adapter.update(input),
   get: (input: { id: string; revision?: number }) => adapter.get(input),
   getManyLatest: (input: { ids: string[] }) => adapter.getManyLatest(input),
-  listAll: (input: { limit?: number }) => adapter.listAll(input),
-  listByWorkspace: (input: { workspaceId: string; limit?: number }) =>
+  listAll: (input: { limit?: number; includeData?: boolean }) => adapter.listAll(input),
+  listByWorkspace: (input: { workspaceId: string; limit?: number; includeData?: boolean }) =>
     adapter.listByWorkspace(input),
-  listByChat: (input: { chatId: string; limit?: number }) => adapter.listByChat(input),
+  listByChat: (input: { chatId: string; limit?: number; includeData?: boolean }) =>
+    adapter.listByChat(input),
   deleteArtifact: (input: { id: string }) => adapter.deleteArtifact(input),
   readFileContents: (input: { id: string; revision?: number }) => adapter.readFileContents(input),
   readBinaryContents: (input: { id: string; revision?: number }) =>

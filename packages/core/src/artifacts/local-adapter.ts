@@ -7,12 +7,24 @@ import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
 import { openKv } from "../kv.ts";
-import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
+import type {
+  Artifact,
+  ArtifactData,
+  ArtifactDataInput,
+  ArtifactSummary,
+  CreateArtifactInput,
+} from "./model.ts";
 import type {
   ArtifactStorageAdapter,
   DatabasePreview,
   ReadDatabasePreviewOptions,
 } from "./types.ts";
+
+/** Strip `data` from an Artifact to produce an ArtifactSummary. */
+function toSummary(artifact: Artifact): ArtifactSummary {
+  const { data: _data, ...summary } = artifact;
+  return summary;
+}
 
 const logger = createLogger({ name: "local-artifact-storage" });
 
@@ -267,7 +279,8 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
   async listByWorkspace(input: {
     workspaceId: string;
     limit?: number;
-  }): Promise<Result<Artifact[], string>> {
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
     using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
@@ -289,11 +302,19 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
     artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return success(artifacts.slice(0, limit));
+    const sliced = artifacts.slice(0, limit);
+    if (input.includeData === false) {
+      return success(sliced.map(toSummary));
+    }
+    return success(sliced);
   }
 
   /** List chat artifacts (latest revisions only) */
-  async listByChat(input: { chatId: string; limit?: number }): Promise<Result<Artifact[], string>> {
+  async listByChat(input: {
+    chatId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
     using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
@@ -315,11 +336,18 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
     artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return success(artifacts.slice(0, limit));
+    const sliced = artifacts.slice(0, limit);
+    if (input.includeData === false) {
+      return success(sliced.map(toSummary));
+    }
+    return success(sliced);
   }
 
   /** List all artifacts (latest revisions only) */
-  async listAll(input: { limit?: number }): Promise<Result<Artifact[], string>> {
+  async listAll(input: {
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
     using db = await openKv(this.kvPath);
 
     const artifacts: Artifact[] = [];
@@ -346,7 +374,11 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
     artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return success(artifacts.slice(0, limit));
+    const sliced = artifacts.slice(0, limit);
+    if (input.includeData === false) {
+      return success(sliced.map(toSummary));
+    }
+    return success(sliced);
   }
 
   /** Soft delete (data preserved) */

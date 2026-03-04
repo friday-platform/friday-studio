@@ -161,6 +161,11 @@ export const CreateArtifactSchema = z.object({
 
 export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
 
+/**
+ * Schema for artifact updates. Creates a new revision.
+ * `slug` and `source` are immutable after creation — carried forward
+ * from the previous revision automatically by the storage adapter.
+ */
 export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataInputSchema,
@@ -186,6 +191,10 @@ export const ArtifactSchema = z.object({
 });
 
 export type Artifact = z.infer<typeof ArtifactSchema>;
+
+/** Lightweight artifact without blob data — used for list endpoints. */
+export const ArtifactSummarySchema = ArtifactSchema.omit({ data: true });
+export type ArtifactSummary = z.infer<typeof ArtifactSummarySchema>;
 
 /**
  * Artifact with optional contents loaded.

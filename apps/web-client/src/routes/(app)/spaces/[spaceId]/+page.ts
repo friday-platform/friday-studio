@@ -1,7 +1,9 @@
 import { client, parseResult } from "@atlas/client/v2";
+import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import { error } from "@sveltejs/kit";
 import { loadWorkspaceIntegrations } from "$lib/modules/integrations/types";
 import type { Integration } from "$lib/modules/integrations/types";
+import { z } from "zod";
 import type { PageLoad } from "./$types";
 
 export const load: PageLoad = async ({ params, parent }) => {
@@ -19,7 +21,9 @@ export const load: PageLoad = async ({ params, parent }) => {
   const [sessionsRes, artifactsRes] = await Promise.all([
     parseResult(client.sessions.index.$get({ query: { workspaceId: params.spaceId } })),
     parseResult(
-      client.artifactsStorage.index.$get({ query: { workspaceId: params.spaceId, limit: "10" } }),
+      client.artifactsStorage.index.$get({
+        query: { workspaceId: params.spaceId, limit: "10", includeData: "false" },
+      }),
     ),
   ]);
 
@@ -31,6 +35,8 @@ export const load: PageLoad = async ({ params, parent }) => {
     requiresSetup: false,
     integrations: [] as Integration[],
     sessions: sessionsRes.data.sessions,
-    artifacts: artifactsRes.ok ? artifactsRes.data.artifacts : [],
+    artifacts: artifactsRes.ok
+      ? (z.array(ArtifactSummarySchema).safeParse(artifactsRes.data.artifacts).data ?? [])
+      : [],
   };
 };
