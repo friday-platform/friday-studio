@@ -148,8 +148,7 @@
     "npm:pgsql-parser@^17.9.12": "17.9.12",
     "npm:postgres@3.4.7": "3.4.7",
     "npm:postgres@^3.4.7": "3.4.7",
-    "npm:prettier-plugin-svelte@^3.4.1": "3.5.0_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0",
-    "npm:prettier-plugin-svelte@^3.5.0": "3.5.0_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0",
+    "npm:prettier-plugin-svelte@^3.5.1": "3.5.1_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0",
     "npm:prettier@^3.8.1": "3.8.1",
     "npm:prom-client@^15.1.3": "15.1.3",
     "npm:proper-lockfile@^4.1.2": "4.1.2",
@@ -5096,8 +5095,8 @@
     "prelude-ls@1.2.1": {
       "integrity": "sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g=="
     },
-    "prettier-plugin-svelte@3.5.0_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0": {
-      "integrity": "sha512-2lLO/7EupnjO/95t+XZesXs8Bf3nYLIDfCo270h5QWbj/vjLqmrQ1LiRk9LPggxSDsnVYfehamZNf+rgQYApZg==",
+    "prettier-plugin-svelte@3.5.1_prettier@3.8.1_svelte@5.53.6__acorn@8.16.0": {
+      "integrity": "sha512-65+fr5+cgIKWKiqM1Doum4uX6bY8iFCdztvvp2RcF+AJoieaw9kJOFMNcJo/bkmKYsxFaM9OsVZK/gWauG/5mg==",
       "dependencies": [
         "prettier",
         "svelte"
@@ -6305,7 +6304,7 @@
             "npm:eslint@^10.0.2",
             "npm:globals@^17.4.0",
             "npm:nanoid@^5.1.6",
-            "npm:prettier-plugin-svelte@^3.4.1",
+            "npm:prettier-plugin-svelte@^3.5.1",
             "npm:prettier@^3.8.1",
             "npm:svelte-check@^4.4.4",
             "npm:svelte-eslint-parser@^1.5.1",
@@ -6374,7 +6373,7 @@
             "npm:eslint@^10.0.2",
             "npm:globals@^17.4.0",
             "npm:gsap@^3.14.2",
-            "npm:prettier-plugin-svelte@^3.5.0",
+            "npm:prettier-plugin-svelte@^3.5.1",
             "npm:prettier@^3.8.1",
             "npm:prom-client@^15.1.3",
             "npm:svelte-check@^4.4.4",
@@ -6484,7 +6483,7 @@
             "npm:globals@^17.4.0",
             "npm:markdown-it@^14.1.1",
             "npm:papaparse@^5.5.3",
-            "npm:prettier-plugin-svelte@^3.4.1",
+            "npm:prettier-plugin-svelte@^3.5.1",
             "npm:prettier@^3.8.1",
             "npm:prosemirror-commands@^1.7.1",
             "npm:prosemirror-dropcursor@^1.8.2",
