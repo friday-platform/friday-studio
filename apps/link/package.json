@@ -18,7 +18,7 @@
     "@octokit/request": "^10.0.8",
     "@socotra/modelcontextprotocol-sdk": "1.21.0",
     "@std/async": "npm:@jsr/std__async@1.0.15",
-    "hono": "4.12.5",
+    "hono": "4.12.3",
     "nanoid": "5.1.6",
     "oauth4webapi": "3.8.5",
     "postgres": "3.4.7",
