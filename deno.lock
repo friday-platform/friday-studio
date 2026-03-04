@@ -6346,7 +6346,7 @@
             "npm:ai@^5.0.142",
             "npm:file-type@^21.3.0",
             "npm:hono-openapi@^1.3.0",
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:jszip@^3.10.1",
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.0.18",
@@ -6402,7 +6402,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@pgsql/traverse@^17.2.4",
             "npm:@pgsql/types@^17.6.2",
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:pgsql-parser@^17.9.12",
             "npm:postgres@3.4.7",
             "npm:vitest@^4.0.18",
@@ -6551,7 +6551,7 @@
       "packages/client": {
         "packageJson": {
           "dependencies": [
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:zod@^4.3.5"
           ]
         }
@@ -6654,7 +6654,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:zod@^4.3.5"
           ]
         }
@@ -6710,7 +6710,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:hono@4.12.3",
+            "npm:hono@4.12.4",
             "npm:vitest@^4.0.18"
           ]
         }
@@ -6787,7 +6787,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@socotra/modelcontextprotocol-sdk@^1.21.0",
-            "npm:hono@4.12.3"
+            "npm:hono@4.12.4"
           ]
         }
       },
