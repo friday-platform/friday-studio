@@ -3,6 +3,8 @@ import { createLogger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CredentialNotFoundError,
+  hasUnusableCredentialCause,
+  LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
   resolveEnvValues,
@@ -236,5 +238,45 @@ describe("Google credential resolution", () => {
     await expect(() => resolveEnvValues(env, logger)).rejects.toThrow(
       "Key 'access_token' not found in credential",
     );
+  });
+});
+
+// =============================================================================
+// hasUnusableCredentialCause
+// =============================================================================
+
+describe("hasUnusableCredentialCause", () => {
+  it.each([
+    { name: "LinkCredentialNotFoundError", error: new LinkCredentialNotFoundError("cred_1") },
+    {
+      name: "LinkCredentialExpiredError (expired_no_refresh)",
+      error: new LinkCredentialExpiredError("cred_2", "expired_no_refresh"),
+    },
+    {
+      name: "LinkCredentialExpiredError (refresh_failed)",
+      error: new LinkCredentialExpiredError("cred_3", "refresh_failed"),
+    },
+  ])("returns true for direct $name", ({ error }) => {
+    expect(hasUnusableCredentialCause(error)).toBe(true);
+  });
+
+  it("returns true when credential error is nested in cause chain", () => {
+    const inner = new LinkCredentialNotFoundError("cred_deep");
+    const middle = new Error("middle");
+    middle.cause = inner;
+    const outer = new Error("outer");
+    outer.cause = middle;
+
+    expect(hasUnusableCredentialCause(outer)).toBe(true);
+  });
+
+  it.each([
+    { name: "generic Error", error: new Error("connection refused") },
+    { name: "TypeError", error: new TypeError("oops") },
+    { name: "string", error: "not an error" },
+    { name: "null", error: null },
+    { name: "undefined", error: undefined },
+  ])("returns false for $name", ({ error }) => {
+    expect(hasUnusableCredentialCause(error)).toBe(false);
   });
 });

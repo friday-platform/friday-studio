@@ -23,11 +23,13 @@ export class CredentialNotFoundError extends Error {
 
 /** Error thrown when a specific credential ID is not found in Link (404) */
 export class LinkCredentialNotFoundError extends Error {
-  constructor(public readonly credentialId: string) {
+  constructor(
+    public readonly credentialId: string,
+    public readonly serverName?: string,
+  ) {
+    const integration = serverName ? `'${serverName}'` : "this integration";
     super(
-      `Credential '${credentialId}' not found in Link. ` +
-        `The credential may have been deleted or revoked. ` +
-        `Update your workspace.yml with a valid credential ID.`,
+      `The credential for ${integration} was deleted or revoked. Reconnect the integration to continue.`,
     );
     this.name = "LinkCredentialNotFoundError";
   }
@@ -38,12 +40,11 @@ export class LinkCredentialExpiredError extends Error {
   constructor(
     public readonly credentialId: string,
     public readonly status: "expired_no_refresh" | "refresh_failed",
+    public readonly serverName?: string,
   ) {
-    const reason =
-      status === "expired_no_refresh"
-        ? "has expired and no refresh token is available"
-        : "refresh failed";
-    super(`Credential '${credentialId}' ${reason}. Re-authorize the integration to continue.`);
+    const integration = serverName ? `'${serverName}'` : "this integration";
+    const action = status === "refresh_failed" ? "could not be refreshed" : "has expired";
+    super(`The credential for ${integration} ${action}. Reconnect the integration to continue.`);
     this.name = "LinkCredentialExpiredError";
   }
 }
@@ -118,6 +119,21 @@ export async function fetchLinkCredential(
   }
 
   return credential;
+}
+
+/** Check if an error (or any error in its `.cause` chain) is an unusable credential error. */
+export function hasUnusableCredentialCause(error: unknown): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (
+      current instanceof LinkCredentialNotFoundError ||
+      current instanceof LinkCredentialExpiredError
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
 }
 
 /**

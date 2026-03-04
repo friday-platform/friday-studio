@@ -16,6 +16,7 @@ import { SkillStorage } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
+import { LinkCredentialNotFoundError } from "../mcp-registry/credential-resolver.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
 // Mock logger
@@ -314,5 +315,70 @@ describe("buildAgentContext skill injection", () => {
     expect(enrichedPrompt).toBe("Original prompt");
     expect(enrichedPrompt.includes("<available_skills>")).toBe(false);
     expect(enrichedPrompt.includes("ignored-skill")).toBe(false);
+  });
+});
+
+describe("buildAgentContext credential error propagation", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = mockWorkspaceConfigFetch();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("re-throws when getMCPManager rejects with LinkCredentialNotFoundError", async () => {
+    // Simulate the cause-wrapped shape that production emits from _registerServerInternal:
+    // enriched LinkCredentialNotFoundError wraps the original as .cause
+    const inner = new LinkCredentialNotFoundError("cred_deleted");
+    const credError = new LinkCredentialNotFoundError(inner.credentialId, "some-server");
+    credError.cause = inner;
+    const releaseSpy = vi.fn();
+
+    const failingPool = {
+      getMCPManager: () => Promise.reject(credError),
+      releaseMCPManager: releaseSpy,
+    };
+
+    const buildAgentContext = createAgentContextBuilder({
+      mcpServerPool: failingPool,
+      logger: mockLogger,
+    });
+
+    await expect(
+      buildAgentContext(createTestAgent(), createTestSessionData("ws-cred-fail"), "test"),
+    ).rejects.toThrow(credError);
+
+    // releaseMCPManager must NOT be called — getMCPManager failed before release was captured
+    expect(releaseSpy).not.toHaveBeenCalled();
+  });
+
+  it("swallows non-credential errors and returns empty tools", async () => {
+    const releaseSpy = vi.fn();
+
+    const failingPool = {
+      getMCPManager: () => Promise.reject(new Error("connection refused")),
+      releaseMCPManager: releaseSpy,
+    };
+
+    const buildAgentContext = createAgentContextBuilder({
+      mcpServerPool: failingPool,
+      logger: mockLogger,
+    });
+
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-generic-fail"),
+      "test",
+    );
+
+    expect(Object.keys(context.tools)).toHaveLength(0);
+    // releaseMCPManager must NOT be called — getMCPManager failed before release was captured
+    expect(releaseSpy).not.toHaveBeenCalled();
   });
 });

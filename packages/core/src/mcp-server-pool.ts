@@ -11,6 +11,7 @@ import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
 import { createErrorCause } from "./errors.ts";
+import { hasUnusableCredentialCause } from "./mcp-registry/credential-resolver.ts";
 
 interface PooledMCPManager {
   manager: MCPManager;
@@ -61,6 +62,12 @@ export class GlobalMCPServerPool {
           await manager.registerServer({ ...config, id });
           serverConfigMap.set(id, config);
         } catch (error) {
+          // Fail fast on unusable credentials — workspace cannot function without them
+          if (hasUnusableCredentialCause(error)) {
+            await manager.dispose().catch(() => {});
+            throw error;
+          }
+
           const errorCause = createErrorCause(error);
           this.logger.error(`Failed to register MCP server in pool: ${id}`, {
             operation: "mcp_server_pool_registration",

@@ -34,6 +34,8 @@ export { SessionFailedError } from "./src/errors/session-failed-error.ts";
 export { UserConfigurationError } from "./src/errors/user-configuration-error.ts";
 export {
   CredentialNotFoundError,
+  hasUnusableCredentialCause,
+  LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";

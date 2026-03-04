@@ -18,6 +18,7 @@ import {
   type EphemeralChunk,
   extractPlannedSteps,
   type GlobalMCPServerPool,
+  hasUnusableCredentialCause,
   isAgentAction,
   mapActionToStepComplete,
   mapActionToStepStart,
@@ -79,9 +80,11 @@ import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
  * @internal Exported for testing
  */
 export function classifySessionError(error: unknown): WorkspaceSessionStatusType {
-  return error instanceof UserConfigurationError
-    ? WorkspaceSessionStatus.SKIPPED
-    : WorkspaceSessionStatus.FAILED;
+  if (error instanceof UserConfigurationError) return WorkspaceSessionStatus.SKIPPED;
+  // Deleted/expired credentials are user configuration issues, not platform bugs.
+  // Classify as "skipped" to prevent false production failure alerts.
+  if (hasUnusableCredentialCause(error)) return WorkspaceSessionStatus.SKIPPED;
+  return WorkspaceSessionStatus.FAILED;
 }
 
 // WorkspaceRuntime signal type - plain payload without full IAtlasScope implementation

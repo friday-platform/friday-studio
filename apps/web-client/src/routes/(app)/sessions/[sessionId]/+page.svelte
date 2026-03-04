@@ -65,6 +65,7 @@
         class:completed={session.status === "completed"}
         class:failed={session.status === "failed"}
         class:active={session.status === "active" || isLive}
+        class:skipped={session.status === "skipped"}
       >
         {#if session.status === "completed"}
           <IconSmall.Check />
@@ -72,6 +73,9 @@
         {:else if session.status === "failed"}
           <IconSmall.Close />
           Failed
+        {:else if session.status === "skipped"}
+          <IconSmall.Close />
+          Skipped
         {:else if isLive}
           <IconSmall.Progress />
           Running
@@ -94,7 +98,7 @@
         {/if}
       </div>
 
-      {#if session.error}
+      {#if session.error && !session.aiSummary}
         <div class="session-error">
           <pre class="error-message">{session.error}</pre>
         </div>
@@ -121,6 +125,12 @@
                 </div>
               {/each}
             </dl>
+          {/if}
+          {#if session.error}
+            <details class="error-details">
+              <summary class="error-details-toggle">Show technical details</summary>
+              <pre class="error-message">{session.error}</pre>
+            </details>
           {/if}
         </div>
       {:else if isLive && session.status !== "active"}
@@ -209,6 +219,11 @@
     &.active {
       background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
       color: var(--color-yellow-2);
+    }
+
+    &.skipped {
+      background: color-mix(in srgb, var(--text-3) 10%, transparent);
+      color: var(--text-3);
     }
   }
 
@@ -316,6 +331,30 @@
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .error-details {
+    margin-block-start: var(--size-3);
+  }
+
+  .error-details-toggle {
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    user-select: none;
+
+    &:hover {
+      color: var(--color-text);
+    }
+  }
+
+  .error-details .error-message {
+    background-color: color-mix(in srgb, var(--color-red) 10%, transparent);
+    border-inline-start: 3px solid var(--color-red);
+    border-radius: var(--radius-1);
+    margin-block-start: var(--size-2);
+    padding-block: var(--size-2);
+    padding-inline: var(--size-3);
   }
 
   .loading {

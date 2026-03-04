@@ -110,6 +110,7 @@
           class:completed={session.status === "completed"}
           class:failed={session.status === "failed"}
           class:active={session.status === "active" || isLive}
+          class:skipped={session.status === "skipped"}
         >
           {#if session.status === "completed"}
             <IconSmall.Check />
@@ -117,6 +118,9 @@
           {:else if session.status === "failed"}
             <IconSmall.Close />
             Failed
+          {:else if session.status === "skipped"}
+            <IconSmall.Close />
+            Skipped
           {:else if isLive}
             <IconSmall.Progress />
             In Progress
@@ -163,6 +167,14 @@
               {/each}
             </dl>
           {/if}
+          {#if session.error}
+            <details class="error-details">
+              <summary class="error-details-toggle">Show technical details</summary>
+              <div class="session-error">
+                <pre class="error-message">{session.error}</pre>
+              </div>
+            </details>
+          {/if}
         </section>
       {:else if isLive && session.status !== "active"}
         <section class="section">
@@ -174,9 +186,9 @@
         </section>
       {/if}
 
-      {#if session.error}
+      {#if session.error && !session.aiSummary}
         <section class="section">
-          <h2 class="section-heading">Summary</h2>
+          <h2 class="section-heading">Error</h2>
           <div class="session-error">
             <pre class="error-message">{session.error}</pre>
           </div>
@@ -269,6 +281,11 @@
     &.active {
       background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
       color: var(--color-yellow-2);
+    }
+
+    &.skipped {
+      background: color-mix(in srgb, var(--text-3) 10%, transparent);
+      color: var(--text-3);
     }
   }
 
@@ -376,6 +393,25 @@
     line-height: var(--font-lineheight-3);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .error-details {
+    margin-block-start: var(--size-3);
+  }
+
+  .error-details-toggle {
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    user-select: none;
+
+    &:hover {
+      color: var(--color-text);
+    }
+  }
+
+  .error-details .session-error {
+    margin-block-start: var(--size-2);
   }
 
   /* Empty states */

@@ -12,12 +12,13 @@ import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 interface AgentContextBuilderDeps {
-  mcpServerPool: GlobalMCPServerPool;
+  mcpServerPool: Pick<GlobalMCPServerPool, "getMCPManager" | "releaseMCPManager">;
   logger: Logger;
   server?: Server;
   hasActiveSSE?: () => boolean;
@@ -62,6 +63,12 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
       agentLogger.info("Pre-fetched tools", { toolCount: Object.keys(allTools).length });
     } catch (error) {
+      // Credential errors must surface to the user — re-throw so the session fails
+      // instead of silently running the agent without any tools.
+      if (hasUnusableCredentialCause(error)) {
+        throw error;
+      }
+
       agentLogger.error("Failed to pre-fetch tools", { error });
       // Continue with empty tools rather than failing entirely
       allTools = {};
@@ -158,7 +165,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 async function fetchAllTools(
   workspaceId: string,
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
-  mcpServerPool: GlobalMCPServerPool,
+  mcpServerPool: Pick<GlobalMCPServerPool, "getMCPManager" | "releaseMCPManager">,
   logger: Logger,
 ): Promise<{ tools: Record<string, AtlasTool>; skillEntries: SkillEntry[]; release: () => void }> {
   logger.debug("Fetching tools from MCP servers", {

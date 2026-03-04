@@ -16,6 +16,7 @@ import {
   MCPTransportConfigSchema,
 } from "@atlas/config";
 import {
+  LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
@@ -287,9 +288,10 @@ export class MCPManager {
         error instanceof Error &&
         (error.message.includes("timeout") || error.message.includes("connection"));
 
-      // Credential not found is a user configuration issue (deleted/revoked credential)
+      // Unusable credentials are user configuration issues (deleted/revoked/expired)
       // Log at warn level - not a platform bug, user needs to update workspace config
-      const isCredentialNotFoundError = error instanceof LinkCredentialNotFoundError;
+      const isUnusableCredential =
+        error instanceof LinkCredentialNotFoundError || error instanceof LinkCredentialExpiredError;
 
       if (isPlatformConnectionIssue) {
         logger.debug(`Platform MCP server temporarily unavailable: ${config.id}`, {
@@ -298,14 +300,14 @@ export class MCPManager {
           reason: error instanceof Error ? error.message : String(error),
           transport: config.transport,
         });
-      } else if (isCredentialNotFoundError) {
+      } else if (isUnusableCredential) {
         logger.warn(`Failed to register MCP server: ${config.id}`, {
           operation: "mcp_server_registration",
           serverId: config.id,
           credentialId: error.credentialId,
           error: error.message,
           transport: config.transport,
-          hint: "Credential was deleted or revoked. Update workspace.yml with a valid credential ID.",
+          hint: "Credential is unusable. Update workspace.yml with a valid credential ID.",
         });
       } else {
         logger.error(`Failed to register MCP server: ${config.id}`, {
@@ -316,7 +318,25 @@ export class MCPManager {
         });
       }
 
-      // Build error message with transport context for debugging
+      // Re-throw credential errors with server name for user-friendly messages.
+      // Creates a new instance so the message identifies which integration failed.
+      // Preserves original as .cause for consistency with the generic error wrapper below.
+      if (error instanceof LinkCredentialNotFoundError) {
+        const enriched = new LinkCredentialNotFoundError(error.credentialId, config.id);
+        enriched.cause = error;
+        throw enriched;
+      }
+      if (error instanceof LinkCredentialExpiredError) {
+        const enriched = new LinkCredentialExpiredError(
+          error.credentialId,
+          error.status,
+          config.id,
+        );
+        enriched.cause = error;
+        throw enriched;
+      }
+
+      // Build error message with transport context for debugging (non-credential errors)
       const msg = error instanceof Error ? error.message : String(error);
       let context = "";
       if (config.transport.type === "stdio") {
@@ -326,7 +346,9 @@ export class MCPManager {
         context = ` (url: ${config.transport.url})`;
       }
 
-      throw new Error(`MCP server '${config.id}' registration failed: ${msg}${context}`);
+      const wrapped = new Error(`MCP server '${config.id}' registration failed: ${msg}${context}`);
+      wrapped.cause = error;
+      throw wrapped;
     }
   }
 

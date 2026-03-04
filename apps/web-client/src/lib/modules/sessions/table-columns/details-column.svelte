@@ -14,6 +14,7 @@
   let { job, summary, workspaceName, sessionType, title, parentTitle, status }: Props = $props();
 
   const isFailed = $derived(status === "failed");
+  const isSkipped = $derived(status === "skipped");
   const isRunning = $derived(status === "partial" || status === "active");
   const isTask = $derived(sessionType === "task");
   // Show title if available, otherwise fall back to workspace/job name
@@ -35,6 +36,11 @@
         <span class="failed-tag">
           <IconSmall.Close />
           Failed
+        </span>
+      {:else if isSkipped}
+        <span class="skipped-tag">
+          <IconSmall.Close />
+          Skipped
         </span>
       {/if}
     </div>
@@ -113,6 +119,20 @@
     background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
     border-radius: var(--radius-2-5);
     color: var(--color-yellow-2);
+    display: inline-flex;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1);
+    margin-inline-start: var(--size-2);
+    padding-block: var(--size-0-5);
+    padding-inline: var(--size-1-5) var(--size-2);
+  }
+
+  .skipped-tag {
+    align-items: center;
+    background: color-mix(in srgb, var(--text-3) 10%, transparent);
+    border-radius: var(--radius-2-5);
+    color: var(--text-3);
     display: inline-flex;
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);

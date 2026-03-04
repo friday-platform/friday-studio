@@ -9,6 +9,10 @@
  */
 
 import process from "node:process";
+import {
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+} from "@atlas/core/mcp-registry/credential-resolver";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MCPManager } from "./manager.ts";
 
@@ -171,10 +175,74 @@ describe("MCPManager - Link Credential Integration", () => {
       env: { API_KEY: { from: "link" as const, id: "cred_nonexistent", key: "token" } },
     };
 
-    // Should fail with credential not found error (404 from Link)
-    await expect(manager.registerServer(config)).rejects.toThrow(
-      /Credential 'cred_nonexistent' not found in Link/,
-    );
+    // Credential errors are re-thrown with server name for user-friendly context
+    const error = await manager.registerServer(config).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
+    if (!(error instanceof LinkCredentialNotFoundError)) throw new Error("unreachable");
+    expect(error.message).toContain("test-missing-cred-server");
+    expect(error.credentialId).toBe("cred_nonexistent");
+  });
+
+  it("fails with expired error when credential status is expired_no_refresh", async () => {
+    // Setup: Mock response with expired status
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            credential: { id: "cred_expired", provider: "slack", type: "oauth", secret: {} },
+            status: "expired_no_refresh",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const config = {
+      id: "test-expired-cred-server",
+      transport: {
+        type: "stdio" as const,
+        command: process.platform === "win32" ? "cmd.exe" : "echo",
+        args: [],
+      },
+      env: { API_KEY: { from: "link" as const, id: "cred_expired", key: "token" } },
+    };
+
+    const error = await manager.registerServer(config).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
+    if (!(error instanceof LinkCredentialExpiredError)) throw new Error("unreachable");
+    expect(error.message).toContain("test-expired-cred-server");
+    expect(error.credentialId).toBe("cred_expired");
+    expect(error.status).toBe("expired_no_refresh");
+  });
+
+  it("fails with expired error when credential status is refresh_failed", async () => {
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            credential: { id: "cred_refresh_fail", provider: "slack", type: "oauth", secret: {} },
+            status: "refresh_failed",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const config = {
+      id: "test-refresh-failed-server",
+      transport: {
+        type: "stdio" as const,
+        command: process.platform === "win32" ? "cmd.exe" : "echo",
+        args: [],
+      },
+      env: { API_KEY: { from: "link" as const, id: "cred_refresh_fail", key: "token" } },
+    };
+
+    const error = await manager.registerServer(config).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
+    if (!(error instanceof LinkCredentialExpiredError)) throw new Error("unreachable");
+    expect(error.message).toContain("test-refresh-failed-server");
+    expect(error.message).toContain("could not be refreshed");
+    expect(error.credentialId).toBe("cred_refresh_fail");
+    expect(error.status).toBe("refresh_failed");
   });
 
   it("Test 3: resolves mixed env types (Link + literal + auto)", async () => {

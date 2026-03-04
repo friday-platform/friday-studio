@@ -1,5 +1,10 @@
 import type { MCPServerConfig } from "@atlas/config";
-import { describe, expect, it } from "vitest";
+import { MCPManager } from "@atlas/mcp";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+} from "./mcp-registry/credential-resolver.ts";
 import { GlobalMCPServerPool } from "./mcp-server-pool.ts";
 
 // Minimal logger stub — pool constructor requires it
@@ -70,5 +75,62 @@ describe("generateConfigKey", () => {
   it.each(differingConfigs)("produces different keys for $name", ({ configA, configB }) => {
     const pool = makePool();
     expect(pool.generateConfigKey(configA)).not.toBe(pool.generateConfigKey(configB));
+  });
+});
+
+describe("getMCPManager — credential error propagation", () => {
+  let disposeSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    disposeSpy = vi.spyOn(MCPManager.prototype, "dispose").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("re-throws when registerServer fails with LinkCredentialNotFoundError", async () => {
+    const credError = new LinkCredentialNotFoundError("cred_deleted_xyz");
+
+    vi.spyOn(MCPManager.prototype, "registerServer").mockRejectedValue(credError);
+
+    const pool = makePool();
+    const configs = { slack: makeConfig() };
+
+    await expect(pool.getMCPManager(configs)).rejects.toThrow(credError);
+    expect(disposeSpy).toHaveBeenCalledOnce();
+    expect(pool.getPoolStats().totalPooledManagers).toBe(0);
+    await pool.dispose();
+  });
+
+  it("re-throws when registerServer fails with LinkCredentialExpiredError", async () => {
+    const expiredError = new LinkCredentialExpiredError("cred_expired_abc", "expired_no_refresh");
+
+    vi.spyOn(MCPManager.prototype, "registerServer").mockRejectedValue(expiredError);
+
+    const pool = makePool();
+    const configs = { github: makeConfig() };
+
+    await expect(pool.getMCPManager(configs)).rejects.toThrow(expiredError);
+    expect(disposeSpy).toHaveBeenCalledOnce();
+    expect(pool.getPoolStats().totalPooledManagers).toBe(0);
+    await pool.dispose();
+  });
+
+  it("swallows non-credential registration errors and continues", async () => {
+    vi.spyOn(MCPManager.prototype, "registerServer").mockRejectedValue(
+      new Error("connection refused"),
+    );
+
+    const pool = makePool();
+    const configs = { slack: makeConfig() };
+
+    // Should NOT throw — error is swallowed, manager returned and cached
+    const manager = await pool.getMCPManager(configs);
+    expect(manager).toBeInstanceOf(MCPManager);
+    expect(pool.getPoolStats().totalPooledManagers).toBe(1);
+    await pool.dispose();
   });
 });
