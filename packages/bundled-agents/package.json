@@ -9,7 +9,7 @@
     "./shared-schemas": "./src/shared-schemas.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.63",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.66",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/schemas": "workspace:*",
