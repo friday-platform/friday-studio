@@ -39,7 +39,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@libpdf/core": "^0.2.10",
+    "@libpdf/core": "^0.2.11",
     "@std/path": "npm:@jsr/std__path@^1.1.4",
     "vitest": "^4.0.18"
   }
