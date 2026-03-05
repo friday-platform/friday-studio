@@ -43,7 +43,7 @@
     "@types/deno": "2.5.0",
     "@types/markdown-it": "^14.1.2",
     "@types/papaparse": "^5.5.2",
-    "ai": "^5.0.146",
+    "ai": "^5.0.148",
     "markdown-it": "^14.1.1",
     "papaparse": "^5.5.3",
     "prosemirror-commands": "^1.7.1",
