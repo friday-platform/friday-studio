@@ -51,7 +51,6 @@ import { configRoutes } from "../routes/config.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
-import { ledgerRoutes } from "../routes/ledger.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
@@ -62,6 +61,7 @@ import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
+import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
@@ -181,8 +181,8 @@ export class AtlasDaemon {
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getLibraryStorage: this.getLibraryStorage.bind(this),
-      getAgentRegistry: this.getAgentRegistry.bind(this),
       getLedgerAdapter: this.getLedgerAdapter.bind(this),
+      getAgentRegistry: this.getAgentRegistry.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
@@ -585,9 +585,7 @@ export class AtlasDaemon {
     return this.libraryStorage;
   }
 
-  /**
-   * Get Ledger resource storage adapter
-   */
+  /** Get Ledger resource storage adapter */
   public getLedgerAdapter(): ResourceStorageAdapter {
     if (!this.resourceStorage) {
       throw new Error("Ledger adapter not initialized (LEDGER_URL not set)");
@@ -644,6 +642,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces", workspacesRoutes);
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
+    this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
@@ -656,7 +655,6 @@ export class AtlasDaemon {
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
-    this.app.route("/api/ledger", ledgerRoutes);
     this.app.route("/api/link", linkRoutes);
     this.app.route("/api/mcp-registry", mcpRegistryRouter);
     this.app.route("/api/me", meRoutes);
@@ -1539,11 +1537,11 @@ export class AtlasDaemon {
     );
     await Promise.all(shutdownPromises);
 
-    // Shutdown StreamRegistry (sync — in-memory only, no pending I/O)
+    // Shutdown StreamRegistry
     this.streamRegistry?.shutdown();
 
     // Shutdown SessionStreamRegistry
-    await this.sessionStreamRegistry?.shutdown();
+    this.sessionStreamRegistry?.shutdown();
 
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {

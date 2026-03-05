@@ -36,11 +36,17 @@
     queryFn: async ({ pageParam }) => await listChats(pageParam),
     initialPageParam: null as number | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? null,
-    select: (data) => ({
-      chats: data.pages.flatMap((c) => c.chats).filter((chat) => chat.source === "atlas"),
-      cursor: data.pages.at(-1)?.nextCursor,
-      hasMore: data.pages.at(-1)?.hasMore,
-    }),
+    select: (data) => {
+      const seen = new Set<string>();
+      const chats = data.pages
+        .flatMap((c) => c.chats)
+        .filter((chat) => {
+          if (chat.source !== "atlas" || seen.has(chat.id)) return false;
+          seen.add(chat.id);
+          return true;
+        });
+      return { chats, cursor: data.pages.at(-1)?.nextCursor, hasMore: data.pages.at(-1)?.hasMore };
+    },
     placeholderData: keepPreviousData,
   }));
 

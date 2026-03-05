@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+  import { createInfiniteQuery, keepPreviousData } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { getAppContext } from "$lib/app-context.svelte";
@@ -11,69 +13,34 @@
   import Footer from "$lib/modules/conversation/footer.svelte";
   import Form from "$lib/modules/conversation/form.svelte";
   import Messages from "$lib/modules/conversation/messages.svelte";
-  // import Outline from "$lib/modules/conversation/outline.svelte";
+  import { pendingWorkspaceMessage } from "$lib/modules/conversation/pending-message.svelte";
+  import { listWorkspaceChats } from "$lib/queries/workspace-chats";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
   const appCtx = getAppContext();
+  const workspaceChatApi = $derived(`${getAtlasDaemonUrl()}/api/workspaces/${data.spaceId}/chat`);
+  const initialPendingMessage = pendingWorkspaceMessage.get();
 
-  // TODO: wire up to real workspace conversations
-  const recentChats = [
-    { id: "1", name: "Metrics analysis" },
-    { id: "2", name: "Validating data" },
-    { id: "3", name: "Signup conversion trends" },
-    { id: "4", name: "Token usage breakdown" },
-    { id: "5", name: "Revenue forecasting" },
-    { id: "6", name: "User retention deep dive" },
-    { id: "7", name: "Latency percentile review" },
-    { id: "8", name: "Onboarding flow review" },
-    { id: "9", name: "API latency investigation" },
-    { id: "10", name: "Queue backpressure tuning" },
-    { id: "11", name: "Weekly standup notes" },
-    { id: "12", name: "Database migration plan" },
-    { id: "13", name: "Churn prediction model" },
-    { id: "14", name: "Dependency upgrade audit" },
-    { id: "15", name: "Feature prioritization" },
-    { id: "16", name: "Search relevance tuning" },
-    { id: "17", name: "Session replay analysis" },
-    { id: "18", name: "Cost optimization" },
-    { id: "19", name: "Incident postmortem" },
-    { id: "20", name: "Funnel analysis" },
-    { id: "21", name: "Embedding similarity check" },
-    { id: "22", name: "Sprint retrospective" },
-    { id: "23", name: "Cache invalidation strategy" },
-    { id: "24", name: "Payload size reduction" },
-    { id: "25", name: "Customer feedback summary" },
-    { id: "26", name: "Load testing results" },
-    { id: "27", name: "Index fragmentation review" },
-    { id: "28", name: "Permissions audit" },
-    { id: "29", name: "Notification redesign" },
-    { id: "30", name: "Connection pool sizing" },
-    { id: "31", name: "Data pipeline debugging" },
-    { id: "32", name: "A/B test evaluation" },
-    { id: "33", name: "Retry policy configuration" },
-    { id: "34", name: "Billing reconciliation" },
-    { id: "35", name: "Error rate spike" },
-    { id: "36", name: "Tenant isolation review" },
-    { id: "37", name: "Roadmap planning Q3" },
-    { id: "38", name: "Webhook reliability" },
-    { id: "39", name: "Memory leak investigation" },
-    { id: "40", name: "SSO integration" },
-    { id: "41", name: "Content moderation rules" },
-    { id: "42", name: "Cold start optimization" },
-    { id: "43", name: "Export performance" },
-    { id: "44", name: "Deployment checklist" },
-    { id: "45", name: "Certificate rotation plan" },
-    { id: "46", name: "Rate limiting strategy" },
-    { id: "47", name: "User segmentation" },
-    { id: "48", name: "Query plan analysis" },
-    { id: "49", name: "Accessibility review" },
-    { id: "50", name: "Schema validation errors" },
-    { id: "51", name: "Failover testing results" },
-    { id: "52", name: "Mobile responsive fixes" },
-    { id: "53", name: "Logging improvements" },
-    { id: "54", name: "Throughput benchmarking" },
-  ];
+  const workspaceChatsQuery = createInfiniteQuery(() => ({
+    queryKey: ["workspace-chats", data.spaceId],
+    queryFn: async ({ pageParam }) => await listWorkspaceChats(data.spaceId, pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? null,
+    select: (d) => {
+      const seen = new Set<string>();
+      return {
+        chats: d.pages
+          .flatMap((c) => c.chats)
+          .filter((chat) => {
+            if (seen.has(chat.id)) return false;
+            seen.add(chat.id);
+            return true;
+          }),
+      };
+    },
+    placeholderData: keepPreviousData,
+  }));
 </script>
 
 <ChatProvider
@@ -81,9 +48,10 @@
   isNew={data.isNew}
   initialMessages={data.messages}
   artifacts={data.artifacts}
+  apiEndpoint={workspaceChatApi}
   onPostSuccess={(id) =>
     goto(resolve(`/spaces/[spaceId]/chat/[chatId]`, { spaceId: data.spaceId, chatId: id }), {
-      replaceState: true,
+      replaceState: false,
     })}
 >
   {#snippet children(context)}
@@ -100,7 +68,7 @@
           </Breadcrumbs.Root>
         {/snippet}
 
-        {#if data.isNew}
+        {#if data.isNew && context.chat.messages.length === 0 && !initialPendingMessage}
           <div class="wrapper">
             <h1>Chat with {data.workspace.name}</h1>
 
@@ -117,24 +85,26 @@
           <ChatBufferBlur />
         {/if}
       </Page.Content>
-      {#if data.isNew && recentChats}
+      {#if data.isNew}
         <Page.Sidebar>
           <div>
             <h2>Conversations</h2>
-            <ul class="conversations">
-              {#each recentChats as chat (chat.id)}
-                <li>
-                  <a
-                    href={resolve(`/spaces/[spaceId]/chat/[chatId]`, {
-                      spaceId: data.spaceId,
-                      chatId: chat.id,
-                    })}
-                  >
-                    {chat.name}
-                  </a>
-                </li>
-              {/each}
-            </ul>
+            {#if workspaceChatsQuery.data?.chats?.length}
+              <ul class="conversations">
+                {#each workspaceChatsQuery.data?.chats ?? [] as chat (chat.id)}
+                  <li>
+                    <a
+                      href="/spaces/{data.spaceId}/chat/{chat.id}"
+                      class:active={data.chatId === chat.id}
+                    >
+                      {chat.title || "Untitled"}
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <span class="empty">You haven't chatted with this space before</span>
+            {/if}
           </div>
         </Page.Sidebar>
       {/if}
@@ -185,6 +155,16 @@
       &:hover {
         text-decoration: underline;
       }
+
+      &.active {
+        opacity: 0.5;
+      }
     }
+  }
+  .empty {
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-4);
+    line-height: var(--font-lineheight-1);
+    opacity: 0.6;
   }
 </style>

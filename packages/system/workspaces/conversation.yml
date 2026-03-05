@@ -75,8 +75,6 @@ signals:
     schema:
       type: "object"
       properties:
-        message:
-          type: "string"
         userId:
           type: "string"
         conversationId:
@@ -108,7 +106,6 @@ signals:
             sessionId:
               type: "string"
       required:
-        - "message"
         - "userId"
 
   conversation-list:

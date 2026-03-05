@@ -241,6 +241,10 @@ function blueprintToTaskPlan(
 /**
  * Creates the do_task tool with writer closure access.
  */
+export interface DoTaskWorkspaceContext {
+  workspaceAgents?: Array<{ id: string; description?: string; type?: string }>;
+}
+
 export function createDoTaskTool(
   writer: UIMessageStreamWriter,
   session: {
@@ -259,6 +263,7 @@ export function createDoTaskTool(
   },
   logger: Logger,
   abortSignal?: AbortSignal,
+  workspaceContext?: DoTaskWorkspaceContext,
 ) {
   const emitProgress = (event: TaskProgressEvent) => {
     const content = formatProgressMessage(event);
@@ -295,13 +300,22 @@ export function createDoTaskTool(
         return { success: false, error: "Task cancelled" };
       }
 
-      logger.info("do_task executing", { intent });
+      // Enrich intent with workspace agent context for priority-aware planning
+      let enrichedIntent = intent;
+      if (workspaceContext?.workspaceAgents?.length) {
+        const agentList = workspaceContext.workspaceAgents
+          .map((a) => `- ${a.id}: ${a.description ?? "no description"}`)
+          .join("\n");
+        enrichedIntent = `[Workspace agents — prefer these domain-specific agents]\n${agentList}\n\nTask: ${intent}`;
+      }
+
+      logger.info("do_task executing", { intent, hasWorkspaceContext: !!workspaceContext });
       const startMs = Date.now();
 
       try {
         emitProgress({ type: "planning" });
 
-        const planResult = await generatePlan(intent, { mode: "task", abortSignal });
+        const planResult = await generatePlan(enrichedIntent, { mode: "task", abortSignal });
 
         // Reuse dynamic servers already fetched during planning (avoids redundant KV lookup)
         const dynamicServers = planResult.dynamicServers;

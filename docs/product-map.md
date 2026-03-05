@@ -22,6 +22,7 @@ start it automatically.
 ├── chat/[[chatId]]                 # Chat interface (optional chatId)
 ├── spaces/[spaceId]/               # Workspace detail
 │   ├── edit                        # Workspace config editor
+│   ├── chat/[[chatId]]             # Workspace chat (optional chatId)
 │   └── sessions/                   # Workspace session list
 │       └── [sessionId]             # Session detail within workspace
 ├── sessions/                       # Global session list
@@ -64,6 +65,16 @@ Base: `http://localhost:8080/api`
 - `DELETE /workspaces/:id` — delete workspace
 - `POST /workspaces/:id/signals/:signalId` — trigger execution
 - `GET /workspaces/:id/sessions` — workspace session list
+
+### Workspace Chat
+
+- `GET /workspaces/:id/chat` — list workspace chats (cursor pagination)
+- `POST /workspaces/:id/chat` — create workspace chat, streams response via SSE
+- `GET /workspaces/:id/chat/:chatId` — chat details with messages
+- `GET /workspaces/:id/chat/:chatId/stream` — resume SSE stream
+- `DELETE /workspaces/:id/chat/:chatId/stream` — stop stream (cosmetic)
+- `POST /workspaces/:id/chat/:chatId/message` — append message
+- `PATCH /workspaces/:id/chat/:chatId/title` — update chat title
 
 ### Sessions
 

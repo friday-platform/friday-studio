@@ -27,11 +27,13 @@
     initialMessages: AtlasUIMessage[];
     artifacts: Map<string, ArtifactWithContents>;
     isNew: boolean;
+    apiEndpoint?: string;
     onPostSuccess?: (chatId: string) => void;
     children: Snippet<[ConversationState]>;
   }
 
-  const { chatId, initialMessages, artifacts, isNew, onPostSuccess, children }: Props = $props();
+  const { chatId, initialMessages, artifacts, isNew, apiEndpoint, onPostSuccess, children }: Props =
+    $props();
 
   // Expose artifacts map to child components via context
   const ARTIFACTS_KEY = Symbol.for("artifacts");
@@ -59,7 +61,7 @@
 
   const transport = $derived(
     new DefaultChatTransport({
-      api: `${getAtlasDaemonUrl()}/api/chat`,
+      api: apiEndpoint ?? `${getAtlasDaemonUrl()}/api/chat`,
       /**
        * Custom fetch wrapper that:
        * 1. Calls onPostSuccess when new chat is created (POST succeeds)
@@ -246,9 +248,8 @@
    */
   async function handleStop() {
     trackEvent(GA4.STREAM_STOP);
-    await fetch(`${getAtlasDaemonUrl()}/api/chat/${chatId}/stream`, { method: "DELETE" }).catch(
-      () => {},
-    );
+    const baseApi = apiEndpoint ?? `${getAtlasDaemonUrl()}/api/chat`;
+    await fetch(`${baseApi}/${chatId}/stream`, { method: "DELETE" }).catch(() => {});
     chat.stop();
   }
 

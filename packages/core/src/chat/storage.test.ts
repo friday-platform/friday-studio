@@ -30,7 +30,12 @@ afterEach(async () => {
 });
 
 const createTestChat = (chatId: string) =>
-  ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: "test-ws", source: "atlas" });
+  ChatStorage.createChat({
+    chatId,
+    userId: "test-user",
+    workspaceId: "friday-conversation",
+    source: "atlas",
+  });
 
 const createMessage = (text: string): AtlasUIMessage => ({
   id: crypto.randomUUID(),
@@ -53,7 +58,7 @@ describe("ChatStorage", () => {
       const getResult = await ChatStorage.getChat(chatId);
       expect.assert(getResult.ok && getResult.data);
       expect(getResult.data.userId).toEqual("test-user");
-      expect(getResult.data.workspaceId).toEqual("test-ws");
+      expect(getResult.data.workspaceId).toEqual("friday-conversation");
       expect(getResult.data.color).toBeDefined();
     });
 
@@ -418,7 +423,7 @@ describe("ChatStorage", () => {
       expect.assert(chat.ok && chat.data);
       expect(chat.data.messages.length).toEqual(1);
       expect(chat.data.userId).toEqual("test-user");
-      expect(chat.data.workspaceId).toEqual("test-ws");
+      expect(chat.data.workspaceId).toEqual("friday-conversation");
     });
   });
 
@@ -505,6 +510,103 @@ describe("ChatStorage", () => {
       const result = await ChatStorage.listChats({ limit: 3 });
       expect.assert(result.ok);
       expect(result.data.chats.length).toEqual(3);
+    });
+
+    it("excludes workspace-scoped chats from global list", async () => {
+      const globalChatId = crypto.randomUUID();
+      const wsChatId = crypto.randomUUID();
+
+      await createTestChat(globalChatId);
+      await ChatStorage.createChat({
+        chatId: wsChatId,
+        userId: "test-user",
+        workspaceId: "my-workspace",
+        source: "atlas",
+      });
+
+      const result = await ChatStorage.listChats({ limit: 10 });
+      expect.assert(result.ok);
+      expect(result.data.chats.length).toEqual(1);
+      expect(result.data.chats[0]?.id).toEqual(globalChatId);
+    });
+  });
+
+  describe("Workspace-scoped storage", () => {
+    const wsId = "analytics-workspace";
+
+    const createWsChat = (chatId: string) =>
+      ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: wsId, source: "atlas" });
+
+    it("stores workspace chats in subdirectory", async () => {
+      const chatId = crypto.randomUUID();
+      await createWsChat(chatId);
+
+      const result = await ChatStorage.getChat(chatId, wsId);
+      expect.assert(result.ok && result.data);
+      expect(result.data.workspaceId).toEqual(wsId);
+    });
+
+    it("isolates workspace chats from each other", async () => {
+      const wsA = "workspace-a";
+      const wsB = "workspace-b";
+      const chatId = crypto.randomUUID();
+
+      await ChatStorage.createChat({
+        chatId,
+        userId: "test-user",
+        workspaceId: wsA,
+        source: "atlas",
+      });
+      await ChatStorage.appendMessage(chatId, createMessage("Secret A data"), wsA);
+
+      const fromB = await ChatStorage.getChat(chatId, wsB);
+      expect.assert(fromB.ok);
+      expect(fromB.data).toBeNull();
+
+      const fromA = await ChatStorage.getChat(chatId, wsA);
+      expect.assert(fromA.ok && fromA.data);
+      expect(fromA.data.messages.length).toEqual(1);
+    });
+
+    it("lists only chats for the requested workspace", async () => {
+      const wsA = "workspace-a";
+      const wsB = "workspace-b";
+
+      await ChatStorage.createChat({
+        chatId: crypto.randomUUID(),
+        userId: "u",
+        workspaceId: wsA,
+        source: "atlas",
+      });
+      await ChatStorage.createChat({
+        chatId: crypto.randomUUID(),
+        userId: "u",
+        workspaceId: wsA,
+        source: "atlas",
+      });
+      await ChatStorage.createChat({
+        chatId: crypto.randomUUID(),
+        userId: "u",
+        workspaceId: wsB,
+        source: "atlas",
+      });
+
+      const resultA = await ChatStorage.listChatsByWorkspace(wsA);
+      expect.assert(resultA.ok);
+      expect(resultA.data.chats.length).toEqual(2);
+
+      const resultB = await ChatStorage.listChatsByWorkspace(wsB);
+      expect.assert(resultB.ok);
+      expect(resultB.data.chats.length).toEqual(1);
+    });
+
+    it("workspace chat not visible without workspaceId", async () => {
+      const chatId = crypto.randomUUID();
+      await createWsChat(chatId);
+
+      const result = await ChatStorage.getChat(chatId);
+      expect.assert(result.ok);
+      expect(result.data).toBeNull();
     });
   });
 });

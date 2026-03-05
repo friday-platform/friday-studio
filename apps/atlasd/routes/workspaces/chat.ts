@@ -1,3 +1,13 @@
+/**
+ * Workspace chat routes.
+ *
+ * POST /                 — Create chat, stream response via SSE
+ * GET  /                 — List workspace chats
+ * GET  /:chatId          — Get workspace chat
+ * GET  /:chatId/stream   — Resume SSE stream
+ * DELETE /:chatId/stream — Stop stream (cosmetic)
+ */
+
 import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
@@ -8,8 +18,8 @@ import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { stream } from "hono/streaming";
 import { z } from "zod";
-import { daemonFactory } from "../src/factory.ts";
-import { isClientSafeEvent } from "../src/stream-event-filter.ts";
+import { daemonFactory } from "../../src/factory.ts";
+import { isClientSafeEvent } from "../../src/stream-event-filter.ts";
 
 const analytics = createAnalyticsClient();
 
@@ -26,8 +36,7 @@ const chatRequestSchema = z.object({
     })
     .optional(),
 });
-const appendMessageSchema = z.object({ message: z.unknown() });
-const updateTitleSchema = z.object({ title: z.string() });
+
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
@@ -42,15 +51,37 @@ function getUserId(): string {
   return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
 }
 
-const chatRoutes = daemonFactory
+const workspaceChatRoutes = daemonFactory
   .createApp()
   /**
-   * GET /api/chat
-   * List recent chats with cursor-based pagination.
+   * Middleware: validate workspace exists for all chat routes.
+   * Runs before every handler — returns 404 for unknown workspaceIds.
+   */
+  .use("*", async (c, next) => {
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+    const ctx = c.get("app");
+    const manager = ctx.getWorkspaceManager();
+    const workspace = await manager.find({ id: workspaceId });
+    if (!workspace) {
+      return c.json({ error: "Workspace not found" }, 404);
+    }
+    await next();
+  })
+  /**
+   * GET /
+   * List chats for this workspace.
    */
   .get("/", zValidator("query", listChatsQuerySchema), async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+
     const { limit, cursor } = c.req.valid("query");
-    const result = await ChatStorage.listChats({ limit, cursor });
+    const result = await ChatStorage.listChatsByWorkspace(workspaceId, { limit, cursor });
     if (!result.ok) {
       return c.json({ error: result.error }, 500);
     }
@@ -59,15 +90,18 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * POST /api/chat
-   * Create chat, store message, stream events in response body.
-   * Streams newline-delimited JSON events.
+   * POST /
+   * Create chat, store message, trigger "chat" signal, stream events.
    */
   .post("/", zValidator("json", chatRequestSchema), async (c) => {
     const ctx = c.get("app");
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+
     const { id: chatId, message, datetime } = c.req.valid("json");
     const userId = getUserId();
-    const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
     const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
     if (!result.ok) {
@@ -81,18 +115,26 @@ const chatRoutes = daemonFactory
       conversationId: chatId,
     });
 
-    // // Validate and parse the message
     const [userMessage] = await validateAtlasUIMessages([message]);
     if (!userMessage) {
       return c.json({ error: "Invalid message format" }, 400);
     }
 
-    const appendResult = await ChatStorage.appendMessage(chatId, userMessage);
+    const appendResult = await ChatStorage.appendMessage(chatId, userMessage, workspaceId);
     if (!appendResult.ok) {
       return c.json({ error: "Failed to store message" }, 500);
     }
 
-    const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
+    const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId).catch((error: unknown) => {
+      if (error instanceof Error && error.message.includes("Workspace not found")) {
+        return null;
+      }
+      throw error;
+    });
+
+    if (!runtime) {
+      return c.json({ error: "Workspace not found" }, 404);
+    }
 
     // Initialize stream buffer for resumption support
     ctx.streamRegistry.createStream(chatId);
@@ -103,7 +145,7 @@ const chatRoutes = daemonFactory
 
       runtime
         .triggerSignalWithSession(
-          "conversation-stream",
+          "chat",
           { chatId, userId, streamId: chatId, datetime },
           chatId,
           async (chunk) => {
@@ -124,12 +166,16 @@ const chatRoutes = daemonFactory
               await streamWriter.write(`data: ${JSON.stringify(chunk)}\n\n`);
             } catch (error) {
               // Client disconnected - events continue buffering in registry
-              logger.debug("Client disconnected during stream", { chatId, error });
+              logger.debug("Client disconnected during workspace chat stream", {
+                chatId,
+                workspaceId,
+                error,
+              });
             }
           },
         )
         .catch((error) => {
-          logger.error("Session error", { error, chatId });
+          logger.error("Workspace chat session error", { error, chatId, workspaceId });
           streamWriter.writeln(
             `data: ${JSON.stringify({
               type: "data-error",
@@ -155,12 +201,8 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * DELETE /api/chat/:chatId/stream
+   * DELETE /:chatId/stream
    * Mark a stream as finished (cosmetic stop).
-   *
-   * The agent continues running in the background, but the client stops
-   * receiving events and the UI shows the conversation as complete.
-   * Idempotent - safe to call multiple times.
    */
   .delete("/:chatId/stream", (c) => {
     const ctx = c.get("app");
@@ -172,11 +214,8 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * GET /api/chat/:chatId/stream
+   * GET /:chatId/stream
    * Reconnect to an active chat stream for resumption.
-   *
-   * Returns 200 with SSE stream if active, replaying buffered events.
-   * Returns 204 if stream doesn't exist or is finished.
    */
   .get("/:chatId/stream", (c) => {
     const ctx = c.get("app");
@@ -184,20 +223,13 @@ const chatRoutes = daemonFactory
 
     const buffer = ctx.streamRegistry.getStream(chatId);
 
-    // No active stream — return 204 so AI SDK's resumeStream() sets status to "ready".
-    // We intentionally don't replay finished buffers here: the AI SDK creates a new
-    // message on resumeStream(), so full replay causes duplicate messages in the UI.
-    // Late reconnectors get eventual consistency via page reload (messages persisted to DB).
-    // TODO: Add Last-Event-Id / offset-based replay to eliminate the data gap.
     if (!buffer || !buffer.active) {
       return c.body(null, 204);
     }
 
-    // Set header for client-side timer synchronization
     c.header("X-Turn-Started-At", String(buffer.createdAt));
 
-    // Return SSE stream with replay + live events
-    const stream = new ReadableStream<Uint8Array>({
+    const readableStream = new ReadableStream<Uint8Array>({
       start(controller) {
         const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
         if (!subscribed) {
@@ -211,7 +243,7 @@ const chatRoutes = daemonFactory
       },
     });
 
-    return c.body(stream, 200, {
+    return c.body(readableStream, 200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
@@ -219,19 +251,19 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * GET /api/chat/:chatId
+   * GET /:chatId
    * Retrieve chat metadata and message history.
    */
   .get("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
 
-    const chatResult = await ChatStorage.getChat(chatId);
+    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
     if (!chatResult.ok || !chatResult.data) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
     const { messages, systemPromptContext, ...chat } = chatResult.data;
-    // Return last 100 messages in chronological order (oldest first)
     const limitedMessages = messages.slice(-100);
 
     return c.json(
@@ -241,28 +273,25 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * POST /api/chat/:chatId/message
+   * POST /:chatId/message
    * Append assistant message to chat history.
-   * Called from conversation agent's onFinish callback.
    */
-  .post("/:chatId/message", zValidator("json", appendMessageSchema), async (c) => {
+  .post("/:chatId/message", zValidator("json", z.object({ message: z.unknown() })), async (c) => {
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
     const { message } = c.req.valid("json");
 
-    // Verify chat exists
-    const chatResult = await ChatStorage.getChat(chatId);
+    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
     if (!chatResult.ok || !chatResult.data) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
-    // Validate the message format
     const [validatedMessage] = await validateAtlasUIMessages([message]);
     if (!validatedMessage) {
       return c.json({ error: "Invalid message format" }, 400);
     }
 
-    // Append the assistant message
-    const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage);
+    const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage, workspaceId);
     if (!appendResult.ok) {
       logger.error("Failed to append assistant message", { chatId, error: appendResult.error });
       return c.json({ error: "Failed to append message" }, 500);
@@ -272,35 +301,21 @@ const chatRoutes = daemonFactory
   })
 
   /**
-   * PATCH /api/chat/:chatId/title
+   * PATCH /:chatId/title
    * Update chat title.
    */
-  .patch("/:chatId/title", zValidator("json", updateTitleSchema), async (c) => {
+  .patch("/:chatId/title", zValidator("json", z.object({ title: z.string() })), async (c) => {
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
     const { title } = c.req.valid("json");
 
-    const result = await ChatStorage.updateChatTitle(chatId, title);
+    const result = await ChatStorage.updateChatTitle(chatId, title, workspaceId);
     if (!result.ok) {
       return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
     }
 
     return c.json({ chat: result.data }, 200);
-  })
-
-  /**
-   * DELETE /api/chat/:chatId
-   * Delete a chat.
-   */
-  .delete("/:chatId", async (c) => {
-    const chatId = c.req.param("chatId");
-
-    const result = await ChatStorage.deleteChat(chatId);
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
-    }
-
-    return c.json({ success: true }, 200);
   });
 
-export default chatRoutes;
-export type ChatRoutes = typeof chatRoutes;
+export default workspaceChatRoutes;
+export type WorkspaceChatRoutes = typeof workspaceChatRoutes;

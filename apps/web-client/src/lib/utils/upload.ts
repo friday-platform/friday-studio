@@ -142,7 +142,7 @@ function extractError(data: unknown, fallback: string): string {
  * @param opts - Upload options (chatId, workspaceId, artifactId, callbacks)
  * @returns Discriminated union: { artifactId: string } on success, { error: string } on failure
  */
-export async function uploadArtifact(
+async function uploadArtifact(
   file: File,
   opts?: UploadOptions,
 ): Promise<{ artifactId: string } | { error: string }> {

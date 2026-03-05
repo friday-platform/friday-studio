@@ -129,6 +129,11 @@ export const JobSpecificationSchema = z
     // Prompt for supervisor guidance
     prompt: z.string().optional().describe("Single prompt string for supervisor"),
 
+    // Input schema for job invocation (exposed as tool parameters in workspace chat)
+    inputs: SchemaObjectSchema.optional().describe(
+      "JSON Schema for job inputs, exposed as tool parameters in workspace chat",
+    ),
+
     // Execution - either agent-based or FSM-based
     execution: JobExecutionSchema.optional().describe("Agent-based execution pipeline"),
     fsm: z

@@ -893,6 +893,39 @@ const workspacesRoutes = daemonFactory
       })),
     );
   })
+  // Execute a job directly (synchronous — blocks until completion)
+  .post(
+    "/:workspaceId/jobs/:jobName/execute",
+    zValidator("param", z.object({ workspaceId: z.string(), jobName: z.string() })),
+    zValidator("json", z.object({ payload: z.record(z.string(), z.unknown()).optional() })),
+    async (c) => {
+      const { workspaceId, jobName } = c.req.valid("param");
+      const { payload } = c.req.valid("json");
+      const ctx = c.get("app");
+
+      try {
+        const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
+        const session = await runtime.executeJobDirectly(jobName, { payload });
+
+        return c.json({
+          sessionId: session.id,
+          status: session.status,
+          error: session.error ?? null,
+        });
+      } catch (error) {
+        const errorMessage = stringifyError(error);
+        logger.error("Failed to execute job directly", { error, workspaceId, jobName });
+
+        if (errorMessage.includes("Workspace not found")) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        if (errorMessage.includes("not found in workspace")) {
+          return c.json({ error: errorMessage }, 404);
+        }
+        return c.json({ error: `Failed to execute job: ${errorMessage}` }, 500);
+      }
+    },
+  )
   // Get workspace sessions
   .get("/:workspaceId/sessions", async (c) => {
     const workspaceId = c.req.param("workspaceId");

@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import ChatProvider from "$lib/modules/conversation/chat-provider.svelte";
   import Form from "$lib/modules/conversation/form.svelte";
   import { nanoid } from "$lib/utils/id";
 
   let { workspaceId }: { workspaceId: string } = $props();
+  const workspaceChatApi = $derived(`${getAtlasDaemonUrl()}/api/workspaces/${workspaceId}/chat`);
 </script>
 
 <ChatProvider
@@ -12,7 +15,11 @@
   isNew
   initialMessages={[]}
   artifacts={new Map()}
-  onPostSuccess={(id) => goto(`/spaces/${workspaceId}/chat/${id}`, { replaceState: false })}
+  apiEndpoint={workspaceChatApi}
+  onPostSuccess={(id) =>
+    goto(resolve(`/spaces/[spaceId]/chat/[chatId]`, { spaceId: workspaceId, chatId: id }), {
+      replaceState: false,
+    })}
 >
   <div class="wrapper">
     <div class="form-wrapper">

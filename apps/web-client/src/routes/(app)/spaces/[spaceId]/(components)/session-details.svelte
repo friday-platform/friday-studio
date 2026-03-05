@@ -11,6 +11,7 @@
   };
 
   let { job, workspaceName, sessionType, title, parentTitle, createdAt }: Props = $props();
+
   const isTask = $derived(sessionType === "task");
   // Show title if available, otherwise fall back to workspace/job name
   const displayName = $derived(

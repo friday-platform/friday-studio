@@ -11,8 +11,9 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import { Page } from "$lib/components/page";
+  import { getFeatureFlags } from "$lib/feature-flags.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
-  import ResourcesSection from "$lib/modules/spaces/resources-section.svelte";
+  import { listWorkspaceJobs } from "$lib/queries/jobs";
   import { listWorkspaceSessions } from "$lib/queries/sessions";
   import { formatChatDate } from "$lib/utils/date";
   import NewChat from "./(components)/new-chat.svelte";
@@ -25,6 +26,8 @@
 
   let queryClient = useQueryClient();
 
+  const featureFlags = getFeatureFlags();
+
   const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
 
   const workspace = $derived(data.workspace);
@@ -36,21 +39,12 @@
     refetchInterval: 10_000,
   }));
   const recentSessions = $derived((sessionsQuery.data ?? []).slice(0, 3));
-  const recentArtifacts = $derived(
-    data.artifacts
-      .filter((a) => !a.slug)
-      .filter((a) => !("source" in a && a.source === "resource_upload"))
-      .slice(0, 5),
-  );
+  const recentArtifacts = $derived(data.artifacts.slice(0, 5));
+
   const jobsQuery = createQuery(() => ({
     queryKey: ["jobs", workspace.id],
-    queryFn: async () => {
-      const result = await parseResult(
-        client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId: workspace.id } }),
-      );
-      if (!result.ok) throw new Error("Failed to load jobs");
-      return result.data;
-    },
+    queryFn: () => listWorkspaceJobs(workspace.id),
+    refetchInterval: 10_000,
   }));
 
   $effect(() => {
@@ -161,16 +155,18 @@
                     </RunJobDialog>
                   {/if}
 
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    href={resolve("/spaces/[spaceId]/jobs/[jobId]", {
-                      spaceId: workspace.id,
-                      jobId: job.id,
-                    })}
-                  >
-                    View
-                  </Button>
+                  {#if featureFlags.ENABLE_GLOBAL_JOB_VIEWS}
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      href={resolve("/spaces/[spaceId]/jobs/[jobId]", {
+                        spaceId: workspace.id,
+                        jobId: job.id,
+                      })}
+                    >
+                      View
+                    </Button>
+                  {/if}
                 </div>
               </div>
             {/each}
@@ -179,8 +175,6 @@
       {:else if jobsQuery.isError}
         <p class="jobs-error">Failed to load jobs.</p>
       {/if}
-
-      <ResourcesSection workspaceId={workspace.id} />
 
       <NewChat workspaceId={workspace.id} />
     </Page.Content>
@@ -196,7 +190,7 @@
       </div>
 
       <div class="section">
-        <h2>Artifacts</h2>
+        <h2>Resources</h2>
 
         {#if recentArtifacts.length > 0}
           <ul class="resources">

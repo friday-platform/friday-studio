@@ -10,8 +10,6 @@ fsm:
           type: string
         userId:
           type: string
-        message:
-          type: string
         streamId:
           type: string
       required:
@@ -135,7 +133,6 @@ fsm:
             data: {
               conversationId: event.data.conversationId || event.data.id,
               userId: event.data.userId,
-              message: event.data.message,
               streamId: event.data.streamId
             }
           });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  import { replaceState } from "$app/navigation";
   import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
   import { Page } from "$lib/components/page";
   import Catalog from "$lib/modules/conversation/catalog.svelte";
@@ -18,12 +18,12 @@
   isNew={data.isNew}
   initialMessages={data.messages}
   artifacts={data.artifacts}
-  onPostSuccess={(id) => goto(`/chat/${id}`, { replaceState: true })}
+  onPostSuccess={(id) => replaceState(`/chat/${id}`, {})}
 >
   {#snippet children(context)}
     <Page.Root>
       <Page.Content padded={false} {@attach scrollAttachment(data.isNew, context)}>
-        {#if data.isNew}
+        {#if data.isNew && context.chat.messages.length === 0}
           <div class="wrapper">
             <h1>What do you want to do today?</h1>
             <div class="form-wrapper">

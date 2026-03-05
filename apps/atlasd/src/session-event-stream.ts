@@ -26,9 +26,9 @@ export class SessionEventStream {
   private readonly adapter: SessionHistoryAdapter;
   private readonly events: SessionStreamEvent[] = [];
   private readonly subscribers = new Set<StreamController>();
+  private active = true;
   private pendingWriteCount = 0;
   private flushResolvers: Array<() => void> = [];
-  private active = true;
 
   constructor(sessionId: string, adapter: SessionHistoryAdapter) {
     this.sessionId = sessionId;
@@ -37,7 +37,8 @@ export class SessionEventStream {
 
   /**
    * Emit a durable event: buffer it, broadcast to subscribers,
-   * and fire-and-forget persist to the adapter.
+   * and persist to the adapter. Pending writes are tracked so
+   * `flush()` can await them before finalization.
    */
   emit(event: SessionStreamEvent): void {
     this.events.push(event);
@@ -55,9 +56,22 @@ export class SessionEventStream {
       .finally(() => {
         this.pendingWriteCount--;
         if (this.pendingWriteCount === 0) {
-          for (const resolve of this.flushResolvers.splice(0)) resolve();
+          for (const resolve of this.flushResolvers) {
+            resolve();
+          }
+          this.flushResolvers = [];
         }
       });
+  }
+
+  /**
+   * Wait for all in-flight `appendEvent` writes to settle.
+   */
+  flush(): Promise<void> {
+    if (this.pendingWriteCount === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.flushResolvers.push(resolve);
+    });
   }
 
   /**
@@ -98,12 +112,6 @@ export class SessionEventStream {
   /** Remove a subscriber. */
   unsubscribe(controller: StreamController): void {
     this.subscribers.delete(controller);
-  }
-
-  /** Await all pending fire-and-forget writes from emit(). */
-  flush(): Promise<void> {
-    if (this.pendingWriteCount === 0) return Promise.resolve();
-    return new Promise<void>((resolve) => this.flushResolvers.push(resolve));
   }
 
   /**

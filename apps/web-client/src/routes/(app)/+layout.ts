@@ -11,7 +11,7 @@ export const load: LayoutLoad = async ({ params }) => {
   // Fetch color based on route params
   let color: Color | undefined;
 
-  if (params.chatId) {
+  if (params.chatId && !params.spaceId) {
     const chatRes = await parseResult(
       client.chat[":chatId"].$get({ param: { chatId: params.chatId } }),
     );

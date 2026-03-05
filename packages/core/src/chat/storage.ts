@@ -14,6 +14,7 @@ import {
 } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
+import { withExclusiveLock } from "../utils/file-lock.ts";
 
 const logger = createLogger({ component: "chat-storage" });
 
@@ -42,19 +43,36 @@ const StoredChatSchema = z.object({
 
 type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
 
+/** System workspace IDs that use global (non-prefixed) chat filenames */
+const GLOBAL_WORKSPACE_IDS = new Set(["atlas-conversation", "friday-conversation"]);
+
+/** Whether a workspaceId should use workspace-prefixed filenames */
+function isWorkspaceScoped(workspaceId: string): boolean {
+  return !GLOBAL_WORKSPACE_IDS.has(workspaceId);
+}
+
 /** Chats directory path */
 function getChatDir(): string {
   return join(getAtlasHome(), "chats");
 }
 
-/** Chat file path for given ID */
-function getChatFile(chatId: string): string {
+/**
+ * Chat file path for given ID.
+ * Workspace chats: {workspaceId}/{chatId}.json (subdirectory per workspace)
+ * Global chats: {chatId}.json
+ */
+function getChatFile(chatId: string, workspaceId?: string): string {
+  if (workspaceId && isWorkspaceScoped(workspaceId)) {
+    return join(getChatDir(), workspaceId, `${chatId}.json`);
+  }
   return join(getChatDir(), `${chatId}.json`);
 }
 
-/** Create chats directory if missing */
-async function ensureChatDir(): Promise<void> {
-  await mkdir(getChatDir(), { recursive: true });
+/** Create chats directory (and workspace subdirectory) if missing */
+async function ensureChatDir(workspaceId?: string): Promise<void> {
+  const dir =
+    workspaceId && isWorkspaceScoped(workspaceId) ? join(getChatDir(), workspaceId) : getChatDir();
+  await mkdir(dir, { recursive: true });
 }
 
 /**
@@ -82,8 +100,8 @@ async function createChat(input: {
   source: "atlas" | "slack" | "discord";
 }): Promise<Result<Chat, string>> {
   try {
-    await ensureChatDir();
-    const chatFile = getChatFile(input.chatId);
+    await ensureChatDir(input.workspaceId);
+    const chatFile = getChatFile(input.chatId, input.workspaceId);
 
     try {
       const existing = await readAndValidateChat(chatFile);
@@ -126,10 +144,11 @@ async function createChat(input: {
  *
  * Returns null if not found.
  * Returns error if corrupted (parse/validation fails).
+ *
  */
-async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
+async function getChat(chatId: string, workspaceId?: string): Promise<Result<Chat | null, string>> {
   try {
-    const chat = await readAndValidateChat(getChatFile(chatId));
+    const chat = await readAndValidateChat(getChatFile(chatId, workspaceId));
     return success(chat);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -152,19 +171,18 @@ async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
 async function appendMessage(
   chatId: string,
   message: AtlasUIMessage,
+  workspaceId?: string,
 ): Promise<Result<void, string>> {
   try {
-    await ensureChatDir();
-    const chatFile = getChatFile(chatId);
+    await ensureChatDir(workspaceId);
+    const chatFile = getChatFile(chatId, workspaceId);
 
-    using file = await Deno.open(chatFile, { read: true, write: true });
-    await file.lock(true);
-
-    const chat = await readAndValidateChat(chatFile);
-    chat.messages.push(message);
-    chat.updatedAt = new Date().toISOString();
-
-    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    await withExclusiveLock(chatFile, async () => {
+      const chat = await readAndValidateChat(chatFile);
+      chat.messages.push(message);
+      chat.updatedAt = new Date().toISOString();
+      await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    });
 
     return success(undefined);
   } catch (error) {
@@ -190,7 +208,8 @@ interface ListChatsResult {
 }
 
 /**
- * List most recently updated chats with cursor-based pagination.
+ * List most recently updated global chats with cursor-based pagination.
+ * Excludes workspace-prefixed chat files.
  *
  * Reads mtime for all files, sorts by mtime descending.
  * When cursor provided, returns chats with mtime < cursor.
@@ -256,26 +275,93 @@ async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsRe
 }
 
 /**
+ * List chats for a specific workspace.
+ * Reads from workspace subdirectory: chats/{workspaceId}/*.json
+ */
+async function listChatsByWorkspace(
+  workspaceId: string,
+  options?: ListChatsOptions,
+): Promise<Result<ListChatsResult, string>> {
+  const limit = options?.limit ?? 25;
+  const cursor = options?.cursor;
+
+  try {
+    const wsDir = join(getChatDir(), workspaceId);
+    await mkdir(wsDir, { recursive: true });
+
+    const fileInfos: Array<{ path: string; mtime: number }> = [];
+
+    const chatEntries = await readdir(wsDir, { withFileTypes: true });
+    for (const entry of chatEntries) {
+      if (entry.isFile() && entry.name.endsWith(".json")) {
+        const filePath = join(wsDir, entry.name);
+        try {
+          const fileStat = await stat(filePath);
+          if (fileStat.mtime) {
+            const mtime = fileStat.mtime.getTime();
+            if (cursor === undefined || mtime < cursor) {
+              fileInfos.push({ path: filePath, mtime });
+            }
+          }
+        } catch (error) {
+          logger.warn("Failed to stat chat file, skipping", {
+            file: entry.name,
+            error: stringifyError(error),
+          });
+        }
+      }
+    }
+
+    fileInfos.sort((a, b) => b.mtime - a.mtime);
+
+    const toRead = fileInfos.slice(0, limit + 1);
+    const hasMore = toRead.length > limit;
+    const filesToRead = toRead.slice(0, limit);
+
+    const chats: Omit<Chat, "messages">[] = [];
+    let lastMtime: number | null = null;
+
+    for (const { path, mtime } of filesToRead) {
+      try {
+        const chat = await readAndValidateChat(path);
+        const { messages: _, ...chatWithoutMessages } = chat;
+        chats.push(chatWithoutMessages);
+        lastMtime = mtime;
+      } catch (error) {
+        logger.warn("Failed to read chat file, skipping", { path, error: stringifyError(error) });
+      }
+    }
+
+    return success({ chats, nextCursor: hasMore && lastMtime ? lastMtime : null, hasMore });
+  } catch (error) {
+    return fail(stringifyError(error));
+  }
+}
+
+/**
  * Update chat title.
  *
  * Uses exclusive lock (same pattern as appendMessage).
  * Returns updated chat.
  */
-async function updateChatTitle(chatId: string, title: string): Promise<Result<Chat, string>> {
+async function updateChatTitle(
+  chatId: string,
+  title: string,
+  workspaceId?: string,
+): Promise<Result<Chat, string>> {
   try {
-    await ensureChatDir();
-    const chatFile = getChatFile(chatId);
+    await ensureChatDir(workspaceId);
+    const chatFile = getChatFile(chatId, workspaceId);
 
-    using file = await Deno.open(chatFile, { read: true, write: true });
-    await file.lock(true);
+    const updatedChat = await withExclusiveLock(chatFile, async () => {
+      const chat = await readAndValidateChat(chatFile);
+      chat.title = title;
+      chat.updatedAt = new Date().toISOString();
+      await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+      return chat;
+    });
 
-    const chat = await readAndValidateChat(chatFile);
-    chat.title = title;
-    chat.updatedAt = new Date().toISOString();
-
-    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
-
-    return success(chat);
+    return success(updatedChat);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Chat not found");
@@ -292,9 +378,9 @@ async function updateChatTitle(chatId: string, title: string): Promise<Result<Ch
  *
  * Removes the chat file from disk.
  */
-async function deleteChat(chatId: string): Promise<Result<void, string>> {
+async function deleteChat(chatId: string, workspaceId?: string): Promise<Result<void, string>> {
   try {
-    const chatFile = getChatFile(chatId);
+    const chatFile = getChatFile(chatId, workspaceId);
     await rm(chatFile);
     logger.debug("Deleted chat", { chatId });
     return success(undefined);
@@ -313,22 +399,20 @@ async function deleteChat(chatId: string): Promise<Result<void, string>> {
 async function setSystemPromptContext(
   chatId: string,
   context: { systemMessages: string[] },
+  workspaceId?: string,
 ): Promise<Result<void, string>> {
   try {
-    const chatFile = getChatFile(chatId);
+    const chatFile = getChatFile(chatId, workspaceId);
 
-    using file = await Deno.open(chatFile, { read: true, write: true });
-    await file.lock(true);
-
-    const chat = await readAndValidateChat(chatFile);
-    if (chat.systemPromptContext) {
-      return success(undefined); // Already set, skip
-    }
-
-    chat.systemPromptContext = { timestamp: new Date().toISOString(), ...context };
-    chat.updatedAt = new Date().toISOString();
-
-    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    await withExclusiveLock(chatFile, async () => {
+      const chat = await readAndValidateChat(chatFile);
+      if (chat.systemPromptContext) {
+        return; // Already set, skip
+      }
+      chat.systemPromptContext = { timestamp: new Date().toISOString(), ...context };
+      chat.updatedAt = new Date().toISOString();
+      await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    });
     return success(undefined);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -345,23 +429,22 @@ async function setSystemPromptContext(
 async function addContentFilteredMessageIds(
   chatId: string,
   messageIds: string[],
+  workspaceId?: string,
 ): Promise<Result<void, string>> {
   try {
-    await ensureChatDir();
-    const chatFile = getChatFile(chatId);
+    await ensureChatDir(workspaceId);
+    const chatFile = getChatFile(chatId, workspaceId);
 
-    using file = await Deno.open(chatFile, { read: true, write: true });
-    await file.lock(true);
-
-    const chat = await readAndValidateChat(chatFile);
-    const existing = new Set(chat.contentFilteredMessageIds ?? []);
-    for (const id of messageIds) {
-      existing.add(id);
-    }
-    chat.contentFilteredMessageIds = [...existing];
-    chat.updatedAt = new Date().toISOString();
-
-    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    await withExclusiveLock(chatFile, async () => {
+      const chat = await readAndValidateChat(chatFile);
+      const existing = new Set(chat.contentFilteredMessageIds ?? []);
+      for (const id of messageIds) {
+        existing.add(id);
+      }
+      chat.contentFilteredMessageIds = [...existing];
+      chat.updatedAt = new Date().toISOString();
+      await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    });
     return success(undefined);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
@@ -376,6 +459,7 @@ export const ChatStorage = {
   getChat,
   appendMessage,
   listChats,
+  listChatsByWorkspace,
   updateChatTitle,
   deleteChat,
   setSystemPromptContext,

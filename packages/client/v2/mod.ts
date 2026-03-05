@@ -9,6 +9,7 @@ import type {
   MeRoutes,
   SessionsRoutes,
   SkillsRoutes,
+  WorkspaceChatRoutes,
   WorkspaceConfigRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
@@ -40,6 +41,8 @@ export const client = {
   skills: hc<SkillsRoutes>(`${baseUrl}/api/skills`),
   workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
   jobs: hc<JobsRoutes>(`${baseUrl}/api/jobs`),
+  workspaceChat: (workspaceId: string) =>
+    hc<WorkspaceChatRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/chat`),
   workspaceConfig: (workspaceId: string) =>
     hc<WorkspaceConfigRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/config`),
   mcpRegistry: hc<MCPRegistryRoutes>(`${baseUrl}/api/mcp-registry`),

@@ -31,7 +31,7 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -321,6 +321,91 @@ export class WorkspaceRuntime {
 
     // Load jobs from config (inline FSM definitions in workspace.yml)
     const configJobs = this.config.workspace.jobs || {};
+
+    // Reserved signal name validation — "chat" is system-owned
+    const configSignals = this.config.workspace.signals || {};
+    if (configSignals["chat"]) {
+      throw new Error(
+        `Workspace "${this.workspace.id}" defines a "chat" signal, but "chat" is reserved for workspace direct chat. Rename your signal.`,
+      );
+    }
+
+    // Skip chat injection for the system conversation workspace
+    const SKIP_CHAT_INJECTION = new Set(["atlas-conversation"]);
+
+    if (!SKIP_CHAT_INJECTION.has(this.workspace.id)) {
+      // Auto-inject chat signal + handle-chat job for workspace direct chat
+      const chatFSM = {
+        id: `${this.workspace.id}-chat`,
+        initial: "idle",
+        documentTypes: {
+          ChatContext: {
+            type: "object",
+            properties: {
+              chatId: { type: "string" },
+              userId: { type: "string" },
+              streamId: { type: "string" },
+            },
+            required: ["userId"],
+          },
+        },
+        states: {
+          idle: {
+            on: {
+              chat: {
+                target: "processing",
+                actions: [{ type: "code", function: "storeChatContext" }],
+              },
+            },
+          },
+          processing: {
+            entry: [
+              { type: "agent", agentId: "workspace-chat", outputTo: "chat-result" },
+              { type: "emit", event: "chat_complete" },
+            ],
+            on: { chat_complete: { target: "idle" } },
+          },
+        },
+        functions: {
+          storeChatContext: {
+            type: "action",
+            code: `export default function storeChatContext(context, event) {
+  try {
+    context.createDoc({
+      id: 'chat-context',
+      type: 'ChatContext',
+      data: {
+        chatId: event.data.chatId,
+        userId: event.data.userId,
+        streamId: event.data.streamId
+      }
+    });
+  } catch {
+    context.updateDoc('chat-context', {
+      chatId: event.data.chatId,
+      userId: event.data.userId,
+      streamId: event.data.streamId
+    });
+  }
+}`,
+          },
+        },
+      };
+
+      this.jobs.set("handle-chat", {
+        name: "handle-chat",
+        fsmPath: "",
+        signals: ["chat"],
+        fsmDefinition: chatFSM,
+        description: "Direct chat with workspace",
+      });
+
+      this.emitJobDefined("handle-chat");
+
+      logger.debug("Auto-injected handle-chat job for workspace direct chat", {
+        workspaceId: this.workspace.id,
+      });
+    }
 
     for (const [jobName, jobSpec] of Object.entries(configJobs)) {
       // Only process jobs with FSM definitions
@@ -1299,11 +1384,18 @@ export class WorkspaceRuntime {
    * List all jobs (FSM definitions) in this workspace.
    * Falls back to config when runtime hasn't been initialized yet (lazy mode).
    */
-  listJobs(): Array<{ name: string; description?: string }> {
+  listJobs(): Array<{
+    name: string;
+    description?: string;
+    signals?: string[];
+    fsmDefinition?: unknown;
+  }> {
     if (this.jobs.size > 0) {
       return Array.from(this.jobs.values()).map((job) => ({
         name: job.name,
         description: job.description ?? `FSM workflow at ${job.fsmPath}`,
+        signals: job.signals,
+        fsmDefinition: job.fsmDefinition,
       }));
     }
 

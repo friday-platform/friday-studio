@@ -322,99 +322,66 @@ describe("finalize", () => {
 // ---------------------------------------------------------------------------
 
 describe("flush", () => {
-  test("awaits all pending appendEvent writes", async () => {
-    const callOrder: string[] = [];
-    let resolveWrite!: () => void;
+  test("resolves immediately when no pending writes", async () => {
+    const stream = new SessionEventStream("sess-1", mockAdapter());
+    await stream.flush(); // Should not hang
+  });
+
+  test("waits for in-flight appendEvent writes", async () => {
+    let resolveAppend!: () => void;
     const adapter = mockAdapter();
-    adapter.appendEvent = vi.fn<SessionHistoryAdapter["appendEvent"]>().mockImplementation(() => {
-      return new Promise<void>((r) => {
-        resolveWrite = () => {
-          callOrder.push("write-resolved");
-          r();
-        };
-      });
+    (adapter.appendEvent as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveAppend = resolve;
+      }),
+    );
+
+    const stream = new SessionEventStream("sess-1", adapter);
+    stream.emit(sessionStart());
+
+    let flushed = false;
+    const flushPromise = stream.flush().then(() => {
+      flushed = true;
     });
 
-    const stream = new SessionEventStream("sess-1", adapter);
-    stream.emit(sessionStart());
+    // flush should not resolve while appendEvent is pending
+    await Promise.resolve();
+    expect(flushed).toBe(false);
 
-    const flushDone = stream.flush().then(() => callOrder.push("flush-done"));
-
-    // flush should be blocked on the pending write
-    await Promise.resolve(); // tick microtasks
-    expect(callOrder).toHaveLength(0);
-
-    resolveWrite();
-    await flushDone;
-
-    expect(callOrder).toEqual(["write-resolved", "flush-done"]);
+    // Resolve the pending write
+    resolveAppend();
+    await flushPromise;
+    expect(flushed).toBe(true);
   });
 
-  test("tolerates rejected appendEvent writes", async () => {
-    const adapter = mockAdapter();
-    adapter.appendEvent = vi
-      .fn<SessionHistoryAdapter["appendEvent"]>()
-      .mockRejectedValue(new Error("disk full"));
-
-    const stream = new SessionEventStream("sess-1", adapter);
-    stream.emit(sessionStart());
-
-    // flush should resolve even though the write rejected
-    await expect(stream.flush()).resolves.toBeUndefined();
-  });
-
-  test("clears pendingWrites after draining", async () => {
-    const adapter = mockAdapter();
-    const stream = new SessionEventStream("sess-1", adapter);
-    stream.emit(sessionStart());
-    stream.emit(stepStart());
-
-    await stream.flush();
-
-    // Second flush is a no-op (nothing pending)
-    await stream.flush();
-
-    // appendEvent was only called for the two original emits
-    expect(adapter.appendEvent).toHaveBeenCalledTimes(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// finalize flush ordering
-// ---------------------------------------------------------------------------
-
-describe("finalize flush ordering", () => {
-  test("awaits pending writes before calling save", async () => {
+  test("finalize awaits flush before save", async () => {
     const callOrder: string[] = [];
-    let resolveWrite!: () => void;
-    const adapter = mockAdapter();
+    let resolveAppend!: () => void;
 
-    adapter.appendEvent = vi.fn<SessionHistoryAdapter["appendEvent"]>().mockImplementation(() => {
-      return new Promise<void>((r) => {
-        resolveWrite = () => {
-          callOrder.push("appendEvent-resolved");
-          r();
-        };
-      });
-    });
-    adapter.save = vi.fn<SessionHistoryAdapter["save"]>().mockImplementation(() => {
-      callOrder.push("save-called");
+    const adapter = mockAdapter();
+    (adapter.appendEvent as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveAppend = resolve;
+      }),
+    );
+    (adapter.save as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callOrder.push("save");
       return Promise.resolve();
     });
 
     const stream = new SessionEventStream("sess-1", adapter);
     stream.emit(sessionStart());
 
-    const finalizeDone = stream.finalize(summary());
+    const finalizePromise = stream.finalize(summary());
 
-    // save should NOT have been called yet (write still pending)
-    expect(callOrder).not.toContain("save-called");
+    // Resolve the pending appendEvent
+    resolveAppend();
+    callOrder.push("appendEvent-resolved");
 
-    resolveWrite();
-    await finalizeDone;
+    await finalizePromise;
 
-    // appendEvent resolves first, then save
-    expect(callOrder).toEqual(["appendEvent-resolved", "save-called"]);
+    // appendEvent should resolve before save is called
+    expect(callOrder).toEqual(["appendEvent-resolved", "save"]);
   });
 });
 

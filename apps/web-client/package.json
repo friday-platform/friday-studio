@@ -26,7 +26,6 @@
     "@atlas/analytics": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
-    "@atlas/resources": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/system": "workspace:*",
     "@lezer/common": "^1.5.1",
