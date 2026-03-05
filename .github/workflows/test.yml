@@ -27,7 +27,7 @@ jobs:
         run: deno install --frozen
 
       - name: Generate SvelteKit types
-        run: cd apps/web-client && npx svelte-kit sync
+        run: deno task --recursive sync
 
       - name: Start daemon for integration tests
         run: |

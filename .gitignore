@@ -101,9 +101,6 @@ apps/cypher/cypheradmin/cypheradmin
 apps/bounce/bounceadmin/bounceadmin
 atlas-otel-collector
 
-# Workspace simulator saved runs
-tools/workspace-simulator/runs/
-
 # Ralph coverage progress
 test-coverage-progress.txt
 scripts/ralph/progress.txt

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "workspace": ["./apps/*", "./packages/*", "./tools/evals", "./tools/workspace-simulator"],
+  "workspace": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": ["./reset.d.ts"],
@@ -22,6 +22,8 @@
     "apps/atlas-auth-ui/src/**",
     "apps/friday-website/.svelte-kit",
     "apps/friday-website/src/**",
+    "tools/agent-playground/.svelte-kit",
+    "tools/agent-playground/src/routes/**",
     "apps/atlas-installer",
     "packages/vendor/**",
     "apps/web-client/src-tauri/**",
@@ -53,8 +55,6 @@
     "lint:check": "deno lint && deno run -A npm:@biomejs/biome check --max-diagnostics=200",
     "clean": "deno run -A scripts/clean.ts",
     "compile": "./scripts/compile.sh",
-    "sim": "deno run --allow-all tools/workspace-simulator/cli.ts",
-    "sim:playground": "deno run --allow-all --watch=tools/workspace-simulator/playground.ts,tools/workspace-simulator/playground.html,tools/workspace-simulator/cli.ts,tools/workspace-simulator/harness/ tools/workspace-simulator/playground.ts",
     "evals": "deno run --allow-all tools/evals/run.ts"
   },
   "lint": {

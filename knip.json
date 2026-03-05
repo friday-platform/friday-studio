@@ -96,9 +96,25 @@
       "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
     },
-    "tools/workspace-simulator": {
-      "entry": ["cli.ts!", "playground.ts!", "**/*.test.ts"],
-      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    "packages/ui": {
+      "entry": ["src/lib/index.ts!", "src/routes/**/*.svelte!"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    },
+    "tools/agent-playground": {
+      "entry": ["cli.ts!", "mod.ts!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
     }
   },
   "ignore": [

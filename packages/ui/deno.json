@@ -1,0 +1,16 @@
+{
+  "name": "@atlas/ui",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./dist/index.js",
+    "./eslint": "./eslint.config.base.js",
+    "./prettier": "./prettier.config.js"
+  },
+  "exclude": [".svelte-kit/**", "dist/**", "node_modules/**", "src/**"],
+  "tasks": {
+    "fmt": "npx prettier --write .",
+    "fmt:check": "npx prettier --check .",
+    "eslint": "npx eslint .",
+    "eslint:fix": "npx eslint --fix ."
+  }
+}

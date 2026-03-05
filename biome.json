@@ -18,6 +18,8 @@
       "!packages/vendor",
       "!apps/web-client",
       "!apps/atlas-auth-ui",
+      "!packages/ui",
+      "!tools/agent-playground",
       "!opensrc"
     ]
   },

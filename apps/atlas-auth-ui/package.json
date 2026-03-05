@@ -29,6 +29,7 @@
     "zod-form-data": "^3.0.1"
   },
   "devDependencies": {
+    "@atlas/ui": "workspace:*",
     "@eslint/compat": "^2.0.2",
     "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
