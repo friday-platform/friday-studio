@@ -34,7 +34,7 @@
     "npm:@ai-sdk/mcp@^0.0.14": "0.0.14_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.97": "2.0.98_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.146": "3.0.148_svelte@5.53.7__acorn@8.16.0_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.148": "3.0.148_svelte@5.53.7__acorn@8.16.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.69": "0.2.69_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.5",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -6479,7 +6479,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.146",
+            "npm:@ai-sdk/svelte@^3.0.148",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
