@@ -176,7 +176,9 @@
         <p class="jobs-error">Failed to load jobs.</p>
       {/if}
 
-      <NewChat workspaceId={workspace.id} />
+      {#if featureFlags.ENABLE_WORKSPACE_PAGE_CONVERSATIONS}
+        <NewChat workspaceId={workspace.id} />
+      {/if}
     </Page.Content>
 
     <Page.Sidebar>
