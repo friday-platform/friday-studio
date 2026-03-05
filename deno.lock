@@ -30,7 +30,7 @@
     "jsr:@std/yaml@1": "1.0.11",
     "npm:@ai-sdk/anthropic@^2.0.70": "2.0.70_zod@4.3.6",
     "npm:@ai-sdk/google@^2.0.58": "2.0.58_zod@4.3.6",
-    "npm:@ai-sdk/groq@^2.0.35": "2.0.36_zod@4.3.6",
+    "npm:@ai-sdk/groq@^2.0.36": "2.0.36_zod@4.3.6",
     "npm:@ai-sdk/mcp@^0.0.14": "0.0.14_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.97": "2.0.98_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
@@ -6667,7 +6667,7 @@
           "dependencies": [
             "npm:@ai-sdk/anthropic@^2.0.70",
             "npm:@ai-sdk/google@^2.0.58",
-            "npm:@ai-sdk/groq@^2.0.35",
+            "npm:@ai-sdk/groq@^2.0.36",
             "npm:@ai-sdk/openai@^2.0.97",
             "npm:@ai-sdk/provider@^2.0.1",
             "npm:@jsr/std__collections@^1.1.3",
