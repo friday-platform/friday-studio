@@ -294,6 +294,12 @@ async function handleUpdateCredential(
 ) {
   const workspaceId = c.req.param("workspaceId");
   const path = c.req.param("path");
+  if (!path) {
+    return c.json(
+      { success: false, error: "bad_request", message: "Missing credential path" },
+      400,
+    );
+  }
   const ctx = c.get("app");
   const { credentialId: newCredentialId } = body;
 
