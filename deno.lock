@@ -180,7 +180,7 @@
     "npm:svelte@^5.51.0": "5.53.7_acorn@8.16.0",
     "npm:svelte@^5.53.6": "5.53.7_acorn@8.16.0",
     "npm:svelte@^5.53.7": "5.53.7_acorn@8.16.0",
-    "npm:tar@^7.5.9": "7.5.9",
+    "npm:tar@^7.5.10": "7.5.10",
     "npm:turndown@7.2.2": "7.2.2",
     "npm:typescript-eslint@^8.56.1": "8.56.1_eslint@10.0.2_typescript@5.9.3_@typescript-eslint+parser@8.56.1__eslint@10.0.2__typescript@5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
@@ -5819,8 +5819,8 @@
     "tar-mini@0.2.0": {
       "integrity": "sha512-+qfUHz700DWnRutdUsxRRVZ38G1Qr27OetwaMYTdg8hcPxf46U0S1Zf76dQMWRBmusOt2ZCK5kbIaiLkoGO7WQ=="
     },
-    "tar@7.5.9": {
-      "integrity": "sha512-BTLcK0xsDh2+PUe9F6c2TlRp4zOOBMTkoQHQIWSIzI0R7KG46uEwq4OPk2W7bZcprBMsuaeFsqwYr7pjh6CuHg==",
+    "tar@7.5.10": {
+      "integrity": "sha512-8mOPs1//5q/rlkNSPcCegA6hiHJYDmSLEI8aMH/CdSQJNWztHC9WHNam5zdQlfpTwB9Xp7IBEsHfV5LKMJGVAw==",
       "dependencies": [
         "@isaacs/fs-minipass",
         "chownr",
@@ -6737,7 +6737,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:ai@^5.0.144",
             "npm:nanoid@^5.1.6",
-            "npm:tar@^7.5.9",
+            "npm:tar@^7.5.10",
             "npm:ulid@^3.0.2",
             "npm:vitest@^4.0.17",
             "npm:zod@^4.3.5"
