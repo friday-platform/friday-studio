@@ -75,15 +75,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     // MCP server configured for Atlas agent orchestration with SSE notification support
     this.server = new McpServer(
       { name: "atlas-agents", version: "1.0.0" },
-      {
-        capabilities: {
-          // Advertise that we support notifications (required for SSE)
-          notifications: {},
-          // We also support tools and resources
-          tools: {},
-          resources: {},
-        },
-      },
+      { capabilities: { tools: {}, resources: {} } },
     );
 
     this.#logger.debug("Created MCP server", {

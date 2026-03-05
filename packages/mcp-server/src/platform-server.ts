@@ -36,11 +36,10 @@ export class PlatformMCPServer {
     this.workspaceProvider = dependencies.workspaceProvider;
 
     // Initialize MCP server
-    this.server = new McpServer({
-      name: "platform",
-      version: "1.0.0",
-      capabilities: { prompts: {}, tools: {}, resources: {}, logging: {}, notifications: {} },
-    });
+    this.server = new McpServer(
+      { name: "platform", version: "1.0.0" },
+      { capabilities: { prompts: {}, tools: {}, resources: {}, logging: {} } },
+    );
 
     // Create shared context for all tools
     const toolContext: ToolContext = {

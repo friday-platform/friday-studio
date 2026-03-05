@@ -22,7 +22,7 @@
     "nanoid": "npm:nanoid@^5.1.6",
     "oauth4webapi": "npm:oauth4webapi@^3.8.3",
     "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.5",
-    "@socotra/modelcontextprotocol-sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.21.0",
+    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.27.0",
     "@sentry/deno": "npm:@sentry/deno@^10.30.0",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "jose": "npm:jose@^6.1.3",

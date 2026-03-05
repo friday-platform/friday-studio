@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { env } from "node:process";
 import { stringifyError } from "@atlas/utils";
-import { Client } from "@socotra/modelcontextprotocol-sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@socotra/modelcontextprotocol-sdk/client/streamableHttp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 

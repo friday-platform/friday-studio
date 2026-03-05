@@ -35,7 +35,7 @@ import type {
   WorkspaceSignalRegistrar,
   WorkspaceSignalTriggerCallback,
 } from "@atlas/workspace/types";
-import { StreamableHTTPTransport } from "@atlas-vendor/hono-mcp";
+import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";

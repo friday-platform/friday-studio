@@ -1,8 +1,0 @@
-{
-  "name": "@atlas-vendor/hono-mcp",
-  "version": "0.1.4",
-  "description": "Vendored @hono/mcp with forked MCP SDK",
-  "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@socotra/modelcontextprotocol-sdk": "^1.21.0", "hono": "4.12.3" }
-}

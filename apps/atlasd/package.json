@@ -25,7 +25,7 @@
     "@atlas/workspace": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/link": "workspace:*",
-    "@atlas-vendor/hono-mcp": "workspace:*",
+    "@hono/mcp": "^0.2.4",
     "@hono/standard-validator": "^0.2.2",
     "@hono/zod-validator": "^0.7.6",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
