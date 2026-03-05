@@ -101,6 +101,12 @@ go build                # Build
 - `LanguageModelV2`'s `doGenerate`/`doStream` return `PromiseLike<T>` — `async`
   is structurally required even without `await`, use lint-ignore not removal
 
+### Hono
+
+- `.use()` middleware validators run at runtime but don't propagate input types
+  to chained route handlers — `c.req.valid("param")` only resolves when
+  `zValidator("param", ...)` is inline on the route handler itself
+
 ### Deno
 
 - `deno check` with multiple entry points sharing recursive `z.lazy()` types

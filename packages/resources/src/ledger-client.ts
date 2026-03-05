@@ -1,14 +1,6 @@
 /** HTTP client for the Ledger resource storage service. Wraps Hono RPC client. */
 import process from "node:process";
-import type {
-  LedgerApp,
-  MutateResult,
-  PublishResult,
-  ResourceMetadata,
-  ResourceStorageAdapter,
-  ResourceVersion,
-  ResourceWithData,
-} from "@atlas/ledger";
+import type { LedgerApp, ResourceStorageAdapter } from "@atlas/ledger";
 import { hc } from "hono/client";
 
 type LedgerClient = ReturnType<typeof hc<LedgerApp>>;
@@ -39,7 +31,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger provision failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as ResourceMetadata;
+      return await res.json();
     },
 
     async query(workspaceId, slug, rawSql, params) {
@@ -51,7 +43,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger query failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as { rows: Record<string, unknown>[]; rowCount: number };
+      return await res.json();
     },
 
     async mutate(workspaceId, slug, rawSql, params) {
@@ -63,7 +55,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger mutate failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as MutateResult;
+      return await res.json();
     },
 
     async publish(workspaceId, slug) {
@@ -74,7 +66,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger publish failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as PublishResult;
+      return await res.json();
     },
 
     async replaceVersion(workspaceId, slug, data, schema) {
@@ -86,7 +78,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger replaceVersion failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as ResourceVersion;
+      return await res.json();
     },
 
     async listResources(workspaceId) {
@@ -95,7 +87,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger listResources failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as ResourceMetadata[];
+      return await res.json();
     },
 
     async getResource(workspaceId, slug, opts) {
@@ -110,11 +102,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
       if (res.status === 404) {
         return null;
       }
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Ledger getResource failed (${res.status}): ${body}`);
-      }
-      return (await res.json()) as ResourceWithData;
+      return await res.json();
     },
 
     async deleteResource(workspaceId, slug) {
@@ -136,7 +124,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger linkRef failed (${res.status}): ${body}`);
       }
-      return (await res.json()) as ResourceVersion;
+      return await res.json();
     },
 
     async resetDraft(workspaceId, slug) {
@@ -157,7 +145,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         const body = await res.text();
         throw new Error(`Ledger publishAllDirty failed (${res.status}): ${body}`);
       }
-      const body = (await res.json()) as { published: number };
+      const body = await res.json();
       return body.published;
     },
 

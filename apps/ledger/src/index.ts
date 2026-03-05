@@ -77,13 +77,11 @@ export function createApp(adapterFactory: AdapterFactory) {
     .use(accessLogMiddleware)
     .use(trimTrailingSlash())
     .get("/health", (c) => c.json({ status: "ok", service: "ledger" }))
-    .get(
-      "/metrics",
-      () =>
-        new Response(getMetrics(), {
-          headers: { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" },
-        }),
-    );
+    .get("/metrics", (c) => {
+      const res = c.text(getMetrics());
+      res.headers.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+      return res;
+    });
 
   if (!cfg.devMode) {
     if (!cfg.jwtPublicKeyFile) {

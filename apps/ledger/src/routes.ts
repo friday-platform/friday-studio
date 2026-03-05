@@ -26,6 +26,9 @@ const SlugParamSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9_-]*$/),
 });
 
+/** Validates both workspaceId and slug on slug routes. */
+const SlugWithWorkspaceParamSchema = WorkspaceIdParamSchema.merge(SlugParamSchema);
+
 /** Coerces "true"/"false" query strings to boolean. */
 const GetResourceQuerySchema = z.object({
   published: z
@@ -36,118 +39,146 @@ const GetResourceQuerySchema = z.object({
 
 /** Creates the Ledger resource routes. Mounted under /v1/resources. */
 export function createResourceRoutes() {
-  return (
-    factory
-      .createApp()
+  return factory
+    .createApp()
 
-      // Validate workspaceId on all routes — it's always the first path segment
-      .use("/:workspaceId/*", zValidator("param", WorkspaceIdParamSchema))
-      .use("/:workspaceId", zValidator("param", WorkspaceIdParamSchema))
-
-      // Validate slug format on all slug routes
-      .use("/:workspaceId/:slug", zValidator("param", SlugParamSchema))
-      .use("/:workspaceId/:slug/*", zValidator("param", SlugParamSchema))
-
-      .post("/:workspaceId/provision", zValidator("json", ProvisionBodySchema), async (c) => {
+    .post(
+      "/:workspaceId/provision",
+      zValidator("param", WorkspaceIdParamSchema),
+      zValidator("json", ProvisionBodySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const workspaceId = c.req.param("workspaceId");
+        const { workspaceId } = c.req.valid("param");
         const body = c.req.valid("json");
 
         const { initialData, ...metadata } = body;
         const result = await adapter.provision(workspaceId, metadata, initialData);
         return c.json(result, 201);
-      })
+      },
+    )
 
-      .post("/:workspaceId/:slug/query", zValidator("json", SqlBodySchema), async (c) => {
+    .post(
+      "/:workspaceId/:slug/query",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      zValidator("json", SqlBodySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
         const { sql, params } = c.req.valid("json");
 
         const result = await adapter.query(workspaceId, slug, sql, params);
-        return c.json(result);
-      })
+        return c.json(result, 200);
+      },
+    )
 
-      .post("/:workspaceId/:slug/mutate", zValidator("json", SqlBodySchema), async (c) => {
+    .post(
+      "/:workspaceId/:slug/mutate",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      zValidator("json", SqlBodySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
         const { sql, params } = c.req.valid("json");
 
         const result = await adapter.mutate(workspaceId, slug, sql, params);
-        return c.json(result);
-      })
+        return c.json(result, 200);
+      },
+    )
 
-      .post("/:workspaceId/:slug/publish", async (c) => {
+    .post(
+      "/:workspaceId/:slug/publish",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
 
         const result = await adapter.publish(workspaceId, slug);
-        return c.json(result);
-      })
+        return c.json(result, 200);
+      },
+    )
 
-      .put(
-        "/:workspaceId/:slug/version",
-        zValidator("json", ReplaceVersionBodySchema),
-        async (c) => {
-          const adapter = c.get("adapter");
-          const { workspaceId, slug } = c.req.param();
-          const { data, schema } = c.req.valid("json");
-
-          const result = await adapter.replaceVersion(workspaceId, slug, data, schema);
-          return c.json(result, 201);
-        },
-      )
-
-      .get("/:workspaceId", async (c) => {
+    .put(
+      "/:workspaceId/:slug/version",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      zValidator("json", ReplaceVersionBodySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const workspaceId = c.req.param("workspaceId");
+        const { workspaceId, slug } = c.req.valid("param");
+        const { data, schema } = c.req.valid("json");
 
-        const result = await adapter.listResources(workspaceId);
-        return c.json(result);
-      })
+        const result = await adapter.replaceVersion(workspaceId, slug, data, schema);
+        return c.json(result, 201);
+      },
+    )
 
-      .get("/:workspaceId/:slug", zValidator("query", GetResourceQuerySchema), async (c) => {
+    .get("/:workspaceId", zValidator("param", WorkspaceIdParamSchema), async (c) => {
+      const adapter = c.get("adapter");
+      const { workspaceId } = c.req.valid("param");
+
+      const result = await adapter.listResources(workspaceId);
+      return c.json(result, 200);
+    })
+
+    .get(
+      "/:workspaceId/:slug",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      zValidator("query", GetResourceQuerySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
         const opts = c.req.valid("query");
 
         const result = await adapter.getResource(workspaceId, slug, opts);
         if (!result) {
           return c.json({ error: "not_found" }, 404);
         }
-        return c.json(result);
-      })
+        return c.json(result, 200);
+      },
+    )
 
-      .delete("/:workspaceId/:slug", async (c) => {
+    .delete("/:workspaceId/:slug", zValidator("param", SlugWithWorkspaceParamSchema), async (c) => {
+      const adapter = c.get("adapter");
+      const { workspaceId, slug } = c.req.valid("param");
+
+      await adapter.deleteResource(workspaceId, slug);
+      return c.json({ deleted: true }, 200);
+    })
+
+    .post(
+      "/:workspaceId/:slug/link-ref",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      zValidator("json", LinkRefBodySchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
-
-        await adapter.deleteResource(workspaceId, slug);
-        return c.json({ deleted: true });
-      })
-
-      .post("/:workspaceId/:slug/link-ref", zValidator("json", LinkRefBodySchema), async (c) => {
-        const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
         const { ref } = c.req.valid("json");
 
         const result = await adapter.linkRef(workspaceId, slug, ref);
         return c.json(result, 201);
-      })
+      },
+    )
 
-      .post("/:workspaceId/:slug/reset-draft", async (c) => {
+    .post(
+      "/:workspaceId/:slug/reset-draft",
+      zValidator("param", SlugWithWorkspaceParamSchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const { workspaceId, slug } = c.req.param();
+        const { workspaceId, slug } = c.req.valid("param");
 
         await adapter.resetDraft(workspaceId, slug);
-        return c.json({ reset: true });
-      })
+        return c.json({ reset: true }, 200);
+      },
+    )
 
-      .post("/:workspaceId/publish-all-dirty", async (c) => {
+    .post(
+      "/:workspaceId/publish-all-dirty",
+      zValidator("param", WorkspaceIdParamSchema),
+      async (c) => {
         const adapter = c.get("adapter");
-        const workspaceId = c.req.param("workspaceId");
+        const { workspaceId } = c.req.valid("param");
 
         const published = await adapter.publishAllDirty(workspaceId);
-        return c.json({ published });
-      })
-  );
+        return c.json({ published }, 200);
+      },
+    );
 }
