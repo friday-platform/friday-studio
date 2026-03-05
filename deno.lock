@@ -34,7 +34,7 @@
     "npm:@ai-sdk/mcp@^0.0.14": "0.0.14_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.97": "2.0.97_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.144": "3.0.144_svelte@5.53.7__acorn@8.16.0_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.146": "3.0.146_svelte@5.53.7__acorn@8.16.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.69": "0.2.69_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.5",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -110,9 +110,9 @@
     "npm:@vitest/coverage-v8@4.0.18": "4.0.18_vitest@4.0.18__@opentelemetry+api@1.9.0__@types+node@25.3.3__vite@7.3.1___@types+node@25.3.3___yaml@2.8.2___picomatch@4.0.3__yaml@2.8.2_@opentelemetry+api@1.9.0_@types+node@25.3.3_yaml@2.8.2",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.8.11": "0.8.11",
-    "npm:ai@^5.0.129": "5.0.144_zod@4.3.6",
-    "npm:ai@^5.0.144": "5.0.144_zod@4.3.6",
-    "npm:ai@^5.0.93": "5.0.144_zod@4.3.6",
+    "npm:ai@^5.0.129": "5.0.146_zod@4.3.6",
+    "npm:ai@^5.0.144": "5.0.146_zod@4.3.6",
+    "npm:ai@^5.0.93": "5.0.146_zod@4.3.6",
     "npm:beautiful-mermaid@^1.1.3": "1.1.3",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.5.0": "5.5.0",
@@ -301,11 +301,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.50_zod@4.3.6": {
-      "integrity": "sha512-JCnGV2CvdcjArmxYtVmZwOKWntEvj/MMr7XVfpAHkPpeRP1eu5GWStXPjskIF9Wxtgu2fao0CMwptEbV9JbMgg==",
+    "@ai-sdk/gateway@2.0.52_zod@4.3.6": {
+      "integrity": "sha512-ff9JMyTKqRXIJm1WkJUArzdjnFFqBgJSlTte+vVXcpgVkH3XimwR2zr6fvMuoBkHJ1EvGkV16bghfBXziCsNdw==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.22_zod@4.3.6",
         "@vercel/oidc",
         "zod"
       ]
@@ -367,10 +367,10 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.144_svelte@5.53.7__acorn@8.16.0_zod@4.3.6": {
-      "integrity": "sha512-sgKMLd2F2AZrZvUyyO+b7IMHRWekcSEcxIIAyXjIcqBzyNOHUAdBqEVRuCJHCXCawNWpRTTpK7dF7kp0n2nXHQ==",
+    "@ai-sdk/svelte@3.0.146_svelte@5.53.7__acorn@8.16.0_zod@4.3.6": {
+      "integrity": "sha512-QD/vgTYFgAqk0VHqC4EST7bThRty71fVdMrrIJ3Tli5NmrX+v4M4rhQUdkVLxZPxhtdhQKC8sXtih2ZY3boVCg==",
       "dependencies": [
-        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.22_zod@4.3.6",
         "ai",
         "svelte",
         "zod"
@@ -3030,12 +3030,12 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai@5.0.144_zod@4.3.6": {
-      "integrity": "sha512-SHIZSCb2AocF+lcCf3oHV42DRrru3kv54K+AlJGYFDtBNTiBm/vkjTsitGltE0lG6b2pbAz3zNtrBaGKBzvEcw==",
+    "ai@5.0.146_zod@4.3.6": {
+      "integrity": "sha512-H6z6gG52NuuE4WEiRu5RXQ7hrMFEa8cDXM3YJSbCp7TRFqubRr5wUM/8f+ycUiXHLdeDSBtIcz6InL5/aXktww==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.21_zod@4.3.6",
+        "@ai-sdk/provider-utils@3.0.22_zod@4.3.6",
         "@opentelemetry/api",
         "zod"
       ]
@@ -6439,7 +6439,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.144",
+            "npm:@ai-sdk/svelte@^3.0.146",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
