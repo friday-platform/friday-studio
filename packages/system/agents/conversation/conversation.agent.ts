@@ -271,7 +271,7 @@ function getSystemPrompt(
 }
 
 /**
- * Generates a concise 3-5 word title for a conversation based on its messages.
+ * Generates a concise 2-3 word title for a conversation based on its messages.
  */
 async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
   const messagePreview = messages
