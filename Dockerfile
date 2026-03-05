@@ -37,6 +37,10 @@ COPY . .
 # Install dependencies (populates node_modules for bare import resolution)
 RUN deno install
 
+# Remove packages that contain non-JS/TS modules (e.g. .svelte files)
+# which deno compile cannot handle. The web-client stage has its own COPY.
+RUN rm -rf packages/ui node_modules/@atlas/ui
+
 # Compile the Atlas CLI to a single binary for optimal performance
 # OTEL_DENO=true must be set at compile time - the config is baked into the binary
 RUN OTEL_DENO=true deno compile \
