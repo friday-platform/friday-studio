@@ -1,8 +1,10 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { ColorSchema, type Color } from "@atlas/utils";
+import { browser } from "$app/environment";
+import { buildFeatureFlags, parseCookieOverrides } from "$lib/feature-flags";
 import type { LayoutLoad } from "./$types";
 
-export const load: LayoutLoad = async ({ params, data }) => {
+export const load: LayoutLoad = async ({ params }) => {
   const res = await parseResult(client.me.index.$get());
   const user = res.ok ? res.data.user : null;
 
@@ -26,5 +28,8 @@ export const load: LayoutLoad = async ({ params, data }) => {
     }
   }
 
-  return { user, color, featureFlags: data.featureFlags };
+  const cookieOverrides = browser ? parseCookieOverrides(document.cookie) : {};
+  const featureFlags = buildFeatureFlags(cookieOverrides);
+
+  return { user, color, featureFlags };
 };

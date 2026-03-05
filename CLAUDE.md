@@ -156,6 +156,14 @@ go build                # Build
 - Mocking constructable classes requires class syntax or regular functions —
   arrow functions in `vi.fn().mockImplementation()` fail with "not a constructor"
 
+### SvelteKit (web-client)
+
+- `+layout.server.ts` / `+page.server.ts` in an `adapter-static` app causes
+  SvelteKit's client router to fetch `__data.json` on navigation — with nginx's
+  `try_files` fallback, this returns `index.html` instead of JSON, crashing
+  `JSON.parse`. The dev server masks this because it executes server load
+  functions properly. An architecture test enforces this constraint.
+
 ### SQLite (@db/sqlite)
 
 - `Database.exec()` handles multi-statement strings (semicolon-separated);
