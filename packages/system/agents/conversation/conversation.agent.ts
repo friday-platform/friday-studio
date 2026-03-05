@@ -279,19 +279,12 @@ async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Pr
     .join("\n");
 
   try {
-    const result = await smallLLM({
+    return await smallLLM({
       system:
         "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
       prompt: `Generate a title for this conversation:\n${messagePreview}`,
       maxOutputTokens: 250,
     });
-
-    const title = result.trim();
-    if (title.length < 3) {
-      logger.warn("Chat title too short, using fallback", { title });
-      return "Saved Chat";
-    }
-    return title;
   } catch (error) {
     logger.error("Failed to generate chat title", { error });
     return "Saved Chat";
