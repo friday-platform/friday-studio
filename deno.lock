@@ -34,7 +34,7 @@
     "npm:@ai-sdk/mcp@^0.0.15": "0.0.15_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.98": "2.0.98_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.148": "3.0.148_svelte@5.53.7_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.149": "3.0.149_svelte@5.53.7_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.70": "0.2.70_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.6",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -353,11 +353,11 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.148_svelte@5.53.7_zod@4.3.6": {
-      "integrity": "sha512-+CEb9a3muzGd9GGUzlJva8IvrpKWxKNjG98OiI98d0mof1oKwFMkReOqf+q6qQ4Auq2OPeN0CchoQXW4vCL9bw==",
+    "@ai-sdk/svelte@3.0.149_svelte@5.53.7_zod@4.3.6": {
+      "integrity": "sha512-47xBHxnZyVKYY2thmeTf8WDt4arjXdKnXEQ7UJVzCMlOfESk2znkCVOiDaclICzDpiJgqfCococsyF6bIBrtpg==",
       "dependencies": [
         "@ai-sdk/provider-utils",
-        "ai@5.0.148_zod@4.3.6",
+        "ai",
         "svelte",
         "zod"
       ],
@@ -2948,16 +2948,6 @@
     },
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
-    },
-    "ai@5.0.148_zod@4.3.6": {
-      "integrity": "sha512-h8Pj3w2oeoi/qNC1jTaGLug5OybGLgPzVfLlMAysTJidVLosrG7A+iYDsLP4S2gVCbNYeMogJBJG0jk41ud6BA==",
-      "dependencies": [
-        "@ai-sdk/gateway",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "@opentelemetry/api",
-        "zod"
-      ]
     },
     "ai@5.0.149_zod@4.3.6": {
       "integrity": "sha512-ebOvqbUZ4njabaKC7gpuFBbNsyvH8y/9eyIDgKefu9PB8j5GdkWKsXNtPxhz4PDFnDb0GClCtsJ4j/gWy71UNg==",
@@ -6388,7 +6378,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.148",
+            "npm:@ai-sdk/svelte@^3.0.149",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
