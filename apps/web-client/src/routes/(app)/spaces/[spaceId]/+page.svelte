@@ -40,6 +40,7 @@
   }));
   const recentSessions = $derived((sessionsQuery.data ?? []).slice(0, 3));
   const recentArtifacts = $derived(data.artifacts.slice(0, 5));
+  const resources = $derived(data.resources);
 
   const jobsQuery = createQuery(() => ({
     queryKey: ["jobs", workspace.id],
@@ -194,8 +195,24 @@
       <div class="section">
         <h2>Resources</h2>
 
-        {#if recentArtifacts.length > 0}
+        {#if resources.length > 0 || recentArtifacts.length > 0}
           <ul class="resources">
+            {#each resources as resource (resource.slug)}
+              <li>
+                <a
+                  href={resolve("/spaces/[spaceId]/resources/[slug]", {
+                    spaceId: workspace.id,
+                    slug: resource.slug,
+                  })}
+                >
+                  <span>
+                    {resource.name}
+                  </span>
+
+                  <IconSmall.CaretRight />
+                </a>
+              </li>
+            {/each}
             {#each recentArtifacts as artifact (artifact.id)}
               <li>
                 <a href={resolve("/library/[libraryId]", { libraryId: artifact.id })}>

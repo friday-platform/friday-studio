@@ -58,7 +58,7 @@ export default {
   "*.{ts,tsx,js,jsx}": (files) => {
     const filtered = files.filter((f) => !f.endsWith(".svelte.ts") && !f.endsWith(".svelte.js"));
     if (filtered.length === 0) return [];
-    return [`deno lint --fix ${filtered.join(" ")}`];
+    return [`deno lint --fix ${filtered.map((f) => `"${f}"`).join(" ")}`];
   },
   "apps/web-client/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
   "apps/atlas-auth-ui/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
