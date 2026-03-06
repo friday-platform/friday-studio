@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import process from "node:process";
+import { generateText } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   astToHTML,
@@ -6,6 +10,28 @@ import {
   markdownToHTML,
   parseMarkdownToAST,
 } from "./markdown.ts";
+
+// Load API keys from ~/.atlas/.env (no dotenv dep — parse manually)
+function loadAtlasEnv(): void {
+  const atlasHome = process.env.ATLAS_HOME ?? join(process.env.HOME ?? "", ".atlas");
+  try {
+    const content = readFileSync(join(atlasHome, ".env"), "utf-8");
+    for (const line of content.split("\n")) {
+      const match = line.match(/^([A-Z_]+)=(.+)$/);
+      const key = match?.[1];
+      const value = match?.[2];
+      if (key && value && !process.env[key]) {
+        process.env[key] = value;
+      }
+    }
+  } catch {
+    // No .env file — tests that need API key will skip
+  }
+}
+loadAtlasEnv();
+
+const hasApiKey =
+  !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== "dummy-key-for-ci";
 
 describe("parseMarkdownToAST", () => {
   it("simple paragraph", () => {
@@ -237,5 +263,132 @@ describe("markdownToHTML", () => {
     const expected =
       "<ol><li>Top level<ul><li>Second level<ul><li>Third level</li></ul></li></ul></li></ol>";
     expect(markdownToHTML(markdown)).toEqual(expected);
+  });
+
+  it("LLM-generated table with plain text cells", () => {
+    // Real LLM output: bundling savings table from insurance research
+    const markdown = `| Bundle Type | Typical Savings |
+|---|---|
+| Auto + Renters | 5–15% on both policies |
+| Auto + Auto (multi-vehicle) | 10–25% on auto |
+| Auto + RV/Trailer | 5–15% on both |
+| Auto + Renters + RV (triple bundle) | 15–25% total portfolio savings |`;
+    const result = markdownToHTML(markdown);
+    expect(result).toContain("<table>");
+    expect(result).toContain("<th>");
+    expect(result).toContain("Bundle Type");
+    expect(result).toContain("Typical Savings");
+    expect(result).toContain("<td>");
+    expect(result).toContain("Auto + Renters");
+    expect(result).toContain("5–15% on both policies");
+    expect(result).toContain("15–25% total portfolio savings");
+    expect(result).toContain("</table>");
+    // Must NOT render as raw pipe text in a paragraph
+    expect(result).not.toContain("<p>|");
+    expect(result).not.toContain("|---|");
+  });
+
+  it("LLM-generated table with bold and emoji cells", () => {
+    // Real LLM output: carrier comparison table from insurance research
+    const markdown = `| Carrier | Auto | Renters | Travel Trailer | Bundle Discount |
+|---|---|---|---|---|
+| **Allstate** | ✅ | ✅ | ✅ | Up to 25% |
+| **Progressive** | ✅ | ✅ | ✅ | Up to 15% |
+| **Farmers** | ✅ | ✅ | ✅ (via Foremost) | Up to 20% |
+| **State Farm** | ✅ | ✅ | ❌ (limited) | Up to 20% |
+| **GEICO** | ✅ | ✅ | ❌ | Up to 25% (auto only) |`;
+    const result = markdownToHTML(markdown);
+    expect(result).toContain("<table>");
+    expect(result).toContain("<th>");
+    expect(result).toContain("Carrier");
+    expect(result).toContain("Bundle Discount");
+    expect(result).toContain("<strong>Allstate</strong>");
+    expect(result).toContain("<strong>Progressive</strong>");
+    expect(result).toContain("<strong>GEICO</strong>");
+    expect(result).toContain("✅");
+    expect(result).toContain("❌");
+    expect(result).toContain("Up to 25%");
+    expect(result).toContain("✅ (via Foremost)");
+    expect(result).toContain("</table>");
+  });
+
+  it("LLM-generated table with surrounding prose", () => {
+    // Real LLM output pattern: heading + prose + table + recommendation
+    const markdown = `## Bundling Savings Potential
+
+This is your **single biggest savings lever**. Here's how bundling could work:
+
+| Bundle Type | Typical Savings |
+|---|---|
+| Auto + Renters | 5–15% on both policies |
+| Auto + Auto (multi-vehicle) | 10–25% on auto |
+
+Allstate and Progressive are the strongest candidates.`;
+    const result = markdownToHTML(markdown);
+    expect(result).toContain("<h2>");
+    expect(result).toContain("<table>");
+    expect(result).toContain("Bundle Type");
+    expect(result).toContain("Auto + Renters");
+    expect(result).toContain("</table>");
+    expect(result).toContain("<p>Allstate and Progressive are the strongest candidates.</p>");
+    expect(result).not.toContain("<p>|");
+  });
+
+  it("LLM-generated summary table with multiple text columns", () => {
+    // Real LLM output: summary recommendation table
+    const markdown = `| Policy | Top Pick | Runner-Up | Key Reason |
+|---|---|---|---|
+| 2018 Audi Q5 | State Farm or GEICO | Farmers | Competitive luxury rates, multi-vehicle discount |
+| 2024 Porsche Cayenne | Chubb | Progressive | Agreed Value, luxury vehicle expertise |
+| Renters | Lemonade | State Farm | Cheapest standalone, good bundled |`;
+    const result = markdownToHTML(markdown);
+    expect(result).toContain("<table>");
+    expect(result).toContain("<th>");
+    expect(result).toContain("Top Pick");
+    expect(result).toContain("Runner-Up");
+    expect(result).toContain("Key Reason");
+    expect(result).toContain("<td>");
+    expect(result).toContain("2018 Audi Q5");
+    expect(result).toContain("Chubb");
+    expect(result).toContain("Agreed Value, luxury vehicle expertise");
+    expect(result).toContain("</table>");
+  });
+});
+
+describe.skipIf(!hasApiKey)("markdownToHTML — LLM integration", () => {
+  it("renders a table generated by Claude", { timeout: 30_000 }, async () => {
+    const { createAnthropicWithOptions } = await import("@atlas/llm");
+    const anthropic = createAnthropicWithOptions();
+    const model = anthropic("claude-haiku-4-5-20251001");
+
+    const { text } = await generateText({
+      model,
+      prompt:
+        "Create a markdown comparison table of 3 programming languages (Python, TypeScript, Rust) " +
+        "with columns: Language, Typing, Speed, Use Case. Use **bold** for language names in the cells. " +
+        "Output ONLY the markdown table, no other text.",
+    });
+
+    const result = markdownToHTML(text);
+
+    // Must produce actual HTML table elements
+    expect(result).toContain("<table>");
+    expect(result).toContain("<thead>");
+    expect(result).toContain("<th>");
+    expect(result).toContain("<tbody>");
+    expect(result).toContain("<td>");
+    expect(result).toContain("</table>");
+
+    // Must NOT contain raw pipe-table syntax
+    expect(result).not.toContain("|---|");
+    expect(result).not.toMatch(/<p>\|/);
+
+    // Should contain the requested content
+    expect(result).toContain("Python");
+    expect(result).toContain("TypeScript");
+    expect(result).toContain("Rust");
+
+    // Bold formatting should be rendered
+    expect(result).toContain("<strong>");
   });
 });

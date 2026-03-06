@@ -1,10 +1,8 @@
 import type { TreeCursor } from "@lezer/common";
-import { parser } from "@lezer/markdown";
+import { parser, Table } from "@lezer/markdown";
 
 // Configure parser with GFM extensions
-const markdownParser = parser.configure([
-  // Add GFM tables, strikethrough, etc if needed
-]);
+const markdownParser = parser.configure([Table]);
 
 // Node structure for rendering
 interface ASTNode {
@@ -148,13 +146,36 @@ function reconstructParagraphContent(node: ASTNode): string {
 }
 
 /**
+ * Render table cells from a TableHeader or TableRow node
+ */
+function renderTableCells(row: ASTNode, tag: "th" | "td"): string {
+  return row.children
+    .filter((c) => c.type === "TableCell")
+    .map((cell) => {
+      const content =
+        cell.children.length > 0
+          ? cell.children.map((child) => astToHTML(child, "TableCell")).join("")
+          : cell.content;
+      return `<${tag}>${content}</${tag}>`;
+    })
+    .join("");
+}
+
+/**
  * Convert AST node to HTML string
  */
 export function astToHTML(node: ASTNode | null, parentType: string = ""): string {
   if (!node) return "";
 
   // Skip marker nodes
-  const skipTypes = ["ListMark", "HeaderMark", "EmphasisMark", "LinkMark", "HorizontalRule"];
+  const skipTypes = [
+    "ListMark",
+    "HeaderMark",
+    "EmphasisMark",
+    "LinkMark",
+    "HorizontalRule",
+    "TableDelimiter",
+  ];
   if (skipTypes.includes(node.type)) {
     return "";
   }
@@ -288,6 +309,24 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
         }
       }
       return `<p><strong>${cleanMarkdownSyntax(node)}</strong></p>`;
+
+    case "Table": {
+      const headerNode = node.children.find((c) => c.type === "TableHeader");
+      const bodyRows = node.children.filter((c) => c.type === "TableRow");
+      const thead = headerNode
+        ? `<thead><tr>${renderTableCells(headerNode, "th")}</tr></thead>`
+        : "";
+      const tbody =
+        bodyRows.length > 0
+          ? `<tbody>${bodyRows.map((row) => `<tr>${renderTableCells(row, "td")}</tr>`).join("")}</tbody>`
+          : "";
+      return `<table>${thead}${tbody}</table>`;
+    }
+
+    case "TableHeader":
+    case "TableRow":
+    case "TableCell":
+      return renderChildren(parentType);
 
     case "BlockQuote":
       return `<blockquote>${
