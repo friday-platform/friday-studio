@@ -1,4 +1,4 @@
-FROM golang:1.26.0-alpine3.23 AS build-env
+FROM golang:1.26.1-alpine3.23 AS build-env
 
 WORKDIR /go/src/atlas
 
