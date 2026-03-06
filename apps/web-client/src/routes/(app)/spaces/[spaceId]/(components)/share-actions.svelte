@@ -3,9 +3,7 @@
   import { client, type InferResponseType } from "@atlas/client/v2";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
-  import { toast } from "$lib/components/notification/notification.svelte";
-  import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
-  import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
+  import { downloadFile } from "$lib/utils/files.svelte";
 
   type Workspace = InferResponseType<(typeof client.workspace)[":workspaceId"]["$get"], 200>;
 
@@ -31,24 +29,6 @@
       const contentDisposition = response.headers.get("Content-Disposition");
       const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
       const filename = filenameMatch?.[1] || `${workspace.name}.yml`;
-
-      if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {
-        try {
-          const uniqueName = await getUniqueFileName(filename, BaseDirectory.Download);
-          await writeTextFile(uniqueName, yamlContent, { baseDir: BaseDirectory.Download });
-
-          toast({
-            title: "Exported",
-            description: `${uniqueName} has been downloaded.`,
-            viewLabel: "View File",
-            viewAction: () => openInDownloads(uniqueName),
-          });
-          return;
-        } catch (e) {
-          console.error("Failed to save file:", e);
-          // Fall through to browser download
-        }
-      }
 
       downloadFile(filename, yamlContent, "text/yaml");
     } catch (error) {

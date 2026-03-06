@@ -801,15 +801,6 @@ async function extractBinary(archivePath: string, platform: string): Promise<str
 
     // Verify the binary exists
     if (!(await exists(binaryPath))) {
-      // Check if this is an installer package by mistake
-      const installerPath = join(tempDir, "Atlas Installer.app");
-      if (await exists(installerPath)) {
-        throw new Error(
-          `Downloaded installer package instead of binary-only package. ` +
-            `The update system requires the CLI binary package (.tar.gz), not the installer package (.zip). ` +
-            `This is a server configuration issue.`,
-        );
-      }
       throw new Error(
         `Binary not found at expected location: ${binaryPath}. The package structure may be incorrect.`,
       );

@@ -1,5 +1,2 @@
-# Specific ownership for installer and tooling
-/tools/atlas-installer/ @ljagiello
-
 # GitHub Actions and workflows
 /.github/ @ljagiello

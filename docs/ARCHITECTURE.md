@@ -342,9 +342,6 @@ auth, storage, and signal ingestion.
   deployment.
 - **Local development**: The daemon runs on `localhost:8080` with file-based
   storage. No K8s required.
-- **Tauri / native builds**: A desktop app exists via Tauri integration in the
-  web client. This is legacy and not the primary deployment target.
-
 ## Go Services
 
 Friday's Go services handle concerns that benefit from Go's deployment model

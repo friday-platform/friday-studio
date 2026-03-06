@@ -7,7 +7,3 @@ bun.lockb
 
 # Miscellaneous
 /static/
-
-# Tauri build output
-/src-tauri/target/
-/src-tauri/gen/

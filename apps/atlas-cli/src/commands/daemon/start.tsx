@@ -589,7 +589,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
     hostname: argv.hostname,
     maxConcurrentWorkspaces: argv.maxWorkspaces,
     idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
-    cors: ["tauri://localhost", "http://127.0.0.1:1420"],
+    cors: ["http://127.0.0.1:1420"],
   });
 
   // Handle graceful shutdown

@@ -5,17 +5,10 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
-  import { toast } from "$lib/components/notification/notification.svelte";
   import BasicTable from "$lib/components/primitives/basic-table.svelte";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import { parseFileContents, type ParsedContent } from "$lib/modules/artifacts/file-utils";
-  import {
-    copyToClipboard,
-    downloadFile,
-    getUniqueFileName,
-    openInDownloads,
-  } from "$lib/utils/files.svelte";
-  import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
+  import { copyToClipboard, downloadFile } from "$lib/utils/files.svelte";
 
   type Props = { data: FileData; contents?: string; artifactId?: string };
 
@@ -46,24 +39,8 @@
 
   const fileContents = $derived(contents);
 
-  async function handleDownload(content: string) {
-    if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {
-      try {
-        const uniqueName = await getUniqueFileName(fileName, BaseDirectory.Download);
-        await writeTextFile(uniqueName, content, { baseDir: BaseDirectory.Download });
-
-        toast({
-          title: "Done",
-          description: `${uniqueName} has been downloaded.`,
-          viewLabel: "View File",
-          viewAction: () => openInDownloads(uniqueName),
-        });
-      } catch (e) {
-        console.error("Failed to save file:", e);
-      }
-    } else {
-      downloadFile(fileName, content, data.mimeType);
-    }
+  function handleDownload(content: string) {
+    downloadFile(fileName, content, data.mimeType);
   }
 </script>
 

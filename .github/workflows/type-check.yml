@@ -24,8 +24,5 @@ jobs:
       - name: Install dependencies
         run: deno install --frozen
 
-      - name: Generate build info
-        run: deno run --allow-read --allow-write --allow-env apps/web-client/scripts/generate-build-info.ts
-
       - name: Run type check
         run: deno task typecheck

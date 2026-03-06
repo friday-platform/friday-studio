@@ -20,16 +20,6 @@ declare global {
     clarity: ((...args: unknown[]) => void) & { q?: unknown[] };
   }
 
-  /**
-   * Build-time constant indicating whether this is a Tauri desktop build.
-   * - `true` in production desktop builds (TAURI_FAMILY env var set during `tauri build`)
-   * - `false` in web builds and dev mode (`tauri dev`)
-   *
-   * Note: In dev mode, use runtime detection instead:
-   * `typeof window !== 'undefined' && '__TAURI__' in window`
-   */
-  const __TAURI_BUILD__: boolean;
-
   /** Build-time constant: true in development mode, false in production */
   const __DEV_MODE__: boolean;
 

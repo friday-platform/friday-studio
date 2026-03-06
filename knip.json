@@ -125,7 +125,6 @@
     "**/dist/**",
     "**/build/**",
     "packages/vendor/**",
-    "apps/atlas-installer/**",
     "**/$lib/build-info"
   ],
   "ignoreDependencies": ["@types/deno"],

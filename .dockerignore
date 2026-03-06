@@ -47,7 +47,6 @@ Thumbs.db
 
 # Development scripts
 scripts/
-tools/atlas-installer/
 
 # Examples and demos (keep only essential ones)
 examples/

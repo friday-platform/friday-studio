@@ -24,8 +24,6 @@
     "apps/friday-website/src/**",
     "tools/agent-playground/.svelte-kit",
     "tools/agent-playground/src/routes/**",
-    "apps/atlas-installer",
-    "apps/web-client/src-tauri/**",
     "opensrc",
     "types"
   ],

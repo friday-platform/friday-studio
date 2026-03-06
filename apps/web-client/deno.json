@@ -18,7 +18,7 @@
   ],
   "tasks": {
     "dev": "vite dev",
-    "build": "deno run --allow-read --allow-write --allow-env scripts/generate-build-info.ts && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -26,7 +26,6 @@
     "fmt": "npx prettier --write .",
     "fmt:check": "npx prettier --check .",
     "lint": "npx prettier --check . && npx eslint .",
-    "eslint": "npx eslint .",
-    "tauri": "tauri"
+    "eslint": "npx eslint ."
   }
 }

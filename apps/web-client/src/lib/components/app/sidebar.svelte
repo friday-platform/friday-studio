@@ -23,7 +23,6 @@
   import { getActivePage, getActiveParam } from "$lib/utils/active-page.svelte";
   import { shareChat } from "$lib/utils/share-chat";
   import ScrollListener from "../scroll-listener.svelte";
-  import NavigationControls from "./navigation-controls.svelte";
   import Usage from "./usage.svelte";
 
   const featureFlags = getFeatureFlags();
@@ -53,13 +52,9 @@
   const currentChatId = $derived(page.params.chatId);
 </script>
 
-{#if __TAURI_BUILD__}
-  <NavigationControls />
-{/if}
-
-<header class:is-app-sidebar={__TAURI_BUILD__}>
+<header>
   <nav>
-    {#if ctx.user && !__TAURI_BUILD__}
+    {#if ctx.user}
       <div class="user">
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
@@ -373,10 +368,6 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     user-select: none;
-
-    &.is-app-sidebar {
-      padding-block: var(--size-13) var(--size-5);
-    }
   }
 
   .user {

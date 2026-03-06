@@ -14,7 +14,6 @@ import {
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { formatMessage } from "../modules/messages/format.ts";
 import { markdownToHTML } from "./markdown.ts";
-import { openUrl } from "./tauri-loader.ts";
 
 /** Double chevron SVG icon for expand/collapse buttons */
 const DOUBLE_CHEVRON_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -45,12 +44,7 @@ export async function shareChat(messages: AtlasUIMessage[], title?: string): Pro
 
   const data = (await response.json()) as { id: string; url: string };
 
-  // Use Tauri's openUrl in desktop app, fallback to window.open in browser
-  if (openUrl) {
-    await openUrl(data.url);
-  } else {
-    globalThis.open(data.url, "_blank");
-  }
+  globalThis.open(data.url, "_blank");
 }
 
 /**

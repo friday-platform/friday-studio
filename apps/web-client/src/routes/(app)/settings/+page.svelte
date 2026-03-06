@@ -9,14 +9,12 @@
     renderComponent,
   } from "@tanstack/svelte-table";
   import { invalidateAll } from "$app/navigation";
-  import { BUILD_INFO } from "$lib/build-info";
   import Button from "$lib/components/button.svelte";
   import { IconSmall } from "$lib/components/icons/small";
   import { Table } from "$lib/components/table";
   import { getClientContext } from "$lib/modules/client/context.svelte";
   import Logo from "$lib/modules/integrations/logo-column.svelte";
   import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
-  import { getVersion, invoke } from "$lib/utils/tauri-loader";
   import { onMount } from "svelte";
   import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
@@ -59,10 +57,6 @@
       .map(([key, value]) => ({ key, value, id: nextId++ })),
   );
   let _isSaving = $state(false);
-  let isRestarting = $state(false);
-  let message = $state("");
-  let version = $state<string>(BUILD_INFO?.version || "1.0.0-beta");
-  let commitHash = BUILD_INFO?.commitHash || "unknown";
 
   // Integrations table (connected credentials only)
   const columnHelper = createColumnHelper<CredentialRow>();
@@ -173,18 +167,6 @@
       history.replaceState({}, "", cleanUrl.href);
       await invalidateAll();
     }
-
-    // Get version info from Tauri if available
-    if (getVersion) {
-      try {
-        const tauriVersion = await getVersion();
-        if (tauriVersion) {
-          version = tauriVersion;
-        }
-      } catch {
-        // Failed to get Tauri version, use build info version
-      }
-    }
   });
 
   function addEntry() {
@@ -217,30 +199,6 @@
     } finally {
       _isSaving = false;
     }
-  }
-
-  async function restartDaemon() {
-    if (!invoke) return;
-
-    trackEvent(GA4.DAEMON_RESTART);
-    isRestarting = true;
-    try {
-      const result = (await invoke("restart_atlas_daemon")) as string;
-      showMessage(result);
-    } catch (err) {
-      console.error("Failed to restart daemon:", err);
-      alert("Failed to restart Friday daemon");
-    } finally {
-      isRestarting = false;
-    }
-  }
-
-  function showMessage(msg: string) {
-    message = msg;
-
-    setTimeout(() => {
-      message = "";
-    }, 5000);
   }
 
   const {
@@ -285,30 +243,6 @@
 
         <Button size="small" onclick={addEntry}>Add variable</Button>
       </div>
-
-      {#if __TAURI_BUILD__}
-        <div class="daemon-section">
-          <h2>Daemon</h2>
-
-          <p>This operation may take a second.</p>
-
-          <Button size="small" onclick={restartDaemon} disabled={isRestarting}>
-            {isRestarting ? "Restarting..." : "Restart Daemon"}
-          </Button>
-
-          {#if message}
-            <p class="daemon-message">
-              {message}
-            </p>
-          {/if}
-        </div>
-
-        <div class="version-info">
-          <h2>App Details</h2>
-
-          <p>Version {version} ({commitHash})</p>
-        </div>
-      {/if}
     </div>
   </div>
 </div>
@@ -321,15 +255,6 @@
 
   .main-int {
     padding: var(--size-14);
-  }
-
-  .version-info {
-    margin-block-start: var(--size-8);
-  }
-
-  .breadcrumbs {
-    position: sticky;
-    inset-block-start: var(--size-3-5);
   }
 
   h1 {
@@ -366,18 +291,6 @@
 
   .env-vars-table {
     margin-block: var(--size-4);
-  }
-
-  .daemon-section {
-    border-block-start: var(--size-px) solid var(--color-border-1);
-    margin-block-start: var(--size-10);
-    padding-block-start: var(--size-10);
-
-    .daemon-message {
-      font-size: var(--font-size-2);
-      font-weight: var(--font-weight-5);
-      opacity: 0.5;
-    }
   }
 
   .advanced-settings {

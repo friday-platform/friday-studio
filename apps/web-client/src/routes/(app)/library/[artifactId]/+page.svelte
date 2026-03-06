@@ -5,20 +5,13 @@
   import { getAtlasDaemonUrl } from "@atlas/oapi-client";
   import { Breadcrumbs } from "$lib/components/breadcrumbs";
   import { DropdownMenu } from "$lib/components/dropdown-menu";
-  import { toast } from "$lib/components/notification/notification.svelte";
   import BasicTable from "$lib/components/primitives/basic-table.svelte";
   import MarkdownRendered from "$lib/components/primitives/markdown-rendered.svelte";
   import Schedule from "$lib/components/primitives/schedule.svelte";
   import WebSearch from "$lib/components/primitives/web-search.svelte";
   import { parseFileContents, type ParsedContent } from "$lib/modules/artifacts/file-utils";
   import WorkspacePlanDetails from "$lib/modules/artifacts/workspace-plan-details.svelte";
-  import {
-    downloadFile,
-    downloadFromUrl,
-    getUniqueFileName,
-    openInDownloads,
-  } from "$lib/utils/files.svelte";
-  import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
+  import { downloadFile, downloadFromUrl } from "$lib/utils/files.svelte";
   import Markdown from "svelte-exmarkdown";
   import { gfmPlugin } from "svelte-exmarkdown/gfm";
   import { z } from "zod";
@@ -93,21 +86,7 @@
     if (!fileContents) return;
     trackEvent(GA4.ARTIFACT_DOWNLOAD, { artifact_id: data.artifactId, file_name: fileName });
 
-    if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {
-      try {
-        const uniqueName = await getUniqueFileName(fileName, BaseDirectory.Download);
-        await writeTextFile(uniqueName, fileContents, { baseDir: BaseDirectory.Download });
-
-        toast({
-          title: "Done",
-          description: `${uniqueName} has been downloaded.`,
-          viewLabel: "View File",
-          viewAction: () => openInDownloads(uniqueName),
-        });
-      } catch (e) {
-        console.error("Failed to save file:", e);
-      }
-    } else if (artifact?.type === "file") {
+    if (artifact?.type === "file") {
       downloadFile(fileName, fileContents, artifact.data.mimeType);
     }
   }
