@@ -18,7 +18,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { z } from "zod";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
-import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import {
   type CancellationNotification,
   StreamContentNotificationSchema,
@@ -65,8 +64,6 @@ export interface AgentOrchestratorConfig {
   /** Default: 300000ms (5min) */
   requestTimeoutMs?: number;
   /** Required for wrapped agents to have tool access */
-  mcpServerPool?: GlobalMCPServerPool;
-  /** Required for wrapped agents to have tool access */
   daemonUrl?: string;
 }
 
@@ -96,8 +93,8 @@ interface MCPSessionSetup {
 
 export class AgentOrchestrator implements IAgentOrchestrator {
   private mcpSessions = new Map<string, MCPSessionSetup>();
-  private config: Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">> &
-    Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
+  private config: Required<Omit<AgentOrchestratorConfig, "daemonUrl">> &
+    Pick<AgentOrchestratorConfig, "daemonUrl">;
   private logger: Logger;
   private sessionCleanupInterval?: ReturnType<typeof setInterval>;
   /** Keyed by `${sessionId}:${agentId}` - handles multi-workspace scenarios */
@@ -115,8 +112,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       agentsServerUrl: config.agentsServerUrl,
       headers: config.headers || {},
       requestTimeoutMs: config.requestTimeoutMs || 300000,
-      // Store new config fields
-      mcpServerPool: config.mcpServerPool,
       daemonUrl: config.daemonUrl,
     };
   }

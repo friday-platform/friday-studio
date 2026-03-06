@@ -8,24 +8,23 @@ import type {
   WorkspaceConfig,
 } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
-import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 interface AgentContextBuilderDeps {
-  mcpServerPool: Pick<GlobalMCPServerPool, "getMCPManager" | "releaseMCPManager">;
   logger: Logger;
   server?: Server;
   hasActiveSSE?: () => boolean;
 }
 
 export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
-  const { mcpServerPool, logger } = deps;
+  const { logger } = deps;
 
   const validateEnvironment = createEnvironmentContext(logger);
 
@@ -34,7 +33,11 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     sessionData: AgentSessionData & { streamId?: string },
     prompt: string,
     overrides?: Partial<AgentContext>,
-  ): Promise<{ context: AgentContext; enrichedPrompt: string; releaseMCPTools: () => void }> {
+  ): Promise<{
+    context: AgentContext;
+    enrichedPrompt: string;
+    releaseMCPTools: () => Promise<void>;
+  }> {
     const agentLogger = logger.child({
       agentId: agent.metadata.id,
       workspaceId: sessionData.workspaceId,
@@ -44,7 +47,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
     let allTools: Record<string, AtlasTool> = {};
     let skillEntries: SkillEntry[] = [];
-    let releaseMCPTools = () => {};
+    let releaseMCPTools: () => Promise<void> = () => Promise.resolve();
     agentLogger.debug("Building agent context", {
       agentId: agent.metadata.id,
       hasMcpConfig: !!agent.mcpConfig,
@@ -54,8 +57,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       const fetched = await fetchAllTools(
         sessionData.workspaceId,
         agent.mcpConfig,
-        mcpServerPool,
         logger,
+        overrides?.abortSignal,
       );
       allTools = fetched.tools;
       skillEntries = fetched.skillEntries;
@@ -74,100 +77,109 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       allTools = {};
     }
 
-    const envContext = await validateEnvironment(
-      sessionData.workspaceId,
-      agent.metadata.id,
-      agent.environmentConfig,
-    );
+    try {
+      const envContext = await validateEnvironment(
+        sessionData.workspaceId,
+        agent.metadata.id,
+        agent.environmentConfig,
+      );
 
-    let enrichedPrompt = prompt;
-    let cleanupSkills: (() => Promise<void>) | undefined;
+      let enrichedPrompt = prompt;
+      let cleanupSkills: (() => Promise<void>) | undefined;
 
-    if (agent.useWorkspaceSkills) {
-      const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
-      const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
+      if (agent.useWorkspaceSkills) {
+        const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
+        const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
 
-      const globalResult = await SkillStorage.list();
-      const globalSummaries = globalResult.ok ? globalResult.data : [];
+        const globalResult = await SkillStorage.list();
+        const globalSummaries = globalResult.ok ? globalResult.data : [];
 
-      const availableSkills = [
-        ...inlineSkills.map((s) => ({ name: s.name, description: s.description })),
-        ...globalSummaries.map((s) => ({
-          name: `@${s.namespace}/${s.name}`,
-          description: s.description,
-        })),
-      ];
+        const availableSkills = [
+          ...inlineSkills.map((s) => ({ name: s.name, description: s.description })),
+          ...globalSummaries.map((s) => ({
+            name: `@${s.namespace}/${s.name}`,
+            description: s.description,
+          })),
+        ];
 
-      if (availableSkills.length > 0) {
-        // Add load_skill tool only if one doesn't already exist.
-        // This preserves any unified or specialized load_skill tool (e.g., conversation agent's
-        // unified tool that checks hardcoded skills first).
-        if (!allTools.load_skill) {
-          const { tool: loadSkill, cleanup } = createLoadSkillTool({
-            inlineSkills,
-            skillEntries: globalRefs,
-          });
-          allTools.load_skill = loadSkill;
-          cleanupSkills = cleanup;
+        if (availableSkills.length > 0) {
+          // Add load_skill tool only if one doesn't already exist.
+          // This preserves any unified or specialized load_skill tool (e.g., conversation agent's
+          // unified tool that checks hardcoded skills first).
+          if (!allTools.load_skill) {
+            const { tool: loadSkill, cleanup } = createLoadSkillTool({
+              inlineSkills,
+              skillEntries: globalRefs,
+            });
+            allTools.load_skill = loadSkill;
+            cleanupSkills = cleanup;
+          }
+          enrichedPrompt = `${enrichedPrompt}\n\n${formatAvailableSkills(availableSkills)}`;
         }
-        enrichedPrompt = `${enrichedPrompt}\n\n${formatAvailableSkills(availableSkills)}`;
       }
-    }
 
-    let streamEmitter = overrides?.stream;
-    if (!streamEmitter) {
-      if (deps.server && sessionData.streamId) {
-        // When we have a streamId and server, always use MCPStreamEmitter
-        // The orchestrator handles its own SSE connection
-        agentLogger.info("Creating MCPStreamEmitter", { sessionData });
-        streamEmitter = new MCPStreamEmitter(
-          deps.server,
-          agent.metadata.id,
-          sessionData.sessionId,
-          agentLogger,
-        );
+      let streamEmitter = overrides?.stream;
+      if (!streamEmitter) {
+        if (deps.server && sessionData.streamId) {
+          // When we have a streamId and server, always use MCPStreamEmitter
+          // The orchestrator handles its own SSE connection
+          agentLogger.info("Creating MCPStreamEmitter", { sessionData });
+          streamEmitter = new MCPStreamEmitter(
+            deps.server,
+            agent.metadata.id,
+            sessionData.sessionId,
+            agentLogger,
+          );
+        }
       }
+
+      const context: AgentContext = {
+        env: envContext,
+        session: sessionData,
+        stream: streamEmitter,
+        logger: logger.child({
+          workspaceId: sessionData.workspaceId,
+          sessionId: sessionData.sessionId,
+          agentId: agent.metadata.id,
+          streamId: sessionData.streamId,
+        }),
+        // Spread overrides to include abortSignal and other overrides
+        ...overrides,
+        // Tools should be last to ensure they're available unless explicitly overridden
+        tools: overrides?.tools || allTools,
+      };
+
+      const release = releaseMCPTools;
+      return {
+        context,
+        enrichedPrompt,
+        releaseMCPTools: async () => {
+          await release();
+          await cleanupSkills?.();
+        },
+      };
+    } catch (err) {
+      await releaseMCPTools();
+      throw err;
     }
-
-    const context: AgentContext = {
-      env: envContext,
-      session: sessionData,
-      stream: streamEmitter,
-      logger: logger.child({
-        workspaceId: sessionData.workspaceId,
-        sessionId: sessionData.sessionId,
-        agentId: agent.metadata.id,
-        streamId: sessionData.streamId,
-      }),
-      // Spread overrides to include abortSignal and other overrides
-      ...overrides,
-      // Tools should be last to ensure they're available unless explicitly overridden
-      tools: overrides?.tools || allTools,
-    };
-
-    const release = releaseMCPTools;
-    return {
-      context,
-      enrichedPrompt,
-      releaseMCPTools: () => {
-        release();
-        cleanupSkills?.();
-      },
-    };
   };
 }
 
 /**
- * Fetch all tools directly from MCP servers
+ * Fetch all tools directly from MCP servers.
  * Merges workspace, platform, and agent servers with proper precedence.
  * Also returns workspace skill entries for load_skill tool configuration.
  */
 async function fetchAllTools(
   workspaceId: string,
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
-  mcpServerPool: Pick<GlobalMCPServerPool, "getMCPManager" | "releaseMCPManager">,
   logger: Logger,
-): Promise<{ tools: Record<string, AtlasTool>; skillEntries: SkillEntry[]; release: () => void }> {
+  signal?: AbortSignal,
+): Promise<{
+  tools: Record<string, AtlasTool>;
+  skillEntries: SkillEntry[];
+  release: () => Promise<void>;
+}> {
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
@@ -205,25 +217,10 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
-  // Get pooled MCP manager and fetch all tools.
-  // The manager is NOT released here — callers hold the release callback
-  // and must call it when execution finishes. This prevents the pool's
-  // cleanup timer from disposing the manager (and its MCP clients) during
-  // long-running agent executions.
-  const mcpManager = await mcpServerPool.getMCPManager(allServerConfigs);
-  const serverIds = Object.keys(allServerConfigs);
-  const release = () => mcpServerPool.releaseMCPManager(allServerConfigs);
-
   const skillEntries = workspaceConfig.skills ?? [];
 
-  try {
-    const tools = await mcpManager.getToolsForServers(serverIds);
-    return { tools, skillEntries, release };
-  } catch (error) {
-    // Release immediately on fetch failure — no tools to keep alive
-    release();
-    throw error;
-  }
+  const { tools, dispose } = await createMCPTools(allServerConfigs, logger, { signal });
+  return { tools, skillEntries, release: dispose };
 }
 
 /**

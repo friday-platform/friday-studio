@@ -1,8 +1,10 @@
+import type { MCPServerConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { AtlasLLMProviderAdapter } from "@atlas/fsm-engine";
 import { enterTraceScope, type TraceEntry } from "@atlas/llm";
-import { MCPManager } from "@atlas/mcp";
+import { logger } from "@atlas/logger/console";
+import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -93,31 +95,24 @@ export const customExecuteRoute = new Hono().post(
     }
 
     return createSSEStream(async (emitter, signal) => {
-      const manager = new MCPManager();
+      // Build MCPServerConfig map from registry metadata + user env
+      const configs: Record<string, MCPServerConfig> = {};
+      for (const id of mcpServerIds) {
+        const server = servers[id];
+        if (!server) continue;
+        const template = server.configTemplate;
+        const resolvedEnv = resolveEnv(template.env, userEnv);
+        configs[id] = {
+          transport: template.transport,
+          auth: template.auth,
+          tools: template.tools,
+          env: resolvedEnv,
+        };
+      }
+
+      const { tools, dispose } = await createMCPTools(configs, logger, { signal });
 
       try {
-        // Register MCP servers in parallel
-        if (mcpServerIds.length > 0) {
-          const registrations = mcpServerIds.map(async (id) => {
-            const server = servers[id];
-            if (!server) return;
-            const template = server.configTemplate;
-            const resolvedEnv = resolveEnv(template.env, userEnv);
-
-            await manager.registerServer({
-              id,
-              transport: template.transport,
-              auth: template.auth,
-              tools: template.tools,
-              env: resolvedEnv,
-            });
-          });
-          await Promise.all(registrations);
-        }
-
-        // Fetch tools from all registered servers
-        const tools = mcpServerIds.length > 0 ? await manager.getToolsForServers(mcpServerIds) : {};
-
         // Build the LLM adapter
         const adapter = new AtlasLLMProviderAdapter(model, provider, undefined, maxSteps);
 
@@ -162,7 +157,7 @@ export const customExecuteRoute = new Hono().post(
           stepCount: traces.length || undefined,
         });
       } finally {
-        await manager.dispose();
+        await dispose();
       }
     });
   },

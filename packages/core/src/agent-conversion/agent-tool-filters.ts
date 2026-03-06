@@ -10,7 +10,7 @@ export { PLATFORM_TOOL_NAMES };
  * External MCP server tools always pass through regardless of this list.
  *
  * Keep in sync with:
- * - packages/fsm-engine/mcp-tool-context.ts (PLATFORM_TOOL_ALLOWLIST)
+ * - packages/fsm-engine/fsm-engine.ts (PLATFORM_TOOL_ALLOWLIST)
  * - packages/system/agents/conversation/conversation.agent.ts (ALLOWED_TOOLS)
  */
 const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([

@@ -5,7 +5,7 @@
  *
  * Single source of truth — imported by:
  * - packages/core/src/agent-conversion/agent-tool-filters.ts
- * - packages/fsm-engine/mcp-tool-context.ts
+ * - packages/fsm-engine/fsm-engine.ts (PLATFORM_TOOL_ALLOWLIST)
  *
  * @see packages/mcp-server/src/tools/index.ts (canonical registration)
  */

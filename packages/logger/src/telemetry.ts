@@ -89,20 +89,6 @@ const LLMAttributesSchema = z
   .partial();
 
 /**
- * Schema for MCP operation attributes
- */
-const MCPAttributesSchema = z
-  .object({
-    serverName: z.string(),
-    serversCount: z.number().optional(),
-    toolCallsCount: z.number().optional(),
-    toolsUsed: z.array(z.string()).optional(),
-    serverNames: z.array(z.string()).optional(),
-    totalToolTime: z.number().optional(),
-  })
-  .partial();
-
-/**
  * Validation utility functions
  *
  * @FIXME this should be simplified dramatically and likely changed into a
@@ -224,18 +210,6 @@ interface LLMAttributes {
   maxSteps?: number;
   retryCount?: number;
   errorCategory?: string;
-}
-
-/**
- * MCP operation attributes
- */
-interface MCPAttributes {
-  serverName: string;
-  serversCount?: number;
-  toolCallsCount?: number;
-  toolsUsed?: string[];
-  serverNames?: string[];
-  totalToolTime?: number;
 }
 
 // Static mapping for worker context properties to atlas attributes
@@ -776,125 +750,6 @@ export class AtlasTelemetry {
         }
       },
       llmAttributes,
-    );
-  }
-
-  /**
-   * Create a span for MCP (Model Context Protocol) operations
-   */
-  static async withMCPSpan<T>(
-    serverName: string,
-    operation: "initialize" | "tool_call" | "cleanup",
-    fn: (span: Span | null) => Promise<T>,
-    additionalAttributes?: Partial<MCPAttributes>,
-  ): Promise<T> {
-    const baseAttributes: MCPAttributes = { serverName, ...additionalAttributes };
-
-    // Validate MCP attributes
-    const validatedAttributes = MCPAttributesSchema.safeParse(baseAttributes);
-    if (!validatedAttributes.success) {
-      logger.warn("Invalid MCP attributes", {
-        error: validatedAttributes.error.issues,
-        providedAttributes: baseAttributes,
-      });
-    }
-
-    const attributes = validatedAttributes.success ? validatedAttributes.data : baseAttributes;
-
-    // Create standardized MCP attributes with proper namespacing
-    const mcpAttributes: Attributes = {};
-    Object.entries(attributes).forEach(([key, value]) => {
-      if (value !== undefined) {
-        if (Array.isArray(value)) {
-          // Handle array attributes
-          mcpAttributes[`mcp.${key}`] = value;
-        } else {
-          mcpAttributes[`mcp.${key}`] = value;
-        }
-      }
-    });
-
-    // Add operation type
-    mcpAttributes["mcp.operation"] = operation;
-
-    const spanName = `mcp.${operation}`;
-
-    return await AtlasTelemetry.withClientSpan(
-      spanName,
-      async (span) => {
-        // Add MCP-specific attributes
-        if (span) {
-          Object.entries(mcpAttributes).forEach(([key, value]) => {
-            if (value !== undefined) {
-              span.setAttribute(key, value);
-            }
-          });
-        }
-
-        const startTime = Date.now();
-
-        try {
-          const result = await fn(span);
-
-          // Record operation latency
-          const latency = Date.now() - startTime;
-          span?.setAttribute("mcp.operation_latency", latency);
-
-          return result;
-        } catch (error) {
-          // Record error details
-          const errorCategory = error instanceof Error ? error.constructor.name : "Unknown";
-          span?.setAttribute("mcp.error_category", errorCategory);
-          throw error;
-        }
-      },
-      mcpAttributes,
-    );
-  }
-
-  /**
-   * Create a composite span that tracks an LLM operation with MCP tools
-   * This creates a hierarchy: llm.generate_with_tools -> mcp.initialize -> mcp.tool_call -> mcp.cleanup
-   */
-  static async withLLMToolSpan<T>(
-    provider: string,
-    model: string,
-    mcpServers: string[],
-    fn: (
-      span: Span | null,
-      mcpSpanCreator: (
-        serverName: string,
-        operation: "initialize" | "tool_call" | "cleanup",
-        toolFn: (span: Span | null) => Promise<unknown>,
-        attributes?: Partial<MCPAttributes>,
-      ) => Promise<unknown>,
-    ) => Promise<T>,
-    additionalAttributes?: Partial<LLMAttributes>,
-  ): Promise<T> {
-    return await AtlasTelemetry.withLLMSpan(
-      provider,
-      model,
-      "generate_with_tools",
-      async (parentSpan) => {
-        // Add MCP server information to the parent LLM span
-        if (parentSpan && mcpServers.length > 0) {
-          parentSpan.setAttribute("mcp.servers_count", mcpServers.length);
-          parentSpan.setAttribute("mcp.server_names", mcpServers);
-        }
-
-        // Create a helper function for child MCP spans
-        const mcpSpanCreator = async (
-          serverName: string,
-          operation: "initialize" | "tool_call" | "cleanup",
-          toolFn: (span: Span | null) => Promise<unknown>,
-          attributes?: Partial<MCPAttributes>,
-        ) => {
-          return await AtlasTelemetry.withMCPSpan(serverName, operation, toolFn, attributes);
-        };
-
-        return await fn(parentSpan, mcpSpanCreator);
-      },
-      { ...additionalAttributes, maxSteps: additionalAttributes?.maxSteps },
     );
   }
 }

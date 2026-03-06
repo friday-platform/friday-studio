@@ -262,6 +262,23 @@ const mockFn = vi.hoisted(() => vi.fn());
 beforeEach(() => { mockFn.mockReset(); });
 ```
 
+### mockResolvedValueOnce slots consumed by actual calls, not config
+
+`mockResolvedValueOnce` slots are consumed by actual calls. If a code path
+short-circuits (e.g., ternary skips a call), the slot isn't consumed and
+subsequent calls get wrong return values.
+
+```typescript
+// BAD — if connectHttp is never called, its slot feeds the next connectStdio call
+mockCreate.mockResolvedValueOnce(stdioClient);
+mockCreate.mockResolvedValueOnce(httpClient); // skipped at runtime
+mockCreate.mockResolvedValueOnce(stdioClient2); // gets httpClient instead
+
+// GOOD — match mock slots to actual call order, not config order
+mockCreate.mockResolvedValueOnce(stdioClient);
+mockCreate.mockResolvedValueOnce(stdioClient2);
+```
+
 ### vi.fn() needs type parameter for typed props
 
 `vi.fn()` without a type parameter produces `Mock<Procedure | Constructable>`

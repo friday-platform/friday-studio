@@ -3,10 +3,8 @@
  */
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
-import { GlobalMCPServerPool } from "@atlas/core";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { truncateUnicode } from "@atlas/utils";
@@ -396,20 +394,12 @@ export function createDoTaskTool(
 
           emitProgress({ type: "preparing", stepCount: 1 });
 
-          // Create MCP pool and provider
-          const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
           const mcpServerConfigMap: Record<string, MCPServerConfig> = {};
           for (const server of mcpServers) {
             mcpServerConfigMap[server.id] = server.config;
           }
-          const mcpToolProvider = new GlobalMCPToolProvider(
-            mcpServerPool,
-            session.workspaceId,
-            mcpServerConfigMap,
-            logger.child({ component: "TaskMCPProvider" }),
-          );
 
-          try {
+          {
             const execResult = await executeTaskViaFSMDirect(fsmDefinition, [fastpathStep], {
               sessionId: session.sessionId,
               workspaceId: session.workspaceId,
@@ -417,8 +407,7 @@ export function createDoTaskTool(
               userId: session.userId,
               daemonUrl: session.daemonUrl,
               datetime: session.datetime,
-              mcpServerPool,
-              mcpToolProvider,
+              mcpServerConfigs: mcpServerConfigMap,
               onProgress: emitProgress,
               abortSignal,
               intent,
@@ -502,8 +491,6 @@ export function createDoTaskTool(
               results: sanitizedResults,
               artifacts: artifacts.length > 0 ? artifacts : undefined,
             };
-          } finally {
-            await mcpServerPool.dispose();
           }
         }
 
@@ -613,21 +600,12 @@ export function createDoTaskTool(
         }
         const fsmDefinition = compiled.value.fsm;
 
-        // Always create the pool - bundled agents (like google-calendar) need it
-        // for their embedded MCP configs even when plan.mcpServers is empty
-        const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
-        const mcpServerConfigs: Record<string, MCPServerConfig> = {};
+        const fullPipelineConfigs: Record<string, MCPServerConfig> = {};
         for (const server of plan.mcpServers) {
-          mcpServerConfigs[server.id] = server.config;
+          fullPipelineConfigs[server.id] = server.config;
         }
-        const mcpToolProvider = new GlobalMCPToolProvider(
-          mcpServerPool,
-          session.workspaceId,
-          mcpServerConfigs,
-          logger.child({ component: "TaskMCPProvider" }),
-        );
 
-        try {
+        {
           const context: TaskExecutionContext = {
             sessionId: session.sessionId,
             workspaceId: session.workspaceId,
@@ -646,8 +624,7 @@ export function createDoTaskTool(
             userId: context.userId,
             daemonUrl: context.daemonUrl,
             datetime: context.datetime,
-            mcpServerPool,
-            mcpToolProvider,
+            mcpServerConfigs: fullPipelineConfigs,
             onProgress: context.onProgress,
             abortSignal: context.abortSignal,
             intent,
@@ -729,8 +706,6 @@ export function createDoTaskTool(
             results: sanitizedResults,
             artifacts: artifacts.length > 0 ? artifacts : undefined,
           };
-        } finally {
-          await mcpServerPool.dispose();
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;

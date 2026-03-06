@@ -19,6 +19,14 @@ import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
 import { LinkCredentialNotFoundError } from "../mcp-registry/credential-resolver.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
+// Mock createMCPTools — default returns empty tools with noop dispose
+const mockDispose = vi.fn().mockResolvedValue(undefined);
+const mockCreateMCPTools = vi.fn().mockResolvedValue({ tools: {}, dispose: mockDispose });
+
+vi.mock("@atlas/mcp", () => ({
+  createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
+}));
+
 // Mock logger
 const mockLogger = {
   debug: () => {},
@@ -29,12 +37,6 @@ const mockLogger = {
   fatal: () => {},
   child: () => mockLogger,
 } as Parameters<typeof createAgentContextBuilder>[0]["logger"];
-
-// Mock MCP server pool - returns empty tools
-const mockMcpServerPool = {
-  getMCPManager: () => Promise.resolve({ getToolsForServers: () => Promise.resolve({}) }),
-  releaseMCPManager: () => {},
-} as unknown as Parameters<typeof createAgentContextBuilder>[0]["mcpServerPool"];
 
 // Minimal agent for testing
 function createTestAgent(overrides: Partial<AtlasAgent> = {}): AtlasAgent {
@@ -68,6 +70,8 @@ describe("buildAgentContext skill injection", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockDispose.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
 
     // Create temp database for skills
     tempDbPath = join(tmpdir(), `skills-test-${Date.now()}.db`);
@@ -104,10 +108,7 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to use temp adapter
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -131,10 +132,7 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { enrichedPrompt } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -157,10 +155,7 @@ describe("buildAgentContext skill injection", () => {
     // No skills created — list returns empty array
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { context, enrichedPrompt } = await buildAgentContext(
       createTestAgent(),
@@ -187,10 +182,7 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage methods
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -198,18 +190,10 @@ describe("buildAgentContext skill injection", () => {
       "Test",
     );
 
-    // The load_skill tool should exist and be a tool object
-    expect("load_skill" in context.tools).toBe(true);
+    // The load_skill tool should exist with expected description
     const loadSkillTool = context.tools.load_skill;
-    expect(typeof loadSkillTool).toBe("object");
-
-    // Tool should have description and input schema
-    if (loadSkillTool) {
-      expect(typeof loadSkillTool.description).toBe("string");
-      expect(loadSkillTool.description ?? "").toContain(
-        "Load skill instructions BEFORE starting a task",
-      );
-    }
+    expect.assert(loadSkillTool !== undefined);
+    expect(loadSkillTool.description).toContain("Load skill instructions BEFORE starting a task");
   });
 
   it("handles SkillStorage.list returning error gracefully", async () => {
@@ -218,10 +202,7 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to return an error
     vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: false, error: "Database error" });
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     // Should not throw, should proceed without skills
     const { context, enrichedPrompt } = await buildAgentContext(
@@ -256,19 +237,13 @@ describe("buildAgentContext skill injection", () => {
       execute: () => Promise.resolve({ result: "unified tool" }),
     };
 
-    // Mock MCP server pool that returns the unified tool
-    const mockMcpPoolWithTool = {
-      getMCPManager: () =>
-        Promise.resolve({
-          getToolsForServers: () => Promise.resolve({ load_skill: unifiedLoadSkillTool }),
-        }),
-      releaseMCPManager: () => {},
-    } as unknown as Parameters<typeof createAgentContextBuilder>[0]["mcpServerPool"];
-
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpPoolWithTool,
-      logger: mockLogger,
+    // Mock createMCPTools to return the unified tool
+    mockCreateMCPTools.mockResolvedValue({
+      tools: { load_skill: unifiedLoadSkillTool },
+      dispose: mockDispose,
     });
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -296,10 +271,7 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to use temp adapter
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: mockMcpServerPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     // Agent does NOT opt in to workspace skills (default behavior)
     const { context, enrichedPrompt } = await buildAgentContext(
@@ -323,6 +295,9 @@ describe("buildAgentContext credential error propagation", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockDispose.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
   });
@@ -332,44 +307,26 @@ describe("buildAgentContext credential error propagation", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("re-throws when getMCPManager rejects with LinkCredentialNotFoundError", async () => {
-    // Simulate the cause-wrapped shape that production emits from _registerServerInternal:
+  it("re-throws when createMCPTools rejects with LinkCredentialNotFoundError", async () => {
+    // Simulate the cause-wrapped shape that production emits:
     // enriched LinkCredentialNotFoundError wraps the original as .cause
     const inner = new LinkCredentialNotFoundError("cred_deleted");
     const credError = new LinkCredentialNotFoundError(inner.credentialId, "some-server");
     credError.cause = inner;
-    const releaseSpy = vi.fn();
 
-    const failingPool = {
-      getMCPManager: () => Promise.reject(credError),
-      releaseMCPManager: releaseSpy,
-    };
+    mockCreateMCPTools.mockRejectedValue(credError);
 
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: failingPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     await expect(
       buildAgentContext(createTestAgent(), createTestSessionData("ws-cred-fail"), "test"),
     ).rejects.toThrow(credError);
-
-    // releaseMCPManager must NOT be called — getMCPManager failed before release was captured
-    expect(releaseSpy).not.toHaveBeenCalled();
   });
 
   it("swallows non-credential errors and returns empty tools", async () => {
-    const releaseSpy = vi.fn();
+    mockCreateMCPTools.mockRejectedValue(new Error("connection refused"));
 
-    const failingPool = {
-      getMCPManager: () => Promise.reject(new Error("connection refused")),
-      releaseMCPManager: releaseSpy,
-    };
-
-    const buildAgentContext = createAgentContextBuilder({
-      mcpServerPool: failingPool,
-      logger: mockLogger,
-    });
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
 
     const { context } = await buildAgentContext(
       createTestAgent(),
@@ -378,7 +335,126 @@ describe("buildAgentContext credential error propagation", () => {
     );
 
     expect(Object.keys(context.tools)).toHaveLength(0);
-    // releaseMCPManager must NOT be called — getMCPManager failed before release was captured
-    expect(releaseSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildAgentContext mergeServerConfigs precedence", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockDispose.mockReset().mockResolvedValue(undefined);
+    mockCreateMCPTools.mockReset().mockResolvedValue({ tools: {}, dispose: mockDispose });
+
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("agent MCP server overrides workspace server with same ID", async () => {
+    // Workspace config has "shared-server" with workspace command
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            config: {
+              name: "test-workspace",
+              tools: {
+                mcp: {
+                  servers: {
+                    "shared-server": {
+                      transport: { type: "stdio", command: "workspace-cmd", args: [] },
+                    },
+                    "workspace-only": {
+                      transport: { type: "stdio", command: "ws-only-cmd", args: [] },
+                    },
+                  },
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    // Agent config has "shared-server" with a DIFFERENT command
+    const agentMCPConfig = {
+      "shared-server": {
+        transport: { type: "stdio" as const, command: "agent-cmd", args: ["--agent"] },
+      },
+    };
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    await buildAgentContext(
+      createTestAgent({ mcpConfig: agentMCPConfig }),
+      createTestSessionData("ws-merge-test"),
+      "test",
+    );
+
+    expect(mockCreateMCPTools).toHaveBeenCalledOnce();
+    const [configs] = mockCreateMCPTools.mock.calls[0] as [
+      Record<string, { transport: { command: string } }>,
+    ];
+
+    // Agent's config wins for shared server ID
+    const shared = configs["shared-server"];
+    expect.assert(shared !== undefined);
+    expect(shared.transport.command).toBe("agent-cmd");
+    // Workspace-only server preserved
+    const wsOnly = configs["workspace-only"];
+    expect.assert(wsOnly !== undefined);
+    expect(wsOnly.transport.command).toBe("ws-only-cmd");
+    // atlas-platform always injected
+    expect(configs["atlas-platform"]).toBeDefined();
+  });
+});
+
+describe("buildAgentContext MCP dispose lifecycle", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockDispose.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = mockWorkspaceConfigFetch();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("releaseMCPTools returns a Promise that awaits dispose()", async () => {
+    // Track whether dispose has resolved
+    let disposeResolved = false;
+    mockDispose.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            disposeResolved = true;
+            resolve();
+          }, 10);
+        }),
+    );
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const { releaseMCPTools } = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-dispose"),
+      "test",
+    );
+
+    // releaseMCPTools should return a Promise we can await
+    const result = releaseMCPTools();
+    expect(result).toBeInstanceOf(Promise);
+
+    // After awaiting, dispose should have completed
+    await result;
+    expect(disposeResolved).toBe(true);
   });
 });

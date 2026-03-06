@@ -6,14 +6,11 @@
   "exports": { ".": "./mod.ts" },
   "dependencies": {
     "@ai-sdk/mcp": "^0.0.15",
-    "@atlas/atlasd": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@modelcontextprotocol/sdk": "^1.27.0",
-    "@opentelemetry/api": "^1.9.0",
-    "ai": "^5.0.148",
-    "vitest": "^4.0.18",
-    "zod": "^4.3.5"
-  }
+    "ai": "^5.0.148"
+  },
+  "devDependencies": { "vitest": "^4.0.18", "zod": "^4.3.5" }
 }

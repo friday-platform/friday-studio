@@ -8,7 +8,6 @@ import {
   AtlasAgentsMCPServer,
   AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
-  GlobalMCPServerPool,
   LocalSessionHistoryAdapter,
   SessionFailedError,
   WorkspaceSessionStatus,
@@ -114,7 +113,6 @@ export class AtlasDaemon {
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private cronManager: CronManager | null = null;
-  private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
@@ -253,10 +251,6 @@ export class AtlasDaemon {
     const kvStorageConfig = StorageConfigs.defaultKV();
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
-
-    // Initialize Global MCP Server Pool
-    logger.info("Initializing Global MCP Server Pool...");
-    this.mcpServerPool = new GlobalMCPServerPool(logger);
 
     // Initialize Ledger client for versioned resource storage (auto-publish, resource tools)
     try {
@@ -444,11 +438,6 @@ export class AtlasDaemon {
         const registry = this.agentRegistry;
         if (!registry) throw new Error("Agent registry not initialized");
         return registry;
-      })(),
-      mcpServerPool: (() => {
-        const pool = this.mcpServerPool;
-        if (!pool) throw new Error("MCP server pool not initialized");
-        return pool;
       })(),
       sessionId,
       hasActiveSSE: (sid?: string) => {
@@ -839,14 +828,6 @@ export class AtlasDaemon {
         throw new Error("Atlas daemon not fully initialized - cannot create workspace runtime");
       }
 
-      // Verify required services are available
-      if (!this.mcpServerPool) {
-        logger.warn(
-          "MCP server pool not initialized - workspace runtime will have limited tool access",
-          { workspaceId },
-        );
-      }
-
       // Check if runtime already exists
       let runtime = this.runtimes.get(workspaceId);
       if (runtime) {
@@ -1023,7 +1004,6 @@ export class AtlasDaemon {
         {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
-          mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
           resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           createSessionStream: (sessionId) =>
@@ -1605,13 +1585,6 @@ export class AtlasDaemon {
     if (this.cronManager) {
       await this.cronManager.shutdown();
       this.cronManager = null;
-    }
-
-    // Dispose MCP Server Pool
-    if (this.mcpServerPool) {
-      logger.info("Disposing Global MCP Server Pool...");
-      await this.mcpServerPool.dispose();
-      this.mcpServerPool = null;
     }
 
     // Shutdown WorkspaceManager

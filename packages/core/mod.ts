@@ -46,8 +46,6 @@ export type {
   MCPServersRegistry,
   RequiredConfigField,
 } from "./src/mcp-registry/schemas.ts";
-// MCP Server Pool
-export { GlobalMCPServerPool } from "./src/mcp-server-pool.ts";
 export type {
   AgentExecutionContext,
   AgentOrchestratorConfig,

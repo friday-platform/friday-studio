@@ -24,11 +24,6 @@ export { FSMEngine } from "./fsm-engine.ts";
 export { AtlasLLMProviderAdapter } from "./llm-provider-adapter.ts";
 // FSM loader with validation
 export { createEngine, loadFromFile, loadFromYAML } from "./loader.ts";
-// MCP tool context provider for FSM LLM actions
-export {
-  GlobalMCPToolProvider,
-  type MCPToolProvider,
-} from "./mcp-tool-context.ts";
 // MCP tools for FSM operations
 export * from "./mcp-tools/index.ts";
 // Testing utilities

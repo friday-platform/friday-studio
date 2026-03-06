@@ -3,7 +3,8 @@
  * No workspace.yml, no daemon registration. Session history still persisted for debugging.
  */
 
-import { AgentOrchestrator, type GlobalMCPServerPool } from "@atlas/core";
+import type { MCPServerConfig } from "@atlas/config";
+import { AgentOrchestrator } from "@atlas/core";
 import { InMemoryDocumentStore } from "@atlas/document-store";
 import type {
   AgentAction,
@@ -16,7 +17,6 @@ import {
   AtlasLLMProviderAdapter,
   createEngine,
   expandArtifactRefsInDocuments,
-  type MCPToolProvider,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import { buildTemporalFacts } from "@atlas/llm";
@@ -31,8 +31,7 @@ interface ExecutionContext {
   userId?: string;
   daemonUrl?: string;
   datetime?: DatetimeContext;
-  mcpServerPool?: GlobalMCPServerPool;
-  mcpToolProvider?: MCPToolProvider;
+  mcpServerConfigs?: Record<string, MCPServerConfig>;
   onProgress?: (event: TaskProgressEvent) => void;
   abortSignal?: AbortSignal;
   /** Task intent for session history */
@@ -61,7 +60,7 @@ export interface ExecutionResult {
  *
  * @param fsmDefinition - Already compiled FSM definition
  * @param steps - Task steps (for result mapping)
- * @param context - Execution context with session info and MCP pool
+ * @param context - Execution context with session info and MCP server configs
  * @returns Execution results for each step
  */
 export async function executeTaskViaFSMDirect(
@@ -72,7 +71,7 @@ export async function executeTaskViaFSMDirect(
   logger.info("Starting direct FSM execution", {
     fsmId: fsmDefinition.id,
     stepCount: steps.length,
-    hasMCPPool: !!context.mcpServerPool,
+    hasMCPConfigs: !!context.mcpServerConfigs,
   });
 
   // Check abort signal before starting
@@ -104,7 +103,6 @@ export async function executeTaskViaFSMDirect(
     orchestrator = new AgentOrchestrator(
       {
         agentsServerUrl: `${agentsServerUrl}/agents`,
-        mcpServerPool: context.mcpServerPool, // Use isolated pool from task
         daemonUrl: context.daemonUrl,
         requestTimeoutMs: 300000,
       },
@@ -201,7 +199,7 @@ export async function executeTaskViaFSMDirect(
       llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
       scope,
       agentExecutor,
-      mcpToolProvider: context.mcpToolProvider,
+      mcpServerConfigs: context.mcpServerConfigs,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
     });
 
@@ -377,7 +375,7 @@ export async function executeTaskViaFSMDirect(
 
     return { success: false, failedStep: currentStepIndex, results: partialResults };
   } finally {
-    // Always cleanup orchestrator (MCP pool cleanup done by caller)
+    // Always cleanup orchestrator
     if (orchestrator) {
       await orchestrator.shutdown();
     }

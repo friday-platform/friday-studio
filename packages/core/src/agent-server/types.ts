@@ -5,7 +5,6 @@
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { z } from "zod";
-import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 
 /**
  * Dependencies for the agent server
@@ -19,9 +18,6 @@ export interface AgentServerDependencies {
 
   /** Base URL for the daemon */
   daemonUrl: string;
-
-  /** Global MCP server connection pool */
-  mcpServerPool: GlobalMCPServerPool;
 
   /** Optional state store for persistence */
   stateStore?: StateStore;

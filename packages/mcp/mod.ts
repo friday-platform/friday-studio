@@ -1,13 +1,11 @@
 /**
- * @atlas/mcp - Core MCP functionality for Atlas
+ * @atlas/mcp - Ephemeral MCP client for Atlas
  *
- * This package provides the core MCP (Model Context Protocol) management
- * functionality for Atlas, including server lifecycle management, configuration
- * resolution, proxy functionality, and remote adapter functionality.
+ * Connects to MCP servers, fetches tools, returns a dispose callback.
+ * No pooling, no sharing, no ref counting.
+ *
+ * @module
  */
 
-// Re-export types that consumers might need
-export type { MCPServerConfig } from "./src/manager.ts";
-export { MCPManager, MCPServerConfigSchema } from "./src/manager.ts";
-export type { AtlasConfig, SessionContext, WorkspaceConfig } from "./src/registry.ts";
-export { MCPServerRegistry } from "./src/registry.ts";
+export type { CreateMCPToolsOptions, MCPToolsResult } from "./src/create-mcp-tools.ts";
+export { createMCPTools } from "./src/create-mcp-tools.ts";

@@ -1,11 +1,10 @@
 /**
  * Integration tests for the fastpath wiring in createDoTaskTool (index.ts).
  *
- * Exercises the orchestration code at lines ~290-448: fastpath gate,
- * credential resolution, MCP pool lifecycle, full-pipeline fallback,
- * and timing instrumentation.
+ * Exercises the orchestration code: fastpath gate, credential resolution,
+ * MCP tools lifecycle, full-pipeline fallback, and timing instrumentation.
  *
- * Mocks are at system boundaries: LLM calls, executor, MCP pool, credential
+ * Mocks are at system boundaries: LLM calls, executor, MCP tools, credential
  * resolution, and artifact storage.
  */
 import type { Agent, CredentialBinding } from "@atlas/workspace-builder";
@@ -27,8 +26,6 @@ const mockExecuteTaskViaFSMDirect = vi.hoisted(() => vi.fn());
 const mockGenerateFriendlyDescriptions = vi.hoisted(() => vi.fn());
 const mockSmallLLM = vi.hoisted(() => vi.fn());
 const mockParseResult = vi.hoisted(() => vi.fn());
-const mockDispose = vi.hoisted(() => vi.fn());
-
 vi.mock("@atlas/workspace-builder", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@atlas/workspace-builder")>();
   return {
@@ -57,14 +54,6 @@ vi.mock("@atlas/client/v2", () => ({
   parseResult: mockParseResult,
 }));
 
-// GlobalMCPServerPool is used with `new` — mock must be a class
-vi.mock("@atlas/core", () => {
-  const MockPool = vi.fn(function (this: { dispose: typeof mockDispose }) {
-    this.dispose = mockDispose;
-  });
-  return { GlobalMCPServerPool: MockPool };
-});
-
 vi.mock("@atlas/core/mcp-registry/registry-consolidated", () => ({
   mcpServersRegistry: { servers: {} },
 }));
@@ -72,16 +61,6 @@ vi.mock("@atlas/core/mcp-registry/registry-consolidated", () => ({
 vi.mock("@atlas/core/mcp-registry/storage", () => ({
   getMCPRegistryAdapter: vi.fn(() => ({ list: mockMCPRegistryList })),
 }));
-
-// GlobalMCPToolProvider is used with `new` — mock must be a class
-const mockMCPToolProviderCtor = vi.hoisted(() => vi.fn());
-vi.mock("@atlas/fsm-engine", () => {
-  const MockProvider = vi.fn(function (this: void) {
-    // no-op — `this: void` prevents biome converting to arrow (non-constructable)
-  });
-  mockMCPToolProviderCtor.mockImplementation(MockProvider);
-  return { GlobalMCPToolProvider: mockMCPToolProviderCtor };
-});
 
 const mockLoggerInstance = vi.hoisted(() => {
   const instance: Record<string, unknown> = {};
@@ -226,7 +205,6 @@ beforeEach(() => {
   mockSmallLLM.mockResolvedValue("Task completed");
   mockMCPRegistryList.mockResolvedValue([]);
   mockParseResult.mockResolvedValue({ ok: true, data: { artifact: { id: "art-1" } } });
-  mockDispose.mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -428,7 +406,7 @@ describe("createDoTaskTool fastpath wiring", () => {
     expect(result.success).toBe(true);
   });
 
-  it("mcpServerPool.dispose() is called even when execution throws", async () => {
+  it("executor receives mcpServerConfigs when execution throws", async () => {
     const agent = makeAgent({ bundledId: "research" });
     mockGeneratePlan.mockResolvedValue(makePlanResult([agent]));
     mockClassifyAgents.mockResolvedValue(makeClassifyResult());
@@ -439,8 +417,9 @@ describe("createDoTaskTool fastpath wiring", () => {
 
     // The error is caught by the outer try/catch, so we get a failure result
     expect(result.success).toBe(false);
-    // dispose() must still be called (finally block)
-    expect(mockDispose).toHaveBeenCalledOnce();
+    // mcpServerConfigs passed to executor (FSM engine handles lifecycle)
+    const ctxArg = mockExecuteTaskViaFSMDirect.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(ctxArg).toHaveProperty("mcpServerConfigs");
   });
 
   it("timing has fastpath: true on fastpath, fastpath: false on full pipeline", async () => {
@@ -464,8 +443,6 @@ describe("createDoTaskTool fastpath wiring", () => {
     vi.clearAllMocks();
     mockSmallLLM.mockResolvedValue("Task completed");
     mockParseResult.mockResolvedValue({ ok: true, data: { artifact: { id: "art-2" } } });
-    mockDispose.mockResolvedValue(undefined);
-
     const agents2 = [
       makeAgent({ id: "a1", name: "Agent A", bundledId: "research" }),
       makeAgent({ id: "a2", name: "Agent B", bundledId: "email" }),
@@ -610,7 +587,7 @@ describe("createDoTaskTool fastpath wiring", () => {
     expect(opts.dynamicServers).toEqual([dynamicServer]);
   });
 
-  it("fastpath passes dynamic servers to buildMCPServerConfigs", async () => {
+  it("fastpath passes dynamic servers as mcpServerConfigs to executor", async () => {
     const dynamicServer = {
       id: "custom-crm",
       name: "Custom CRM",
@@ -636,9 +613,9 @@ describe("createDoTaskTool fastpath wiring", () => {
 
     expect(mockExecuteTaskViaFSMDirect).toHaveBeenCalledOnce();
 
-    // GlobalMCPToolProvider receives config map as 3rd constructor arg
-    expect(mockMCPToolProviderCtor).toHaveBeenCalledOnce();
-    const configMap = mockMCPToolProviderCtor.mock.calls[0]?.[2] as Record<string, unknown>;
+    // mcpServerConfigs passed to executor with dynamic server
+    const ctxArg = mockExecuteTaskViaFSMDirect.mock.calls[0]?.[2] as Record<string, unknown>;
+    const configMap = ctxArg.mcpServerConfigs as Record<string, unknown>;
     expect(configMap).toHaveProperty("custom-crm");
     expect(configMap["custom-crm"]).toMatchObject({
       transport: { type: "stdio", command: "npx", args: ["-y", "crm-mcp"] },

@@ -15,14 +15,18 @@ import {
   createResourceWriteTool,
   type FailInput,
   FailInputSchema,
+  PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
 import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
+import type { MCPServerConfig } from "@atlas/config";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import {
   buildResourceGuidance,
   enrichCatalogEntries,
@@ -57,6 +61,17 @@ import type {
   TransitionDefinition,
 } from "./types.ts";
 import { WorkerExecutor } from "./worker-executor.ts";
+
+/**
+ * Platform tools exposed to FSM LLM steps.
+ * Minimal set — runs without per-invocation user consent.
+ */
+const PLATFORM_TOOL_ALLOWLIST = new Set([
+  "webfetch",
+  "artifacts_create",
+  "artifacts_get",
+  "artifacts_update",
+]);
 
 const FSMStateSchema = z.object({ state: z.string() });
 
@@ -286,7 +301,8 @@ export interface FSMEngineOptions {
   documentStore: DocumentStore;
   scope: DocumentScope;
   agentExecutor?: AgentExecutor;
-  mcpToolProvider?: import("./mcp-tool-context.ts").MCPToolProvider;
+  /** MCP server configs from workspace — merged with atlas-platform at call time */
+  mcpServerConfigs?: Record<string, MCPServerConfig>;
   validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
@@ -909,8 +925,10 @@ export class FSMEngine {
             skillNames: skills.map((s) => s.name),
           });
 
-          // Build base tools from action definition
-          const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
+          const buildResult = action.tools
+            ? await this.buildTools(action.tools, context)
+            : { tools: {}, dispose: async () => {} };
+          const baseTools = buildResult.tools;
 
           let cleanupSkills: (() => Promise<void>) | undefined;
           if (skills.length > 0) {
@@ -1223,6 +1241,7 @@ export class FSMEngine {
               outputTo: action.outputTo,
             });
           } finally {
+            await buildResult.dispose();
             cleanupSkills?.();
 
             // Publish dirty drafts after LLM actions that have resource tools.
@@ -1489,10 +1508,14 @@ export class FSMEngine {
   /**
    * Build AI SDK Tool objects for LLM action
    * FSM tools: JSONSchema → Zod → Tool (one conversion)
-   * MCP tools: Already Tool objects (pass through)
+   * MCP tools: ephemeral createMCPTools() call — dispose in finally block
    */
-  private async buildTools(toolNames: string[], context: Context): Promise<Record<string, Tool>> {
+  private async buildTools(
+    toolNames: string[],
+    context: Context,
+  ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
+    let dispose: () => Promise<void> = async () => {};
 
     const fsmToolNames = toolNames.filter((name) => this._definition.tools?.[name]);
     const mcpServerIds = toolNames.filter((name) => !this._definition.tools?.[name]);
@@ -1517,14 +1540,31 @@ export class FSMEngine {
       };
     }
 
-    // MCP tools: always fetch when provider available (includes ambient platform tools)
-    // GlobalMCPToolProvider auto-includes atlas-platform for webfetch/artifacts even with empty serverIds
-    if (this.options.mcpToolProvider) {
-      const mcpTools = await this.options.mcpToolProvider.getToolsForServers(mcpServerIds);
-      Object.assign(tools, mcpTools);
+    // MCP tools: always include atlas-platform for ambient capabilities (webfetch,
+    // artifacts) even when the action only uses FSM-defined tools. The connection
+    // cost is one HTTP roundtrip + dispose per LLM action — acceptable tradeoff
+    // for consistent platform tool availability.
+    const effectiveConfigs: Record<string, MCPServerConfig> = {
+      "atlas-platform": getAtlasPlatformServerConfig(),
+    };
+    for (const id of mcpServerIds) {
+      const config = this.options.mcpServerConfigs?.[id];
+      if (config && id !== "atlas-platform") {
+        effectiveConfigs[id] = config;
+      }
     }
 
-    return tools;
+    const mcpResult = await createMCPTools(effectiveConfigs, logger);
+    dispose = mcpResult.dispose;
+
+    // Filter: platform tools must be in allowlist, non-platform tools pass through
+    for (const [name, mcpTool] of Object.entries(mcpResult.tools)) {
+      if (!PLATFORM_TOOL_NAMES.has(name) || PLATFORM_TOOL_ALLOWLIST.has(name)) {
+        tools[name] = mcpTool;
+      }
+    }
+
+    return { tools, dispose };
   }
 
   private validateDocumentData(type: string, data: Record<string, unknown>, id: string): void {

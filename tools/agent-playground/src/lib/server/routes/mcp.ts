@@ -1,6 +1,8 @@
+import type { MCPServerConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-import { MCPManager } from "@atlas/mcp";
+import { logger } from "@atlas/logger/console";
+import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -87,50 +89,37 @@ export const mcpRoute = new Hono()
       return c.json({ error: `Missing required env vars — ${details}` }, 400);
     }
 
-    // Create ephemeral MCPManager, register servers, fetch tools, dispose
-    const manager = new MCPManager();
-    const tools: Array<{ name: string; description: string; inputSchema: unknown }> = [];
-    const errors: Array<{ serverId: string; error: string }> = [];
-
-    try {
-      // Register all servers in parallel
-      const registrations = serverIds.map(async (id) => {
-        const server = servers[id];
-        if (!server) return; // already validated above
-        const template = server.configTemplate;
-        const resolvedEnv = resolveEnv(template.env, userEnv);
-
-        try {
-          await manager.registerServer({
-            id,
-            transport: template.transport,
-            auth: template.auth,
-            tools: template.tools,
-            env: resolvedEnv,
-          });
-        } catch (err) {
-          errors.push({ serverId: id, error: err instanceof Error ? err.message : String(err) });
-        }
-      });
-      await Promise.all(registrations);
-
-      // Fetch tools from successfully registered servers
-      const successfulIds = serverIds.filter((id) => !errors.some((e) => e.serverId === id));
-
-      if (successfulIds.length > 0) {
-        const toolsRecord = await manager.getToolsForServers(successfulIds);
-        for (const [name, tool] of Object.entries(toolsRecord)) {
-          tools.push({
-            name,
-            description: tool.description ?? "",
-            inputSchema: tool.inputSchema ?? {},
-          });
-        }
-      }
-    } finally {
-      await manager.dispose();
+    // Build MCPServerConfig map from registry metadata + user env
+    const configs: Record<string, MCPServerConfig> = {};
+    for (const id of serverIds) {
+      const server = servers[id];
+      if (!server) continue;
+      const template = server.configTemplate;
+      const resolvedEnv = resolveEnv(template.env, userEnv);
+      configs[id] = {
+        transport: template.transport,
+        auth: template.auth,
+        tools: template.tools,
+        env: resolvedEnv,
+      };
     }
 
-    return c.json({ tools, ...(errors.length > 0 ? { errors } : {}) });
+    // Connect, fetch tools, dispose
+    const { tools: toolsRecord, dispose } = await createMCPTools(configs, logger);
+    const tools: Array<{ name: string; description: string; inputSchema: unknown }> = [];
+
+    try {
+      for (const [name, tool] of Object.entries(toolsRecord)) {
+        tools.push({
+          name,
+          description: tool.description ?? "",
+          inputSchema: tool.inputSchema ?? {},
+        });
+      }
+    } finally {
+      await dispose();
+    }
+
+    return c.json({ tools });
   });
 

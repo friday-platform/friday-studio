@@ -35,7 +35,7 @@ type PrepareContextInput = {
 export type PrepareContextOutput = {
   context: AgentContext;
   enrichedPrompt: string;
-  releaseMCPTools: () => void;
+  releaseMCPTools: () => Promise<void>;
 };
 
 type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentContext };
@@ -63,7 +63,7 @@ interface AgentExecutionContext {
   sessionData?: AgentSessionData;
   abortSignal?: AbortSignal;
   preparedContext?: AgentContext;
-  releaseMCPTools?: () => void;
+  releaseMCPTools?: () => Promise<void>;
   result?: AgentPayload<unknown>;
   error?: Error;
   startTime?: number;
@@ -247,8 +247,12 @@ export function createAgentExecutionMachine(
         logger.info("Persisting results", { agentId: context.agentId, duration });
       },
 
+      // XState v5 actions are synchronous — cannot await the Promise.
+      // Fire-and-forget with .catch() so cleanup errors are logged instead of silently swallowed.
       releaseMCPTools: ({ context }) => {
-        context.releaseMCPTools?.();
+        context.releaseMCPTools?.().catch((err: unknown) => {
+          logger.warn("MCP tool cleanup failed", { error: err });
+        });
       },
 
       logCompleted: ({ context }) => {
@@ -351,6 +355,7 @@ export function createAgentExecutionMachine(
 
       executing: {
         entry: "logExecuting",
+        exit: "releaseMCPTools",
 
         invoke: {
           id: "executeAgent",
@@ -412,7 +417,6 @@ export function createAgentExecutionMachine(
       },
 
       completed: {
-        entry: "releaseMCPTools",
         on: {
           EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
           UNLOAD: { target: "idle" },
@@ -420,7 +424,7 @@ export function createAgentExecutionMachine(
       },
 
       failed: {
-        entry: ["logError", "releaseMCPTools"],
+        entry: "logError",
 
         on: {
           LOAD: { target: "loading" },

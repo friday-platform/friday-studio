@@ -1,19 +1,20 @@
 /**
  * Direct MCP executor for FSM execution harness.
  *
- * Runs agents in-process using MCPManager + AI SDK generateText.
- * Fully decoupled from the daemon — spins up MCP server connections
- * directly, injects a `complete` tool for structured output capture,
- * and returns AgentResult envelopes.
+ * Runs agents in-process using createMCPTools + AI SDK generateText.
+ * Fully decoupled from the daemon — spins up ephemeral MCP server
+ * connections per action, injects a `complete` tool for structured
+ * output capture, and returns AgentResult envelopes.
  *
  * @module
  */
 
+import type { MCPServerConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { AgentAction, AgentResult, Context, SignalWithContext } from "@atlas/fsm-engine";
 import { registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import { MCPManager } from "@atlas/mcp";
+import { createMCPTools } from "@atlas/mcp";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { generateText, stepCountIs, type Tool } from "ai";
 import { z } from "zod";
@@ -22,16 +23,7 @@ import { z } from "zod";
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-/**
- * Builds the agent prompt from an action and FSM context.
- *
- * When `fsmContext.input` is present, an "Input:" section is rendered.
- * No Documents section — prepare functions curate what the agent needs.
- *
- * @param action - The agent action containing prompt and agentId
- * @param fsmContext - The FSM context with optional input
- * @returns The assembled prompt string
- */
+/** Builds agent prompt. No Documents section — prepare functions curate what the agent needs. */
 export function buildAgentPrompt(action: AgentAction, fsmContext: Context): string {
   const base = action.prompt ?? `Execute task step for agent "${action.agentId}".`;
 
@@ -67,12 +59,12 @@ export interface DirectExecutorOptions {
  * Creates an AgentExecutor that runs agents directly with MCP tools.
  *
  * For each agent action:
- * 1. Looks up agent's MCP servers in plan
- * 2. Registers servers with MCPManager (resolves Link credentials automatically)
- * 3. Gets AI SDK tools from the MCP servers
- * 4. Injects a `complete` tool using the output schema from document contracts
- * 5. Runs generateText agentic loop
- * 6. Extracts structured output from the `complete` tool call
+ * 1. Looks up agent's MCP servers in plan via static registry
+ * 2. Creates ephemeral MCP connections via createMCPTools (credentials resolved automatically)
+ * 3. Injects a `complete` tool using the output schema from document contracts
+ * 4. Runs generateText agentic loop
+ * 5. Extracts structured output from the `complete` tool call
+ * 6. Disposes MCP connections (in finally block)
  */
 export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
   executor: (
@@ -82,9 +74,7 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
   ) => Promise<AgentResult>;
   shutdown: () => Promise<void>;
 } {
-  const { plan, model: modelId = "groq:openai/gpt-oss-120b" } = opts;
-  const mcpManager = new MCPManager();
-  const registeredServers = new Set<string>();
+  const { plan, model: modelId = "anthropic:claude-sonnet-4-6" } = opts;
 
   // Lookups — key by both plan ID and bundledId so FSM actions
   // (which use executionRef as agentId) resolve correctly.
@@ -121,150 +111,138 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
       };
     }
 
-    // Register MCP servers lazily (once per server)
-    const serverIds: string[] = [];
+    // Build server configs from the agent's MCP server references
+    const serverConfigs: Record<string, MCPServerConfig> = {};
     if (agent.mcpServers?.length) {
       for (const serverRef of agent.mcpServers) {
-        serverIds.push(serverRef.serverId);
-        if (registeredServers.has(serverRef.serverId)) continue;
-
         const serverMeta = mcpServersRegistry.servers[serverRef.serverId];
         if (!serverMeta) {
           throw new Error(`Unknown MCP server in registry: ${serverRef.serverId}`);
         }
-
-        logger.info("Registering MCP server for direct execution", {
-          serverId: serverRef.serverId,
-          transport: serverMeta.configTemplate.transport.type,
-        });
-
-        await mcpManager.registerServer({ id: serverRef.serverId, ...serverMeta.configTemplate });
-        registeredServers.add(serverRef.serverId);
+        serverConfigs[serverRef.serverId] = serverMeta.configTemplate;
       }
     }
 
-    // Get MCP tools
-    const mcpTools: Record<string, Tool> =
-      serverIds.length > 0 ? await mcpManager.getToolsForServers(serverIds) : {};
+    const { tools: mcpTools, dispose } = await createMCPTools(serverConfigs, logger);
 
-    // Inject `complete` tool if we have an output schema (same pattern as FSMEngine).
-    // We capture args via the execute callback because AI SDK step.toolCalls
-    // exposes `input` not `args`, and the execute callback receives the
-    // Zod-validated object directly.
-    let completeToolInjected = false;
-    let capturedCompleteArgs: unknown;
-    const allTools: Record<string, Tool> = { ...mcpTools };
+    try {
+      // Inject `complete` tool if we have an output schema (same pattern as FSMEngine).
+      // We capture args via the execute callback because AI SDK step.toolCalls
+      // exposes `input` not `args`, and the execute callback receives the
+      // Zod-validated object directly.
+      let completeToolInjected = false;
+      let capturedCompleteArgs: unknown;
+      const allTools: Record<string, Tool> = { ...mcpTools };
 
-    if (action.outputTo) {
-      const jsonSchema = schemaByOutputTo.get(action.outputTo);
-      if (jsonSchema?.properties && Object.keys(jsonSchema.properties).length > 0) {
-        const zodSchema = z.fromJSONSchema(jsonSchema);
-        allTools.complete = {
-          description:
-            "Call this to complete the task and store results. You MUST call this when finished.",
-          inputSchema: zodSchema,
-          execute: (args: unknown) => {
-            capturedCompleteArgs = args;
-            return { success: true };
-          },
-        };
-        completeToolInjected = true;
+      if (action.outputTo) {
+        const jsonSchema = schemaByOutputTo.get(action.outputTo);
+        if (jsonSchema?.properties && Object.keys(jsonSchema.properties).length > 0) {
+          const zodSchema = z.fromJSONSchema(jsonSchema);
+          allTools.complete = {
+            description:
+              "Call this to complete the task and store results. You MUST call this when finished.",
+            inputSchema: zodSchema,
+            execute: (args: unknown) => {
+              capturedCompleteArgs = args;
+              return { success: true };
+            },
+          };
+          completeToolInjected = true;
+        }
       }
-    }
 
-    // Build prompt
-    const basePrompt = buildAgentPrompt(action, fsmContext);
-    const completeSuffix = completeToolInjected
-      ? "\n\nIMPORTANT: When you have finished gathering information, you MUST call the `complete` tool to store your structured results. " +
-        "Do NOT just respond with text — call the `complete` tool with the data."
-      : "";
-    const prompt = basePrompt + completeSuffix;
+      // Build prompt
+      const basePrompt = buildAgentPrompt(action, fsmContext);
+      const completeSuffix = completeToolInjected
+        ? "\n\nIMPORTANT: When you have finished gathering information, you MUST call the `complete` tool to store your structured results. " +
+          "Do NOT just respond with text — call the `complete` tool with the data."
+        : "";
+      const prompt = basePrompt + completeSuffix;
 
-    logger.info("Running direct agent execution", {
-      agentId: action.agentId,
-      mcpServers: serverIds,
-      toolCount: Object.keys(allTools).length,
-      hasCompleteSchema: completeToolInjected,
-    });
-
-    // Agentic loop
-    const result = await generateText({
-      model: traceModel(registry.languageModel(modelId)),
-      system: `You are ${agent.name}. ${agent.description}\n\nYou have access to tools. Use them to accomplish your task.`,
-      prompt,
-      tools: allTools,
-      stopWhen: stepCountIs(50),
-    });
-
-    // Log execution trace per step
-    for (let i = 0; i < result.steps.length; i++) {
-      const step = result.steps[i];
-      if (!step) continue;
-      const calls = (step.toolCalls ?? []).map((tc) => tc.toolName);
-      const results = (step.toolResults ?? []).map((tr) => ({
-        tool: tr.toolName,
-        resultLength: tr.output != null ? JSON.stringify(tr.output).length : 0,
-      }));
-      logger.info(`Direct execution step ${i + 1}/${result.steps.length}`, {
+      const serverIds = Object.keys(serverConfigs);
+      logger.info("Running direct agent execution", {
         agentId: action.agentId,
-        toolCalls: calls,
-        toolResults: results,
-        finishReason: step.finishReason,
-        textLength: step.text?.length ?? 0,
+        mcpServers: serverIds,
+        toolCount: Object.keys(allTools).length,
+        hasCompleteSchema: completeToolInjected,
       });
-    }
-    const toolCallNames = result.steps.flatMap((s) => (s.toolCalls ?? []).map((tc) => tc.toolName));
-    logger.info("Direct agent execution completed", {
-      agentId: action.agentId,
-      steps: result.steps.length,
-      toolCalls: toolCallNames,
-      finishReason: result.finishReason,
-      textLength: result.text.length,
-    });
 
-    // Extract structured output from `complete` tool call
-    let data: unknown;
-    if (completeToolInjected) {
-      if (capturedCompleteArgs !== undefined) {
-        data = capturedCompleteArgs;
-      } else {
-        logger.warn("Agent did not call complete tool — falling back to text parsing", {
+      // Agentic loop
+      const result = await generateText({
+        model: traceModel(registry.languageModel(modelId)),
+        system: `You are ${agent.name}. ${agent.description}\n\nYou have access to tools. Use them to accomplish your task.`,
+        prompt,
+        tools: allTools,
+        stopWhen: stepCountIs(50),
+      });
+
+      // Log execution trace per step
+      for (let i = 0; i < result.steps.length; i++) {
+        const step = result.steps[i];
+        if (!step) continue;
+        const calls = (step.toolCalls ?? []).map((tc) => tc.toolName);
+        const results = (step.toolResults ?? []).map((tr) => ({
+          tool: tr.toolName,
+          resultLength: tr.output != null ? JSON.stringify(tr.output).length : 0,
+        }));
+        logger.info(`Direct execution step ${i + 1}/${result.steps.length}`, {
           agentId: action.agentId,
-          toolCallsMade: toolCallNames,
+          toolCalls: calls,
+          toolResults: results,
+          finishReason: step.finishReason,
+          textLength: step.text?.length ?? 0,
         });
       }
-    }
+      const toolCallNames = result.steps.flatMap((s) =>
+        (s.toolCalls ?? []).map((tc) => tc.toolName),
+      );
+      logger.info("Direct agent execution completed", {
+        agentId: action.agentId,
+        steps: result.steps.length,
+        toolCalls: toolCallNames,
+        finishReason: result.finishReason,
+        textLength: result.text.length,
+      });
 
-    // Fallback: try parsing text as JSON, then wrap as text
-    if (data === undefined && result.text) {
-      try {
-        data = JSON.parse(result.text);
-      } catch {
-        data = { text: result.text };
+      // Extract structured output from `complete` tool call
+      let data: unknown;
+      if (completeToolInjected) {
+        if (capturedCompleteArgs !== undefined) {
+          data = capturedCompleteArgs;
+        } else {
+          logger.warn("Agent did not call complete tool — falling back to text parsing", {
+            agentId: action.agentId,
+            toolCallsMade: toolCallNames,
+          });
+        }
       }
+
+      // Fallback: try parsing text as JSON, then wrap as text
+      if (data === undefined && result.text) {
+        try {
+          data = JSON.parse(result.text);
+        } catch {
+          data = { text: result.text };
+        }
+      }
+
+      data ??= {};
+
+      return {
+        ok: true as const,
+        agentId: action.agentId,
+        timestamp: new Date().toISOString(),
+        input: fsmContext.input ?? {},
+        data,
+        durationMs: Date.now() - startTime,
+      };
+    } finally {
+      await dispose();
     }
-
-    data ??= {};
-
-    return {
-      ok: true as const,
-      agentId: action.agentId,
-      timestamp: new Date().toISOString(),
-      input: fsmContext.input ?? {},
-      data,
-      durationMs: Date.now() - startTime,
-    };
   };
 
-  const shutdown = async () => {
-    for (const serverId of registeredServers) {
-      try {
-        await mcpManager.closeServer(serverId);
-      } catch {
-        // best-effort cleanup
-      }
-    }
-  };
+  // No persistent state to clean up — MCP clients are ephemeral per action
+  const shutdown = async () => {};
 
   return { executor, shutdown };
 }

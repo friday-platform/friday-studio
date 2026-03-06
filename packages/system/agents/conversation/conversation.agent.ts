@@ -627,7 +627,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         // Keep in sync with:
         // - packages/mcp-server/src/tools/index.ts (canonical tool registration)
         // - packages/core/src/agent-conversion/agent-tool-filters.ts (LLM agent allowlist)
-        // - packages/fsm-engine/mcp-tool-context.ts (FSM engine allowlist)
+        // - packages/fsm-engine/fsm-engine.ts (PLATFORM_TOOL_ALLOWLIST)
         const ALLOWED_TOOLS = new Set([
           // Workspace management
           "workspace_list",

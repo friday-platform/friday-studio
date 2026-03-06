@@ -98,6 +98,22 @@ continue with the other.
 Merge findings from both agents into a single list organized by severity, not by
 agent. Deduplicate any overlap.
 
+### 3d: Triage (Karpathy Lens)
+
+For each finding, apply these filters to determine if it's worth acting on:
+
+- **Surgical Changes (#3):** Does this finding trace to changes in this PR, or
+  is it pre-existing? Pre-existing issues get demoted to "Needs Decision" at
+  most — they're not the author's mess to clean up in this PR.
+- **Simplicity (#2):** Is the recommended fix minimum-code that solves a real
+  problem, or is it speculative (defensive tests for trivial branches, error
+  handling for impossible scenarios, abstractions for single-use code)?
+- **Tradeoff (#1):** For findings that survive, name the cost of fixing vs. not
+  fixing in one sentence.
+
+Annotate each finding with a **Worth doing** line: Yes/No + brief rationale.
+This lets the author skip the mental triage and go straight to action.
+
 ## Phase 4: Write Output
 
 ### Review Document
@@ -127,7 +143,8 @@ recommendation. Or "None."}
 
 ## Important
 
-{Important findings — architecture, design, assumptions. Or "None."}
+{Important findings — architecture, design, assumptions. Each with a
+"Worth doing: Yes/No — rationale" line from the Karpathy triage. Or "None."}
 
 ## Tests
 

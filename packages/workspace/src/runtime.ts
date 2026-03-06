@@ -17,7 +17,6 @@ import {
   buildSessionView,
   type EphemeralChunk,
   extractPlannedSteps,
-  type GlobalMCPServerPool,
   hasUnusableCredentialCause,
   isAgentAction,
   mapActionToStepComplete,
@@ -43,9 +42,7 @@ import {
   FSMDefinitionSchema,
   type FSMEngine,
   type FSMEvent,
-  GlobalMCPToolProvider,
   loadFromFile,
-  type MCPToolProvider,
   type SignalWithContext,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
@@ -177,7 +174,6 @@ interface SessionStream {
 interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   workspacePath?: string;
-  mcpServerPool?: GlobalMCPServerPool;
   daemonUrl?: string;
   /** Factory to create a session event stream (injected by daemon via registry) */
   createSessionStream?: (sessionId: string) => SessionStream;
@@ -291,7 +287,6 @@ export class WorkspaceRuntime {
     this.orchestrator = new AgentOrchestrator(
       {
         agentsServerUrl: `${agentsServerUrl}/agents`,
-        mcpServerPool: options.mcpServerPool,
         daemonUrl: options.daemonUrl,
         requestTimeoutMs: 900000,
       },
@@ -523,27 +518,7 @@ export class WorkspaceRuntime {
     const agentExecutor: AgentExecutor = (action, context, signal) =>
       this.executeAgent(action, context, job, signal);
 
-    // Always create MCP tool provider when pool available
-    // GlobalMCPToolProvider auto-includes atlas-platform for ambient tools (webfetch, artifacts)
-    // even when workspace has no explicit MCP servers configured
-    let mcpToolProvider: MCPToolProvider | undefined;
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
-
-    if (this.options.mcpServerPool) {
-      mcpToolProvider = new GlobalMCPToolProvider(
-        this.options.mcpServerPool,
-        this.workspace.id,
-        mcpServerConfigs,
-        logger.child({ component: "MCPToolProvider", workspaceId: this.workspace.id }),
-      );
-
-      logger.debug("Created MCP tool provider for FSM", {
-        workspaceId: this.workspace.id,
-        jobName: job.name,
-        serverCount: Object.keys(mcpServerConfigs).length,
-        serverIds: Object.keys(mcpServerConfigs),
-      });
-    }
 
     const scope = { workspaceId: this.workspace.id };
     const engineOptions = {
@@ -556,7 +531,7 @@ export class WorkspaceRuntime {
         job.maxSteps,
       ),
       agentExecutor,
-      mcpToolProvider,
+      mcpServerConfigs,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
       artifactStorage: ArtifactStorage,
       resourceAdapter: this.options.resourceStorage,
