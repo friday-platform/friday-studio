@@ -157,7 +157,7 @@ func (er *EventRouter) forwardToAtlas(ctx context.Context, url string, payload a
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := er.httpClient.Do(req) //nolint:gosec // G704: URL scheme validated in constructAtlasURL
+	resp, err := er.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to forward to Atlas: %w", err)
 	}

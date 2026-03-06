@@ -85,7 +85,7 @@ func (c *Client) CreateVirtualKey(ctx context.Context, req CreateVirtualKeyReque
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
@@ -142,7 +142,7 @@ func (c *Client) DeleteVirtualKeyByUserID(ctx context.Context, userID string) er
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("execute request: %w", err)
 	}
@@ -183,7 +183,7 @@ func (c *Client) HasKey(ctx context.Context, userID string) (bool, error) {
 
 	httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return false, fmt.Errorf("execute request: %w", err)
 	}

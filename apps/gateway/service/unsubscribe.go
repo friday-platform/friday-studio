@@ -119,7 +119,7 @@ func (s *Service) storeSuppression(ctx context.Context, email, workspaceID, user
 func (s *Service) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	log := httplog.LogEntry(r.Context())
 
-	token := r.FormValue("token")
+	token := r.FormValue("token") //nolint:gosec // G120: short HMAC token, not unbounded form data
 	if token == "" {
 		http.Error(w, "missing token", http.StatusBadRequest)
 		return
@@ -176,7 +176,7 @@ func (s *Service) HandleUnsubscribePage(w http.ResponseWriter, r *http.Request) 
 	displayName := workspaceDisplayName(payload.WorkspaceID)
 	unsubscribeRequestsTotal.WithLabelValues("GET", "rendered").Inc()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(displayName), html.EscapeString(token)) //nolint:gosec // G705: values are HTML-escaped
+	_, _ = fmt.Fprintf(w, unsubscribeConfirmPage, html.EscapeString(displayName), html.EscapeString(token))
 }
 
 // workspaceDisplayName returns a human-readable name for a workspace ID.

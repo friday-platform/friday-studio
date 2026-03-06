@@ -408,7 +408,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenData, err := json.Marshal(token)
+	tokenData, err := json.Marshal(token) //nolint:gosec // G117: stored in DB for provider re-auth
 	if err != nil {
 		log.Error("Failed to marshal token data", "error", err)
 		http.Error(w, "Failed to marshal token data", http.StatusInternalServerError)
@@ -474,7 +474,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Async: Create Stripe customer if missing (non-blocking, fire-and-forget)
 	if !tempestUser.StripeCustomerID.Valid || tempestUser.StripeCustomerID.String == "" {
-		go createStripeCustomer(log, cfg, pool, tempestUser)
+		go createStripeCustomer(log, cfg, pool, tempestUser) //nolint:gosec // G118: intentionally detached from request context
 	}
 
 	// Now we can generate a session and redirect the user to the redirect_to URL

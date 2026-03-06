@@ -35,7 +35,7 @@ func (s *Service) HandleParallelProxy(w http.ResponseWriter, r *http.Request) {
 		targetURL += "?" + r.URL.RawQuery
 	}
 
-	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body) //nolint:gosec // G704: targetURL built from const parallelBaseURL
 	if err != nil {
 		s.Logger.Error("failed to create parallel proxy request", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

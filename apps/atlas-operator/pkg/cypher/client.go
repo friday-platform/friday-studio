@@ -108,7 +108,7 @@ func (c *Client) Encrypt(ctx context.Context, userID string, plaintext []string)
 	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(saToken)))
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: endpoint validated in NewClient
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}

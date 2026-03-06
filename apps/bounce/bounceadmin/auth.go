@@ -67,7 +67,7 @@ func doOAuthLogin(ctx context.Context) (*oauth2.Token, error) {
 
 		switch {
 		case errMsg != "":
-			_, _ = fmt.Fprintf(w, "Authentication failed: %s", html.EscapeString(errMsg)) //nolint:gosec
+			_, _ = fmt.Fprintf(w, "Authentication failed: %s", html.EscapeString(errMsg))
 			errChan <- fmt.Errorf("oauth error: %s", errMsg)
 		case code != "" && state == expectedState:
 			_, _ = fmt.Fprintln(w, "Authentication successful! You can close this window.")
@@ -168,7 +168,7 @@ func saveTokenCache(token *oauth2.Token) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(token)
+	data, err := json.Marshal(token) //nolint:gosec // G117: writing to local file cache, not exposed
 	if err != nil {
 		return err
 	}

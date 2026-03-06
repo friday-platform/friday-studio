@@ -55,7 +55,7 @@ func NewOTP(email, secret string, createTime time.Time) (*OTP, error) {
 	}
 
 	h := hmac.New(sha256.New, []byte(secret))
-	_, err := fmt.Fprintf(h, otpStr, email, o.CreatedAt.Unix()) //nolint:gosec // G705: writing to hmac.Hash, not http.ResponseWriter
+	_, err := fmt.Fprintf(h, otpStr, email, o.CreatedAt.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func verifyEmailSignupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async: Create Stripe customer (non-blocking, fire-and-forget)
-	go createStripeCustomer(log, cfg, pool, tu)
+	go createStripeCustomer(log, cfg, pool, tu) //nolint:gosec // G118: intentionally detached from request context
 
 	amr := &AMREntry{
 		Method:    "email",
@@ -537,7 +537,7 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"success": true}`)
 
 	// Async: Create Stripe customer (non-blocking, fire-and-forget)
-	go createStripeCustomer(log, cfg, pool, user)
+	go createStripeCustomer(log, cfg, pool, user) //nolint:gosec // G118: intentionally detached from request context
 }
 
 // createStripeCustomer is fire-and-forget — errors are logged but don't affect signup.
