@@ -1310,10 +1310,14 @@ export class WorkspaceRuntime {
     // Initialize job engine if not already created
     await this.initializeJobEngine(job);
 
-    // Create synthetic trigger signal with payload
+    // Create synthetic trigger signal with payload.
+    // Use the job's first trigger signal name as the event type so the FSM
+    // transition in the idle state matches (it listens for the signal name,
+    // not the job name).
+    const triggerSignalId = job.signals[0] ?? jobName;
     const signal: WorkspaceRuntimeSignal = {
-      id: `job:${jobName}`,
-      type: `job:${jobName}`,
+      id: triggerSignalId,
+      type: triggerSignalId,
       data: params.payload || {},
       timestamp: new Date(),
     };
