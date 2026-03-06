@@ -111,6 +111,14 @@ Call validateArtifact tool with the extracted information to verify the artifact
 
       logger.debug("Parse prompt completed", { usage: parseResult.usage });
 
+      if (parseResult.finishReason === "error") {
+        logger.error("csv-filter-sampler LLM returned error", {
+          phase: "parse-prompt",
+          finishReason: parseResult.finishReason,
+        });
+        return err("Failed to parse filter prompt");
+      }
+
       if (!artifactId || !csvContent) {
         return err("Failed to extract valid artifact ID from prompt");
       }
@@ -238,6 +246,14 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       });
 
       logger.debug("SQL generation completed", { usage: sqlResult.usage });
+
+      if (sqlResult.finishReason === "error") {
+        logger.error("csv-filter-sampler LLM returned error", {
+          phase: "sql-generation",
+          finishReason: sqlResult.finishReason,
+        });
+        return err("Failed to generate SQL filter");
+      }
 
       logger.info("Executing SQL query", { sampleCount });
       const query = whereClause

@@ -190,6 +190,10 @@ async function runAnalysisLoop(
 
   logger.debug("Analysis complete", { usage: result.usage, steps: result.steps?.length ?? 0 });
 
+  if (result.finishReason === "error") {
+    throw new Error("Data analysis LLM returned finishReason error");
+  }
+
   const summary = result.text || "Analysis complete but no summary generated.";
 
   return { summary, savedResults: getSavedResults() };

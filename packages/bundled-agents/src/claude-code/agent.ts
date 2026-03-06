@@ -283,14 +283,21 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
         if (message.type === "assistant") {
           for (const block of message.message.content) {
             if (block.type === "tool_use") {
-              const progress = await generateProgress(
-                { toolName: block.name, input: block.input },
-                abortSignal,
-              );
-              stream?.emit({
-                type: "data-tool-progress",
-                data: { toolName: "Claude Code", content: progress },
-              });
+              try {
+                const progress = await generateProgress(
+                  { toolName: block.name, input: block.input },
+                  abortSignal,
+                );
+                stream?.emit({
+                  type: "data-tool-progress",
+                  data: { toolName: "Claude Code", content: progress },
+                });
+              } catch (error) {
+                logger.warn("generateProgress failed, skipping progress update", {
+                  error,
+                  toolName: block.name,
+                });
+              }
             }
           }
         }

@@ -201,6 +201,8 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
           type: "data-tool-progress",
           data: { toolName: "Slack", content: "Failed to summarize the content" },
         });
+
+        return err("Failed to translate artifacts to Slack format");
       }
     }
 
@@ -270,6 +272,11 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
         step: "execute-slack-actions",
         usage: executionResult.usage,
       });
+
+      if (executionResult.finishReason === "error") {
+        logger.error("slack-communicator LLM returned error", { phase: "execute-slack-actions" });
+        return err("Failed to execute Slack action");
+      }
 
       const { assembledToolCalls: execToolCalls, assembledToolResults: execToolResults } =
         collectToolUsageFromSteps({

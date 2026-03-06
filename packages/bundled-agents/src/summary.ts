@@ -101,6 +101,14 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
         usage: result.usage,
       });
 
+      if (result.finishReason === "error") {
+        logger.error("summary LLM returned error", {
+          phase: "summarize-content",
+          finishReason: result.finishReason,
+        });
+        return err("Failed to generate summary");
+      }
+
       const { steps, toolCalls, toolResults } = result;
       const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
         steps,
@@ -134,7 +142,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
         },
       );
     } catch (error) {
-      logger.debug("summarizer tool failed", { error });
+      logger.error("summarizer failed", { error });
       return err(stringifyError(error));
     }
   },

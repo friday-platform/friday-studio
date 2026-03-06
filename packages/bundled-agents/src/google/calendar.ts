@@ -210,6 +210,14 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         toolResults: result.toolResults,
       });
 
+      if (result.finishReason === "error") {
+        logger.error("google-calendar LLM returned error", {
+          phase: "calendar-query-execution",
+          toolsCalled: [...new Set(assembledToolCalls.map((tc) => tc.toolName))],
+        });
+        return err("Failed to process calendar request");
+      }
+
       // Check if the agent signaled failure
       if (state.failure) {
         return err(state.failure.reason);
