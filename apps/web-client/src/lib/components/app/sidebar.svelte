@@ -251,7 +251,11 @@
 
                             if (res.ok) {
                               // @ts-expect-error the type is correct
-                              await shareChat(res.data.messages, chat.title ?? "Untitled");
+                              await shareChat(
+                                res.data.messages,
+                                chat.title ?? "Untitled",
+                                chat.color,
+                              );
                             }
                           }}
                         >

@@ -13,6 +13,8 @@ import {
 } from "@atlas/core/artifacts";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { formatMessage } from "../modules/messages/format.ts";
+import markdownCSS from "../styles/markdown.css?raw";
+import shareTokensCSS from "../styles/share-tokens.css?raw";
 import { markdownToHTML } from "./markdown.ts";
 
 /** Double chevron SVG icon for expand/collapse buttons */
@@ -25,8 +27,12 @@ const DOUBLE_CHEVRON_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill
  * Uploads chat HTML via atlasd share endpoint and opens the share URL.
  * The share service returns a public URL for viewing the shared chat.
  */
-export async function shareChat(messages: AtlasUIMessage[], title?: string): Promise<void> {
-  const html = await generateChatHTML(messages, title);
+export async function shareChat(
+  messages: AtlasUIMessage[],
+  title?: string,
+  color?: string,
+): Promise<void> {
+  const html = await generateChatHTML(messages, title, color);
   const daemonUrl = getAtlasDaemonUrl();
 
   const response = await fetch(`${daemonUrl}/api/share`, {
@@ -100,7 +106,11 @@ async function fetchArtifacts(artifactIds: string[]): Promise<Map<string, Artifa
   return artifacts;
 }
 
-async function generateChatHTML(messages: AtlasUIMessage[], title?: string): Promise<string> {
+async function generateChatHTML(
+  messages: AtlasUIMessage[],
+  title?: string,
+  color?: string,
+): Promise<string> {
   // Extract and fetch all artifacts before rendering
   const artifactIds = extractArtifactIds(messages);
   const artifacts = await fetchArtifacts(artifactIds);
@@ -137,7 +147,7 @@ ${getEmbeddedStyles()}
     gtag('config', 'G-NLLF9SE37C', { page_title: 'Friday Shared Chat' });
   </script>
 </head>
-<body>
+<body class="${color ?? "yellow"}">
   <div class="chat-container">
     <header class="chat-header">
       <h1>${displayTitle}</h1>
@@ -163,7 +173,7 @@ function renderMessage(message: AtlasUIMessage, artifacts: Map<string, ArtifactD
 
         return `
       <article class="message ${isUser ? "user" : "assistant"}">
-        <div class="${isUser ? "request" : "content"}">
+        <div class="${isUser ? "request" : "content md"}">
           ${htmlContent}
         </div>
       </article>`;
@@ -453,25 +463,8 @@ function wrapWebSearchArtifact(data: WebSearchData): string {
 
 function getEmbeddedStyles(): string {
   return `
-    :root {
-      --color-surface-1: hsl(0 0% 100% / 1);
-      --color-surface-2: hsl(41 3% 95% / 1);
-      --color-border-1: hsl(300 1% 87% / 1);
-      --color-text: hsl(230 32% 14% / 1);
-      --color-red: hsl(5 60% 53% / 1);
-      --color-blue: hsl(210 100% 50% / 1);
-      --font-family-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-      --font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --color-surface-1: hsl(229 18% 12% / 1);
-        --color-surface-2: hsl(233 17% 10% / 1);
-        --color-border-1: hsl(0 0% 0% / 0.3);
-        --color-text: hsl(40 12% 95% / 1);
-      }
-    }
+    /* Design tokens + theme accent mappings — imported from share-tokens.css */
+    ${shareTokensCSS}
 
     * {
       box-sizing: border-box;
@@ -531,62 +524,8 @@ function getEmbeddedStyles(): string {
       max-width: 100%;
     }
 
-    .message .content p,
-    .message .content ul,
-    .message .content ol {
-      margin-bottom: 0.375rem;
-    }
-
-    .message .content p:last-child,
-    .message .content ul:last-child,
-    .message .content ol:last-child {
-      margin-bottom: 0;
-    }
-
-    .message .content ul {
-      list-style-type: disc;
-      padding-left: 1.5rem;
-    }
-
-    .message .content ol {
-      list-style-type: decimal;
-      padding-left: 1.5rem;
-    }
-
-    .message .content strong {
-      font-weight: 600;
-    }
-
-    .message .content a {
-      color: var(--color-text);
-      text-decoration: underline;
-    }
-
-    .message .content code {
-      background-color: var(--color-surface-2);
-      border-radius: 0.25rem;
-      color: var(--color-red);
-      font-family: var(--font-family-monospace);
-      font-size: 0.875rem;
-      padding: 0.125rem 0.25rem;
-    }
-
-    .message .content pre {
-      background-color: var(--color-surface-2);
-      border-radius: 0.625rem;
-      font-family: var(--font-family-monospace);
-      font-size: 0.875rem;
-      margin: 1rem 0;
-      overflow-x: auto;
-      padding: 1rem 1.5rem;
-    }
-
-    .message .content pre code {
-      background: none;
-      border-radius: 0;
-      color: inherit;
-      padding: 0;
-    }
+    /* Markdown styles — imported from shared markdown.css */
+    ${markdownCSS}
 
     .message .request {
       background-color: var(--color-surface-2);

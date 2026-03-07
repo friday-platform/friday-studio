@@ -1,4 +1,5 @@
 @import "./reset.css";
+@import "./lib/styles/markdown.css";
 
 svg {
   /* Prevents SVG pixel shifting during animations in Safari  */
