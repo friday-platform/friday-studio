@@ -45,7 +45,7 @@ describe("discoverDataSources", () => {
     expect(callArgs.prompt).toContain(prompt);
   });
 
-  test("system prompt instructs LLM to only include Datasets, not Files or External", async () => {
+  test("system prompt instructs LLM to include Signal Data and Datasets, not Files or External", async () => {
     generateObjectMock.mockResolvedValue({ object: { question: "test", artifactIds: [] } });
 
     await discoverDataSources("test");
@@ -54,11 +54,11 @@ describe("discoverDataSources", () => {
     if (typeof callArgs?.system !== "string") throw new Error("Expected string system prompt");
     const system = callArgs.system;
 
-    // Verify the system prompt contains key constraints for correct extraction
+    expect(system).toContain("Signal Data");
     expect(system).toContain("Datasets");
     expect(system).toContain("Do NOT include");
-    expect(system).toMatch(/Files|External/);
-    expect(system).toContain("database");
+    expect(system).toContain("Files");
+    expect(system).toContain("External");
   });
 
   test("passes abort signal to generateObject", async () => {

@@ -11,9 +11,9 @@ const ResolvedDataSourcesSchema = z.object({
   artifactIds: z
     .array(z.string())
     .describe(
-      "Artifact IDs of database-type resources to ATTACH for DuckDB analysis. " +
-        "Only include IDs from the Datasets section (artifact-ref with database type). " +
-        "Do NOT include file artifacts or external resources.",
+      "Artifact IDs to ATTACH for DuckDB analysis. " +
+        "Include UUIDs from Signal Data payload AND from the Datasets section. " +
+        "Do NOT include IDs from the Files or External sections of Workspace Resources.",
     ),
 });
 
@@ -23,14 +23,19 @@ const DISCOVERY_SYSTEM_PROMPT = `You are a data source resolver. Your job is to:
 1. Extract the analytical question from the user's prompt
 2. Identify which database datasets should be loaded for analysis
 
-The prompt may contain a "## Workspace Resources" section with available data sources.
-Only include artifact IDs from the "Datasets" category — these are database-type artifacts
-that can be queried via DuckDB. Do NOT include artifacts from "Files" or "External" sections.
+Artifact IDs come from two places — check BOTH:
 
-If the prompt contains artifact UUIDs directly (e.g. in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx),
-include those as well if they appear in a Datasets context.
+1. **Signal Data** — The prompt may contain a "## Signal Data" JSON block with artifact IDs
+   passed as signal payload values (e.g. "csv_file": "<uuid>"). These are the PRIMARY data
+   sources and should ALWAYS be included.
 
-If no datasets are referenced, return an empty artifactIds array.`;
+2. **Workspace Resources** — The prompt may contain a "## Workspace Resources" section.
+   Include artifact IDs from the "Datasets" category (database-type artifacts queryable via
+   DuckDB). Do NOT include IDs from "Files" or "External" sections.
+
+If the prompt contains artifact UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx format) in either
+Signal Data or Datasets, include them. If no artifact IDs are found anywhere, return an empty
+artifactIds array.`;
 
 /** Resolves which database artifacts to load via a lightweight haiku model call. */
 export async function discoverDataSources(

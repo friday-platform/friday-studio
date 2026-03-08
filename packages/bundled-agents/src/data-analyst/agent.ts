@@ -23,8 +23,8 @@ import {
   type SavedResults,
 } from "./sql-tools.ts";
 
-/** Fetches artifacts by ID. Only accepts "database" type; throws on missing or wrong type. */
-async function fetchAndValidateArtifacts(
+/** Fetches artifacts by ID. Keeps "database" type, skips non-database with a warning. */
+export async function fetchAndValidateArtifacts(
   artifactIds: string[],
   logger: Logger,
 ): Promise<Artifact[]> {
@@ -41,13 +41,12 @@ async function fetchAndValidateArtifacts(
   const artifactMap = new Map(result.data.map((a) => [a.id, a]));
 
   const results: Artifact[] = [];
-  const errors: string[] = [];
 
   for (const id of artifactIds) {
     const artifact = artifactMap.get(id);
 
     if (!artifact) {
-      errors.push(`Artifact ${id} not found`);
+      logger.warn("Artifact not found, skipping", { id });
       continue;
     }
 
@@ -56,11 +55,13 @@ async function fetchAndValidateArtifacts(
       continue;
     }
 
-    errors.push(`Artifact ${id} is type ${artifact.data.type}, expected database`);
+    logger.warn("Skipping non-database artifact", { id, type: artifact.data.type });
   }
 
-  if (errors.length > 0) {
-    throw new Error(errors.join("; "));
+  if (results.length === 0) {
+    throw new Error(
+      "No database artifacts found. The data analyst can only query database-type artifacts.",
+    );
   }
 
   logger.info("Artifacts validated", { count: results.length });
