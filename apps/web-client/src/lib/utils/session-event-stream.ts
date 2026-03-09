@@ -23,6 +23,7 @@ import {
   type SessionStreamEvent,
 } from "@atlas/core/session/session-events";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { parseSSEStream, type SSEMessage } from "@atlas/utils";
 
 /** Base delay for exponential backoff in milliseconds. */
 const BASE_DELAY_MS = 1000;
@@ -85,7 +86,7 @@ export async function* sessionEventStream(
       // Reset retry counter on successful connection
       retries = 0;
 
-      yield* parseSSEStream(response.body);
+      yield* parseTypedSSEStream(response.body);
 
       // Stream ended normally (server closed connection after session:complete)
       return;
@@ -103,7 +104,9 @@ export async function* sessionEventStream(
       retries++;
       if (retries > MAX_RETRIES) {
         throw new Error(
-          `SSE connection lost after ${MAX_RETRIES} retries: ${error instanceof Error ? error.message : String(error)}`,
+          `SSE connection lost after ${MAX_RETRIES} retries: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
           { cause: error },
         );
       }
@@ -116,71 +119,31 @@ export async function* sessionEventStream(
 }
 
 /**
- * Parses an SSE byte stream into typed session events.
+ * Wraps the shared SSE parser with session-specific Zod schema application.
  *
- * SSE format:
- * - Default events: `data: {...}\n\n` → parsed as SessionStreamEvent
- * - Named events: `event: ephemeral\ndata: {...}\n\n` → parsed as EphemeralChunk
+ * Routes messages by `event:` field:
+ * - `ephemeral` → {@link EphemeralChunkSchema}
+ * - default (no event) → {@link SessionStreamEventSchema}
  */
-async function* parseSSEStream(
+async function* parseTypedSSEStream(
   body: ReadableStream<Uint8Array>,
 ): AsyncGenerator<SessionStreamEvent | EphemeralChunk> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // Process complete SSE messages (separated by double newline)
-      let boundary: number;
-      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-        const message = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        const parsed = parseSSEMessage(message);
-        if (parsed) {
-          yield parsed;
-        }
-      }
+  for await (const message of parseSSEStream(body)) {
+    const typed = applySchema(message);
+    if (typed) {
+      yield typed;
     }
-  } finally {
-    reader.releaseLock();
   }
 }
 
 /**
- * Parses a single SSE message block into a typed event.
- *
- * Each message block contains `event:` and `data:` lines. The `event:` line
- * determines the parse schema; default (no event line) uses SessionStreamEvent.
- *
- * @param message - Raw SSE message text (lines between double newlines)
- * @returns Parsed event, or null for comments/keepalives
+ * Applies the appropriate Zod schema to a raw SSE message based on its
+ * `event` field.
  */
-function parseSSEMessage(message: string): SessionStreamEvent | EphemeralChunk | null {
-  let data = "";
-  let eventType = "";
+function applySchema(message: SSEMessage): SessionStreamEvent | EphemeralChunk | null {
+  const json: unknown = JSON.parse(message.data);
 
-  for (const line of message.split("\n")) {
-    if (line.startsWith("data:")) {
-      // Append data (handles multi-line data fields)
-      data += (data ? "\n" : "") + line.slice(5).trim();
-    } else if (line.startsWith("event:")) {
-      eventType = line.slice(6).trim();
-    }
-    // Ignore comments (: prefix) and other fields (id:, retry:)
-  }
-
-  if (!data) return null;
-
-  const json: unknown = JSON.parse(data);
-
-  if (eventType === "ephemeral") {
+  if (message.event === "ephemeral") {
     return EphemeralChunkSchema.parse(json);
   }
 

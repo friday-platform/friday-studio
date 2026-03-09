@@ -4,7 +4,7 @@
  * Converts workspace jobs into AI SDK tools that the workspace-chat agent can invoke.
  * Jobs with `inputs` schemas get typed parameters; jobs without get a generic `{ prompt }` fallback.
  *
- * Job tools call the daemon's synchronous execute endpoint, blocking until completion.
+ * Job tools call the daemon's signal trigger endpoint (JSON mode), blocking until completion.
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
@@ -23,8 +23,8 @@ const DEFAULT_INPUT_SCHEMA = {
 /**
  * Create AI SDK tools from workspace job definitions.
  *
- * Each job becomes a tool that executes via the daemon's synchronous job
- * execution endpoint and blocks until completion.
+ * Each job becomes a tool that triggers the job's signal via the daemon's
+ * signal endpoint (JSON mode) and blocks until completion.
  * The `handle-chat` job is excluded to prevent self-referential invocation.
  */
 export function createJobTools(
@@ -55,11 +55,15 @@ export function createJobTools(
       description,
       inputSchema: jsonSchema(inputSchemaObj),
       execute: async (input: Record<string, unknown>) => {
-        logger.info("Job tool executing", { jobName, workspaceId });
+        logger.info("Job tool executing via signal trigger", {
+          jobName,
+          workspaceId,
+          signalId: triggerSignal,
+        });
 
         const result = await parseResult(
-          client.workspace[":workspaceId"].jobs[":jobName"].execute.$post({
-            param: { workspaceId, jobName },
+          client.workspace[":workspaceId"].signals[":signalId"].$post({
+            param: { workspaceId, signalId: triggerSignal },
             json: { payload: input },
           }),
         );
@@ -69,15 +73,20 @@ export function createJobTools(
           return { success: false, error: `Failed to execute job: ${result.error}` };
         }
 
-        const { sessionId, status, error } = result.data;
+        const { sessionId, status } = result.data;
 
         if (status === "completed") {
           logger.info("Job tool completed", { jobName, sessionId, status });
           return { success: true, sessionId, status };
         }
 
-        logger.error("Job tool execution failed", { jobName, sessionId, status, error });
-        return { success: false, sessionId, status, error: error ?? `Job '${jobName}' ${status}` };
+        logger.error("Job tool execution unexpected status", { jobName, sessionId, status });
+        return {
+          success: false,
+          sessionId,
+          status,
+          error: `Job '${jobName}' returned status: ${status}`,
+        };
       },
     });
 

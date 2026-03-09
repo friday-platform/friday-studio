@@ -262,15 +262,17 @@ export function truncateMessageHistory(
 }
 
 /**
- * Process message history: Convert -> Inject Images -> Prune Tool Bloat -> Truncate to Budget
+ * Process message history: Convert -> Sanitize -> Inject Images -> Prune Tool Bloat -> Truncate to Budget
  *
  * Algorithm:
  * 0. Collect image artifact IDs from data parts (before expansion destroys them)
  * 1. Expand data parts to text (credentials, artifacts)
  * 2. Convert to ModelMessages (standard format)
- * 3. Inject ImageParts for image artifacts into last user message
- * 4. Prune tool results (remove heavy outputs from old messages)
- * 5. Truncate based on the PRUNED size (maximize retained context)
+ * 3. Sanitize tool-call inputs (fix AI SDK undefined input bug)
+ * 4. Inject ImageParts for image artifacts into last user message
+ * 5. Prune tool results (remove heavy outputs from old messages)
+ * 6. Merge consecutive user messages
+ * 7. Truncate based on the PRUNED size (maximize retained context)
  */
 export async function processMessageHistory(
   messages: AtlasUIMessage[],
@@ -288,10 +290,16 @@ export async function processMessageHistory(
   // 2. Convert to ModelMessages first (to enable pruning)
   let modelMessages = convertToModelMessages(expandedMessages);
 
-  // 3. Inject ImageParts for image artifacts
+  // 3. Fix tool-call parts with missing input (AI SDK bug workaround)
+  // When a tool call fails Zod validation, AI SDK stores input in rawInput
+  // but the validation schema strips it, leaving input as undefined.
+  // The Anthropic provider then sends input: undefined → API rejects.
+  sanitizeToolCallInputs(modelMessages);
+
+  // 4. Inject ImageParts for image artifacts
   modelMessages = await injectImageParts(modelMessages, imageArtifactIds, logger);
 
-  // 4. Prune tool results (Phase 1)
+  // 5. Prune tool results (Phase 1)
   // This shrinks the "fat" messages BEFORE we calculate budget.
   // We keep tool results only in the last 4 messages for recent context
   // but strip them from older history to save tokens.
@@ -301,17 +309,43 @@ export async function processMessageHistory(
     emptyMessages: "remove",
   });
 
-  // 5. Merge consecutive user messages (Phase 2)
+  // 6. Merge consecutive user messages (Phase 2)
   // Empty assistant messages (e.g. from content-filter) produce zero model messages
   // after conversion and pruning, creating consecutive user messages that violate
   // the API's alternating role requirement. Merge them to prevent API errors.
   const mergedMessages = mergeConsecutiveUserMessages(prunedMessages, logger);
 
-  // 6. Truncate based on the pruned size (Phase 3)
+  // 7. Truncate based on the pruned size (Phase 3)
   // Now that messages are smaller, we can keep more of them.
   const finalMessages = truncateMessageHistory(mergedMessages, config, logger);
 
   return finalMessages;
+}
+
+/**
+ * Fix tool-call parts with missing input (AI SDK bug workaround).
+ *
+ * When a tool call fails Zod validation, AI SDK emits a `tool-input-error` chunk
+ * that stores `input: undefined` and `rawInput: chunk.input`. The validation schema
+ * (`uiMessagesSchema`) doesn't include `rawInput`, so Zod strips it during
+ * `validateUIMessages`. After conversion, `convertToModelMessages` tries
+ * `part.input ?? part.rawInput` — both undefined. The Anthropic provider then
+ * serializes `input: undefined` as a missing field → API rejects with
+ * "tool_use.input: Field required".
+ *
+ * Mutates in place for efficiency — called before pruning on every turn.
+ */
+export function sanitizeToolCallInputs(messages: ModelMessage[]): ModelMessage[] {
+  for (const message of messages) {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (part.type === "tool-call" && part.input == null) {
+          part.input = {};
+        }
+      }
+    }
+  }
+  return messages;
 }
 
 /**

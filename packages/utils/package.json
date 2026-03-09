@@ -10,6 +10,7 @@
     "./paths.server": "./src/paths.ts",
     "./release-channel": "./src/release-channel.ts",
     "./telemetry.server": "./src/telemetry.ts",
+    "./sse": "./src/sse.ts",
     "./temp.server": "./src/temp.server.ts"
   },
   "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.3.5" },

@@ -53,6 +53,7 @@ import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
+import { createStreamingSignalTriggerTool } from "./tools/streaming-signal-trigger.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 
 const ROLE_SYSTEM = "system" as const;
@@ -638,8 +639,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           "session_cancel",
           "workspace_jobs_list",
           "workspace_jobs_describe",
-          // Signal triggering
-          "workspace_signal_trigger",
+          // Signal listing
           "workspace_signals_list",
           // Library
           "library_list",
@@ -677,6 +677,21 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           abortSignal,
         );
 
+        // Create streaming workspace_signal_trigger tool with writer closure for progress
+        const streamingSignalTriggerTool = createStreamingSignalTriggerTool(
+          writer,
+          {
+            sessionId: session.sessionId || `session-${Date.now()}`,
+            workspaceId: session.workspaceId || "atlas-conversation",
+            streamId: session.streamId,
+            daemonUrl: getAtlasDaemonUrl(),
+            userId: session.userId,
+            datetime: session.datetime,
+          },
+          logger,
+          abortSignal,
+        );
+
         const loadSkillResult = createLoadSkillTool({ hardcodedSkills: skills });
         const loadSkillTool = loadSkillResult.tool;
         cleanupSkills = loadSkillResult.cleanup;
@@ -687,6 +702,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           ...connectServiceTool,
           ...systemAgents,
           do_task: doTaskTool,
+          workspace_signal_trigger: streamingSignalTriggerTool,
           load_skill: loadSkillTool,
         };
 

@@ -180,7 +180,7 @@ Never guess provider IDs. Use exact id from <integrations>.
 <capability_sources>
 When checking if you can do something:
 - <integrations>: OAuth services (status="ready"=use, status="unconnected"=call connect_service)
-- <available_workspaces>: User's configured automations (trigger via workspace_signal_trigger) - PREFER THESE when user references a workspace
+- <available_workspaces>: User's existing automations (run via workspace_signal_trigger) - PREFER THESE when user references a workspace
 - <bundled_agents>: Zero-config agents for ad-hoc tasks (available via do_task)
 - <mcp_servers>: External integrations - use when bundled agents dont cover it (may require configuration)
 - Platform tools via do_task: webfetch (URL fetching) and artifacts (output storage) - always available

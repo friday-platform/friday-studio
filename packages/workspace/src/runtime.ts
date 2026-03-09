@@ -905,7 +905,7 @@ export class WorkspaceRuntime {
 
   /**
    * Track session result, persist to history, emit completion, and clean up.
-   * Shared finalization path for both processSignal and executeJobDirectly.
+   * Shared finalization path for processSignal.
    */
   private async finalizeSession(
     sessionResult: SessionResult,
@@ -1279,64 +1279,6 @@ export class WorkspaceRuntime {
     };
 
     return await this.processSignal(signal, onStreamEvent);
-  }
-
-  /**
-   * Execute a job directly by name (bypasses signal routing)
-   * Always treats execution as a trigger signal (fresh execution, clears state)
-   */
-  async executeJobDirectly(
-    jobName: string,
-    params: { payload?: Record<string, unknown>; streamId?: string },
-  ): Promise<IWorkspaceSession> {
-    await this.ensureInitialized();
-
-    logger.info("Executing job directly", {
-      workspaceId: this.workspace.id,
-      jobName,
-      hasPayload: !!params.payload,
-    });
-
-    // Find job by name
-    const job = this.jobs.get(jobName);
-    if (!job) {
-      throw new Error(
-        `Job '${jobName}' not found in workspace '${this.workspace.id}'. Available jobs: ${Array.from(
-          this.jobs.keys(),
-        ).join(", ")}`,
-      );
-    }
-
-    // Initialize job engine if not already created
-    await this.initializeJobEngine(job);
-
-    // Create synthetic trigger signal with payload.
-    // Use the job's first trigger signal name as the event type so the FSM
-    // transition in the idle state matches (it listens for the signal name,
-    // not the job name).
-    const triggerSignalId = job.signals[0] ?? jobName;
-    const signal: WorkspaceRuntimeSignal = {
-      id: triggerSignalId,
-      type: triggerSignalId,
-      data: params.payload || {},
-      timestamp: new Date(),
-    };
-
-    // Process as trigger signal (clears state, fresh execution)
-    // Note: onStreamEvent not passed here as this is a direct job execution
-    // without an active stream callback context
-    const sessionResult = await this.processSignalForJob(job, signal, undefined);
-
-    const session = await this.finalizeSession(sessionResult, job, signal);
-
-    logger.info("Job execution completed", {
-      workspaceId: this.workspace.id,
-      jobName,
-      sessionId: sessionResult.id,
-      status: sessionResult.status,
-    });
-
-    return session;
   }
 
   /**

@@ -9,16 +9,14 @@ import { createJobTools } from "./job-tools.ts";
 // Hoisted mocks for @atlas/client/v2
 // ---------------------------------------------------------------------------
 
-const mockJobExecutePost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const mockSignalPost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const mockParseResult = vi.hoisted(() =>
   vi.fn<(promise: Promise<unknown>) => Promise<Result<unknown, unknown>>>(),
 );
 
 vi.mock("@atlas/client/v2", () => ({
   client: {
-    workspace: {
-      [":workspaceId"]: { jobs: { [":jobName"]: { execute: { $post: mockJobExecutePost } } } },
-    },
+    workspace: { [":workspaceId"]: { signals: { [":signalId"]: { $post: mockSignalPost } } } },
   },
   parseResult: mockParseResult,
 }));
@@ -197,7 +195,7 @@ describe("createJobTools execute", () => {
   const noSignals: Record<string, WorkspaceSignalConfig> = {};
 
   beforeEach(() => {
-    mockJobExecutePost.mockReset();
+    mockSignalPost.mockReset();
     mockParseResult.mockReset();
   });
 
@@ -218,7 +216,7 @@ describe("createJobTools execute", () => {
   it("returns success when job completes", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
-      data: { sessionId: "sess-1", status: "completed", error: null },
+      data: { sessionId: "sess-1", status: "completed" },
     });
 
     const { execute } = buildTool();
@@ -239,7 +237,7 @@ describe("createJobTools execute", () => {
   it("returns failure when session status is failed", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
-      data: { sessionId: "sess-2", status: "failed", error: "agent crashed" },
+      data: { sessionId: "sess-2", status: "failed" },
     });
 
     const { execute, logger } = buildTool();
@@ -249,7 +247,7 @@ describe("createJobTools execute", () => {
       success: false,
       sessionId: "sess-2",
       status: "failed",
-      error: "agent crashed",
+      error: "Job 'deploy-app' returned status: failed",
     });
     expect(logger.error).toHaveBeenCalled();
   });
@@ -257,7 +255,7 @@ describe("createJobTools execute", () => {
   it("returns failure when session status is cancelled", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
-      data: { sessionId: "sess-3", status: "cancelled", error: null },
+      data: { sessionId: "sess-3", status: "cancelled" },
     });
 
     const { execute } = buildTool();
@@ -267,7 +265,7 @@ describe("createJobTools execute", () => {
       success: false,
       sessionId: "sess-3",
       status: "cancelled",
-      error: "Job 'deploy-app' cancelled",
+      error: "Job 'deploy-app' returned status: cancelled",
     });
   });
 
@@ -278,11 +276,12 @@ describe("createJobTools execute", () => {
     });
 
     const { execute } = buildTool();
-    await execute({ target: "production", force: true }, TOOL_CALL_OPTS);
+    const result = await execute({ target: "production", force: true }, TOOL_CALL_OPTS);
 
-    expect(mockJobExecutePost).toHaveBeenCalledWith({
-      param: { workspaceId: "ws-test", jobName: "deploy-app" },
+    expect(mockSignalPost).toHaveBeenCalledWith({
+      param: { workspaceId: "ws-test", signalId: "deploy-signal" },
       json: { payload: { target: "production", force: true } },
     });
+    expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed" });
   });
 });

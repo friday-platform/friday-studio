@@ -37,6 +37,13 @@ import {
 
 const analytics = createAnalyticsClient();
 
+/** Shared schemas for the signal endpoint (SSE + JSON handlers). */
+const signalParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
+const signalBodySchema = z.object({
+  payload: z.record(z.string(), z.unknown()).optional(),
+  streamId: z.string().optional(),
+});
+
 export * from "./schemas.ts";
 
 /** Format a job key into a display name: title > formatted key > raw key */
@@ -800,17 +807,123 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Trigger a workspace signal
+  // Trigger a workspace signal (SSE mode)
+  // Registered as a separate middleware before the JSON handler so the SSE return
+  // type doesn't widen the JSON handler's inferred type (Hono RPC client derives
+  // response shape from return type — mixing stream + json breaks inference).
+  .post("/:workspaceId/signals/:signalId", async (c, next) => {
+    if (!c.req.header("accept")?.includes("text/event-stream")) {
+      return next();
+    }
+
+    const paramResult = signalParamSchema.safeParse(c.req.param());
+    if (!paramResult.success) {
+      return c.json({ error: paramResult.error.message }, 400);
+    }
+    const { workspaceId, signalId } = paramResult.data;
+
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const bodyResult = signalBodySchema.safeParse(rawBody);
+    if (!bodyResult.success) {
+      return c.json({ error: bodyResult.error.message }, 400);
+    }
+    const body = bodyResult.data;
+    const ctx = c.get("app");
+
+    // Pre-stream validation: return HTTP error before committing to SSE stream
+    const manager = ctx.daemon.getWorkspaceManager();
+    const workspace = await manager.find({ id: workspaceId });
+    if (!workspace) {
+      return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+    }
+
+    const encoder = new TextEncoder();
+
+    const sseStream = new ReadableStream({
+      start(controller) {
+        ctx.daemon
+          .triggerWorkspaceSignal(workspaceId, signalId, body.payload, body.streamId, (chunk) => {
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            } catch (error) {
+              logger.debug("Client disconnected during signal SSE stream", {
+                workspaceId,
+                signalId,
+                error,
+              });
+            }
+          })
+          .then((result) => {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: "job-complete",
+                    data: { success: true, sessionId: result.sessionId, status: "completed" },
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            } catch (enqueueError) {
+              logger.debug("Client disconnected before job-complete event", {
+                workspaceId,
+                signalId,
+                error: enqueueError,
+              });
+            }
+          })
+          .catch((error) => {
+            const errorMessage = stringifyError(error);
+            logger.error("Signal trigger SSE error", {
+              error: errorMessage,
+              workspaceId,
+              signalId,
+            });
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+                ),
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            } catch (enqueueError) {
+              logger.debug("Client disconnected before job-error event", {
+                workspaceId,
+                signalId,
+                error: enqueueError,
+              });
+            }
+          })
+          .finally(() => {
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          });
+      },
+    });
+
+    return new Response(sseStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  })
+  // Trigger a workspace signal (JSON mode)
   .post(
     "/:workspaceId/signals/:signalId",
-    zValidator("param", z.object({ workspaceId: z.string(), signalId: z.string() })),
-    zValidator(
-      "json",
-      z.object({
-        payload: z.record(z.string(), z.unknown()).optional(),
-        streamId: z.string().optional(),
-      }),
-    ),
+    zValidator("param", signalParamSchema),
+    zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
       const { payload, streamId } = c.req.valid("json");
@@ -824,8 +937,8 @@ const workspacesRoutes = daemonFactory
           streamId,
         );
         return c.json({
-          message: "Signal accepted for processing",
-          status: "processing" as const,
+          message: "Signal completed",
+          status: "completed" as const,
           workspaceId,
           signalId,
           sessionId: result.sessionId,
@@ -893,39 +1006,6 @@ const workspacesRoutes = daemonFactory
       })),
     );
   })
-  // Execute a job directly (synchronous — blocks until completion)
-  .post(
-    "/:workspaceId/jobs/:jobName/execute",
-    zValidator("param", z.object({ workspaceId: z.string(), jobName: z.string() })),
-    zValidator("json", z.object({ payload: z.record(z.string(), z.unknown()).optional() })),
-    async (c) => {
-      const { workspaceId, jobName } = c.req.valid("param");
-      const { payload } = c.req.valid("json");
-      const ctx = c.get("app");
-
-      try {
-        const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-        const session = await runtime.executeJobDirectly(jobName, { payload });
-
-        return c.json({
-          sessionId: session.id,
-          status: session.status,
-          error: session.error ?? null,
-        });
-      } catch (error) {
-        const errorMessage = stringifyError(error);
-        logger.error("Failed to execute job directly", { error, workspaceId, jobName });
-
-        if (errorMessage.includes("Workspace not found")) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-        if (errorMessage.includes("not found in workspace")) {
-          return c.json({ error: errorMessage }, 404);
-        }
-        return c.json({ error: `Failed to execute job: ${errorMessage}` }, 500);
-      }
-    },
-  )
   // Get workspace sessions
   .get("/:workspaceId/sessions", async (c) => {
     const workspaceId = c.req.param("workspaceId");

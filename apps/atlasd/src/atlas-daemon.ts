@@ -63,7 +63,6 @@ import { userRoutes } from "../routes/user/index.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
-import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
 import { createApp } from "./factory.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
@@ -240,11 +239,6 @@ export class AtlasDaemon {
       contentDir: env.ATLAS_LIBRARY_DIR,
       organizeByDate: true,
     });
-
-    // Initialize daemon-level capabilities
-    logger.info("Initializing daemon capabilities...");
-    DaemonCapabilityRegistry.setDaemonInstance(this);
-    DaemonCapabilityRegistry.initialize();
 
     // Initialize CronManager with KV storage
     logger.info("Initializing CronManager...");

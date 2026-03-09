@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   estimateTokens,
   processMessageHistory,
+  sanitizeToolCallInputs,
   truncateMessageHistory,
 } from "./message-windowing.ts";
 
@@ -345,6 +346,73 @@ describe("message-windowing", () => {
       expect(texts).toContain("?");
       expect(texts).toContain("hello?");
     }
+  });
+
+  /**
+   * Regression test for tool_use.input missing after Zod validation error.
+   *
+   * When a tool call fails Zod validation, AI SDK stores input in rawInput
+   * but the validation schema strips it, leaving input as undefined after
+   * convertToModelMessages. The Anthropic provider then sends input: undefined →
+   * API rejects with "tool_use.input: Field required" on the next turn.
+   */
+  it("regression: tool-call with undefined input gets sanitized to {}", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Connect my calendar" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call_bad",
+            toolName: "connect_service",
+            input: undefined as unknown as Record<string, unknown>,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call_bad",
+            toolName: "connect_service",
+            output: { type: "text", value: "validation error" },
+          },
+        ],
+      },
+      { role: "user", content: "Ok, try something else" },
+    ];
+
+    sanitizeToolCallInputs(messages);
+
+    const assistantMsg = messages[1];
+    expect(assistantMsg?.role).toEqual("assistant");
+    expect(Array.isArray(assistantMsg?.content)).toBe(true);
+    const toolCall = (assistantMsg?.content as Array<{ type: string; input: unknown }>)[0];
+    expect(toolCall?.type).toEqual("tool-call");
+    expect(toolCall?.input).toEqual({});
+  });
+
+  it("sanitizeToolCallInputs leaves valid input untouched", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call_ok",
+            toolName: "search",
+            input: { query: "test" },
+          },
+        ],
+      },
+    ];
+
+    sanitizeToolCallInputs(messages);
+
+    const part = (messages[0] as { content: Array<{ type: string; input: unknown }> }).content[0];
+    expect(part?.input).toEqual({ query: "test" });
   });
 
   it("processMessageHistory (pipeline) - preserves recent tool calls", () => {
