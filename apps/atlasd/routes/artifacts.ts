@@ -515,7 +515,7 @@ export async function createArtifactFromFile(opts: {
       system:
         "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
       prompt: truncated,
-      maxOutputTokens: 60,
+      maxOutputTokens: 250,
     })
       .then(async (llmSummary) => {
         const trimmed = truncateUnicode(llmSummary.trim(), 200);
@@ -601,7 +601,7 @@ export async function replaceArtifactFromFile(opts: {
       system:
         "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
       prompt: truncated,
-      maxOutputTokens: 60,
+      maxOutputTokens: 250,
     })
       .then(async (llmSummary) => {
         const trimmed = truncateUnicode(llmSummary.trim(), 200);

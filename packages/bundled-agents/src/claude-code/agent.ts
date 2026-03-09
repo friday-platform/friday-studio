@@ -155,7 +155,7 @@ Read package.json → "Reading package.json"
 </examples>`,
     prompt: contextStr,
     abortSignal,
-    maxOutputTokens: 50,
+    maxOutputTokens: 250,
   });
 }
 

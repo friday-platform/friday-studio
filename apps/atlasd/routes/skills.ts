@@ -143,7 +143,7 @@ export const skillsRoutes = daemonFactory
             system:
               'Write a skill description under 1024 characters. Start with what it does (verb-led), then add "Use when..." with specific keywords that help agents match tasks to this skill. Never say "this skill" — that\'s assumed. Output only the description, nothing else.',
             prompt: input.instructions,
-            maxOutputTokens: 100,
+            maxOutputTokens: 250,
           });
           input.description = generated.trim();
         } catch {

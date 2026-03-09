@@ -35,7 +35,7 @@ async function generateResponseProgress(
       "Find info on Rippling, Replit, Socket" → "Researching portfolio companies"`,
     prompt,
     abortSignal,
-    maxOutputTokens: 50,
+    maxOutputTokens: 250,
   });
 }
 
@@ -57,7 +57,7 @@ async function generateResponseDescription(
       "How does React's virtual DOM work?" → "React Virtual DOM Overview"`,
     prompt,
     abortSignal,
-    maxOutputTokens: 50,
+    maxOutputTokens: 250,
   });
 }
 

@@ -14,7 +14,7 @@ async function condenseObjective(objective: string, logger: Logger): Promise<str
     system:
       "Extract the core search question from this context. Output ONLY the search query, max 500 chars.",
     prompt: objective,
-    maxOutputTokens: 200,
+    maxOutputTokens: 250,
   });
 
   logger.info("Objective condensed", { newLength: condensed.length });

@@ -98,7 +98,7 @@ async function generateTaskSummary(
     return await smallLLM({
       system: "Summarize task execution in 1 sentence, ≤100 chars. Be direct, no fluff.",
       prompt: `Intent: ${intent}\nSteps: ${stepCount}\nStatus: ${success ? "succeeded" : "failed"}`,
-      maxOutputTokens: 50,
+      maxOutputTokens: 250,
     });
   } catch {
     return `Task: ${truncateUnicode(intent, 60, "...")} (${stepCount} steps, ${success ? "ok" : "failed"})`;

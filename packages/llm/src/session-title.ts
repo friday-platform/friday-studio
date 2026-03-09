@@ -33,7 +33,7 @@ CONSTRAINTS:
 - Do NOT include status words like "completed", "failed", "success"
 - Do NOT include generic prefixes like "Task:", "Job:", "Session:"`,
       prompt,
-      maxOutputTokens: 30,
+      maxOutputTokens: 250,
     });
 
     const title = result.trim();

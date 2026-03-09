@@ -247,7 +247,7 @@ const progressEvals = variants.flatMap((variant) =>
       config: {
         input: testCase.input,
         run: async () => {
-          return await runSmallLLM(variant.provider, testCase.system, testCase.input, 50);
+          return await runSmallLLM(variant.provider, testCase.system, testCase.input, 250);
         },
         score: (result) => [
           latencyScore(result.latencyMs),
@@ -266,7 +266,7 @@ const webSearchEvals = webSearchCases.map((testCase) =>
     config: {
       input: testCase.input,
       run: async () => {
-        return await runSmallLLM("groq", testCase.system, testCase.input, 30);
+        return await runSmallLLM("groq", testCase.system, testCase.input, 250);
       },
       score: (result) => [
         latencyScore(result.latencyMs),

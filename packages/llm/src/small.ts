@@ -25,7 +25,7 @@ export async function smallLLM(params: {
       ],
       abortSignal: params.abortSignal,
       temperature: 0.4,
-      maxOutputTokens: params.maxOutputTokens ?? 100,
+      maxOutputTokens: params.maxOutputTokens ?? 250,
     });
     return result.text;
   } catch (e) {
