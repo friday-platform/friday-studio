@@ -184,8 +184,8 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/gabriel-vasile/mimetype v1.4.12 h1:e9hWvmLYvtp846tLHam2o++qitpguFiYCKbn0w9jyqw=
 github.com/gabriel-vasile/mimetype v1.4.12/go.mod h1:d+9Oxyo1wTzWdyVUPMmXFvp4F9tea18J8ufA774AB3s=
-github.com/ggicci/httpin v0.20.2 h1:SmXSM/jg58H2W4+fIcF+6bo4JXQW/f8oeHYHYmwecmk=
-github.com/ggicci/httpin v0.20.2/go.mod h1:lQaLWTYNcs4eo8WoESBqqT4fUc9dgdIKeHweZMj17No=
+github.com/ggicci/httpin v0.20.3 h1:qy93bUsF/eGbX8WJfXEjB3bjgUrv7MKZ3qVWR73DIGY=
+github.com/ggicci/httpin v0.20.3/go.mod h1:ppHGT8xt99mRnDUuehLLWl2RAVLKG+VGn48GjK5xaLA=
 github.com/ggicci/owl v0.8.2 h1:og+lhqpzSMPDdEB+NJfzoAJARP7qCG3f8uUC3xvGukA=
 github.com/ggicci/owl v0.8.2/go.mod h1:PHRD57u41vFN5UtFz2SF79yTVoM3HlWpjMiE+ZU2dj4=
 github.com/go-chi/chi/v5 v5.2.5 h1:Eg4myHZBjyvJmAFjFvWgrqDTXFyOzjj7YIm3L3mu6Ug=
