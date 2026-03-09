@@ -60,7 +60,7 @@ require (
 	go.opentelemetry.io/otel/log v0.17.0
 	go.opentelemetry.io/otel/sdk/log v0.17.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/oauth2 v0.35.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.269.0
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
