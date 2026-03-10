@@ -11,7 +11,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.0",
     "@worker-tools/html-rewriter": "0.1.0-pre.19",
-    "ai": "^5.0.150",
+    "ai": "^5.0.151",
     "fast-glob": "^3.3.3",
     "minimatch": "^10.2.4",
     "papaparse": "^5.5.3",
