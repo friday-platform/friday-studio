@@ -23,9 +23,11 @@ import {
   EXTENSION_TO_MIME,
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
+  isAudioMimeType,
   isImageMimeType,
   isInvalidChatId,
   LEGACY_FORMAT_ERRORS,
+  MAX_AUDIO_SIZE,
   MAX_FILE_SIZE,
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
@@ -55,16 +57,10 @@ for (const [ext, mime] of EXTENSION_TO_MIME) {
 
 type ValidationResult = { valid: true; mimeType: string } | { valid: false; error: string };
 
-/**
- * Check if uploaded file is a PDF using the canonical extension-to-MIME mapping.
- */
 function isPdfFile(filename: string): boolean {
   return getValidatedMimeType(filename) === "application/pdf";
 }
 
-/**
- * Check if uploaded file is a DOCX using the canonical extension-to-MIME mapping.
- */
 function isDocxFile(filename: string): boolean {
   return (
     getValidatedMimeType(filename) ===
@@ -72,9 +68,6 @@ function isDocxFile(filename: string): boolean {
   );
 }
 
-/**
- * Check if uploaded file is a PPTX using the canonical extension-to-MIME mapping.
- */
 function isPptxFile(filename: string): boolean {
   return (
     getValidatedMimeType(filename) ===
@@ -91,17 +84,22 @@ const SPECIFIC_BINARY_MIMES = new Set([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "audio/mpeg",
+  "audio/mp4",
+  "video/mp4",
+  "audio/x-m4a",
+  "audio/wav",
+  "audio/webm",
+  "video/webm",
+  "audio/ogg",
+  "audio/flac",
 ]);
 
 type ConvertedFile =
   | { ok: true; title: string; summary: string; data: ArtifactDataInput; markdown?: string }
   | { ok: false; error: string };
 
-/**
- * Convert an uploaded file into artifact data without persisting the artifact.
- * Mirrors the branching logic of `createArtifactFromFile` but returns the
- * conversion result so the caller can use it with `ArtifactStorage.update`.
- */
+/** Convert an uploaded file into artifact data without persisting. Caller handles storage. */
 async function convertUploadedFile(opts: {
   filePath: string;
   fileName: string;
@@ -111,7 +109,6 @@ async function convertUploadedFile(opts: {
   const detected = await fileTypeFromFile(filePath);
   const resolvedMime = await resolveFileType(detected, filePath, fileName);
 
-  // Log mismatch when resolved type differs from extension-implied type
   const extensionMime = getValidatedMimeType(fileName);
   if (resolvedMime && extensionMime && resolvedMime !== extensionMime) {
     logger.warn("File content type differs from extension", {
@@ -127,7 +124,7 @@ async function convertUploadedFile(opts: {
     const detectedLabel = (detected.ext ?? "unknown").toUpperCase();
     return {
       ok: false,
-      error: `Detected ${detectedLabel} content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF`,
+      error: `Detected ${detectedLabel} content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF, MP3, MP4, M4A, WAV, WebM, OGG, FLAC`,
     };
   }
 
@@ -248,6 +245,39 @@ async function convertUploadedFile(opts: {
     }
   }
 
+  // Audio files — store as-is (transcription happens downstream)
+  if (resolvedMime && isAudioMimeType(resolvedMime)) {
+    try {
+      const { size } = await stat(filePath);
+      if (size > MAX_AUDIO_SIZE) {
+        await rm(filePath, { force: true });
+        return { ok: false, error: "Audio files must be under 25MB." };
+      }
+
+      const persistedAudioPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
+      await copyFile(filePath, persistedAudioPath);
+      await unlink(filePath).catch(() => {});
+
+      return {
+        ok: true,
+        title: fileName,
+        summary: `Audio: ${fileName}`,
+        data: {
+          type: "file",
+          version: 1,
+          data: { path: persistedAudioPath, originalName: fileName },
+        },
+      };
+    } catch (error) {
+      await unlink(filePath).catch(() => {});
+      logger.error("Failed to process audio file", {
+        filename: fileName,
+        error: stringifyError(error),
+      });
+      return { ok: false, error: "Upload failed" };
+    }
+  }
+
   // Other text files — copy as-is
   const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt || ".txt"}`);
   try {
@@ -268,10 +298,7 @@ async function convertUploadedFile(opts: {
   }
 }
 
-/**
- * Convert a binary document (PDF/DOCX/PPTX) to markdown for `convertUploadedFile`.
- * Returns the artifact data envelope with the markdown content for LLM summarization.
- */
+/** Convert a binary document (PDF/DOCX/PPTX) to markdown. Returns data envelope + markdown for LLM summarization. */
 async function convertUploadedBinary(opts: {
   filePath: string;
   fileName: string;
@@ -338,8 +365,9 @@ export async function resolveFileType(
     return getValidatedMimeType(fileName);
   }
 
-  if (SPECIFIC_BINARY_MIMES.has(detected.mime)) {
-    return detected.mime;
+  const baseMime = detected.mime.split(";")[0] ?? detected.mime;
+  if (SPECIFIC_BINARY_MIMES.has(baseMime)) {
+    return baseMime;
   }
 
   if (detected.mime === "application/zip") {
@@ -365,11 +393,7 @@ export async function resolveFileType(
   return undefined;
 }
 
-/**
- * Sanitize filename into valid SQLite table name.
- * Converts to lowercase, replaces non-alphanumeric with underscores,
- * prefixes leading digits, and caps at 64 chars.
- */
+/** Sanitize filename into valid SQLite table name. */
 function sanitizeTableName(filename: string): string {
   const baseName = filename.replace(/\.csv$/i, "");
   const sanitized = baseName
@@ -382,11 +406,7 @@ function sanitizeTableName(filename: string): string {
   return sanitized || "data";
 }
 
-/**
- * Format a value as a CSV cell with proper escaping.
- * Wraps in quotes and escapes embedded quotes if the value contains
- * commas, quotes, or newlines.
- */
+/** Format a value as a CSV cell with proper escaping. */
 function formatCsvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const str = String(value);
@@ -396,10 +416,7 @@ function formatCsvCell(value: unknown): string {
   return str;
 }
 
-/**
- * Validate uploaded file extension. Binary content detection happens later
- * in createArtifactFromFile via magic bytes after the file is written to disk.
- */
+/** Validate uploaded file extension. Magic byte detection happens later in createArtifactFromFile. */
 function validateUpload(file: File): ValidationResult {
   const mimeType = getValidatedMimeType(file.name);
   if (!mimeType) {
@@ -408,10 +425,7 @@ function validateUpload(file: File): ValidationResult {
   return { valid: true, mimeType };
 }
 
-/**
- * Stream a web ReadableStream to a file on disk with backpressure handling.
- * Parent directory is created if it doesn't exist.
- */
+/** Stream a ReadableStream to disk with backpressure handling. Creates parent directory. */
 export async function streamToFile(
   stream: ReadableStream<Uint8Array>,
   destPath: string,
@@ -449,11 +463,7 @@ async function emitArtifactCreatedEvent(artifactId: string, artifactType: string
   }
 }
 
-/**
- * Given a validated file already on disk, create an artifact.
- * Delegates to `convertUploadedFile` for format detection and conversion,
- * then persists via `ArtifactStorage.create`.
- */
+/** Convert file on disk and persist as artifact via ArtifactStorage.create. */
 export async function createArtifactFromFile(opts: {
   filePath: string;
   fileName: string;
@@ -531,12 +541,7 @@ export async function createArtifactFromFile(opts: {
   return { ok: true as const, artifact: result.data };
 }
 
-/**
- * Replace an existing artifact's content with a new file.
- * Converts the file via `convertUploadedFile`, then creates a new revision
- * via `ArtifactStorage.update`. The artifact's workspace association
- * is preserved by the storage layer (update only touches data/title/summary).
- */
+/** Replace an artifact's content with a new file. Creates a new revision via ArtifactStorage.update. */
 export async function replaceArtifactFromFile(opts: {
   artifactId: string;
   filePath: string;
@@ -1030,6 +1035,9 @@ const artifactsApp = daemonFactory
     const mimeType = getValidatedMimeType(file.name);
     if (mimeType && isImageMimeType(mimeType) && file.size > MAX_IMAGE_SIZE) {
       return c.json({ error: "Image files must be under 5MB." }, 413);
+    }
+    if (mimeType && isAudioMimeType(mimeType) && file.size > MAX_AUDIO_SIZE) {
+      return c.json({ error: "Audio files must be under 25MB." }, 413);
     }
     if (file.size > MAX_FILE_SIZE) {
       const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));

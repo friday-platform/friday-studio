@@ -98,4 +98,10 @@ export const registry = {
     if (!_registry) _registry = createRegistry();
     return _registry.textEmbeddingModel(...args);
   },
+  transcriptionModel: (
+    ...args: Parameters<ReturnType<typeof createRegistry>["transcriptionModel"]>
+  ) => {
+    if (!_registry) _registry = createRegistry();
+    return _registry.transcriptionModel(...args);
+  },
 };

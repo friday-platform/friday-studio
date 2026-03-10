@@ -6571,6 +6571,7 @@
         ],
         "packageJson": {
           "dependencies": [
+            "npm:@ai-sdk/provider@^2.0.1",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.72",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__encoding@^1.0.10",

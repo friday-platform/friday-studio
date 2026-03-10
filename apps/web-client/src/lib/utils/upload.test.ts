@@ -89,6 +89,25 @@ describe("validateFile", () => {
     const result = validateFile(createTestFile("README.md", 100));
     expect(result).toEqual({ valid: true });
   });
+
+  test("accepts valid audio file under size limit", () => {
+    const result = validateFile(createTestFile("recording.mp3", 5 * 1024 * 1024, "audio/mpeg"));
+    expect(result).toEqual({ valid: true });
+  });
+
+  test("rejects audio files over MAX_AUDIO_SIZE", () => {
+    const result = validateFile(createTestFile("huge.mp3", 26 * 1024 * 1024, "audio/mpeg"));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain("Audio");
+      expect(result.error).toContain("25MB");
+    }
+  });
+
+  test("accepts audio file with video/* MIME type", () => {
+    const result = validateFile(createTestFile("clip.mp4", 10 * 1024 * 1024, "video/mp4"));
+    expect(result).toEqual({ valid: true });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

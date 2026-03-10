@@ -4,19 +4,18 @@
  * Used by both server (validation) and client (UX feedback).
  */
 
-/** Maximum file size for uploads (500MB) */
 export const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
-/** Maximum file size for PDF uploads (50MB) - lower than other types due to memory usage during extraction */
+// Lower than general limit due to memory usage during extraction
 export const MAX_PDF_SIZE = 50 * 1024 * 1024;
-
-/** Maximum file size for Office document uploads (50MB) - same limit as PDF for same reasons */
 export const MAX_OFFICE_SIZE = 50 * 1024 * 1024;
 
-/** Maximum file size for image uploads (5MB) - matches Anthropic API per-image limit */
+// Matches Anthropic API per-image limit
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
-/** Maximum cumulative decompressed content size for OOXML files (200MB) */
+// Matches OpenAI Whisper API limit
+export const MAX_AUDIO_SIZE = 25 * 1024 * 1024;
+
 export const MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024;
 
 /**
@@ -33,8 +32,8 @@ export const LEGACY_FORMAT_ERRORS = new Map([
  * Extension to MIME type mapping for allowed file types.
  *
  * Covers text formats (CSV, JSON, TXT, MD, YAML), documents (PDF, DOCX, PPTX),
- * and images (PNG, JPEG, WebP, GIF). Images are stored as-is (no conversion)
- * and sent as native image content parts to LLMs.
+ * images (PNG, JPEG, WebP, GIF), and audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).
+ * Images and audio are stored as-is (no conversion).
  */
 export const EXTENSION_TO_MIME = new Map([
   [".csv", "text/csv"],
@@ -52,6 +51,15 @@ export const EXTENSION_TO_MIME = new Map([
   [".jpeg", "image/jpeg"],
   [".webp", "image/webp"],
   [".gif", "image/gif"],
+  [".mp3", "audio/mpeg"],
+  [".mp4", "audio/mp4"],
+  [".m4a", "audio/x-m4a"],
+  [".wav", "audio/wav"],
+  [".webm", "audio/webm"],
+  [".ogg", "audio/ogg"],
+  [".flac", "audio/flac"],
+  [".mpeg", "audio/mpeg"],
+  [".mpga", "audio/mpeg"],
 ]);
 
 /**
@@ -78,6 +86,15 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "audio/mpeg",
+  "audio/mp4",
+  "video/mp4",
+  "audio/x-m4a",
+  "audio/wav",
+  "audio/webm",
+  "video/webm",
+  "audio/ogg",
+  "audio/flac",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,7 +110,6 @@ export const CHUNK_SIZE = 5 * 1024 * 1024;
 /** How long a chunked upload session stays alive before cleanup (2 hours) */
 export const CHUNKED_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 
-/** Returns true if chatId contains path traversal or unsafe characters */
 export function isInvalidChatId(chatId: string): boolean {
   return (
     chatId.includes("..") ||
@@ -103,19 +119,33 @@ export function isInvalidChatId(chatId: string): boolean {
   );
 }
 
-/** Error message for disallowed file types */
 export const FILE_TYPE_NOT_ALLOWED_ERROR =
-  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF";
+  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF, MP3, MP4, M4A, WAV, WebM, OGG, FLAC";
 
-/** MIME types supported for image upload and LLM vision input */
 const SUPPORTED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-/** Returns true if the given MIME type is a supported image type */
 export function isImageMimeType(mimeType: string): boolean {
   return SUPPORTED_IMAGE_MIMES.has(mimeType);
 }
 
-/** Extract and validate file extension against EXTENSION_TO_MIME. Returns MIME type or undefined. */
+const SUPPORTED_AUDIO_MIMES = new Set([
+  "audio/mpeg",
+  "audio/mp4",
+  "video/mp4",
+  "audio/x-m4a",
+  "audio/wav",
+  "audio/wave",
+  "audio/webm",
+  "video/webm",
+  "audio/ogg",
+  "audio/flac",
+  "audio/x-flac",
+]);
+
+export function isAudioMimeType(mimeType: string): boolean {
+  return SUPPORTED_AUDIO_MIMES.has(mimeType);
+}
+
 export function getValidatedMimeType(fileName: string): string | undefined {
   const dotIdx = fileName.lastIndexOf(".");
   if (dotIdx < 0) return undefined;
@@ -123,8 +153,5 @@ export function getValidatedMimeType(fileName: string): string | undefined {
   return EXTENSION_TO_MIME.get(ext);
 }
 
-/** Allowed file extensions for client-side validation */
 export const ALLOWED_EXTENSIONS = new Set(EXTENSION_TO_MIME.keys());
-
-/** List of allowed extensions for display purposes */
 export const ALLOWED_EXTENSION_LIST = [...ALLOWED_EXTENSIONS];

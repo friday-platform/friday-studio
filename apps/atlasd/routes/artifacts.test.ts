@@ -2,6 +2,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import {
+  MAX_AUDIO_SIZE,
   MAX_FILE_SIZE,
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
@@ -277,10 +278,8 @@ describe("Upload endpoint", () => {
 
     expect(response.status).toEqual(415);
     const body = await response.json();
-    assertErrorResponse(
-      body,
-      "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF",
-    );
+    expect(body).toHaveProperty("error");
+    expect((body as { error: string }).error).toMatch(/^File type not allowed\. Supported:/);
   });
 
   it("rejects corrupt PDFs with user-friendly error", async () => {
@@ -1266,9 +1265,9 @@ describe("Mismatched extension rejection", () => {
     // Should get a user-facing error, not a 500 stacktrace
     expect(response.status).toEqual(500);
     const body = await response.json();
-    assertErrorResponse(
-      body,
-      "Detected ZIP content, which is not a supported format. Supported: PDF, DOCX, PPTX, PNG, JPG, WebP, GIF",
+    expect(body).toHaveProperty("error");
+    expect((body as { error: string }).error).toMatch(
+      /^Detected ZIP content, which is not a supported format\. Supported:/,
     );
   });
 });
@@ -1463,6 +1462,75 @@ describe("Image upload integration", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Audio upload tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Minimal valid MP3 frame header (MPEG1 Layer3, 128kbps, 44100Hz, stereo) + padding */
+const TINY_MP3 = new Uint8Array([0xff, 0xfb, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+describe("Audio upload integration", () => {
+  it("creates file artifact for MP3 upload", async () => {
+    const file = new File([TINY_MP3.buffer], "recording.mp3", { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("chatId", "test-chat-audio");
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(201);
+    const body = ArtifactResponseSchema.parse(await response.json());
+    expect(body.artifact.data.type).toEqual("file");
+    expect(body.artifact.title).toEqual("recording.mp3");
+    expect(body.artifact.chatId).toEqual("test-chat-audio");
+  });
+
+  it("stores audio with originalName", async () => {
+    const file = new File([TINY_MP3.buffer], "voice-memo.mp3", { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const { artifact } = FileArtifactResponseSchema.parse(await uploadResponse.json());
+
+    expect(artifact.data.type).toEqual("file");
+    expect(artifact.data.data.originalName).toEqual("voice-memo.mp3");
+  });
+
+  it("uses 'Audio: {originalName}' as summary", async () => {
+    const file = new File([TINY_MP3.buffer], "meeting.mp3", { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    expect(uploadResponse.status).toEqual(201);
+    const body = await uploadResponse.json();
+    const parsed = ArtifactResponseSchema.parse(body);
+    const summary = (parsed.artifact as { summary?: string }).summary;
+    expect(summary).toEqual("Audio: meeting.mp3");
+  });
+
+  it("rejects audio over 25MB with 413", async () => {
+    const largeContent = createLargeBuffer(MAX_AUDIO_SIZE + 1);
+    const file = new File([largeContent], "huge.mp3", { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(413);
+    const body = await response.json();
+    assertErrorResponse(body, "Audio files must be under 25MB.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Content-based file routing integration tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1640,11 +1708,20 @@ describe("resolveFileType", () => {
 
   it("returns undefined for unsupported detected MIME", async () => {
     const result = await resolveFileType(
+      { mime: "application/x-msdownload", ext: "exe" },
+      join(tempDir, "unused.bin"),
+      "program.exe",
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("returns audio/mpeg for detected MP3 content", async () => {
+    const result = await resolveFileType(
       { mime: "audio/mpeg", ext: "mp3" },
       join(tempDir, "unused.bin"),
       "song.mp3",
     );
-    expect(result).toBeUndefined();
+    expect(result).toBe("audio/mpeg");
   });
 
   it("returns DOCX MIME when ZIP contains word/document.xml", async () => {

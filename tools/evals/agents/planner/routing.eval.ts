@@ -110,6 +110,30 @@ const cases: RoutingCase[] = [
     expectedCapabilities: ["email"],
     forbiddenCapabilities: ["google-gmail"],
   },
+  {
+    id: "transcribe-audio",
+    name: "bundled - transcribe audio file",
+    input: "Transcribe this audio file",
+    expectedCapabilities: ["transcribe"],
+  },
+  {
+    id: "voice-memo-to-text",
+    name: "bundled - voice memo to text",
+    input: "What does this voice memo say?",
+    expectedCapabilities: ["transcribe"],
+  },
+  {
+    id: "transcribe-and-summarize",
+    name: "bundled - transcribe and summarize",
+    input: "Transcribe this recording and summarize the key points",
+    expectedCapabilities: ["transcribe"],
+  },
+  {
+    id: "convert-recording-to-text",
+    name: "bundled - convert recording to text",
+    input: "Convert this recording to text",
+    expectedCapabilities: ["transcribe"],
+  },
 
   // -------------------------------------------------------------------------
   // MCP server cases

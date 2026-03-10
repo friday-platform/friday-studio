@@ -5,10 +5,6 @@
   import { formatFileSize } from "$lib/utils/files.svelte";
   import { onDestroy } from "svelte";
 
-  /**
-   * Self-contained file upload dropzone for `format: "artifact-ref"` schema fields.
-   * Renders a dropzone, handles upload lifecycle, and fires onchange with the artifact ID.
-   */
   type Props = {
     fieldName: string;
     label?: string;
@@ -41,14 +37,9 @@
     uploading = status === "uploading" || status === "converting";
   });
 
-  /** Percentage of upload complete. */
   let percentage = $derived(file && file.size > 0 ? Math.round((progress / file.size) * 100) : 0);
-
-  /** Accept string for file input. */
   const acceptString = ALLOWED_EXTENSION_LIST.join(",");
-
-  /** Human-readable file type hint. */
-  const fileTypeHint = "CSV, PDF, DOCX, PPTX, images";
+  const fileTypeHint = "CSV, PDF, DOCX, PPTX, images, audio";
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();

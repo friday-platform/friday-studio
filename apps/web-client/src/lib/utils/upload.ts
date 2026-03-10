@@ -1,20 +1,12 @@
-/**
- * Shared file upload utility.
- *
- * Handles client-side validation, simple vs chunked upload routing,
- * progress tracking, and abort support. Used by both the chat file drop
- * flow and workspace resource uploads.
- *
- * @module
- */
-
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
   CHUNK_SIZE,
   CHUNKED_UPLOAD_THRESHOLD,
   EXTENSION_TO_MIME,
+  isAudioMimeType,
   isImageMimeType,
+  MAX_AUDIO_SIZE,
   MAX_FILE_SIZE,
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
@@ -23,7 +15,6 @@ import {
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
 
-/** Upload lifecycle status. */
 export type UploadStatus = "uploading" | "converting" | "ready" | "error";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,26 +38,16 @@ const StatusPollResponseSchema = z.object({
 // Uses shared constants from @atlas/core/artifacts/file-upload
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Validates a file for upload eligibility.
- * Checks size first, then MIME type, then extension fallback.
- * This is UX enhancement only - server must still validate.
- *
- * @param file - The File object to validate
- * @returns Discriminated union: { valid: true } or { valid: false, error: string }
- */
+/** Client-side UX validation only -- server still validates. */
 export function validateFile(file: File): { valid: true } | { valid: false; error: string } {
-  // Empty file check (quick, definitive)
   if (file.size === 0) {
     return { valid: false, error: "File is empty." };
   }
 
-  // Size check first (quick, definitive)
   if (file.size > MAX_FILE_SIZE) {
     return { valid: false, error: "File too large. Maximum size is 500MB." };
   }
 
-  // Binary-to-markdown formats have a lower size limit due to memory usage during extraction
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
   if (ext === ".pdf" && file.size > MAX_PDF_SIZE) {
     const maxMB = Math.round(MAX_PDF_SIZE / (1024 * 1024));
@@ -81,13 +62,16 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
   if (mimeForExt && isImageMimeType(mimeForExt) && file.size > MAX_IMAGE_SIZE) {
     return { valid: false, error: "Image files must be under 5MB." };
   }
+  if (mimeForExt && isAudioMimeType(mimeForExt) && file.size > MAX_AUDIO_SIZE) {
+    const maxMB = Math.round(MAX_AUDIO_SIZE / (1024 * 1024));
+    return { valid: false, error: `Audio files must be under ${maxMB}MB.` };
+  }
 
-  // MIME type check (browser-provided, may be empty)
   if (file.type && ALLOWED_MIME_TYPES.has(file.type)) {
     return { valid: true };
   }
 
-  // Extension fallback (handles empty/generic MIME types)
+  // Fallback: browser MIME can be empty/generic
   if (ALLOWED_EXTENSIONS.has(ext)) {
     return { valid: true };
   }
@@ -95,7 +79,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
   return {
     valid: false,
     error:
-      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, WebP, and GIF files are allowed.",
+      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, WebP, GIF, and audio files (MP3, MP4, M4A, WAV, WebM, OGG, FLAC) are allowed.",
   };
 }
 
@@ -116,13 +100,6 @@ interface UploadOptions {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Extracts an error message from an unknown response body using ErrorResponseSchema.
- *
- * @param data - Unknown response body to parse
- * @param fallback - Fallback message if parsing fails
- * @returns The extracted error string or the fallback
- */
 function extractError(data: unknown, fallback: string): string {
   const parsed = ErrorResponseSchema.safeParse(data);
   return parsed.success ? parsed.data.error : fallback;
@@ -132,16 +109,7 @@ function extractError(data: unknown, fallback: string): string {
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Uploads a file to the server with client-side validation.
- * Automatically picks single-request or chunked upload based on file size.
- * Passes optional fields (workspaceId, artifactId) through
- * to the server for artifact creation or replacement.
- *
- * @param file - The File to upload
- * @param opts - Upload options (chatId, workspaceId, artifactId, callbacks)
- * @returns Discriminated union: { artifactId: string } on success, { error: string } on failure
- */
+/** Upload a file, routing to simple or chunked path based on size. */
 async function uploadArtifact(
   file: File,
   opts?: UploadOptions,
@@ -157,12 +125,7 @@ async function uploadArtifact(
   return await uploadFileSimple(file, opts);
 }
 
-/**
- * Uploads a file to the server. Automatically picks single-request or chunked
- * upload based on file size.
- *
- * @deprecated Use uploadArtifact instead
- */
+/** @deprecated Use uploadArtifact instead. */
 export function uploadFile(
   file: File,
   chatId?: string,
@@ -177,9 +140,6 @@ export function uploadFile(
 // Simple upload (XHR for progress tracking)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Single-request upload via XHR (for files below CHUNKED_UPLOAD_THRESHOLD).
- */
 function uploadFileSimple(
   file: File,
   opts?: UploadOptions,
@@ -246,11 +206,6 @@ function uploadFileSimple(
 // Chunked upload
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Chunked upload with per-chunk retry and resume support.
- * Splits file into CHUNK_SIZE pieces, uploads sequentially,
- * and retries each chunk up to 3 times with exponential backoff.
- */
 async function uploadFileChunked(
   file: File,
   opts?: UploadOptions,

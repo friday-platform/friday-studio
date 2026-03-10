@@ -10,6 +10,7 @@ import { googleCalendarAgent } from "./google/calendar.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
+import { transcriptionAgent } from "./transcription/agent.ts";
 import { webSearchAgent } from "./web-search/web-search.ts";
 
 /**
@@ -28,6 +29,7 @@ export const bundledAgents: AtlasAgent[] = [
   csvFilterSamplerAgent,
   dataAnalystAgent,
   tableAgent,
+  transcriptionAgent,
 ];
 
 /**
@@ -49,16 +51,12 @@ export type BundledAgentConfigField =
     }
   | { from: "link"; envKey: string; provider: string; key: string; description: string };
 
-/**
- * Converts agent environment config to registry config fields.
- * Maps from AgentEnvironmentConfig (on agent metadata) to BundledAgentConfigField[] (for registry consumers).
- */
+/** Converts agent environment config to registry config fields. */
 function toConfigFields(envConfig: AgentEnvironmentConfig["required"]): BundledAgentConfigField[] {
   if (!envConfig) return [];
 
   return envConfig.map((field): BundledAgentConfigField => {
     if (field.linkRef) {
-      // Link credential reference
       return {
         from: "link",
         envKey: field.name,
@@ -67,20 +65,16 @@ function toConfigFields(envConfig: AgentEnvironmentConfig["required"]): BundledA
         description: field.description,
       };
     }
-    // Plain environment variable
     return {
       from: "env",
       key: field.name,
       description: field.description,
-      type: "string", // Default type, could be enhanced if agent metadata includes type info
+      type: "string",
       validation: field.validation,
     };
   });
 }
 
-/**
- * Converts optional env config to registry config fields.
- */
 function toOptionalConfigFields(
   envConfig: AgentEnvironmentConfig["optional"],
 ): BundledAgentConfigField[] {
@@ -97,28 +91,18 @@ function toOptionalConfigFields(
   );
 }
 
-/**
- * Derive a registry entry from an agent instance.
- * Extracts all metadata from the agent, converts schemas to JSON Schema.
- */
 function deriveRegistryEntry(agent: AtlasAgent) {
   const { metadata, environmentConfig } = agent;
 
   return {
-    // Identity
     id: metadata.id,
     name: metadata.displayName ?? metadata.id,
     description: metadata.description,
     version: metadata.version,
-
-    // Classification
     examples: metadata.expertise.examples,
-
-    // Configuration (derived from environment config)
     requiredConfig: toConfigFields(environmentConfig?.required),
     optionalConfig: toOptionalConfigFields(environmentConfig?.optional),
 
-    // Schemas (Zod → JSON Schema, engine compatibility enforced by registry.test.ts)
     // Cast: Zod's JSON Schema type allows boolean sub-schemas (draft 2020-12),
     // which our engine doesn't use. The test guarantees no data loss.
     inputJsonSchema: metadata.inputSchema
@@ -147,7 +131,4 @@ export const bundledAgentsRegistry = Object.fromEntries(
   bundledAgents.map((agent) => [agent.metadata.id, deriveRegistryEntry(agent)]),
 ) as Record<string, ReturnType<typeof deriveRegistryEntry>>;
 
-/**
- * Type of a registry entry, inferred from the derived registry.
- */
 export type BundledAgentRegistryEntry = (typeof bundledAgentsRegistry)[string];
