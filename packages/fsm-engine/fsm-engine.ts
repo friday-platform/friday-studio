@@ -257,6 +257,58 @@ function validateAndFixFunctionSyntax(code: string, functionName: string): strin
   );
 }
 
+/** Max characters per tool result when formatting for retry context */
+const MAX_RETRY_TOOL_RESULT_CHARS = 4000;
+
+/** Max total characters for all tool results in retry context */
+const MAX_RETRY_TOOL_CONTEXT_CHARS = 50_000;
+
+/**
+ * Format tool results from a previous LLM attempt into a readable text block
+ * for injection into the retry prompt. Gives the retry LLM visibility into
+ * data it already fetched so it can fix its reasoning without re-calling tools.
+ */
+export function formatToolResultsForRetry(trace: LLMActionTrace): string {
+  if (!trace.toolResults?.length) return "";
+
+  const parts: string[] = [];
+  let totalLen = 0;
+
+  for (let i = 0; i < trace.toolResults.length; i++) {
+    const tr = trace.toolResults[i];
+    if (!tr) continue;
+
+    const toolName = tr.toolName ?? "unknown";
+    const inputText = tr.input != null ? ` | input: ${JSON.stringify(tr.input)}` : "";
+    const header = `=== Tool Result ${i + 1}: ${toolName}${inputText} ===`;
+
+    let outputText: string;
+    try {
+      const raw = typeof tr.output === "string" ? tr.output : JSON.stringify(tr.output, null, 2);
+      outputText =
+        raw.length > MAX_RETRY_TOOL_RESULT_CHARS
+          ? `${raw.slice(0, MAX_RETRY_TOOL_RESULT_CHARS)}…[truncated]`
+          : raw;
+    } catch {
+      outputText = "[Failed to serialize]";
+    }
+
+    const entry = `${header}\n${outputText}`;
+    // Account for "\n\n" join separator between entries
+    const separatorLen = parts.length > 0 ? 2 : 0;
+
+    if (totalLen + separatorLen + entry.length > MAX_RETRY_TOOL_CONTEXT_CHARS) {
+      parts.push(`…[${trace.toolResults.length - i} more tool results truncated for size]`);
+      break;
+    }
+
+    parts.push(entry);
+    totalLen += separatorLen + entry.length;
+  }
+
+  return parts.join("\n\n");
+}
+
 /**
  * Build LLMActionTrace from an LLM result envelope for hallucination detection.
  * Passes through AI SDK tool types directly without transformation.
@@ -1111,12 +1163,21 @@ export class FSMEngine {
                   feedback: validation.feedback,
                 });
 
+                // Include previous tool results so the retry LLM can see data
+                // it already fetched and fix its reasoning without re-calling tools.
+                const previousToolContext = formatToolResultsForRetry(trace);
+
                 const retryPrompt =
                   `${contextPrompt}\n\n` +
+                  (previousToolContext
+                    ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
+                    : "") +
                   `<validation-feedback>\n${
                     validation.feedback ?? "Output failed validation."
                   }\n</validation-feedback>\n` +
-                  `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
+                  (previousToolContext
+                    ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
+                    : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
 
                 // Rebuild messages with retry prompt, preserving image parts from the original call
                 const retryMessages: CoreMessage[] | undefined =

@@ -2,7 +2,7 @@ import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
-import { buildLLMActionTrace, FSMEngine } from "../fsm-engine.ts";
+import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMActionTrace, OutputValidator } from "../types.ts";
 
 /**
@@ -538,5 +538,324 @@ describe("LLM Action Validation Hook", () => {
     expect(retryTrace?.toolResults?.[0]?.toolName).toEqual("lookup");
     expect(retryTrace?.toolResults?.[0]?.output).toEqual({ name: "fresh data" });
     expect(retryTrace?.toolCalls?.[0]?.toolName).toEqual("lookup");
+  });
+
+  it("retry prompt includes previous tool results for LLM context", async () => {
+    const originalToolResults: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "tc1",
+        toolName: "resource_read",
+        input: { slug: "seen_issues" },
+        output: { data: [{ id: "ISSUE-1" }, { id: "ISSUE-2" }] },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "tc2",
+        toolName: "search_issues",
+        input: { project: "web" },
+        output: { issues: [{ id: "ISSUE-1" }, { id: "ISSUE-3" }] },
+      },
+    ];
+
+    // Capture prompts passed to the LLM
+    const llmPrompts: string[] = [];
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test", sessionId: "test-session" };
+
+    const fsm: FSMDefinition = {
+      id: "retry-prompt-test",
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Check for new issues",
+                  outputTo: "output",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    let callCount = 0;
+    const mockLLMProvider: import("../types.ts").LLMProvider = {
+      call: (params) => {
+        llmPrompts.push(params.prompt);
+        callCount++;
+        const response =
+          callCount === 1
+            ? {
+                content: "Found ISSUE-1 and ISSUE-3 as new",
+                toolCalls: [
+                  {
+                    type: "tool-call" as const,
+                    toolCallId: "tc1",
+                    toolName: "resource_read",
+                    input: { slug: "seen_issues" },
+                  },
+                  {
+                    type: "tool-call" as const,
+                    toolCallId: "tc2",
+                    toolName: "search_issues",
+                    input: { project: "web" },
+                  },
+                ],
+                toolResults: originalToolResults,
+              }
+            : { content: "Only ISSUE-3 is new" };
+        return Promise.resolve(mockToEnvelope(response, params.agentId, params.prompt));
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      validateOutput: (trace) => {
+        if (trace.content.includes("ISSUE-1 and ISSUE-3")) {
+          return Promise.resolve({
+            valid: false,
+            feedback: "ISSUE-1 was already in the seen table",
+          });
+        }
+        return Promise.resolve({ valid: true });
+      },
+    });
+    await engine.initialize();
+    await engine.signal({ type: "RUN" });
+
+    expect(callCount).toEqual(2);
+    // Retry prompt should contain previous tool results
+    const retryPrompt = llmPrompts[1];
+    expect(retryPrompt).toContain("<previous-attempt-tool-results>");
+    expect(retryPrompt).toContain("resource_read");
+    expect(retryPrompt).toContain("ISSUE-1");
+    expect(retryPrompt).toContain("ISSUE-2");
+    expect(retryPrompt).toContain("search_issues");
+    expect(retryPrompt).toContain("<validation-feedback>");
+    expect(retryPrompt).toContain("ISSUE-1 was already in the seen table");
+    expect(retryPrompt).toContain("tool results above");
+  });
+
+  it("retry prompt without tool results does not reference tool results above", async () => {
+    const llmPrompts: string[] = [];
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "test", sessionId: "test-session" };
+
+    const fsm: FSMDefinition = {
+      id: "no-tools-retry-test",
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Summarize",
+                  outputTo: "output",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    let callCount = 0;
+    const mockLLMProvider: import("../types.ts").LLMProvider = {
+      call: (params) => {
+        llmPrompts.push(params.prompt);
+        callCount++;
+        const response = callCount === 1 ? { content: "bad summary" } : { content: "good summary" };
+        return Promise.resolve(mockToEnvelope(response, params.agentId, params.prompt));
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      validateOutput: (trace) => {
+        if (trace.content === "bad summary") {
+          return Promise.resolve({ valid: false, feedback: "Too short" });
+        }
+        return Promise.resolve({ valid: true });
+      },
+    });
+    await engine.initialize();
+    await engine.signal({ type: "RUN" });
+
+    expect(callCount).toEqual(2);
+    const retryPrompt = llmPrompts[1];
+    expect(retryPrompt).not.toContain("<previous-attempt-tool-results>");
+    expect(retryPrompt).not.toContain("tool results above");
+    expect(retryPrompt).toContain("<validation-feedback>");
+    expect(retryPrompt).toContain("Too short");
+    expect(retryPrompt).toContain("feedback above");
+  });
+});
+
+/**
+ * Part 3: Pure Function Tests for formatToolResultsForRetry
+ */
+describe("formatToolResultsForRetry", () => {
+  it("returns empty string when no tool results", () => {
+    const trace: LLMActionTrace = { content: "hello", model: "test", prompt: "test" };
+    expect(formatToolResultsForRetry(trace)).toEqual("");
+  });
+
+  it("returns empty string for empty tool results array", () => {
+    const trace: LLMActionTrace = {
+      content: "hello",
+      toolResults: [],
+      model: "test",
+      prompt: "test",
+    };
+    expect(formatToolResultsForRetry(trace)).toEqual("");
+  });
+
+  it("formats tool results with name, input, and output", () => {
+    const trace: LLMActionTrace = {
+      content: "result",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "tc1",
+          toolName: "search",
+          input: { query: "test" },
+          output: { hits: 42 },
+        },
+      ],
+      model: "test",
+      prompt: "test",
+    };
+    const formatted = formatToolResultsForRetry(trace);
+    expect(formatted).toContain("=== Tool Result 1: search");
+    expect(formatted).toContain('"query":"test"'); // compact JSON in header
+    expect(formatted).toContain('"hits": 42'); // pretty-printed JSON in body
+  });
+
+  it("truncates large tool outputs", () => {
+    const largeOutput = "x".repeat(10000);
+    const trace: LLMActionTrace = {
+      content: "result",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "tc1",
+          toolName: "big_tool",
+          input: {},
+          output: largeOutput,
+        },
+      ],
+      model: "test",
+      prompt: "test",
+    };
+    const formatted = formatToolResultsForRetry(trace);
+    expect(formatted).toContain("…[truncated]");
+    expect(formatted.length).toBeLessThan(largeOutput.length);
+  });
+
+  it("formats multiple tool results", () => {
+    const trace: LLMActionTrace = {
+      content: "result",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "tc1",
+          toolName: "tool_a",
+          input: {},
+          output: "output_a",
+        },
+        {
+          type: "tool-result",
+          toolCallId: "tc2",
+          toolName: "tool_b",
+          input: { key: "val" },
+          output: "output_b",
+        },
+      ],
+      model: "test",
+      prompt: "test",
+    };
+    const formatted = formatToolResultsForRetry(trace);
+    expect(formatted).toContain("=== Tool Result 1: tool_a");
+    expect(formatted).toContain("=== Tool Result 2: tool_b");
+    expect(formatted).toContain("output_a");
+    expect(formatted).toContain("output_b");
+  });
+
+  it("handles undefined output via serialization fallback", () => {
+    const trace: LLMActionTrace = {
+      content: "result",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "tc1",
+          toolName: "broken_tool",
+          input: {},
+          output: undefined,
+        },
+      ],
+      model: "test",
+      prompt: "test",
+    };
+    const formatted = formatToolResultsForRetry(trace);
+    // JSON.stringify(undefined) returns undefined, triggering the catch path
+    expect(formatted).toContain("=== Tool Result 1: broken_tool");
+    expect(formatted).toContain("[Failed to serialize]");
+  });
+
+  it("truncates when total size exceeds budget", () => {
+    // Each result is ~5K chars, 15 results = ~75K > 50K budget
+    const bigOutput = "y".repeat(5000);
+    const results: ToolResult[] = Array.from({ length: 15 }, (_, i) => ({
+      type: "tool-result" as const,
+      toolCallId: `tc${i}`,
+      toolName: `tool_${i}`,
+      input: {},
+      output: bigOutput,
+    }));
+
+    const trace: LLMActionTrace = {
+      content: "result",
+      toolResults: results,
+      model: "test",
+      prompt: "test",
+    };
+    const formatted = formatToolResultsForRetry(trace);
+
+    // Should hit the total budget cap before all 15 results
+    expect(formatted).toContain("truncated for size");
+    // First result should be present
+    expect(formatted).toContain("=== Tool Result 1: tool_0");
+    // Should NOT contain the last result
+    expect(formatted).not.toContain("=== Tool Result 15: tool_14");
+
+    // Verify the reported remaining count is correct
+    const match = formatted.match(/(\d+) more tool results truncated for size/);
+    if (!match) throw new Error("Expected truncation message not found");
+    const reportedRemaining = Number(match[1]);
+    // Count how many results actually appear
+    const includedCount = (formatted.match(/=== Tool Result \d+:/g) ?? []).length;
+    expect(reportedRemaining + includedCount).toEqual(15);
+
+    // Total output should be under 50K budget + truncation message (~80 chars)
+    expect(formatted.length).toBeLessThan(50_200);
   });
 });
