@@ -158,7 +158,7 @@
     "npm:prosemirror-commands@^1.7.1": "1.7.1",
     "npm:prosemirror-dropcursor@^1.8.2": "1.8.2",
     "npm:prosemirror-example-setup@^1.2.3": "1.2.3",
-    "npm:prosemirror-gapcursor@^1.4.0": "1.4.0",
+    "npm:prosemirror-gapcursor@^1.4.1": "1.4.1",
     "npm:prosemirror-history@^1.5.0": "1.5.0",
     "npm:prosemirror-inputrules@^1.5.1": "1.5.1",
     "npm:prosemirror-keymap@^1.2.3": "1.2.3",
@@ -5171,8 +5171,8 @@
         "prosemirror-state"
       ]
     },
-    "prosemirror-gapcursor@1.4.0": {
-      "integrity": "sha512-z00qvurSdCEWUIulij/isHaqu4uLS8r/Fi61IbjdIPJEonQgggbJsLnstW7Lgdk4zQ68/yr6B6bf7sJXowIgdQ==",
+    "prosemirror-gapcursor@1.4.1": {
+      "integrity": "sha512-pMdYaEnjNMSwl11yjEGtgTmLkR08m/Vl+Jj443167p9eB3HVQKhYCc4gmHVDsLPODfZfjr/MmirsdyZziXbQKw==",
       "dependencies": [
         "prosemirror-keymap",
         "prosemirror-model",
@@ -6537,7 +6537,7 @@
             "npm:prosemirror-commands@^1.7.1",
             "npm:prosemirror-dropcursor@^1.8.2",
             "npm:prosemirror-example-setup@^1.2.3",
-            "npm:prosemirror-gapcursor@^1.4.0",
+            "npm:prosemirror-gapcursor@^1.4.1",
             "npm:prosemirror-history@^1.5.0",
             "npm:prosemirror-inputrules@^1.5.1",
             "npm:prosemirror-keymap@^1.2.3",
