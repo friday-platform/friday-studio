@@ -46,6 +46,7 @@ RUN rm -rf packages/ui node_modules/@atlas/ui
 RUN OTEL_DENO=true deno compile \
     --include=apps/atlas-cli \
     --include=packages \
+    --include=node_modules/@opentelemetry \
     --allow-all \
     --no-check \
     --output=atlas \
