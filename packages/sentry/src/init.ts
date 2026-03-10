@@ -13,6 +13,43 @@ export function isInitialized(): boolean {
   return initialized;
 }
 
+/**
+ * Strip compile-time absolute path prefixes from stack frame filenames.
+ *
+ * `deno compile` bakes the build-time CWD into all module paths
+ * (e.g. `/tmp/deno-compile-atlas/apps/atlasd/src/atlas-daemon.ts`).
+ * Sentry can't resolve these, showing `?` in culprit lines.
+ * Rewriting to repo-relative paths makes frames actionable.
+ *
+ * Uses `beforeSend` instead of `rewriteFramesIntegration` because the
+ * built-in integration only processes exception frames — it skips
+ * `event.threads` entirely (verified in @sentry/core@10.42.0).
+ */
+const COMPILE_PATH_PREFIX = /^.*?\/(apps\/|packages\/|tools\/|scripts\/|node_modules\/|examples\/)/;
+
+function stripPrefix(frame: Sentry.StackFrame): void {
+  if (frame.filename) {
+    frame.filename = frame.filename.replace(COMPILE_PATH_PREFIX, "$1");
+  }
+  if (frame.abs_path) {
+    frame.abs_path = frame.abs_path.replace(COMPILE_PATH_PREFIX, "$1");
+  }
+}
+
+export function rewriteFrames(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+  for (const exception of event.exception?.values ?? []) {
+    for (const frame of exception.stacktrace?.frames ?? []) {
+      stripPrefix(frame);
+    }
+  }
+  for (const thread of event.threads?.values ?? []) {
+    for (const frame of thread.stacktrace?.frames ?? []) {
+      stripPrefix(frame);
+    }
+  }
+  return event;
+}
+
 export function initSentry(): void {
   if (initialized) return;
 
@@ -29,6 +66,7 @@ export function initSentry(): void {
       release: `atlas@${release}`,
       tracesSampleRate: 1.0,
       sendDefaultPii: true,
+      beforeSend: rewriteFrames,
       // Disable denoServeIntegration — its monitorStream() calls reader.releaseLock()
       // after observing reader.closed, which throws in Deno's streams implementation.
       // This crashes the daemon on every SSE response teardown.

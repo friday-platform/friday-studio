@@ -11,6 +11,7 @@ import {
   toIdRefs,
   toProviderRefs,
 } from "@atlas/config/mutations";
+import { SessionFailedError } from "@atlas/core";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
@@ -945,6 +946,10 @@ const workspacesRoutes = daemonFactory
         });
       } catch (error) {
         const errorMessage = stringifyError(error);
+        if (error instanceof SessionFailedError) {
+          logger.warn("Signal session failed", { error });
+          return c.json({ error: errorMessage }, 422);
+        }
         logger.error("Failed to process signal", { error });
         if (errorMessage.includes("Workspace not found")) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);

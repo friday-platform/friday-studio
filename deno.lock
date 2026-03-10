@@ -6752,7 +6752,8 @@
       "packages/sentry": {
         "packageJson": {
           "dependencies": [
-            "npm:@sentry/deno@^10.42.0"
+            "npm:@sentry/deno@^10.42.0",
+            "npm:vitest@^4.0.18"
           ]
         }
       },

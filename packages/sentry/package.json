@@ -3,5 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "dependencies": { "@sentry/deno": "^10.42.0" }
+  "dependencies": { "@sentry/deno": "^10.42.0" },
+  "devDependencies": { "vitest": "^4.0.18" }
 }

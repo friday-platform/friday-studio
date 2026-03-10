@@ -49,18 +49,23 @@ const PostToolsSchema = z.object({
  */
 export const mcpRoute = new Hono()
   .get("/servers", (c) => {
-    const servers = Object.values(mcpServersRegistry.servers).map((server) => ({
-      id: server.id,
-      name: server.name,
-      description: server.description ?? "",
-      transportType: server.configTemplate.transport.type,
-      requiredConfig: (server.requiredConfig ?? []).map((field) => ({
-        key: field.key,
-        description: field.description,
-      })),
-    }));
+    try {
+      const servers = Object.values(mcpServersRegistry.servers).map((server) => ({
+        id: server.id,
+        name: server.name,
+        description: server.description ?? "",
+        transportType: server.configTemplate.transport.type,
+        requiredConfig: (server.requiredConfig ?? []).map((field) => ({
+          key: field.key,
+          description: field.description,
+        })),
+      }));
 
-    return c.json(servers);
+      return c.json(servers);
+    } catch (error) {
+      logger.error("Failed to list MCP servers", { error });
+      return c.json({ error: "Failed to list MCP servers" }, 500);
+    }
   })
   .post("/tools", zValidator("json", PostToolsSchema), async (c) => {
     const { serverIds, env: userEnv } = c.req.valid("json");
