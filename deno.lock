@@ -134,7 +134,7 @@
     "npm:jsonrepair@^3.13.2": "3.13.2",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@5.86.0": "5.86.0_@types+node@25.3.3_typescript@5.9.3",
-    "npm:lint-staged@^16.3.2": "16.3.2",
+    "npm:lint-staged@^16.3.3": "16.3.3",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:minimatch@^10.2.4": "10.2.4",
     "npm:nanoid@5.1.6": "5.1.6",
@@ -4227,8 +4227,8 @@
         "uc.micro"
       ]
     },
-    "lint-staged@16.3.2": {
-      "integrity": "sha512-xKqhC2AeXLwiAHXguxBjuChoTTWFC6Pees0SHPwOpwlvI3BH7ZADFPddAdN3pgo3aiKgPUx/bxE78JfUnxQnlg==",
+    "lint-staged@16.3.3": {
+      "integrity": "sha512-RLq2koZ5fGWrx7tcqx2tSTMQj4lRkfNJaebO/li/uunhCJbtZqwTuwPHpgIimAHHi/2nZIiGrkCHDCOeR1onxA==",
       "dependencies": [
         "commander",
         "listr2",
@@ -6314,7 +6314,7 @@
         "npm:@types/turndown@^5.0.6",
         "npm:@vitest/coverage-v8@4.0.18",
         "npm:knip@5.86.0",
-        "npm:lint-staged@^16.3.2",
+        "npm:lint-staged@^16.3.3",
         "npm:nanoid@^5.1.6",
         "npm:vitest@^4.0.18"
       ]

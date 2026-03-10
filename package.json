@@ -20,7 +20,7 @@
     "@atlas/workspace": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
-    "lint-staged": "^16.3.2",
+    "lint-staged": "^16.3.3",
     "nanoid": "^5.1.6"
   },
   "devDependencies": {
