@@ -129,7 +129,7 @@
     "npm:jose@6.2.1": "6.2.1",
     "npm:jose@^6.1.3": "6.2.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
-    "npm:jsonrepair@^3.13.2": "3.13.3",
+    "npm:jsonrepair@^3.13.3": "3.13.3",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@5.86.0": "5.86.0_@types+node@25.4.0_typescript@5.9.3",
     "npm:lint-staged@^16.3.3": "16.3.3",
@@ -6438,7 +6438,7 @@
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.151",
-            "npm:jsonrepair@^3.13.2",
+            "npm:jsonrepair@^3.13.3",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
