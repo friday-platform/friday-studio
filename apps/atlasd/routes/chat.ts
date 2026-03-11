@@ -87,7 +87,7 @@ const chatRoutes = daemonFactory
       return c.json({ error: "Invalid message format" }, 400);
     }
 
-    const appendResult = await ChatStorage.appendMessage(chatId, userMessage);
+    const appendResult = await ChatStorage.appendMessage(chatId, userMessage, workspaceId);
     if (!appendResult.ok) {
       return c.json({ error: "Failed to store message" }, 500);
     }
@@ -261,8 +261,12 @@ const chatRoutes = daemonFactory
       return c.json({ error: "Invalid message format" }, 400);
     }
 
-    // Append the assistant message
-    const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage);
+    // Append the assistant message (use workspace ID from chat metadata for correct file path)
+    const appendResult = await ChatStorage.appendMessage(
+      chatId,
+      validatedMessage,
+      chatResult.data.workspaceId,
+    );
     if (!appendResult.ok) {
       logger.error("Failed to append assistant message", { chatId, error: appendResult.error });
       return c.json({ error: "Failed to append message" }, 500);

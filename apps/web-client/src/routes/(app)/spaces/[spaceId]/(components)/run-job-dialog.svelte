@@ -254,6 +254,7 @@
                     id={fieldId}
                     type="number"
                     value={formData[fieldName] ?? ""}
+                    placeholder={`Enter ${fieldLabel.toLowerCase()}`}
                     oninput={(e) => {
                       const val = e.currentTarget.value;
                       formData[fieldName] = val === "" ? undefined : Number(val);
@@ -266,6 +267,7 @@
                     id={fieldId}
                     type="text"
                     value={formData[fieldName] ?? ""}
+                    placeholder={`Enter ${fieldLabel.toLowerCase()}`}
                     oninput={(e) => {
                       formData[fieldName] = e.currentTarget.value;
                     }}
@@ -337,6 +339,7 @@
     color: var(--color-text);
     font-size: var(--font-size-2);
     opacity: 0.5;
+    overflow-wrap: break-word;
   }
 
   input[type="text"],

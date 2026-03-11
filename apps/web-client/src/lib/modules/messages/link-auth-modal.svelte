@@ -4,32 +4,56 @@
   import { stringifyError } from "@atlas/utils";
   import { Dialog } from "$lib/components/dialog";
   import type { Snippet } from "svelte";
+  import type { SecretField } from "./secret-fields";
 
   type Props = {
     provider: string;
     displayName: string;
-    secretFieldName: string;
+    secretFields: SecretField[];
     onSuccess: (credentialId: string) => void;
     triggerContents: Snippet;
   };
 
-  let { provider, displayName, secretFieldName, onSuccess, triggerContents }: Props = $props();
+  let { provider, displayName, secretFields, onSuccess, triggerContents }: Props = $props();
+
+  const SENSITIVE_PATTERNS = /password|secret|token|key/i;
 
   let label = $state("");
-  let apiKey = $state("");
+  let fieldValues = $state<Record<string, string>>({});
   let isSubmitting = $state(false);
   let error = $state<string | null>(null);
 
   function resetForm() {
     label = "";
-    apiKey = "";
+    fieldValues = {};
     error = null;
   }
 
+  function isSensitiveField(key: string): boolean {
+    return SENSITIVE_PATTERNS.test(key);
+  }
+
   async function handleSubmit(open: { set: (v: boolean) => void }) {
-    if (!label.trim() || !apiKey.trim()) {
-      error = "Both label and API key are required";
+    if (!label.trim()) {
+      error = "Label is required";
       return;
+    }
+
+    const missingRequired = secretFields
+      .filter((f) => f.required && !fieldValues[f.key]?.trim())
+      .map((f) => f.label);
+
+    if (missingRequired.length > 0) {
+      error = `Required: ${missingRequired.join(", ")}`;
+      return;
+    }
+
+    const secret: Record<string, string> = {};
+    for (const field of secretFields) {
+      const value = fieldValues[field.key]?.trim();
+      if (value) {
+        secret[field.key] = value;
+      }
     }
 
     isSubmitting = true;
@@ -40,7 +64,7 @@
       const result = await parseResult(
         client.link.v1.credentials[":type"].$put({
           param: { type: "apikey" },
-          json: { provider, label: label.trim(), secret: { [secretFieldName]: apiKey.trim() } },
+          json: { provider, label: label.trim(), secret },
         }),
       );
 
@@ -92,9 +116,9 @@
           }}
         >
           <div class="field">
-            <label for="label">Label</label>
+            <label for="link-auth-label">Label</label>
             <input
-              id="label"
+              id="link-auth-label"
               type="text"
               bind:value={label}
               placeholder="e.g., Work Account"
@@ -103,17 +127,21 @@
             />
           </div>
 
-          <div class="field">
-            <label for="apikey">API Key</label>
-            <input
-              id="apikey"
-              type="password"
-              bind:value={apiKey}
-              placeholder="Enter your API key"
-              disabled={isSubmitting}
-              required
-            />
-          </div>
+          {#each secretFields as field (field.key)}
+            <div class="field">
+              <label for="link-auth-{field.key}">{field.label}</label>
+              <input
+                id="link-auth-{field.key}"
+                type={isSensitiveField(field.key) ? "password" : "text"}
+                bind:value={fieldValues[field.key]}
+                placeholder={field.required
+                  ? `Enter ${field.label.toLowerCase()}`
+                  : `${field.label} (optional)`}
+                disabled={isSubmitting}
+                required={field.required}
+              />
+            </div>
+          {/each}
 
           {#if error}
             <div class="error">

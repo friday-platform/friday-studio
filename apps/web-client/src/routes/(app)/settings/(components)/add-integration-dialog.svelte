@@ -14,6 +14,11 @@
   import { Table } from "$lib/components/table";
   import Logo from "$lib/modules/integrations/logo-column.svelte";
   import LinkAuthModal from "$lib/modules/messages/link-auth-modal.svelte";
+  import {
+    schemaToSecretFields,
+    SecretSchemaShape,
+    type SecretField,
+  } from "$lib/modules/messages/secret-fields";
   import { tick } from "svelte";
   import { fade } from "svelte/transition";
   import { z } from "zod";
@@ -34,9 +39,11 @@
   } = createDialog({ forceVisible: true, portal: "body" });
 
   // Track which API key provider is being connected (rendered outside dialog)
-  let apiKeyProvider = $state<{ id: string; displayName: string; secretFieldName: string } | null>(
-    null,
-  );
+  let apiKeyProvider = $state<{
+    id: string;
+    displayName: string;
+    secretFields: SecretField[];
+  } | null>(null);
 
   let apiKeyTriggerEl = $state<HTMLElement | null>(null);
 
@@ -59,8 +66,6 @@
     credentialId: z.string(),
     provider: z.string(),
   });
-
-  const SecretSchemaShape = z.object({ required: z.array(z.string()) }).partial();
 
   let popupBlocked = $state(false);
   let popupBlockedProviderId = $state<string | null>(null);
@@ -185,14 +190,12 @@
     if (!result.ok) return;
 
     const parsed = SecretSchemaShape.safeParse(result.data.secretSchema);
-    const fieldName = parsed.success ? (parsed.data.required?.[0] ?? null) : null;
-    if (!fieldName) return;
+    if (!parsed.success) return;
 
-    apiKeyProvider = {
-      id: provider.id,
-      displayName: provider.displayName,
-      secretFieldName: fieldName,
-    };
+    const fields = schemaToSecretFields(parsed.data);
+    if (fields.length === 0) return;
+
+    apiKeyProvider = { id: provider.id, displayName: provider.displayName, secretFields: fields };
 
     // Wait for LinkAuthModal to render, then programmatically click its trigger
     await tick();
@@ -321,7 +324,7 @@
     <LinkAuthModal
       provider={apiKeyProvider.id}
       displayName={apiKeyProvider.displayName}
-      secretFieldName={apiKeyProvider.secretFieldName}
+      secretFields={apiKeyProvider.secretFields}
       onSuccess={handleApiKeySuccess}
     >
       {#snippet triggerContents()}

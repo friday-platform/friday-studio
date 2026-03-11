@@ -525,5 +525,5 @@ export const mcpServersRegistry: MCPServersRegistry = {
     // Google Workspace services (generated from GOOGLE_WORKSPACE_SERVICES)
     ...googleWorkspaceEntries,
   },
-  metadata: { version: "2.0.0", lastUpdated: "2025-01-27" },
+  metadata: { version: "2.1.0", lastUpdated: "2026-03-06" },
 };

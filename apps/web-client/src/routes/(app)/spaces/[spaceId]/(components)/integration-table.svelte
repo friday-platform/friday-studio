@@ -16,6 +16,11 @@
   import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
   import type { Integration } from "$lib/modules/integrations/types";
   import LinkAuthModal from "$lib/modules/messages/link-auth-modal.svelte";
+  import {
+    schemaToSecretFields,
+    SecretSchemaShape,
+    type SecretField,
+  } from "$lib/modules/messages/secret-fields";
   import { tick } from "svelte";
   import { z } from "zod";
   import ConnectCell from "./connect-cell.svelte";
@@ -29,16 +34,16 @@
     provider: z.string(),
   });
 
-  const SecretSchemaShape = z.object({ required: z.array(z.string()) }).partial();
-
   let popupBlocked = $state(false);
   let popupBlockedProviderId = $state<string | null>(null);
   let popupProviderType = $state<string | null>(null);
   let activeIntegration = $state<Integration | null>(null);
 
-  let apiKeyProvider = $state<{ id: string; displayName: string; secretFieldName: string } | null>(
-    null,
-  );
+  let apiKeyProvider = $state<{
+    id: string;
+    displayName: string;
+    secretFields: SecretField[];
+  } | null>(null);
   let apiKeyTriggerEl = $state<HTMLElement | null>(null);
 
   function handleOAuthMessage(event: MessageEvent) {
@@ -165,14 +170,16 @@
     if (!result.ok) return;
 
     const parsed = SecretSchemaShape.safeParse(result.data.secretSchema);
-    const fieldName = parsed.success ? (parsed.data.required?.[0] ?? null) : null;
-    if (!fieldName) return;
+    if (!parsed.success) return;
+
+    const fields = schemaToSecretFields(parsed.data);
+    if (fields.length === 0) return;
 
     activeIntegration = integration;
     apiKeyProvider = {
       id: integration.provider,
       displayName: integration.providerDetails.displayName,
-      secretFieldName: fieldName,
+      secretFields: fields,
     };
 
     await tick();
@@ -324,7 +331,7 @@
     <LinkAuthModal
       provider={apiKeyProvider.id}
       displayName={apiKeyProvider.displayName}
-      secretFieldName={apiKeyProvider.secretFieldName}
+      secretFields={apiKeyProvider.secretFields}
       onSuccess={handleApiKeySuccess}
     >
       {#snippet triggerContents()}

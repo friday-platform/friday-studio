@@ -10,6 +10,7 @@
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { z } from "zod";
   import LinkAuthModal from "./link-auth-modal.svelte";
+  import { schemaToSecretFields, SecretSchemaShape, type SecretField } from "./secret-fields";
   import MessageWrapper from "./wrapper.svelte";
 
   /** Schema for OAuth callback message from popup window */
@@ -31,7 +32,7 @@
     displayName: string;
     description: string;
     setupInstructions?: string;
-    secretSchema?: { required?: string[] };
+    secretFields?: SecretField[];
   } | null>(null);
   let error = $state<string | null>(null);
   let popupBlocked = $state(false);
@@ -48,13 +49,16 @@
         client.link.v1.providers[":id"].$get({ param: { id: provider } }),
       );
       if (result.ok) {
+        const parsed = SecretSchemaShape.safeParse(result.data.secretSchema);
+        const fields = parsed.success ? schemaToSecretFields(parsed.data) : undefined;
+
         providerDetails = {
           id: result.data.id,
           type: result.data.type,
           displayName: result.data.displayName,
           description: result.data.description,
           setupInstructions: result.data.setupInstructions,
-          secretSchema: result.data.secretSchema as { required?: string[] } | undefined,
+          secretFields: fields,
         };
       } else {
         error = "Failed to load provider details";
@@ -328,7 +332,7 @@
             </button>
           </div>
         {/if}
-      {:else if providerDetails.type === "apikey" && providerDetails.secretSchema?.required?.[0]}
+      {:else if providerDetails.type === "apikey" && providerDetails.secretFields && providerDetails.secretFields.length > 0}
         {#if providerDetails.setupInstructions}
           <div class="instructions">
             <MarkdownContent content={providerDetails.setupInstructions} />
@@ -337,7 +341,7 @@
         <LinkAuthModal
           provider={providerDetails.id}
           displayName={providerDetails.displayName}
-          secretFieldName={providerDetails.secretSchema.required[0]}
+          secretFields={providerDetails.secretFields}
           onSuccess={handleModalSuccess}
         >
           {#snippet triggerContents()}

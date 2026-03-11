@@ -6,6 +6,11 @@ import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
+import {
+  SnowflakeAnalystOutputSchema,
+  type SnowflakeAnalystResult,
+  snowflakeAnalystAgent,
+} from "./snowflake-analyst/agent.ts";
 import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
 import { TranscriptionOutputSchema, transcriptionAgent } from "./transcription/agent.ts";
@@ -19,6 +24,7 @@ export {
   emailAgent,
   fathomGetTranscriptAgent,
   googleCalendarAgent,
+  snowflakeAnalystAgent,
   webSearchAgent,
   slackCommunicatorAgent,
   summaryAgent,
@@ -32,11 +38,12 @@ export {
   GoogleCalendarOutputSchema,
   ResearchOutputSchema,
   SlackOutputSchema,
+  SnowflakeAnalystOutputSchema,
   SummaryOutputSchema,
   TranscriptionOutputSchema,
 };
 
-export type { DataAnalystResult, DiscoveredAudio, QueryExecution };
+export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
 
 export {
   type BundledAgentConfigField,

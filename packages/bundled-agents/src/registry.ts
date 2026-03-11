@@ -8,6 +8,7 @@ import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { googleCalendarAgent } from "./google/calendar.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
+import { snowflakeAnalystAgent } from "./snowflake-analyst/agent.ts";
 import { summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
 import { transcriptionAgent } from "./transcription/agent.ts";
@@ -28,6 +29,7 @@ export const bundledAgents: AtlasAgent[] = [
   claudeCodeAgent,
   csvFilterSamplerAgent,
   dataAnalystAgent,
+  snowflakeAnalystAgent,
   tableAgent,
   transcriptionAgent,
 ];

@@ -21,6 +21,7 @@ import { notionProvider } from "./notion.ts";
 import { posthogProvider } from "./posthog.ts";
 import { sentryProvider } from "./sentry.ts";
 import { createSlackAppInstallProvider } from "./slack-app.ts";
+import { snowflakeProvider } from "./snowflake.ts";
 import { getProviderStorageAdapter, type ProviderStorageAdapter } from "./storage/index.ts";
 import type { DynamicProviderInput, ProviderDefinition } from "./types.ts";
 
@@ -193,6 +194,7 @@ registry.register(atlassianProvider);
 registry.register(linearProvider);
 registry.register(sentryProvider);
 registry.register(posthogProvider);
+registry.register(snowflakeProvider);
 
 const hubspotProvider = createHubSpotProvider();
 if (hubspotProvider) {

@@ -217,6 +217,7 @@ export function wrapAtlasAgent(
     version: baseAgent.metadata.version,
     description: description || baseAgent.metadata.description,
     expertise: baseAgent.metadata.expertise,
+    environment: baseAgent.environmentConfig,
     handler: async (prompt, context) => {
       // Merge resolved env with context env
       const mergedContext = { ...context, env: { ...context.env, ...resolvedEnv } };

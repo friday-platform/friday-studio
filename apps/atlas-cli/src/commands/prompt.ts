@@ -13,13 +13,19 @@ interface PromptArgs {
   message: string;
   chat?: string;
   human: boolean;
+  workspace?: string;
 }
 
 export function builder(y: YargsInstance) {
   return y
     .positional("message", { type: "string", demandOption: true })
     .option("chat", { type: "string", describe: "Continue existing chat by ID" })
-    .option("human", { type: "boolean", default: false, describe: "Human-readable output" });
+    .option("human", { type: "boolean", default: false, describe: "Human-readable output" })
+    .option("workspace", {
+      type: "string",
+      alias: "w",
+      describe: "Workspace ID or name for workspace-scoped chat",
+    });
 }
 
 // Module-level state for tracking stream events
@@ -126,7 +132,11 @@ export const handler = async (argv: PromptArgs): Promise<void> => {
   Deno.addSignalListener("SIGINT", handleAbort);
 
   try {
-    const response = await fetch(`${daemonUrl}/api/chat`, {
+    const chatUrl = argv.workspace
+      ? `${daemonUrl}/api/workspaces/${encodeURIComponent(argv.workspace)}/chat`
+      : `${daemonUrl}/api/chat`;
+
+    const response = await fetch(chatUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

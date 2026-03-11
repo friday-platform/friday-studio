@@ -84,4 +84,12 @@ describe("fetchAndValidateArtifacts", () => {
       "No artifact IDs found in prompt",
     );
   });
+
+  test("throws when storage returns error", async () => {
+    getManyLatestMock.mockResolvedValue({ ok: false, error: "storage unavailable" });
+
+    await expect(fetchAndValidateArtifacts(["id-1"], mockLogger as never)).rejects.toThrow(
+      "Failed to fetch artifacts: storage unavailable",
+    );
+  });
 });

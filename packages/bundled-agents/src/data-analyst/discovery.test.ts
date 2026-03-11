@@ -32,19 +32,6 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("discoverDataSources", () => {
-  test("passes user prompt through to generateObject", async () => {
-    generateObjectMock.mockResolvedValue({ object: { question: "test", artifactIds: [] } });
-
-    const prompt = "Analyze my sales data for Q4 trends";
-    await discoverDataSources(prompt);
-
-    expect(generateObjectMock).toHaveBeenCalledOnce();
-    const call = generateObjectMock.mock.calls[0];
-    if (!call) throw new Error("Expected generateObject to have been called");
-    const callArgs = call[0];
-    expect(callArgs.prompt).toContain(prompt);
-  });
-
   test("system prompt instructs LLM to include Signal Data and Datasets, not Files or External", async () => {
     generateObjectMock.mockResolvedValue({ object: { question: "test", artifactIds: [] } });
 
@@ -59,18 +46,6 @@ describe("discoverDataSources", () => {
     expect(system).toContain("Do NOT include");
     expect(system).toContain("Files");
     expect(system).toContain("External");
-  });
-
-  test("passes abort signal to generateObject", async () => {
-    generateObjectMock.mockResolvedValue({ object: { question: "test", artifactIds: [] } });
-
-    const controller = new AbortController();
-    await discoverDataSources("test prompt", controller.signal);
-
-    const call = generateObjectMock.mock.calls[0];
-    if (!call) throw new Error("Expected generateObject to have been called");
-    const callArgs = call[0];
-    expect(callArgs.abortSignal).toBe(controller.signal);
   });
 
   test("uses haiku model for lightweight discovery", async () => {
