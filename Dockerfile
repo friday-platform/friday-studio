@@ -55,7 +55,7 @@ RUN OTEL_DENO=true deno compile \
     --unstable-worker-options \
     --unstable-kv \
     --unstable-raw-imports \
-    apps/atlas-cli/src/cli.tsx
+    apps/atlas-cli/src/cli.ts
 
 # Stage 2: Daemon runtime
 FROM denoland/deno:alpine-2.7.4 AS daemon
