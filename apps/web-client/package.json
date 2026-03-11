@@ -18,7 +18,7 @@
     "vitest": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/svelte": "^3.0.151",
+    "@ai-sdk/svelte": "^3.0.152",
     "@atlas/analytics": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
