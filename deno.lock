@@ -64,7 +64,7 @@
     "npm:@jsr/std__yaml@^1.0.9": "1.0.12",
     "npm:@lezer/common@^1.5.1": "1.5.1",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
-    "npm:@libpdf/core@~0.2.12": "0.2.12",
+    "npm:@libpdf/core@0.3": "0.3.0",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.53.10",
     "npm:@modelcontextprotocol/sdk@^1.27.0": "1.27.1_zod@4.3.6",
     "npm:@modelcontextprotocol/sdk@^1.27.1": "1.27.1_zod@4.3.6",
@@ -1205,8 +1205,8 @@
         "@lezer/highlight"
       ]
     },
-    "@libpdf/core@0.2.12": {
-      "integrity": "sha512-z22SyNEXa8YsCJarJBkgQv4SvvDn0Opw21cNQOQ0Xax9Ys1qjpAyVTSjlGExYVI8bT9b02VNy+nsOcJ79SzsQg==",
+    "@libpdf/core@0.3.0": {
+      "integrity": "sha512-7lXqhYWRIuP2gIKN+Ik/trRcSViFVm2lGZCYS4rtWw75dKeeDvCA+hXkPZqhPY0c2tCB4a4K+n8k42tXEU98Tg==",
       "dependencies": [
         "@noble/ciphers",
         "@noble/hashes@2.0.1",
@@ -6272,7 +6272,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@libpdf/core@~0.2.12",
+            "npm:@libpdf/core@0.3",
             "npm:ai@^5.0.151",
             "npm:file-type@^21.3.1",
             "npm:hono-openapi@^1.3.0",
@@ -6506,7 +6506,7 @@
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
-            "npm:@libpdf/core@~0.2.12",
+            "npm:@libpdf/core@0.3",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
             "npm:@xmldom/xmldom@~0.8.11",
             "npm:ai@^5.0.151",
