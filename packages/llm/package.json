@@ -8,7 +8,7 @@
     "@ai-sdk/groq": "^2.0.36",
     "@atlas/logger": "workspace:*",
     "@ai-sdk/anthropic": "^2.0.70",
-    "@ai-sdk/google": "^2.0.61",
+    "@ai-sdk/google": "^2.0.62",
     "@ai-sdk/openai": "^2.0.99",
     "@ai-sdk/provider": "^2.0.1",
     "@std/collections": "npm:@jsr/std__collections@^1.1.3",

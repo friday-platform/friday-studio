@@ -29,7 +29,7 @@
     "jsr:@std/text@1": "1.0.17",
     "jsr:@std/yaml@1": "1.0.12",
     "npm:@ai-sdk/anthropic@^2.0.70": "2.0.70_zod@4.3.6",
-    "npm:@ai-sdk/google@^2.0.61": "2.0.62_zod@4.3.6",
+    "npm:@ai-sdk/google@^2.0.62": "2.0.62_zod@4.3.6",
     "npm:@ai-sdk/groq@^2.0.36": "2.0.36_zod@4.3.6",
     "npm:@ai-sdk/mcp@^0.0.15": "0.0.15_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.99": "2.0.99_zod@4.3.6",
@@ -6565,7 +6565,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/anthropic@^2.0.70",
-            "npm:@ai-sdk/google@^2.0.61",
+            "npm:@ai-sdk/google@^2.0.62",
             "npm:@ai-sdk/groq@^2.0.36",
             "npm:@ai-sdk/openai@^2.0.99",
             "npm:@ai-sdk/provider@^2.0.1",
