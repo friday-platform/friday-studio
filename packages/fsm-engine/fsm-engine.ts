@@ -341,11 +341,13 @@ export function buildLLMActionTrace(
  * @param action - The full AgentAction object (includes agentId, prompt, outputTo)
  * @param context - FSM context with documents, state, and utility functions
  * @param signal - Signal with context (sessionId, workspaceId, onEvent callback)
+ * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes)
  */
 export type AgentExecutor = (
   action: AgentAction,
   context: Context,
   signal: SignalWithContext,
+  options?: { outputSchema?: Record<string, unknown> },
 ) => Promise<AgentSDKExecutionResult>;
 
 export interface FSMEngineOptions {
@@ -1342,9 +1344,26 @@ export class FSMEngine {
             deleteDoc: this.makeDeleteDocFn(documents, currentState),
           };
 
+          // Resolve output schema from documentTypes — same fallback logic as LLM actions:
+          // 1. action.outputType takes precedence (explicit mapping)
+          // 2. Fall back to existing document's type if document exists
+          const outputDoc = action.outputTo ? documents.get(action.outputTo) : undefined;
+          const agentDocTypeName = action.outputType ?? outputDoc?.type;
+          const agentOutputSchema = agentDocTypeName
+            ? z
+                .record(z.string(), z.unknown())
+                .optional()
+                .parse(this._definition.documentTypes?.[agentDocTypeName])
+            : undefined;
+
           // Execute agent via callback, passing full action object for prompt access
           // Agent returns AgentResult envelope directly
-          const result = await this.options.agentExecutor(action, agentContext, sig);
+          const result = await this.options.agentExecutor(
+            action,
+            agentContext,
+            sig,
+            agentOutputSchema ? { outputSchema: agentOutputSchema } : undefined,
+          );
 
           // Check envelope's ok discriminant for error
           if (!result.ok) {

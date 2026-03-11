@@ -89,6 +89,7 @@ export class AgentExecutionManager {
     prompt: string,
     sessionData: AgentSessionData,
     requestId?: string,
+    outputSchema?: Record<string, unknown>,
   ): Promise<AgentPayload<unknown>> {
     this.logger.info("Executing agent", { agentId, prompt, requestId, ...sessionData });
     const actor = this.getOrCreateExecutionActor(agentId);
@@ -123,8 +124,14 @@ export class AgentExecutionManager {
         }
       });
 
-      // Start execution - pass the abort signal separately
-      actor.send({ type: "EXECUTE", prompt, sessionData, abortSignal: abortController?.signal });
+      // Start execution - pass the abort signal and outputSchema separately
+      actor.send({
+        type: "EXECUTE",
+        prompt,
+        sessionData,
+        abortSignal: abortController?.signal,
+        outputSchema,
+      });
     });
   }
 

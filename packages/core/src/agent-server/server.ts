@@ -122,6 +122,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       ? z.object({
           input: agent.inputSchema, // Structured typed input
           _sessionContext: AgentSessionDataSchema,
+          outputSchema: z.record(z.string(), z.unknown()).optional(),
         })
       : AgentToolParamsSchema; // Fallback: { prompt: string, ... }
 
@@ -169,8 +170,15 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           // Extract input - use structured input if schema exists, otherwise use prompt string
           const input = agent.inputSchema ? args.input : args.prompt;
 
+          // Extract outputSchema if provided (from FSM documentTypes resolution)
+          const outputSchema = z
+            .record(z.string(), z.unknown())
+            .optional()
+            .catch(() => undefined)
+            .parse(args.outputSchema);
+
           // Pass requestId directly to executeAgent - no instance variable
-          const result = await this.executeAgent(agentId, input, session, requestId);
+          const result = await this.executeAgent(agentId, input, session, requestId, outputSchema);
 
           this.#logger.debug("Agent execution result", {
             agentId,
@@ -309,6 +317,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     prompt: string,
     sessionData: AgentSessionData,
     requestId?: string,
+    outputSchema?: Record<string, unknown>,
   ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
@@ -317,6 +326,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       workspaceId: sessionData.workspaceId,
       prompt: prompt,
       requestId,
+      hasOutputSchema: !!outputSchema,
     });
 
     const startTime = Date.now();
@@ -326,6 +336,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       prompt,
       sessionData,
       requestId,
+      outputSchema,
     );
 
     return {

@@ -240,6 +240,8 @@ export interface AgentContext {
   session: AgentSessionData;
   env: Record<string, string>;
   config?: Record<string, unknown>;
+  /** JSON Schema for structured output. When provided, agents should use it to return validated data. */
+  outputSchema?: Record<string, unknown>;
   stream: StreamEmitter | undefined;
   logger: Logger;
   abortSignal?: AbortSignal;

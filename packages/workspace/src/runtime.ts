@@ -515,8 +515,8 @@ export class WorkspaceRuntime {
     job.documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
 
     // Create agent executor callback for this job
-    const agentExecutor: AgentExecutor = (action, context, signal) =>
-      this.executeAgent(action, context, job, signal);
+    const agentExecutor: AgentExecutor = (action, context, signal, options) =>
+      this.executeAgent(action, context, job, signal, options);
 
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
@@ -956,6 +956,7 @@ export class WorkspaceRuntime {
     fsmContext: Context,
     job: FSMJob,
     signal: SignalWithContext,
+    options?: { outputSchema?: Record<string, unknown> },
   ): Promise<AgentResult> {
     const agentId = action.agentId;
 
@@ -1031,6 +1032,7 @@ export class WorkspaceRuntime {
       onStreamEvent: signal._context?.onStreamEvent,
       additionalContext: { documents: fsmContext.documents },
       config: agentCustomConfig,
+      outputSchema: options?.outputSchema,
     });
     // Map "atlas" config type to "sdk" for consistency with function parameter
     // Default to "sdk" when agent has no workspace config (code-based agents)

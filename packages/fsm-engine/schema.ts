@@ -37,6 +37,8 @@ export const AgentActionSchema = z.object({
   type: z.literal("agent"),
   agentId: z.string(),
   outputTo: z.string().optional(),
+  /** Explicit document type name for output schema lookup. Resolves to JSON Schema from documentTypes. */
+  outputType: z.string().optional(),
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt: z.string().optional(),
 });

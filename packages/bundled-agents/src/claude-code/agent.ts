@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { type HookCallback, query } from "@anthropic-ai/claude-agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM, traceModel } from "@atlas/llm";
@@ -13,7 +13,7 @@ import { createSandbox, sandboxOptions } from "./sandbox.ts";
 const execFileAsync = promisify(execFile);
 
 /**
- * Schema for extracting repo and task from prompt.
+ * Schema for extracting repo, task, and effort from prompt.
  */
 const PrepSchema = z.object({
   repo: z
@@ -21,6 +21,11 @@ const PrepSchema = z.object({
     .nullable()
     .describe("Repository in owner/repo format, or null if no clone instruction"),
   task: z.string().describe("Task with clone instruction removed, or original prompt verbatim"),
+  effort: z
+    .enum(["low", "medium", "high"])
+    .describe(
+      "Task complexity: low=read/query/explain, medium=focused edits/single-file changes, high=multi-file refactors/debugging/complex architecture",
+    ),
 });
 
 /**
@@ -36,7 +41,7 @@ async function extractRepoAndTask(
     model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     schema: PrepSchema,
     abortSignal,
-    prompt: `Extract repository and task from this prompt.
+    prompt: `Extract repository, task, and effort level from this prompt.
 
 If the prompt instructs cloning a repository:
 - Extract the repo in "owner/repo" format (not a full URL)
@@ -44,6 +49,11 @@ If the prompt instructs cloning a repository:
 - Return the rest of the task verbatim
 
 If no cloning is mentioned: repo is null and task is the original prompt verbatim.
+
+Classify effort:
+- low: reading files, explaining code, answering questions, simple queries
+- medium: focused edits, single-file changes, small bug fixes, adding tests
+- high: multi-file refactors, complex debugging, architecture changes, large features
 
 Prompt:
 ${prompt}`,
@@ -72,53 +82,111 @@ async function cloneRepo(
   }
 }
 
-/** Base timeout: no SDK messages AND no stderr activity (ms) */
-export const MESSAGE_TIMEOUT_MS = 60_000;
-/** Extended timeout: no SDK messages but stderr was recently active (ms) */
-export const EXTENDED_TIMEOUT_MS = 180_000;
+/**
+ * Select primary model and fallback based on effort classification.
+ * High-effort tasks get Opus (deeper reasoning), others get Sonnet (faster, cheaper).
+ * Haiku is the universal last-resort fallback.
+ */
+export function selectModel(effort: "low" | "medium" | "high"): {
+  model: string;
+  fallbackModel: string;
+} {
+  if (effort === "high") {
+    return { model: "claude-opus-4-6", fallbackModel: "claude-sonnet-4-6" };
+  }
+  return { model: "claude-sonnet-4-6", fallbackModel: "claude-haiku-4-5" };
+}
+
+/** Stall timeout: safety net for actual process freezes (ms). With includePartialMessages enabled,
+ * the SDK streams token-level events during LLM generation, so activity is continuous. This timeout
+ * only triggers on genuine process hangs — not normal thinking pauses. */
+export const MESSAGE_TIMEOUT_MS = 600_000; // 10 minutes — safety net, not a balance point
+
+/** How often to check for stall conditions (ms) */
+const STALL_CHECK_INTERVAL_MS = 5_000;
 
 export type ActivityTracker = { lastActivityMs: number };
 
 /**
- * Wraps an async iterable with a tiered stall-detection timeout.
+ * Wraps an async iterable with activity-based stall detection.
  *
- * Two tiers:
- * - At baseTimeoutMs: check if stderr was active near this wait. If stale
- *   (process cold/dead), reject immediately.
- * - At extendedTimeoutMs: hard cap — always reject. Accommodates subagent
- *   execution where the process was recently alive but goes silent.
+ * Polls at regular intervals and only rejects when there has been no activity
+ * (neither stream messages nor stderr output) for `timeoutMs`. This correctly
+ * handles long-running subagent execution where the outer process is alive but
+ * silent on both stdout and stderr for extended periods — as long as ANY
+ * activity occurs within the timeout window, the check resets.
  */
 export async function* withMessageTimeout<T>(
   iterable: AsyncIterable<T>,
-  baseTimeoutMs: number,
-  extendedTimeoutMs: number,
+  timeoutMs: number,
   onTimeout: () => Error,
   activity: ActivityTracker,
 ): AsyncGenerator<T> {
   const iterator = iterable[Symbol.asyncIterator]();
-  while (true) {
-    const waitStart = Date.now();
-    let baseTimer: ReturnType<typeof setTimeout> | undefined;
-    let extTimer: ReturnType<typeof setTimeout> | undefined;
-    const result = await Promise.race([
-      iterator.next().then((r) => {
-        clearTimeout(baseTimer);
-        clearTimeout(extTimer);
-        activity.lastActivityMs = Date.now(); // message = process alive
-        return r;
-      }),
-      new Promise<never>((_, reject) => {
-        baseTimer = setTimeout(() => {
-          if (activity.lastActivityMs < waitStart - baseTimeoutMs) {
-            clearTimeout(extTimer);
-            reject(onTimeout());
-          }
-        }, baseTimeoutMs);
-        extTimer = setTimeout(() => reject(onTimeout()), extendedTimeoutMs);
-      }),
-    ]);
-    if (result.done) break;
-    yield result.value;
+  try {
+    while (true) {
+      let intervalId: ReturnType<typeof setInterval> | undefined;
+      const cleanup = () => {
+        if (intervalId !== undefined) {
+          clearInterval(intervalId);
+          intervalId = undefined;
+        }
+      };
+
+      const mappedNext = iterator.next().then(
+        (r) => {
+          cleanup();
+          activity.lastActivityMs = Date.now(); // message = process alive
+          return r;
+        },
+        (e: unknown) => {
+          cleanup();
+          throw e;
+        },
+      );
+      // Suppress unhandled rejection if timeout wins the race and iterator later rejects
+      mappedNext.catch(() => {});
+
+      const result = await Promise.race([
+        mappedNext,
+        new Promise<never>((_, reject) => {
+          const checkMs = Math.min(timeoutMs, STALL_CHECK_INTERVAL_MS);
+          intervalId = setInterval(() => {
+            if (Date.now() - activity.lastActivityMs >= timeoutMs) {
+              cleanup();
+              reject(onTimeout());
+            }
+          }, checkMs);
+        }),
+      ]);
+      if (result.done) break;
+      yield result.value;
+    }
+  } finally {
+    await iterator.return?.();
+  }
+}
+
+/**
+ * Creates a hook callback that updates the activity tracker — acts as keepalive for stall detection.
+ */
+export function createKeepalive(activity: ActivityTracker): HookCallback {
+  return () => {
+    activity.lastActivityMs = Date.now();
+    return Promise.resolve({ continue: true });
+  };
+}
+
+/**
+ * Attempt to parse structured output from the SDK response.
+ * Returns the parsed record if valid JSON object, undefined otherwise.
+ */
+export function parseStructuredOutput(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -159,192 +227,262 @@ Read package.json → "Reading package.json"
   });
 }
 
-export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult>({
-  id: "claude-code",
-  displayName: "Claude Code",
-  version: "1.0.0",
-  description:
-    "Execute coding tasks in a sandboxed environment via Claude Code SDK. Clones repos, reads/writes files, runs commands, analyzes codebases, and debugs issues. USE FOR: code generation, code changes, codebase analysis, debugging, root cause analysis.",
-  constraints:
-    "Runs in isolated sandbox. Requires Anthropic API key and GitHub token. Cannot access workspace resource tables or artifacts directly. For reading GitHub data (PRs, issues, commits, repos), use the github MCP server. For data analysis, use data-analyst.",
-  outputSchema: ClaudeCodeOutputSchema,
-  expertise: {
-    examples: [
-      "Write a TypeScript function to parse JSON",
-      "Read and analyze the package.json file",
-      "Analyze stack traces and identify root causes",
-      "Debug this error in the codebase",
-    ],
-  },
-  environment: {
-    required: [
-      {
-        name: "ANTHROPIC_API_KEY",
-        description: "Anthropic API key for Claude API access",
-        linkRef: { provider: "anthropic", key: "api_key" },
-      },
-      {
-        name: "GH_TOKEN",
-        description: "GitHub token for gh CLI access to private repos",
-        linkRef: { provider: "github", key: "access_token" },
-      },
-    ],
-  },
-  handler: async (prompt, { logger, abortSignal, stream, session, env }) => {
-    const apiKey = env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
-    }
-
-    const ghToken = env.GH_TOKEN;
-    if (!ghToken) {
-      return err("GH_TOKEN not set. Connect GitHub in Link.");
-    }
-
-    const sandbox = await createSandbox(session.sessionId);
-
-    const controller = new AbortController();
-    abortSignal?.addEventListener("abort", () => controller.abort());
-
-    // Extract repo from prompt and pre-clone if present
-    let effectivePrompt = prompt;
-    try {
-      const prep = await extractRepoAndTask(prompt, abortSignal);
-      if (prep.repo) {
-        logger.info("Pre-cloning repository", { repo: prep.repo, targetDir: sandbox.workDir });
-        const cloneResult = await cloneRepo(prep.repo, sandbox.workDir, ghToken);
-        if (cloneResult.ok) {
-          effectivePrompt = prep.task;
-          logger.info("Pre-clone successful, CLAUDE.md and skills will be loaded", {
-            repo: prep.repo,
-          });
-        } else {
-          logger.warn("Pre-clone failed, agent will handle", {
-            repo: prep.repo,
-            error: cloneResult.error,
-          });
-        }
-      } else {
-        logger.debug("No repository detected in prompt, skipping pre-clone");
-      }
-    } catch (error) {
-      logger.warn("Repo extraction failed, using original prompt", {
-        error: stringifyError(error),
-      });
-    }
-
-    try {
-      let responseText = "";
-      const activity: ActivityTracker = { lastActivityMs: Date.now() };
-
-      const sdkStream = query({
-        prompt: effectivePrompt,
-        options: {
-          // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
-          pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
-          cwd: sandbox.workDir,
-          model: "claude-sonnet-4-6",
-          tools: { type: "preset", preset: "claude_code" },
-          disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
-          permissionMode: "bypassPermissions",
-          settingSources: ["project"],
-          maxTurns: 500,
-          sandbox: sandboxOptions,
-          abortController: controller,
-          env: { ...process.env, ANTHROPIC_API_KEY: apiKey, GH_TOKEN: ghToken },
-          stderr: (data) => {
-            activity.lastActivityMs = Date.now();
-            logger.debug("Claude CLI stderr", { data });
-          },
-          systemPrompt: {
-            type: "preset",
-            preset: "claude_code",
-            append:
-              "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.",
-          },
+export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Record<string, unknown>>(
+  {
+    id: "claude-code",
+    displayName: "Claude Code",
+    version: "1.0.0",
+    description:
+      "Execute coding tasks in a sandboxed environment via Claude Code SDK. Clones repos, reads/writes files, runs commands, analyzes codebases, and debugs issues. USE FOR: code generation, code changes, codebase analysis, debugging, root cause analysis.",
+    constraints:
+      "Runs in isolated sandbox. Requires Anthropic API key and GitHub token. Cannot access workspace resource tables or artifacts directly. For reading GitHub data (PRs, issues, commits, repos), use the github MCP server. For data analysis, use data-analyst.",
+    outputSchema: ClaudeCodeOutputSchema,
+    expertise: {
+      examples: [
+        "Write a TypeScript function to parse JSON",
+        "Read and analyze the package.json file",
+        "Analyze stack traces and identify root causes",
+        "Debug this error in the codebase",
+      ],
+    },
+    environment: {
+      required: [
+        {
+          name: "ANTHROPIC_API_KEY",
+          description: "Anthropic API key for Claude API access",
+          linkRef: { provider: "anthropic", key: "api_key" },
         },
-      });
+        {
+          name: "GH_TOKEN",
+          description: "GitHub token for gh CLI access to private repos",
+          linkRef: { provider: "github", key: "access_token" },
+        },
+      ],
+    },
+    handler: async (prompt, { logger, abortSignal, stream, session, env, outputSchema }) => {
+      const apiKey = env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
+      }
 
-      const timedStream = withMessageTimeout(
-        sdkStream,
-        MESSAGE_TIMEOUT_MS,
-        EXTENDED_TIMEOUT_MS,
-        () => new Error(`SDK stalled: no message received in ${MESSAGE_TIMEOUT_MS / 1000}s`),
-        activity,
-      );
+      const ghToken = env.GH_TOKEN;
+      if (!ghToken) {
+        return err("GH_TOKEN not set. Connect GitHub in Link.");
+      }
 
-      for await (const message of timedStream) {
-        // System init
-        if (message.type === "system" && message.subtype === "init") {
-          logger.debug("Session started", { sessionId: message.session_id, cwd: message.cwd });
+      const controller = new AbortController();
+      abortSignal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+      // Run sandbox creation and prompt extraction in parallel to reduce latency
+      const [sandbox, prep] = await Promise.all([
+        createSandbox(session.sessionId),
+        extractRepoAndTask(prompt, abortSignal).catch((error: unknown) => {
+          logger.warn("Repo extraction failed, using original prompt", {
+            error: stringifyError(error),
+          });
+          return undefined;
+        }),
+      ]);
+
+      // Apply extraction results: repo cloning and effort classification
+      let effectivePrompt = prompt;
+      let effort: "low" | "medium" | "high" = "medium";
+      if (prep) {
+        effort = prep.effort;
+        if (prep.repo) {
+          logger.info("Pre-cloning repository", { repo: prep.repo, targetDir: sandbox.workDir });
+          const cloneResult = await cloneRepo(prep.repo, sandbox.workDir, ghToken);
+          if (cloneResult.ok) {
+            effectivePrompt = prep.task;
+            logger.info("Pre-clone successful, CLAUDE.md and skills will be loaded", {
+              repo: prep.repo,
+            });
+          } else {
+            logger.warn("Pre-clone failed, agent will handle", {
+              repo: prep.repo,
+              error: cloneResult.error,
+            });
+          }
+        } else {
+          logger.debug("No repository detected in prompt, skipping pre-clone");
         }
+      }
 
-        // Tool progress from assistant messages
-        if (message.type === "assistant") {
-          for (const block of message.message.content) {
-            if (block.type === "tool_use") {
-              try {
-                const progress = await generateProgress(
-                  { toolName: block.name, input: block.input },
-                  abortSignal,
-                );
-                stream?.emit({
-                  type: "data-tool-progress",
-                  data: { toolName: "Claude Code", content: progress },
-                });
-              } catch (error) {
-                logger.warn("generateProgress failed, skipping progress update", {
-                  error,
-                  toolName: block.name,
-                });
+      let sdkStream: ReturnType<typeof query> | undefined;
+      try {
+        let responseText = "";
+        let structuredOutput: unknown;
+        const activity: ActivityTracker = { lastActivityMs: Date.now() };
+
+        const keepalive = createKeepalive(activity);
+
+        const { model, fallbackModel } = selectModel(effort);
+
+        logger.info("Starting SDK query", { effort, model, fallbackModel });
+
+        sdkStream = query({
+          prompt: effectivePrompt,
+          options: {
+            // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
+            pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
+            cwd: sandbox.workDir,
+            model,
+            fallbackModel,
+            effort,
+            tools: { type: "preset", preset: "claude_code" },
+            disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
+            permissionMode: "bypassPermissions",
+            settingSources: ["project"],
+            maxTurns: 500,
+            sandbox: sandboxOptions,
+            abortController: controller,
+            // Stream partial assistant messages (token-level deltas) during LLM generation.
+            // Each stream_event resets the activity tracker, eliminating the blind spot where
+            // the SDK is alive but silent during extended thinking.
+            includePartialMessages: true,
+            env: (() => {
+              const env: Record<string, string | undefined> = {
+                ...process.env,
+                ANTHROPIC_API_KEY: apiKey,
+                GH_TOKEN: ghToken,
+              };
+              // Strip CLAUDECODE to allow nested Claude Code execution (e.g. daemon running inside Claude Code)
+              delete env.CLAUDECODE;
+              return env;
+            })(),
+            stderr: (data) => {
+              activity.lastActivityMs = Date.now();
+              logger.debug("Claude CLI stderr", { data });
+            },
+            systemPrompt: {
+              type: "preset",
+              preset: "claude_code",
+              append:
+                "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.",
+            },
+            // Hooks fire on tool use and subagent lifecycle — each callback updates activity
+            // tracker, which resets the stall detection timer (keepalive). Hook messages also
+            // appear on the stream, providing a double keepalive.
+            hooks: {
+              PostToolUse: [{ hooks: [keepalive] }],
+              SubagentStart: [{ hooks: [keepalive] }],
+              SubagentStop: [{ hooks: [keepalive] }],
+            },
+            // When FSM provides an output schema, use SDK's structured output to get validated JSON
+            ...(outputSchema
+              ? { outputFormat: { type: "json_schema" as const, schema: outputSchema } }
+              : {}),
+          },
+        });
+
+        const timedStream = withMessageTimeout(
+          sdkStream,
+          MESSAGE_TIMEOUT_MS,
+          () => new Error(`SDK stalled: no activity for ${MESSAGE_TIMEOUT_MS / 1000}s`),
+          activity,
+        );
+
+        for await (const message of timedStream) {
+          // System init
+          if (message.type === "system" && message.subtype === "init") {
+            logger.debug("Session started", { sessionId: message.session_id, cwd: message.cwd });
+          }
+
+          // Tool progress from assistant messages
+          if (message.type === "assistant") {
+            for (const block of message.message.content) {
+              if (block.type === "tool_use") {
+                try {
+                  const progress = await generateProgress(
+                    { toolName: block.name, input: block.input },
+                    abortSignal,
+                  );
+                  stream?.emit({
+                    type: "data-tool-progress",
+                    data: { toolName: "Claude Code", content: progress },
+                  });
+                } catch (error) {
+                  logger.warn("generateProgress failed, skipping progress update", {
+                    error,
+                    toolName: block.name,
+                  });
+                }
               }
             }
           }
-        }
 
-        // Final result
-        if (message.type === "result") {
-          if (message.subtype === "success") {
-            // API auth failures have subtype=success but is_error=true
-            if (message.is_error) {
-              return err(message.result || "Execution failed");
+          // Final result
+          if (message.type === "result") {
+            if (message.subtype === "success") {
+              // API auth failures have subtype=success but is_error=true
+              if (message.is_error) {
+                return err(message.result || "Execution failed");
+              }
+
+              responseText = message.result;
+              // SDK puts structured data in structured_output when outputFormat is json_schema
+              if ("structured_output" in message && message.structured_output != null) {
+                structuredOutput = message.structured_output;
+              }
+              logger.debug("Execution complete", {
+                cost: message.total_cost_usd,
+                turns: message.num_turns,
+                hasStructuredOutput: structuredOutput != null,
+              });
+            } else {
+              // Error types: error_max_turns, error_during_execution, etc.
+              logger.error("Execution failed", { subtype: message.subtype });
+              return err(message.subtype);
             }
-
-            responseText = message.result;
-            logger.debug("Execution complete", {
-              cost: message.total_cost_usd,
-              turns: message.num_turns,
-            });
-          } else {
-            // Error types: error_max_turns, error_during_execution, etc.
-            logger.error("Execution failed", { subtype: message.subtype });
-            return err(message.subtype);
           }
         }
+
+        // Create artifact
+        const artifactResponse = await parseResult(
+          client.artifactsStorage.index.$post({
+            json: {
+              data: {
+                type: "summary" as const,
+                version: 1 as const,
+                data: structuredOutput != null ? JSON.stringify(structuredOutput) : responseText,
+              },
+              title: "Claude Code Output",
+              summary: `Claude Code: ${truncateUnicode(prompt, 100, "...")}`,
+            },
+          }),
+        );
+
+        if (!artifactResponse.ok) {
+          return err(stringifyError(artifactResponse.error));
+        }
+
+        const { id, type, summary } = artifactResponse.data.artifact;
+        const extras = { artifactRefs: [{ id, type, summary }] };
+
+        // When outputSchema is present, SDK puts validated JSON in structured_output.
+        // Fall back to parsing responseText for older SDK versions or edge cases.
+        if (outputSchema) {
+          if (structuredOutput != null && typeof structuredOutput === "object") {
+            const validated = z.record(z.string(), z.unknown()).safeParse(structuredOutput);
+            if (validated.success) {
+              return ok(validated.data, extras);
+            }
+          }
+          const parsed = parseStructuredOutput(responseText);
+          if (parsed) {
+            return ok(parsed, extras);
+          }
+          logger.warn("Structured output not available, returning as text");
+        }
+
+        return ok({ response: responseText }, extras);
+      } catch (error) {
+        logger.error("Claude Code agent failed", { error });
+        return err(stringifyError(error));
+      } finally {
+        sdkStream?.close(); // Terminate SDK subprocess cleanly on all exit paths
+        await sandbox.cleanup();
       }
-
-      // Create artifact
-      const artifactResponse = await parseResult(
-        client.artifactsStorage.index.$post({
-          json: {
-            data: { type: "summary" as const, version: 1 as const, data: responseText },
-            title: "Claude Code Output",
-            summary: `Claude Code: ${truncateUnicode(prompt, 100, "...")}`,
-          },
-        }),
-      );
-
-      if (!artifactResponse.ok) {
-        return err(stringifyError(artifactResponse.error));
-      }
-
-      const { id, type, summary } = artifactResponse.data.artifact;
-      return ok({ response: responseText }, { artifactRefs: [{ id, type, summary }] });
-    } catch (error) {
-      logger.error("Claude Code agent failed", { error });
-      return err(stringifyError(error));
-    } finally {
-      await sandbox.cleanup();
-    }
+    },
   },
-});
+);

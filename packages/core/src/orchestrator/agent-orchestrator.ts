@@ -55,6 +55,8 @@ export interface AgentExecutionContext {
   abortSignal?: AbortSignal;
   /** Agent-specific configuration from workspace.yml */
   config?: Record<string, unknown>;
+  /** JSON Schema for structured output from FSM documentTypes */
+  outputSchema?: Record<string, unknown>;
 }
 
 export interface AgentOrchestratorConfig {
@@ -295,6 +297,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           streamId: context.streamId,
           datetime: context.datetime,
         },
+        outputSchema: context.outputSchema,
       };
 
       let toolResult: unknown;

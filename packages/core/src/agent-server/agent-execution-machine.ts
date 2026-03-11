@@ -30,6 +30,7 @@ type PrepareContextInput = {
   prompt: string;
   sessionData: AgentSessionData;
   abortSignal?: AbortSignal;
+  outputSchema?: Record<string, unknown>;
 };
 
 export type PrepareContextOutput = {
@@ -62,6 +63,7 @@ interface AgentExecutionContext {
   enrichedPrompt?: string;
   sessionData?: AgentSessionData;
   abortSignal?: AbortSignal;
+  outputSchema?: Record<string, unknown>;
   preparedContext?: AgentContext;
   releaseMCPTools?: () => Promise<void>;
   result?: AgentPayload<unknown>;
@@ -74,7 +76,13 @@ interface AgentExecutionContext {
 /** Events that drive state transitions */
 type AgentExecutionEvents =
   | { type: "LOAD" }
-  | { type: "EXECUTE"; prompt: string; sessionData: AgentSessionData; abortSignal?: AbortSignal }
+  | {
+      type: "EXECUTE";
+      prompt: string;
+      sessionData: AgentSessionData;
+      abortSignal?: AbortSignal;
+      outputSchema?: Record<string, unknown>;
+    }
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
   | { type: "UNLOAD" }
@@ -125,9 +133,16 @@ export function createAgentExecutionMachine(
       }),
 
       prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
-        // Pass abortSignal as an override if present
-        const overrides = input.abortSignal ? { abortSignal: input.abortSignal } : undefined;
-        return await contextBuilder(input.agent, input.sessionData, input.prompt, overrides);
+        // Pass abortSignal and outputSchema as overrides if present
+        const overrides: Partial<AgentContext> = {};
+        if (input.abortSignal) overrides.abortSignal = input.abortSignal;
+        if (input.outputSchema) overrides.outputSchema = input.outputSchema;
+        return await contextBuilder(
+          input.agent,
+          input.sessionData,
+          input.prompt,
+          Object.keys(overrides).length > 0 ? overrides : undefined,
+        );
       }),
 
       executeAgent: fromPromise<ExecuteAgentOutput, ExecuteAgentInput>(async ({ input }) => {
@@ -173,6 +188,12 @@ export function createAgentExecutionMachine(
             return undefined;
           }
           return event.abortSignal;
+        },
+        outputSchema: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.outputSchema;
         },
         startTime: () => Date.now(),
       }),
@@ -344,6 +365,7 @@ export function createAgentExecutionMachine(
               prompt: context.currentPrompt,
               sessionData: context.sessionData,
               abortSignal: context.abortSignal,
+              outputSchema: context.outputSchema,
             };
           },
           onDone: { target: "executing", actions: "assignPreparedContext" },

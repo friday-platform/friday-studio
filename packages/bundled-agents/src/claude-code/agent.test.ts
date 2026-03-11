@@ -1,13 +1,34 @@
+import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentContext } from "@atlas/agent-sdk";
 import type { LogContext, Logger } from "@atlas/logger";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ActivityTracker,
   claudeCodeAgent,
-  EXTENDED_TIMEOUT_MS,
+  createKeepalive,
   MESSAGE_TIMEOUT_MS,
+  parseStructuredOutput,
+  selectModel,
   withMessageTimeout,
 } from "./agent.ts";
+
+// --- Module mocks for handler-level tests (structured output wiring) ---
+
+const mockQuery = vi.hoisted(() => vi.fn());
+const mockCreateSandbox = vi.hoisted(() => vi.fn());
+const mockArtifactPost = vi.hoisted(() => vi.fn());
+
+vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@anthropic-ai/claude-agent-sdk")>();
+  return { ...mod, query: mockQuery };
+});
+
+vi.mock("./sandbox.ts", () => ({ createSandbox: mockCreateSandbox, sandboxOptions: {} }));
+
+vi.mock("@atlas/client/v2", () => ({
+  client: { artifactsStorage: { index: { $post: mockArtifactPost } } },
+  parseResult: (p: Promise<unknown>) => p,
+}));
 
 /**
  * Creates a minimal mock Logger for testing.
@@ -43,12 +64,23 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
 }
 
 it("fails fast without ANTHROPIC_API_KEY", async () => {
-  // Pass empty env via context - agent should fail because ANTHROPIC_API_KEY is missing
   const result = await claudeCodeAgent.execute("test prompt", createMockContext({ env: {} }));
 
   expect(result.ok).toEqual(false);
   if (!result.ok) {
     expect(result.error.reason).toContain("ANTHROPIC_API_KEY");
+  }
+});
+
+it("fails fast without GH_TOKEN", async () => {
+  const result = await claudeCodeAgent.execute(
+    "test prompt",
+    createMockContext({ env: { ANTHROPIC_API_KEY: "sk-test" } }),
+  );
+
+  expect(result.ok).toEqual(false);
+  if (!result.ok) {
+    expect(result.error.reason).toContain("GH_TOKEN");
   }
 });
 
@@ -99,6 +131,83 @@ async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
   return values;
 }
 
+describe("selectModel", () => {
+  it("routes high effort to Opus with Sonnet fallback", () => {
+    const { model, fallbackModel } = selectModel("high");
+    expect(model).toBe("claude-opus-4-6");
+    expect(fallbackModel).toBe("claude-sonnet-4-6");
+  });
+
+  it("routes medium effort to Sonnet with Haiku fallback", () => {
+    const { model, fallbackModel } = selectModel("medium");
+    expect(model).toBe("claude-sonnet-4-6");
+    expect(fallbackModel).toBe("claude-haiku-4-5");
+  });
+
+  it("routes low effort to Sonnet with Haiku fallback", () => {
+    const { model, fallbackModel } = selectModel("low");
+    expect(model).toBe("claude-sonnet-4-6");
+    expect(fallbackModel).toBe("claude-haiku-4-5");
+  });
+});
+
+/** Minimal valid HookInput for testing — only required fields */
+const testHookInput: HookInput = {
+  session_id: "test",
+  transcript_path: "/tmp/test",
+  cwd: "/tmp",
+  hook_event_name: "PostToolUse",
+  tool_name: "Read",
+  tool_input: {},
+  tool_response: "",
+  tool_use_id: "test-id",
+};
+
+const testHookOptions = { signal: AbortSignal.timeout(5000) };
+
+describe("createKeepalive", () => {
+  it("updates activity tracker timestamp and returns continue", async () => {
+    const activity: ActivityTracker = { lastActivityMs: 0 };
+    const keepalive = createKeepalive(activity);
+
+    const before = Date.now();
+    const result = await keepalive(testHookInput, "tool-1", testHookOptions);
+    const after = Date.now();
+
+    expect(activity.lastActivityMs).toBeGreaterThanOrEqual(before);
+    expect(activity.lastActivityMs).toBeLessThanOrEqual(after);
+    expect(result).toEqual({ continue: true });
+  });
+});
+
+describe("parseStructuredOutput", () => {
+  it.each([
+    { input: '{"name": "test", "count": 42}', expected: { name: "test", count: 42 } },
+    {
+      input: '{"data": {"nested": true}, "items": [1, 2]}',
+      expected: { data: { nested: true }, items: [1, 2] },
+    },
+  ])("returns parsed record for valid JSON object: $input", ({ input, expected }) => {
+    expect(parseStructuredOutput(input)).toEqual(expected);
+  });
+
+  it.each([
+    "not json at all",
+    '{"name": "test", "count":',
+    "",
+  ])("returns undefined for invalid JSON: %s", (input) => {
+    expect(parseStructuredOutput(input)).toBeUndefined();
+  });
+
+  it.each([
+    "[1, 2, 3]",
+    '"just a string"',
+    "42",
+  ])("returns undefined for non-object JSON: %s", (input) => {
+    expect(parseStructuredOutput(input)).toBeUndefined();
+  });
+});
+
 describe("withMessageTimeout", () => {
   const onTimeout = () => new Error("stall detected");
 
@@ -109,30 +218,21 @@ describe("withMessageTimeout", () => {
       yield 3;
     }
     const activity: ActivityTracker = { lastActivityMs: Date.now() };
-    const gen = withMessageTimeout(
-      source(),
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
-      onTimeout,
-      activity,
-    );
+    const gen = withMessageTimeout(source(), MESSAGE_TIMEOUT_MS, onTimeout, activity);
 
     const values = await collect(gen);
     expect(values).toEqual([1, 2, 3]);
   });
 
-  // Short timeout versions for testing the timeout logic without waiting 60+ seconds.
-  // Uses real timers with 50ms base / 150ms extended timeouts for deterministic behavior.
-  const SHORT_BASE_MS = 50;
-  const SHORT_EXTENDED_MS = 150;
+  // Short timeout for testing without waiting 10+ minutes.
+  const SHORT_TIMEOUT_MS = 50;
 
-  it("rejects at base timeout when stderr is stale and no messages arrive", async () => {
-    // stderr was active 200ms before the wait — process is cold (> SHORT_BASE_MS ago)
+  it("rejects when no activity at all for the timeout duration", async () => {
+    // No activity — lastActivityMs is far in the past
     const activity: ActivityTracker = { lastActivityMs: Date.now() - 200 };
     const gen = withMessageTimeout(
       hangingIterable<number>(),
-      SHORT_BASE_MS,
-      SHORT_EXTENDED_MS,
+      SHORT_TIMEOUT_MS,
       onTimeout,
       activity,
     );
@@ -143,68 +243,45 @@ describe("withMessageTimeout", () => {
       (e: Error) => e,
     );
 
-    // Should reject at base timeout (~50ms)
     const error = await errorPromise;
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toBe("stall detected");
   });
 
-  it("uses extended timeout when stderr was active near the wait start", async () => {
-    // stderr was active at exactly the time the wait starts (subagent scenario)
+  it("does not reject when stderr keeps activity fresh", async () => {
     const activity: ActivityTracker = { lastActivityMs: Date.now() };
-    const gen = withMessageTimeout(
-      hangingIterable<number>(),
-      SHORT_BASE_MS,
-      SHORT_EXTENDED_MS,
-      onTimeout,
-      activity,
-    );
-
-    const startTime = Date.now();
-    const consumePromise = gen.next();
-    const errorPromise = consumePromise.then(
-      () => undefined,
-      (e: Error) => e,
-    );
-
-    // Should reject at extended timeout (~150ms), not base (~50ms)
-    const error = await errorPromise;
-    const elapsed = Date.now() - startTime;
-
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("stall detected");
-    // Should have waited longer than base timeout (with some tolerance)
-    expect(elapsed).toBeGreaterThan(SHORT_BASE_MS * 0.8);
-  });
-
-  it("survives silence when stderr was recent (real subagent scenario)", async () => {
-    // Simulates: last stderr at t=-10ms (shortly before wait started)
-    const activity: ActivityTracker = { lastActivityMs: Date.now() - 10 };
     const { iterable, emit } = controllableIterable<string>();
-    const gen = withMessageTimeout(iterable, SHORT_BASE_MS, SHORT_EXTENDED_MS, onTimeout, activity);
+    const gen = withMessageTimeout(iterable, SHORT_TIMEOUT_MS, onTimeout, activity);
 
     const consumePromise = gen.next();
 
-    // Wait 40ms (less than SHORT_BASE_MS) - should not have rejected yet
-    await new Promise((r) => setTimeout(r, 40));
+    // Simulate stderr activity keeping the process alive
+    const keepAlive = setInterval(() => {
+      activity.lastActivityMs = Date.now();
+    }, SHORT_TIMEOUT_MS / 3);
 
-    // Now the subagent finishes and a message arrives
+    // Wait longer than the timeout — should NOT reject because stderr is active
+    await new Promise((r) => setTimeout(r, SHORT_TIMEOUT_MS * 3));
+
+    clearInterval(keepAlive);
+
+    // Now emit a real message — should succeed
     emit("subagent done");
     const result = await consumePromise;
     expect(result.value).toBe("subagent done");
   });
 
-  it("rejects at base timeout when stderr was active long before the wait", async () => {
-    // stderr was active 100ms before the wait — outside the SHORT_BASE_MS window
-    const activity: ActivityTracker = { lastActivityMs: Date.now() - 100 };
+  it("rejects after activity stops and timeout elapses", async () => {
+    // Activity was recent at start
+    const activity: ActivityTracker = { lastActivityMs: Date.now() };
     const gen = withMessageTimeout(
       hangingIterable<number>(),
-      SHORT_BASE_MS,
-      SHORT_EXTENDED_MS,
+      SHORT_TIMEOUT_MS,
       onTimeout,
       activity,
     );
 
+    // Don't update activity — process goes silent
     const startTime = Date.now();
     const consumePromise = gen.next();
     const errorPromise = consumePromise.then(
@@ -217,7 +294,238 @@ describe("withMessageTimeout", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toBe("stall detected");
-    // Should have timed out around base timeout (50ms), not extended (150ms)
-    expect(elapsed).toBeLessThan(SHORT_EXTENDED_MS * 0.8);
+    // Should have waited at least the timeout duration
+    expect(elapsed).toBeGreaterThanOrEqual(SHORT_TIMEOUT_MS * 0.8);
+  });
+
+  it("survives silence when a message arrives before timeout", async () => {
+    const activity: ActivityTracker = { lastActivityMs: Date.now() };
+    const { iterable, emit } = controllableIterable<string>();
+    const gen = withMessageTimeout(iterable, SHORT_TIMEOUT_MS, onTimeout, activity);
+
+    const consumePromise = gen.next();
+
+    // Wait less than timeout, then emit a message
+    await new Promise((r) => setTimeout(r, SHORT_TIMEOUT_MS * 0.5));
+    emit("arrived in time");
+
+    const result = await consumePromise;
+    expect(result.value).toBe("arrived in time");
+  });
+
+  it("calls iterator.return() on normal completion", async () => {
+    let returnCalled = false;
+    const iterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]() {
+        let i = 0;
+        return {
+          next() {
+            return Promise.resolve(
+              i < 2
+                ? { value: ++i, done: false as const }
+                : ({ value: undefined, done: true as const } as IteratorResult<number>),
+            );
+          },
+          return() {
+            returnCalled = true;
+            return Promise.resolve({
+              value: undefined,
+              done: true as const,
+            } as IteratorResult<number>);
+          },
+        };
+      },
+    };
+    const activity: ActivityTracker = { lastActivityMs: Date.now() };
+    const values = await collect(
+      withMessageTimeout(iterable, MESSAGE_TIMEOUT_MS, onTimeout, activity),
+    );
+
+    expect(values).toEqual([1, 2]);
+    expect(returnCalled).toBe(true);
+  });
+
+  it("calls iterator.return() on timeout", async () => {
+    let returnCalled = false;
+    const iterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => new Promise<IteratorResult<number>>(() => {}),
+          return() {
+            returnCalled = true;
+            return Promise.resolve({
+              value: undefined,
+              done: true as const,
+            } as IteratorResult<number>);
+          },
+        };
+      },
+    };
+    const activity: ActivityTracker = { lastActivityMs: Date.now() - 200 };
+    const gen = withMessageTimeout(iterable, SHORT_TIMEOUT_MS, onTimeout, activity);
+
+    await gen.next().catch(() => {});
+    expect(returnCalled).toBe(true);
+  });
+
+  it("propagates iterator.next() rejection", async () => {
+    const streamError = new Error("stream exploded");
+    const failingIterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]() {
+        return { next: () => Promise.reject(streamError) };
+      },
+    };
+    const activity: ActivityTracker = { lastActivityMs: Date.now() };
+    const gen = withMessageTimeout(failingIterable, SHORT_TIMEOUT_MS, onTimeout, activity);
+
+    const error = await gen.next().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+
+    expect(error).toBe(streamError);
+    expect(error?.message).toBe("stream exploded");
+  });
+});
+
+// --- Handler-level tests for outputSchema → outputFormat → structured_output wiring ---
+
+/** Creates a mock SDK stream that yields messages then completes. */
+function createMockSDKStream(messages: Record<string, unknown>[]) {
+  return {
+    [Symbol.asyncIterator]() {
+      let i = 0;
+      return {
+        next(): Promise<IteratorResult<unknown>> {
+          if (i < messages.length) {
+            return Promise.resolve({ value: messages[i++], done: false });
+          }
+          return Promise.resolve({ value: undefined, done: true });
+        },
+      };
+    },
+    close() {},
+  };
+}
+
+/** Minimal SDK result message shape for testing. */
+function sdkResult(overrides: Record<string, unknown> = {}) {
+  return {
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result: "",
+    total_cost_usd: 0,
+    num_turns: 1,
+    ...overrides,
+  };
+}
+
+describe("structured output wiring", () => {
+  const testSchema = {
+    type: "object",
+    properties: {
+      summary: { type: "string" },
+      keyPoints: { type: "array", items: { type: "string" } },
+    },
+    required: ["summary", "keyPoints"],
+  };
+
+  const testEnv = { ANTHROPIC_API_KEY: "sk-test", GH_TOKEN: "ghp-test" };
+
+  beforeEach(() => {
+    mockQuery.mockReset();
+    mockCreateSandbox.mockReset();
+    mockArtifactPost.mockReset();
+
+    mockCreateSandbox.mockResolvedValue({
+      workDir: "/tmp/test-sandbox",
+      cleanup: () => Promise.resolve(),
+    });
+
+    mockArtifactPost.mockResolvedValue({
+      ok: true,
+      data: { artifact: { id: "art-1", type: "summary", summary: "test" } },
+    });
+  });
+
+  it("passes outputFormat to SDK when outputSchema is provided", async () => {
+    mockQuery.mockReturnValue(
+      createMockSDKStream([sdkResult({ structured_output: { summary: "x", keyPoints: [] } })]),
+    );
+
+    await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, outputSchema: testSchema }),
+    );
+
+    expect(mockQuery).toHaveBeenCalledOnce();
+    const call = mockQuery.mock.calls[0];
+    expect.assert(call);
+    const opts = call[0].options;
+    expect(opts.outputFormat).toEqual({ type: "json_schema", schema: testSchema });
+  });
+
+  it("omits outputFormat when outputSchema is absent", async () => {
+    mockQuery.mockReturnValue(createMockSDKStream([sdkResult({ result: "plain text" })]));
+
+    await claudeCodeAgent.execute("test", createMockContext({ env: testEnv }));
+
+    const call = mockQuery.mock.calls[0];
+    expect.assert(call);
+    const opts = call[0].options;
+    expect(opts.outputFormat).toBeUndefined();
+  });
+
+  it("returns structured_output as ok data and stores JSON in artifact", async () => {
+    const structured = { summary: "TS generics", keyPoints: ["Type safety", "Reusability"] };
+    mockQuery.mockReturnValue(createMockSDKStream([sdkResult({ structured_output: structured })]));
+
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, outputSchema: testSchema }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(structured);
+    }
+
+    // Artifact should store JSON.stringify of structured output, not empty responseText
+    const artifactCall = mockArtifactPost.mock.calls[0];
+    expect.assert(artifactCall);
+    const artifactArgs = artifactCall[0].json.data;
+    expect(artifactArgs.data).toBe(JSON.stringify(structured));
+  });
+
+  it("falls back to parsing responseText when structured_output is absent", async () => {
+    const jsonText = '{"summary": "fallback", "keyPoints": ["p1"]}';
+    mockQuery.mockReturnValue(createMockSDKStream([sdkResult({ result: jsonText })]));
+
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, outputSchema: testSchema }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({ summary: "fallback", keyPoints: ["p1"] });
+    }
+  });
+
+  it("falls back to plain text when outputSchema present but response is not JSON", async () => {
+    mockQuery.mockReturnValue(
+      createMockSDKStream([sdkResult({ result: "just plain text, no JSON here" })]),
+    );
+
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, outputSchema: testSchema }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({ response: "just plain text, no JSON here" });
+    }
   });
 });

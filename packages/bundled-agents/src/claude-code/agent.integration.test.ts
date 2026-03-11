@@ -1,6 +1,10 @@
 /**
- * Integration test: verifies the stall detection doesn't kill sessions during
- * long-running Task subagent execution.
+ * Integration test: verifies that includePartialMessages + activity-based stall
+ * detection allows long-running SDK sessions to complete without being killed.
+ *
+ * With includePartialMessages: true, the SDK streams token-level events during
+ * LLM generation, keeping the activity tracker alive. The stall timeout (2 min
+ * in test, 10 min in production) acts as a safety net for genuine process hangs.
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY - valid API key
@@ -16,12 +20,7 @@
 import process from "node:process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
-import {
-  type ActivityTracker,
-  EXTENDED_TIMEOUT_MS,
-  MESSAGE_TIMEOUT_MS,
-  withMessageTimeout,
-} from "./agent.ts";
+import { type ActivityTracker, createKeepalive, withMessageTimeout } from "./agent.ts";
 import { sandboxOptions } from "./sandbox.ts";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -30,19 +29,27 @@ const GH_TOKEN = process.env.GH_TOKEN ?? "dummy";
 
 const canRun = Boolean(ANTHROPIC_API_KEY && ATLAS_CLAUDE_PATH);
 
-describe.skipIf(!canRun)("integration: stall detection with real subagent", () => {
-  it("survives a Task subagent execution without triggering stall timeout", async () => {
-    const startTime = Date.now();
+/** Use a shorter timeout than production (2 min vs 10 min) to catch regressions faster.
+ * With includePartialMessages, stream_event tokens keep activity alive during LLM generation,
+ * so even this shorter window is generous — it only triggers on actual process hangs. */
+const TEST_TIMEOUT_MS = 120_000;
+
+describe.skipIf(!canRun)("integration: stall detection with includePartialMessages", () => {
+  it("completes a coding task without triggering stall timeout", async () => {
     const activity: ActivityTracker = { lastActivityMs: Date.now() };
     const messages: Array<{ type: string; subtype?: string }> = [];
+    let streamEventCount = 0;
+
+    const keepalive = createKeepalive(activity);
+
+    // Strip CLAUDECODE env var to allow nested Claude Code execution (e.g. when running from Claude Code)
+    const env: Record<string, string | undefined> = { ...process.env, ANTHROPIC_API_KEY, GH_TOKEN };
+    delete env.CLAUDECODE;
 
     const sdkStream = query({
       prompt: [
-        "You MUST use the Task tool (subagent) to complete this work — do NOT do it inline.",
-        "Task: Write a comprehensive TypeScript implementation of a red-black tree data structure.",
-        "Include insert, delete, search, and in-order traversal. Add detailed comments.",
-        "Also write at least 5 unit test cases using assert statements.",
-        "Put everything in a single file called rbtree.ts.",
+        "Write a TypeScript implementation of a red-black tree with insert, delete, search,",
+        "and in-order traversal. Put everything in a single file called rbtree.ts.",
       ].join("\n"),
       options: {
         pathToClaudeCodeExecutable: ATLAS_CLAUDE_PATH,
@@ -53,32 +60,31 @@ describe.skipIf(!canRun)("integration: stall detection with real subagent", () =
         settingSources: [],
         maxTurns: 30,
         sandbox: sandboxOptions,
-        env: { ...process.env, ANTHROPIC_API_KEY, GH_TOKEN },
+        includePartialMessages: true,
+        env,
         stderr: (_data) => {
           activity.lastActivityMs = Date.now();
         },
-        systemPrompt: {
-          type: "preset",
-          preset: "claude_code",
-          append:
-            "You MUST use the Task tool for any substantial coding work. Do not implement directly.",
+        hooks: {
+          PostToolUse: [{ hooks: [keepalive] }],
+          SubagentStart: [{ hooks: [keepalive] }],
+          SubagentStop: [{ hooks: [keepalive] }],
         },
+        systemPrompt: { type: "preset", preset: "claude_code" },
       },
     });
 
     const timedStream = withMessageTimeout(
       sdkStream,
-      MESSAGE_TIMEOUT_MS,
-      EXTENDED_TIMEOUT_MS,
+      TEST_TIMEOUT_MS,
       () =>
         new Error(
-          `SDK stalled: no message in ${MESSAGE_TIMEOUT_MS / 1000}s (INTEGRATION TEST FAILED)`,
+          `SDK stalled: no activity for ${TEST_TIMEOUT_MS / 1000}s (INTEGRATION TEST FAILED)`,
         ),
       activity,
     );
 
     let resultText = "";
-    let taskToolUsed = false;
 
     for await (const message of timedStream) {
       messages.push({
@@ -86,12 +92,9 @@ describe.skipIf(!canRun)("integration: stall detection with real subagent", () =
         subtype: "subtype" in message ? message.subtype : undefined,
       });
 
-      if (message.type === "assistant") {
-        for (const block of message.message.content) {
-          if (block.type === "tool_use" && block.name === "Task") {
-            taskToolUsed = true;
-          }
-        }
+      // Count stream_event messages — these are the token-level deltas from includePartialMessages
+      if (message.type === "stream_event") {
+        streamEventCount++;
       }
 
       if (message.type === "result" && message.subtype === "success") {
@@ -99,18 +102,17 @@ describe.skipIf(!canRun)("integration: stall detection with real subagent", () =
       }
     }
 
-    const elapsed = Date.now() - startTime;
-
-    // Verify the session completed successfully
+    // Session completed successfully without stall timeout
     const resultMsg = messages.find((m) => m.type === "result");
     expect(resultMsg).toBeDefined();
     expect(resultMsg?.subtype).toBe("success");
     expect(resultText.length).toBeGreaterThan(0);
 
-    // The Task tool must have been invoked — otherwise we didn't test the subagent path
-    expect(taskToolUsed).toBe(true);
-
-    // Session must have exceeded the old 60s timeout to confirm the fix was exercised
-    expect(elapsed).toBeGreaterThan(MESSAGE_TIMEOUT_MS);
+    // includePartialMessages must have produced stream_event messages — these are what
+    // keep the activity tracker alive during LLM generation, preventing stall kills
+    expect(
+      streamEventCount,
+      "stream_event messages must be present (includePartialMessages keepalive)",
+    ).toBeGreaterThan(0);
   }, 300_000); // 5 minute timeout
 });
