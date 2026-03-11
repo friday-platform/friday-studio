@@ -143,7 +143,7 @@
     "npm:openapi-fetch@0.17": "0.17.0",
     "npm:openapi-typescript@^7.13.0": "7.13.0_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
-    "npm:parallel-web@0.3.1": "0.3.1",
+    "npm:parallel-web@0.3.2": "0.3.2",
     "npm:pgsql-parser@^17.9.11": "17.9.12",
     "npm:pgsql-parser@^17.9.12": "17.9.12",
     "npm:postgres@3.4.7": "3.4.7",
@@ -4870,8 +4870,8 @@
     "papaparse@5.5.3": {
       "integrity": "sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A=="
     },
-    "parallel-web@0.3.1": {
-      "integrity": "sha512-1yLiqdjFFhwgZUV2qOLTvu36A3wiCld8/Y8Zu1FsGk6y4ov4cZPhXNGafjDkM68aFc1c5KVB9ZYpkJZZ/mZW/w=="
+    "parallel-web@0.3.2": {
+      "integrity": "sha512-PVCECmqn4cADf5LIWZJ+I6aeYG5/Endt3AbOJP/tWQK3Y+yobjMlmOJAhaUgJvNWXXcvqW75qapILWcEqCiMHw=="
     },
     "parse-json@8.3.0": {
       "integrity": "sha512-ybiGyvspI+fAoRQbIPRddCcSTV9/LsJbf0e/S85VLowVGzRmokfneg2kwVW/KU5rOXrPSbF1qAKPMgNTqqROQQ==",
@@ -6469,7 +6469,7 @@
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:ai@^5.0.151",
-            "npm:parallel-web@0.3.1",
+            "npm:parallel-web@0.3.2",
             "npm:vitest@^4.0.18",
             "npm:zod@^4.3.5"
           ]
