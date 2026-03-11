@@ -379,6 +379,36 @@ func TestAddEmailContentWithTable(t *testing.T) {
 	assert.Contains(t, plainText, "Item")
 }
 
+func TestPoolEmailRegex(t *testing.T) {
+	tests := []struct {
+		input string
+		match bool
+	}{
+		{"bb390b36-377a-435a-828d-88c087b90b90@pool.internal", true},
+		{"BB390B36-377A-435A-828D-88C087B90B90@POOL.INTERNAL", true},
+		{"550e8400-e29b-41d4-a716-446655440000@pool.internal", true},
+		{"abc123@pool.internal", false},                           // not a UUID
+		{"user@example.com", false},                               // wrong domain
+		{"pool.internal", false},                                  // no local part
+		{"---@pool.internal", false},                              // not a UUID
+		{"bb390b36377a435a828d88c087b90b90@pool.internal", false}, // missing hyphens
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.match, poolEmailRegex.MatchString(tt.input))
+		})
+	}
+}
+
+func TestPoolEmailRegex_ReplaceInContent(t *testing.T) {
+	content := `<p>Hello</p><p style="font-size: 12px;">Sent by bb390b36-377a-435a-828d-88c087b90b90@pool.internal</p><p>Powered by Friday</p>`
+	result := poolEmailRegex.ReplaceAllLiteralString(content, "user@company.com")
+
+	assert.Contains(t, result, "Sent by user@company.com")
+	assert.NotContains(t, result, "pool.internal")
+}
+
 func TestResolveWorkspaceID(t *testing.T) {
 	tests := []struct {
 		name   string

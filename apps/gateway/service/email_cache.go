@@ -54,3 +54,8 @@ func (c *EmailCache) Resolve(ctx context.Context, userID string) (string, error)
 func isPoolEmail(email string) bool {
 	return strings.HasSuffix(strings.ToLower(email), "@pool.internal")
 }
+
+// containsPoolEmail reports whether s contains a @pool.internal reference (case-insensitive).
+func containsPoolEmail(s string) bool {
+	return strings.Contains(strings.ToLower(s), "@pool.internal")
+}

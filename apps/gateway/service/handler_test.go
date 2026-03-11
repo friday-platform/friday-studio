@@ -694,6 +694,193 @@ func TestHandleSendGridEmail_PoolEmailResolved(t *testing.T) {
 	assert.NotContains(t, string(receivedBody), "pool.internal")
 }
 
+func TestHandleSendGridEmail_PoolEmailInContentResolved(t *testing.T) {
+	var receivedBody []byte
+
+	mockSendGrid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message": "success"}`))
+	}))
+	defer mockSendGrid.Close()
+
+	origHost := sendGridHost
+	sendGridHost = mockSendGrid.URL
+	defer func() { sendGridHost = origHost }()
+
+	ec := &EmailCache{
+		queryFn: func(_ context.Context, _ string) (string, error) {
+			return "real@company.com", nil
+		},
+		cache: lru.NewTTLCache[string, string](16),
+	}
+
+	svc := &Service{
+		Logger:     testLogger(),
+		cfg:        Config{SendGridAPIKey: "test-key"},
+		client:     &http.Client{},
+		emailCache: ec,
+	}
+
+	// Recipient is a real email, but body contains a pool placeholder in "Sent by" footer
+	poolContent := `<html><body><p>Hello</p><p style="font-size: 12px;">Sent by bb390b36-377a-435a-828d-88c087b90b90@pool.internal</p></body></html>`
+	body, _ := json.Marshal(SendEmailRequest{
+		To:      "colleague@company.com",
+		From:    "notifications@hellofriday.ai",
+		Subject: "Daily PR Summary",
+		Content: poolContent,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), userIDContextKey, "test-user-456")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	// Body should contain the resolved email, not the pool placeholder
+	assert.Contains(t, string(receivedBody), "real@company.com")
+	assert.NotContains(t, string(receivedBody), "pool.internal")
+}
+
+func TestHandleSendGridEmail_PoolEmailInSubjectResolved(t *testing.T) {
+	var receivedBody []byte
+
+	mockSendGrid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message": "success"}`))
+	}))
+	defer mockSendGrid.Close()
+
+	origHost := sendGridHost
+	sendGridHost = mockSendGrid.URL
+	defer func() { sendGridHost = origHost }()
+
+	ec := &EmailCache{
+		queryFn: func(_ context.Context, _ string) (string, error) {
+			return "real@company.com", nil
+		},
+		cache: lru.NewTTLCache[string, string](16),
+	}
+
+	svc := &Service{
+		Logger:     testLogger(),
+		cfg:        Config{SendGridAPIKey: "test-key"},
+		client:     &http.Client{},
+		emailCache: ec,
+	}
+
+	body, _ := json.Marshal(SendEmailRequest{
+		To:      "colleague@company.com",
+		From:    "notifications@hellofriday.ai",
+		Subject: "Report from bb390b36-377a-435a-828d-88c087b90b90@pool.internal",
+		Content: "Hello",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), userIDContextKey, "test-user-456")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	// Subject in the SendGrid payload should contain the resolved email
+	assert.Contains(t, string(receivedBody), "real@company.com")
+	assert.NotContains(t, string(receivedBody), "pool.internal")
+}
+
+func TestHandleSendGridEmail_PoolEmailInContentSkippedWithoutCache(t *testing.T) {
+	var receivedBody []byte
+
+	mockSendGrid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message": "success"}`))
+	}))
+	defer mockSendGrid.Close()
+
+	origHost := sendGridHost
+	sendGridHost = mockSendGrid.URL
+	defer func() { sendGridHost = origHost }()
+
+	svc := &Service{
+		Logger:     testLogger(),
+		cfg:        Config{SendGridAPIKey: "test-key"},
+		client:     &http.Client{},
+		emailCache: nil, // no cache available
+	}
+
+	// Content has pool email but no cache to resolve — should pass through
+	body, _ := json.Marshal(SendEmailRequest{
+		To:      "colleague@company.com",
+		From:    "notifications@hellofriday.ai",
+		Subject: "Test",
+		Content: `<p>Sent by abc@pool.internal</p>`,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	// Should still succeed — content resolution is best-effort
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	// Body should pass through unmodified with pool email still present
+	assert.Contains(t, string(receivedBody), "pool.internal")
+}
+
+func TestHandleSendGridEmail_PoolEmailInContentDBError(t *testing.T) {
+	var receivedBody []byte
+
+	mockSendGrid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message": "success"}`))
+	}))
+	defer mockSendGrid.Close()
+
+	origHost := sendGridHost
+	sendGridHost = mockSendGrid.URL
+	defer func() { sendGridHost = origHost }()
+
+	ec := &EmailCache{
+		queryFn: func(_ context.Context, _ string) (string, error) {
+			return "", fmt.Errorf("connection refused")
+		},
+		cache: lru.NewTTLCache[string, string](16),
+	}
+
+	svc := &Service{
+		Logger:     testLogger(),
+		cfg:        Config{SendGridAPIKey: "test-key"},
+		client:     &http.Client{},
+		emailCache: ec,
+	}
+
+	// req.To is a real email, but content has pool placeholder and cache errors
+	body, _ := json.Marshal(SendEmailRequest{
+		To:      "colleague@company.com",
+		From:    "notifications@hellofriday.ai",
+		Subject: "Test",
+		Content: `<html><body><p>Sent by abc@pool.internal</p></body></html>`,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sendgrid/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), userIDContextKey, "test-user-789")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	svc.HandleSendGridEmail(rec, req)
+
+	// Content resolution is best-effort — DB error should not block the email
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	// Pool email remains in body since resolution failed
+	assert.Contains(t, string(receivedBody), "pool.internal")
+}
+
 func TestHandleSendGridEmail_PoolEmailStillPool(t *testing.T) {
 	ec := &EmailCache{
 		queryFn: func(_ context.Context, _ string) (string, error) {

@@ -42,6 +42,10 @@ var (
 // templateIDRegex validates SendGrid template IDs (alphanumeric with hyphens).
 var templateIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
+// poolEmailRegex matches pool-provisioned placeholder emails (UUID v4 @pool.internal).
+// Format: gen_random_uuid()::text || '@pool.internal' (see atlas-operator/repo/query.sql).
+var poolEmailRegex = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@pool\.internal`)
+
 // Whitelist of allowed custom email headers.
 var allowedCustomHeaders = map[string]bool{
 	"X-Atlas-Session":    true,
@@ -156,6 +160,27 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 			log.Warn("replaced stale pool email with current email",
 				"original", req.To, "resolved", resolvedEmail)
 			req.To = resolvedEmail
+		}
+	}
+
+	// Also resolve pool email references embedded in the HTML body and subject
+	// (e.g., the "Sent by" footer).  The agent extracts the sender email from
+	// the JWT and bakes it into the template before sending.  For
+	// pool-provisioned pods the JWT email is a @pool.internal placeholder, so
+	// we replace it here with the user's current real email.  This runs
+	// independently of the req.To resolution above because the recipient may
+	// already be a real address (e.g., sending to a colleague on the same
+	// company domain) while the body/subject still contains the pool
+	// placeholder.
+	if s.emailCache != nil && (containsPoolEmail(req.Content) || containsPoolEmail(req.Subject)) {
+		resolvedEmail, err := s.emailCache.Resolve(r.Context(), userID)
+		if err == nil && !isPoolEmail(resolvedEmail) {
+			req.Content = poolEmailRegex.ReplaceAllLiteralString(req.Content, resolvedEmail)
+			req.Subject = poolEmailRegex.ReplaceAllLiteralString(req.Subject, resolvedEmail)
+		} else if err != nil {
+			log := httplog.LogEntry(r.Context())
+			log.Warn("failed to resolve pool email in content/subject",
+				"error", err, "userID", userID)
 		}
 	}
 
