@@ -640,13 +640,13 @@ export class WorkspaceRuntime {
     const isTriggerSignal = this.isTriggerSignal(signal.id);
 
     if (isTriggerSignal) {
-      // Trigger signal starts fresh execution - clear persisted state and documents
+      // Trigger signal starts fresh execution - clear persisted state
       logger.info("Trigger signal detected - clearing persisted state for fresh execution", {
         signalId: signal.id,
         workspaceId: this.workspace.id,
         jobName: job.name,
       });
-      await this.clearPersistedStateFiles(job);
+      await this.clearPersistedState(job);
 
       // Reset engine to initial state
       await job.engine.reset();
@@ -1216,17 +1216,16 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Clear persisted state and document files for fresh execution
+   * Clear persisted FSM state for fresh execution.
+   * Document cleanup is handled by engine.reset() → persistDocuments().
    */
-  private async clearPersistedStateFiles(job: FSMJob): Promise<void> {
+  private async clearPersistedState(job: FSMJob): Promise<void> {
     if (!job.engine || !job.documentStore) {
       throw new Error("Cannot clear state - engine not initialized");
     }
 
     const scope = { workspaceId: this.workspace.id };
-    // Use the engine's FSM definition ID
-    const fsmId =
-      job.engine.toYAML().match(/^id:\s*(.+)$/m)?.[1] || job.name || "atlas-conversation";
+    const fsmId = job.engine.definition.id;
 
     // Clear persisted state file (no schema, null value — cannot fail validation)
     const clearResult = await job.documentStore.saveState(scope, fsmId, null);
@@ -1234,17 +1233,10 @@ export class WorkspaceRuntime {
       logger.warn("Failed to clear persisted state", { error: clearResult.error });
     }
 
-    // Clear any persisted document files
-    const existingDocIds = await job.documentStore.list(scope, fsmId);
-    for (const docId of existingDocIds) {
-      await job.documentStore.delete(scope, fsmId, docId);
-    }
-
-    logger.debug("Cleared persisted state files for fresh execution", {
+    logger.debug("Cleared persisted state for fresh execution", {
       workspaceId: this.workspace.id,
       jobName: job.name,
       fsmId,
-      clearedDocCount: existingDocIds.length,
     });
   }
 

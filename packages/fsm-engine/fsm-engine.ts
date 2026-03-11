@@ -533,16 +533,15 @@ export class FSMEngine {
         logger.debug("Initial state entry actions completed");
       }
 
-      // Persist initial documents if any
-      if (this._documents.size > 0) {
-        await this.persistDocuments();
-      }
-
       // Persist initial state
       await this.persistExecutionState();
     } else {
       logger.debug("State restored but no documents found. Skipping initialization.");
     }
+
+    // Always persist documents after initialization — clears stale documents
+    // from storage regardless of which initialization path was taken
+    await this.persistDocuments();
 
     this._initialized = true;
   }
@@ -1762,6 +1761,24 @@ export class FSMEngine {
         throw new Error(`Failed to persist document ${doc.id}: ${result.error}`);
       }
     }
+
+    // Delete stale documents that are no longer in memory
+    const storedIds = await this.options.documentStore.list(
+      this.options.scope,
+      this._definition.id,
+    );
+    for (const id of storedIds) {
+      if (!this._documents.has(id)) {
+        const deleted = await this.options.documentStore.delete(
+          this.options.scope,
+          this._definition.id,
+          id,
+        );
+        if (!deleted) {
+          logger.warn(`Failed to delete stale document ${id} from storage`);
+        }
+      }
+    }
   }
 
   /** The immutable FSM graph definition this engine was constructed with. */
@@ -1783,15 +1800,6 @@ export class FSMEngine {
 
   getDocument(id: string): Document | undefined {
     return this._documents.get(id);
-  }
-
-  /**
-   * Clear all documents from memory
-   * Used when workspace needs to start fresh for each signal
-   */
-  clearDocuments(): void {
-    this._documents.clear();
-    logger.debug("Cleared all documents from FSM engine", { fsmId: this._definition.id });
   }
 
   get context(): Context {
@@ -1853,10 +1861,11 @@ export class FSMEngine {
         this._signalQueue,
         this._currentState,
       );
-
-      // Persist any document changes from entry actions
-      await this.persistDocuments();
     }
+
+    // Always persist after reset — clears stale documents from storage
+    // even when initial state has no entry actions
+    await this.persistDocuments();
 
     logger.debug("FSM reset to initial state", {
       fsmId: this._definition.id,

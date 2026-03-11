@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
 
@@ -401,6 +402,135 @@ describe("FSM Engine - Document Lifecycle", () => {
       expect(engine.state).toEqual("step_0");
       const doc2 = engine.documents.find((d) => d.id === "fresh-doc");
       expect(doc2?.data.run).toEqual(1); // New document, fresh counter
+    });
+  });
+
+  describe("persistDocuments deletes stale documents from storage", () => {
+    function makeCleanupFsm(id: string): FSMDefinition {
+      return {
+        id,
+        initial: "idle",
+        states: {
+          idle: {
+            entry: [{ type: "code", function: "cleanup" }],
+            on: { START: { target: "working" } },
+          },
+          working: {
+            entry: [{ type: "code", function: "create_output" }],
+            on: { DONE: { target: "idle" } },
+          },
+        },
+        documentTypes: {
+          Output: {
+            type: "object",
+            properties: { value: { type: "string" } },
+            required: ["value"],
+          },
+        },
+        functions: {
+          cleanup: {
+            type: "action",
+            code: `export default function cleanup(context, event) {
+              context.deleteDoc('output-doc');
+            }`,
+          },
+          create_output: {
+            type: "action",
+            code: `export default function create_output(context, event) {
+              context.createDoc?.({ id: 'output-doc', type: 'Output', data: { value: 'result' } });
+            }`,
+          },
+        },
+      };
+    }
+
+    it("should remove documents from store when deleted via deleteDoc", async () => {
+      const fsm = makeCleanupFsm("storage-sync");
+
+      const { engine, store, scope } = await createTestEngine(fsm);
+
+      // Run: idle -> working, creates output-doc
+      await engine.signal({ type: "START" });
+      expect(engine.documents.length).toEqual(1);
+
+      // Verify document is in persistent storage
+      const storedBefore = await store.list(scope, "storage-sync");
+      expect(storedBefore).toContain("output-doc");
+
+      // Complete: working -> idle, cleanup deletes output-doc
+      await engine.signal({ type: "DONE" });
+      expect(engine.documents.length).toEqual(0);
+
+      // Verify document is also removed from persistent storage
+      const storedAfter = await store.list(scope, "storage-sync");
+      expect(storedAfter).not.toContain("output-doc");
+    });
+
+    it("should not reload deleted documents after re-initialization", async () => {
+      const fsm = makeCleanupFsm("reload-after-delete");
+
+      const { engine, store, scope } = await createTestEngine(fsm);
+
+      // Full lifecycle: idle → working (create doc) → idle (cleanup deletes doc)
+      await engine.signal({ type: "START" });
+      expect(engine.documents.length).toEqual(1);
+      await engine.signal({ type: "DONE" });
+      expect(engine.documents.length).toEqual(0);
+
+      // Verify storage is clean after the lifecycle
+      const storedAfterCycle = await store.list(scope, "reload-after-delete");
+      expect(storedAfterCycle).not.toContain("output-doc");
+
+      // Simulate pod restart — new engine against the same store
+      const engine2 = new FSMEngine(fsm, { documentStore: store, scope });
+      await engine2.initialize();
+
+      // The deleted document should not be resurrected from storage
+      expect(engine2.documents.length).toEqual(0);
+    });
+
+    it("should clear storage on reset() even when idle has no entry actions", async () => {
+      const fsm: FSMDefinition = {
+        id: "reset-no-entry",
+        initial: "idle",
+        states: {
+          idle: { on: { START: { target: "working" } } },
+          working: {
+            entry: [{ type: "code", function: "create_output" }],
+            on: { DONE: { target: "idle" } },
+          },
+        },
+        documentTypes: {
+          Output: {
+            type: "object",
+            properties: { value: { type: "string" } },
+            required: ["value"],
+          },
+        },
+        functions: {
+          create_output: {
+            type: "action",
+            code: `export default function create_output(context, event) {
+              context.createDoc?.({ id: 'output-doc', type: 'Output', data: { value: 'result' } });
+            }`,
+          },
+        },
+      };
+
+      const { engine, store, scope } = await createTestEngine(fsm);
+
+      // Create a document by transitioning to working
+      await engine.signal({ type: "START" });
+      expect(engine.documents.length).toEqual(1);
+      const storedBefore = await store.list(scope, "reset-no-entry");
+      expect(storedBefore).toContain("output-doc");
+
+      // Reset — idle has no entry actions, but storage should still be cleaned
+      await engine.reset();
+      expect(engine.documents.length).toEqual(0);
+
+      const storedAfter = await store.list(scope, "reset-no-entry");
+      expect(storedAfter).not.toContain("output-doc");
     });
   });
 });
