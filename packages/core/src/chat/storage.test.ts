@@ -4,19 +4,16 @@ import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { aroundEach, describe, expect, it } from "vitest";
 import { ChatStorage } from "./storage.ts";
 
-let originalAtlasHome: string | undefined;
 let testDir: string;
 
-beforeEach(() => {
+aroundEach(async (run) => {
   testDir = makeTempDir({ prefix: "atlas_chat_test_" });
-  originalAtlasHome = process.env.ATLAS_HOME;
+  const originalAtlasHome = process.env.ATLAS_HOME;
   process.env.ATLAS_HOME = testDir;
-});
-
-afterEach(async () => {
+  await run();
   if (originalAtlasHome) {
     process.env.ATLAS_HOME = originalAtlasHome;
   } else {

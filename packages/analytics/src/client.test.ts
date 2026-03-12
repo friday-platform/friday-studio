@@ -1,18 +1,13 @@
 import process from "node:process";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { aroundEach, describe, expect, it } from "vitest";
 import { createAnalyticsClient } from "./client.ts";
 import { EventNames } from "./types.ts";
 
 describe("createAnalyticsClient", () => {
-  let originalEnv: string | undefined;
-
-  beforeEach(() => {
-    originalEnv = process.env.ANALYTICS_OTEL_ENDPOINT;
-    // Clear environment to ensure analytics is disabled for most tests
+  aroundEach(async (run) => {
+    const originalEnv = process.env.ANALYTICS_OTEL_ENDPOINT;
     delete process.env.ANALYTICS_OTEL_ENDPOINT;
-  });
-
-  afterEach(() => {
+    await run();
     if (originalEnv) {
       process.env.ANALYTICS_OTEL_ENDPOINT = originalEnv;
     } else {

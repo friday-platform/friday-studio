@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { aroundEach, describe, expect, it, vi } from "vitest";
 import {
   CypherAuthError,
   CypherDecryptError,
@@ -192,11 +192,9 @@ describe("CypherHttpClient", () => {
   });
 
   describe("timeout tests", () => {
-    beforeEach(() => {
+    aroundEach(async (run) => {
       vi.useFakeTimers();
-    });
-
-    afterEach(() => {
+      await run();
       vi.useRealTimers();
     });
 

@@ -16,7 +16,7 @@
     "minimatch": "^10.2.4",
     "papaparse": "^5.5.3",
     "turndown": "7.2.2",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.0",
     "zod": "^4.3.5"
   }
 }

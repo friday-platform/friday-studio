@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "@db/sqlite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { aroundEach, beforeEach, describe, expect, test } from "vitest";
 import { createSQLiteAdapter, SQLiteAdapter } from "./sqlite-adapter.ts";
 import { ClientError, type ProvisionInput } from "./types.ts";
 
@@ -14,13 +14,11 @@ let tempDir: string;
 let db: Database;
 let adapter: SQLiteAdapter;
 
-beforeEach(async () => {
+aroundEach(async (run) => {
   tempDir = await mkdtemp(join(tmpdir(), "ledger-test-"));
   db = new Database(join(tempDir, "test.db"));
   adapter = new SQLiteAdapter(db);
-});
-
-afterEach(async () => {
+  await run();
   try {
     db.close();
   } catch {

@@ -16,5 +16,5 @@
     "immer": "^11.1.4",
     "zod": "^4.3.5"
   },
-  "devDependencies": { "vitest": "^4.0.18" }
+  "devDependencies": { "vitest": "^4.1.0" }
 }

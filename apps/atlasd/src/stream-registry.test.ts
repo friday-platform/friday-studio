@@ -1,5 +1,5 @@
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { aroundEach, describe, expect, it, vi } from "vitest";
 import {
   CLEANUP_INTERVAL_MS,
   FINISHED_TTL_MS,
@@ -25,11 +25,9 @@ function createController(options?: {
 describe("StreamRegistry", () => {
   let registry: StreamRegistry;
 
-  beforeEach(() => {
+  aroundEach(async (run) => {
     registry = new StreamRegistry();
-  });
-
-  afterEach(() => {
+    await run();
     registry.shutdown();
   });
 
@@ -373,11 +371,9 @@ describe("StreamRegistry", () => {
   });
 
   describe("cleanup", () => {
-    beforeEach(() => {
+    aroundEach(async (run) => {
       vi.useFakeTimers();
-    });
-
-    afterEach(() => {
+      await run();
       vi.useRealTimers();
     });
 

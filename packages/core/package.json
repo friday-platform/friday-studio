@@ -47,7 +47,7 @@
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
     "proper-lockfile": "^4.1.2",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.0",
     "xstate": "^5.28.0",
     "zod": "^4.3.5"
   }

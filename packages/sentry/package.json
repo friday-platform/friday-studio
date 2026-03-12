@@ -4,5 +4,5 @@
   "type": "module",
   "main": "./mod.ts",
   "dependencies": { "@sentry/deno": "^10.43.0" },
-  "devDependencies": { "vitest": "^4.0.18" }
+  "devDependencies": { "vitest": "^4.1.0" }
 }

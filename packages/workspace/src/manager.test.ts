@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MergedConfig } from "@atlas/config";
 import { createKVStorage } from "@atlas/storage";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { aroundEach, describe, expect, it } from "vitest";
 import { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./manager.ts";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
@@ -148,7 +148,7 @@ tools:
   let tempDir: string;
   let manager: WorkspaceManager;
 
-  beforeEach(async () => {
+  aroundEach(async (run) => {
     tempDir = await mkdtemp(join(tmpdir(), "atlas-test-"));
     await writeFile(join(tempDir, "workspace.yml"), workspaceYaml);
 
@@ -156,9 +156,7 @@ tools:
     const registry = new RegistryStorageAdapter(kv);
     await registry.initialize();
     manager = new WorkspaceManager(registry);
-  });
-
-  afterEach(async () => {
+    await run();
     await rm(tempDir, { recursive: true, force: true });
   });
 

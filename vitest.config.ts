@@ -7,5 +7,6 @@ export default defineConfig({
     coverage: { provider: "v8" },
     include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     exclude: ["**/node_modules/**", "apps/friday-website/**", "opensrc/**"],
+    update: process.env.CI ? "none" : "new",
   },
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { aroundEach, describe, expect, test } from "vitest";
 import { LocalSessionHistoryAdapter } from "./local-session-history-adapter.ts";
 import type {
   SessionStartEvent,
@@ -89,13 +89,11 @@ function sessionSummary(overrides: Partial<SessionSummary> = {}): SessionSummary
 let testDir: string;
 let adapter: SessionHistoryAdapter;
 
-beforeEach(async () => {
+aroundEach(async (run) => {
   testDir = join(tmpdir(), `atlas-test-${crypto.randomUUID()}`);
   await mkdir(testDir, { recursive: true });
   adapter = new LocalSessionHistoryAdapter(testDir);
-});
-
-afterEach(async () => {
+  await run();
   await rm(testDir, { recursive: true, force: true });
 });
 

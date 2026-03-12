@@ -22,7 +22,7 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "ai": "^5.0.153",
     "parallel-web": "0.3.2",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.0",
     "zod": "^4.3.5",
     "snowflake-sdk": "^2.3.4"
   }

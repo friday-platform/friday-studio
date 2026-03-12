@@ -13,5 +13,5 @@
     "@atlas/schemas": "workspace:*",
     "hono": "4.12.7"
   },
-  "devDependencies": { "vitest": "^4.0.18" }
+  "devDependencies": { "vitest": "^4.1.0" }
 }

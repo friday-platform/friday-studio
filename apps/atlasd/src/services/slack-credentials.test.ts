@@ -1,5 +1,5 @@
 import process from "node:process";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { aroundEach, describe, expect, it } from "vitest";
 import { getSlackTokenByTeamId } from "./slack-credentials.ts";
 
 // =============================================================================
@@ -95,14 +95,10 @@ function mockLinkFetch(config: {
 // Test Setup
 // =============================================================================
 
-let originalDevMode: string | undefined;
-
-beforeEach(() => {
-  originalDevMode = process.env.LINK_DEV_MODE;
+aroundEach(async (run) => {
+  const originalDevMode = process.env.LINK_DEV_MODE;
   process.env.LINK_DEV_MODE = "true"; // Skip ATLAS_KEY auth requirement
-});
-
-afterEach(() => {
+  await run();
   if (originalDevMode === undefined) {
     delete process.env.LINK_DEV_MODE;
   } else {

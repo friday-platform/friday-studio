@@ -1,5 +1,5 @@
 import type { SessionHistoryAdapter } from "@atlas/core";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { aroundEach, describe, expect, test, vi } from "vitest";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 
 // ---------------------------------------------------------------------------
@@ -21,13 +21,11 @@ function mockAdapter(): SessionHistoryAdapter {
 
 let registry: SessionStreamRegistry;
 
-beforeEach(() => {
+aroundEach(async (run) => {
   vi.useFakeTimers();
   registry = new SessionStreamRegistry();
   registry.start();
-});
-
-afterEach(() => {
+  await run();
   registry.shutdown();
   vi.useRealTimers();
 });
