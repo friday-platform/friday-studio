@@ -61,6 +61,11 @@ updates:
       # See: https://github.com/porsager/postgres/issues/1143
       - dependency-name: "postgres"
         versions: [">= 3.4.8"]
+      # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
+      # Docker images — rolldown-binding.linux-x64-musl.node not found.
+      # Also requires vite-plugin-svelte v7 migration. Block until resolved.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
       # vite-plugin-svelte v7 requires Vite 8 (Rolldown) — hard API deps on
       # optimizeDeps.rolldownOptions and transformWithOxc. Pinned to ~6.2.4 until
       # Vite 8 reaches stable. See PR #2164 for context.
@@ -450,6 +455,10 @@ updates:
       - "friday-website"
     rebase-strategy: "auto"
     ignore:
+      # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
+      # Docker images. Block until resolved.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
       # vite-plugin-svelte v7 requires Vite 8 (Rolldown). See PR #2164.
       - dependency-name: "@sveltejs/vite-plugin-svelte"
         update-types: ["version-update:semver-major"]
