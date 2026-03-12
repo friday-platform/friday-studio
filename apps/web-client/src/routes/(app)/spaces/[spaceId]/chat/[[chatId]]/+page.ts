@@ -1,18 +1,12 @@
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { ArtifactWithContents } from "@atlas/core/artifacts";
-import { error, redirect } from "@sveltejs/kit";
+import {  redirect } from "@sveltejs/kit";
 import { extractArtifactIds } from "$lib/utils/artifacts";
 import { nanoid } from "$lib/utils/id";
 import type { PageLoad } from "./$types";
 
-export const load: PageLoad = async ({ params, parent }) => {
-  const { featureFlags } = await parent();
-
-  if (!featureFlags.ENABLE_WORKSPACE_PAGE_CONVERSATIONS) {
-    throw error(404, "Not found");
-  }
-
+export const load: PageLoad = async ({ params }) => {
   // New chat mode - generate ID at load time (not render time)
   if (!params.chatId) {
     return {

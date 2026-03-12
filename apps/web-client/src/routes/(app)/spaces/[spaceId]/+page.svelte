@@ -11,7 +11,6 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import { Page } from "$lib/components/page";
-  import { getFeatureFlags } from "$lib/feature-flags.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { listWorkspaceJobs } from "$lib/queries/jobs";
   import { listWorkspaceSessions } from "$lib/queries/sessions";
@@ -25,8 +24,6 @@
   let { data }: { data: PageData } = $props();
 
   let queryClient = useQueryClient();
-
-  const featureFlags = getFeatureFlags();
 
   const COLORS: Color[] = ["yellow", "green", "blue", "red", "purple", "brown"];
 
@@ -111,6 +108,8 @@
         {/if}
       {/snippet}
 
+      <NewChat workspaceId={workspace.id} />
+
       {#if jobsQuery.data?.length}
         <section class="jobs">
           <div class="jobs-grid">
@@ -173,10 +172,6 @@
         </section>
       {:else if jobsQuery.isError}
         <p class="jobs-error">Failed to load jobs.</p>
-      {/if}
-
-      {#if featureFlags.ENABLE_WORKSPACE_PAGE_CONVERSATIONS}
-        <NewChat workspaceId={workspace.id} />
       {/if}
     </Page.Content>
 

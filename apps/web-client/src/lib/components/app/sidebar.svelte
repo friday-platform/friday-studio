@@ -16,7 +16,6 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
-  import { getFeatureFlags } from "$lib/feature-flags.svelte";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
@@ -25,7 +24,6 @@
   import ScrollListener from "../scroll-listener.svelte";
   import Usage from "./usage.svelte";
 
-  const featureFlags = getFeatureFlags();
   const ctx = getAppContext();
   const queryClient = useQueryClient();
 
@@ -146,16 +144,14 @@
 
                 {#if active}
                   <ul class="sub-nav">
-                    {#if featureFlags.ENABLE_WORKSPACE_NAV_CONVERSATIONS}
-                      <li>
-                        <a
-                          href={ctx.routes.spaces.item(space.id, "chat")}
-                          class:active={getActivePage(["chat/[[chatId]]"])}
-                        >
-                          Conversations
-                        </a>
-                      </li>
-                    {/if}
+                    <li>
+                      <a
+                        href={ctx.routes.spaces.item(space.id, "chat")}
+                        class:active={getActivePage(["chat/[[chatId]]"])}
+                      >
+                        Conversations
+                      </a>
+                    </li>
                   </ul>
                 {/if}
               </li>

@@ -41,7 +41,6 @@
   }
 
   .form-wrapper {
-    margin-inline: auto;
     max-inline-size: var(--size-144);
   }
 </style>
