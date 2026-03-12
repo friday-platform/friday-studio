@@ -118,24 +118,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
         { key: "GH_TOKEN", description: "GitHub App installation token.", type: "string" },
       ],
     },
-    hubspot: {
-      id: "hubspot",
-      name: "HubSpot",
-      description:
-        "HubSpot CRM via MCP — manage contacts, companies, deals, tickets, and marketing campaigns. Read and update CRM records, track sales pipelines, and automate marketing workflows.",
-      constraints: "Requires OAuth. CRM and marketing operations only.",
-      urlDomains: ["hubspot.com", "app.hubspot.com"],
-      source: "static",
-      securityRating: "high",
-      configTemplate: {
-        transport: { type: "http", url: "https://mcp.hubspot.com" },
-        auth: { type: "bearer", token_env: "HUBSPOT_ACCESS_TOKEN" },
-        env: { HUBSPOT_ACCESS_TOKEN: { from: "link", provider: "hubspot", key: "access_token" } },
-      },
-      requiredConfig: [
-        { key: "HUBSPOT_ACCESS_TOKEN", description: "HubSpot App Access Token.", type: "string" },
-      ],
-    },
     azure: {
       id: "azure",
       name: "Azure Services",

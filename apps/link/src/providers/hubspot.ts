@@ -1,32 +1,11 @@
 import { readFileSync } from "node:fs";
 import { env } from "node:process";
 import { stringifyError } from "@atlas/utils";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { z } from "zod";
+import { Client } from "@hubspot/api-client";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 
-const MCP_URL = "https://mcp.hubspot.com";
-
-/** Schema for HubSpot OAuth token info response */
-const HubSpotTokenInfoSchema = z.object({
-  user_id: z.number(),
-  hub_id: z.number(),
-  user: z.string().optional(),
-});
-
-async function createMcpClient(accessToken: string): Promise<Client> {
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    requestInit: { headers: { Authorization: `Bearer ${accessToken}` } },
-  });
-  const client = new Client({ name: "friday", version: "1.0.0" }, { capabilities: {} });
-  await client.connect(transport);
-  return client;
-}
-
 /**
- * Creates HubSpot OAuth provider.
- * HubSpot MCP does not support dynamic client registration, so we use static mode.
+ * Creates HubSpot account-level OAuth provider with read/write scopes.
  * Reads client credentials from files specified by env vars.
  *
  * @returns OAuthProvider if HUBSPOT_CLIENT_ID_FILE and HUBSPOT_CLIENT_SECRET_FILE are set, undefined otherwise
@@ -45,7 +24,7 @@ export function createHubSpotProvider(): OAuthProvider | undefined {
   return defineOAuthProvider({
     id: "hubspot",
     displayName: "HubSpot",
-    description: "HubSpot CRM access via MCP",
+    description: "HubSpot account-level access with read/write CRM permissions",
     oauthConfig: {
       mode: "static",
       authorizationEndpoint: "https://app.hubspot.com/oauth/authorize",
@@ -54,33 +33,48 @@ export function createHubSpotProvider(): OAuthProvider | undefined {
       clientSecret,
       scopes: [
         "oauth",
-        "crm.objects.tickets.read", // required by HubSpot MCP
+        "tickets",
         "crm.objects.contacts.read",
+        "crm.objects.contacts.write",
         "crm.objects.companies.read",
+        "crm.objects.companies.write",
         "crm.objects.deals.read",
+        "crm.objects.deals.write",
+        "crm.objects.line_items.read",
+        "crm.objects.line_items.write",
+        "crm.objects.owners.read",
       ],
+      extraAuthParams: {
+        optional_scope: [
+          "crm.objects.orders.read",
+          "crm.objects.orders.write",
+          "crm.objects.quotes.read",
+          "crm.objects.quotes.write",
+          "crm.lists.read",
+          "crm.lists.write",
+          "crm.objects.users.read",
+          "crm.objects.carts.read",
+          "crm.objects.subscriptions.read",
+          "crm.objects.invoices.read",
+        ].join(" "),
+      },
     },
     health: async (tokens) => {
-      const mcpClient = await createMcpClient(tokens.access_token);
       try {
-        await mcpClient.listTools();
+        const client = new Client({ accessToken: tokens.access_token });
+        await client.crm.contacts.basicApi.getPage(1);
         return { healthy: true };
       } catch (e) {
         return { healthy: false, error: stringifyError(e) };
-      } finally {
-        await mcpClient.close();
       }
     },
     identify: async (tokens) => {
-      // HubSpot MCP has no get_self tool - use REST API
-      const res = await fetch(
-        `https://api.hubapi.com/oauth/v1/access-tokens/${tokens.access_token}`,
-      );
-      if (!res.ok) {
-        throw new Error(`HubSpot token info failed: ${res.status}`);
+      const client = new Client({ accessToken: tokens.access_token });
+      const info = await client.oauth.accessTokensApi.get(tokens.access_token);
+      if (info.userId == null) {
+        throw new Error("HubSpot token info missing userId");
       }
-      const data = HubSpotTokenInfoSchema.parse(await res.json());
-      return String(data.user_id); // Immutable user ID
+      return String(info.userId);
     },
   });
 }

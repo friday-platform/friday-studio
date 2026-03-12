@@ -22,6 +22,7 @@
     "nanoid": "5.1.6",
     "oauth4webapi": "3.8.5",
     "postgres": "3.4.7",
+    "@hubspot/api-client": "^13.4.0",
     "zod": "4.3.6"
   },
   "devDependencies": { "jose": "6.2.1", "vitest": "^4.0.18" }

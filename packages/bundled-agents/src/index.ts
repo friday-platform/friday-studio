@@ -5,6 +5,7 @@ import type { QueryExecution } from "./data-analyst/sql-tools.ts";
 import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
+import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import {
   SnowflakeAnalystOutputSchema,
@@ -24,6 +25,7 @@ export {
   emailAgent,
   fathomGetTranscriptAgent,
   googleCalendarAgent,
+  hubspotAgent,
   snowflakeAnalystAgent,
   webSearchAgent,
   slackCommunicatorAgent,
@@ -36,6 +38,7 @@ export {
   EmailOutputSchema,
   FathomOutputSchema,
   GoogleCalendarOutputSchema,
+  HubSpotOutputSchema,
   ResearchOutputSchema,
   SlackOutputSchema,
   SnowflakeAnalystOutputSchema,
