@@ -8462,7 +8462,7 @@
             "npm:typescript@^5.9.3",
             "npm:vite-plugin-compression2@^2.5.1",
             "npm:vite@^7.3.1",
-            "npm:vitest@^4.0.18"
+            "npm:vitest@^4.1.0"
           ]
         }
       },
