@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/bigquery v1.74.0
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/secretmanager v1.16.0
-	cloud.google.com/go/storage v1.61.0
+	cloud.google.com/go/storage v1.61.2
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/ggicci/httpin v0.20.3
 	github.com/go-chi/chi/v5 v5.2.5
@@ -311,7 +311,7 @@ require (
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260209163413-e7419c687ee4 // indirect
 	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
