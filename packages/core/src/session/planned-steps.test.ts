@@ -47,8 +47,8 @@ describe("extractPlannedSteps", () => {
     });
 
     expect(extractPlannedSteps(def)).toEqual([
-      { agentName: "researcher", actionType: "agent" },
-      { agentName: "writer", actionType: "agent" },
+      { agentName: "researcher", stateId: "step_1", actionType: "agent" },
+      { agentName: "writer", stateId: "step_2", actionType: "agent" },
     ]);
   });
 
@@ -72,7 +72,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "summary_result", actionType: "llm" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "summary_result", stateId: "step_1", actionType: "llm" },
+    ]);
   });
 
   test("skips LLM actions without outputTo", () => {
@@ -106,7 +108,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "worker", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "worker", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("prefers ADVANCE signal over other signals", () => {
@@ -128,7 +132,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "worker", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "worker", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("falls back to first signal key when no ADVANCE", () => {
@@ -143,7 +149,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "fetcher", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "fetcher", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("handles array-valued transitions (guarded) by taking first target", () => {
@@ -164,7 +172,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "primary", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "primary", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("detects cycles and stops traversal", () => {
@@ -178,7 +188,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "looper", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "looper", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("stops at state with no transitions", () => {
@@ -192,7 +204,9 @@ describe("extractPlannedSteps", () => {
       },
     });
 
-    expect(extractPlannedSteps(def)).toEqual([{ agentName: "terminal", actionType: "agent" }]);
+    expect(extractPlannedSteps(def)).toEqual([
+      { agentName: "terminal", stateId: "step_1", actionType: "agent" },
+    ]);
   });
 
   test("handles mixed agent and LLM actions in multi-step pipeline", () => {
@@ -224,9 +238,9 @@ describe("extractPlannedSteps", () => {
     });
 
     expect(extractPlannedSteps(def)).toEqual([
-      { agentName: "fetcher", actionType: "agent" },
-      { agentName: "summary", actionType: "llm" },
-      { agentName: "publisher", actionType: "agent" },
+      { agentName: "fetcher", stateId: "fetch", actionType: "agent" },
+      { agentName: "summary", stateId: "summarize", actionType: "llm" },
+      { agentName: "publisher", stateId: "publish", actionType: "agent" },
     ]);
   });
 

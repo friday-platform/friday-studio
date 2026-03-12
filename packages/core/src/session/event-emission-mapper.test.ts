@@ -77,6 +77,7 @@ describe("mapActionToStepStart", () => {
       sessionId: "sess-1",
       stepNumber: 1,
       agentName: "researcher",
+      stateId: "research",
       actionType: "agent",
       task: "research the thing",
     });

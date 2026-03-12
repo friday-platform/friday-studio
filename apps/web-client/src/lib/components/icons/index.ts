@@ -8,6 +8,7 @@ import Close from "./close.svelte";
 import Dashboard from "./dashboard.svelte";
 import DeleteSpace from "./delete-space.svelte";
 import DotFilled from "./dot-filled.svelte";
+import DotOpen from "./dot-open.svelte";
 import DoubleArrow from "./double-arrow.svelte";
 import EyeClosed from "./eye-closed.svelte";
 import Eye from "./eye.svelte";
@@ -28,6 +29,7 @@ import Search from "./search.svelte";
 import Settings from "./settings.svelte";
 import Share from "./share.svelte";
 import Slack from "./slack.svelte";
+import StyledCheckmark from "./styled-checkmark.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
 import TripleDots from "./triple-dots.svelte";
@@ -46,6 +48,7 @@ export const Icons = {
   DeleteSpace,
   DoubleArrow,
   DotFilled,
+  DotOpen,
   Eye,
   EyeClosed,
   Folder,
@@ -65,6 +68,7 @@ export const Icons = {
   Settings,
   Share,
   Slack,
+  StyledCheckmark,
   Trash,
   TriangleRight,
   TripleDots,

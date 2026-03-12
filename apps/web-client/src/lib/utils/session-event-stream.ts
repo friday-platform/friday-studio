@@ -21,6 +21,7 @@ import {
   SessionViewSchema,
   type EphemeralChunk,
   type SessionStreamEvent,
+  type SessionView,
 } from "@atlas/core/session/session-events";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { parseSSEStream, type SSEMessage } from "@atlas/utils";
@@ -176,6 +177,7 @@ async function* fetchJsonFallback(
   // blocks (which session:complete will transition to skipped if unmatched).
   const plannedSteps = view.agentBlocks.map((b) => ({
     agentName: b.agentName,
+    stateId: b.stateId,
     task: b.task,
     actionType: b.actionType,
   }));
@@ -202,8 +204,10 @@ async function* fetchJsonFallback(
       sessionId: view.sessionId,
       stepNumber: block.stepNumber,
       agentName: block.agentName,
+      stateId: block.stateId,
       actionType: block.actionType,
       task: block.task,
+      input: block.input,
       timestamp: view.startedAt,
     };
     yield stepStart;
@@ -242,6 +246,27 @@ async function* fetchJsonFallback(
     };
     yield sessionSummary;
   }
+}
+
+/**
+ * Fetches the session JSON endpoint and returns the full SessionView.
+ * Use this for already-finished sessions to avoid an unnecessary SSE round-trip.
+ */
+export async function fetchSessionView(sessionId: string): Promise<SessionView> {
+  const baseUrl = getAtlasDaemonUrl();
+  const jsonUrl = `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`;
+  const response = await fetch(jsonUrl);
+
+  if (response.status === 410) {
+    throw new Error("Session uses an outdated format and cannot be displayed");
+  }
+
+  if (!response.ok) {
+    throw new Error(`Session JSON request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const json: unknown = await response.json();
+  return SessionViewSchema.parse(json);
 }
 
 /** Error messages that should not trigger reconnection. */

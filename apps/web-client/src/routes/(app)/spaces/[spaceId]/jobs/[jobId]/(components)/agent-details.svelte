@@ -4,7 +4,7 @@
   import { IconSmall } from "$lib/components/icons/small";
   import { toast } from "$lib/components/notification/notification.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
-  import type { Integration } from "$lib/modules/integrations/types";
+  import type { AccountInfo } from "../+page";
 
   interface Agent {
     id: string;
@@ -16,9 +16,9 @@
 
   let {
     agents,
-    integrations,
+    accounts,
     workspaceId,
-  }: { agents: Agent[]; integrations: Integration[]; workspaceId: string } = $props();
+  }: { agents: Agent[]; accounts: Map<string, AccountInfo>; workspaceId: string } = $props();
 
   async function handlePromptBlur(agent: Agent, newPrompt: string) {
     if (newPrompt === agent.prompt) return;
@@ -55,13 +55,11 @@
     return agent.tools ?? [];
   }
 
-  const integrationsByProvider = $derived(new Map(integrations.map((i) => [i.provider, i])));
-
   function getAgentIntegrations(agent: Agent) {
     return getProviders(agent)
       .map((provider) => ({
         provider,
-        account: integrationsByProvider.get(provider),
+        account: accounts.get(provider),
         icon: getServiceIcon(provider),
       }))
       .filter((i) => i.icon || i.account);
@@ -126,7 +124,13 @@
                     {/if}
 
                     <span class="label">
-                      {account?.credential?.displayName ?? account?.credential?.label ?? provider}
+                      {#if account?.connected && account.label}
+                        {account.label}
+                      {:else if account && !account.connected}
+                        {provider} (Disconnected)
+                      {:else}
+                        {provider}
+                      {/if}
                     </span>
                   </div>
                 {/if}

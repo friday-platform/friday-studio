@@ -707,6 +707,7 @@ export class WorkspaceRuntime {
       rawPlannedSteps.length > 0
         ? rawPlannedSteps.map((step) => ({
             agentName: step.agentName,
+            stateId: step.stateId,
             task: this.config.workspace.agents?.[step.agentName]?.description ?? step.agentName,
             actionType: step.actionType,
           }))
@@ -1054,10 +1055,17 @@ export class WorkspaceRuntime {
       const sideChannel = this.agentResultSideChannel.get(sideChannelSessionId);
       if (sideChannel) {
         const key = `${job.name}/${action.agentId}/${fsmContext.state}`;
+        const resultsByCallId = new Map(
+          (result.ok ? result.toolResults : undefined)?.map((tr) => [tr.toolCallId, tr.output]) ??
+            [],
+        );
         const toolCalls =
           (result.ok ? result.toolCalls : undefined)?.map((tc) => ({
             toolName: tc.toolName,
             args: tc.input,
+            ...(resultsByCallId.has(tc.toolCallId) && {
+              result: resultsByCallId.get(tc.toolCallId),
+            }),
           })) ?? [];
         // Structured output = args from the "complete" tool call (the actual result
         // stored in context.results). Falls back to result.data (LLM text) when no

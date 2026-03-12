@@ -9,10 +9,10 @@
   import { experimental_streamedQuery } from "@tanstack/query-core";
   import { createQuery } from "@tanstack/svelte-query";
   import { IconSmall } from "$lib/components/icons/small";
-  import AgentBlockCard from "$lib/components/session-history/agent-block-card.svelte";
   import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { sessionEventStream } from "$lib/utils/session-event-stream";
   import { onMount } from "svelte";
+  import AgentBlockCard from "../../../../sessions/(components)/agent-block-card.svelte";
   import Breadcrumbs from "../(components)/breadcrumbs.svelte";
   import type { PageData } from "./$types";
 

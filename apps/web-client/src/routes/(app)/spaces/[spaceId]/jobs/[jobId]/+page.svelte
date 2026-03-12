@@ -90,7 +90,7 @@
     {#if agents.length > 0}
       <section class="section">
         <h2>Agents</h2>
-        <AgentDetails {agents} integrations={data.integrations} workspaceId={data.spaceId} />
+        <AgentDetails {agents} accounts={data.accounts} workspaceId={data.spaceId} />
       </section>
     {/if}
   </article>

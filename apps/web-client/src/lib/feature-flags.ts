@@ -12,7 +12,6 @@ export interface FeatureFlags {
   ENABLE_SKILLS_FILTERS: boolean;
   ENABLE_SKILL_ASSETS: boolean;
   ENABLE_SKILL_REFERENCES: boolean;
-  ENABLE_GLOBAL_JOB_VIEWS: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -29,7 +28,6 @@ const DEFAULT_FLAGS: FeatureFlags = {
   ENABLE_SKILLS_FILTERS: false,
   ENABLE_SKILL_ASSETS: false,
   ENABLE_SKILL_REFERENCES: false,
-  ENABLE_GLOBAL_JOB_VIEWS: false,
 };
 
 function isFeatureFlagKey(key: string): key is keyof FeatureFlags {

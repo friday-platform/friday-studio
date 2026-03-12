@@ -1283,9 +1283,15 @@ export class FSMEngine {
 
             // Capture LLM result for session history side-channel
             if (result.ok) {
+              const resultsByCallId = new Map(
+                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              );
               const toolCalls = (result.toolCalls ?? []).map((tc) => ({
                 toolName: tc.toolName,
                 args: tc.input,
+                ...(resultsByCallId.has(tc.toolCallId) && {
+                  result: resultsByCallId.get(tc.toolCallId),
+                }),
               }));
               // Structured output = args from the "complete" tool call (the actual
               // result the agent declared). Falls back to result.data (LLM text)

@@ -63,6 +63,7 @@ export function mapActionToStepStart(
     sessionId: event.data.sessionId,
     stepNumber,
     agentName: event.data.actionId ?? "unknown",
+    stateId: event.data.state,
     actionType: SessionActionTypeSchema.parse(event.data.actionType),
     task: snapshot?.task ?? "",
     input: snapshot?.config,

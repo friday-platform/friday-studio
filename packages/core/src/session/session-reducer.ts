@@ -59,6 +59,7 @@ export function reduceSessionEvent(
           event.plannedSteps?.map((step) => ({
             stepNumber: undefined,
             agentName: step.agentName,
+            stateId: step.stateId,
             actionType: step.actionType,
             task: step.task,
             status: "pending" as const,
@@ -129,6 +130,7 @@ function reduceStepStart(
     const updated: AgentBlock = {
       ...pending,
       stepNumber: event.stepNumber,
+      stateId: event.stateId ?? pending.stateId,
       actionType: event.actionType,
       task: event.task,
       input: event.input,
@@ -147,6 +149,7 @@ function reduceStepStart(
       {
         stepNumber: event.stepNumber,
         agentName: event.agentName,
+        stateId: event.stateId,
         actionType: event.actionType,
         task: event.task,
         input: event.input,

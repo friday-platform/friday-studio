@@ -7,7 +7,7 @@
 
 import type { FSMDefinition } from "@atlas/fsm-engine";
 
-export type PlannedStep = { agentName: string; actionType: "agent" | "llm" };
+export type PlannedStep = { agentName: string; stateId: string; actionType: "agent" | "llm" };
 
 /**
  * Traverse the FSM definition graph from its initial state, collecting
@@ -36,9 +36,9 @@ export function extractPlannedSteps(definition: FSMDefinition): PlannedStep[] {
     if (state.entry) {
       for (const action of state.entry) {
         if (action.type === "agent") {
-          steps.push({ agentName: action.agentId, actionType: "agent" });
+          steps.push({ agentName: action.agentId, stateId: currentStateName, actionType: "agent" });
         } else if (action.type === "llm" && action.outputTo) {
-          steps.push({ agentName: action.outputTo, actionType: "llm" });
+          steps.push({ agentName: action.outputTo, stateId: currentStateName, actionType: "llm" });
         }
       }
     }

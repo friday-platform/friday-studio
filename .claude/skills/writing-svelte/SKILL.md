@@ -26,6 +26,20 @@ for full usage.
 
 ## Core Rules
 
+0. **Always use `$lib/components/button.svelte` for buttons** — never write raw
+   `<button>` elements. The `Button` component supports `onclick`, `href` (renders
+   as `<a>`), `size`, `disabled`, and more. Only use a raw element if a design
+   screenshot shows something that clearly isn't a button.
+
+```svelte
+<script>
+  import Button from "$lib/components/button.svelte";
+</script>
+
+<Button onclick={() => query.refetch()}>Retry</Button>
+<Button href="/settings" size="small">Settings</Button>
+```
+
 1. **Use the Hono RPC client for all API calls** — never raw `fetch` with
    `getAtlasDaemonUrl()`. The client at `@atlas/client/v2` provides type-safe
    routes.
@@ -38,6 +52,29 @@ for full usage.
    manage internal edits, receive changes via `onblur(value)` callbacks.
 5. **Use `select` in queries** — unwrap response data at the query level, not in
    every consumer.
+
+## File Organization
+
+- **`$lib/components/`** — general-purpose, reusable components used across
+  multiple routes.
+- **`routes/[route]/(components)/`** — specialized components used only within
+  that route subtree. If a component is only consumed by pages under a single
+  route, co-locate it there instead of `$lib/components/`.
+
+## Routing
+
+- **Use `resolve` from `$app/paths` for internal links** — never interpolate
+  route params manually. `resolve` handles base path and param substitution.
+
+```svelte
+<script>
+  import { resolve } from "$app/paths";
+</script>
+
+<a href={resolve("/spaces/[spaceId]/jobs/[jobId]", { spaceId: "abc", jobId: "my-job" })}>
+  My Job
+</a>
+```
 
 ## Gotchas
 

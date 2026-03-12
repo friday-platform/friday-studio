@@ -124,6 +124,7 @@ describe("session:start", () => {
     expect(view.agentBlocks).toHaveLength(2);
     expect(view.agentBlocks[0]).toMatchObject({
       agentName: "researcher",
+      stateId: undefined,
       task: "research",
       actionType: "agent",
       status: "pending",
@@ -132,6 +133,7 @@ describe("session:start", () => {
     });
     expect(view.agentBlocks[1]).toMatchObject({
       agentName: "writer",
+      stateId: undefined,
       task: "write report",
       actionType: "llm",
       status: "pending",
@@ -192,6 +194,57 @@ describe("step:start", () => {
       agentName: "writer",
       status: "pending",
       stepNumber: undefined,
+    });
+  });
+
+  test("preserves planned stateId when step:start omits stateId", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          {
+            agentName: "researcher",
+            stateId: "planned-state",
+            task: "research",
+            actionType: "agent",
+          },
+        ],
+      }),
+    );
+
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "researcher" }));
+
+    expect(view.agentBlocks[0]).toMatchObject({
+      agentName: "researcher",
+      stateId: "planned-state",
+      status: "running",
+    });
+  });
+
+  test("step:start stateId overrides planned stateId", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          {
+            agentName: "researcher",
+            stateId: "planned-state",
+            task: "research",
+            actionType: "agent",
+          },
+        ],
+      }),
+    );
+
+    view = reduceSessionEvent(
+      view,
+      stepStart({ stepNumber: 1, agentName: "researcher", stateId: "runtime-state" }),
+    );
+
+    expect(view.agentBlocks[0]).toMatchObject({
+      agentName: "researcher",
+      stateId: "runtime-state",
+      status: "running",
     });
   });
 

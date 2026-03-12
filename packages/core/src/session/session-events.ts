@@ -45,7 +45,12 @@ export const SessionStartEventSchema = z.object({
   task: z.string(),
   plannedSteps: z
     .array(
-      z.object({ agentName: z.string(), task: z.string(), actionType: SessionActionTypeSchema }),
+      z.object({
+        agentName: z.string(),
+        stateId: z.string().optional(),
+        task: z.string(),
+        actionType: SessionActionTypeSchema,
+      }),
     )
     .optional(),
   timestamp: z.string(),
@@ -57,6 +62,8 @@ export const StepStartEventSchema = z.object({
   sessionId: z.string(),
   stepNumber: z.number(),
   agentName: z.string(),
+  /** FSM state identifier — stable key for joining to job agent definitions */
+  stateId: z.string().optional(),
   actionType: SessionActionTypeSchema,
   task: z.string(),
   /** Input context from prepare function (accumulated results from prior steps) */
@@ -147,6 +154,8 @@ export type SessionAISummary = z.infer<typeof SessionAISummarySchema>;
 export const AgentBlockSchema = z.object({
   stepNumber: z.number().optional(),
   agentName: z.string(),
+  /** FSM state identifier — stable key for joining to job agent definitions */
+  stateId: z.string().optional(),
   actionType: SessionActionTypeSchema,
   task: z.string(),
   /** Input context from prepare function (accumulated results from prior steps) */

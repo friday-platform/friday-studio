@@ -2,7 +2,6 @@
   <path
     d="M4.75 4.75L11.25 11.25M11.25 4.75L4.75 11.25"
     stroke="currentColor"
-    stroke-width="1.5"
     stroke-linecap="round"
   />
 </svg>
