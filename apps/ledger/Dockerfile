@@ -1,6 +1,6 @@
 # Atlas Ledger service Dockerfile
 
-FROM denoland/deno:alpine-2.7.5 AS builder
+FROM denoland/deno:alpine-2.7.4 AS builder
 
 WORKDIR /app
 

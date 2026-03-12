@@ -83,14 +83,14 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno 2.6.8 - ships glibc libs that break apk
-    # See: https://github.com/denoland/deno/issues/32037
+    # Block denoland/deno 2.7.5 - OTEL regression deadlocks compiled binaries
+    # See: https://github.com/denoland/deno/pull/32501
     # Block golang >= 1.26 (still RC). Docker `versions` uses Bundler syntax
     # on the extracted numeric version, not the full tag.
     # See: https://github.com/dependabot/dependabot-core/issues/9007
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["2.6.8"]
+        versions: ["2.7.5"]
       - dependency-name: "golang"
         versions: [">= 1.26.a"]
 
@@ -286,11 +286,11 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno alpine-2.6.8 - ships glibc libs that break apk
-    # See: https://github.com/denoland/deno/issues/32037
+    # Block denoland/deno 2.7.5 - OTEL regression deadlocks compiled binaries
+    # See: https://github.com/denoland/deno/pull/32501
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["2.6.8"]
+        versions: ["2.7.5"]
 
   # Keep Docker dependencies up to date (for link service)
   - package-ecosystem: "docker"
@@ -308,11 +308,11 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno alpine-2.6.8 - ships glibc libs that break apk
-    # See: https://github.com/denoland/deno/issues/32037
+    # Block denoland/deno 2.7.5 - OTEL regression deadlocks compiled binaries
+    # See: https://github.com/denoland/deno/pull/32501
     ignore:
       - dependency-name: "denoland/deno"
-        versions: ["2.6.8"]
+        versions: ["2.7.5"]
 
   # Keep Docker dependencies up to date (for ledger service)
   - package-ecosystem: "docker"
@@ -330,6 +330,11 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    # Block denoland/deno 2.7.5 - OTEL regression deadlocks compiled binaries
+    # See: https://github.com/denoland/deno/pull/32501
+    ignore:
+      - dependency-name: "denoland/deno"
+        versions: ["2.7.5"]
 
   # Keep Docker dependencies up to date (for signal-gateway)
   - package-ecosystem: "docker"
