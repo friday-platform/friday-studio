@@ -21,7 +21,7 @@
     "@atlas/logger": "workspace:*",
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.43.0",
-    "@sveltejs/kit": "^2.53.4",
+    "@sveltejs/kit": "^2.54.0",
     "@types/deno": "2.5.0",
     "nanoid": "^5.1.6",
     "svelte": "^5.53.9",
