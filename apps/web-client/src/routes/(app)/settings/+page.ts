@@ -7,7 +7,10 @@ export const load: PageLoad = async () => {
   // Load credentials and env vars in parallel
   const [credentialsRes, envVarsRes] = await Promise.all([
     parseResult(client.link.v1.summary.$get({ query: {} })),
-    fetch(`${getAtlasDaemonUrl()}/api/config/env`).then((r) => r.json()) as Promise<{
+    fetch(`${getAtlasDaemonUrl()}/api/config/env`).then((r) => {
+      if (!r.ok) return { success: false, envVars: {} };
+      return r.json();
+    }) as Promise<{
       success: boolean;
       envVars?: Record<string, string>;
       error?: string;

@@ -36,7 +36,16 @@ function stripPrefix(frame: Sentry.StackFrame): void {
   }
 }
 
-export function rewriteFrames(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+/** Error types that represent expected operational conditions, not bugs. */
+const FILTERED_ERROR_TYPES = new Set(["AbortError", "UserConfigurationError"]);
+
+export function rewriteFrames(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
+  for (const exc of event.exception?.values ?? []) {
+    if (exc.type && FILTERED_ERROR_TYPES.has(exc.type)) {
+      return null;
+    }
+  }
+
   for (const exception of event.exception?.values ?? []) {
     for (const frame of exception.stacktrace?.frames ?? []) {
       stripPrefix(frame);

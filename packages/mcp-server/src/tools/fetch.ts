@@ -123,6 +123,9 @@ Usage notes:
             return createSuccessResponse({ output: content, title, metadata: {} });
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return createErrorResponse("Request was aborted (timeout or cancellation)");
+        }
         ctx.logger.error("webfetch tool error", { error, params });
         return createErrorResponse(`webfetch tool error: ${stringifyError(error)}`);
       }

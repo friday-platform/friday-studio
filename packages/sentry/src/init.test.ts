@@ -26,6 +26,7 @@ describe("rewriteFrames", () => {
     ]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("apps/atlasd/src/atlas-daemon.ts");
@@ -41,6 +42,7 @@ describe("rewriteFrames", () => {
     ]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.threads?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("apps/atlasd/src/atlas-daemon.ts");
@@ -56,6 +58,7 @@ describe("rewriteFrames", () => {
     ]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe(
@@ -67,6 +70,7 @@ describe("rewriteFrames", () => {
     const event = makeEvent([{ filename: "/app/apps/atlasd/src/atlas-daemon.ts" }]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("apps/atlasd/src/atlas-daemon.ts");
@@ -76,6 +80,7 @@ describe("rewriteFrames", () => {
     const event = makeEvent([{ filename: "/tmp/deno-compile-atlas/packages/sentry/src/init.ts" }]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("packages/sentry/src/init.ts");
@@ -87,6 +92,7 @@ describe("rewriteFrames", () => {
     ]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("tools/agent-playground/src/lib/server/routes/mcp.ts");
@@ -96,6 +102,7 @@ describe("rewriteFrames", () => {
     const event = makeEvent([{ filename: "apps/atlasd/src/atlas-daemon.ts" }]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("apps/atlasd/src/atlas-daemon.ts");
@@ -105,6 +112,7 @@ describe("rewriteFrames", () => {
     const event = makeEvent([{ filename: "/usr/lib/some-system-lib.js" }]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frame = result.exception?.values?.[0]?.stacktrace?.frames?.[0];
 
     expect(frame?.filename).toBe("/usr/lib/some-system-lib.js");
@@ -122,6 +130,7 @@ describe("rewriteFrames", () => {
       exception: { values: [{ type: "Error", value: "something broke" }] },
     };
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     expect(result.exception?.values?.[0]?.type).toBe("Error");
   });
 
@@ -152,6 +161,7 @@ describe("rewriteFrames", () => {
     };
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
 
     expect(result.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe(
       "apps/atlasd/src/a.ts",
@@ -189,6 +199,7 @@ describe("rewriteFrames", () => {
     ]);
 
     const result = rewriteFrames(event);
+    if (!result) throw new Error("expected non-null result");
     const frames = result.exception?.values?.[0]?.stacktrace?.frames ?? [];
 
     expect(frames[0]?.filename).toBe(
@@ -199,5 +210,42 @@ describe("rewriteFrames", () => {
     expect(frames[3]?.filename).toBe(
       "node_modules/.deno/@hono+mcp@0.2.4/node_modules/@hono/mcp/dist/index.js",
     );
+  });
+
+  test("filters AbortError events", () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: { values: [{ type: "AbortError", value: "The operation was aborted" }] },
+    };
+    expect(rewriteFrames(event)).toBeNull();
+  });
+
+  test("filters UserConfigurationError events", () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: { values: [{ type: "UserConfigurationError", value: "missing OAuth" }] },
+    };
+    expect(rewriteFrames(event)).toBeNull();
+  });
+
+  test("does not filter unrelated error types", () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: { values: [{ type: "TypeError", value: "cannot read property" }] },
+    };
+    expect(rewriteFrames(event)).not.toBeNull();
+  });
+
+  test("filters when filtered type is in chained exception (non-primary position)", () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: {
+        values: [
+          { type: "Error", value: "wrapper error" },
+          { type: "AbortError", value: "The operation was aborted" },
+        ],
+      },
+    };
+    expect(rewriteFrames(event)).toBeNull();
   });
 });
