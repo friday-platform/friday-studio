@@ -149,8 +149,12 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
       return body.published;
     },
 
-    async getSkill() {
-      const res = await client.v1.skill.$get();
+    async getSkill(availableTools?: readonly string[]) {
+      const query: { tools?: string } = {};
+      if (availableTools) {
+        query.tools = availableTools.join(",");
+      }
+      const res = await client.v1.skill.$get({ query });
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`Ledger getSkill failed (${res.status}): ${body}`);

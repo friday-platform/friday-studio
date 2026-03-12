@@ -157,6 +157,8 @@ export interface ResourceStorageAdapter {
   /** Publish all dirty drafts for a workspace in a single pass. Returns count of published resources. */
   publishAllDirty(workspaceId: string): Promise<number>;
 
-  /** Returns dialect-specific SQL skill text for agent prompt injection. */
-  getSkill(): Promise<string>;
+  /** Returns dialect-specific SQL skill text for agent prompt injection.
+   * @param availableTools - When provided, only include sections for these tools. Omit for full text.
+   */
+  getSkill(availableTools?: readonly string[]): Promise<string>;
 }

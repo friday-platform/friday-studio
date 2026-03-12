@@ -116,7 +116,9 @@ export function createApp(adapterFactory: AdapterFactory) {
   const app = baseApp
     .get("/v1/skill", async (c) => {
       const adapter = c.get("adapter");
-      const skill = await adapter.getSkill();
+      const toolsParam = c.req.query("tools");
+      const availableTools = toolsParam ? toolsParam.split(",") : undefined;
+      const skill = await adapter.getSkill(availableTools);
       return c.text(skill);
     })
     .route("/v1/resources", createResourceRoutes())

@@ -5,6 +5,7 @@
 
 import type { MCPServerConfig } from "@atlas/config";
 import { AgentOrchestrator } from "@atlas/core";
+import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { InMemoryDocumentStore } from "@atlas/document-store";
 import type {
   AgentAction,
@@ -19,6 +20,7 @@ import {
   expandArtifactRefsInDocuments,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import type { DAGStep, DocumentContract } from "@atlas/workspace-builder";
@@ -40,6 +42,10 @@ interface ExecutionContext {
   dagSteps?: DAGStep[];
   /** Document contracts for result collection by document ID */
   documentContracts?: DocumentContract[];
+  /** Ledger adapter for resource tools in sub-tasks */
+  resourceAdapter?: ResourceStorageAdapter;
+  /** Artifact storage adapter for image context in sub-tasks */
+  artifactStorage?: ArtifactStorageAdapter;
 }
 
 export interface ExecutionResult {
@@ -201,6 +207,8 @@ export async function executeTaskViaFSMDirect(
       agentExecutor,
       mcpServerConfigs: context.mcpServerConfigs,
       validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
+      resourceAdapter: context.resourceAdapter,
+      artifactStorage: context.artifactStorage,
     });
 
     await engine.initialize();

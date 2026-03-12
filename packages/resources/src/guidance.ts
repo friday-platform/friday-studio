@@ -18,11 +18,18 @@ function formatRowCount(count: number): string {
 }
 
 /**
- * Builds resource guidance text from enriched ResourceEntry records.
- * Categorizes into Documents, Datasets, Files, and External sections.
- * Omits entries with `artifactType: "unavailable"`.
+ * Options for tool-aware resource guidance rendering.
+ * @property availableTools - When provided, instructions are adapted to the caller's tool surface.
+ *   e.g. if `resource_link_ref` is absent, unregistered external refs emit `do_task` guidance instead.
  */
-export function buildResourceGuidance(resources: ResourceEntry[]): string {
+export interface ResourceGuidanceOptions {
+  availableTools?: readonly string[];
+}
+
+export function buildResourceGuidance(
+  resources: ResourceEntry[],
+  options?: ResourceGuidanceOptions,
+): string {
   const documents = resources.filter(
     (r): r is ResourceEntryOf<"document"> => r.type === "document",
   );
@@ -79,9 +86,14 @@ export function buildResourceGuidance(resources: ResourceEntry[]): string {
       if (r.ref) {
         lines.push(`- ${r.slug} (${r.provider}, ref: ${r.ref}): ${r.description}`);
       } else {
+        const hasLinkRef =
+          !options?.availableTools || options.availableTools.includes("resource_link_ref");
+        const instruction = hasLinkRef
+          ? `→ Create this resource using ${r.provider} MCP tools, then call resource_link_ref with the URL/ID to register it.`
+          : `→ Use do_task to create and register this resource.`;
         lines.push(
           `- ${r.slug} (${r.provider}, unregistered): ${r.description}`,
-          `  → Create this resource using ${r.provider} MCP tools, then call resource_link_ref with the URL/ID to register it.`,
+          `  ${instruction}`,
         );
       }
     }

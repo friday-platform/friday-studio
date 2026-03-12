@@ -146,6 +146,8 @@ vi.mock("ai", () => ({
   smoothStream: mockSmoothStream,
   stepCountIs: mockStepCountIs,
   hasToolCall: mockHasToolCall,
+  jsonSchema: vi.fn((s: unknown) => s),
+  tool: vi.fn((config: unknown) => config),
 }));
 
 // ---------------------------------------------------------------------------

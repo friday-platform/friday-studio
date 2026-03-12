@@ -1,7 +1,7 @@
 import { createLogger } from "@atlas/logger";
 import type { JSONValue, Sql } from "postgres";
 import postgres from "postgres";
-import { POSTGRES_SKILL_TEXT } from "./postgres-skill.ts";
+import { buildPostgresSkillText } from "./postgres-skill.ts";
 import { withUserContext } from "./rls.ts";
 import {
   ClientError,
@@ -901,8 +901,8 @@ export class PostgresAdapter implements ResourceStorageAdapter {
     return published;
   }
 
-  getSkill(): Promise<string> {
-    return Promise.resolve(POSTGRES_SKILL_TEXT);
+  getSkill(availableTools?: readonly string[]): Promise<string> {
+    return Promise.resolve(buildPostgresSkillText(availableTools));
   }
 }
 

@@ -114,6 +114,72 @@ describe("buildResourceGuidance", () => {
     );
   });
 
+  it("replaces resource_link_ref instruction with do_task when tool is unavailable", () => {
+    const resources: ResourceEntry[] = [
+      {
+        type: "external_ref",
+        slug: "my_sheet",
+        name: "My Sheet",
+        description: "Some sheet",
+        provider: "google-sheets",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    const result = buildResourceGuidance(resources, {
+      availableTools: ["resource_read", "resource_write"],
+    });
+
+    expect(result).toContain("- my_sheet (google-sheets, unregistered): Some sheet");
+    expect(result).toContain("→ Use do_task to create and register this resource.");
+    expect(result).not.toContain("resource_link_ref");
+  });
+
+  it("preserves resource_link_ref instruction when tool is in availableTools", () => {
+    const resources: ResourceEntry[] = [
+      {
+        type: "external_ref",
+        slug: "my_sheet",
+        name: "My Sheet",
+        description: "Some sheet",
+        provider: "google-sheets",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    const result = buildResourceGuidance(resources, {
+      availableTools: ["resource_read", "resource_write", "resource_link_ref"],
+    });
+
+    expect(result).toContain(
+      "→ Create this resource using google-sheets MCP tools, then call resource_link_ref",
+    );
+    expect(result).not.toContain("do_task");
+  });
+
+  it("preserves default behavior when options is omitted", () => {
+    const resources: ResourceEntry[] = [
+      {
+        type: "external_ref",
+        slug: "my_sheet",
+        name: "My Sheet",
+        description: "Some sheet",
+        provider: "google-sheets",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    const withoutOptions = buildResourceGuidance(resources);
+    const withUndefined = buildResourceGuidance(resources, undefined);
+
+    expect(withoutOptions).toBe(withUndefined);
+    expect(withoutOptions).toContain("resource_link_ref");
+    expect(withoutOptions).not.toContain("do_task");
+  });
+
   it("omits artifact-ref entries with artifactType unavailable", () => {
     const resources: ResourceEntry[] = [
       {

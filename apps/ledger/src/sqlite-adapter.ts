@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { Database } from "@db/sqlite";
-import { SQLITE_SKILL_TEXT } from "./sqlite-skill.ts";
+import { buildSqliteSkillText } from "./sqlite-skill.ts";
 import {
   ClientError,
   type GetResourceOptions,
@@ -819,8 +819,8 @@ ${rawSql}`;
   }
 
   // deno-lint-ignore require-await
-  async getSkill(): Promise<string> {
-    return SQLITE_SKILL_TEXT;
+  async getSkill(availableTools?: readonly string[]): Promise<string> {
+    return buildSqliteSkillText(availableTools);
   }
 }
 

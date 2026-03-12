@@ -34,18 +34,3 @@ export type TaskProgressEvent =
 
 import type { DatetimeContext } from "@atlas/llm";
 export type { DatetimeContext };
-
-/**
- * Execution context with progress callback and cancellation.
- * Passed to FSM executor.
- */
-export interface TaskExecutionContext {
-  sessionId: string;
-  workspaceId: string;
-  streamId: string;
-  userId?: string;
-  daemonUrl?: string;
-  datetime?: DatetimeContext;
-  onProgress?: (event: TaskProgressEvent) => void;
-  abortSignal?: AbortSignal;
-}

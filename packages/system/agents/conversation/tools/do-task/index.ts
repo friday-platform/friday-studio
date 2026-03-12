@@ -3,8 +3,10 @@
  */
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
+import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { truncateUnicode } from "@atlas/utils";
@@ -35,12 +37,7 @@ import {
   isFastpathEligible,
 } from "./fastpath.ts";
 import { generateFriendlyDescriptions } from "./friendly-descriptions.ts";
-import type {
-  EnhancedTaskPlan,
-  EnhancedTaskStep,
-  TaskExecutionContext,
-  TaskProgressEvent,
-} from "./types.ts";
+import type { EnhancedTaskPlan, EnhancedTaskStep, TaskProgressEvent } from "./types.ts";
 
 /**
  * Strip UUIDs from user-facing progress messages.
@@ -258,6 +255,8 @@ export function createDoTaskTool(
       localTime: string;
       timezoneOffset: string;
     };
+    resourceAdapter?: ResourceStorageAdapter;
+    artifactStorage?: ArtifactStorageAdapter;
   },
   logger: Logger,
   abortSignal?: AbortSignal,
@@ -413,6 +412,8 @@ export function createDoTaskTool(
               intent,
               dagSteps: [dagStep],
               documentContracts: [contract],
+              resourceAdapter: session.resourceAdapter,
+              artifactStorage: session.artifactStorage,
             });
 
             const execMs = Date.now();
@@ -606,30 +607,21 @@ export function createDoTaskTool(
         }
 
         {
-          const context: TaskExecutionContext = {
+          const execResult = await executeTaskViaFSMDirect(fsmDefinition, plan.steps, {
             sessionId: session.sessionId,
             workspaceId: session.workspaceId,
             streamId: session.streamId,
             userId: session.userId,
             daemonUrl: session.daemonUrl,
             datetime: session.datetime,
-            abortSignal,
-            onProgress: emitProgress,
-          };
-
-          const execResult = await executeTaskViaFSMDirect(fsmDefinition, plan.steps, {
-            sessionId: context.sessionId,
-            workspaceId: context.workspaceId,
-            streamId: context.streamId,
-            userId: context.userId,
-            daemonUrl: context.daemonUrl,
-            datetime: context.datetime,
             mcpServerConfigs: fullPipelineConfigs,
-            onProgress: context.onProgress,
-            abortSignal: context.abortSignal,
+            onProgress: emitProgress,
+            abortSignal,
             intent,
             dagSteps: classifiedJob.steps,
             documentContracts: classifiedJob.documentContracts,
+            resourceAdapter: session.resourceAdapter,
+            artifactStorage: session.artifactStorage,
           });
 
           const execMs = Date.now();

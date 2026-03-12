@@ -1,6 +1,7 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import type { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import type { ResourceEntry } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,10 +12,14 @@ vi.mock("@atlas/llm", async () => {
 
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import {
+  type ArtifactSummary,
   buildSkillsSection,
+  computeOrphanedArtifacts,
   formatWorkspaceSection,
   generateChatTitle,
   getSystemPrompt,
+  parseArtifactSummaries,
+  parseResourceEntries,
 } from "./workspace-chat.agent.ts";
 
 function makeLogger(): Logger {
@@ -35,11 +40,20 @@ type WorkspaceDetails = {
   agents: string[];
   jobs: Array<{ id: string; name: string; description?: string }>;
   signals: Array<{ name: string }>;
-  resources: Array<{ id: string; type: string; title: string; summary: string }>;
+  resourceEntries: ResourceEntry[];
+  orphanedArtifacts: Array<{ id: string; type: string; title: string; summary: string }>;
 };
 
 function makeDetails(overrides: Partial<WorkspaceDetails> = {}): WorkspaceDetails {
-  return { name: "test-workspace", agents: [], jobs: [], signals: [], resources: [], ...overrides };
+  return {
+    name: "test-workspace",
+    agents: [],
+    jobs: [],
+    signals: [],
+    resourceEntries: [],
+    orphanedArtifacts: [],
+    ...overrides,
+  };
 }
 
 function makeMessage(role: "user" | "assistant", text: string): AtlasUIMessage {
@@ -92,14 +106,9 @@ describe("formatWorkspaceSection", () => {
     expect(result).toContain("<signals>webhook, cron</signals>");
   });
 
-  it("renders resources section", () => {
-    const result = formatWorkspaceSection(
-      "ws-7",
-      makeDetails({
-        resources: [{ id: "r1", type: "document", title: "Readme", summary: "Project docs" }],
-      }),
-    );
-    expect(result).toContain('<resource id="r1" type="document">Readme - Project docs</resource>');
+  it("does not render resources XML block (handled separately via guidance)", () => {
+    const result = formatWorkspaceSection("ws-7", makeDetails());
+    expect(result).not.toContain("<resources>");
   });
 
   it("renders all sections together", () => {
@@ -111,7 +120,6 @@ describe("formatWorkspaceSection", () => {
         agents: ["a1"],
         jobs: [{ id: "j1", name: "build", description: "Build all" }],
         signals: [{ name: "push" }],
-        resources: [{ id: "r1", type: "file", title: "Config", summary: "App config" }],
       }),
     );
 
@@ -120,7 +128,7 @@ describe("formatWorkspaceSection", () => {
     expect(result).toContain("<agents>a1</agents>");
     expect(result).toContain("<jobs>\nbuild - Build all\n</jobs>");
     expect(result).toContain("<signals>push</signals>");
-    expect(result).toContain('<resource id="r1" type="file">Config - App config</resource>');
+    expect(result).not.toContain("<resources>");
     expect(result).toMatch(/<\/workspace>$/);
   });
 });
@@ -185,29 +193,41 @@ describe("getSystemPrompt", () => {
 
   it("appends integrations section when provided", () => {
     const integrations = "<integrations>github</integrations>";
-    const result = getSystemPrompt(workspaceSection, integrations);
+    const result = getSystemPrompt(workspaceSection, { integrations });
     expect(result).toBe(`${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${integrations}`);
   });
 
   it("appends skills section when provided", () => {
     const skills = "<available_skills>deploy</available_skills>";
-    const result = getSystemPrompt(workspaceSection, undefined, skills);
+    const result = getSystemPrompt(workspaceSection, { skills });
     expect(result).toBe(`${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${skills}`);
   });
 
   it("appends user identity section when provided", () => {
     const identity = "<user>alice</user>";
-    const result = getSystemPrompt(workspaceSection, undefined, undefined, identity);
+    const result = getSystemPrompt(workspaceSection, { userIdentity: identity });
     expect(result).toBe(`${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${identity}`);
+  });
+
+  it("appends resource section after workspace section", () => {
+    const resources = "## Workspace Resources\n\nDocuments:\n- food_log: Daily food tracker.";
+    const result = getSystemPrompt(workspaceSection, { resources });
+    expect(result).toBe(`${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${resources}`);
   });
 
   it("appends all optional sections in order", () => {
     const integrations = "<integrations>github</integrations>";
     const skills = "<available_skills>deploy</available_skills>";
     const identity = "<user>alice</user>";
-    const result = getSystemPrompt(workspaceSection, integrations, skills, identity);
+    const resources = "## Workspace Resources";
+    const result = getSystemPrompt(workspaceSection, {
+      integrations,
+      skills,
+      userIdentity: identity,
+      resources,
+    });
     expect(result).toBe(
-      `${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${integrations}\n\n${skills}\n\n${identity}`,
+      `${SYSTEM_PROMPT}\n\n${workspaceSection}\n\n${resources}\n\n${integrations}\n\n${skills}\n\n${identity}`,
     );
   });
 });
@@ -264,5 +284,256 @@ describe("generateChatTitle", () => {
     const title = await generateChatTitle(messages, logger);
 
     expect(title).toBe("Saved Chat");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseResourceEntries
+// ---------------------------------------------------------------------------
+describe("parseResourceEntries", () => {
+  const ts = "2026-03-01T00:00:00Z";
+
+  it("parses document entries", () => {
+    const data = {
+      resources: [
+        {
+          type: "document",
+          slug: "log",
+          name: "Log",
+          description: "A log",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+    };
+    const entries = parseResourceEntries(data);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({
+      type: "document",
+      slug: "log",
+      name: "Log",
+      description: "A log",
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  });
+
+  it("parses external_ref entries", () => {
+    const data = {
+      resources: [
+        {
+          type: "external_ref",
+          slug: "sheet",
+          name: "Sheet",
+          description: "Spreadsheet",
+          provider: "google",
+          ref: "abc123",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+    };
+    const entries = parseResourceEntries(data);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: "external_ref", slug: "sheet", provider: "google" });
+  });
+
+  it("parses artifact_ref entries with canonical artifact types", () => {
+    const data = {
+      resources: [
+        {
+          type: "artifact_ref",
+          slug: "plan",
+          name: "Plan",
+          description: "Workspace plan",
+          artifactId: "art-1",
+          artifactType: "workspace-plan",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+    };
+    const entries = parseResourceEntries(data);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "workspace-plan" });
+  });
+
+  it("parses artifact_ref entries with 'unavailable' type", () => {
+    const data = {
+      resources: [
+        {
+          type: "artifact_ref",
+          slug: "x",
+          name: "X",
+          description: "Missing",
+          artifactId: "art-2",
+          artifactType: "unavailable",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+    };
+    const entries = parseResourceEntries(data);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "unavailable" });
+  });
+
+  it("parses mixed entry types", () => {
+    const data = {
+      resources: [
+        {
+          type: "document",
+          slug: "doc",
+          name: "Doc",
+          description: "D",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          type: "external_ref",
+          slug: "ext",
+          name: "Ext",
+          description: "E",
+          provider: "notion",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          type: "artifact_ref",
+          slug: "art",
+          name: "Art",
+          description: "A",
+          artifactId: "a1",
+          artifactType: "table",
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+    };
+    const entries = parseResourceEntries(data);
+    expect(entries).toHaveLength(3);
+    expect(entries.map((e) => e.type)).toEqual(["document", "external_ref", "artifact_ref"]);
+  });
+
+  it("returns empty array for invalid data", () => {
+    expect(parseResourceEntries(null)).toEqual([]);
+    expect(parseResourceEntries({})).toEqual([]);
+    expect(parseResourceEntries({ resources: "not-array" })).toEqual([]);
+  });
+
+  it("returns empty array when individual entries have invalid shape", () => {
+    const data = { resources: [{ type: "document" }] };
+    expect(parseResourceEntries(data)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseArtifactSummaries
+// ---------------------------------------------------------------------------
+describe("parseArtifactSummaries", () => {
+  it("parses valid artifact summaries", () => {
+    const data = {
+      artifacts: [
+        { id: "a1", type: "table", title: "Sales", summary: "Sales data" },
+        { id: "a2", type: "file", title: "Report", summary: "Monthly report" },
+      ],
+    };
+    const summaries = parseArtifactSummaries(data);
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]).toEqual({
+      id: "a1",
+      type: "table",
+      title: "Sales",
+      summary: "Sales data",
+    });
+  });
+
+  it("returns empty array for invalid data", () => {
+    expect(parseArtifactSummaries(null)).toEqual([]);
+    expect(parseArtifactSummaries({})).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeOrphanedArtifacts
+// ---------------------------------------------------------------------------
+describe("computeOrphanedArtifacts", () => {
+  const ts = "2026-03-01T00:00:00Z";
+
+  function makeArtifact(id: string): ArtifactSummary {
+    return { id, type: "table", title: `Artifact ${id}`, summary: "desc" };
+  }
+
+  it("returns all artifacts when no resource entries exist", () => {
+    const artifacts = [makeArtifact("a1"), makeArtifact("a2")];
+    const orphans = computeOrphanedArtifacts([], artifacts);
+    expect(orphans).toEqual(artifacts);
+  });
+
+  it("returns all artifacts when no artifact_ref entries exist", () => {
+    const entries: ResourceEntry[] = [
+      {
+        type: "document",
+        slug: "doc",
+        name: "Doc",
+        description: "D",
+        createdAt: ts,
+        updatedAt: ts,
+      },
+    ];
+    const artifacts = [makeArtifact("a1")];
+    const orphans = computeOrphanedArtifacts(entries, artifacts);
+    expect(orphans).toEqual(artifacts);
+  });
+
+  it("excludes artifacts linked via artifact_ref", () => {
+    const entries: ResourceEntry[] = [
+      {
+        type: "artifact_ref",
+        slug: "linked",
+        name: "Linked",
+        description: "L",
+        artifactId: "a1",
+        artifactType: "table",
+        createdAt: ts,
+        updatedAt: ts,
+      },
+    ];
+    const artifacts = [makeArtifact("a1"), makeArtifact("a2")];
+    const orphans = computeOrphanedArtifacts(entries, artifacts);
+    expect(orphans).toEqual([makeArtifact("a2")]);
+  });
+
+  it("returns empty array when all artifacts are linked", () => {
+    const entries: ResourceEntry[] = [
+      {
+        type: "artifact_ref",
+        slug: "s1",
+        name: "S1",
+        description: "D",
+        artifactId: "a1",
+        artifactType: "table",
+        createdAt: ts,
+        updatedAt: ts,
+      },
+      {
+        type: "artifact_ref",
+        slug: "s2",
+        name: "S2",
+        description: "D",
+        artifactId: "a2",
+        artifactType: "file",
+        createdAt: ts,
+        updatedAt: ts,
+      },
+    ];
+    const artifacts = [makeArtifact("a1"), makeArtifact("a2")];
+    const orphans = computeOrphanedArtifacts(entries, artifacts);
+    expect(orphans).toEqual([]);
+  });
+
+  it("returns empty array when no artifacts exist", () => {
+    const orphans = computeOrphanedArtifacts([], []);
+    expect(orphans).toEqual([]);
   });
 });

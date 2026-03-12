@@ -3,6 +3,8 @@ import { createAgent, ok, repairToolCall, validateAtlasUIMessages } from "@atlas
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
+import { ArtifactTypeSchema } from "@atlas/core/artifacts";
+import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
@@ -14,6 +16,8 @@ import {
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import type { ResourceEntry } from "@atlas/resources";
+import { buildResourceGuidance, createLedgerClient } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
 import {
@@ -32,6 +36,7 @@ import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
 import { createWorkspaceDoTask } from "./tools/do-task.ts";
 import { createJobTools } from "./tools/job-tools.ts";
+import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 
 const ROLE_SYSTEM = "system" as const;
 
@@ -39,8 +44,90 @@ interface WorkspaceChatResult {
   text: string | undefined;
 }
 
+/** Artifact shape from the artifacts storage endpoint. */
+export interface ArtifactSummary {
+  id: string;
+  type: string;
+  title: string;
+  summary: string;
+}
+
+/** Zod schema for parsing resource entries from the daemon API. */
+const ResourceEntrySchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("document"),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("external_ref"),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+    provider: z.string(),
+    ref: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("artifact_ref"),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+    artifactId: z.string(),
+    artifactType: z.union([ArtifactTypeSchema, z.literal("unavailable")]),
+    rowCount: z.number().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+]);
+
+const ResourcesResponseSchema = z.object({ resources: z.array(ResourceEntrySchema) });
+const ArtifactsResponseSchema = z.object({
+  artifacts: z.array(
+    z.object({ id: z.string(), type: z.string(), title: z.string(), summary: z.string() }),
+  ),
+});
+
 /**
- * Fetch workspace details: config, agents, jobs, signals.
+ * Parse resource entries from raw daemon API response.
+ * Returns empty array on invalid data (graceful degradation).
+ */
+export function parseResourceEntries(data: unknown): ResourceEntry[] {
+  const parsed = ResourcesResponseSchema.safeParse(data);
+  return parsed.success ? parsed.data.resources : [];
+}
+
+/**
+ * Parse artifact summaries from raw daemon API response.
+ * Returns empty array on invalid data.
+ */
+export function parseArtifactSummaries(data: unknown): ArtifactSummary[] {
+  const parsed = ArtifactsResponseSchema.safeParse(data);
+  return parsed.success ? parsed.data.artifacts : [];
+}
+
+/**
+ * Compute orphaned artifacts — those whose IDs don't appear in any artifact_ref resource entry.
+ */
+export function computeOrphanedArtifacts(
+  resourceEntries: ResourceEntry[],
+  artifacts: ArtifactSummary[],
+): ArtifactSummary[] {
+  const linkedArtifactIds = new Set(
+    resourceEntries
+      .filter((e): e is ResourceEntry & { type: "artifact_ref" } => e.type === "artifact_ref")
+      .map((e) => e.artifactId),
+  );
+  return artifacts.filter((a) => !linkedArtifactIds.has(a.id));
+}
+
+/**
+ * Fetch workspace details: config, agents, jobs, signals, resources, artifacts.
  */
 async function fetchWorkspaceDetails(
   workspaceId: string,
@@ -51,15 +138,18 @@ async function fetchWorkspaceDetails(
   agents: string[];
   jobs: Array<{ id: string; name: string; description?: string }>;
   signals: Array<{ name: string }>;
-  resources: Array<{ id: string; type: string; title: string; summary: string }>;
+  resourceEntries: ResourceEntry[];
+  orphanedArtifacts: ArtifactSummary[];
 }> {
-  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult] = await Promise.all([
-    parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
-    parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
-    parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
-    parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
-    parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
-  ]);
+  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult, resourcesResult] =
+    await Promise.all([
+      parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
+      parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
+      parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
+      parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
+      parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
+      parseResult(client.workspace[":workspaceId"].resources.$get({ param: { workspaceId } })),
+    ]);
 
   const name = wsResult.ok ? (wsResult.data.name ?? workspaceId) : workspaceId;
   const description = wsResult.ok ? wsResult.data.description : undefined;
@@ -108,18 +198,21 @@ async function fetchWorkspaceDetails(
     logger.warn("Failed to fetch workspace signals", { workspaceId, error: signalsResult.error });
   }
 
-  const resources: Array<{ id: string; type: string; title: string; summary: string }> = [];
+  // Parse resource entries from daemon API (graceful degradation on failure)
+  let resourceEntries: ResourceEntry[] = [];
+  if (resourcesResult.ok) {
+    resourceEntries = parseResourceEntries(resourcesResult.data);
+  } else {
+    logger.warn("Failed to fetch workspace resources", {
+      workspaceId,
+      error: resourcesResult.error,
+    });
+  }
+
+  // Parse artifacts and compute orphans (artifacts not linked to any resource entry)
+  let artifacts: ArtifactSummary[] = [];
   if (artifactsResult.ok) {
-    const parsed = z
-      .object({
-        artifacts: z.array(
-          z.object({ id: z.string(), type: z.string(), title: z.string(), summary: z.string() }),
-        ),
-      })
-      .safeParse(artifactsResult.data);
-    if (parsed.success) {
-      resources.push(...parsed.data.artifacts);
-    }
+    artifacts = parseArtifactSummaries(artifactsResult.data);
   } else {
     logger.warn("Failed to fetch workspace artifacts", {
       workspaceId,
@@ -127,7 +220,9 @@ async function fetchWorkspaceDetails(
     });
   }
 
-  return { name, description, agents, jobs, signals, resources };
+  const orphanedArtifacts = computeOrphanedArtifacts(resourceEntries, artifacts);
+
+  return { name, description, agents, jobs, signals, resourceEntries, orphanedArtifacts };
 }
 
 /**
@@ -159,13 +254,6 @@ export function formatWorkspaceSection(
     section += `\n<signals>${details.signals.map((s) => s.name).join(", ")}</signals>`;
   }
 
-  if (details.resources.length > 0) {
-    const resourceEntries = details.resources.map((r) => {
-      return `<resource id="${r.id}" type="${r.type}">${r.title} - ${r.summary}</resource>`;
-    });
-    section += `\n<resources>\n${resourceEntries.join("\n")}\n</resources>`;
-  }
-
   section += "\n</workspace>";
   return section;
 }
@@ -191,24 +279,26 @@ ${entries.join("\n")}
  */
 export function getSystemPrompt(
   workspaceSection: string,
-  integrationsSection?: string,
-  skillsSection?: string,
-  userIdentitySection?: string,
+  options?: { integrations?: string; skills?: string; userIdentity?: string; resources?: string },
 ): string {
   let prompt = SYSTEM_PROMPT;
 
   prompt = `${prompt}\n\n${workspaceSection}`;
 
-  if (integrationsSection) {
-    prompt = `${prompt}\n\n${integrationsSection}`;
+  if (options?.resources) {
+    prompt = `${prompt}\n\n${options.resources}`;
   }
 
-  if (skillsSection) {
-    prompt = `${prompt}\n\n${skillsSection}`;
+  if (options?.integrations) {
+    prompt = `${prompt}\n\n${options.integrations}`;
   }
 
-  if (userIdentitySection) {
-    prompt = `${prompt}\n\n${userIdentitySection}`;
+  if (options?.skills) {
+    prompt = `${prompt}\n\n${options.skills}`;
+  }
+
+  if (options?.userIdentity) {
+    prompt = `${prompt}\n\n${options.userIdentity}`;
   }
 
   return prompt;
@@ -359,6 +449,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           connectServiceTool.connect_service = createConnectServiceTool(providerIds);
         }
 
+        // Resource adapter — shared by resource tools and do_task sub-tasks
+        const resourceAdapter = createLedgerClient();
+
         // do_task (workspace-scoped if config available, standard otherwise)
         const doTaskSession = {
           sessionId: session.sessionId || `session-${Date.now()}`,
@@ -367,6 +460,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           userId: session.userId,
           daemonUrl: getAtlasDaemonUrl(),
           datetime: session.datetime,
+          resourceAdapter,
+          artifactStorage: ArtifactStorage,
         };
         const fallbackConfig: WorkspaceConfig = {
           version: "1.0",
@@ -393,20 +488,69 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           logger,
         );
 
+        // Resource tools — only register when workspace has document resources
+        const hasDocuments = workspaceDetails.resourceEntries.some((e) => e.type === "document");
+        const resourceTools = hasDocuments
+          ? createResourceChatTools(
+              resourceAdapter,
+              new Map(workspaceDetails.resourceEntries.map((e) => [e.slug, e])),
+              workspaceId,
+            )
+          : {};
+
         const allTools = {
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
+          ...resourceTools,
           do_task: doTaskTool,
           load_skill: loadSkillTool,
         };
 
-        const systemPrompt = getSystemPrompt(
-          workspaceSection,
-          integrationsSection,
-          skillsSection,
-          userIdentitySection,
-        );
+        // Build resource section for system prompt
+        const resourceSectionParts: string[] = [];
+
+        if (hasDocuments) {
+          resourceSectionParts.push(`<resources>
+Use resource_read/resource_write for direct document operations — faster than do_task or job tools.
+For external services, use do_task. For artifact data, use artifacts_get.
+</resources>`);
+        }
+
+        const resourceGuidance = buildResourceGuidance(workspaceDetails.resourceEntries, {
+          availableTools: RESOURCE_CHAT_TOOL_NAMES,
+        });
+        if (resourceGuidance) {
+          resourceSectionParts.push(resourceGuidance);
+        }
+
+        if (workspaceDetails.orphanedArtifacts.length > 0) {
+          const orphanLines = workspaceDetails.orphanedArtifacts.map(
+            (a) => `- ${a.id} (${a.type}): ${a.title} - ${a.summary}`,
+          );
+          resourceSectionParts.push(`Files (access via artifacts_get):\n${orphanLines.join("\n")}`);
+        }
+
+        if (hasDocuments) {
+          try {
+            const skillText = await resourceAdapter.getSkill(RESOURCE_CHAT_TOOL_NAMES);
+            if (skillText) {
+              resourceSectionParts.push(skillText);
+            }
+          } catch (err) {
+            logger.warn("Failed to fetch resource skill text", { error: err });
+          }
+        }
+
+        const resourceSection =
+          resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
+
+        const systemPrompt = getSystemPrompt(workspaceSection, {
+          integrations: integrationsSection,
+          skills: skillsSection,
+          userIdentity: userIdentitySection,
+          resources: resourceSection,
+        });
         const datetimeMessage = buildTemporalFacts(session.datetime);
 
         // Capture system prompt context on first turn (fire-and-forget)
@@ -426,7 +570,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           agentCount: workspaceDetails.agents.length,
           jobCount: workspaceDetails.jobs.length,
           signalCount: workspaceDetails.signals.length,
-          resourceCount: workspaceDetails.resources.length,
+          resourceCount: workspaceDetails.resourceEntries.length,
           integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
           userIdentity: userIdentitySection ? "available" : "unavailable",
         });

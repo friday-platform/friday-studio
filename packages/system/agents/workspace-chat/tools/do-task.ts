@@ -6,6 +6,8 @@
  */
 
 import type { WorkspaceConfig } from "@atlas/config";
+import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
+import type { ResourceStorageAdapter } from "@atlas/ledger";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import {
@@ -26,6 +28,8 @@ interface DoTaskSession {
     localTime: string;
     timezoneOffset: string;
   };
+  resourceAdapter?: ResourceStorageAdapter;
+  artifactStorage?: ArtifactStorageAdapter;
 }
 
 export function createWorkspaceDoTask(

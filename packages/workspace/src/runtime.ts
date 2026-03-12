@@ -319,7 +319,7 @@ export class WorkspaceRuntime {
 
     // Reserved signal name validation — "chat" is system-owned
     const configSignals = this.config.workspace.signals || {};
-    if (configSignals["chat"]) {
+    if (configSignals.chat) {
       throw new Error(
         `Workspace "${this.workspace.id}" defines a "chat" signal, but "chat" is reserved for workspace direct chat. Rename your signal.`,
       );

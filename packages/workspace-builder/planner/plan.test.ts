@@ -525,4 +525,56 @@ describe("generatePlan — resource declarations", () => {
       }),
     );
   });
+
+  it("system prompt suppresses pure-CRUD jobs for resource-only workspaces", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Test", purpose: "Test" },
+          signals: [],
+          agents: [],
+          resources: [],
+        },
+      },
+    });
+
+    await generatePlan("track my food", { mode: "workspace" });
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("Do NOT create jobs for basic resource operations"),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("system prompt specifies what still gets jobs", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        plan: {
+          workspace: { name: "Test", purpose: "Test" },
+          signals: [],
+          agents: [],
+          resources: [],
+        },
+      },
+    });
+
+    await generatePlan("track my food", { mode: "workspace" });
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("External service integration"),
+          }),
+        ]),
+      }),
+    );
+  });
 });

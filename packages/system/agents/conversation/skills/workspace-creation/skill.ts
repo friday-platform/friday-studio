@@ -3,11 +3,13 @@ import type { Skill } from "../index.ts";
 export const workspaceCreationSkill = {
   id: "workspace-creation",
   description:
-    "Use when user wants to create automations, monitoring, scheduled tasks, or workflows. Covers workspace planning and creation.",
+    "Use when user wants to create a workspace — data trackers, automations, monitoring, scheduled tasks, or workflows. Covers workspace planning and creation.",
   instructions: `# Workspace Creation
 
 ## When to Use
+- User says: "track my X", "log my X", "manage my X", "keep a list of X"
 - User says: "monitor X", "automate Y", "alert when Z", "schedule X"
+- User wants to store and manage data through conversation
 - User wants recurring/scheduled tasks
 - User needs persistent automation
 
@@ -54,8 +56,35 @@ When the user mentions an external service:
 
 ## Workflow (follow exactly)
 
-### Step 1: Gather Requirements
-Ask about (use numbered list):
+### Step 1: Classify Intent
+
+Determine whether this is **data management** or **automation**:
+
+**Data management** — user wants to track, log, list, or manage data through
+conversation. Signals: "track my X", "manage my X", "log my X", "keep a list of
+X". No external services, no scheduled triggers, no notifications. The workspace
+IS the chat — the user interacts with their data by talking to it.
+
+**Automation** — user wants scheduled tasks, monitoring, alerts, or multi-service
+workflows. Signals: "monitor X", "alert when X", "every day do X", "sync X to
+Y", "send me a report".
+
+Some requests are **hybrid** — data management PLUS automation (e.g., "track my
+food and send me a weekly summary on Slack"). Treat these as automation with a
+data storage component.
+
+### Step 2: Gather Requirements
+
+**For data management workspaces**, ask only about data:
+1. What data do you want to track? What fields matter?
+2. Do you want to store it in Friday (built-in, no external service needed), or
+   in an external service like Notion or Google Sheets?
+
+Do NOT ask about triggers, frequency, output destinations, or services — these
+are chat-first workspaces with no automation. Do NOT frame the interaction as
+"on-demand triggering" or mention signals/webhooks.
+
+**For automation workspaces** (and hybrid), ask about:
 1. Trigger: how/when should this start?
 2. Frequency: how often? (if recurring)
 3. Data: does this need to track or store anything over time? Suggest storing it
@@ -68,31 +97,45 @@ Ask about (use numbered list):
 4. Output: where should results go? (email, Slack, etc.)
 5. Services: what APIs/integrations needed?
 
-### Step 2: Generate Plan
+### Step 3: Generate Plan
 Call workspace-planner with complete user intent.
+
+**For data management workspaces**, frame the intent clearly:
+- Describe the data and its schema
+- Say "store in Friday" (or the chosen external service)
+- Do NOT mention triggers, signals, webhooks, or on-demand submission
+- Do NOT say "the user triggers it manually" — that implies a signal
+
+Example good intent: "Track daily food intake. Store in Friday with columns:
+food_name, quantity, meal_type (breakfast/lunch/dinner/snack), logged_at. No
+external services."
+
+Example bad intent: "Create a food tracker with on-demand logging. The user
+triggers it manually by submitting what they ate. The signal should accept..."
+
 Returns: {planSummary, artifactId, revision}
 The plan is automatically displayed to the user — do NOT call display_artifact.
 Present planSummary to user and wait for approval.
 
-### Step 3: Get Approval
+### Step 4: Get Approval
 NEVER create without explicit approval.
 Wait for: "yes", "proceed", "go ahead", "create it"
 
 **On approval (user says yes):**
 - The artifactId is in workspace-planner's response
-- Go directly to Step 4
+- Go directly to Step 5
 - DO NOT call workspace-planner again
 
 **On change request (user asks for modifications):**
 - Call workspace-planner with SAME artifactId + user's changes
 - This creates a revision, not a new plan
-- Return to Step 2 to show updated plan
+- Return to Step 3 to show updated plan
 
-### Step 4: Create Workspace
+### Step 5: Create Workspace
 IMMEDIATELY after approval, call fsm-workspace-creator with {artifactId}.
 Do NOT re-plan. The plan was already approved.
 
-### Step 5: Handle Creation Errors
+### Step 6: Handle Creation Errors
 
 If fsm-workspace-creator fails:
 

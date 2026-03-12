@@ -228,7 +228,19 @@ just say "store in Notion" without referencing something specific, omit \`ref\`.
 - Data flows from one agent to another within the same job (use document contracts)
 - Agent writes to an external service as a one-shot notification (e.g., "send a Slack message") with no persistent state
 - Data is ephemeral and only needed for a single run
-- The external service IS the persistent store — when the user links to an existing Notion page or Google Sheet, that IS where data lives. Do NOT add a document resource for data that flows through the pipeline and ends up in the external service. Example: "read bank transactions and update my Google Sheet" needs only the Google Sheets external-ref, not an additional transactions document. The agent reads, processes, and writes to the sheet in one pass.`;
+- The external service IS the persistent store — when the user links to an existing Notion page or Google Sheet, that IS where data lives. Do NOT add a document resource for data that flows through the pipeline and ends up in the external service. Example: "read bank transactions and update my Google Sheet" needs only the Google Sheets external-ref, not an additional transactions document. The agent reads, processes, and writes to the sheet in one pass.
+
+### Jobs and resource operations
+
+Do NOT create jobs for basic resource operations (add, remove, update, query) that only touch workspace resources without external service integration. The workspace chat agent handles these directly via resource tools. Users interact with resources conversationally — no job needed.
+
+Create jobs ONLY when the operation requires:
+- **Scheduled triggers**: daily meal plan generation, weekly report compilation
+- **External service integration**: import from Google Calendar, sync to Notion, fetch from API
+- **Multi-step orchestration across services**: fetch data → transform → write to resource → notify via Slack
+- **Hybrid operations**: resource CRUD combined with external service calls (e.g., add food and post summary to Slack)
+
+A resource-only workspace (e.g., "track my food") should declare resources but generate zero jobs. The workspace IS the chat.`;
 
 const WORKSPACE_PROMPT_SECTION = `
 ## Context

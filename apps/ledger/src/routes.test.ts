@@ -87,13 +87,32 @@ async function provisionDoc(
 // ---------------------------------------------------------------------------
 
 describe("GET /skill", () => {
-  test("returns skill text as plain text", async () => {
+  test("returns full skill text with all tools when no filter", async () => {
     const res = await app.request("/v1/skill");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/plain");
 
     const body = await res.text();
     expect(body).toContain("Resource Data Access");
+    expect(body).toContain("resource_read");
+    expect(body).toContain("resource_write");
+    expect(body).toContain("resource_save");
+    expect(body).toContain("resource_link_ref");
+    expect(body).toContain("Four tools");
+    expect(body).toContain("Draft/Publish Lifecycle");
+  });
+
+  test("returns filtered skill text with only requested tools", async () => {
+    const res = await app.request("/v1/skill?tools=resource_read,resource_write");
+    expect(res.status).toBe(200);
+
+    const body = await res.text();
+    expect(body).toContain("resource_read");
+    expect(body).toContain("resource_write");
+    expect(body).not.toContain("resource_save");
+    expect(body).not.toContain("resource_link_ref");
+    expect(body).toContain("Two tools");
+    expect(body).not.toContain("Draft/Publish Lifecycle");
   });
 });
 
