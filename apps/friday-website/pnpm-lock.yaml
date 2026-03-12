@@ -77,8 +77,8 @@ importers:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@25.4.0)
       vite-plugin-compression2:
-        specifier: ^2.5.0
-        version: 2.5.0(rollup@4.59.0)
+        specifier: ^2.5.1
+        version: 2.5.1(rollup@4.59.0)
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.4.0)
@@ -1253,8 +1253,8 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
-  vite-plugin-compression2@2.5.0:
-    resolution: {integrity: sha512-bHxtBibPxxSn5eZSe0IAzvYucP/hg8Bz8ppjbH7lndU5kIHT+92qTkB4z9xWYfnyV0YHuir1SjOuyO0fzU4Vgg==}
+  vite-plugin-compression2@2.5.1:
+    resolution: {integrity: sha512-2YpLZWs1ZRo9XwtSFA6/NVuBgOR+kvFk8M0HNDsP7Wu7OfJDOKT6fHB8kzuvw6jhgC9KYgDOttfaG2qC0wE9AQ==}
 
   vite@7.3.1:
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
@@ -2436,7 +2436,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite-plugin-compression2@2.5.0(rollup@4.59.0):
+  vite-plugin-compression2@2.5.1(rollup@4.59.0):
     dependencies:
       '@rollup/pluginutils': 5.3.0(rollup@4.59.0)
       tar-mini: 0.2.0
