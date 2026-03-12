@@ -12,7 +12,7 @@
     "@atlas/ledger": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
-    "ai": "^5.0.152",
+    "ai": "^5.0.153",
     "jsonrepair": "^3.13.3",
     "zod": "^4.3.5"
   },
