@@ -184,8 +184,9 @@
     "npm:undici@^7.22.0": "7.22.0",
     "npm:vite-plugin-compression2@^2.5.1": "2.5.1",
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.4.0_yaml@2.8.2_picomatch@4.0.3",
-    "npm:vitest@^4.0.17": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2",
-    "npm:vitest@^4.0.18": "4.0.18_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2",
+    "npm:vitest@^4.0.17": "4.1.0_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3",
+    "npm:vitest@^4.0.18": "4.1.0_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3",
+    "npm:vitest@^4.1.0": "4.1.0_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3",
     "npm:xstate@^5.28.0": "5.28.0",
     "npm:yaml@^2.8.2": "2.8.2",
     "npm:yargs@18": "18.0.0",
@@ -4110,16 +4111,16 @@
       "integrity": "sha512-7i+N2i0+ME+2JFZhfuz7Tg/FqKtilHjGyGvoHYQ6iLV0zahbsJ9sljC9OcFcPDbhYKCet+sG8SsVqlyGvPflZg==",
       "dependencies": [
         "@bcoe/v8-coverage",
-        "@vitest/utils",
+        "@vitest/utils@4.0.18",
         "ast-v8-to-istanbul",
         "istanbul-lib-coverage",
         "istanbul-lib-report",
         "istanbul-reports",
         "magicast",
         "obug",
-        "std-env",
+        "std-env@3.10.0",
         "tinyrainbow",
-        "vitest"
+        "vitest@4.0.18_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2"
       ]
     },
     "@vitest/expect@4.0.18": {
@@ -4127,8 +4128,19 @@
       "dependencies": [
         "@standard-schema/spec",
         "@types/chai",
-        "@vitest/spy",
-        "@vitest/utils",
+        "@vitest/spy@4.0.18",
+        "@vitest/utils@4.0.18",
+        "chai",
+        "tinyrainbow"
+      ]
+    },
+    "@vitest/expect@4.1.0": {
+      "integrity": "sha512-EIxG7k4wlWweuCLG9Y5InKFwpMEOyrMb6ZJ1ihYu02LVj/bzUwn2VMU+13PinsjRW75XnITeFrQBMH5+dLvCDA==",
+      "dependencies": [
+        "@standard-schema/spec",
+        "@types/chai",
+        "@vitest/spy@4.1.0",
+        "@vitest/utils@4.1.0",
         "chai",
         "tinyrainbow"
       ]
@@ -4136,7 +4148,19 @@
     "@vitest/mocker@4.0.18_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3_@types+node@25.4.0_yaml@2.8.2": {
       "integrity": "sha512-HhVd0MDnzzsgevnOWCBj5Otnzobjy5wLBe4EdeeFGv8luMsGcYqDuFRMcttKWZA5vVO8RFjexVovXvAM4JoJDQ==",
       "dependencies": [
-        "@vitest/spy",
+        "@vitest/spy@4.0.18",
+        "estree-walker@3.0.3",
+        "magic-string",
+        "vite"
+      ],
+      "optionalPeers": [
+        "vite"
+      ]
+    },
+    "@vitest/mocker@4.1.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3": {
+      "integrity": "sha512-evxREh+Hork43+Y4IOhTo+h5lGmVRyjqI739Rz4RlUPqwrkFFDF6EMvOOYjTx4E8Tl6gyCLRL8Mu7Ry12a13Tw==",
+      "dependencies": [
+        "@vitest/spy@4.1.0",
         "estree-walker@3.0.3",
         "magic-string",
         "vite"
@@ -4151,17 +4175,39 @@
         "tinyrainbow"
       ]
     },
+    "@vitest/pretty-format@4.1.0": {
+      "integrity": "sha512-3RZLZlh88Ib0J7NQTRATfc/3ZPOnSUn2uDBUoGNn5T36+bALixmzphN26OUD3LRXWkJu4H0s5vvUeqBiw+kS0A==",
+      "dependencies": [
+        "tinyrainbow"
+      ]
+    },
     "@vitest/runner@4.0.18": {
       "integrity": "sha512-rpk9y12PGa22Jg6g5M3UVVnTS7+zycIGk9ZNGN+m6tZHKQb7jrP7/77WfZy13Y/EUDd52NDsLRQhYKtv7XfPQw==",
       "dependencies": [
-        "@vitest/utils",
+        "@vitest/utils@4.0.18",
+        "pathe"
+      ]
+    },
+    "@vitest/runner@4.1.0": {
+      "integrity": "sha512-Duvx2OzQ7d6OjchL+trw+aSrb9idh7pnNfxrklo14p3zmNL4qPCDeIJAK+eBKYjkIwG96Bc6vYuxhqDXQOWpoQ==",
+      "dependencies": [
+        "@vitest/utils@4.1.0",
         "pathe"
       ]
     },
     "@vitest/snapshot@4.0.18": {
       "integrity": "sha512-PCiV0rcl7jKQjbgYqjtakly6T1uwv/5BQ9SwBLekVg/EaYeQFPiXcgrC2Y7vDMA8dM1SUEAEV82kgSQIlXNMvA==",
       "dependencies": [
-        "@vitest/pretty-format",
+        "@vitest/pretty-format@4.0.18",
+        "magic-string",
+        "pathe"
+      ]
+    },
+    "@vitest/snapshot@4.1.0": {
+      "integrity": "sha512-0Vy9euT1kgsnj1CHttwi9i9o+4rRLEaPRSOJ5gyv579GJkNpgJK+B4HSv/rAWixx2wdAFci1X4CEPjiu2bXIMg==",
+      "dependencies": [
+        "@vitest/pretty-format@4.1.0",
+        "@vitest/utils@4.1.0",
         "magic-string",
         "pathe"
       ]
@@ -4169,10 +4215,21 @@
     "@vitest/spy@4.0.18": {
       "integrity": "sha512-cbQt3PTSD7P2OARdVW3qWER5EGq7PHlvE+QfzSC0lbwO+xnt7+XH06ZzFjFRgzUX//JmpxrCu92VdwvEPlWSNw=="
     },
+    "@vitest/spy@4.1.0": {
+      "integrity": "sha512-pz77k+PgNpyMDv2FV6qmk5ZVau6c3R8HC8v342T2xlFxQKTrSeYw9waIJG8KgV9fFwAtTu4ceRzMivPTH6wSxw=="
+    },
     "@vitest/utils@4.0.18": {
       "integrity": "sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==",
       "dependencies": [
-        "@vitest/pretty-format",
+        "@vitest/pretty-format@4.0.18",
+        "tinyrainbow"
+      ]
+    },
+    "@vitest/utils@4.1.0": {
+      "integrity": "sha512-XfPXT6a8TZY3dcGY8EdwsBulFCIw+BeeX0RZn2x/BtiY/75YGh8FeWGG8QISN/WhaqSrE2OrlDgtF8q5uhOTmw==",
+      "dependencies": [
+        "@vitest/pretty-format@4.1.0",
+        "convert-source-map",
         "tinyrainbow"
       ]
     },
@@ -4811,6 +4868,9 @@
     },
     "es-module-lexer@1.7.0": {
       "integrity": "sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA=="
+    },
+    "es-module-lexer@2.0.0": {
+      "integrity": "sha512-5POEcUuZybH7IdmGsD8wlf0AI55wMecM9rVBTI/qEAy2c1kTOm3DjFYjrBdI2K3BaJjJYfYFeRtM0t9ssnRuxw=="
     },
     "es-object-atoms@1.1.1": {
       "integrity": "sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==",
@@ -7554,6 +7614,9 @@
     "std-env@3.10.0": {
       "integrity": "sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg=="
     },
+    "std-env@4.0.0": {
+      "integrity": "sha512-zUMPtQ/HBY3/50VbpkupYHbRroTRZJPRLvreamgErJVys0ceuzMkD44J/QjqhHjOzK42GQ3QZIeFG1OYfOtKqQ=="
+    },
     "stream-events@1.0.5": {
       "integrity": "sha512-E1GUzBSgvct8Jsb3v2X15pjzN1tYebtbLaMg+eBOUOAxgbLoSbT2NS91ckc5lJD1KfLjId+jXJRgo0qnV5Nerg==",
       "dependencies": [
@@ -8036,20 +8099,52 @@
       "dependencies": [
         "@opentelemetry/api",
         "@types/node",
-        "@vitest/expect",
-        "@vitest/mocker",
-        "@vitest/pretty-format",
-        "@vitest/runner",
-        "@vitest/snapshot",
-        "@vitest/spy",
-        "@vitest/utils",
-        "es-module-lexer",
+        "@vitest/expect@4.0.18",
+        "@vitest/mocker@4.0.18_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3_@types+node@25.4.0_yaml@2.8.2",
+        "@vitest/pretty-format@4.0.18",
+        "@vitest/runner@4.0.18",
+        "@vitest/snapshot@4.0.18",
+        "@vitest/spy@4.0.18",
+        "@vitest/utils@4.0.18",
+        "es-module-lexer@1.7.0",
         "expect-type",
         "magic-string",
         "obug",
         "pathe",
         "picomatch@4.0.3",
-        "std-env",
+        "std-env@3.10.0",
+        "tinybench",
+        "tinyexec",
+        "tinyglobby",
+        "tinyrainbow",
+        "vite",
+        "why-is-node-running"
+      ],
+      "optionalPeers": [
+        "@opentelemetry/api",
+        "@types/node"
+      ],
+      "bin": true
+    },
+    "vitest@4.1.0_@opentelemetry+api@1.9.0_@types+node@25.4.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3": {
+      "integrity": "sha512-YbDrMF9jM2Lqc++2530UourxZHmkKLxrs4+mYhEwqWS97WJ7wOYEkcr+QfRgJ3PW9wz3odRijLZjHEaRLTNbqw==",
+      "dependencies": [
+        "@opentelemetry/api",
+        "@types/node",
+        "@vitest/expect@4.1.0",
+        "@vitest/mocker@4.1.0_vite@7.3.1__@types+node@25.4.0__yaml@2.8.2__picomatch@4.0.3",
+        "@vitest/pretty-format@4.1.0",
+        "@vitest/runner@4.1.0",
+        "@vitest/snapshot@4.1.0",
+        "@vitest/spy@4.1.0",
+        "@vitest/utils@4.1.0",
+        "es-module-lexer@2.0.0",
+        "expect-type",
+        "magic-string",
+        "obug",
+        "pathe",
+        "picomatch@4.0.3",
+        "std-env@4.0.0",
         "tinybench",
         "tinyexec",
         "tinyglobby",
@@ -8434,7 +8529,7 @@
             "npm:nanoid@5.1.6",
             "npm:oauth4webapi@3.8.5",
             "npm:postgres@3.4.7",
-            "npm:vitest@^4.0.18",
+            "npm:vitest@^4.1.0",
             "npm:zod@4.3.6"
           ]
         }
