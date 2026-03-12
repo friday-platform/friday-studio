@@ -100,7 +100,8 @@ WORKDIR /home/atlas
 
 # Set environment variables for optimal operation
 ENV DENO_NO_UPDATE_CHECK=1 \
-    DENO_DIR=/home/atlas/.deno \
+    DENO_DIR=/tmp/.deno \
+    npm_config_cache=/tmp/.npm \
     ATLAS_HOME=/home/atlas/.atlas \
     ATLAS_LOG_LEVEL=info \
     ATLAS_DAEMON_HOST=0.0.0.0 \
