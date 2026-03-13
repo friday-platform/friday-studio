@@ -2,6 +2,8 @@ import { mkdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import process from "node:process";
+import type { UserActivityAction } from "@atlas/activity";
+import { generateUserActivityTitle } from "@atlas/activity";
 import { getValidatedMimeType } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { createLogger, logger } from "@atlas/logger";
@@ -11,10 +13,45 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import Papa from "papaparse";
 import { z } from "zod";
+import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory } from "../../src/factory.ts";
 import { replaceArtifactFromFile, streamToFile } from "../artifacts.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import { classifyUpload, getTabularColumns, isProse, parseCsvToJsonb } from "./upload-strategy.ts";
+
+/**
+ * Fire-and-forget activity creation for user resource actions.
+ * Resolves the current user internally — callers don't need to pass userId.
+ * Failures are logged but never block the primary operation.
+ */
+async function createResourceActivity(
+  ctx: AppContext,
+  opts: {
+    referenceId: string;
+    workspaceId: string;
+    action: UserActivityAction;
+    resourceName: string;
+  },
+): Promise<void> {
+  try {
+    const userResult = await getCurrentUser();
+    const userId = userResult.ok ? (userResult.data?.id ?? "local") : "local";
+
+    await ctx
+      .getActivityAdapter()
+      .create({
+        type: "resource",
+        source: "user",
+        referenceId: opts.referenceId,
+        workspaceId: opts.workspaceId,
+        jobId: null,
+        userId,
+        title: generateUserActivityTitle(opts.action, opts.resourceName),
+      });
+  } catch (err) {
+    logger.warn("Failed to create resource activity", { action: opts.action, error: String(err) });
+  }
+}
 
 const LinkBodySchema = z.object({
   url: z.string(),
@@ -213,6 +250,13 @@ const resourceRoutes = daemonFactory
             rowCount: rows.length,
           });
 
+          await createResourceActivity(ctx, {
+            referenceId: metadata.id,
+            workspaceId,
+            action: "uploaded",
+            resourceName: name,
+          });
+
           return c.json({ resource: metadata }, 201);
         } catch (error) {
           uploadLogger.error("CSV resource upload failed", {
@@ -244,6 +288,13 @@ const resourceRoutes = daemonFactory
             workspaceId,
             slug,
             contentLength: content.length,
+          });
+
+          await createResourceActivity(ctx, {
+            referenceId: metadata.id,
+            workspaceId,
+            action: "uploaded",
+            resourceName: name,
           });
 
           return c.json({ resource: metadata }, 201);
@@ -303,6 +354,13 @@ const resourceRoutes = daemonFactory
           artifactId: artifactResult.data.id,
         });
 
+        await createResourceActivity(ctx, {
+          referenceId: metadata.id,
+          workspaceId,
+          action: "uploaded",
+          resourceName: name,
+        });
+
         return c.json({ resource: metadata }, 201);
       } catch (error) {
         await unlink(persistedPath).catch(() => {});
@@ -341,11 +399,18 @@ const resourceRoutes = daemonFactory
       const userResult = await getCurrentUser();
       const userId = userResult.ok ? (userResult.data?.id ?? "local") : "local";
 
-      await ledger.provision(
+      const linkMetadata = await ledger.provision(
         workspaceId,
         { userId, slug, name, description: description ?? "", type: "external_ref", schema: {} },
         { provider, ref: url, metadata: {} },
       );
+
+      await createResourceActivity(ctx, {
+        referenceId: linkMetadata.id,
+        workspaceId,
+        action: "linked",
+        resourceName: name,
+      });
 
       return c.json({ slug, name, provider, ref: url }, 201);
     } catch (error) {
@@ -379,6 +444,14 @@ const resourceRoutes = daemonFactory
 
       const mimeType = getValidatedMimeType(file.name);
 
+      const createReplaceActivity = () =>
+        createResourceActivity(ctx, {
+          referenceId: existing.metadata.id,
+          workspaceId,
+          action: "replaced",
+          resourceName: existing.metadata.name,
+        });
+
       if (existing.metadata.type === "document") {
         if (isProse(existing.version.schema)) {
           if (mimeType !== "text/markdown") {
@@ -387,6 +460,7 @@ const resourceRoutes = daemonFactory
           const content = await file.text();
           await ledger.replaceVersion(workspaceId, slug, content);
 
+          await createReplaceActivity();
           const refreshed = await ledger.getResource(workspaceId, slug);
           return c.json({ resource: refreshed?.metadata ?? null });
         }
@@ -399,6 +473,7 @@ const resourceRoutes = daemonFactory
         const { rows, schema } = parseCsvToJsonb(csvText);
         await ledger.replaceVersion(workspaceId, slug, rows, schema);
 
+        await createReplaceActivity();
         const refreshed = await ledger.getResource(workspaceId, slug);
         return c.json({ resource: refreshed?.metadata ?? null });
       }
@@ -428,6 +503,7 @@ const resourceRoutes = daemonFactory
           return c.json({ error: replaceResult.error }, 500);
         }
 
+        await createReplaceActivity();
         // Return updated metadata
         const refreshed = await ledger.getResource(workspaceId, slug);
         return c.json({ resource: refreshed?.metadata ?? null });
@@ -468,6 +544,13 @@ const resourceRoutes = daemonFactory
           });
         }
       }
+
+      await createResourceActivity(ctx, {
+        referenceId: existing.metadata.id,
+        workspaceId,
+        action: "deleted",
+        resourceName: existing.metadata.name,
+      });
 
       return c.json({ success: true });
     } catch (error) {

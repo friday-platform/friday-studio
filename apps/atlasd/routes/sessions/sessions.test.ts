@@ -154,6 +154,7 @@ function createTestApp(options: {
     sessionHistoryAdapter: adapter,
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
     getLedgerAdapter: vi.fn() as unknown as AppContext["getLedgerAdapter"],
+    getActivityAdapter: vi.fn() as unknown as AppContext["getActivityAdapter"],
   };
 
   const app = new Hono<AppVariables>();

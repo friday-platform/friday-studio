@@ -1078,7 +1078,7 @@ describe.skipIf(!canConnect)("PostgresAdapter (Postgres integration)", () => {
   // -------------------------------------------------------------------------
 
   describe("publishAllDirty", () => {
-    test("publishes only dirty drafts and returns count", async () => {
+    test("publishes only dirty drafts and returns metadata", async () => {
       await provisionDoc("tasks", [{ item: "eggs" }]);
       await provisionDoc("notes", ["note1"]);
       await provisionDoc("clean", []);
@@ -1092,7 +1092,8 @@ describe.skipIf(!canConnect)("PostgresAdapter (Postgres integration)", () => {
       await adapter.mutate("ws1", "notes", "SELECT draft.data || '\"note2\"'::jsonb FROM draft");
 
       const published = await adapter.publishAllDirty("ws1");
-      expect(published).toBe(2);
+      expect(published).toHaveLength(2);
+      expect(published.map((p) => p.slug).sort()).toEqual(["notes", "tasks"]);
 
       // Verify version 2 exists for published resources
       const tasksV2 = await adapter.getResource("ws1", "tasks", { published: true });
@@ -1102,11 +1103,11 @@ describe.skipIf(!canConnect)("PostgresAdapter (Postgres integration)", () => {
       expect(notesV2?.version.version).toBe(2);
     });
 
-    test("returns 0 when no drafts are dirty", async () => {
+    test("returns empty array when no drafts are dirty", async () => {
       await provisionDoc("tasks", []);
 
       const published = await adapter.publishAllDirty("ws1");
-      expect(published).toBe(0);
+      expect(published).toHaveLength(0);
     });
 
     test("scopes to workspace — does not publish dirty drafts in other workspaces", async () => {
@@ -1130,7 +1131,7 @@ describe.skipIf(!canConnect)("PostgresAdapter (Postgres integration)", () => {
 
       // Publish only ws1
       const published = await adapter.publishAllDirty("ws1");
-      expect(published).toBe(1);
+      expect(published).toHaveLength(1);
 
       // ws2 should still have dirty draft (no version 2)
       const ws2Published = await adapter.getResource("ws2", "data", { published: true });

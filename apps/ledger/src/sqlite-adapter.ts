@@ -9,6 +9,7 @@ import {
   type GetResourceOptions,
   type MutateResult,
   type ProvisionInput,
+  type PublishedResourceInfo,
   type PublishResult,
   type QueryResult,
   type ResourceMetadata,
@@ -751,7 +752,7 @@ ${rawSql}`;
     return toResourceVersion(row);
   }
 
-  async publishAllDirty(workspaceId: string): Promise<number> {
+  async publishAllDirty(workspaceId: string): Promise<PublishedResourceInfo[]> {
     // Find all dirty drafts for this workspace
     const dirtyDrafts = this.db
       .prepare(
@@ -772,7 +773,7 @@ ${rawSql}`;
 
     // Publish each resource independently — a failure on one resource
     // must not prevent others from being published.
-    let published = 0;
+    const published: PublishedResourceInfo[] = [];
     for (const draft of dirtyDrafts) {
       try {
         this.db.transaction(() => {
@@ -804,7 +805,7 @@ ${rawSql}`;
             .prepare("UPDATE resource_versions SET dirty = 0, draft_version = 0 WHERE id = ?")
             .run(draft.draft_id);
         })();
-        published++;
+        published.push({ resourceId: draft.resource_id, slug: draft.slug });
       } catch (error) {
         logger.warn("publishAllDirty: failed to publish resource", {
           workspaceId,

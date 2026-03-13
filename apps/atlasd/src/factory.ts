@@ -1,3 +1,4 @@
+import type { ActivityStorageAdapter } from "@atlas/activity";
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
@@ -38,6 +39,9 @@ export interface AppContext {
 
   // Ledger resource storage
   getLedgerAdapter(): ResourceStorageAdapter;
+
+  // Activity storage
+  getActivityAdapter(): ActivityStorageAdapter;
 
   // Agent registry
   getAgentRegistry(): AgentRegistry;

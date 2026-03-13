@@ -97,6 +97,7 @@ function createTestApp(
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getLedgerAdapter: vi.fn(),
+    getActivityAdapter: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,
     sessionStreamRegistry: {},

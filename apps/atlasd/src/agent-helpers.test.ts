@@ -240,7 +240,7 @@ function createMockAdapter(resources: ResourceMetadata[]): ResourceStorageAdapte
     deleteResource: vi.fn<() => Promise<void>>(),
     linkRef: vi.fn(),
     resetDraft: vi.fn<() => Promise<void>>(),
-    publishAllDirty: vi.fn<(workspaceId: string) => Promise<number>>().mockResolvedValue(0),
+    publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue([]),
     getSkill: vi
       .fn<() => Promise<string>>()
       .mockResolvedValue("# Resource Data Access (SQLite)\n\nMock skill text"),

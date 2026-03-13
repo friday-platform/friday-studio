@@ -8,6 +8,7 @@ import {
   type GetResourceOptions,
   type MutateResult,
   type ProvisionInput,
+  type PublishedResourceInfo,
   type PublishResult,
   type QueryResult,
   type ResourceMetadata,
@@ -831,7 +832,7 @@ export class PostgresAdapter implements ResourceStorageAdapter {
     });
   }
 
-  async publishAllDirty(workspaceId: string): Promise<number> {
+  async publishAllDirty(workspaceId: string): Promise<PublishedResourceInfo[]> {
     const userId = this.requireUserId();
 
     // Find all dirty drafts for this workspace.
@@ -848,11 +849,11 @@ export class PostgresAdapter implements ResourceStorageAdapter {
       `;
     });
 
-    if (dirtyDrafts.length === 0) return 0;
+    if (dirtyDrafts.length === 0) return [];
 
     // Publish each resource independently — a failure on one resource
     // must not prevent others from being published.
-    let published = 0;
+    const published: PublishedResourceInfo[] = [];
     for (const draft of dirtyDrafts) {
       try {
         await withUserContext(this.sql, userId, async (tx) => {
@@ -888,7 +889,7 @@ export class PostgresAdapter implements ResourceStorageAdapter {
             WHERE id = ${draft.draft_id} AND user_id = ${userId}
           `;
         });
-        published++;
+        published.push({ resourceId: draft.resource_id, slug: draft.slug });
       } catch (error) {
         logger.warn("publishAllDirty: failed to publish resource", {
           workspaceId,

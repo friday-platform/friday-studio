@@ -82,7 +82,14 @@ const mockApp = new Hono()
     return c.json({ reset: true });
   })
   .post("/v1/resources/:workspaceId/publish-all-dirty", (c) => {
-    return c.json({ published: 3 });
+    return c.json({
+      published: 3,
+      resources: [
+        { resourceId: "r1", slug: "tasks" },
+        { resourceId: "r2", slug: "notes" },
+        { resourceId: "r3", slug: "data" },
+      ],
+    });
   })
   .get("/v1/skill", (c) => {
     return c.text("# Resource Data Access (SQLite)\n\nMock skill text for testing");
@@ -241,10 +248,11 @@ describe("resetDraft", () => {
 });
 
 describe("publishAllDirty", () => {
-  test("sends POST and returns published count", async () => {
+  test("sends POST and returns resource metadata", async () => {
     const result = await client.publishAllDirty(WORKSPACE);
 
-    expect(result).toBe(3);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ resourceId: "r1", slug: "tasks" });
   });
 });
 

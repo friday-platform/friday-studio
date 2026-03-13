@@ -1,4 +1,4 @@
-import type { ResourceStorageAdapter } from "@atlas/ledger";
+import type { PublishedResourceInfo, ResourceStorageAdapter } from "@atlas/ledger";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { publishDirtyDrafts } from "./publish-hook.ts";
 
@@ -14,7 +14,7 @@ vi.mock("@atlas/logger", () => ({ logger: mockLogger, createLogger: vi.fn(() => 
 const WORKSPACE = "ws-test-1";
 
 function createMockAdapter(
-  publishAllDirtyFn?: (ws: string) => Promise<number>,
+  publishAllDirtyFn?: (ws: string) => Promise<PublishedResourceInfo[]>,
 ): ResourceStorageAdapter {
   return {
     init: vi.fn<() => Promise<void>>(),
@@ -29,12 +29,18 @@ function createMockAdapter(
     deleteResource: vi.fn(),
     linkRef: vi.fn(),
     resetDraft: vi.fn(),
-    publishAllDirty: vi.fn<(ws: string) => Promise<number>>(
-      publishAllDirtyFn ?? (() => Promise.resolve(0)),
+    publishAllDirty: vi.fn<(ws: string) => Promise<PublishedResourceInfo[]>>(
+      publishAllDirtyFn ?? (() => Promise.resolve([])),
     ),
     getSkill: vi.fn<() => Promise<string>>().mockResolvedValue(""),
   };
 }
+
+const threeResources: PublishedResourceInfo[] = [
+  { resourceId: "r1", slug: "res-1" },
+  { resourceId: "r2", slug: "res-2" },
+  { resourceId: "r3", slug: "res-3" },
+];
 
 describe("publishDirtyDrafts", () => {
   beforeEach(() => {
@@ -52,8 +58,8 @@ describe("publishDirtyDrafts", () => {
     expect(adapter.publishAllDirty).toHaveBeenCalledWith(WORKSPACE);
   });
 
-  test("no-op log when no dirty drafts — returns 0", async () => {
-    const adapter = createMockAdapter(() => Promise.resolve(0));
+  test("no-op log when no dirty drafts — returns empty array", async () => {
+    const adapter = createMockAdapter(() => Promise.resolve([]));
 
     await publishDirtyDrafts(adapter, WORKSPACE);
 
@@ -62,7 +68,7 @@ describe("publishDirtyDrafts", () => {
   });
 
   test("logs debug with published count when dirty drafts exist", async () => {
-    const adapter = createMockAdapter(() => Promise.resolve(3));
+    const adapter = createMockAdapter(() => Promise.resolve(threeResources));
 
     await publishDirtyDrafts(adapter, WORKSPACE);
 
@@ -84,7 +90,12 @@ describe("publishDirtyDrafts", () => {
   });
 
   test("does not call individual publish — uses batch method only", async () => {
-    const adapter = createMockAdapter(() => Promise.resolve(2));
+    const adapter = createMockAdapter(() =>
+      Promise.resolve([
+        { resourceId: "r1", slug: "s1" },
+        { resourceId: "r2", slug: "s2" },
+      ]),
+    );
 
     await publishDirtyDrafts(adapter, WORKSPACE);
 

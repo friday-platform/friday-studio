@@ -213,6 +213,7 @@ export type {
   GetResourceOptions,
   MutateResult,
   ProvisionInput,
+  PublishedResourceInfo,
   PublishResult,
   QueryResult,
   ResourceMetadata,

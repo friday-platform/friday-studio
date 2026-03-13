@@ -14,6 +14,12 @@ export class ClientError extends Error {
   }
 }
 
+/** Metadata returned for each resource published by publishAllDirty. */
+export interface PublishedResourceInfo {
+  resourceId: string;
+  slug: string;
+}
+
 /** Discriminant for resource storage behavior. */
 export const ResourceTypeSchema = z.enum(["document", "artifact_ref", "external_ref"]);
 
@@ -154,8 +160,8 @@ export interface ResourceStorageAdapter {
   /** Reset draft to latest published version, clear dirty flag. Crash recovery. */
   resetDraft(workspaceId: string, slug: string): Promise<void>;
 
-  /** Publish all dirty drafts for a workspace in a single pass. Returns count of published resources. */
-  publishAllDirty(workspaceId: string): Promise<number>;
+  /** Publish all dirty drafts for a workspace in a single pass. Returns metadata of published resources. */
+  publishAllDirty(workspaceId: string): Promise<PublishedResourceInfo[]>;
 
   /** Returns dialect-specific SQL skill text for agent prompt injection.
    * @param availableTools - When provided, only include sections for these tools. Omit for full text.

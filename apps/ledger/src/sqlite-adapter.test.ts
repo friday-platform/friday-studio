@@ -1226,7 +1226,7 @@ describe("linkRef", () => {
 // ---------------------------------------------------------------------------
 
 describe("publishAllDirty", () => {
-  test("publishes only dirty drafts and returns count", async () => {
+  test("publishes only dirty drafts and returns metadata", async () => {
     await adapter.init();
 
     const metaA = await provisionDoc("tasks", [{ item: "eggs" }]);
@@ -1243,7 +1243,8 @@ describe("publishAllDirty", () => {
 
     const published = await adapter.publishAllDirty("ws1");
 
-    expect(published).toBe(2);
+    expect(published).toHaveLength(2);
+    expect(published.map((p) => p.slug).sort()).toEqual(["notes", "tasks"]);
 
     // Verify version 2 exists for both dirty resources
     const v2Tasks = db
@@ -1268,13 +1269,13 @@ describe("publishAllDirty", () => {
     expect(draftA.draft_version).toBe(0);
   });
 
-  test("returns 0 when no drafts are dirty", async () => {
+  test("returns empty array when no drafts are dirty", async () => {
     await adapter.init();
 
     await provisionDoc("tasks", []);
 
     const published = await adapter.publishAllDirty("ws1");
-    expect(published).toBe(0);
+    expect(published).toHaveLength(0);
   });
 
   test("scopes to workspace — does not publish dirty drafts in other workspaces", async () => {
@@ -1302,7 +1303,7 @@ describe("publishAllDirty", () => {
 
     // Publish only ws1
     const published = await adapter.publishAllDirty("ws1");
-    expect(published).toBe(1);
+    expect(published).toHaveLength(1);
 
     // ws2 draft should still be dirty
     const ws2Draft = db

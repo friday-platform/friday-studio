@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
+import { ActivityStorage, type ActivityStorageAdapter } from "@atlas/activity";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
@@ -37,6 +38,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
+import { activityRoutes } from "../routes/activity.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -177,6 +179,7 @@ export class AtlasDaemon {
       resetIdleTimeout: this.resetIdleTimeout.bind(this),
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
+      getActivityAdapter: this.getActivityAdapter.bind(this),
       getLibraryStorage: this.getLibraryStorage.bind(this),
       getLedgerAdapter: this.getLedgerAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
@@ -558,6 +561,11 @@ export class AtlasDaemon {
     return this.supervisorDefaults;
   }
 
+  /** Get activity storage adapter (lazy singleton) */
+  public getActivityAdapter(): ActivityStorageAdapter {
+    return ActivityStorage;
+  }
+
   /**
    * Get library storage instance
    */
@@ -634,6 +642,7 @@ export class AtlasDaemon {
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);
+    this.app.route("/api/activity", activityRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
@@ -999,6 +1008,7 @@ export class AtlasDaemon {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
           resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
+          activityStorage: ActivityStorage, // Share activity storage for feed items
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),

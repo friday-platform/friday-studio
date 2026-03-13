@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "dependencies": {
+    "@atlas/activity": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/analytics": "workspace:*",
     "@atlas/atlasd": "workspace:*",

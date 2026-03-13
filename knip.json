@@ -2,6 +2,10 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     ".": { "project": ["*.ts!"] },
+    "packages/activity": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/agent-sdk": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]

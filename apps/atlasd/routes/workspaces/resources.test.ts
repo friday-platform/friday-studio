@@ -148,7 +148,7 @@ function createMockLedgerAdapter(
     deleteResource: vi.fn<() => Promise<void>>(),
     linkRef: vi.fn(),
     resetDraft: vi.fn<() => Promise<void>>(),
-    publishAllDirty: vi.fn<(ws: string) => Promise<number>>().mockResolvedValue(0),
+    publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue([]),
     getSkill: vi.fn<() => Promise<string>>().mockResolvedValue(""),
     ...overrides,
   };
@@ -178,6 +178,7 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getLedgerAdapter: () => ledger,
+    getActivityAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],

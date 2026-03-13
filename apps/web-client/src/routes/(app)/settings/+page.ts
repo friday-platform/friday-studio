@@ -10,11 +10,7 @@ export const load: PageLoad = async () => {
     fetch(`${getAtlasDaemonUrl()}/api/config/env`).then((r) => {
       if (!r.ok) return { success: false, envVars: {} };
       return r.json();
-    }) as Promise<{
-      success: boolean;
-      envVars?: Record<string, string>;
-      error?: string;
-    }>,
+    }) as Promise<{ success: boolean; envVars?: Record<string, string>; error?: string }>,
   ]);
 
   if (!credentialsRes.ok) {

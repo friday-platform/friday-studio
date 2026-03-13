@@ -177,8 +177,8 @@ export function createResourceRoutes() {
         const adapter = c.get("adapter");
         const { workspaceId } = c.req.valid("param");
 
-        const published = await adapter.publishAllDirty(workspaceId);
-        return c.json({ published }, 200);
+        const resources = await adapter.publishAllDirty(workspaceId);
+        return c.json({ published: resources.length, resources }, 200);
       },
     );
 }

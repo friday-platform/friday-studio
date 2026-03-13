@@ -8,6 +8,8 @@
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
 import * as path from "node:path";
+import type { ActivityStorageAdapter } from "@atlas/activity";
+import { generateSessionActivityTitle } from "@atlas/activity";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { type MergedConfig, validateSignalPayload } from "@atlas/config";
@@ -186,6 +188,8 @@ interface WorkspaceRuntimeOptions {
   }) => void | Promise<void>;
   /** Ledger storage adapter for versioned workspace resources (auto-publish) */
   resourceStorage?: ResourceStorageAdapter;
+  /** Activity storage adapter for creating activity feed items */
+  activityStorage?: ActivityStorageAdapter;
 }
 
 interface FSMJob {
@@ -815,7 +819,10 @@ export class WorkspaceRuntime {
       // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
       if (this.options.resourceStorage) {
         try {
-          await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id);
+          await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
+            jobId: job.name,
+            activityStorage: this.options.activityStorage,
+          });
         } catch (publishError) {
           logger.warn("Auto-publish at session teardown failed", {
             sessionId: session.id,
@@ -895,6 +902,37 @@ export class WorkspaceRuntime {
         await sessionStream.finalize(summaryV2).catch((err) => {
           logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
         });
+
+        // Create activity feed item for terminal sessions
+        if (
+          this.options.activityStorage &&
+          (view.status === "completed" || view.status === "failed")
+        ) {
+          try {
+            // Extract final output from the last completed agent block
+            const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
+            const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
+
+            const title = await generateSessionActivityTitle({
+              status: view.status,
+              jobName: job.name,
+              agentNames: executedBlocks.map((b) => b.agentName),
+              finalOutput,
+              error: session.error?.message,
+            });
+            await this.options.activityStorage.create({
+              type: "session",
+              source: "agent",
+              referenceId: sessionId,
+              workspaceId: this.workspace.id,
+              jobId: job.name,
+              userId: null,
+              title,
+            });
+          } catch (err) {
+            logger.warn("Failed to create session activity", { sessionId, error: String(err) });
+          }
+        }
       }
 
       // Clean up side-channel

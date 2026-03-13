@@ -484,7 +484,7 @@ describe("LLM prompt: workspace resource context", () => {
       deleteResource: vi.fn(),
       linkRef: vi.fn(),
       resetDraft: vi.fn(),
-      publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue(0),
+      publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue([]),
       getSkill: vi.fn<ResourceStorageAdapter["getSkill"]>().mockResolvedValue(""),
       ...overrides,
     };

@@ -8639,6 +8639,16 @@
           ]
         }
       },
+      "packages/activity": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@jsr/db__sqlite@0.12",
+            "npm:ulid@^3.0.2",
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
+          ]
+        }
+      },
       "packages/agent-sdk": {
         "packageJson": {
           "dependencies": [

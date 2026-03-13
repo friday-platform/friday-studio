@@ -80,6 +80,7 @@
     "@atlas/hallucination": "./packages/hallucination/mod.ts",
     "@atlas/resources": "./packages/resources/src/mod.ts",
     "@atlas/resources/guidance": "./packages/resources/src/guidance.ts",
+    "@atlas/activity": "./packages/activity/src/mod.ts",
     "@atlas/resources/types": "./packages/resources/src/types.ts"
   },
   "allowScripts": [

@@ -8,6 +8,7 @@
     "./types": "./src/types.ts"
   },
   "imports": {
+    "@atlas/activity": "../activity/src/mod.ts",
     "@atlas/ledger": "../../apps/ledger/src/index.ts",
     "@atlas/logger": "../logger/mod.ts",
     "@atlas/core/artifacts": "../core/src/artifacts/mod.ts",

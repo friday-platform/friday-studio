@@ -56,7 +56,7 @@ function mockAdapter(overrides: Partial<ResourceStorageAdapter> = {}): ResourceS
         updatedAt: "2026-01-01T00:00:00Z",
       }),
     resetDraft: vi.fn<ResourceStorageAdapter["resetDraft"]>().mockResolvedValue(undefined),
-    publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue(0),
+    publishAllDirty: vi.fn<ResourceStorageAdapter["publishAllDirty"]>().mockResolvedValue([]),
     getSkill: vi.fn<ResourceStorageAdapter["getSkill"]>().mockResolvedValue(""),
     ...overrides,
   };

@@ -146,7 +146,7 @@ export function createLedgerClient(baseUrl?: string): ResourceStorageAdapter {
         throw new Error(`Ledger publishAllDirty failed (${res.status}): ${body}`);
       }
       const body = await res.json();
-      return body.published;
+      return body.resources;
     },
 
     async getSkill(availableTools?: readonly string[]) {
