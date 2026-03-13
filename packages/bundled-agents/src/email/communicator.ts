@@ -11,6 +11,7 @@ import { contentType } from "@std/media-types";
 import { generateText, tool } from "ai";
 import { z } from "zod";
 import { validateRecipient } from "./recipient-validation.ts";
+import { escapeHtml, sanitizeHref } from "./sanitize.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
 
@@ -23,11 +24,63 @@ export const EmailOutputSchema = z.object({
       subject: z.string(),
       content: z.string(),
       from: z.string(),
+      from_name: z.string(),
     })
     .optional(),
 });
 
 type EmailOutput = z.infer<typeof EmailOutputSchema>;
+
+/** Render structured content blocks to escaped HTML. */
+export function renderContentBlocks(
+  blocks: ReadonlyArray<{ tag: string; content: string }>,
+): string {
+  return blocks
+    .map((c) => {
+      if (c.tag === "paragraph") {
+        return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${escapeHtml(c.content)}</p>`;
+      } else if (c.tag === "heading") {
+        return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${escapeHtml(c.content)}</h2>`;
+      } else if (c.tag === "link") {
+        const href = sanitizeHref(c.content);
+        if (!href) return `<span>${escapeHtml(c.content)}</span>`;
+        return `<a style="color: #2A54DF; text-decoration: underline;" href="${href}">${escapeHtml(c.content)}</a>`;
+      }
+      return escapeHtml(c.content);
+    })
+    .join("");
+}
+
+/** Build the final HTML email body via single-pass template replacement. */
+export function buildEmailBody(
+  templateHtml: string,
+  contentBlocks: ReadonlyArray<{ tag: string; content: string }>,
+  senderHtml: string,
+): string {
+  return templateHtml.replace(/\{\{ content \}\}|\{\{ sender_info \}\}/g, (match) => {
+    if (match === "{{ content }}") return renderContentBlocks(contentBlocks);
+    if (match === "{{ sender_info }}") return senderHtml;
+    return match;
+  });
+}
+
+/** Schema for the composeEmail tool exposed to the LLM. */
+export const composeEmailSchema = z.object({
+  to: z.string().describe("Recipient email address"),
+  subject: z.string().min(1).describe("Email subject line"),
+  content: z.array(
+    z.object({
+      tag: z
+        .enum(["paragraph", "heading", "link"])
+        .describe("Preferred tag for part of the content"),
+      content: z.string().min(1).describe("Content to be wrapped in the tag"),
+    }),
+  ),
+  attachment_paths: z
+    .array(z.string())
+    .optional()
+    .describe("File paths to attach. Omit if none specified"),
+});
 
 export const emailAgent = createAgent<string, EmailOutput>({
   id: "email",
@@ -75,24 +128,6 @@ export const emailAgent = createAgent<string, EmailOutput>({
     });
 
     const failureState = { failed: false, reason: "" };
-    const composeEmailSchema = z.object({
-      to: z.string().describe("Recipient email address"),
-      subject: z.string().min(1).describe("Email subject line"),
-      content: z.array(
-        z.object({
-          tag: z
-            .enum(["paragraph", "heading", "link"])
-            .describe("Preferred tag for part of the content"),
-          content: z.string().min(1).describe("Content to be wrapped in the tag"),
-        }),
-      ),
-      from: z.string().optional().describe("Sender email address. Omit if not specified in prompt"),
-      from_name: z.string().optional().describe("Sender display name. Omit if not specified"),
-      attachment_paths: z
-        .array(z.string())
-        .optional()
-        .describe("File paths to attach. Omit if none specified"),
-    });
     let composedEmail: z.infer<typeof composeEmailSchema> | null = null;
 
     const compositionSystem = `You are an email composition expert. Analyze the prompt and either compose an email or report that you cannot.
@@ -197,13 +232,6 @@ CONTENT GUIDELINES (for composeEmail):
       );
     }
 
-    if (params.from && !prompt.toLowerCase().includes(params.from.toLowerCase())) {
-      logger.warn("Security: Sender email not in prompt, using default", {
-        hallucinated: params.from,
-      });
-      params.from = undefined;
-    }
-
     logger.debug("email-communicator composed email", {
       to: params.to,
       subject: params.subject,
@@ -268,31 +296,16 @@ CONTENT GUIDELINES (for composeEmail):
         data: { toolName: "Email", content: `Sending email to ${params.to}` },
       });
 
-      const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
-      const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
+      const fromEmail = env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
+      const fromName = env.SENDGRID_FROM_NAME || "Friday AI";
+      const senderInfo = `<p style="font-size: 12px;">Sent by ${escapeHtml(atlasUserEmail)}</p>`;
 
       const emailParams: EmailParams = {
         to: params.to,
         subject: params.subject,
-        content: template
-          .replace(
-            "{{ content }}",
-            params.content
-              .map((c) => {
-                if (c.tag === "paragraph") {
-                  return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
-                } else if (c.tag === "heading") {
-                  return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
-                } else if (c.tag === "link") {
-                  return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
-                }
-                return c.content;
-              })
-              .join(""),
-          )
-          .replace("{{ sender_info }}", senderInfo),
+        content: buildEmailBody(template, params.content, senderInfo),
         from: fromEmail,
-        from_name: params.from_name || env.SENDGRID_FROM_NAME || "Friday AI",
+        from_name: fromName,
         attachments,
       };
 
@@ -322,6 +335,7 @@ CONTENT GUIDELINES (for composeEmail):
             subject: emailParams.subject,
             content: emailParams.content,
             from: fromEmail,
+            from_name: fromName,
           },
         },
         {

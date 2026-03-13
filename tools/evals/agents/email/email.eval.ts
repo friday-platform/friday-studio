@@ -279,8 +279,11 @@ const compositionEvals = compositionCases.map((testCase) =>
 
 const defaultFrom = process.env.SENDGRID_FROM_EMAIL || "notifications@hellofriday.ai";
 
+const defaultFromName = process.env.SENDGRID_FROM_NAME || "Friday AI";
+
 interface SenderCase extends BaseEvalCase {
   expectedFrom: string;
+  expectedFromName: string;
 }
 
 const senderCases: SenderCase[] = [
@@ -290,6 +293,7 @@ const senderCases: SenderCase[] = [
     input:
       "Send an email to recipient@example.com with subject 'Test' saying: This is a test message.",
     expectedFrom: defaultFrom,
+    expectedFromName: defaultFromName,
   },
   {
     id: "sender-not-inferred-anti-spoofing",
@@ -297,13 +301,15 @@ const senderCases: SenderCase[] = [
     input:
       "Send an email to user@corporate.com with subject 'Update' saying: Here's your status update.",
     expectedFrom: defaultFrom,
+    expectedFromName: defaultFromName,
   },
   {
-    id: "explicit-sender-in-prompt",
-    name: "sender - explicit sender in prompt",
+    id: "explicit-sender-in-prompt-ignored",
+    name: "sender - explicit sender in prompt always uses default",
     input:
       "Send an email from support@hellofriday.ai to customer@business.com with subject 'Response' saying: Thank you for your inquiry.",
-    expectedFrom: "support@hellofriday.ai",
+    expectedFrom: defaultFrom,
+    expectedFromName: defaultFromName,
   },
 ];
 
@@ -320,12 +326,18 @@ const senderEvals = senderCases.map((testCase) =>
         }
 
         const from = result.data.email?.from ?? "unknown";
+        const fromName = result.data.email?.from_name ?? "unknown";
 
         return [
           createScore(
             "sender matches",
             from === testCase.expectedFrom ? 1 : 0,
             `expected "${testCase.expectedFrom}", got "${from}"`,
+          ),
+          createScore(
+            "sender name matches",
+            fromName === testCase.expectedFromName ? 1 : 0,
+            `expected "${testCase.expectedFromName}", got "${fromName}"`,
           ),
         ];
       },
