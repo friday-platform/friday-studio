@@ -96,7 +96,12 @@ const jsonLd =
 	<BackgroundBlobs />
 </div>
 
-<Announcement text="Introducing Friday" href={resolve('/announcement')} />
+<Announcement
+	text="Introducing Friday"
+	href="https://medium.com/friday-ai/introducing-friday-f3164c655181"
+	target="_blank"
+	rel="noopener noreferrer"
+/>
 
 <UseCases />
 

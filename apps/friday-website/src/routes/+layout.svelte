@@ -87,8 +87,16 @@ afterNavigate(() => {
 	{@html jsonLd}
 </svelte:head>
 
-{#if env.PUBLIC_ANALYTICS_ENABLED === "true"}
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WKFQFCTM" title="GTM" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+{#if env.PUBLIC_ANALYTICS_ENABLED === 'true'}
+	<noscript
+		><iframe
+			src="https://www.googletagmanager.com/ns.html?id=GTM-WKFQFCTM"
+			title="GTM"
+			height="0"
+			width="0"
+			style="display:none;visibility:hidden"
+		></iframe></noscript
+	>
 {/if}
 
 <a href="#main-content" class="skip-to-content">Skip to content</a>
@@ -105,8 +113,6 @@ afterNavigate(() => {
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content>
 				<DropdownMenu.Item href={resolve('/')}>Home</DropdownMenu.Item>
-
-				<DropdownMenu.Item href={resolve('/announcement')}>Announcement</DropdownMenu.Item>
 
 				<DropdownMenu.Item href="/#faq">FAQ</DropdownMenu.Item>
 

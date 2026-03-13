@@ -1,11 +1,13 @@
 <script lang="ts">
-type Props = { text: string; href: string };
+import type { HTMLAnchorAttributes } from "svelte/elements";
 
-let { text, href }: Props = $props();
+type Props = { text: string };
+
+let { text, ...props }: Props & HTMLAnchorAttributes = $props();
 </script>
 
 <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-<a {href}>
+<a {...props}>
 	<svg class="border" aria-hidden="true">
 		<defs>
 			<linearGradient id="border-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
