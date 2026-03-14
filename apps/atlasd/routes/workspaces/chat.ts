@@ -13,6 +13,7 @@ import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
+import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
@@ -126,7 +127,7 @@ const workspaceChatRoutes = daemonFactory
     }
 
     const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId).catch((error: unknown) => {
-      if (error instanceof Error && error.message.includes("Workspace not found")) {
+      if (error instanceof WorkspaceNotFoundError) {
         return null;
       }
       throw error;

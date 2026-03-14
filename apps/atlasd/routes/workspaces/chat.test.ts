@@ -5,6 +5,7 @@
  * Mocks ChatStorage and StreamRegistry to isolate route logic from I/O.
  */
 
+import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { Hono } from "hono";
 import { describe, expect, test, vi } from "vitest";
 
@@ -74,7 +75,7 @@ function createTestApp(
   };
 
   const getOrCreateWorkspaceRuntime = runtimeMissing
-    ? vi.fn().mockRejectedValue(new Error("Workspace not found"))
+    ? vi.fn().mockRejectedValue(new WorkspaceNotFoundError("ws-missing"))
     : runtimeError
       ? vi.fn().mockRejectedValue(runtimeError)
       : vi.fn().mockResolvedValue(mockRuntime);

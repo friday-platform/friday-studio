@@ -14,6 +14,7 @@ import {
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
+import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { logger } from "@atlas/logger";
@@ -886,9 +887,8 @@ export class AtlasDaemon {
       }
 
       if (!workspace) {
-        const error = "Workspace not found";
-        logger.error(error, { workspaceId });
-        throw new Error(`${error}: ${workspaceId}`);
+        logger.error("Workspace not found", { workspaceId });
+        throw new WorkspaceNotFoundError(workspaceId);
       }
 
       logger.info("Creating runtime for workspace", {

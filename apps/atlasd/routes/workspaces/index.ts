@@ -12,6 +12,7 @@ import {
   toProviderRefs,
 } from "@atlas/config/mutations";
 import { SessionFailedError } from "@atlas/core";
+import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
@@ -950,10 +951,10 @@ const workspacesRoutes = daemonFactory
           logger.warn("Signal session failed", { error });
           return c.json({ error: errorMessage }, 422);
         }
-        logger.error("Failed to process signal", { error });
-        if (errorMessage.includes("Workspace not found")) {
+        if (error instanceof WorkspaceNotFoundError) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
+        logger.error("Failed to process signal", { error });
         if (errorMessage.includes("Workspace path does not exist")) {
           return c.json(
             {
@@ -990,6 +991,9 @@ const workspacesRoutes = daemonFactory
       const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
       runtime.listJobs(); // ensure runtime is initialized
     } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
       if (!stringifyError(error).includes("Workspace path does not exist")) {
         logger.error("Failed to list jobs", { error, workspaceId });
         return c.json({ error: `Failed to list jobs: ${stringifyError(error)}` }, 500);
