@@ -136,6 +136,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
         prompt: userPrompt,
         schema: SkillOutputSchema,
         maxOutputTokens: 8192,
+        maxRetries: 3,
         abortSignal,
       });
 

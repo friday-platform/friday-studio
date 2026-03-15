@@ -595,6 +595,7 @@ export async function generatePlan(
       model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
       schema: schemas.task,
       experimental_repairText: repairJson,
+      maxRetries: 3,
       messages: [
         {
           role: "system",
@@ -626,6 +627,7 @@ export async function generatePlan(
     model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: schemas.workspace,
     experimental_repairText: repairJson,
+    maxRetries: 3,
     messages: [
       {
         role: "system",

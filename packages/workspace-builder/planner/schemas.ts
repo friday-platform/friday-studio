@@ -183,6 +183,7 @@ export async function generateOutputSchemas(
               model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
               schema: OutputFieldSchema,
               experimental_repairText: repairJson,
+              maxRetries: 3,
               messages: [
                 {
                   role: "system",

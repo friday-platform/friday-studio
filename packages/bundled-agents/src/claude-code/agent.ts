@@ -41,6 +41,7 @@ async function extractRepoAndTask(
     model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     schema: PrepSchema,
     abortSignal,
+    maxRetries: 3,
     prompt: `Extract repository, task, and effort level from this prompt.
 
 If the prompt instructs cloning a repository:

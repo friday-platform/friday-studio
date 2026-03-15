@@ -138,6 +138,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       schema: planSchema,
       temperature: 0,
       maxOutputTokens: 2000,
+      maxRetries: 3,
       experimental_repairText: repairJson,
     });
 
@@ -161,6 +162,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       const translateResult = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
+        maxRetries: 3,
         messages: [
           {
             role: "system",
@@ -251,6 +253,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       const executionResult = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
+        maxRetries: 3,
         messages: [
           {
             role: "system",

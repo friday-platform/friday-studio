@@ -150,6 +150,7 @@ ${excerpts}`;
   const result = await generateObject({
     model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     abortSignal,
+    maxRetries: 3,
     schema: ResponseSchema,
     experimental_repairText: repairJson,
     messages: [
@@ -228,6 +229,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     try {
       const response = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+        maxRetries: 3,
         messages: [
           { role: "system", content: QUERY_ANALYSIS_PROMPT },
           temporalGroundingMessage(),

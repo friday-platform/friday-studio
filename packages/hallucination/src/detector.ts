@@ -309,6 +309,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
       schema: ValidationSchema,
       temperature: 0.05,
       maxOutputTokens: 1000,
+      maxRetries: 3,
       experimental_repairText: repairJson,
     });
 

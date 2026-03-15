@@ -44,6 +44,7 @@ async function summarize(params: {
     Content:
     ${params.content}`,
     maxOutputTokens: 100,
+    maxRetries: 3,
     abortSignal: params.abortSignal,
   });
 

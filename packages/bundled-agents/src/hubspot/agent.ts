@@ -203,6 +203,7 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
         ],
         tools,
         abortSignal,
+        maxRetries: 3,
         stopWhen: stepCountIs(MAX_STEPS),
         experimental_repairToolCall: repairToolCall,
       });

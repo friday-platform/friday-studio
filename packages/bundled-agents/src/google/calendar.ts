@@ -185,6 +185,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
       const result = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
+        maxRetries: 3,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
           temporalGroundingMessage(),
@@ -236,6 +237,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
           schema: CalendarScheduleSchema,
           experimental_repairText: repairJson,
           abortSignal,
+          maxRetries: 3,
           messages: [
             {
               role: "system",

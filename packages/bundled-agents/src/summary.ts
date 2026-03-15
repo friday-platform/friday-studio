@@ -84,6 +84,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
       const result = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
         abortSignal,
+        maxRetries: 3,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
           { role: "user", content: prompt },

@@ -58,6 +58,7 @@ Output clean, well-organized data appropriate for tabular display.`;
         schema: TableDataSchema,
         experimental_repairText: repairJson,
         abortSignal,
+        maxRetries: 3,
         messages: [
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
           { role: "user", content: prompt },

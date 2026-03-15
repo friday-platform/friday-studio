@@ -154,6 +154,7 @@ CONTENT GUIDELINES (for composeEmail):
 
     const res = await generateText({
       model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      maxRetries: 3,
       messages: [
         {
           role: "system",

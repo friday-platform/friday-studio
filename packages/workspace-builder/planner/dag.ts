@@ -87,6 +87,7 @@ export async function generateDAGSteps(
     model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
     schema: jobSchema,
     experimental_repairText: repairJson,
+    maxRetries: 3,
     messages: [
       {
         role: "system",

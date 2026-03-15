@@ -42,6 +42,7 @@ export async function generateSessionSummary(
       schema: SessionAISummarySchema,
       prompt,
       maxOutputTokens: 300,
+      maxRetries: 3,
       abortSignal: AbortSignal.timeout(5000),
       experimental_repairText: repairJson,
     });

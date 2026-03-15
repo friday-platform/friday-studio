@@ -46,6 +46,7 @@ export async function discoverDataSources(
     model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     schema: ResolvedDataSourcesSchema,
     abortSignal,
+    maxRetries: 3,
     prompt,
     system: DISCOVERY_SYSTEM_PROMPT,
   });
