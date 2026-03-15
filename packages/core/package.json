@@ -22,6 +22,7 @@
     "./mcp-registry/requirement-validator": "./src/mcp-registry/requirement-validator.ts",
     "./mcp-registry/credential-resolver": "./src/mcp-registry/credential-resolver.ts",
     "./mcp-registry/storage": "./src/mcp-registry/storage/index.ts",
+    "./errors/missing-environment": "./src/errors/missing-environment-error.ts",
     "./errors/workspace-not-found": "./src/errors/workspace-not-found-error.ts"
   },
   "main": "./mod.ts",

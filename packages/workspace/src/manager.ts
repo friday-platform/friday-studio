@@ -11,6 +11,7 @@ import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
+import { MissingEnvironmentError } from "@atlas/core/errors/missing-environment";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
@@ -101,7 +102,7 @@ export function validateMCPEnvironmentForWorkspace(
       ? `workspace .env (${workspaceEnvPath})`
       : `workspace .env (create ${workspaceEnvPath})`;
 
-    throw new Error(
+    throw new MissingEnvironmentError(
       `Missing required environment variables for workspace:\n${formatted}\n\n` +
         `Set these in:\n` +
         `  - ${workspaceEnvHint}\n` +

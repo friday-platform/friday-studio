@@ -30,6 +30,7 @@ export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
 // Error types
+export { MissingEnvironmentError } from "./src/errors/missing-environment-error.ts";
 export { SessionFailedError } from "./src/errors/session-failed-error.ts";
 export { UserConfigurationError } from "./src/errors/user-configuration-error.ts";
 export { WorkspaceNotFoundError } from "./src/errors/workspace-not-found-error.ts";

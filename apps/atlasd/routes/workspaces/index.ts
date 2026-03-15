@@ -12,6 +12,7 @@ import {
   toProviderRefs,
 } from "@atlas/config/mutations";
 import { SessionFailedError } from "@atlas/core";
+import { MissingEnvironmentError } from "@atlas/core/errors/missing-environment";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import {
   CredentialNotFoundError,
@@ -954,6 +955,13 @@ const workspacesRoutes = daemonFactory
         if (error instanceof WorkspaceNotFoundError) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
+        if (error instanceof MissingEnvironmentError) {
+          logger.warn("Workspace has missing required environment variables", {
+            error,
+            workspaceId,
+          });
+          return c.json({ error: "Workspace has missing required environment variables" }, 422);
+        }
         logger.error("Failed to process signal", { error });
         if (errorMessage.includes("Workspace path does not exist")) {
           return c.json(
@@ -1038,8 +1046,16 @@ const workspacesRoutes = daemonFactory
       const signals = runtime.listSignals();
       return c.json({ signals: signals.map((signal) => ({ name: signal.id, signal })) }, 200);
     } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      if (error instanceof MissingEnvironmentError) {
+        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
+        return c.json({ error: "Workspace has missing required environment variables" }, 422);
+      }
+      const errorMessage = stringifyError(error);
       // When workspace path doesn't exist (stopped/deleted workspace), fall back to config
-      if (stringifyError(error).includes("Workspace path does not exist")) {
+      if (errorMessage.includes("Workspace path does not exist")) {
         logger.debug("Workspace path unavailable, reading signals from config", { workspaceId });
         const manager = ctx.getWorkspaceManager();
         const config = await manager.getWorkspaceConfig(workspaceId);
@@ -1059,7 +1075,7 @@ const workspacesRoutes = daemonFactory
         );
       }
       logger.error("Failed to list signals", { error, workspaceId });
-      return c.json({ error: `Failed to list signals: ${stringifyError(error)}` }, 500);
+      return c.json({ error: `Failed to list signals: ${errorMessage}` }, 500);
     }
   })
   // Describe specific agent in a workspace
@@ -1073,6 +1089,13 @@ const workspacesRoutes = daemonFactory
       const agent = runtime.describeAgent(agentId);
       return c.json(agent, 200);
     } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      if (error instanceof MissingEnvironmentError) {
+        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
+        return c.json({ error: "Workspace has missing required environment variables" }, 422);
+      }
       logger.error("Failed to describe agent", { error, workspaceId, agentId });
       return c.json({ error: `Failed to describe agent: ${stringifyError(error)}` }, 500);
     }
@@ -1087,6 +1110,13 @@ const workspacesRoutes = daemonFactory
       const agents = runtime.listAgents();
       return c.json(agents);
     } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      if (error instanceof MissingEnvironmentError) {
+        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
+        return c.json({ error: "Workspace has missing required environment variables" }, 422);
+      }
       logger.error("Failed to list agents", { error, workspaceId });
       return c.json({ error: `Failed to list agents: ${stringifyError(error)}` }, 500);
     }
