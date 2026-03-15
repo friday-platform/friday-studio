@@ -987,23 +987,12 @@ const workspacesRoutes = daemonFactory
     const workspaceId = c.req.param("workspaceId");
     const ctx = c.get("app");
 
-    try {
-      const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-      runtime.listJobs(); // ensure runtime is initialized
-    } catch (error) {
-      if (error instanceof WorkspaceNotFoundError) {
-        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-      }
-      if (!stringifyError(error).includes("Workspace path does not exist")) {
-        logger.error("Failed to list jobs", { error, workspaceId });
-        return c.json({ error: `Failed to list jobs: ${stringifyError(error)}` }, 500);
-      }
-      logger.debug("Workspace path unavailable, reading jobs from config", { workspaceId });
-    }
-
     const manager = ctx.getWorkspaceManager();
     const config = await manager.getWorkspaceConfig(workspaceId);
-    const workspaceConfig = config?.workspace;
+    if (!config) {
+      return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+    }
+    const workspaceConfig = config.workspace;
     const jobs = workspaceConfig?.jobs || {};
 
     return c.json(
@@ -1011,7 +1000,7 @@ const workspacesRoutes = daemonFactory
         id: key,
         name: formatJobName(key, job),
         description: job.description,
-        integrations: workspaceConfig ? extractJobIntegrations(job, workspaceConfig) : [],
+        integrations: extractJobIntegrations(job, workspaceConfig),
       })),
     );
   })

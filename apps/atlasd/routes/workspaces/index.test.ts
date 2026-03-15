@@ -298,11 +298,8 @@ describe("extractJobIntegrations", () => {
 // =============================================================================
 
 describe("GET /workspaces/:workspaceId/jobs", () => {
-  function createJobsTestApp(options: {
-    runtimeError?: Error;
-    config?: Record<string, unknown> | null;
-  }) {
-    const { runtimeError, config = null } = options;
+  function createJobsTestApp(options: { config?: Record<string, unknown> | null }) {
+    const { config = null } = options;
 
     const mockWorkspaceManager = {
       find: vi.fn().mockResolvedValue(null),
@@ -312,13 +309,7 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
       deleteWorkspace: vi.fn(),
     } as unknown as WorkspaceManager;
 
-    const mockDaemon = {
-      getWorkspaceManager: () => mockWorkspaceManager,
-      runtimes: new Map(),
-      getOrCreateWorkspaceRuntime: runtimeError
-        ? vi.fn().mockRejectedValue(runtimeError)
-        : vi.fn().mockResolvedValue({ listJobs: () => [] }),
-    };
+    const mockDaemon = { getWorkspaceManager: () => mockWorkspaceManager, runtimes: new Map() };
 
     const mockContext: AppContext = {
       runtimes: new Map(),
@@ -445,31 +436,14 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
     expect(postJob?.integrations).toEqual(["slack"]);
   });
 
-  test("fallback path returns same shape when workspace path unavailable", async () => {
-    const { app } = createJobsTestApp({
-      runtimeError: new Error("Workspace path does not exist"),
-      config: {
-        workspace: {
-          version: "1.0",
-          workspace: { id: "ws-1", name: "Test" },
-          jobs: {
-            cleanup: {
-              title: "Cleanup",
-              description: "Runs cleanup",
-              execution: { agents: ["agent-1"], strategy: "sequential" },
-            },
-          },
-        },
-      },
-    });
+  test("returns 404 when workspace config not found", async () => {
+    const { app } = createJobsTestApp({ config: null });
 
     const res = await app.request("/workspaces/ws-1/jobs");
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
 
     const body = JSON.parse(await res.text());
-    expect(body).toEqual([
-      { id: "cleanup", name: "Cleanup", description: "Runs cleanup", integrations: [] },
-    ]);
+    expect(body).toEqual({ error: "Workspace not found: ws-1" });
   });
 
   test("returns empty array when no jobs configured", async () => {
