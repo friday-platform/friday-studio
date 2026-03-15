@@ -136,6 +136,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
         schema: SupervisorOutputSchema,
         messages,
         maxOutputTokens: 16384,
+        maxRetries: 3,
         abortSignal,
       });
 
