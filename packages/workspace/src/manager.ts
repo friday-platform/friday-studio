@@ -11,7 +11,7 @@ import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
-import { MissingEnvironmentError } from "@atlas/core/errors/missing-environment";
+import { MissingEnvironmentError } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";

@@ -11,10 +11,10 @@ import {
   convertLLMToAgent,
   LocalSessionHistoryAdapter,
   SessionFailedError,
+  WorkspaceNotFoundError,
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
-import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { logger } from "@atlas/logger";

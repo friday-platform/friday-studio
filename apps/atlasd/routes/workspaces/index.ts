@@ -11,9 +11,12 @@ import {
   toIdRefs,
   toProviderRefs,
 } from "@atlas/config/mutations";
-import { SessionFailedError } from "@atlas/core";
-import { MissingEnvironmentError } from "@atlas/core/errors/missing-environment";
-import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
+import {
+  MissingEnvironmentError,
+  SessionFailedError,
+  UserConfigurationError,
+  WorkspaceNotFoundError,
+} from "@atlas/core";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
@@ -950,6 +953,10 @@ const workspacesRoutes = daemonFactory
         const errorMessage = stringifyError(error);
         if (error instanceof SessionFailedError) {
           logger.warn("Signal session failed", { error });
+          return c.json({ error: errorMessage }, 422);
+        }
+        if (error instanceof UserConfigurationError) {
+          logger.warn("Signal skipped due to user configuration error", { error });
           return c.json({ error: errorMessage }, 422);
         }
         if (error instanceof WorkspaceNotFoundError) {

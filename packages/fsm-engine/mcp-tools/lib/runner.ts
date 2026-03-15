@@ -2,6 +2,7 @@
  * Test runner for FSM transition validation
  */
 
+import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -157,8 +158,14 @@ export class TestRunner {
       // Initialize engine (will load documents from store)
       await engine.initialize();
 
-      // Send signal
-      await engine.signal(test.signal);
+      // Send signal — pass a context with a fresh sessionId so that
+      // WorkspaceRuntime.executeAgent (runtime.ts:1007) does not throw
+      // "Missing sessionId in signal context". Production paths always
+      // supply context via processSignalForJob; the test runner must too.
+      await engine.signal(test.signal, {
+        sessionId: randomUUID(),
+        workspaceId: this.scope.workspaceId,
+      });
 
       // Get actual results
       const actualState = engine.state;
