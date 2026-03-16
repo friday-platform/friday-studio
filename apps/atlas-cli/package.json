@@ -19,7 +19,7 @@
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@types/react": "^19.2.14",
-    "ai": "^5.0.153",
+    "ai": "^5.0.154",
     "gunshi": "^0.29.3",
     "ink": "^6.8.0",
     "js-levenshtein": "^1.1.6",
