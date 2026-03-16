@@ -20,7 +20,6 @@ import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { CancellationNotificationSchema } from "../streaming/stream-emitters.ts";
 import { AgentExecutionManager } from "./agent-execution-manager.ts";
 import { type AgentServerDependencies, AgentToolParamsSchema } from "./types.ts";
-
 export class AtlasAgentsMCPServer implements AgentServerAdapter {
   #logger: Logger;
   private server: McpServer;
@@ -36,9 +35,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
    * Format error/cancellation response for both MCP and direct contexts
    */
   private formatErrorResponse(error: unknown, agentId: string, asMcpResponse = false) {
-    const isCancellation =
-      error instanceof Error &&
-      (error.message.includes("cancelled") || error.message.includes("aborted"));
+    const isCancellation = error instanceof Error && error.name === "AbortError";
 
     const payload = isCancellation
       ? ({ type: "cancelled", result: "Agent execution was cancelled" } as const)

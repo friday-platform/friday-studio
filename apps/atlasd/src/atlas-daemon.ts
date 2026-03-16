@@ -1235,6 +1235,7 @@ export class AtlasDaemon {
         sessionId,
         workspaceId,
         timeoutMs: isTimeout ? timeoutMs : undefined,
+        sessionError: session.session.error,
       });
       return false;
     }

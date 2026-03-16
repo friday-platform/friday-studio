@@ -284,9 +284,7 @@ export function createAgentExecutionMachine(
 
       logError: ({ context }) => {
         const isCancellation =
-          context.error &&
-          (context.error.message?.includes("cancelled") ||
-            context.error.message?.includes("aborted"));
+          context.error instanceof Error && context.error.name === "AbortError";
 
         if (isCancellation) {
           logger.info("Agent execution cancelled", { agentId: context.agentId });
