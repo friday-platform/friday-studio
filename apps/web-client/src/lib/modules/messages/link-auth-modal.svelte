@@ -11,10 +11,12 @@
     displayName: string;
     secretFields: SecretField[];
     onSuccess: (credentialId: string) => void;
+    onClose?: () => void;
     triggerContents: Snippet;
   };
 
-  let { provider, displayName, secretFields, onSuccess, triggerContents }: Props = $props();
+  let { provider, displayName, secretFields, onSuccess, onClose, triggerContents }: Props =
+    $props();
 
   const SENSITIVE_PATTERNS = /password|secret|token|key/i;
 
@@ -88,7 +90,10 @@
 
 <Dialog.Root
   onOpenChange={({ next }) => {
-    if (!next) resetForm();
+    if (!next) {
+      resetForm();
+      onClose?.();
+    }
     return next;
   }}
 >

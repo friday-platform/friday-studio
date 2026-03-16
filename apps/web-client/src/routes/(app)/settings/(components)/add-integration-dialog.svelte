@@ -197,7 +197,11 @@
 
     apiKeyProvider = { id: provider.id, displayName: provider.displayName, secretFields: fields };
 
-    // Wait for LinkAuthModal to render, then programmatically click its trigger
+    // Close the outer dialog so LinkAuthModal isn't occluded (z-index conflict)
+    open.set(false);
+
+    // Wait for the fade-out transition (200ms) + DOM update before opening inner modal
+    await new Promise((r) => setTimeout(r, 250));
     await tick();
     const triggerButton = apiKeyTriggerEl?.querySelector("button");
     triggerButton?.click();
@@ -223,8 +227,11 @@
     const providerId = apiKeyProvider?.id ?? "";
     apiKeyProvider = null;
     trackEvent(GA4.CREDENTIAL_LINK_SUCCESS, { provider: providerId, type: "apikey" });
-    open.set(false);
     invalidateAll();
+  }
+
+  function handleApiKeyClose() {
+    apiKeyProvider = null;
   }
 
   // --- Table ---
@@ -326,6 +333,7 @@
       displayName={apiKeyProvider.displayName}
       secretFields={apiKeyProvider.secretFields}
       onSuccess={handleApiKeySuccess}
+      onClose={handleApiKeyClose}
     >
       {#snippet triggerContents()}
         <span></span>
