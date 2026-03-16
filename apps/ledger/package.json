@@ -9,7 +9,7 @@
     "dev": "DEV_MODE=true deno run --env-file --watch --allow-all src/index.ts"
   },
   "dependencies": {
-    "@pgsql/traverse": "^17.2.4",
+    "@pgsql/traverse": "^17.2.5",
     "@pgsql/types": "^17.6.2",
     "@atlas/logger": "workspace:*",
     "@atlas/sentry": "workspace:*",

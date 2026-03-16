@@ -79,7 +79,8 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@opentelemetry/exporter-logs-otlp-http@0.213": "0.213.0_@opentelemetry+api@1.9.0",
     "npm:@opentelemetry/sdk-logs@0.213": "0.213.0_@opentelemetry+api@1.9.0",
-    "npm:@pgsql/traverse@^17.2.4": "17.2.4",
+    "npm:@pgsql/traverse@^17.2.4": "17.2.5",
+    "npm:@pgsql/traverse@^17.2.5": "17.2.5",
     "npm:@pgsql/types@^17.6.2": "17.6.2",
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sentry/deno@^10.30.0": "10.43.0",
@@ -2682,8 +2683,8 @@
     "@pgsql/quotes@17.1.0": {
       "integrity": "sha512-J/H+LcrENBpYgL45WW6aTjb5Yk4tX4+AmB2/k8KZa+Zh3wiCtqmNIag+HZz5HmWaF6EZK9ZGC95NBD1fs+rUvg=="
     },
-    "@pgsql/traverse@17.2.4": {
-      "integrity": "sha512-7dnst2U3qXXSFbS+HvVktW/C4aVKe/niaRxZ1cfhmdy9E7SMYM0OukFO7gvoZb6I3dnKm/eTfpv23JPKq5z6DA==",
+    "@pgsql/traverse@17.2.5": {
+      "integrity": "sha512-LJAkgoSCL5JDy9uFPFZ3duLCTYzYwu/FNxcRNIvwL1xwcSm2KLWu7SWWt+N5EJVbJd6LVA792Ei899a5RJH+7Q==",
       "dependencies": [
         "@pgsql/types",
         "pg-proto-parser"
@@ -6877,8 +6878,8 @@
     "pg-int8@1.0.1": {
       "integrity": "sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw=="
     },
-    "pg-proto-parser@1.30.4": {
-      "integrity": "sha512-+9/n8zfYQVNRc8KGhxxNXO8NA5OKni01IPtit6+C3sLMtcRVVFCj4W0XtrEGFivNjz2qwUtFmRhG8OGMTxs6hg==",
+    "pg-proto-parser@1.30.5": {
+      "integrity": "sha512-DWXRF5u3hcAwJfrlfKjqOfSex2E6d4Lh9Y3NxFsaieQD1ZoQlsceAn1Xp6C5HRKnHxUB/F5N7R4aVeDBG/sk4Q==",
       "dependencies": [
         "@babel/generator",
         "@babel/parser@7.29.0",
@@ -8533,7 +8534,7 @@
           "dependencies": [
             "npm:@hono/zod-validator@0.7.6",
             "npm:@jsr/db__sqlite@0.12",
-            "npm:@pgsql/traverse@^17.2.4",
+            "npm:@pgsql/traverse@^17.2.5",
             "npm:@pgsql/types@^17.6.2",
             "npm:hono@4.12.7",
             "npm:pgsql-parser@^17.9.12",
