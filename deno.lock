@@ -182,7 +182,7 @@
     "npm:typescript@^5.9.3": "5.9.3",
     "npm:ulid@^3.0.2": "3.0.2",
     "npm:undici@^7.24.4": "7.24.4",
-    "npm:vite-plugin-compression2@^2.5.1": "2.5.1",
+    "npm:vite-plugin-compression2@^2.5.2": "2.5.2",
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.5.0_yaml@2.8.2_picomatch@4.0.3",
     "npm:vitest@^4.1.0": "4.1.0_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2",
     "npm:xstate@^5.28.0": "5.28.0",
@@ -8138,8 +8138,8 @@
         "vfile-message"
       ]
     },
-    "vite-plugin-compression2@2.5.1": {
-      "integrity": "sha512-2YpLZWs1ZRo9XwtSFA6/NVuBgOR+kvFk8M0HNDsP7Wu7OfJDOKT6fHB8kzuvw6jhgC9KYgDOttfaG2qC0wE9AQ==",
+    "vite-plugin-compression2@2.5.2": {
+      "integrity": "sha512-a1eAY2Ux5JrflaWStWUa7yoMnjhw3tx7y6vQIp20QZ9K57wcKxYT+DUJiAG4VSEvmFMjeo9a5R2phdBriOJ/1A==",
       "dependencies": [
         "@rollup/pluginutils",
         "tar-mini"
@@ -8510,7 +8510,7 @@
             "npm:svelte@^5.53.11",
             "npm:typescript-eslint@^8.57.0",
             "npm:typescript@^5.9.3",
-            "npm:vite-plugin-compression2@^2.5.1",
+            "npm:vite-plugin-compression2@^2.5.2",
             "npm:vite@^7.3.1",
             "npm:vitest@^4.1.0"
           ]
