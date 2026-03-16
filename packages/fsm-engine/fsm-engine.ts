@@ -17,7 +17,7 @@ import {
   FailInputSchema,
   PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
-import { extractToolCallInput } from "@atlas/agent-sdk/vercel-helpers";
+import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import type { MCPServerConfig } from "@atlas/config";
 import { createErrorCause, isAPIErrorCause } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
@@ -1262,8 +1262,11 @@ export class FSMEngine {
               }
 
               // Dual-write: results accumulator (replace semantics)
+              // LLMs sometimes stringify nested JSON fields (e.g. arrays as
+              // JSON strings). Parse them so downstream .map() calls don't crash.
               if (results && dataToStore) {
-                const parsed = z.record(z.string(), z.unknown()).safeParse(dataToStore);
+                const sanitized = unstringifyNestedJson(dataToStore);
+                const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
                 if (parsed.success) {
                   results.set(action.outputTo, parsed.data);
                 }
