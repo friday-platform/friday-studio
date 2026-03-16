@@ -136,8 +136,8 @@
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:minimatch@^10.2.4": "10.2.4",
-    "npm:nanoid@5.1.6": "5.1.6",
-    "npm:nanoid@^5.1.6": "5.1.6",
+    "npm:nanoid@5.1.7": "5.1.7",
+    "npm:nanoid@^5.1.6": "5.1.7",
     "npm:oauth4webapi@3.8.5": "3.8.5",
     "npm:oauth4webapi@^3.8.3": "3.8.5",
     "npm:openapi-fetch@0.15": "0.15.2",
@@ -1996,7 +1996,7 @@
         "@internationalized/date",
         "dequal",
         "focus-trap",
-        "nanoid@5.1.6",
+        "nanoid@5.1.7",
         "svelte"
       ]
     },
@@ -6619,8 +6619,8 @@
       "integrity": "sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==",
       "bin": true
     },
-    "nanoid@5.1.6": {
-      "integrity": "sha512-c7+7RQ+dMB5dPwwCp4ee1/iV/q2P6aK1mTZcfr1BTuVlyW9hJYiMPybJCcnBlQtuSmTIWNeazm/zqNoZSSElBg==",
+    "nanoid@5.1.7": {
+      "integrity": "sha512-ua3NDgISf6jdwezAheMOk4mbE1LXjm1DfMUDMuJf4AqxLFK3ccGpgWizwa5YV7Yz9EpXwEaWoRXSb/BnV0t5dQ==",
       "bin": true
     },
     "natural-compare@1.4.0": {
@@ -8575,7 +8575,7 @@
             "npm:@octokit/request@^10.0.8",
             "npm:hono@4.12.7",
             "npm:jose@6.2.1",
-            "npm:nanoid@5.1.6",
+            "npm:nanoid@5.1.7",
             "npm:oauth4webapi@3.8.5",
             "npm:postgres@3.4.7",
             "npm:vitest@^4.1.0",

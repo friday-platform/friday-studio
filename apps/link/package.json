@@ -19,7 +19,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@std/async": "npm:@jsr/std__async@1.0.15",
     "hono": "4.12.7",
-    "nanoid": "5.1.6",
+    "nanoid": "5.1.7",
     "oauth4webapi": "3.8.5",
     "postgres": "3.4.7",
     "@hubspot/api-client": "^13.4.0",
