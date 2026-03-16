@@ -133,8 +133,7 @@
     "npm:jsonrepair@^3.13.3": "3.13.3",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@5.86.0": "5.86.0_@types+node@25.5.0_typescript@5.9.3",
-    "npm:lint-staged@^16.3.2": "16.3.3",
-    "npm:lint-staged@^16.3.3": "16.3.3",
+    "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:minimatch@^10.2.4": "10.2.4",
     "npm:nanoid@5.1.6": "5.1.6",
@@ -6012,12 +6011,12 @@
         "uc.micro"
       ]
     },
-    "lint-staged@16.3.3": {
-      "integrity": "sha512-RLq2koZ5fGWrx7tcqx2tSTMQj4lRkfNJaebO/li/uunhCJbtZqwTuwPHpgIimAHHi/2nZIiGrkCHDCOeR1onxA==",
+    "lint-staged@16.4.0": {
+      "integrity": "sha512-lBWt8hujh/Cjysw5GYVmZpFHXDCgZzhrOm8vbcUdobADZNOK/bRshr2kM3DfgrrtR1DQhfupW9gnIXOfiFi+bw==",
       "dependencies": [
         "commander",
         "listr2",
-        "micromatch",
+        "picomatch@4.0.3",
         "string-argv",
         "tinyexec",
         "yaml@2.8.2"
@@ -7916,8 +7915,8 @@
     "tinybench@2.9.0": {
       "integrity": "sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg=="
     },
-    "tinyexec@1.0.2": {
-      "integrity": "sha512-W/KYk+NFhkmsYpuHq5JykngiOCnxeVL8v8dFnqxSD8qEEdRfXk1SDM6JzNqcERbcGYj9tMrDQBYV9cjgnunFIg=="
+    "tinyexec@1.0.4": {
+      "integrity": "sha512-u9r3uZC0bdpGOXtlxUIdwf9pkmvhqJdrVCH9fapQtgy/OeTTMZ1nqH7agtvEfmGui6e1XxjcdrlxvxJvc3sMqw=="
     },
     "tinyglobby@0.2.15_picomatch@4.0.3": {
       "integrity": "sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==",
@@ -8409,7 +8408,7 @@
         "npm:@types/turndown@^5.0.6",
         "npm:@vitest/coverage-v8@4.1.0",
         "npm:knip@5.86.0",
-        "npm:lint-staged@^16.3.3",
+        "npm:lint-staged@^16.4.0",
         "npm:nanoid@^5.1.6",
         "npm:vitest@^4.1.0"
       ]
