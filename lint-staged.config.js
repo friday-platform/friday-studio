@@ -56,7 +56,15 @@ export default {
     "deno run -A npm:@biomejs/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched",
   ],
   "*.{ts,tsx,js,jsx}": (files) => {
-    const filtered = files.filter((f) => !f.endsWith(".svelte.ts") && !f.endsWith(".svelte.js"));
+    // Exclude files in directories that deno.json excludes from linting —
+    // passing only excluded files causes `deno lint` to fail with "No target files found".
+    const DENO_LINT_EXCLUDED = ["/apps/friday-website/src/", "/apps/atlas-auth-ui/src/"];
+    const filtered = files.filter(
+      (f) =>
+        !f.endsWith(".svelte.ts") &&
+        !f.endsWith(".svelte.js") &&
+        !DENO_LINT_EXCLUDED.some((dir) => f.includes(dir)),
+    );
     if (filtered.length === 0) return [];
     return [`deno lint --fix ${filtered.map((f) => `"${f}"`).join(" ")}`];
   },

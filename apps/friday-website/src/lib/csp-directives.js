@@ -12,9 +12,17 @@ export const REPORT_ENDPOINT = "https://dm35suqd.uriports.com/reports";
 export function makeDirectives({ dev }) {
   return {
     "default-src": ["self"],
+    // CSP Level 3: 'strict-dynamic' propagates trust from SvelteKit's hashed
+    // scripts to dynamically-created children (GTM → GA, CookieYes, Clarity).
+    // URL hosts and 'unsafe-inline' are ignored by CSP3 browsers — kept as
+    // CSP Level 2 fallback only. Cloudflare Web Analytics (edge-injected static
+    // <script>) won't execute under strict-dynamic; server-side Cloudflare
+    // analytics is unaffected.
     "script-src": [
       "self",
       "report-sample",
+      "strict-dynamic",
+      "unsafe-inline",
       "https://cdn-cookieyes.com",
       "https://www.googletagmanager.com",
       "https://*.clarity.ms",
