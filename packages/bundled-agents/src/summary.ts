@@ -117,7 +117,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
         toolResults,
       });
 
-      const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+      const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
       logger.debug("summarizer tool success", { artifactRefs });
 
       if (!artifactRefs || artifactRefs.length === 0) {

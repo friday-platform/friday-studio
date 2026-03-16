@@ -1,12 +1,38 @@
-import type { Logger } from "@atlas/logger";
 import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
 import type { AgentPayload } from "./result.ts";
 
-// Re-export message types for convenience
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
+
+// ==============================================================================
+// LOGGER TYPES
+// ==============================================================================
+
+/** Context attached to log entries */
+export interface LogContext {
+  workspaceId?: string;
+  sessionId?: string;
+  agentId?: string;
+  workerType?: string;
+  agentName?: string;
+  supervisorId?: string;
+  workerId?: string;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+/** Logger interface — matches @atlas/logger contract */
+export interface Logger {
+  trace(message: string, context?: LogContext): void;
+  debug(message: string, context?: LogContext): void;
+  info(message: string, context?: LogContext): void;
+  warn(message: string, context?: LogContext): void;
+  error(message: string, context?: LogContext): void;
+  fatal(message: string, context?: LogContext): void;
+  child(context: LogContext): Logger;
+}
 
 // ==============================================================================
 // BASE UTILITY SCHEMAS
@@ -311,7 +337,6 @@ export const AtlasAgentConfigSchema = z.strictObject({
   agent: z.string().describe("Atlas Agent ID from registry"),
   description: z.string().describe("Agent description"),
   prompt: z.string().describe("Agent prompt"),
-  // version: z.string().optional().describe("Agent version (defaults to latest)"),
   config: z
     .record(z.string(), z.unknown())
     .optional()

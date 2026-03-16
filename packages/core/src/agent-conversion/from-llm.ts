@@ -116,7 +116,7 @@ export function convertLLMToAgent(
           toolResults,
         });
 
-        const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+        const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
         return ok(
           { response: text },

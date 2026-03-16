@@ -192,7 +192,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
 
       allToolCalls = [...allToolCalls, ...assembledToolCalls];
       allToolResults = [...allToolResults, ...assembledToolResults];
-      artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+      artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
       logger.info("slack-summarizer summary", { text: translateResult.text });
 
@@ -291,7 +291,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       allToolCalls = [...allToolCalls, ...execToolCalls];
       allToolResults = [...allToolResults, ...execToolResults];
 
-      const execArtifactRefs = extractArtifactRefsFromToolResults(execToolResults);
+      const execArtifactRefs = extractArtifactRefsFromToolResults(execToolResults, logger);
       if (execArtifactRefs.length > 0) {
         artifactRefs = [...(artifactRefs ?? []), ...execArtifactRefs];
       }

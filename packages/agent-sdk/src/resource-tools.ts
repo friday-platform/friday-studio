@@ -1,6 +1,6 @@
-import { stringifyError } from "@atlas/utils";
 import { jsonSchema, tool } from "ai";
 import type { ResourceToolkit } from "./resource-toolkit.ts";
+import { stringifyError } from "./utils.ts";
 
 /** Creates a resource_read tool. SELECT queries against a resource's draft via the Ledger. */
 export function createResourceReadTool(toolkit: ResourceToolkit, workspaceId: string) {

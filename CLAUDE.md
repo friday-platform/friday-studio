@@ -152,6 +152,11 @@ go build                # Build
 - `.svelte.ts` files have looser `JSON.parse` inference (returns any-ish) —
   plain `.ts` files enforce `unknown`, so extracted code needs explicit Zod
   parsing for `JSON.parse` results
+- `arr[i]` is `T | undefined` under Deno's strict index checks — use `for...of`
+  or destructured iteration instead of indexed access to avoid unnecessary
+  null guards
+- `"key" in obj` on `object` narrows to `Record<"key", unknown>` — use `in`
+  checks instead of `as Record<string, unknown>` casts for property access
 
 ### Vitest
 

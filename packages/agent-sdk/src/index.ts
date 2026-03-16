@@ -1,16 +1,6 @@
-/**
- * Atlas Agent SDK
- *
- * Build agents that handle natural language prompts.
- * Agents access MCP tools, environment variables, and streaming.
- */
-
-// Adapter interfaces for server implementations
 export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
-// Core API
 export { createAgent } from "./create-agent.ts";
 export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
-// Fail tool for graceful agent failure signaling
 export { createFailTool, FailInputSchema } from "./fail-tool.ts";
 export type {
   AtlasDataEvents,
@@ -19,15 +9,12 @@ export type {
   AtlasUIMessagePart,
   MessageMetadata,
 } from "./messages.ts";
-// Messages
 export {
   AtlasDataEventSchemas,
   MessageMetadataSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
-// Platform tool constants
 export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
-// Resource toolkit interface + tool constructors
 export type { ResourceToolkit } from "./resource-toolkit.ts";
 export {
   createResourceLinkRefTool,
@@ -41,9 +28,7 @@ export type {
   AgentPayloadError,
   AgentPayloadSuccess,
 } from "./result.ts";
-// Payload helpers for agent handlers
 export { err, ok } from "./result.ts";
-// Types
 export type {
   AgentContext,
   AgentEnvironmentConfig,
@@ -66,6 +51,8 @@ export type {
   AtlasTools,
   CreateAgentConfig,
   LinkCredentialRef,
+  LogContext,
+  Logger,
   MCPAuthConfig,
   MCPServerConfig,
   MCPServerToolFilter,
@@ -76,7 +63,6 @@ export type {
   ToolContext,
   ToolResult,
 } from "./types.ts";
-// Zod Schemas for runtime validation
 export {
   AgentEnvironmentConfigSchema,
   AgentExecutionErrorSchema,
@@ -97,5 +83,4 @@ export {
   MCPTransportConfigSchema,
   OutlineRefSchema,
 } from "./types.ts";
-// Vercel AI SDK helpers
 export { repairJson, repairToolCall } from "./vercel-helpers/json-repair.ts";

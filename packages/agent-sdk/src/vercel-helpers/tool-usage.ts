@@ -1,7 +1,9 @@
-import { ArtifactSchema } from "@atlas/core/artifacts";
-import { logger } from "@atlas/logger";
 import type { StepResult, ToolSet, TypedToolCall, TypedToolResult } from "ai";
-import type { ArtifactRef, AtlasTools, ToolCall, ToolResult } from "../types.ts";
+import { z } from "zod";
+import type { ArtifactRef, AtlasTools, Logger, ToolCall, ToolResult } from "../types.ts";
+
+/** Minimal schema for artifact output — only the fields we extract */
+const ArtifactOutputSchema = z.object({ id: z.string(), type: z.string(), summary: z.string() });
 
 /**
  * Find a tool call by name and return its input if it's an object.
@@ -48,20 +50,23 @@ export function collectToolUsageFromSteps<T extends ToolSet = AtlasTools>(res: {
 }
 
 /** Extract artifact references from tool results */
-export function extractArtifactRefsFromToolResults(toolResults: ToolResult[]): ArtifactRef[] {
+export function extractArtifactRefsFromToolResults(
+  toolResults: ToolResult[],
+  logger?: Logger,
+): ArtifactRef[] {
   const refs: ArtifactRef[] = [];
 
   for (const result of toolResults) {
     if (result.toolName === "artifacts_create") {
       // Skip error results
       if (result.output.isError) {
-        logger.debug("skipping error tool result", { toolResult: result });
+        logger?.debug("skipping error tool result", { toolResult: result });
         continue;
       }
 
       try {
         const parsedText = JSON.parse(result.output.content[0].text);
-        const outputArtifact = ArtifactSchema.safeParse(parsedText);
+        const outputArtifact = ArtifactOutputSchema.safeParse(parsedText);
         if (outputArtifact.success && outputArtifact.data) {
           refs.push({
             id: outputArtifact.data.id,
@@ -70,7 +75,7 @@ export function extractArtifactRefsFromToolResults(toolResults: ToolResult[]): A
           });
         }
       } catch (error) {
-        logger.debug("failed to parse artifact refs from tool result", {
+        logger?.debug("failed to parse artifact refs from tool result", {
           error,
           toolResult: result,
         });

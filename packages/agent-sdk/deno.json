@@ -7,5 +7,5 @@
     "./vercel-helpers": "./src/vercel-helpers/index.ts",
     "./telemetry": "./src/telemetry/index.ts"
   },
-  "imports": { "@atlas/ledger": "../../apps/ledger/src/index.ts" }
+  "imports": {}
 }

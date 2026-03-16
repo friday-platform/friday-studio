@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest";
-import type { ToolCall } from "../types.ts";
-import { extractToolCallInput } from "./tool-usage.ts";
+import { describe, expect, test, vi } from "vitest";
+import type { Logger, ToolCall, ToolResult } from "../types.ts";
+import { extractArtifactRefsFromToolResults, extractToolCallInput } from "./tool-usage.ts";
 
 describe("extractToolCallInput", () => {
   function makeToolCall(toolName: string, input: unknown): ToolCall {
@@ -85,5 +85,138 @@ describe("extractToolCallInput", () => {
     const result = extractToolCallInput(toolCalls, "failStep");
 
     expect(result).toEqual({ reason: "Cannot proceed" });
+  });
+});
+
+describe("extractArtifactRefsFromToolResults", () => {
+  function makeArtifactResult(artifact: { id: string; type: string; summary: string }): ToolResult {
+    return {
+      type: "tool-result",
+      toolCallId: "call-1",
+      toolName: "artifacts_create",
+      output: { isError: false, content: [{ type: "text", text: JSON.stringify(artifact) }] },
+    } as ToolResult;
+  }
+
+  test("extracts refs from successful artifacts_create results", () => {
+    const results = [
+      makeArtifactResult({ id: "art-1", type: "document", summary: "A doc" }),
+      makeArtifactResult({ id: "art-2", type: "code", summary: "Some code" }),
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([
+      { id: "art-1", type: "document", summary: "A doc" },
+      { id: "art-2", type: "code", summary: "Some code" },
+    ]);
+  });
+
+  test("skips error tool results", () => {
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "artifacts_create",
+        output: { isError: true, content: [{ type: "text", text: "boom" }] },
+      } as ToolResult,
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([]);
+  });
+
+  test("skips non-artifacts_create tool results", () => {
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "some_other_tool",
+        output: { isError: false, content: [{ type: "text", text: "{}" }] },
+      } as ToolResult,
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([]);
+  });
+
+  test("skips results with malformed JSON", () => {
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "artifacts_create",
+        output: { isError: false, content: [{ type: "text", text: "not json" }] },
+      } as ToolResult,
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([]);
+  });
+
+  test("skips results with missing required fields", () => {
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "artifacts_create",
+        output: {
+          isError: false,
+          content: [{ type: "text", text: JSON.stringify({ id: "art-1" }) }],
+        },
+      } as ToolResult,
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([]);
+  });
+
+  test("works without logger (no throw)", () => {
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "artifacts_create",
+        output: { isError: true, content: [{ type: "text", text: "err" }] },
+      } as ToolResult,
+      {
+        type: "tool-result",
+        toolCallId: "call-2",
+        toolName: "artifacts_create",
+        output: { isError: false, content: [{ type: "text", text: "bad json" }] },
+      } as ToolResult,
+    ];
+
+    expect(() => extractArtifactRefsFromToolResults(results)).not.toThrow();
+    expect(extractArtifactRefsFromToolResults(results)).toEqual([]);
+  });
+
+  test("logs debug messages when logger is provided", () => {
+    const logger: Logger = {
+      trace: vi.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn(),
+    };
+
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "artifacts_create",
+        output: { isError: true, content: [{ type: "text", text: "err" }] },
+      } as ToolResult,
+    ];
+
+    extractArtifactRefsFromToolResults(results, logger);
+
+    expect(logger.debug).toHaveBeenCalledWith("skipping error tool result", expect.any(Object));
   });
 });

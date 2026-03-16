@@ -1,4 +1,3 @@
-import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type { AgentPayload } from "./result.ts";
 import { err } from "./result.ts";
@@ -18,6 +17,7 @@ import {
   AgentMetadataSchema,
   MCPServerConfigSchema,
 } from "./types.ts";
+import { stringifyError } from "./utils.ts";
 
 class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<TInput, TOutput> {
   metadata: AgentMetadata;
