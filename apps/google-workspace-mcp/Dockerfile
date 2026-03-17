@@ -17,7 +17,7 @@ RUN if [ -n "$WORKSPACE_MCP_VERSION" ]; then \
       uv pip install --system --no-cache -r requirements.txt; \
     fi
 
-# Apply TLS support patch (version-agnostic, pattern-based)
+# Patch TLS support (upstream doesn't support SSL natively)
 COPY apps/google-workspace-mcp/apply-tls-patch.py /tmp/
 RUN python /tmp/apply-tls-patch.py && rm /tmp/apply-tls-patch.py
 
@@ -31,7 +31,6 @@ USER nobody:nobody
 
 # External OAuth 2.1 mode - fully stateless, no secrets needed
 ENV EXTERNAL_OAUTH21_PROVIDER="true" \
-    FASTMCP_STATELESS_HTTP="true" \
     GOOGLE_OAUTH_CLIENT_ID="external" \
     GOOGLE_OAUTH_CLIENT_SECRET="external" \
     MCP_ENABLE_OAUTH21="true" \

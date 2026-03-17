@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 Patch workspace-mcp main.py to support TLS via SSL_KEYFILE and SSL_CERTFILE env vars.
+
+Upstream workspace-mcp does not support TLS natively. This patch injects
+uvicorn_config with ssl_keyfile/ssl_certfile into the server.run() call.
 """
 
-import re
 import site
 import sys
 from pathlib import Path
@@ -24,37 +26,26 @@ def patch_main_py():
         print("Already patched, skipping")
         return
 
-    # Find and replace the server.run() call for streamable-http
-    # The pattern matches the indented server.run call
-    # Support both old (host="0.0.0.0") and new (host=host) patterns
-    old_patterns = [
-        'server.run(transport="streamable-http", host=host, port=port)',  # 1.9.0+
-        'server.run(transport="streamable-http", host="0.0.0.0", port=port)',  # 1.8.x
-    ]
+    # Find the server.run() call for streamable-http (workspace-mcp 1.14.x)
+    old_code = 'server.run(transport="streamable-http", host=host, port=port)'
 
-    old_code = None
-    for pattern in old_patterns:
-        if pattern in content:
-            old_code = pattern
-            break
-
-    if old_code is None:
+    if old_code not in content:
         print("ERROR: Could not find server.run() pattern to patch", file=sys.stderr)
+        for i, line in enumerate(content.splitlines()):
+            if "server.run" in line:
+                print(f"  Line {i+1}: {line}", file=sys.stderr)
         sys.exit(1)
 
-    # Use the same host value as the original code
-    host_value = "host" if "host=host" in old_code else '"0.0.0.0"'
-
-    new_code = f'''# TLS configuration from environment variables
+    new_code = '''# TLS configuration from environment variables
             ssl_keyfile = os.getenv("SSL_KEYFILE")
             ssl_certfile = os.getenv("SSL_CERTFILE")
-            uvicorn_config = {{}}
+            uvicorn_config = {}
             if ssl_keyfile and ssl_certfile:
                 uvicorn_config["ssl_keyfile"] = ssl_keyfile
                 uvicorn_config["ssl_certfile"] = ssl_certfile
-                safe_print(f"TLS enabled: keyfile={{ssl_keyfile}}, certfile={{ssl_certfile}}")
+                safe_print(f"TLS enabled: keyfile={ssl_keyfile}, certfile={ssl_certfile}")
 
-            server.run(transport="streamable-http", host={host_value}, port=port, uvicorn_config=uvicorn_config if uvicorn_config else None)'''
+            server.run(transport="streamable-http", host=host, port=port, uvicorn_config=uvicorn_config if uvicorn_config else None)'''
 
     new_content = content.replace(old_code, new_code)
     main_py.write_text(new_content)

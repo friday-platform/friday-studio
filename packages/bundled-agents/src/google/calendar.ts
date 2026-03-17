@@ -135,9 +135,8 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
 Available capabilities:
 - list_calendars: List all accessible calendars
 - get_events: Search and retrieve calendar events (by time range, query, or event ID)
-- create_event: Create new events with attendees, Google Meet, reminders, attachments
-- modify_event: Update existing events (title, time, attendees, location, etc.)
-- delete_event: Remove events from calendar
+- manage_event: Create, update, or delete events (attendees, Google Meet, reminders, attachments)
+- query_freebusy: Check free/busy status for calendars over a time range
 
 Rules:
 - Never fabricate information. Only use tool outputs.
@@ -226,7 +225,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
 
       // Determine what operations were performed from assembled tool calls
       const calledToolNames = new Set(assembledToolCalls.map((tc) => tc.toolName));
-      const writeToolNames = new Set(["create_event", "modify_event", "delete_event"]);
+      const writeToolNames = new Set(["manage_event"]);
       const calledWriteTools = [...calledToolNames].some((name) => writeToolNames.has(name));
       const calledGetEvents = calledToolNames.has("get_events");
 
