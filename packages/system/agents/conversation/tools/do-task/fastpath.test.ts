@@ -129,7 +129,7 @@ describe("buildFastpathDAGStep", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildFastpathStep", () => {
-  test("bundled agent: agentId is planner identity, executionRef is bundledId", () => {
+  test("bundled agent: agentId and executionRef both use agent.id (workspace key)", () => {
     const agent = makeAgent({
       name: "Research",
       bundledId: "research",
@@ -140,7 +140,7 @@ describe("buildFastpathStep", () => {
 
     expect(result).toMatchObject({
       agentId: "test-agent",
-      executionRef: "research",
+      executionRef: "test-agent",
       description: "find me some info",
       executionType: "agent",
       capabilities: ["web-search"],
@@ -223,7 +223,7 @@ describe("buildFastpathFSM", () => {
     expect(entry).toHaveLength(2);
     expect(entry?.[0]).toMatchObject({
       type: "agent",
-      agentId: "research",
+      agentId: "test-agent",
       outputTo: "result",
       prompt: "find me some info",
     });

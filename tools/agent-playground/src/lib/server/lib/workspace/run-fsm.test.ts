@@ -88,7 +88,7 @@ describe("runFSM — action trace input", () => {
     expect(completedAgentTraces.length).toBeGreaterThan(0);
 
     // The send-report step has a prepare mapping, so its agent trace should have input
-    const emailTrace = completedAgentTraces.find((t) => t.actionId === "email");
+    const emailTrace = completedAgentTraces.find((t) => t.actionId === "csv-email-reporter");
     expect(emailTrace).toBeDefined();
     if (!emailTrace) throw new Error("Expected email trace");
     expect(emailTrace.input).toBeDefined();

@@ -2,7 +2,7 @@
  * do_task Tool - Direct tool with progress emission
  */
 import { client, parseResult } from "@atlas/client/v2";
-import type { MCPServerConfig } from "@atlas/config";
+import type { MCPServerConfig, WorkspaceAgentConfig } from "@atlas/config";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
@@ -20,6 +20,8 @@ import {
   type CredentialBinding,
   checkEnvironmentReadiness,
   classifyAgents,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
   generatePlan,
   PipelineError,
   resolveCredentials,
@@ -234,6 +236,41 @@ function blueprintToTaskPlan(
 }
 
 /**
+ * Build a workspace agent config map from planner agents for agent indirection.
+ *
+ * Bundled agents → `type: "atlas"` so resolveRuntimeAgentId maps to bundledId.
+ * LLM agents → `type: "llm"` so expandAgentActions inlines provider/model/tools.
+ */
+export function buildWorkspaceAgentConfigs(agents: Agent[]): Record<string, WorkspaceAgentConfig> {
+  const configs: Record<string, WorkspaceAgentConfig> = {};
+  for (const agent of agents) {
+    if (agent.bundledId) {
+      // Atlas/bundled agent — resolveRuntimeAgentId will map to agent.bundledId
+      configs[agent.id] = {
+        type: "atlas",
+        agent: agent.bundledId,
+        description: agent.description,
+        prompt: agent.description,
+      };
+    } else {
+      // LLM agent — expandAgentActions will convert type: agent → type: llm
+      configs[agent.id] = {
+        type: "llm",
+        description: agent.description,
+        config: {
+          provider: DEFAULT_LLM_PROVIDER,
+          model: DEFAULT_LLM_MODEL,
+          prompt: agent.description,
+          temperature: 0.3,
+          tools: agent.mcpServers?.map((s) => s.serverId),
+        },
+      };
+    }
+  }
+  return configs;
+}
+
+/**
  * Creates the do_task tool with writer closure access.
  */
 export interface DoTaskWorkspaceContext {
@@ -414,6 +451,7 @@ export function createDoTaskTool(
               documentContracts: [contract],
               resourceAdapter: session.resourceAdapter,
               artifactStorage: session.artifactStorage,
+              workspaceAgents: buildWorkspaceAgentConfigs([agent]),
             });
 
             const execMs = Date.now();
@@ -622,6 +660,7 @@ export function createDoTaskTool(
             documentContracts: classifiedJob.documentContracts,
             resourceAdapter: session.resourceAdapter,
             artifactStorage: session.artifactStorage,
+            workspaceAgents: buildWorkspaceAgentConfigs(blueprintResult.blueprint.agents),
           });
 
           const execMs = Date.now();

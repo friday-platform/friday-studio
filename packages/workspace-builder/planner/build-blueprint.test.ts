@@ -558,10 +558,13 @@ describe("buildBlueprint", () => {
       const result = await buildBlueprint("Analyze CSV", baseOpts());
 
       // generateOutputSchemas received post-stamp steps with preserved planner ID
-      // and executionRef pointing to bundled registry key
+      // and executionRef pointing to workspace agent key
       expect(mockGenerateOutputSchemas).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ agentId: "csv-data-analyst", executionRef: "data-analyst" }),
+          expect.objectContaining({
+            agentId: "csv-data-analyst",
+            executionRef: "csv-data-analyst",
+          }),
         ]),
         expect.arrayContaining([
           expect.objectContaining({ id: "csv-data-analyst", bundledId: "data-analyst" }),

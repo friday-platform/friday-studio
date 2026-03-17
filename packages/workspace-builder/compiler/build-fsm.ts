@@ -12,7 +12,7 @@
 
 import type { FSMDefinition } from "../../fsm-engine/types.ts";
 import { FSMBuilder } from "../builder.ts";
-import { agentAction, codeAction, emitAction, llmAction } from "../helpers.ts";
+import { agentAction, codeAction, emitAction } from "../helpers.ts";
 import type { ClassifiedJobWithDAG } from "../planner/stamp-execution-types.ts";
 import { type TopologicalSortError, topologicalSort } from "../topological-sort.ts";
 import type {
@@ -152,8 +152,8 @@ function buildContext(job: ClassifiedJobWithDAG, sorted: ClassifiedDAGStep[]): C
 /**
  * Compile a ClassifiedJobWithDAG into an FSMDefinition.
  *
- * Steps with `executionType: "bundled"` emit `agentAction()`, steps with
- * `executionType: "llm"` emit `llmAction()` with default provider/model.
+ * All steps emit `agentAction(step.agentId)` — the runtime expansion layer
+ * resolves execution details (provider, model, tools) at load time.
  *
  * @param job - A classified job with typed DAG steps, document contracts, prepare mappings, and optional conditionals
  * @returns Result with FSMDefinition on success, or array of errors on failure
@@ -228,26 +228,13 @@ function buildStates(builder: FSMBuilder, ctx: CompilerContext): void {
 
     // Execution action + emit ADVANCE
     const contract = ctx.contractsByStep.get(step.id);
-    if (step.executionType === "bundled") {
-      builder.onEntry(
-        agentAction(step.executionRef, {
-          outputTo: contract?.documentId,
-          outputType: contract?.documentType,
-          prompt: step.description,
-        }),
-      );
-    } else {
-      builder.onEntry(
-        llmAction({
-          provider: DEFAULT_LLM_PROVIDER,
-          model: DEFAULT_LLM_MODEL,
-          prompt: step.description,
-          tools: step.tools,
-          outputTo: contract?.documentId,
-          outputType: contract?.documentType,
-        }),
-      );
-    }
+    builder.onEntry(
+      agentAction(step.agentId, {
+        outputTo: contract?.documentId,
+        outputType: contract?.documentType,
+        prompt: step.description,
+      }),
+    );
     builder.onEntry(emitAction("ADVANCE"));
 
     // Transition: conditional branches, fan-in guard, existence guard, or unconditional

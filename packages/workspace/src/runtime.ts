@@ -6,13 +6,18 @@
  */
 
 import { EventEmitter } from "node:events";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import type { ActivityStorageAdapter } from "@atlas/activity";
 import { generateSessionActivityTitle } from "@atlas/activity";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
-import { type MergedConfig, validateSignalPayload } from "@atlas/config";
+import {
+  expandAgentActions,
+  type MergedConfig,
+  resolveRuntimeAgentId,
+  validateSignalPayload,
+} from "@atlas/config";
 import {
   AgentOrchestrator,
   type AgentResultData,
@@ -44,8 +49,8 @@ import {
   FSMDefinitionSchema,
   type FSMEngine,
   type FSMEvent,
-  loadFromFile,
   type SignalWithContext,
+  validateFSMStructure,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
@@ -54,6 +59,8 @@ import { logger } from "@atlas/logger";
 import { publishDirtyDrafts } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { parse as parseYAML } from "@std/yaml";
+import { z } from "zod";
 import {
   buildAgentPrompt,
   buildFinalAgentPrompt,
@@ -549,20 +556,33 @@ export class WorkspaceRuntime {
         jobName: job.name,
       });
 
-      // Validate and parse with Zod schema
-      const definition = FSMDefinitionSchema.parse(job.fsmDefinition);
+      // Parse first, then expand workspace agent references with full type safety
+      const parsed = FSMDefinitionSchema.parse(job.fsmDefinition);
+      const definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
 
       job.engine = createEngine(definition, engineOptions);
       await job.engine.initialize();
     } else {
-      // Load from file
+      // Load from file — parse YAML then expand agent references
       const configPath =
         this.options.workspacePath || path.join(getAtlasHome(), "workspaces", this.workspace.id);
       const fsmPath = job.fsmPath || path.join(configPath, "workspace.fsm.yaml");
 
       logger.debug("Loading FSM from file", { workspaceId: this.workspace.id, fsmPath });
 
-      job.engine = await loadFromFile(fsmPath, engineOptions);
+      const yaml = await readFile(fsmPath, "utf-8");
+      const raw = z.object({ fsm: FSMDefinitionSchema }).parse(parseYAML(yaml));
+
+      const parsed = raw.fsm;
+      const definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
+
+      const validation = validateFSMStructure(definition);
+      if (!validation.valid) {
+        throw new Error(`FSM validation failed:\n${validation.errors.join("\n")}`);
+      }
+
+      job.engine = createEngine(definition, engineOptions);
+      await job.engine.initialize();
     }
 
     logger.info("FSM engine initialized for job", {
@@ -1060,8 +1080,11 @@ export class WorkspaceRuntime {
       );
     }
 
+    // Resolve workspace agent key → runtime agent ID (e.g. "my-gh-agent" → "github")
+    const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
+
     // Execute agent via orchestrator - returns AgentResult directly
-    const result = await this.orchestrator.executeAgent(agentId, prompt, {
+    const result = await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
       sessionId,
       workspaceId,
       streamId,

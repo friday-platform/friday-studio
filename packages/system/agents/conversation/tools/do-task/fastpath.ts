@@ -66,7 +66,7 @@ export function buildFastpathDAGStep(agent: Agent, intent: string): DAGStep {
 export function buildFastpathStep(agent: Agent, intent: string): EnhancedTaskStep {
   return {
     agentId: agent.id,
-    executionRef: agent.bundledId ?? agent.id,
+    executionRef: agent.id,
     description: intent,
     executionType: agent.bundledId ? "agent" : "llm",
     capabilities: agent.capabilities,
@@ -124,7 +124,7 @@ export function buildFastpathFSM(
     : buildGroundedPrompt(intent, datetime);
 
   const action = agent.bundledId
-    ? { type: "agent" as const, agentId: agent.bundledId, prompt, outputTo: "result" }
+    ? { type: "agent" as const, agentId: agent.id, prompt, outputTo: "result" }
     : {
         type: "llm" as const,
         provider: DEFAULT_LLM_PROVIDER,

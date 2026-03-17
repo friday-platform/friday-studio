@@ -209,7 +209,7 @@ describe("buildFSMFromPlan — csv-analysis (linear)", () => {
     expect(analyzeState?.entry).toHaveLength(2);
     expect(analyzeState?.entry?.[0]).toMatchObject({
       type: "agent",
-      agentId: "data-analyst",
+      agentId: "csv-data-analyst",
       outputType: "summary",
       prompt: "Run SQL analysis on the uploaded CSV data to answer the user's question",
     });
@@ -222,7 +222,7 @@ describe("buildFSMFromPlan — csv-analysis (linear)", () => {
     expect(sendState?.entry?.[0]).toMatchObject({ type: "code" });
     expect(sendState?.entry?.[1]).toMatchObject({
       type: "agent",
-      agentId: "email",
+      agentId: "csv-email-reporter",
       outputType: "email-result",
       prompt: "Email the analysis summary and key findings to the specified recipient",
     });
@@ -362,12 +362,10 @@ describe("buildFSMFromPlan — linear-ticket (3-step)", () => {
     const updateState = fsm.states.step_update_ticket;
     expect(updateState?.entry?.[0]).toMatchObject({ type: "code" });
     expect(updateState?.entry?.[1]).toMatchObject({
-      type: "llm",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
+      type: "agent",
+      agentId: "ticket-updater",
       prompt:
         "Update the ticket with the implementation results, files changed, and completion status",
-      tools: ["linear"],
     });
 
     expect(fsm.documentTypes?.ticket).toBeDefined();
@@ -1042,17 +1040,11 @@ describe("buildFSMFromPlan — execution action prompt", () => {
     const stepDescriptions = new Map(job.steps.map((s) => [s.agentId, s.description]));
     const executionActions = Object.values(result.value.fsm.states)
       .flatMap((s) => s.entry ?? [])
-      .filter((a) => a.type === "agent" || a.type === "llm");
+      .filter((a) => a.type === "agent");
 
     expect(executionActions.length).toBeGreaterThan(0);
     for (const action of executionActions) {
-      const key = action.type === "agent" ? action.agentId : undefined;
-      if (key) {
-        expect(action.prompt).toBe(stepDescriptions.get(key));
-      } else {
-        // LLM actions don't carry agentId — verify prompt matches some step description
-        expect([...stepDescriptions.values()]).toContain(action.prompt);
-      }
+      expect(action.prompt).toBe(stepDescriptions.get(action.agentId));
     }
   });
 
@@ -1063,17 +1055,25 @@ describe("buildFSMFromPlan — execution action prompt", () => {
 
     const executionActions = Object.values(result.value.fsm.states)
       .flatMap((s) => s.entry ?? [])
-      .filter((a) => a.type === "agent" || a.type === "llm");
+      .filter((a) => a.type === "agent");
 
-    // All steps in linear-ticket have contracts: 2 LLM + 1 bundled
+    // All steps in linear-ticket have contracts: 3 agent actions
     expect(executionActions).toHaveLength(3);
-    expect(executionActions[0]).toMatchObject({ type: "llm", outputType: "ticket" });
+    expect(executionActions[0]).toMatchObject({
+      type: "agent",
+      agentId: "ticket-reader",
+      outputType: "ticket",
+    });
     expect(executionActions[1]).toMatchObject({
       type: "agent",
       agentId: "claude-code",
       outputType: "code-result",
     });
-    expect(executionActions[2]).toMatchObject({ type: "llm", outputType: "status" });
+    expect(executionActions[2]).toMatchObject({
+      type: "agent",
+      agentId: "ticket-updater",
+      outputType: "status",
+    });
   });
 
   it("agent actions omit outputType when step has no contract", () => {
@@ -1104,7 +1104,7 @@ describe("buildFSMFromPlan — execution action prompt", () => {
       .filter((a) => a.type === "agent");
 
     expect(agentActions).toHaveLength(1);
-    expect(agentActions[0]).toMatchObject({ agentId: "bundled-a" });
+    expect(agentActions[0]).toMatchObject({ agentId: "planner-a" });
     expect(agentActions[0]).not.toHaveProperty("outputType");
   });
 });

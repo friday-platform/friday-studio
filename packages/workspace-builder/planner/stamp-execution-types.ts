@@ -31,10 +31,10 @@ export interface ClassifiedJobWithDAG {
  *
  * Two-field identity model:
  * - `agentId` — preserved as the planner-assigned ID, used for schema/mapping lookups
- * - `executionRef` — execution target (bundled registry key for bundled agents,
- *   same as agentId for LLM agents)
+ * - `executionRef` — workspace agent key (always `step.agentId`); the runtime
+ *   resolution layer maps this to a concrete executor at dispatch time.
  *
- * Bundled agents: `executionType: "bundled"`, `executionRef` = `agent.bundledId`
+ * Bundled agents: `executionType: "bundled"`, `executionRef` = `step.agentId`
  * LLM agents: `executionType: "llm"`, `executionRef` = `step.agentId`, `tools` from MCP servers
  *
  * @param jobs - Jobs with raw DAGStep arrays (from the dag generation phase)
@@ -50,7 +50,7 @@ export function stampExecutionTypes(jobs: JobWithDAG[], agents: Agent[]): Classi
       const agent = agentMap.get(step.agentId);
 
       if (agent?.bundledId) {
-        return { ...step, executionType: "bundled", executionRef: agent.bundledId };
+        return { ...step, executionType: "bundled", executionRef: step.agentId };
       }
 
       const mcpServerIds = agent?.mcpServers?.map((s) => s.serverId);

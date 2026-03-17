@@ -14,13 +14,16 @@ export * from "./src/base.ts";
 export * from "./src/config-loader.ts";
 // Configuration adapter interface
 export type { ConfigurationAdapter } from "./src/configuration-adapter.ts";
-
+// Expand agent actions in FSM definitions
+export { expandAgentActions } from "./src/expand-agent-actions.ts";
 // Job specification schemas
 export * from "./src/jobs.ts";
 // MCP schemas (Platform and Protocol)
 export * from "./src/mcp.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
+// Agent indirection: workspace agent key → runtime agent ID
+export { resolveRuntimeAgentId } from "./src/resolve-runtime-agent.ts";
 // Signal schemas with tagged unions
 export * from "./src/signals.ts";
 // Skill schemas

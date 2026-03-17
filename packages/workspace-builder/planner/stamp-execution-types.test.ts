@@ -47,7 +47,7 @@ describe("stampExecutionTypes", () => {
     if (!step) throw new Error("expected step");
 
     expect(step.agentId).toBe("planner-note-agent");
-    expect(step.executionRef).toBe("email");
+    expect(step.executionRef).toBe("planner-note-agent");
     expect(step.executionType).toBe("bundled");
   });
 
@@ -105,7 +105,7 @@ describe("stampExecutionTypes", () => {
 
     expect(result[0]?.steps[0]).toMatchObject({
       agentId: "planner-email",
-      executionRef: "email",
+      executionRef: "planner-email",
       executionType: "bundled",
     });
     expect(result[1]?.steps[0]).toMatchObject({

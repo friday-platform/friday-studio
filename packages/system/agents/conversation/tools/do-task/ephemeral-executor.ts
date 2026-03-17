@@ -3,7 +3,12 @@
  * No workspace.yml, no daemon registration. Session history still persisted for debugging.
  */
 
-import type { MCPServerConfig } from "@atlas/config";
+import {
+  expandAgentActions,
+  type MCPServerConfig,
+  resolveRuntimeAgentId,
+  type WorkspaceAgentConfig,
+} from "@atlas/config";
 import { AgentOrchestrator } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { InMemoryDocumentStore } from "@atlas/document-store";
@@ -46,6 +51,8 @@ interface ExecutionContext {
   resourceAdapter?: ResourceStorageAdapter;
   /** Artifact storage adapter for image context in sub-tasks */
   artifactStorage?: ArtifactStorageAdapter;
+  /** Workspace agent configs for agent indirection (expansion + resolution) */
+  workspaceAgents?: Record<string, WorkspaceAgentConfig>;
 }
 
 export interface ExecutionResult {
@@ -93,7 +100,7 @@ export async function executeTaskViaFSMDirect(
     const docStore = new InMemoryDocumentStore();
     const scope = { workspaceId: context.workspaceId };
 
-    // 2. Build step lookup keyed by executionRef (matches action.agentId at runtime)
+    // Build step lookup keyed by executionRef (matches action.agentId at runtime)
     const stepByExecutionRef = new Map<string, { index: number; step: EnhancedTaskStep }>();
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
@@ -170,7 +177,10 @@ export async function executeTaskViaFSMDirect(
       if (!orchestrator) {
         throw new Error("Orchestrator not initialized");
       }
-      const result = await orchestrator.executeAgent(agentId, prompt, {
+      const agentConfig = context.workspaceAgents?.[agentId];
+      const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
+
+      const result = await orchestrator.executeAgent(runtimeAgentId, prompt, {
         sessionId: taskSessionId,
         workspaceId: context.workspaceId,
         streamId: context.streamId,
@@ -199,8 +209,12 @@ export async function executeTaskViaFSMDirect(
       return result;
     };
 
-    // 5. Create FSM engine
-    engine = createEngine(fsmDefinition, {
+    // Expand LLM workspace agents — converts type: agent → type: llm for LLM agents
+    const expandedFSM = context.workspaceAgents
+      ? expandAgentActions(fsmDefinition, context.workspaceAgents)
+      : fsmDefinition;
+
+    engine = createEngine(expandedFSM, {
       documentStore: docStore,
       llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
       scope,
