@@ -65,8 +65,8 @@ function createGoogleProvider(
       const res = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       });
-      const data = z.object({ sub: z.string() }).parse(await res.json());
-      return data.sub;
+      const data = z.object({ sub: z.string(), email: z.string().email() }).parse(await res.json());
+      return data.email;
     },
   });
 }
