@@ -12,7 +12,7 @@ export async function createSkill(): Promise<{ skillId: string }> {
 
 export async function listSkills(sort?: "name" | "createdAt"): Promise<SkillsListResponse> {
   const res = await parseResult(client.skills.index.$get({ query: { includeAll: "true", sort } }));
-  if (!res.ok) throw new Error("Failed to load skills");
+  if (!res.ok) throw new Error(`Failed to load skills: ${JSON.stringify(res.error)}`);
   return res.data;
 }
 
