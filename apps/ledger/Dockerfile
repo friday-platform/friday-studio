@@ -13,7 +13,7 @@ COPY apps/ledger/src/ ./apps/ledger/src/
 WORKDIR /app/apps/ledger
 RUN deno compile --allow-all --no-check --output=ledger --config=deno.json src/index.ts
 
-FROM debian:bookworm-20260223-slim
+FROM debian:bookworm-20260316-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 && \
     rm -rf /var/lib/apt/lists/* && \
