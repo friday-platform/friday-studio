@@ -44,7 +44,10 @@ function mockLinkFetch(config: {
       }
       return Promise.resolve(
         new Response(
-          JSON.stringify({ providers: [], credentials: config.summaryCredentials ?? [] }),
+          JSON.stringify({
+            providers: [{ id: "slack" }],
+            credentials: config.summaryCredentials ?? [],
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       );

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CredentialNotFoundError,
   hasUnusableCredentialCause,
+  InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
@@ -21,7 +22,11 @@ type MockCredential = { id: string; provider: string; label: string; type: strin
 /**
  * Create mock fetch that returns summary for a provider.
  */
-function mockSummaryFetch(provider: string, credentials: MockCredential[]): typeof fetch {
+function mockSummaryFetch(
+  provider: string,
+  credentials: MockCredential[],
+  providers: { id: string }[] = [{ id: provider }],
+): typeof fetch {
   const url = `${LINK_BASE_URL}/v1/summary?provider=${provider}`;
 
   return (input: RequestInfo | URL) => {
@@ -31,7 +36,7 @@ function mockSummaryFetch(provider: string, credentials: MockCredential[]): type
     }
 
     return Promise.resolve(
-      new Response(JSON.stringify({ providers: [], credentials }), {
+      new Response(JSON.stringify({ providers, credentials }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -137,6 +142,14 @@ describe("resolveCredentialsByProvider", () => {
     const error = await resolveCredentialsByProvider("slack").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CredentialNotFoundError);
     expect((error as Error).message).toContain("No credentials found for provider 'slack'");
+  });
+
+  it("throws InvalidProviderError when provider is not registered", async () => {
+    globalThis.fetch = mockSummaryFetch("nonexistent", [], []);
+
+    const error = await resolveCredentialsByProvider("nonexistent").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidProviderError);
+    expect((error as Error).message).toContain("not a registered provider");
   });
 
   it("returns all credentials when multiple exist", async () => {

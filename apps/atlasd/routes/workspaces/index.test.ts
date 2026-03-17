@@ -5,11 +5,17 @@
  * Tests that zValidator rejects invalid payloads before handlers execute.
  */
 
+import type { WorkspaceConfig } from "@atlas/config";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import { describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
-import { extractJobIntegrations, formatJobName, workspacesRoutes } from "./index.ts";
+import {
+  extractJobIntegrations,
+  formatJobName,
+  injectBundledAgentRefs,
+  workspacesRoutes,
+} from "./index.ts";
 
 // Mock external dependencies that route handlers import
 vi.mock("@atlas/analytics", () => ({
@@ -456,5 +462,101 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
 
     const body = JSON.parse(await res.text());
     expect(body).toEqual([]);
+  });
+});
+
+// =============================================================================
+// injectBundledAgentRefs
+// =============================================================================
+
+describe("injectBundledAgentRefs", () => {
+  function makeConfig(agents?: WorkspaceConfig["agents"]): WorkspaceConfig {
+    return { version: "1.0" as const, workspace: { id: "ws-1", name: "Test" }, agents };
+  }
+
+  test("returns config unchanged when agents is undefined", () => {
+    const config = makeConfig(undefined);
+    const result = injectBundledAgentRefs(config);
+    expect(result).toBe(config);
+  });
+
+  test("skips non-atlas agent types", () => {
+    const config = makeConfig({
+      "my-llm": {
+        type: "llm",
+        description: "Custom LLM agent",
+        config: {
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          prompt: "Do things",
+          temperature: 0.3,
+        },
+      },
+    });
+    const result = injectBundledAgentRefs(config);
+    expect(result).toBe(config);
+  });
+
+  test("skips atlas agent with unknown agent id", () => {
+    const config = makeConfig({
+      "my-agent": {
+        type: "atlas",
+        agent: "nonexistent-agent-id",
+        description: "Unknown agent",
+        prompt: "Do things",
+      },
+    });
+    const result = injectBundledAgentRefs(config);
+    expect(result).toBe(config);
+  });
+
+  test("injects missing link credential refs for bundled atlas agent", () => {
+    const config = makeConfig({
+      communicator: {
+        type: "atlas",
+        agent: "slack",
+        description: "Slack communicator",
+        prompt: "Talk on Slack",
+      },
+    });
+    const result = injectBundledAgentRefs(config);
+
+    expect(result).not.toBe(config);
+    const agent = result.agents?.communicator;
+    if (!agent || agent.type !== "atlas") throw new Error("Expected atlas agent");
+    expect(agent.env).toMatchObject({
+      SLACK_MCP_XOXP_TOKEN: { from: "link", provider: "slack", key: "access_token" },
+    });
+  });
+
+  test("does not overwrite existing env refs", () => {
+    const existingRef = { from: "link" as const, provider: "slack", key: "custom_token" };
+    const config = makeConfig({
+      communicator: {
+        type: "atlas",
+        agent: "slack",
+        description: "Slack communicator",
+        prompt: "Talk on Slack",
+        env: { SLACK_MCP_XOXP_TOKEN: existingRef },
+      },
+    });
+    const result = injectBundledAgentRefs(config);
+
+    // No injection needed — all refs present — returns same object
+    expect(result).toBe(config);
+  });
+
+  test("returns config unchanged when all refs already present", () => {
+    const config = makeConfig({
+      communicator: {
+        type: "atlas",
+        agent: "slack",
+        description: "Slack communicator",
+        prompt: "Talk on Slack",
+        env: { SLACK_MCP_XOXP_TOKEN: { from: "link", provider: "slack", key: "access_token" } },
+      },
+    });
+    const result = injectBundledAgentRefs(config);
+    expect(result).toBe(config);
   });
 });

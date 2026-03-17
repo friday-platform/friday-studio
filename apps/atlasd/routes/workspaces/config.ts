@@ -33,6 +33,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { type AppVariables, daemonFactory } from "../../src/factory.ts";
+import { injectBundledAgentRefs } from "./index.ts";
 
 /**
  * Extract a required route parameter from the Hono context.
@@ -254,7 +255,8 @@ async function handleListCredentials(c: Context<AppVariables>) {
         500,
       );
     }
-    const credentials: CredentialUsage[] = extractCredentials(config.workspace);
+    const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
+    const credentials: CredentialUsage[] = extractCredentials(configWithAgentRefs);
     return c.json({ credentials, total: credentials.length });
   } catch (error) {
     return c.json(

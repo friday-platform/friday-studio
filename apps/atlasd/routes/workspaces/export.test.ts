@@ -491,4 +491,77 @@ describe("GET /:workspaceId/export", () => {
     const sentryRef = getExportedRef(parsed, "sentry", "SENTRY_TOKEN");
     expect(sentryRef).toBeUndefined();
   });
+
+  test("injects missing bundled agent credential refs on export", async () => {
+    // Workspace has a bundled "slack" agent with no env block configured
+    const config = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { id: "ws-test-id", name: "Test Workspace" },
+        agents: {
+          communicator: {
+            type: "atlas",
+            agent: "slack",
+            description: "Slack communicator",
+            prompt: "Send messages",
+          },
+        },
+      },
+    };
+    const { app } = createExportTestApp({ config });
+    await mountRoutes(app);
+
+    const response = await app.request("/ws-test-id/export");
+
+    expect(response.status).toBe(200);
+    const yaml = await response.text();
+    const parsed = parse(yaml) as Record<string, unknown>;
+    const agentRef = getExportedAgentRef(parsed, "communicator", "SLACK_MCP_XOXP_TOKEN");
+
+    assert(agentRef, "expected communicator SLACK_MCP_XOXP_TOKEN in export");
+    expect(agentRef).toMatchObject({ from: "link", provider: "slack", key: "access_token" });
+    expect(agentRef).not.toHaveProperty("id");
+  });
+
+  test("does not overwrite existing agent credential refs when injecting", async () => {
+    // Workspace has a bundled "slack" agent with an existing credential ref
+    const config = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { id: "ws-test-id", name: "Test Workspace" },
+        agents: {
+          communicator: {
+            type: "atlas",
+            agent: "slack",
+            description: "Slack communicator",
+            prompt: "Send messages",
+            env: {
+              SLACK_MCP_XOXP_TOKEN: {
+                from: "link",
+                id: "cred_existing",
+                provider: "slack",
+                key: "access_token",
+              },
+            },
+          },
+        },
+      },
+    };
+    const { app } = createExportTestApp({ config });
+    await mountRoutes(app);
+
+    const response = await app.request("/ws-test-id/export");
+
+    expect(response.status).toBe(200);
+    const yaml = await response.text();
+    const parsed = parse(yaml) as Record<string, unknown>;
+    const agentRef = getExportedAgentRef(parsed, "communicator", "SLACK_MCP_XOXP_TOKEN");
+
+    // Should keep the existing ref (with id stripped by export flow), not replace it
+    assert(agentRef, "expected communicator SLACK_MCP_XOXP_TOKEN in export");
+    expect(agentRef).toMatchObject({ from: "link", provider: "slack", key: "access_token" });
+    expect(agentRef).not.toHaveProperty("id");
+  });
 });

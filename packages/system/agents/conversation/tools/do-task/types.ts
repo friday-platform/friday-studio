@@ -2,6 +2,7 @@
  * Task execution types for do_task.
  */
 
+import type { DatetimeContext } from "@atlas/llm";
 import type { MCPServerResult } from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
 
 /** A single step in an enhanced task plan. */
@@ -31,7 +32,5 @@ export type TaskProgressEvent =
   | { type: "preparing"; stepCount: number }
   | { type: "step-start"; stepIndex: number; totalSteps: number; description: string }
   | { type: "step-complete"; stepIndex: number; success: boolean };
-
-import type { DatetimeContext } from "@atlas/llm";
 
 export type { DatetimeContext };

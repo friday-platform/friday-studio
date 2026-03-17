@@ -20,6 +20,7 @@ import {
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
+  InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
@@ -122,6 +123,52 @@ export function extractJobIntegrations(
   return [...providers];
 }
 
+/**
+ * Inject missing `from: link` credential refs from the bundled agent registry.
+ * When a workspace uses a bundled atlas agent but the user hasn't configured
+ * its required OAuth credentials, the agent's env block is empty/missing.
+ * This ensures those refs are present so the credential extraction flow
+ * can detect and resolve them during export/import.
+ */
+export function injectBundledAgentRefs(config: WorkspaceConfig): WorkspaceConfig {
+  const agents = config.agents;
+  if (!agents) return config;
+
+  let needsUpdate = false;
+  const updatedAgents: Record<string, (typeof agents)[string]> = {};
+
+  for (const [id, agent] of Object.entries(agents)) {
+    if (agent.type !== "atlas") {
+      updatedAgents[id] = agent;
+      continue;
+    }
+
+    const entry = bundledAgentsRegistry[agent.agent];
+    if (!entry) {
+      updatedAgents[id] = agent;
+      continue;
+    }
+
+    const missingRefs: Record<string, { from: "link"; provider: string; key: string }> = {};
+    for (const field of entry.requiredConfig) {
+      if (field.from !== "link") continue;
+      if (agent.env?.[field.envKey]) continue;
+      missingRefs[field.envKey] = { from: "link", provider: field.provider, key: field.key };
+    }
+
+    if (Object.keys(missingRefs).length === 0) {
+      updatedAgents[id] = agent;
+      continue;
+    }
+
+    needsUpdate = true;
+    updatedAgents[id] = { ...agent, env: { ...agent.env, ...missingRefs } };
+  }
+
+  if (!needsUpdate) return config;
+  return { ...config, agents: updatedAgents };
+}
+
 // Create and mount routes
 const workspacesRoutes = daemonFactory
   .createApp()
@@ -164,6 +211,10 @@ const workspacesRoutes = daemonFactory
 
       let validatedConfig = validationResult.data;
 
+      // Inject missing credential refs from bundled agent registry so that
+      // agents requiring OAuth credentials are detected during import.
+      validatedConfig = injectBundledAgentRefs(validatedConfig);
+
       // Preprocess id-only credential refs (from foreign/legacy workspace files).
       // Try to fetch each to discover the provider. If the credential belongs to the
       // current user, convert to a provider-only ref so the normal resolution flow
@@ -177,6 +228,7 @@ const workspacesRoutes = daemonFactory
       );
 
       let strippedCredentialPaths: string[] | undefined;
+      let unresolvedCredentialPaths: string[] | undefined;
 
       if (idOnlyRefs.length > 0) {
         const lookupResults = await Promise.allSettled(
@@ -252,6 +304,7 @@ const workspacesRoutes = daemonFactory
       };
       let resolvedCredentials: ResolvedCredentialInfo[] | undefined;
       const unresolvedProviders: string[] = [];
+      const invalidProviders: string[] = [];
 
       if (uniqueProviders.length > 0) {
         const results = await Promise.allSettled(
@@ -264,7 +317,9 @@ const workspacesRoutes = daemonFactory
         for (const [i, result] of results.entries()) {
           const provider = uniqueProviders[i] ?? "";
           if (result.status === "rejected") {
-            if (result.reason instanceof CredentialNotFoundError) {
+            if (result.reason instanceof InvalidProviderError) {
+              invalidProviders.push(provider);
+            } else if (result.reason instanceof CredentialNotFoundError) {
               unresolvedProviders.push(provider);
             } else {
               throw result.reason;
@@ -278,7 +333,26 @@ const workspacesRoutes = daemonFactory
           }
         }
 
-        // Apply credential IDs for providers that resolved (unresolved refs left unchanged)
+        if (invalidProviders.length > 0) {
+          return c.json(
+            {
+              error: "missing_providers",
+              message: "Cannot import workspace: required providers are not configured",
+              providers: invalidProviders,
+            },
+            400,
+          );
+        }
+
+        // Track unresolved provider refs for requires_setup flag, but keep them
+        // in the config — they're declarative requirements the setup page needs
+        // to show Connect buttons for MCP server credentials.
+        if (unresolvedProviders.length > 0) {
+          unresolvedCredentialPaths = providerOnlyRefs
+            .filter((ref) => unresolvedProviders.includes(ref.provider))
+            .map((ref) => ref.path);
+        }
+
         validatedConfig = toIdRefs(validatedConfig, credentialMap);
 
         resolvedCredentials = providerOnlyRefs
@@ -313,8 +387,8 @@ const workspacesRoutes = daemonFactory
         const ctx = c.get("app");
         const manager = ctx.daemon.getWorkspaceManager();
         const hasUnresolvedCredentials =
-          unresolvedProviders.length > 0 ||
-          (strippedCredentialPaths !== undefined && strippedCredentialPaths.length > 0);
+          (strippedCredentialPaths !== undefined && strippedCredentialPaths.length > 0) ||
+          (unresolvedCredentialPaths !== undefined && unresolvedCredentialPaths.length > 0);
         const { workspace, created } = await manager.registerWorkspace(workspacePath, {
           name: finalWorkspaceName,
           description: validatedConfig.workspace.description,
@@ -351,6 +425,9 @@ const workspacesRoutes = daemonFactory
               : {}),
             ...(strippedCredentialPaths && strippedCredentialPaths.length > 0
               ? { strippedCredentials: strippedCredentialPaths }
+              : {}),
+            ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
+              ? { unresolvedCredentials: unresolvedCredentialPaths }
               : {}),
           },
           201,
@@ -515,7 +592,11 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
 
-      const credentials = extractCredentials(config.workspace);
+      // Inject missing credential refs from bundled agent registry so they
+      // appear in the exported YAML even if the user never configured them.
+      const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
+
+      const credentials = extractCredentials(configWithAgentRefs);
       const legacyRefs = credentials.filter(
         (cred): cred is CredentialUsage & { credentialId: string } =>
           !cred.provider && !!cred.credentialId,
@@ -549,7 +630,7 @@ const workspacesRoutes = daemonFactory
       // Strip unresolvable legacy refs instead of failing the export.
       // The exported YAML will omit those env vars; the importing user
       // will need to configure credentials through workspace settings.
-      let workspaceToExport = config.workspace;
+      let workspaceToExport = configWithAgentRefs;
       if (unresolvedPaths.length > 0) {
         exportLogger.warn("Stripping unresolvable credential refs from export", {
           unresolvedPaths,

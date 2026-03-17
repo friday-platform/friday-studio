@@ -21,6 +21,14 @@ export class CredentialNotFoundError extends Error {
   }
 }
 
+/** Error thrown when a provider is not registered in the Link provider registry */
+export class InvalidProviderError extends Error {
+  constructor(public readonly provider: string) {
+    super(`Provider '${provider}' is not a registered provider`);
+    this.name = "InvalidProviderError";
+  }
+}
+
 /** Error thrown when a specific credential ID is not found in Link (404) */
 export class LinkCredentialNotFoundError extends Error {
   constructor(
@@ -74,9 +82,19 @@ async function fetchCredentialsByProvider(provider: string): Promise<CredentialS
 }
 
 export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
-  const credentials = await fetchCredentialsByProvider(provider);
+  const result = await parseResult(
+    client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
+  );
+  if (!result.ok) {
+    throw new Error(`Failed to fetch credentials for provider '${provider}': ${result.error}`);
+  }
 
-  if (credentials.length === 0) throw new CredentialNotFoundError(provider);
+  const { credentials, providers } = result.data;
+  if (credentials.length === 0) {
+    const isKnownProvider = providers.some((p) => p.id === provider);
+    if (!isKnownProvider) throw new InvalidProviderError(provider);
+    throw new CredentialNotFoundError(provider);
+  }
   return credentials;
 }
 
