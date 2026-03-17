@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "^2.0.1",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.77",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/schemas": "workspace:*",
