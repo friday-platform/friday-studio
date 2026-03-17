@@ -67,7 +67,7 @@ describe("buildWorkspaceAgentConfigs", () => {
 
     const configs = buildWorkspaceAgentConfigs(agents);
 
-    expect(configs["summarizer"]).toMatchObject({
+    expect(configs.summarizer).toMatchObject({
       type: "llm",
       description: "Summarizes content",
       config: {
@@ -98,8 +98,8 @@ describe("buildWorkspaceAgentConfigs", () => {
 
     const configs = buildWorkspaceAgentConfigs(agents);
 
-    expect(configs["cloner"]?.type).toBe("atlas");
-    expect(configs["analyst"]?.type).toBe("llm");
+    expect(configs.cloner?.type).toBe("atlas");
+    expect(configs.analyst?.type).toBe("llm");
     expect(Object.keys(configs)).toEqual(["cloner", "analyst"]);
   });
 });

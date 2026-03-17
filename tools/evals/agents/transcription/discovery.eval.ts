@@ -20,7 +20,7 @@ import { createScore } from "../../lib/scoring.ts";
 await loadCredentials();
 
 const DAEMON_URL = process.env.ATLAS_DAEMON_URL || "http://localhost:8080";
-const FIXTURES_DIR = join(import.meta.dirname!, "fixtures");
+const FIXTURES_DIR = join(import.meta.dirname ?? ".", "fixtures");
 
 const adapter = new AgentContextAdapter();
 

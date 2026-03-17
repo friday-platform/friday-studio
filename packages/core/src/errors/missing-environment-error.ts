@@ -6,8 +6,4 @@
  */
 export class MissingEnvironmentError extends Error {
   override readonly name = "MissingEnvironmentError";
-
-  constructor(message: string) {
-    super(message);
-  }
 }

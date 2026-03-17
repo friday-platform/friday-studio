@@ -303,7 +303,7 @@ describe("SessionHistoryStorage", () => {
       assert(appendResult.ok);
 
       const timeline = await SessionHistoryStorage.loadSessionTimeline(sessionId);
-      assert(timeline.ok && timeline.data && timeline.data.events[0]);
+      assert(timeline.ok && timeline.data?.events[0]);
 
       expect(timeline.data.events[0]).toMatchObject({
         data: { inputSnapshot: { task: "Analyze sentiment" } },
@@ -339,7 +339,7 @@ describe("SessionHistoryStorage", () => {
       assert(appendResult.ok);
 
       const timeline = await SessionHistoryStorage.loadSessionTimeline(sessionId);
-      assert(timeline.ok && timeline.data && timeline.data.events[0]);
+      assert(timeline.ok && timeline.data?.events[0]);
 
       const data = timeline.data.events[0].data as { inputSnapshot?: unknown };
       expect(data.inputSnapshot).toBeUndefined();

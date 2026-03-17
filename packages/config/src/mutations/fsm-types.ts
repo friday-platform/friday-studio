@@ -12,6 +12,7 @@ import {
   type LLMAction as FSMLLMAction,
   type StateDefinition,
 } from "@atlas/fsm-engine";
+
 // ==============================================================================
 // RE-EXPORTED TYPES FROM FSM-ENGINE
 // ==============================================================================
@@ -29,17 +30,13 @@ export type FSMStateDefinition = StateDefinition;
 /**
  * Union of all FSM action types.
  */
-export type { FSMAction };
-
 /**
  * Bundled agent call in FSM state entry.
  */
-export type { FSMAgentAction };
-
 /**
  * Inline LLM action in FSM state entry.
  */
-export type { FSMLLMAction };
+export type { FSMAction, FSMAgentAction, FSMLLMAction };
 
 /**
  * Other FSM action types (code, emit) that we don't expose via config API.

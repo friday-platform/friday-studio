@@ -16,7 +16,7 @@ const mockParseResult = vi.hoisted(() =>
 
 vi.mock("@atlas/client/v2", () => ({
   client: {
-    workspace: { [":workspaceId"]: { signals: { [":signalId"]: { $post: mockSignalPost } } } },
+    workspace: { ":workspaceId": { signals: { ":signalId": { $post: mockSignalPost } } } },
   },
   parseResult: mockParseResult,
 }));

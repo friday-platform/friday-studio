@@ -26,13 +26,13 @@ import { generateOutputSchemas } from "./schemas.ts";
 import { stampExecutionTypes } from "./stamp-execution-types.ts";
 import { validateResourceSchemas } from "./validate-resource-schemas.ts";
 
-// Re-export extracted types so existing consumers keep working
-export type { CredentialBinding };
 export type { FieldCheck, ReadinessCheck, ReadinessResult } from "./preflight.ts";
 export type {
   ResolveCredentialsOpts,
   UnresolvedCredential,
 } from "./resolve-credentials.ts";
+// Re-export extracted types so existing consumers keep working
+export type { CredentialBinding };
 
 // ---------------------------------------------------------------------------
 // PipelineError

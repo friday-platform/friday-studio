@@ -12,7 +12,7 @@ import { createStreamingSignalTriggerTool } from "./streaming-signal-trigger.ts"
  */
 function makeSSEStream(events: Array<Record<string, unknown>>): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const lines = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("") + "data: [DONE]\n\n";
+  const lines = `${events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")}data: [DONE]\n\n`;
   return new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(lines));

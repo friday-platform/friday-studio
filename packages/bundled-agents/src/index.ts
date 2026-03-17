@@ -19,38 +19,37 @@ import { type DiscoveredAudio, discoverAudioFiles } from "./transcription/discov
 import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
 
 export {
-  claudeCodeAgent,
-  csvFilterSamplerAgent,
-  dataAnalystAgent,
-  emailAgent,
-  fathomGetTranscriptAgent,
-  googleCalendarAgent,
-  hubspotAgent,
-  snowflakeAnalystAgent,
-  webSearchAgent,
-  slackCommunicatorAgent,
-  summaryAgent,
-  tableAgent,
-  discoverAudioFiles,
-  transcriptionAgent,
-  ClaudeCodeOutputSchema,
-  CsvFilterSamplerOutputSchema,
-  EmailOutputSchema,
-  FathomOutputSchema,
-  GoogleCalendarOutputSchema,
-  HubSpotOutputSchema,
-  ResearchOutputSchema,
-  SlackOutputSchema,
-  SnowflakeAnalystOutputSchema,
-  SummaryOutputSchema,
-  TranscriptionOutputSchema,
-};
-
-export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
-
-export {
   type BundledAgentConfigField,
   type BundledAgentRegistryEntry,
   bundledAgents,
   bundledAgentsRegistry,
 } from "./registry.ts";
+
+export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
+export {
+  ClaudeCodeOutputSchema,
+  CsvFilterSamplerOutputSchema,
+  claudeCodeAgent,
+  csvFilterSamplerAgent,
+  dataAnalystAgent,
+  discoverAudioFiles,
+  EmailOutputSchema,
+  emailAgent,
+  FathomOutputSchema,
+  fathomGetTranscriptAgent,
+  GoogleCalendarOutputSchema,
+  googleCalendarAgent,
+  HubSpotOutputSchema,
+  hubspotAgent,
+  ResearchOutputSchema,
+  SlackOutputSchema,
+  SnowflakeAnalystOutputSchema,
+  SummaryOutputSchema,
+  slackCommunicatorAgent,
+  snowflakeAnalystAgent,
+  summaryAgent,
+  TranscriptionOutputSchema,
+  tableAgent,
+  transcriptionAgent,
+  webSearchAgent,
+};
