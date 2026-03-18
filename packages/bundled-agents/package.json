@@ -20,7 +20,7 @@
     "@hubspot/api-client": "^13.4.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
-    "ai": "^5.0.154",
+    "ai": "^5.0.155",
     "parallel-web": "0.3.2",
     "vitest": "^4.1.0",
     "zod": "^4.3.5",
