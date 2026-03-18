@@ -34,7 +34,7 @@
     "npm:@ai-sdk/mcp@^0.0.15": "0.0.15_zod@4.3.6",
     "npm:@ai-sdk/openai@^2.0.100": "2.0.100_zod@4.3.6",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.155": "3.0.155_svelte@5.54.0_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^3.0.156": "3.0.156_svelte@5.54.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.79": "0.2.79_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.7",
     "npm:@deno/kv@0.13": "0.13.0",
@@ -296,15 +296,6 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.59_zod@4.3.6": {
-      "integrity": "sha512-hmXtD2InGIMoHm3gf1yZM4GURS0/4ZL4ff9O0jkF1tXcKl9V/72omLZlwlOM9r7pgpr/65H7anaV2t8kbip0FQ==",
-      "dependencies": [
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "@vercel/oidc",
-        "zod"
-      ]
-    },
     "@ai-sdk/gateway@2.0.60_zod@4.3.6": {
       "integrity": "sha512-1wrIHHv+W/zFgGKDno5pHJeUpkbITbEq+oJRDhT0/t6cxoPCCPvBtzxof3vUxTOn4Aokhmo64C5yi2/tjbtVrQ==",
       "dependencies": [
@@ -362,11 +353,11 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.155_svelte@5.54.0_zod@4.3.6": {
-      "integrity": "sha512-cA+2SAxmd0c3DH+z0NAlwnB1dO3IfUSxlKli+QfBaW2Q/AtvLtcDk4T9iA8LJzi8P+X05KY0fdnzt6QMPRePAg==",
+    "@ai-sdk/svelte@3.0.156_svelte@5.54.0_zod@4.3.6": {
+      "integrity": "sha512-5xLkw3vZzNv4lto9ahq8bXSCvC1Iq+jabBKZh5vXXPnkXT5WwmGiyuloWVg+ux3dQF3U6YmVskZQQ1uKzyLL5w==",
       "dependencies": [
         "@ai-sdk/provider-utils",
-        "ai@5.0.155_zod@4.3.6",
+        "ai",
         "svelte",
         "zod"
       ],
@@ -4267,20 +4258,10 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai@5.0.155_zod@4.3.6": {
-      "integrity": "sha512-lq6PafJobpWyxnQofOukwIBwWNWKpf4AJMWISwHOOXEjMCcsHR1cKw92rQ/cy9O/tneQpP8uXgNWUDU+f+270A==",
-      "dependencies": [
-        "@ai-sdk/gateway@2.0.59_zod@4.3.6",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "@opentelemetry/api",
-        "zod"
-      ]
-    },
     "ai@5.0.156_zod@4.3.6": {
       "integrity": "sha512-TwpwdC4YAyxg4s1Infm2lrFB8KTfL9Sy0Gzbomlh2ldcw6rnGMKj3WSUnulXDQJvIVHWN+g8uCYJ3wLJZuVGOA==",
       "dependencies": [
-        "@ai-sdk/gateway@2.0.60_zod@4.3.6",
+        "@ai-sdk/gateway",
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "@opentelemetry/api",
@@ -8460,7 +8441,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.155",
+            "npm:@ai-sdk/svelte@^3.0.156",
             "npm:@eslint/compat@^2.0.2",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
