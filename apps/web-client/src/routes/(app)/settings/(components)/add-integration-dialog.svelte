@@ -48,7 +48,9 @@
   let apiKeyTriggerEl = $state<HTMLElement | null>(null);
 
   const sortedProviders = $derived(
-    [...providers].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [...providers]
+      .filter((p) => p.displayName)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
   );
 
   const filteredProviders = $derived(

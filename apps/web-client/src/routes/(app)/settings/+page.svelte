@@ -24,8 +24,8 @@
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
-  const credentials = $derived(data.credentials);
-  const providers = $derived(data.providers);
+  const credentials = $derived(data.credentials ?? []);
+  const providers = $derived(data.providers ?? []);
 
   type CredentialRow = PageData["credentials"][number];
 
