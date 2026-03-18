@@ -23,6 +23,7 @@ jobs:
   build-publish:
     name: Build and Publish Bounce
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 

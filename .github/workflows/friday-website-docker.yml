@@ -25,6 +25,7 @@ jobs:
   build-publish:
     name: Build and Publish Friday Website
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 

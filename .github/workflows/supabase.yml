@@ -6,6 +6,10 @@ on:
       - 'supabase/**'
   merge_group:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: read
   contents: read
@@ -14,6 +18,7 @@ jobs:
   supabase:
     name: supabase migration
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: supabase/setup-cli@v1
