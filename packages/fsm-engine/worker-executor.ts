@@ -90,15 +90,22 @@ export class WorkerExecutor {
     context: Context,
     signal: Signal,
   ): Promise<unknown> {
-    const workerUrl = new URL("./function-executor.worker.ts", import.meta.url).href;
-    const worker = new Worker(workerUrl, {
-      type: "module",
-      deno: { permissions: this.permissions },
-    });
-
     const requestId = crypto.randomUUID();
 
     return new Promise((resolve, reject) => {
+      let worker: Worker;
+      try {
+        const workerUrl = new URL("./function-executor.worker.ts", import.meta.url).href;
+        worker = new Worker(workerUrl, { type: "module", deno: { permissions: this.permissions } });
+      } catch (error) {
+        reject(
+          new Error(
+            `Worker creation failed for ${this.functionType} '${functionName}': ${stringifyError(error)}`,
+          ),
+        );
+        return;
+      }
+
       const timeoutId = setTimeout(() => {
         worker.terminate();
         reject(
@@ -148,7 +155,9 @@ export class WorkerExecutor {
         reject(new Error(`Worker error: ${stringifyError(errorMsg)}`));
       };
 
-      // Support both NodeWorker (.on) and standard Web Worker (onmessage) APIs
+      // Attach error handlers immediately after creation so async module-load
+      // failures (e.g. file-not-found in compiled binaries) are caught before
+      // they bubble to the global handler as unhandled exceptions.
       if (hasNodeWorkerApi(worker)) {
         worker.on("message", handleMessage);
         worker.on("error", handleError);
