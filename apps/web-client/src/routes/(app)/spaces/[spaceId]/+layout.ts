@@ -11,5 +11,9 @@ export const load: LayoutLoad = async ({ params }) => {
     error(404, `Workspace not found: ${params.spaceId}`);
   }
 
+  if (!res.data) {
+    error(404, `Workspace data unavailable: ${params.spaceId}`);
+  }
+
   return { workspace: res.data, spaceId: params.spaceId };
 };
