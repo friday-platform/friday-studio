@@ -1,5 +1,5 @@
 import { logger } from "@atlas/logger";
-import { generateText } from "ai";
+import { APICallError, generateText } from "ai";
 import { registry } from "./registry.ts";
 import { traceModel } from "./tracing.ts";
 
@@ -29,6 +29,13 @@ export async function smallLLM(params: {
     });
     return result.text;
   } catch (e) {
+    // All smallLLM() call sites have graceful fallbacks (e.g. deterministic titles),
+    // so 400s from the LiteLLM proxy (budget exceeded, model not found, parameter
+    // rejection, etc.) are expected/benign — log at warn to avoid Sentry noise.
+    if (APICallError.isInstance(e) && e.statusCode === 400) {
+      logger.warn("Small LLM request rejected (400)", { error: e });
+      throw e;
+    }
     logger.error("Small LLM failed", { error: e });
     throw e;
   }
