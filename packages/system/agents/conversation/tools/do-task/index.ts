@@ -88,6 +88,11 @@ interface DoTaskResult {
   artifacts?: Array<{ id: string; type: string; summary: string }>;
 }
 
+/** Fallback summary when LLM returns empty/whitespace. */
+export function fallbackTaskSummary(intent: string, stepCount: number, success: boolean): string {
+  return `Task: ${truncateUnicode(intent, 60, "...")} (${stepCount} steps, ${success ? "ok" : "failed"})`;
+}
+
 async function generateTaskSummary(
   intent: string,
   stepCount: number,
@@ -100,7 +105,7 @@ async function generateTaskSummary(
       maxOutputTokens: 250,
     });
   } catch {
-    return `Task: ${truncateUnicode(intent, 60, "...")} (${stepCount} steps, ${success ? "ok" : "failed"})`;
+    return fallbackTaskSummary(intent, stepCount, success);
   }
 }
 
@@ -115,11 +120,9 @@ async function storeTaskArtifact(
   context: { workspaceId: string; streamId: string },
   logger: Logger,
 ): Promise<string> {
-  const summary = await generateTaskSummary(
-    data.intent,
-    Array.isArray(data.results) ? data.results.length : 0,
-    data.success,
-  );
+  const stepCount = Array.isArray(data.results) ? data.results.length : 0;
+  const rawSummary = await generateTaskSummary(data.intent, stepCount, data.success);
+  const summary = rawSummary.trim() || fallbackTaskSummary(data.intent, stepCount, data.success);
 
   const artifactResult = await parseResult(
     client.artifactsStorage.index.$post({
