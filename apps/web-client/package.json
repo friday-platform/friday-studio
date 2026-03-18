@@ -51,7 +51,7 @@
     "prosemirror-schema-basic": "^1.2.4",
     "prosemirror-schema-list": "^1.5.1",
     "prosemirror-state": "^1.4.4",
-    "prosemirror-view": "^1.41.6",
+    "prosemirror-view": "^1.41.7",
     "shiki": "^4.0.2",
     "svelte": "^5.54.0",
     "svelte-exmarkdown": "^5.0.2",
