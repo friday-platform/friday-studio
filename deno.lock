@@ -37,7 +37,7 @@
     "npm:@ai-sdk/svelte@^3.0.155": "3.0.155_svelte@5.53.13_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.77": "0.2.77_zod@4.3.6",
     "npm:@deno/kv@0.13": "0.13.0",
-    "npm:@electric-sql/pglite@~0.3.16": "0.3.16",
+    "npm:@electric-sql/pglite@0.4": "0.4.0",
     "npm:@eslint/compat@^2.0.2": "2.0.3_eslint@10.0.3",
     "npm:@eslint/compat@^2.0.3": "2.0.3_eslint@10.0.3",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.0.3",
@@ -1283,8 +1283,8 @@
         "@deno/kv-win32-x64-msvc"
       ]
     },
-    "@electric-sql/pglite@0.3.16": {
-      "integrity": "sha512-mZkZfOd9OqTMHsK+1cje8OSzfAQcpD7JmILXTl5ahdempjUDdmg4euf1biDex5/LfQIDJ3gvCu6qDgdnDxfJmA=="
+    "@electric-sql/pglite@0.4.0": {
+      "integrity": "sha512-NBs9e2XwW0+pzUVNqsIRe+VOrP36zfJexI6EBuiPSn/6AcwQ/QE88QtbRfRNFJINqSagH7Rpn5e3Q7NypsVYWg=="
     },
     "@emnapi/core@1.9.0": {
       "integrity": "sha512-0DQ98G9ZQZOxfUcQn1waV2yS8aWdZ6kJMbYCJB3oUBecjWYO1fqJ+a1DRfPF3O5JEkwqwP1A9QEN/9mYm2Yd0w==",
@@ -8804,7 +8804,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^2.0.1",
-            "npm:@electric-sql/pglite@~0.3.16",
+            "npm:@electric-sql/pglite@0.4",
             "npm:@faker-js/faker@^10.3.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",
