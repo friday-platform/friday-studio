@@ -131,7 +131,7 @@
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.3": "3.13.3",
     "npm:jszip@^3.10.1": "3.10.1",
-    "npm:knip@5.87.0": "5.87.0_@types+node@25.5.0_typescript@5.9.3",
+    "npm:knip@5.88.0": "5.88.0_@types+node@25.5.0_typescript@5.9.3",
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:minimatch@^10.2.4": "10.2.4",
@@ -5821,8 +5821,8 @@
     "kleur@4.1.5": {
       "integrity": "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="
     },
-    "knip@5.87.0_@types+node@25.5.0_typescript@5.9.3": {
-      "integrity": "sha512-oJBrwd4/Mt5E6817vcdQLaPpejxZTxpASauYLkp6HaT0HN1seHnpF96KEjza9O8yARvHEQ9+So9AFUjkPci7dQ==",
+    "knip@5.88.0_@types+node@25.5.0_typescript@5.9.3": {
+      "integrity": "sha512-FZjQYLYwUbVrtC3C1cKyEMMqR4K2ZlkQLZszJgF5cfDo4GUSBZAdAV0P3eyzZrkssRoghLJQA9HTQUW7G+Tc8Q==",
       "dependencies": [
         "@nodelib/fs.walk",
         "@types/node",
@@ -8207,7 +8207,7 @@
         "npm:@types/proper-lockfile@^4.1.4",
         "npm:@types/turndown@^5.0.6",
         "npm:@vitest/coverage-v8@4.1.0",
-        "npm:knip@5.87.0",
+        "npm:knip@5.88.0",
         "npm:lint-staged@^16.4.0",
         "npm:nanoid@^5.1.6",
         "npm:vitest@^4.1.0"
