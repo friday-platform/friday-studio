@@ -117,7 +117,7 @@ afterNavigate(() => {
 				<DropdownMenu.Item href="/#faq">FAQ</DropdownMenu.Item>
 
 				<DropdownMenu.Item
-					href="https://medium.com/friday-ai"
+					href="https://blog.hellofriday.ai"
 					target="_blank"
 					rel="noopener noreferrer">Blog</DropdownMenu.Item
 				>
@@ -160,7 +160,7 @@ afterNavigate(() => {
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 			<li><a href="/#faq">FAQ</a></li>
 			<li>
-				<a href="https://medium.com/friday-ai" target="_blank" rel="noopener noreferrer">Blog</a>
+				<a href="https://blog.hellofriday.ai" target="_blank" rel="noopener noreferrer">Blog</a>
 			</li>
 			<li>
 				<a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a>

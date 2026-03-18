@@ -203,6 +203,16 @@ export const handle: Handle = async ({ event, resolve }) => {
     return response;
   }
 
+  // Redirect /blog → blog.hellofriday.ai
+  if (event.url.pathname === "/blog") {
+    const response = new Response(null, {
+      status: 308,
+      headers: { location: "https://blog.hellofriday.ai" },
+    });
+    setSecurityHeaders(response.headers);
+    return response;
+  }
+
   const start = performance.now();
   const response = await resolve(event);
   const durationMs = performance.now() - start;
