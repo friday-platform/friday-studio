@@ -93,8 +93,8 @@
     "npm:@sveltejs/package@^2.5.7": "2.5.7_svelte@5.54.0",
     "npm:@sveltejs/vite-plugin-svelte@^6.2.4": "6.2.4_svelte@5.54.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.2",
     "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.54.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.2",
-    "npm:@tanstack/query-core@^5.90.20": "5.90.20",
-    "npm:@tanstack/svelte-query@^6.1.0": "6.1.0_svelte@5.54.0",
+    "npm:@tanstack/query-core@^5.90.20": "5.91.0",
+    "npm:@tanstack/svelte-query@^6.1.1": "6.1.1_svelte@5.54.0",
     "npm:@tanstack/svelte-table@9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.54.0",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/deno@2.5.0": "2.5.0",
@@ -3825,11 +3825,11 @@
         "tslib"
       ]
     },
-    "@tanstack/query-core@5.90.20": {
-      "integrity": "sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg=="
+    "@tanstack/query-core@5.91.0": {
+      "integrity": "sha512-FYXN8Kk9Q5VKuV6AIVaNwMThSi0nvAtR4X7HQoigf6ePOtFcavJYVIzgFhOVdtbBQtCJE3KimDIMMJM2DR1hjw=="
     },
-    "@tanstack/svelte-query@6.1.0_svelte@5.54.0": {
-      "integrity": "sha512-iKeMaBalk5NeRvp1Y2LgtG3j9HCeLcTEpfsyM+jL1wASnW/EYdCqyyotMKkOY4SNsnBpPDM5zrmstMn6tOzKFQ==",
+    "@tanstack/svelte-query@6.1.1_svelte@5.54.0": {
+      "integrity": "sha512-55wDSYAPfnZVILy2iYybMvGHsueOdyOkgcW9WQ2Etdtp2udOGAWX0N/KXc9tqdrp8HS5pHvg99eLBCeQFBGJMw==",
       "dependencies": [
         "@tanstack/query-core",
         "svelte"
@@ -8473,7 +8473,7 @@
             "npm:@sveltejs/kit@^2.55.0",
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tanstack/query-core@^5.90.20",
-            "npm:@tanstack/svelte-query@^6.1.0",
+            "npm:@tanstack/svelte-query@^6.1.1",
             "npm:@tanstack/svelte-table@9.0.0-alpha.10",
             "npm:@types/deno@2.5.0",
             "npm:@types/markdown-it@^14.1.2",
