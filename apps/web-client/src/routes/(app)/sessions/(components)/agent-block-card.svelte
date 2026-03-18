@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AgentBlock } from "@atlas/core";
+  import type { AgentBlock } from "@atlas/core/session/session-events";
   import { createCollapsible } from "@melt-ui/svelte";
   import { Collapsible } from "$lib/components/collapsible";
   import { Icons } from "$lib/components/icons";
