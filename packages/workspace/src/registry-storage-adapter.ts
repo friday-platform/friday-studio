@@ -153,7 +153,15 @@ export class RegistryStorageAdapter {
     for await (const { key, value } of this.storage.list<WorkspaceEntry>(["workspaces"])) {
       // Skip the special _list key
       if (key.length === 2 && key[1] !== "_list" && value) {
-        workspaces.push(value);
+        const result = WorkspaceEntrySchema.safeParse(value);
+        if (result.success) {
+          workspaces.push(result.data);
+        } else {
+          logger.warn("Skipping invalid workspace entry in storage", {
+            key,
+            errors: result.error.issues.map((i) => i.message),
+          });
+        }
       }
     }
 
