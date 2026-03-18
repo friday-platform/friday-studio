@@ -26,7 +26,7 @@ jobs:
           deno-version: v2.7.4
 
       - name: Cache Deno dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/deno
           key: deno-${{ hashFiles('deno.lock') }}
