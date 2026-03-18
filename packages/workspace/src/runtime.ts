@@ -835,6 +835,20 @@ export class WorkspaceRuntime {
           jobName: job.name,
         });
       }
+
+      // Emit error event so the client SSE stream receives it.
+      // Without this, errors are swallowed — the .catch() in chat.ts never
+      // fires because this function always resolves (never rejects).
+      if (onStreamEvent) {
+        try {
+          await onStreamEvent({
+            type: "data-error",
+            data: { error: stringifyError(session.error), errorCause: session.error },
+          });
+        } catch (emitError) {
+          logger.error("Failed to emit error event", { sessionId: session.id, error: emitError });
+        }
+      }
     } finally {
       // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
       if (this.options.resourceStorage) {

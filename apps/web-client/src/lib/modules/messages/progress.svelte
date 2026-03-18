@@ -109,6 +109,8 @@
       return "Processing";
     } else if (type.startsWith("tool-")) {
       return "Calling Tools";
+    } else if (type === "data-error") {
+      return "Error";
     } else if (type === "data-tool-progress" && content) {
       return content;
     } else {
