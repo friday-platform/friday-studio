@@ -169,7 +169,7 @@
     "npm:publint@~0.3.18": "0.3.18",
     "npm:react@^19.2.4": "19.2.4",
     "npm:shiki@^4.0.2": "4.0.2",
-    "npm:snowflake-sdk@^2.3.4": "2.3.5_asn1.js@5.4.1",
+    "npm:snowflake-sdk@^2.3.5": "2.3.5_asn1.js@5.4.1",
     "npm:svelte-check@^4.4.5": "4.4.5_svelte@5.53.13_typescript@5.9.3",
     "npm:svelte-eslint-parser@^1.6.0": "1.6.0_svelte@5.53.13",
     "npm:svelte-exmarkdown@^5.0.2": "5.0.2_svelte@5.53.13",
@@ -449,8 +449,8 @@
         "tslib"
       ]
     },
-    "@aws-sdk/client-s3@3.1010.0": {
-      "integrity": "sha512-XUqXFrn/FGLLzO5OXu9iAtt492kj9Z7Yk8b0iPFxeJoIhaa61YOgR84chOExvnjm2+JTYyGNZiVPmgnFB3jxXA==",
+    "@aws-sdk/client-s3@3.1011.0": {
+      "integrity": "sha512-jY7CGX+vfM/DSi4K8UwaZKoXnhqchmAbKFB1kIuHMfPPqW7l3jC/fUVDb95/njMsB2ymYOTusZEzoCTeUB/4qA==",
       "dependencies": [
         "@aws-crypto/sha1-browser",
         "@aws-crypto/sha256-browser",
@@ -509,8 +509,8 @@
         "tslib"
       ]
     },
-    "@aws-sdk/client-sts@3.1010.0": {
-      "integrity": "sha512-XLJORGBYx3zSrsL8KynN5CvE8RIFOS3J0+P7GRT7/8QufcL59c/7B3WFOTIykshw3INQ0UQg/RJi8S6unCTIkA==",
+    "@aws-sdk/client-sts@3.1011.0": {
+      "integrity": "sha512-m02iQJdqivFabwXQlcDxnFuVXAC7qdgrNADLU58vrPo5LdRB+C4Q7idqLhaWAO4rsSmtQISvPB2T89Is44/5sw==",
       "dependencies": [
         "@aws-crypto/sha256-browser",
         "@aws-crypto/sha256-js",
@@ -688,8 +688,8 @@
         "tslib"
       ]
     },
-    "@aws-sdk/ec2-metadata-service@3.1010.0": {
-      "integrity": "sha512-XHiJEmSRC/SBiqKYgnHXnvZheIqRhBTM+6Is+mpGdPOxR55vAxmdVirH9JZ24l0IRxaQMdz6mG2jG9L2bNVKrA==",
+    "@aws-sdk/ec2-metadata-service@3.1011.0": {
+      "integrity": "sha512-fOAxlSOMH2W1qrV/CRewvVkA3O/H79eXQ5uZd/fGxmhUD7gaYr3uwffAiQSUL0R4A+i0YU/DL+w47COK0Wx9Eg==",
       "dependencies": [
         "@aws-sdk/types",
         "@smithy/node-config-provider",
@@ -8487,7 +8487,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:ai@^5.0.154",
             "npm:parallel-web@0.3.2",
-            "npm:snowflake-sdk@^2.3.4",
+            "npm:snowflake-sdk@^2.3.5",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]

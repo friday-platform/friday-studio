@@ -24,6 +24,6 @@
     "parallel-web": "0.3.2",
     "vitest": "^4.1.0",
     "zod": "^4.3.5",
-    "snowflake-sdk": "^2.3.4"
+    "snowflake-sdk": "^2.3.5"
   }
 }
