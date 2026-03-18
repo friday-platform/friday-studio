@@ -6,7 +6,7 @@ type SkillResponse = InferResponseType<(typeof client.skills)[":skillId"]["$get"
 
 export async function createSkill(): Promise<{ skillId: string }> {
   const res = await parseResult(client.skills.index.$post());
-  if (!res.ok) throw new Error("Failed to create skill");
+  if (!res.ok) throw new Error(`Failed to create skill: ${JSON.stringify(res.error)}`);
   return res.data;
 }
 
@@ -18,7 +18,7 @@ export async function listSkills(sort?: "name" | "createdAt"): Promise<SkillsLis
 
 export async function getSkillById(skillId: string): Promise<SkillResponse> {
   const res = await parseResult(client.skills[":skillId"].$get({ param: { skillId } }));
-  if (!res.ok) throw new Error("Failed to load skill");
+  if (!res.ok) throw new Error(`Failed to load skill: ${JSON.stringify(res.error)}`);
   return res.data;
 }
 
@@ -26,13 +26,13 @@ export async function disableSkill(skillId: string, disabled: boolean) {
   const res = await parseResult(
     client.skills[":skillId"].disable.$patch({ param: { skillId }, json: { disabled } }),
   );
-  if (!res.ok) throw new Error("Failed to update skill");
+  if (!res.ok) throw new Error(`Failed to update skill: ${JSON.stringify(res.error)}`);
   return res.data;
 }
 
 export async function deleteSkill(skillId: string) {
   const res = await parseResult(client.skills[":skillId"].$delete({ param: { skillId } }));
-  if (!res.ok) throw new Error("Failed to delete skill");
+  if (!res.ok) throw new Error(`Failed to delete skill: ${JSON.stringify(res.error)}`);
   return res.data;
 }
 
@@ -53,6 +53,6 @@ export async function publishSkill(
       json: input,
     }),
   );
-  if (!res.ok) throw new Error("Failed to publish skill");
+  if (!res.ok) throw new Error(`Failed to publish skill: ${JSON.stringify(res.error)}`);
   return res.data.published;
 }
