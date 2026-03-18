@@ -213,6 +213,16 @@ export const handle: Handle = async ({ event, resolve }) => {
     return response;
   }
 
+  // Redirect /signup → auth.hellofriday.ai/signup
+  if (event.url.pathname === "/signup") {
+    const response = new Response(null, {
+      status: 308,
+      headers: { location: "https://auth.hellofriday.ai/signup" },
+    });
+    setSecurityHeaders(response.headers);
+    return response;
+  }
+
   const start = performance.now();
   const response = await resolve(event);
   const durationMs = performance.now() - start;
