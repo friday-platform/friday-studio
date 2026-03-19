@@ -13,12 +13,23 @@
 
   let copied = $state(false);
   let expanded = $state(false);
-  let contentEl = $state<HTMLDivElement>();
+  let overflows = $state(false);
 
-  const needsClamp = $derived.by(() => {
-    if (!maxLines || expanded || !contentEl) return false;
-    return contentEl.scrollHeight > contentEl.clientHeight;
-  });
+  const needsClamp = $derived(!expanded && overflows);
+
+  function observeOverflow(el: HTMLElement) {
+    if (!maxLines) return;
+
+    function check() {
+      overflows = el.scrollHeight > el.clientHeight;
+    }
+
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    check();
+
+    return () => observer.disconnect();
+  }
 
   function handleCopy() {
     if (!copyText) return;
@@ -41,7 +52,7 @@
     class="content"
     class:clamped={maxLines && !expanded}
     style:--max-lines={maxLines}
-    bind:this={contentEl}
+    {@attach observeOverflow}
   >
     {@render children()}
   </div>

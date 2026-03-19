@@ -3,9 +3,11 @@
   "version": "0.0.1",
   "exports": { ".": "./src/mod.ts" },
   "imports": {
+    "@atlas/ledger": "../../apps/ledger/src/index.ts",
     "@atlas/llm": "../llm/mod.ts",
     "@atlas/logger": "../logger/mod.ts",
     "@atlas/utils": "../utils/mod.ts",
-    "@atlas/utils/paths.server": "../utils/src/paths.ts"
+    "@atlas/utils/paths.server": "../utils/src/paths.ts",
+    "hono/client": "npm:hono@^4.10.4/client"
   }
 }

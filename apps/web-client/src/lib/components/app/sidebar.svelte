@@ -16,11 +16,16 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import {
+    getActivityUnreadCount,
+    startActivityStream,
+  } from "$lib/modules/activity/activity-stream.svelte";
   import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
   import { listChats } from "$lib/queries/chats";
   import { listSpaces } from "$lib/queries/spaces";
   import { getActivePage, getActiveParam } from "$lib/utils/active-page.svelte";
   import { shareChat } from "$lib/utils/share-chat";
+  import { onMount } from "svelte";
   import ScrollListener from "../scroll-listener.svelte";
   import Usage from "./usage.svelte";
 
@@ -46,6 +51,10 @@
     },
     placeholderData: keepPreviousData,
   }));
+
+  onMount(() => {
+    startActivityStream();
+  });
 
   const currentChatId = $derived(page.params.chatId);
 </script>
@@ -99,12 +108,16 @@
 
       <li>
         <a
-          href={ctx.routes.sessions.list}
-          class:active={getActivePage(["(app)/sessions", "(app)/sessions/[sessionId]"])}
-          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "sessions" })}
+          href={ctx.routes.activity.list}
+          class:active={getActivePage(["(app)/activity"])}
+          onclick={() => trackEvent(GA4.NAV_CLICK, { section: "activity" })}
         >
           <IconSmall.Activity />
           Activity
+
+          {#if getActivityUnreadCount() > 0 && !getActivePage( ["(app)/activity", "(app)/sessions/[sessionId]"], )}
+            <span class="badge">{getActivityUnreadCount()}</span>
+          {/if}
         </a>
       </li>
 
@@ -397,6 +410,22 @@
 
     &.main-links {
       gap: 0;
+    }
+
+    .badge {
+      align-items: center;
+      background-color: color-mix(in srgb, var(--color-text), transparent 92%);
+      border-radius: var(--radius-round);
+      block-size: var(--size-5-5);
+      display: flex;
+      justify-content: center;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-5);
+      margin-inline-start: auto;
+      margin-inline-end: calc(-1 * var(--size-2));
+      min-inline-size: var(--size-7-5);
+      padding-inline: var(--size-2);
+      text-align: center;
     }
 
     li {

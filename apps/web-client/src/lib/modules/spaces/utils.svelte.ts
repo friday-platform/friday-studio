@@ -58,7 +58,8 @@ export async function addWorkspace(
 
     toast({
       title: "Couldn't add Space",
-      description: typeof res.error === "string" ? res.error : "Something went wrong. Please try again.",
+      description:
+        typeof res.error === "string" ? res.error : "Something went wrong. Please try again.",
       error: true,
     });
     throw new Error(typeof res.error === "string" ? res.error : "Failed to add workspace");

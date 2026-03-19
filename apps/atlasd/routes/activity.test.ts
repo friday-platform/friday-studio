@@ -1,7 +1,11 @@
 import process from "node:process";
-import type { ActivityStorageAdapter, ActivityWithReadStatus } from "@atlas/activity";
+import {
+  type ActivityStorageAdapter,
+  type ActivityWithReadStatus,
+  activityNotifier,
+} from "@atlas/activity";
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AppContext, AppVariables } from "../src/factory.ts";
 
@@ -31,6 +35,9 @@ function createMockActivityAdapter(
 ): ActivityStorageAdapter {
   return {
     create: vi.fn<ActivityStorageAdapter["create"]>(),
+    deleteByReferenceId: vi
+      .fn<ActivityStorageAdapter["deleteByReferenceId"]>()
+      .mockResolvedValue(undefined),
     list: vi
       .fn<ActivityStorageAdapter["list"]>()
       .mockResolvedValue({ activities: [], hasMore: false }),
@@ -274,6 +281,101 @@ describe("Activity API Routes", () => {
       } finally {
         process.env.ATLAS_KEY = savedKey;
       }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/activity/stream
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("GET /api/activity/stream", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("returns 401 without auth", async () => {
+      const savedKey = process.env.ATLAS_KEY;
+      delete process.env.ATLAS_KEY;
+
+      try {
+        const res = await app.request("/api/activity/stream");
+        expect(res.status).toBe(401);
+      } finally {
+        process.env.ATLAS_KEY = savedKey;
+      }
+    });
+
+    it("returns SSE headers", async () => {
+      const res = await app.request("/api/activity/stream");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+      expect(res.headers.get("Cache-Control")).toBe("no-cache");
+      expect(res.headers.get("Connection")).toBe("keep-alive");
+    });
+
+    it("initial event contains current unread count", async () => {
+      vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(7);
+
+      const res = await app.request("/api/activity/stream");
+      expect(res.status).toBe(200);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      const { value } = await reader.read();
+      const text = decoder.decode(value);
+
+      expect(text).toContain('data: {"count":7}');
+      reader.cancel();
+    });
+
+    it("sends updated count when notifier fires", async () => {
+      let callCount = 0;
+      vi.mocked(mockAdapter.getUnreadCount).mockImplementation(() => {
+        callCount++;
+        // First call returns 3 (initial), second returns 5 (after notify)
+        return Promise.resolve(callCount === 1 ? 3 : 5);
+      });
+
+      const res = await app.request("/api/activity/stream");
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+
+      // Read initial event
+      const { value: first } = await reader.read();
+      expect(decoder.decode(first)).toContain('data: {"count":3}');
+
+      // Trigger a notification
+      activityNotifier.notify();
+
+      // Read the next event
+      const { value: second } = await reader.read();
+      expect(decoder.decode(second)).toContain('data: {"count":5}');
+
+      reader.cancel();
+    });
+
+    it("deduplicates when count has not changed", async () => {
+      vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(3);
+
+      const res = await app.request("/api/activity/stream");
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+
+      // Read initial event
+      const { value: first } = await reader.read();
+      expect(decoder.decode(first)).toContain('data: {"count":3}');
+
+      // Trigger notification — count hasn't changed, should not produce event
+      activityNotifier.notify();
+
+      // Trigger another notification with different count
+      vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(4);
+      activityNotifier.notify();
+
+      const { value: second } = await reader.read();
+      expect(decoder.decode(second)).toContain('data: {"count":4}');
+
+      reader.cancel();
     });
   });
 });

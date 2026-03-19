@@ -8,6 +8,7 @@
   import type { Component } from "svelte";
   import { sineOut } from "svelte/easing";
   import { slide } from "svelte/transition";
+  import { deepParseJson } from "./deep-parse-json";
   import FormattedData from "./formatted-data.svelte";
   import JsonHighlight from "./json-highlight.svelte";
   import { parseError } from "./parse-error";
@@ -83,7 +84,7 @@
   const parsedError = $derived(block.error ? parseError(block.error) : null);
 
   function displayJson(value: unknown): string {
-    return JSON.stringify(value, null, 2).replace(/\\n/g, "\n");
+    return JSON.stringify(deepParseJson(value), null, 2).replace(/\\n/g, "\n");
   }
 
   function formatAgentName(name: string): string {
@@ -111,14 +112,14 @@
 <div class="component" {...$root} use:root>
   <button class="header-row" {...$trigger} use:trigger type="button">
     <span class="icon" class:running={isRunning}>
-      {#if icon}
+      {#if isRunning}
+        <IconSmall.Progress />
+      {:else if icon}
         {#if icon.type === "component"}
           <icon.src />
         {:else}
           <img src={icon.src} alt="" class="icon-image" />
         {/if}
-      {:else if isRunning}
-        <IconSmall.Progress />
       {:else if isCompleted}
         <Icons.DotFilled />
       {:else if isFailed}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createTabs } from "@melt-ui/svelte";
+  import { deepParseJson } from "./deep-parse-json";
   import FormattedData from "./formatted-data.svelte";
   import JsonHighlight from "./json-highlight.svelte";
 
@@ -29,14 +30,14 @@
     </div>
 
     <div {...$content("request")} use:content>
-      <FormattedData copyText={JSON.stringify(args, null, 2)} maxLines={7}>
+      <FormattedData copyText={JSON.stringify(deepParseJson(args), null, 2)} maxLines={7}>
         <JsonHighlight code={displayArgs} />
       </FormattedData>
     </div>
 
     {#if hasResult}
       <div {...$content("response")} use:content>
-        <FormattedData copyText={JSON.stringify(result, null, 2)} maxLines={50}>
+        <FormattedData copyText={JSON.stringify(deepParseJson(result), null, 2)} maxLines={50}>
           <JsonHighlight code={displayResult ?? ""} />
         </FormattedData>
       </div>

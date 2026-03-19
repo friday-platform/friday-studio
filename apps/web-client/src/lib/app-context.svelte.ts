@@ -102,6 +102,7 @@ function getRouteConfig() {
       list: resolve("/library", {}),
       item: (libraryId: string) => resolve("/library/[libraryId]", { libraryId }),
     },
+    activity: { list: resolve("/activity", {}) },
     sessions: {
       list: resolve("/sessions", {}),
       item: (sessionId: string) => resolve("/sessions/[sessionId]", { sessionId }),

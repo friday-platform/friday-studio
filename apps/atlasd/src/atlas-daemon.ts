@@ -1,7 +1,11 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import { ActivityStorage, type ActivityStorageAdapter } from "@atlas/activity";
+import {
+  type ActivityStorageAdapter,
+  createActivityLedgerClient,
+  LocalActivityAdapter,
+} from "@atlas/activity";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
@@ -117,6 +121,7 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
+  private activityAdapter: ActivityStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
@@ -255,6 +260,15 @@ export class AtlasDaemon {
       this.resourceStorage = createLedgerClient();
     } catch {
       logger.warn("Ledger client not initialized (LEDGER_URL not set)");
+    }
+
+    // Initialize activity storage adapter
+    if (process.env.LEDGER_URL) {
+      this.activityAdapter = createActivityLedgerClient();
+      logger.info("Activity storage using Ledger client");
+    } else {
+      this.activityAdapter = new LocalActivityAdapter();
+      logger.info("Activity storage using local SQLite adapter");
     }
 
     // Initialize agent registry with bundled agents
@@ -562,9 +576,12 @@ export class AtlasDaemon {
     return this.supervisorDefaults;
   }
 
-  /** Get activity storage adapter (lazy singleton) */
+  /** Get activity storage adapter (constructed during initialize). */
   public getActivityAdapter(): ActivityStorageAdapter {
-    return ActivityStorage;
+    if (!this.activityAdapter) {
+      throw new Error("Activity adapter not initialized — call initialize() first");
+    }
+    return this.activityAdapter;
   }
 
   /**
@@ -1008,7 +1025,7 @@ export class AtlasDaemon {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
           resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
-          activityStorage: ActivityStorage, // Share activity storage for feed items
+          activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),

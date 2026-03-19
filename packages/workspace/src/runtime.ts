@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
 import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import type { ActivityStorageAdapter } from "@atlas/activity";
-import { generateSessionActivityTitle } from "@atlas/activity";
+import { generateSessionActivityTitle, kebabToSentenceCase } from "@atlas/activity";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -748,6 +748,28 @@ export class WorkspaceRuntime {
       timestamp: session.startedAt.toISOString(),
     });
 
+    // Create "running" activity item (skip conversations)
+    const isConversation =
+      this.workspace.id === "atlas-conversation" ||
+      this.workspace.id === "friday-conversation" ||
+      job.name === "handle-chat";
+    if (this.options.activityStorage && !isConversation) {
+      try {
+        const title = `${kebabToSentenceCase(job.name)} is running`;
+        await this.options.activityStorage.create({
+          type: "session",
+          source: "agent",
+          referenceId: sessionId,
+          workspaceId: this.workspace.id,
+          jobId: job.name,
+          userId: null,
+          title,
+        });
+      } catch (err) {
+        logger.warn("Failed to create running activity", { sessionId, error: String(err) });
+      }
+    }
+
     try {
       // Process signal through FSM with callback context
       await job.engine.signal(
@@ -937,11 +959,17 @@ export class WorkspaceRuntime {
           logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
         });
 
-        // Create activity feed item for terminal sessions
+        // Replace "running" activity with final activity for terminal sessions
         if (
           this.options.activityStorage &&
+          !isConversation &&
           (view.status === "completed" || view.status === "failed")
         ) {
+          // Delete the "running" activity first
+          await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
+            logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
+          });
+
           try {
             // Extract final output from the last completed agent block
             const lastBlock = [...executedBlocks].reverse().find((b) => b.output);

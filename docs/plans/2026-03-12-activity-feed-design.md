@@ -30,9 +30,14 @@ tracks per-user read status for unread badge counts and notification dots.
 7. As a user, I want activity items for my own direct actions (uploading a file,
    replacing a resource) to appear in the feed but not trigger unread
    notifications, so that I'm not spammed by my own actions
-8. As a user, I want session activity to only appear once the session is
-   finished (completed or failed), so that the feed isn't cluttered with
-   in-progress work
+8. As a user, I want to see in-progress sessions in the activity feed with a
+   "running" title, so that I know something is happening right now
+8a. As a user, I want the running activity item to be replaced with a
+    descriptive completion item when the session finishes, so the feed reflects
+    what actually happened
+8b. As a user, I want the badge count to stay at 1 (not go from 1 to 2) when
+    a running session completes without me viewing it, so I'm not
+    double-notified
 9. As a user, I want activity titles to be concise and human-friendly, so that I
    can scan the feed quickly without reading technical details
 10. As a user, I want agent-driven activity to show descriptive titles based on
@@ -66,7 +71,7 @@ tracks per-user read status for unread badge counts and notification dots.
 | Field        | Type                          | Notes                |
 |--------------|-------------------------------|----------------------|
 | `userId`     | string                        | Composite PK         |
-| `activityId` | string                        | Composite PK         |
+| `activityId` | string                        | Composite PK, FK → activities(id) ON DELETE CASCADE |
 | `status`     | `"viewed"` \| `"dismissed"`   | No row = unread      |
 
 Index on `(userId)` for badge count queries.
@@ -94,6 +99,7 @@ New package: `packages/activity/`
 ```
 ActivityStorageAdapter:
   create(input)               → Activity (insert + optional read status)
+  deleteByReferenceId(referenceId)  → void (cascades read status)
   list(userId, filters?)      → Activity[] with read status (joined)
   getUnreadCount(userId)      → number
   updateReadStatus(userId, activityIds, status)  → void (by IDs)
@@ -121,29 +127,47 @@ No public create endpoint — activity is only created internally by hooks.
 
 ### Hook Points
 
-**1. Session completion** — `packages/workspace/src/runtime.ts`
+**1. Session lifecycle** — `packages/workspace/src/runtime.ts`
 
-In the finally block of `processSignalForJob()`, after `sessionStream.finalize()`
-completes. The session view and summary are already built at this point. Only
-fires for terminal statuses (`completed` or `failed`).
+Two-phase activity creation in `processSignalForJob()`:
 
-Creates activity with:
-- `type: "session"`, `source: "agent"`
-- `referenceId: sessionId`
-- `workspaceId`, `jobId` from session context
-- `userId: null`
-- Title: LLM-generated from session output and status
+**Phase 1 — Session start:** After the session is initialized but before FSM
+execution begins, create a "running" activity item. Title is a static template:
+`"{Job Name} is running"` (kebab-to-sentence-case, no LLM call). Skip
+conversation workspaces (`atlas-conversation`, `friday-conversation`) and
+workspace chat (`handle-chat` job).
+
+**Phase 2 — Session completion:** In the finally block, after
+`sessionStream.finalize()` completes. Only fires for terminal statuses
+(`completed` or `failed`). Deletes the "running" activity item via
+`deleteByReferenceId(sessionId)`, then creates the final activity with an
+LLM-generated title. The delete-then-create ensures the badge count stays at 1
+(not 1→2) when a user hasn't viewed the running item.
 
 ```typescript
-// In runtime.ts processSignalForJob() finally block, after sessionStream.finalize():
-
-await sessionStream.finalize(summaryV2).catch((err) => {
-  logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
-});
-
-// --- Activity creation hook ---
-if (view.status === "completed" || view.status === "failed") {
+// Phase 1 — before FSM execution:
+if (activityStorage && !isConversation) {
   try {
+    const title = `${humanizeJobName(job.name)} is running`;
+    await activityStorage.create({
+      type: "session",
+      source: "agent",
+      referenceId: sessionId,
+      workspaceId: this.workspace.id,
+      jobId: job.name,
+      userId: null,
+      title,
+    });
+  } catch (err) {
+    logger.warn("Failed to create running activity", { sessionId, error: String(err) });
+  }
+}
+
+// Phase 2 — in finally block, after sessionStream.finalize():
+if (activityStorage && !isConversation &&
+    (view.status === "completed" || view.status === "failed")) {
+  try {
+    await activityStorage.deleteByReferenceId(sessionId);
     const title = await generateActivityTitle({ type: "session", view, jobName: job.name });
     await activityStorage.create({
       type: "session",
@@ -435,6 +459,8 @@ Test cases:
 - `updateReadStatus` inserts viewed/dismissed rows, changes unread count
 - `markViewedBefore` marks all items before timestamp, leaves newer items unread
 - User-initiated activity with auto-viewed: unread count is 0 for that user
+- `deleteByReferenceId` removes the activity and cascades read status cleanup
+- Delete-then-create for same referenceId keeps unread count at 1 (not 2)
 - Fixtures validated against production Zod schemas (never use `as` casts)
 
 ### Route tests — `apps/atlasd/routes/activity.test.ts`
@@ -496,7 +522,7 @@ just be testing mocks.
 
 ## Out of Scope
 
-- Active/in-progress session display (separate UI section)
+- Orphaned "running" activity cleanup (daemon crash mid-session)
 - Activity page UI implementation (separate ticket, screenshot provided for
   reference)
 - Sidebar badge UI component

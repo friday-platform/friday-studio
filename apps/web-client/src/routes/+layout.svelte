@@ -4,12 +4,19 @@
   import appleTouchIcon from "$lib/assets/apple-touch-icon.png";
   import favicon from "$lib/assets/favicon.png";
   import FindBar from "$lib/components/find-bar.svelte";
+  import {
+    getActivityUnreadCount,
+    startActivityStream,
+  } from "$lib/modules/activity/activity-stream.svelte";
   import { onMount } from "svelte";
 
   const { children } = $props();
   setAppContext();
 
   let showFindBar = $state(false);
+  const pageTitle = $derived(
+    getActivityUnreadCount() > 0 ? `Friday (${getActivityUnreadCount()})` : "Friday",
+  );
 
   onMount(() => {
     const handleKeydown = (e: KeyboardEvent) => {
@@ -20,6 +27,8 @@
     };
 
     document.addEventListener("keydown", handleKeydown);
+
+    startActivityStream();
 
     return () => {
       document.removeEventListener("keydown", handleKeydown);
@@ -32,7 +41,7 @@
 <FindBar bind:open={showFindBar} onClose={() => (showFindBar = false)} />
 
 <svelte:head>
-  <title>Friday</title>
+  <title>{pageTitle}</title>
 
   <link rel="apple-touch-icon" href={appleTouchIcon} />
   <link rel="icon" href={favicon} sizes="32x32" />

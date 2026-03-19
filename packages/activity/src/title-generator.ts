@@ -133,7 +133,7 @@ export function generateUserActivityTitle(
 // HELPERS
 // ==============================================================================
 
-function kebabToSentenceCase(str: string): string {
+export function kebabToSentenceCase(str: string): string {
   return str
     .replace(/[-_]/g, " ")
     .replace(/([a-z])([A-Z])/g, "$1 $2")

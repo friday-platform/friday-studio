@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { dirname, extname } from "node:path";
 
 const BINARY_EXTENSIONS = new Set([
   ".lock",
@@ -66,7 +66,11 @@ export default {
         !DENO_LINT_EXCLUDED.some((dir) => f.includes(dir)),
     );
     if (filtered.length === 0) return [];
-    return [`deno lint --fix ${filtered.map((f) => `"${f}"`).join(" ")}`];
+    // deno lint treats parentheses in paths as glob chars — lint the directory instead
+    const normal = filtered.filter((f) => !f.includes("("));
+    const parenDirs = [...new Set(filtered.filter((f) => f.includes("(")).map((f) => dirname(f)))];
+    const args = [...normal.map((f) => `"${f}"`), ...parenDirs.map((d) => `"${d}"`)];
+    return [`deno lint --fix ${args.join(" ")}`];
   },
   "apps/web-client/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
   "apps/atlas-auth-ui/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",

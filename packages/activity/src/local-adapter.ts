@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS activities (
 
 CREATE TABLE IF NOT EXISTS activity_read_status (
   user_id TEXT NOT NULL,
-  activity_id TEXT NOT NULL REFERENCES activities(id),
+  activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
   PRIMARY KEY (user_id, activity_id)
 );
@@ -80,6 +80,7 @@ export class LocalActivityAdapter implements ActivityStorageAdapter {
     if (!this.db) {
       const { Database: SqliteDatabase } = await import("@db/sqlite");
       this.db = new SqliteDatabase(this.dbPath);
+      this.db.exec("PRAGMA foreign_keys = ON");
       this.db.exec(SCHEMA);
       logger.info("Database initialized", { dbPath: this.dbPath });
     }
@@ -140,6 +141,18 @@ export class LocalActivityAdapter implements ActivityStorageAdapter {
       title: input.title,
       createdAt: now,
     };
+  }
+
+  async deleteByReferenceId(referenceId: string): Promise<void> {
+    const db = await this.getDb();
+    // Manually clean up read_status rows first — existing databases may lack ON DELETE CASCADE
+    db.prepare(
+      `DELETE FROM activity_read_status WHERE activity_id IN (
+        SELECT id FROM activities WHERE reference_id = ?
+      )`,
+    ).run(referenceId);
+    db.prepare("DELETE FROM activities WHERE reference_id = ?").run(referenceId);
+    logger.debug("Activities deleted by referenceId", { referenceId });
   }
 
   async list(userId: string, filters?: ActivityListFilter): Promise<ActivityListResult> {

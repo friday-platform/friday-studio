@@ -1,7 +1,11 @@
 // Schemas and types
 
+// Ledger HTTP client
+export { createActivityLedgerClient } from "./ledger-client.ts";
 // Local adapter (for direct instantiation in tests)
 export { LocalActivityAdapter } from "./local-adapter.ts";
+// Notifier
+export { ActivityNotifier } from "./notifier.ts";
 export type {
   Activity,
   ActivityListFilter,
@@ -24,7 +28,7 @@ export {
 } from "./schemas.ts";
 // Storage
 export type { ActivityListResult, ActivityStorageAdapter } from "./storage.ts";
-export { ActivityStorage } from "./storage.ts";
+export { activityNotifier } from "./storage.ts";
 
 // Title generators
 export type {
@@ -36,4 +40,5 @@ export {
   generateResourceActivityTitle,
   generateSessionActivityTitle,
   generateUserActivityTitle,
+  kebabToSentenceCase,
 } from "./title-generator.ts";

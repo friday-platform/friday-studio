@@ -1,4 +1,5 @@
 import type {
+  ActivityRoutes,
   ArtifactsRoutes,
   ChatRoutes,
   ChatStorageRoutes,
@@ -30,6 +31,7 @@ export { DetailedError } from "hono/client";
 const baseUrl = getAtlasDaemonUrl();
 
 export const client = {
+  activity: hc<ActivityRoutes>(`${baseUrl}/api/activity`),
   artifactsStorage: hc<ArtifactsRoutes>(`${baseUrl}/api/artifacts`),
   chat: hc<ChatRoutes>(`${baseUrl}/api/chat`),
   chatStorage: hc<ChatStorageRoutes>(`${baseUrl}/api/chat-storage`),

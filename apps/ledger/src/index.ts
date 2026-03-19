@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
+import type { ActivityStorageAdapter } from "@atlas/activity";
+import { LocalActivityAdapter } from "@atlas/activity";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -9,6 +11,8 @@ import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
+import { ActivityPostgresAdapter } from "./activity-postgres-adapter.ts";
+import { createActivityRoutes } from "./activity-routes.ts";
 import { config, readConfig } from "./config.ts";
 import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
@@ -24,11 +28,17 @@ import { ClientError, type ResourceStorageAdapter } from "./types.ts";
  */
 export type AdapterFactory = (userId: string) => ResourceStorageAdapter;
 
+/** Factory function for per-request activity adapter. Same pattern as AdapterFactory. */
+export type ActivityAdapterFactory = (userId: string) => ActivityStorageAdapter;
+
 /**
- * Creates the Ledger application with a dependency-injected adapter factory.
- * The factory is called per-request with the authenticated userId.
+ * Creates the Ledger application with dependency-injected adapter factories.
+ * The factories are called per-request with the authenticated userId.
  */
-export function createApp(adapterFactory: AdapterFactory) {
+export function createApp(
+  adapterFactory: AdapterFactory,
+  activityAdapterFactory?: ActivityAdapterFactory,
+) {
   const cfg = readConfig();
 
   /** Extracts userId from JWT payload. In dev mode, falls back to 'dev'. */
@@ -110,8 +120,16 @@ export function createApp(adapterFactory: AdapterFactory) {
     await next();
   });
 
+  const activityAdapterMiddleware = factory.createMiddleware(async (c, next) => {
+    if (activityAdapterFactory) {
+      c.set("activityAdapter", activityAdapterFactory(c.get("userId")));
+    }
+    await next();
+  });
+
   baseApp.use("/v1/*", tenancyMiddleware);
   baseApp.use("/v1/*", adapterMiddleware);
+  baseApp.use("/v1/activity/*", activityAdapterMiddleware);
 
   const app = baseApp
     .get("/v1/skill", async (c) => {
@@ -122,6 +140,7 @@ export function createApp(adapterFactory: AdapterFactory) {
       return c.text(skill);
     })
     .route("/v1/resources", createResourceRoutes())
+    .route("/v1/activity", createActivityRoutes())
     .onError((err, c) => {
       if (err instanceof HTTPException) throw err;
 
@@ -178,12 +197,14 @@ if (import.meta.main) {
 
   let lifecycleAdapter: ResourceStorageAdapter;
   let adapterFactory: AdapterFactory;
+  let activityAdapterFactory: ActivityAdapterFactory;
 
   if (config.postgresConnection) {
     const pgAdapter = createPostgresAdapter(config.postgresConnection, config.postgresPool);
     await pgAdapter.init();
     lifecycleAdapter = pgAdapter;
     adapterFactory = (userId) => new PostgresAdapter(pgAdapter.sql, userId);
+    activityAdapterFactory = (userId) => new ActivityPostgresAdapter(pgAdapter.sql, userId);
     logger.info("Ledger started with Postgres adapter", {
       postgres: config.postgresConnection.split("@")[1]?.split("/")[0] ?? "configured",
       pool: config.postgresPool,
@@ -197,10 +218,15 @@ if (import.meta.main) {
     await sqliteAdapter.init();
     lifecycleAdapter = sqliteAdapter;
     adapterFactory = () => sqliteAdapter;
+    const activityDbPath = config.sqlitePath
+      ? join(config.sqlitePath, "..", "activity.db")
+      : join(getAtlasHome(), "activity.db");
+    const sharedActivityAdapter = new LocalActivityAdapter(activityDbPath);
+    activityAdapterFactory = () => sharedActivityAdapter;
     logger.info("Ledger started with SQLite adapter", { path: dbPath });
   }
 
-  const app = createApp(adapterFactory);
+  const app = createApp(adapterFactory, activityAdapterFactory);
   logger.info("Ledger service starting", { port: config.port });
 
   Deno.addSignalListener("SIGINT", () => shutdown("SIGINT", lifecycleAdapter));
