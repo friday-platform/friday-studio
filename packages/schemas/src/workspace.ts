@@ -308,6 +308,29 @@ export const ClassifiedJobWithDAGSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
+// Credential Candidates — surfaced for multi-credential picker in plan UI
+// ---------------------------------------------------------------------------
+
+/** A single credential candidate for a provider (mirrors AvailableCredential in web client). */
+export const CredentialCandidateSchema = z.strictObject({
+  id: z.string().describe("Link credential ID"),
+  label: z.string().describe("User-assigned credential label"),
+  displayName: z.string().nullable().describe("Provider display name (e.g. 'Google Calendar')"),
+  userIdentifier: z.string().nullable().describe("Account identifier (e.g. email address)"),
+  isDefault: z.boolean().describe("Whether this credential is the user's default for its provider"),
+});
+export type CredentialCandidate = z.infer<typeof CredentialCandidateSchema>;
+
+/** All credential candidates for a single provider. */
+export const ProviderCredentialCandidatesSchema = z.strictObject({
+  provider: z.string().describe("OAuth provider (e.g. 'google', 'slack')"),
+  candidates: z
+    .array(CredentialCandidateSchema)
+    .describe("Available credentials for this provider (2+)"),
+});
+export type ProviderCredentialCandidates = z.infer<typeof ProviderCredentialCandidatesSchema>;
+
+// ---------------------------------------------------------------------------
 // Workspace Blueprint — top-level schema (renamed from PlanWithContracts)
 // ---------------------------------------------------------------------------
 
@@ -334,5 +357,9 @@ export const WorkspaceBlueprintSchema = z.strictObject({
     .array(CredentialBindingSchema)
     .optional()
     .describe("Resolved Link credential bindings for MCP servers and agents"),
+  credentialCandidates: z
+    .array(ProviderCredentialCandidatesSchema)
+    .optional()
+    .describe("Credential candidates for providers with 2+ credentials (for plan UI picker)"),
 });
 export type WorkspaceBlueprint = z.infer<typeof WorkspaceBlueprintSchema>;

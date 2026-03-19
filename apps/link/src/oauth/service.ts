@@ -274,7 +274,7 @@ export class OAuthService {
     };
 
     // 8. Upsert credential (atomic create-or-update by provider+label identity)
-    const { id, metadata } = await this.storage.upsert(credentialInput, userId || "dev");
+    const { id, isDefault, metadata } = await this.storage.upsert(credentialInput, userId || "dev");
 
     // Build OAuthCredential response (includes userIdentifier)
     const credential: OAuthCredential = {
@@ -283,6 +283,7 @@ export class OAuthService {
       provider: providerId,
       userIdentifier,
       label: userIdentifier,
+      isDefault,
       secret: credentialInput.secret,
       metadata,
     };

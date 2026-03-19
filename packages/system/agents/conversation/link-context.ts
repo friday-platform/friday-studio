@@ -46,30 +46,42 @@ export async function fetchLinkSummary(logger: Logger): Promise<SummaryResponse 
  * Includes urlDomains for URL-to-MCP mapping.
  *
  * @param summary - Summary response from Link service
+ * @param options - Formatting options
+ * @param options.includeLabels - Include credential labels in output (default: true).
+ *   Set to false for planner context where credential identity is irrelevant.
  * @returns Formatted XML section for system prompt
  */
-export function formatIntegrationsSection(summary: SummaryResponse): string {
+export function formatIntegrationsSection(
+  summary: SummaryResponse,
+  options?: { includeLabels?: boolean },
+): string {
   const { credentials, providers } = summary;
+  const includeLabels = options?.includeLabels ?? true;
 
-  // Build credential lookup: providerId -> label
-  const credentialLabels = new Map<string, string>();
+  // Group credentials by provider
+  const credsByProvider = new Map<string, typeof credentials>();
   for (const cred of credentials) {
-    // If multiple credentials for same provider, join labels
-    const existing = credentialLabels.get(cred.provider);
-    credentialLabels.set(cred.provider, existing ? `${existing}, ${cred.label}` : cred.label);
+    const list = credsByProvider.get(cred.provider) ?? [];
+    list.push(cred);
+    credsByProvider.set(cred.provider, list);
   }
 
   // Build flat XML with urlDomains from MCP registry
   let section = "<integrations>\n";
   for (const provider of providers) {
-    const label = credentialLabels.get(provider.id);
     const mcpEntry = mcpServersRegistry.servers[provider.id];
     const urlDomains = mcpEntry?.urlDomains?.join(",") ?? "";
+    const providerCreds = credsByProvider.get(provider.id);
 
-    if (label) {
-      section += `  <service id="${provider.id}" status="ready" label="${label}" urlDomains="${urlDomains}"/>\n`;
-    } else {
+    if (!providerCreds || providerCreds.length === 0) {
       section += `  <service id="${provider.id}" status="unconnected" urlDomains="${urlDomains}"/>\n`;
+    } else if (!includeLabels) {
+      section += `  <service id="${provider.id}" status="ready" urlDomains="${urlDomains}"/>\n`;
+    } else {
+      for (const cred of providerCreds) {
+        const defaultAttr = cred.isDefault ? ` default="true"` : "";
+        section += `  <service id="${provider.id}" status="ready" label="${cred.label}"${defaultAttr} urlDomains="${urlDomains}"/>\n`;
+      }
     }
   }
   section += "</integrations>";

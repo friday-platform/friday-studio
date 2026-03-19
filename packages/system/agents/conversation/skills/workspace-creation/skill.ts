@@ -164,13 +164,17 @@ CRITICAL: Never call workspace-planner after creation failure unless user explic
 
 ## Configuration Requirements
 
-ALWAYS include specific values in workspace-planner intent:
+ALWAYS include specific values in workspace-planner intent, except credential
+account details (which account to use is picked at plan approval time via a
+credential picker):
 - Slack: "Send to #channel-name" (not "send to Slack")
-- Email: "Email to user@domain.com"
+- Email destination: "Email to user@domain.com"
 - Schedule: "Run every 30 minutes"
 - Files: Include full paths like /Users/name/file.csv
 - Resources: describe what data to store and its structure
   (e.g., "Track grocery items with name, quantity, category, and purchased status")
+- Services: refer by capability ("Google Calendar", "Linear"), omit credential
+  labels or account identifiers
 
 ## Environment Variables After Creation
 

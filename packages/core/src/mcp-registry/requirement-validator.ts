@@ -2,7 +2,11 @@ import process from "node:process";
 import type { BundledAgentConfigField } from "@atlas/bundled-agents/registry";
 import type { MCPServerConfig } from "@atlas/config";
 import { z } from "zod";
-import { CredentialNotFoundError, resolveCredentialsByProvider } from "./credential-resolver.ts";
+import {
+  CredentialNotFoundError,
+  NoDefaultCredentialError,
+  resolveCredentialsByProvider,
+} from "./credential-resolver.ts";
 import type { RequiredConfigField } from "./schemas.ts";
 
 /**
@@ -82,20 +86,27 @@ export async function validateRequiredFields(
         const linkField = field as { provider: string; key: string; envKey: string };
         try {
           const credentials = await resolveCredentialsByProvider(linkField.provider);
-          // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
-          const firstCred = credentials[0]!;
+          const defaultCred = credentials.find((c) => c.isDefault);
+          if (!defaultCred) {
+            throw new NoDefaultCredentialError(linkField.provider);
+          }
           resolvedCredentials.push({
             field: linkField.envKey,
             provider: linkField.provider,
-            credentialId: firstCred.id,
+            credentialId: defaultCred.id,
             key: linkField.key,
-            label: firstCred.label || undefined,
+            label: defaultCred.label || undefined,
           });
         } catch (error) {
           if (error instanceof CredentialNotFoundError) {
             missingCredentials.push({
               field: linkField.envKey,
               reason: `No credentials found for provider '${linkField.provider}'`,
+            });
+          } else if (error instanceof NoDefaultCredentialError) {
+            missingCredentials.push({
+              field: linkField.envKey,
+              reason: `No default credential set for provider '${linkField.provider}'`,
             });
           } else {
             throw error;
@@ -138,25 +149,31 @@ export async function validateRequiredFields(
         continue;
       }
 
-      // Resolve by provider - returns ALL matching credentials
+      // Resolve by provider — check that a default credential exists
       if (envDef.provider) {
         try {
           const credentials = await resolveCredentialsByProvider(envDef.provider);
-          // First-match: use the first credential found
-          // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
-          const firstCred = credentials[0]!;
+          const defaultCred = credentials.find((c) => c.isDefault);
+          if (!defaultCred) {
+            throw new NoDefaultCredentialError(envDef.provider);
+          }
           resolvedCredentials.push({
             field: field.key,
             provider: envDef.provider,
-            credentialId: firstCred.id,
+            credentialId: defaultCred.id,
             key: envDef.key,
-            label: firstCred.label || undefined,
+            label: defaultCred.label || undefined,
           });
         } catch (error) {
           if (error instanceof CredentialNotFoundError) {
             missingCredentials.push({
               field: field.key,
               reason: `No credentials found for provider '${error.provider}'`,
+            });
+          } else if (error instanceof NoDefaultCredentialError) {
+            missingCredentials.push({
+              field: field.key,
+              reason: `No default credential set for provider '${error.provider}'`,
             });
           } else {
             throw error;

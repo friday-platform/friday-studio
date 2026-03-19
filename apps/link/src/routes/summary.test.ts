@@ -53,6 +53,7 @@ const SummaryResponseSchema = z.object({
       label: z.string(),
       displayName: z.string().nullable(),
       userIdentifier: z.string().nullable(),
+      isDefault: z.boolean(),
       createdAt: z.string(),
       updatedAt: z.string(),
     }),

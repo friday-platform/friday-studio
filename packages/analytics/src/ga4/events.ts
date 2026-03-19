@@ -74,6 +74,7 @@ export const GA4 = {
   // Web Client - Settings
   CREDENTIAL_REMOVE: "credential_remove",
   CREDENTIAL_RENAME: "credential_rename",
+  CREDENTIAL_SET_DEFAULT: "credential_set_default",
 
   // Web Client - Credential Linking
   CREDENTIAL_LINK_START: "credential_link_start",

@@ -585,7 +585,7 @@ export async function generatePlan(
   const { ids: capabilityIds, dynamicServers } = capabilityResult;
   const schemas = buildPlanSchemas(capabilityIds);
   const integrationsXml = linkSummary
-    ? formatIntegrationsSection(linkSummary)
+    ? formatIntegrationsSection(linkSummary, { includeLabels: false })
     : "<integrations><!-- No OAuth services connected --></integrations>";
 
   const userMessage = formatUserMessage(prompt, mode);

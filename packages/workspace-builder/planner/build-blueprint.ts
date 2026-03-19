@@ -9,7 +9,11 @@
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Logger } from "@atlas/logger";
-import type { CredentialBinding, ResourceDeclaration } from "@atlas/schemas/workspace";
+import type {
+  CredentialBinding,
+  ProviderCredentialCandidates,
+  ResourceDeclaration,
+} from "@atlas/schemas/workspace";
 import { ResourceDeclarationSchema } from "@atlas/schemas/workspace";
 import type { DocumentContract, WorkspaceBlueprint } from "../types.ts";
 
@@ -28,6 +32,7 @@ import { validateResourceSchemas } from "./validate-resource-schemas.ts";
 
 export type { FieldCheck, ReadinessCheck, ReadinessResult } from "./preflight.ts";
 export type {
+  ProviderCredentialCandidates,
   ResolveCredentialsOpts,
   UnresolvedCredential,
 } from "./resolve-credentials.ts";
@@ -80,7 +85,11 @@ export type BuildBlueprintOpts = {
 export type BlueprintResult = {
   blueprint: WorkspaceBlueprint;
   clarifications: AgentClarification[];
-  credentials: { bindings: CredentialBinding[]; unresolved: UnresolvedCredential[] };
+  credentials: {
+    bindings: CredentialBinding[];
+    unresolved: UnresolvedCredential[];
+    candidates: ProviderCredentialCandidates[];
+  };
   readiness: ReadinessResult;
   /** Runtime-registered MCP servers from KV used during classification. */
   dynamicServers: MCPServerMetadata[];
@@ -178,16 +187,22 @@ export async function buildBlueprint(
   // -- credentials ---------------------------------------------------------
   let credentialBindings: CredentialBinding[] = [];
   let unresolvedCredentials: UnresolvedCredential[] = [];
+  let credentialCandidates: ProviderCredentialCandidates[] = [];
 
   if (configRequirements.length > 0) {
     const credResult = await runStep("credentials", () => resolveCredentials(configRequirements), {
       logger,
       abortSignal,
       inputs: { configRequirements: configRequirements.length },
-      logOutputs: (r) => ({ resolved: r.bindings.length, unresolved: r.unresolved.length }),
+      logOutputs: (r) => ({
+        resolved: r.bindings.length,
+        unresolved: r.unresolved.length,
+        candidates: r.candidates.length,
+      }),
     });
     credentialBindings = credResult.bindings;
     unresolvedCredentials = credResult.unresolved;
+    credentialCandidates = credResult.candidates;
   }
 
   // -- preflight -----------------------------------------------------------
@@ -379,7 +394,11 @@ export async function buildBlueprint(
   return {
     blueprint,
     clarifications,
-    credentials: { bindings: credentialBindings, unresolved: unresolvedCredentials },
+    credentials: {
+      bindings: credentialBindings,
+      unresolved: unresolvedCredentials,
+      candidates: credentialCandidates,
+    },
     readiness,
     dynamicServers,
   };

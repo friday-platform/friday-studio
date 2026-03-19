@@ -1,8 +1,10 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
+  import * as Sentry from "@sentry/sveltekit";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { invalidateAll } from "$app/navigation";
   import Button from "$lib/components/button.svelte";
+  import { toast } from "$lib/components/notification/notification.svelte";
   import Separator from "$lib/components/separator.svelte";
   import type { Integration } from "$lib/modules/integrations/types";
   import IntegrationTable from "./integration-table.svelte";
@@ -17,7 +19,43 @@
 
   let queryClient = useQueryClient();
 
-  const allConnected = $derived(integrations.every((i) => i.connected));
+  // Default selections derived from isDefault credentials
+  const defaultSelections = $derived.by(() => {
+    const defaults: Record<string, string> = {};
+    for (const integration of integrations) {
+      if (integration.availableCredentials) {
+        const defaultCred = integration.availableCredentials.find((c) => c.isDefault);
+        if (defaultCred) {
+          defaults[integration.provider] = defaultCred.id;
+        }
+      }
+    }
+    return defaults;
+  });
+
+  // User overrides (provider → credentialId)
+  let overrides = $state<Record<string, string>>({});
+
+  // Merge defaults with user overrides
+  const selectedCredentials = $derived({ ...defaultSelections, ...overrides });
+
+  function handleCredentialSelect(provider: string, credentialId: string) {
+    overrides = { ...overrides, [provider]: credentialId };
+  }
+
+  const ambiguousProviders = $derived(
+    integrations.filter((i) => i.availableCredentials && i.availableCredentials.length >= 2),
+  );
+
+  const allAmbiguousResolved = $derived(
+    ambiguousProviders.every((i) => selectedCredentials[i.provider]),
+  );
+
+  const allConnected = $derived(
+    integrations.every((i) => i.connected || i.availableCredentials),
+  );
+
+  const canComplete = $derived(allConnected && allAmbiguousResolved);
 
   let setupError = $state<string | null>(null);
   let completingSetup = $state(false);
@@ -25,6 +63,41 @@
   async function handleCompleteSetup() {
     setupError = null;
     completingSetup = true;
+
+    // Bind selected credentials for ambiguous providers first
+    const configClient = client.workspaceConfig(workspace.id);
+    const failures: { path: string; error: unknown }[] = [];
+
+    for (const integration of ambiguousProviders) {
+      const credentialId = selectedCredentials[integration.provider];
+      if (!credentialId) continue;
+
+      for (const pathEntry of integration.paths) {
+        const result = await parseResult(
+          configClient.credentials[":path"].$put({
+            param: { path: pathEntry.path },
+            json: { credentialId },
+          }),
+        );
+        if (!result.ok) {
+          failures.push({ path: pathEntry.path, error: result.error });
+        }
+      }
+    }
+
+    if (failures.length > 0) {
+      const paths = failures.map((f) => f.path).join(", ");
+      Sentry.captureException(new Error(`Failed to bind credential to paths: ${paths}`), {
+        extra: { workspaceId: workspace.id, failures },
+      });
+      toast({
+        title: "Some integrations failed to connect",
+        description: `Could not bind credential to: ${paths}`,
+        error: true,
+      });
+      completingSetup = false;
+      return;
+    }
 
     const res = await parseResult(
       client.workspace[":workspaceId"].setup.complete.$post({
@@ -58,7 +131,12 @@
     <div class="section">
       <h2>Integrations</h2>
 
-      <IntegrationTable {integrations} workspaceId={workspace.id} />
+      <IntegrationTable
+        {integrations}
+        workspaceId={workspace.id}
+        {selectedCredentials}
+        onCredentialSelect={handleCredentialSelect}
+      />
     </div>
   {/if}
 
@@ -67,7 +145,7 @@
   {/if}
 
   <div class="actions">
-    <Button disabled={!allConnected || completingSetup} onclick={handleCompleteSetup}>
+    <Button disabled={!canComplete || completingSetup} onclick={handleCompleteSetup}>
       {completingSetup ? "Completing..." : "Complete Setup"}
     </Button>
   </div>

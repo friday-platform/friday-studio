@@ -52,6 +52,7 @@ export function createSummaryRoutes(storage: StorageAdapter) {
             label: c.label,
             displayName: c.displayName ?? null,
             userIdentifier: c.userIdentifier ?? null,
+            isDefault: c.isDefault,
             createdAt: c.metadata.createdAt,
             updatedAt: c.metadata.updatedAt,
           }));

@@ -33,6 +33,8 @@ export type ConfigRequirementField = {
   description: string;
   provider?: string;
   source: "env" | "link";
+  /** Secret key to extract from the credential (e.g. 'access_token', 'key'). Only set for link sources. */
+  secretKey?: string;
 };
 
 /** Config requirements for one agent's integration. */
@@ -78,6 +80,7 @@ function extractBundledConfigRequirements(
           description: field.description,
           provider: field.provider,
           source: "link" as const,
+          secretKey: field.key,
         };
       }
       return { key: field.key, description: field.description, source: "env" as const };
@@ -113,7 +116,14 @@ function extractMCPConfigRequirements(
     if (envDef && typeof envDef === "object" && "from" in envDef && envDef.from === "link") {
       const provider =
         "provider" in envDef && typeof envDef.provider === "string" ? envDef.provider : undefined;
-      return { key: field.key, description: field.description, provider, source: "link" as const };
+      const secretKey = "key" in envDef && typeof envDef.key === "string" ? envDef.key : undefined;
+      return {
+        key: field.key,
+        description: field.description,
+        provider,
+        source: "link" as const,
+        secretKey,
+      };
     }
     return { key: field.key, description: field.description, source: "env" as const };
   });

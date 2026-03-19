@@ -304,6 +304,18 @@ const workspacesRoutes = daemonFactory
       };
       let resolvedCredentials: ResolvedCredentialInfo[] | undefined;
       const unresolvedProviders: string[] = [];
+      let ambiguousProviders:
+        | Record<
+            string,
+            Array<{
+              id: string;
+              label: string;
+              displayName: string | null;
+              userIdentifier: string | null;
+              isDefault: boolean;
+            }>
+          >
+        | undefined;
       const invalidProviders: string[] = [];
 
       if (uniqueProviders.length > 0) {
@@ -324,12 +336,22 @@ const workspacesRoutes = daemonFactory
             } else {
               throw result.reason;
             }
-          } else {
+          } else if (result.value.length === 1) {
             const first = result.value[0];
             if (first) {
               credentialMap[provider] = first.id;
               labelMap[provider] = first.label;
             }
+          } else if (result.value.length > 1) {
+            // Multiple credentials — surface ambiguity for the picker UI
+            ambiguousProviders ??= {};
+            ambiguousProviders[provider] = result.value.map((cred) => ({
+              id: cred.id,
+              label: cred.label,
+              displayName: cred.displayName,
+              userIdentifier: cred.userIdentifier,
+              isDefault: cred.isDefault,
+            }));
           }
         }
 
@@ -353,6 +375,7 @@ const workspacesRoutes = daemonFactory
             .map((ref) => ref.path);
         }
 
+        // Apply credential IDs only for single-match providers (ambiguous excluded from map)
         validatedConfig = toIdRefs(validatedConfig, credentialMap);
 
         resolvedCredentials = providerOnlyRefs
@@ -387,6 +410,8 @@ const workspacesRoutes = daemonFactory
         const ctx = c.get("app");
         const manager = ctx.daemon.getWorkspaceManager();
         const hasUnresolvedCredentials =
+          unresolvedProviders.length > 0 ||
+          ambiguousProviders !== undefined ||
           (strippedCredentialPaths !== undefined && strippedCredentialPaths.length > 0) ||
           (unresolvedCredentialPaths !== undefined && unresolvedCredentialPaths.length > 0);
         const { workspace, created } = await manager.registerWorkspace(workspacePath, {
@@ -423,6 +448,7 @@ const workspacesRoutes = daemonFactory
             ...(resolvedCredentials && resolvedCredentials.length > 0
               ? { resolvedCredentials }
               : {}),
+            ...(ambiguousProviders ? { ambiguousProviders } : {}),
             ...(strippedCredentialPaths && strippedCredentialPaths.length > 0
               ? { strippedCredentials: strippedCredentialPaths }
               : {}),

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { client, parseResult } from "@atlas/client/v2";
   import { ArtifactDataSchema, type ArtifactWithContents } from "@atlas/core/artifacts";
+  import type { WorkspaceBlueprint } from "@atlas/schemas/workspace";
   import MessageWrapper from "$lib/modules/messages/wrapper.svelte";
   import { getContext } from "svelte";
   import WorkspacePlanDetails from "./workspace-plan-details.svelte";
@@ -25,10 +26,21 @@
       signals: parsed.data.signals,
       credentials: parsed.data.credentialBindings,
       resources: parsed.data.resources,
+      credentialCandidates: parsed.data.credentialCandidates,
     };
   }
 
+  /** Extracts the full v2 blueprint for artifact PUT on credential selection. */
+  function extractBlueprint(
+    parsed: ReturnType<typeof ArtifactDataSchema.parse>,
+  ): WorkspaceBlueprint | undefined {
+    if (parsed.type !== "workspace-plan" || parsed.version !== 2) return undefined;
+    return parsed.data;
+  }
+
   let planData = $state<Parameters<typeof WorkspacePlanDetails>[1]["workspacePlan"]>();
+  let blueprint = $state<WorkspaceBlueprint>();
+  let artifactSummary = $state("");
 
   $effect(() => {
     if (planData || !artifactId) return;
@@ -38,6 +50,8 @@
     if (cached) {
       const parsed = ArtifactDataSchema.parse(cached.data);
       planData = extractPlanData(parsed);
+      blueprint = extractBlueprint(parsed);
+      artifactSummary = cached.summary ?? "";
       return;
     }
 
@@ -52,6 +66,8 @@
 
         const parsed = ArtifactDataSchema.parse(result.data.artifact.data);
         planData = extractPlanData(parsed);
+        blueprint = extractBlueprint(parsed);
+        artifactSummary = result.data.artifact.summary ?? "";
       } catch (error) {
         console.error(error);
       }
@@ -59,12 +75,43 @@
 
     grabArtifact();
   });
+
+  /**
+   * Persists the final credential selections to the artifact, then approves.
+   * Strips credentialCandidates — they're UI-only metadata, not needed downstream.
+   */
+  async function handleApprove(credentials?: Map<string, string>) {
+    if (credentials && credentials.size > 0 && blueprint) {
+      const updatedBindings = (blueprint.credentialBindings ?? []).map((binding) => {
+        const selectedId = credentials.get(binding.provider);
+        if (!selectedId) return binding;
+        return { ...binding, credentialId: selectedId };
+      });
+
+      const { credentialCandidates: _, ...rest } = blueprint;
+      const updatedBlueprint = { ...rest, credentialBindings: updatedBindings };
+
+      await parseResult(
+        client.artifactsStorage[":id"].$put({
+          param: { id: artifactId },
+          json: {
+            type: "workspace-plan",
+            data: { type: "workspace-plan", version: 2, data: updatedBlueprint },
+            summary: artifactSummary,
+            revisionMessage: "Confirmed credential selection",
+          },
+        }),
+      );
+    }
+
+    onApprove();
+  }
 </script>
 
 <MessageWrapper>
   {#if planData}
     <div id={`artifact-${artifactId}`}>
-      <WorkspacePlanDetails workspacePlan={planData} {onApprove} {onTest} />
+      <WorkspacePlanDetails workspacePlan={planData} onApprove={handleApprove} {onTest} />
     </div>
   {/if}
 </MessageWrapper>

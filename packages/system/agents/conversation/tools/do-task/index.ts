@@ -238,17 +238,11 @@ function blueprintToTaskPlan(
   return { steps, capabilities: Array.from(allCapabilities), mcpServers };
 }
 
-/**
- * Build a workspace agent config map from planner agents for agent indirection.
- *
- * Bundled agents → `type: "atlas"` so resolveRuntimeAgentId maps to bundledId.
- * LLM agents → `type: "llm"` so expandAgentActions inlines provider/model/tools.
- */
+/** Build workspace agent config map from planner agents for runtime indirection. */
 export function buildWorkspaceAgentConfigs(agents: Agent[]): Record<string, WorkspaceAgentConfig> {
   const configs: Record<string, WorkspaceAgentConfig> = {};
   for (const agent of agents) {
     if (agent.bundledId) {
-      // Atlas/bundled agent — resolveRuntimeAgentId will map to agent.bundledId
       configs[agent.id] = {
         type: "atlas",
         agent: agent.bundledId,
@@ -256,7 +250,6 @@ export function buildWorkspaceAgentConfigs(agents: Agent[]): Record<string, Work
         prompt: agent.description,
       };
     } else {
-      // LLM agent — expandAgentActions will convert type: agent → type: llm
       configs[agent.id] = {
         type: "llm",
         description: agent.description,

@@ -7,6 +7,7 @@ import {
   InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
   resolveCredentialsByProvider,
   resolveEnvValues,
 } from "./credential-resolver.ts";
@@ -17,7 +18,15 @@ import {
 
 const LINK_BASE_URL = "http://127.0.0.1:8080/api/link";
 
-type MockCredential = { id: string; provider: string; label: string; type: string };
+type MockCredential = {
+  id: string;
+  provider: string;
+  label: string;
+  type: string;
+  displayName: string | null;
+  userIdentifier: string | null;
+  isDefault: boolean;
+};
 
 /**
  * Create mock fetch that returns summary for a provider.
@@ -51,17 +60,26 @@ type MockFullCredential = {
   secret: Record<string, unknown>;
 };
 
+/** Default credential lookup by provider (keyed by provider name) */
+type MockDefaultCredentialEntry = {
+  credential: MockFullCredential;
+  status?: "ready" | "expired_no_refresh" | "refresh_failed";
+};
+type MockDefaultCredentials = Record<string, MockFullCredential | MockDefaultCredentialEntry>;
+
 /**
- * Create mock fetch that handles both summary and credential endpoints.
+ * Create mock fetch that handles summary, credential-by-id, and default credential endpoints.
  * Used for testing full resolveEnvValues flow.
  */
 function mockLinkFetch(
   provider: string,
   summaryCredentials: MockCredential[],
   fullCredentials: Record<string, MockFullCredential>,
+  defaultCredentials?: MockDefaultCredentials,
 ): typeof fetch {
   const summaryUrl = `${LINK_BASE_URL}/v1/summary?provider=${provider}`;
   const internalUrlPrefix = `${LINK_BASE_URL}/internal/v1/credentials/`;
+  const defaultUrlPrefix = `${LINK_BASE_URL}/internal/v1/credentials/default/`;
 
   return (input: RequestInfo | URL) => {
     const requestUrl = typeof input === "string" ? input : input.toString();
@@ -76,7 +94,33 @@ function mockLinkFetch(
       );
     }
 
-    // Handle internal credential endpoint
+    // Handle default credential endpoint (must check before generic internal prefix)
+    if (requestUrl.startsWith(defaultUrlPrefix)) {
+      const providerName = requestUrl.slice(defaultUrlPrefix.length);
+      const entry = defaultCredentials?.[providerName];
+
+      if (!entry) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "no_default_credential" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
+      // Support both plain credential object and { credential, status } entry
+      const credential = "credential" in entry ? entry.credential : entry;
+      const status = "credential" in entry ? (entry.status ?? "ready") : "ready";
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ credential, status }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+
+    // Handle internal credential-by-id endpoint
     if (requestUrl.startsWith(internalUrlPrefix)) {
       const credId = requestUrl.slice(internalUrlPrefix.length);
       const credential = fullCredentials[credId];
@@ -127,7 +171,15 @@ afterEach(() => {
 describe("resolveCredentialsByProvider", () => {
   it("returns all credentials when one exists", async () => {
     globalThis.fetch = mockSummaryFetch("slack", [
-      { id: "cred_abc", provider: "slack", label: "Work", type: "oauth" },
+      {
+        id: "cred_abc",
+        provider: "slack",
+        label: "Work",
+        type: "oauth",
+        displayName: "Slack",
+        userIdentifier: "work@example.com",
+        isDefault: true,
+      },
     ]);
 
     const credentials = await resolveCredentialsByProvider("slack");
@@ -154,8 +206,24 @@ describe("resolveCredentialsByProvider", () => {
 
   it("returns all credentials when multiple exist", async () => {
     globalThis.fetch = mockSummaryFetch("slack", [
-      { id: "cred_abc", provider: "slack", label: "Work", type: "oauth" },
-      { id: "cred_xyz", provider: "slack", label: "Personal", type: "oauth" },
+      {
+        id: "cred_abc",
+        provider: "slack",
+        label: "Work",
+        type: "oauth",
+        displayName: "Slack",
+        userIdentifier: "work@example.com",
+        isDefault: true,
+      },
+      {
+        id: "cred_xyz",
+        provider: "slack",
+        label: "Personal",
+        type: "oauth",
+        displayName: "Slack",
+        userIdentifier: "personal@example.com",
+        isDefault: false,
+      },
     ]);
 
     const credentials = await resolveCredentialsByProvider("slack");
@@ -185,21 +253,22 @@ describe("LinkCredentialNotFoundError", () => {
 });
 
 // =============================================================================
-// Google Credential Resolution Tests
+// resolveEnvValues — provider-only refs use default credential
 // =============================================================================
 
-describe("Google credential resolution", () => {
+describe("resolveEnvValues with provider-only ref", () => {
   const logger = createLogger({ name: "test", level: "silent" });
 
-  it("resolves google-calendar access_token via resolveEnvValues", async () => {
+  it("fetches default credential for provider-only ref", async () => {
     const fakeAccessToken = "ya29.fake-google-access-token-for-testing";
     const credId = "cred_google_calendar_abc";
 
     globalThis.fetch = mockLinkFetch(
       "google-calendar",
-      [{ id: credId, provider: "google-calendar", label: "Work Calendar", type: "oauth" }],
+      [],
+      {},
       {
-        [credId]: {
+        "google-calendar": {
           id: credId,
           provider: "google-calendar",
           type: "oauth",
@@ -228,18 +297,85 @@ describe("Google credential resolution", () => {
     expect(token?.startsWith("ya29.")).toEqual(true);
   });
 
-  it("throws when Google credential has no access_token key", async () => {
+  it("throws NoDefaultCredentialError when no default exists", async () => {
+    globalThis.fetch = mockLinkFetch("slack", [], {});
+
+    const env = { SLACK_TOKEN: { from: "link" as const, provider: "slack", key: "access_token" } };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(NoDefaultCredentialError);
+    expect((error as NoDefaultCredentialError).provider).toEqual("slack");
+  });
+
+  it("throws LinkCredentialExpiredError when default credential is expired_no_refresh", async () => {
+    globalThis.fetch = mockLinkFetch(
+      "google-calendar",
+      [],
+      {},
+      {
+        "google-calendar": {
+          credential: {
+            id: "cred_expired",
+            provider: "google-calendar",
+            type: "oauth",
+            secret: { access_token: "expired-token" },
+          },
+          status: "expired_no_refresh",
+        },
+      },
+    );
+
+    const env = {
+      GOOGLE_CALENDAR_TOKEN: {
+        from: "link" as const,
+        provider: "google-calendar",
+        key: "access_token",
+      },
+    };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
+    expect((error as LinkCredentialExpiredError).credentialId).toEqual("cred_expired");
+  });
+
+  it("throws LinkCredentialExpiredError when default credential refresh fails", async () => {
+    globalThis.fetch = mockLinkFetch(
+      "slack",
+      [],
+      {},
+      {
+        slack: {
+          credential: {
+            id: "cred_refresh_fail",
+            provider: "slack",
+            type: "oauth",
+            secret: { access_token: "stale-token" },
+          },
+          status: "refresh_failed",
+        },
+      },
+    );
+
+    const env = { SLACK_TOKEN: { from: "link" as const, provider: "slack", key: "access_token" } };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
+    expect((error as LinkCredentialExpiredError).credentialId).toEqual("cred_refresh_fail");
+  });
+
+  it("throws when default credential is missing requested secret key", async () => {
     const credId = "cred_drive_no_token";
 
     globalThis.fetch = mockLinkFetch(
       "google-drive",
-      [{ id: credId, provider: "google-drive", label: "Drive", type: "oauth" }],
+      [],
+      {},
       {
-        [credId]: {
+        "google-drive": {
           id: credId,
           provider: "google-drive",
           type: "oauth",
-          secret: { refresh_token: "only-refresh" }, // Missing access_token
+          secret: { refresh_token: "only-refresh" },
         },
       },
     );
@@ -251,6 +387,32 @@ describe("Google credential resolution", () => {
     await expect(() => resolveEnvValues(env, logger)).rejects.toThrow(
       "Key 'access_token' not found in credential",
     );
+  });
+});
+
+// =============================================================================
+// resolveEnvValues — explicit id refs unchanged
+// =============================================================================
+
+describe("resolveEnvValues with explicit id ref", () => {
+  const logger = createLogger({ name: "test", level: "silent" });
+
+  it("fetches credential by id directly", async () => {
+    const credId = "cred_explicit_123";
+
+    globalThis.fetch = mockLinkFetch("slack", [], {
+      [credId]: {
+        id: credId,
+        provider: "slack",
+        type: "oauth",
+        secret: { access_token: "xoxb-explicit" },
+      },
+    });
+
+    const env = { SLACK_TOKEN: { from: "link" as const, id: credId, key: "access_token" } };
+
+    const resolved = await resolveEnvValues(env, logger);
+    expect(resolved.SLACK_TOKEN).toEqual("xoxb-explicit");
   });
 });
 
@@ -269,6 +431,7 @@ describe("hasUnusableCredentialCause", () => {
       name: "LinkCredentialExpiredError (refresh_failed)",
       error: new LinkCredentialExpiredError("cred_3", "refresh_failed"),
     },
+    { name: "NoDefaultCredentialError", error: new NoDefaultCredentialError("slack") },
   ])("returns true for direct $name", ({ error }) => {
     expect(hasUnusableCredentialCause(error)).toBe(true);
   });

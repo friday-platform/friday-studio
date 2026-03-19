@@ -106,13 +106,14 @@ export const workspacePlannerAgent = createAgent<
         return err(`Cannot create workspace plan - missing required information:\n\n${report}`);
       }
 
-      // Check unresolved credentials — bail with connect_service message
-      if (result.credentials.unresolved.length > 0) {
-        const missing = result.credentials.unresolved
+      // Check unresolved credentials — only block on not_found (ambiguous auto-resolved)
+      const notFound = result.credentials.unresolved.filter((c) => c.reason === "not_found");
+      if (notFound.length > 0) {
+        const missing = notFound
           .map((c) => `- ${c.provider}: ${c.reason} (agent field: ${c.field})`)
           .join("\n");
-        logger.warn("Workspace planning blocked by unresolved credentials", {
-          count: result.credentials.unresolved.length,
+        logger.warn("Workspace planning blocked by missing credentials", {
+          count: notFound.length,
         });
         return err(
           `Cannot create workspace plan - missing service connections. Please call connect_service for the following:\n\n${missing}`,
@@ -123,6 +124,9 @@ export const workspacePlannerAgent = createAgent<
         ...result.blueprint,
         ...(result.credentials.bindings.length > 0 && {
           credentialBindings: result.credentials.bindings,
+        }),
+        ...(result.credentials.candidates.length > 0 && {
+          credentialCandidates: result.credentials.candidates,
         }),
       };
 

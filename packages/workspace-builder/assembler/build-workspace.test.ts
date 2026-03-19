@@ -305,6 +305,7 @@ describe("buildWorkspaceYaml — credential bindings", () => {
               GOOGLE_GMAIL_ACCESS_TOKEN: {
                 from: "link",
                 id: "cred_gmail_123",
+                provider: "google-gmail",
                 key: "access_token",
               },
             },
@@ -328,7 +329,16 @@ describe("buildWorkspaceYaml — credential bindings", () => {
     const config = buildAndParse(phase1WithBundled, phase3, fsms, bindings);
 
     expect(config.agents).toMatchObject({
-      email: { env: { SENDGRID_API_KEY: { from: "link", id: "cred_sg_456", key: "api_key" } } },
+      email: {
+        env: {
+          SENDGRID_API_KEY: {
+            from: "link",
+            id: "cred_sg_456",
+            provider: "sendgrid",
+            key: "api_key",
+          },
+        },
+      },
     });
   });
 
@@ -359,11 +369,13 @@ describe("buildWorkspaceYaml — credential bindings", () => {
               GOOGLE_GMAIL_ACCESS_TOKEN: {
                 from: "link",
                 id: "cred_gmail_tok",
+                provider: "google-gmail",
                 key: "access_token",
               },
               GOOGLE_GMAIL_REFRESH_TOKEN: {
                 from: "link",
                 id: "cred_gmail_ref",
+                provider: "google-gmail",
                 key: "refresh_token",
               },
             },
@@ -486,7 +498,11 @@ describe("buildWorkspaceYaml — dynamic MCP servers", () => {
     expect(config.tools).toMatchObject({
       mcp: {
         servers: {
-          "custom-crm": { env: { CRM_KEY: { from: "link", id: "cred_crm_123", key: "api_key" } } },
+          "custom-crm": {
+            env: {
+              CRM_KEY: { from: "link", id: "cred_crm_123", provider: "custom-crm", key: "api_key" },
+            },
+          },
         },
       },
     });

@@ -19,7 +19,7 @@
   import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
-  import RemoveCredentialDialog from "./(components)/remove-credential-dialog.svelte";
+  import CredentialActionsCell from "./(components)/credential-actions-cell.svelte";
   import ValueInputCell from "./(components)/value-input-cell.svelte";
   import type { PageData } from "./$types";
 
@@ -83,6 +83,7 @@
             displayName: row.displayName,
             date: row.createdAt,
             credentialId: row.id,
+            isDefault: row.isDefault,
           });
         },
       }),
@@ -91,10 +92,11 @@
         header: "",
         cell: (info) => {
           const row = info.row.original;
-          return renderComponent(RemoveCredentialDialog, {
+          return renderComponent(CredentialActionsCell, {
             credentialId: row.id,
             provider: row.provider,
             displayName: row.displayName ?? row.label,
+            isDefault: row.isDefault,
             onRemove: removeCredential,
           });
         },

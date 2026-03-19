@@ -105,6 +105,22 @@ const testProviders = {
     setupInstructions: "# Setup",
     secretSchema: z.object({ token: z.string() }),
   },
+  basicDefault: {
+    id: "test-default",
+    type: "apikey" as const,
+    displayName: "Test Default",
+    description: "Test provider for default endpoint",
+    setupInstructions: "# Test",
+    secretSchema: z.object({ key: z.string() }),
+  },
+  internalDefault: {
+    id: "test-internal-default",
+    type: "apikey" as const,
+    displayName: "Test Internal Default",
+    description: "Test provider for internal default endpoint",
+    setupInstructions: "# Test",
+    secretSchema: z.object({ apiKey: z.string() }),
+  },
   listProvider: {
     id: "test-provider-list",
     type: "apikey" as const,
@@ -507,5 +523,144 @@ describe("Link HTTP routes", () => {
     expect(res.status).toBe(404);
     const json = ErrorResponse.parse(await res.json());
     expect(json.error).toMatch(/not found/i);
+  });
+
+  it("PATCH /v1/credentials/:id/default sets credential as default", async () => {
+    // Create two credentials for the same provider
+    const res1 = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicDefault.id,
+        label: "DefaultTest-First",
+        secret: { key: "first" },
+      }),
+    });
+    const first = CredentialSummarySchema.parse(await res1.json());
+
+    const res2 = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicDefault.id,
+        label: "DefaultTest-Second",
+        secret: { key: "second" },
+      }),
+    });
+    const second = CredentialSummarySchema.parse(await res2.json());
+
+    // Explicitly set first as default
+    await app.request(`/v1/credentials/${first.id}/default`, { method: "PATCH" });
+
+    // Swap: set second as default
+    const patchRes = await app.request(`/v1/credentials/${second.id}/default`, { method: "PATCH" });
+    expect(patchRes.status).toBe(200);
+
+    // Verify second is now default
+    const getSecond = await app.request(`/v1/credentials/${second.id}`);
+    const secondAfter = CredentialSummarySchema.parse(await getSecond.json());
+    expect(secondAfter.isDefault).toBe(true);
+
+    // Verify first is no longer default
+    const getFirst = await app.request(`/v1/credentials/${first.id}`);
+    const firstAfter = CredentialSummarySchema.parse(await getFirst.json());
+    expect(firstAfter.isDefault).toBe(false);
+  });
+
+  it("PATCH /v1/credentials/:id/default returns 200 when already default", async () => {
+    // Create a credential with a unique provider for this test
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicDefault.id,
+        label: "AlreadyDefault",
+        secret: { key: "val" },
+      }),
+    });
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    // Explicitly set as default to guarantee state
+    await app.request(`/v1/credentials/${created.id}/default`, { method: "PATCH" });
+
+    // Set as default again — should be 200 no-op
+    const patchRes = await app.request(`/v1/credentials/${created.id}/default`, {
+      method: "PATCH",
+    });
+    expect(patchRes.status).toBe(200);
+  });
+
+  it("PATCH /v1/credentials/:id/default returns 404 for non-existent credential", async () => {
+    const res = await app.request("/v1/credentials/nonexistent-id/default", { method: "PATCH" });
+
+    expect(res.status).toBe(404);
+    const json = ErrorResponse.parse(await res.json());
+    expect(json.error).toMatch(/not found/i);
+  });
+
+  it("PATCH /v1/credentials/:id/default returns 404 for soft-deleted credential", async () => {
+    // Create and delete
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.basicDelete.id,
+        label: "SoftDeleteDefault",
+        secret: {},
+      }),
+    });
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    await app.request(`/v1/credentials/${created.id}`, { method: "DELETE" });
+
+    // Try to set as default
+    const patchRes = await app.request(`/v1/credentials/${created.id}/default`, {
+      method: "PATCH",
+    });
+    expect(patchRes.status).toBe(404);
+    const json = ErrorResponse.parse(await patchRes.json());
+    expect(json.error).toMatch(/not found/i);
+  });
+
+  it("GET /internal/v1/credentials/default/:provider returns default credential with secrets", async () => {
+    const secretData = { apiKey: "sk-internal-default-secret" };
+
+    // Create credential and set as default
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.internalDefault.id,
+        label: "InternalDefaultTest",
+        secret: secretData,
+      }),
+    });
+    const created = CredentialSummarySchema.parse(await createRes.json());
+    await app.request(`/v1/credentials/${created.id}/default`, { method: "PATCH" });
+
+    // Fetch default by provider
+    const res = await app.request(
+      `/internal/v1/credentials/default/${testProviders.internalDefault.id}`,
+    );
+
+    expect(res.status).toBe(200);
+    const json = z
+      .object({
+        credential: CredentialSchema,
+        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+        error: z.string().optional(),
+      })
+      .parse(await res.json());
+    expect(json.status).toBe("ready");
+    expect(json.credential.secret.apiKey).toBe(secretData.apiKey);
+    expect(json.credential.provider).toBe(testProviders.internalDefault.id);
+  });
+
+  it("GET /internal/v1/credentials/default/:provider returns 404 when no default exists", async () => {
+    const res = await app.request("/internal/v1/credentials/default/nonexistent-provider");
+
+    expect(res.status).toBe(404);
+    const json = ErrorResponse.parse(await res.json());
+    expect(json.error).toBe("no_default_credential");
   });
 });

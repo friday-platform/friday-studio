@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { ProviderCredentialCandidates } from "@atlas/schemas/workspace";
   import type { ResourceDeclaration } from "@atlas/schemas/workspace";
   import Button from "$lib/components/button.svelte";
   import { Collapsible } from "$lib/components/collapsible";
@@ -6,6 +7,7 @@
   import ExternalLinkIcon from "$lib/components/icons/small/external-link.svelte";
   import FileIcon from "$lib/components/icons/small/file.svelte";
   import Tooltip from "$lib/components/tooltip.svelte";
+  import CredentialPicker from "$lib/modules/integrations/credential-picker.svelte";
   import { getProviderIcon } from "$lib/utils/provider-detection";
   import { transformResourcesForDisplay } from "./workspace-plan-resources.svelte.ts";
 
@@ -18,17 +20,35 @@
     signals: Array<{ id: string; name: string; signalType: string; displayLabel?: string }>;
     credentials?: PlanCredential[];
     resources?: ResourceDeclaration[];
+    credentialCandidates?: ProviderCredentialCandidates[];
   };
 
   type Props = {
     workspacePlan: PlanCardData;
     hideControls?: boolean;
-    onApprove?: () => void;
+    onApprove?: (credentials?: Map<string, string>) => void;
     onTest?: () => void;
   };
   let { workspacePlan, hideControls = false, onApprove, onTest }: Props = $props();
 
   const signalTypeLabels: Record<string, string> = { schedule: "Schedule", http: "Webhook" };
+
+  /** Map of provider → candidates for providers with 2+ credentials. */
+  const candidatesByProvider = $derived.by(() => {
+    const map = new Map<string, ProviderCredentialCandidates>();
+    for (const entry of workspacePlan.credentialCandidates ?? []) {
+      map.set(entry.provider, entry);
+    }
+    return map;
+  });
+
+  /** Track credential selections: provider → selected credentialId. */
+  let credentialSelections = $state(new Map<string, string>());
+
+  /** Get the displayed credential ID for a provider (selection or original binding). */
+  function getSelectedCredentialId(provider: string, originalId: string): string {
+    return credentialSelections.get(provider) ?? originalId;
+  }
 
   const uniqueCredentials = $derived.by(() => {
     const credentials = workspacePlan.credentials ?? [];
@@ -50,6 +70,15 @@
     const resources = workspacePlan.resources;
     if (!resources || resources.length === 0) return null;
     return transformResourcesForDisplay(resources);
+  });
+
+  /** Build the full credential state: original bindings merged with any picker selections. */
+  const resolvedCredentials = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const cred of uniqueCredentials) {
+      map.set(cred.provider, credentialSelections.get(cred.provider) ?? cred.credentialId);
+    }
+    return map;
   });
 </script>
 
@@ -195,10 +224,21 @@
         <ul>
           {#each uniqueCredentials as credential (credential.credentialId)}
             {@const IconComponent = getProviderIcon(credential.provider)}
+            {@const providerCandidates = candidatesByProvider.get(credential.provider)}
             <li>
               <IconComponent />
 
-              {#if credential.label}
+              {#if providerCandidates && providerCandidates.candidates.length >= 2}
+                <CredentialPicker
+                  credentials={providerCandidates.candidates}
+                  selectedId={getSelectedCredentialId(credential.provider, credential.credentialId)}
+                  onselect={(id) => {
+                    const next = new Map(credentialSelections);
+                    next.set(credential.provider, id);
+                    credentialSelections = next;
+                  }}
+                />
+              {:else if credential.label}
                 <span>{credential.label}</span>
               {/if}
             </li>
@@ -212,7 +252,7 @@
         <Button
           size="small"
           onclick={() => {
-            if (onApprove) onApprove();
+            if (onApprove) onApprove(resolvedCredentials.size > 0 ? resolvedCredentials : undefined);
           }}
         >
           Approve

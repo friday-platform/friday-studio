@@ -3,8 +3,16 @@ import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 
-/** Minimal credential info from Link summary endpoint */
-export type CredentialSummary = { id: string; provider: string; label: string; type: string };
+/** Credential info from Link summary endpoint */
+export type CredentialSummary = {
+  id: string;
+  provider: string;
+  label: string;
+  type: string;
+  displayName: string | null;
+  userIdentifier: string | null;
+  isDefault: boolean;
+};
 
 /** Full credential with secret from Link API */
 export type Credential = {
@@ -43,6 +51,14 @@ export class LinkCredentialNotFoundError extends Error {
   }
 }
 
+/** Error thrown when multiple credentials exist for a provider but none is marked as default */
+export class NoDefaultCredentialError extends Error {
+  constructor(public readonly provider: string) {
+    super(`No default credential set for ${provider}. Go to Settings > Connections to pick one.`);
+    this.name = "NoDefaultCredentialError";
+  }
+}
+
 /** Error thrown when a credential exists but is expired or its refresh has failed */
 export class LinkCredentialExpiredError extends Error {
   constructor(
@@ -71,16 +87,6 @@ function getLinkAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${atlasKey}` };
 }
 
-async function fetchCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
-  const result = await parseResult(
-    client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
-  );
-  if (!result.ok) {
-    throw new Error(`Failed to fetch credentials: ${result.error}`);
-  }
-  return result.data.credentials;
-}
-
 export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
   const result = await parseResult(
     client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
@@ -96,6 +102,43 @@ export async function resolveCredentialsByProvider(provider: string): Promise<Cr
     throw new CredentialNotFoundError(provider);
   }
   return credentials;
+}
+
+/**
+ * Fetches the default credential for a provider from Link service.
+ * Calls GET /internal/v1/credentials/default/:provider.
+ * Throws NoDefaultCredentialError if no default is set (404).
+ */
+async function fetchDefaultCredential(provider: string, logger: Logger): Promise<Credential> {
+  logger.debug("Fetching default credential from Link", { provider });
+
+  const result = await parseResult(
+    client.link.internal.v1.credentials.default[":provider"].$get(
+      { param: { provider } },
+      { headers: getLinkAuthHeaders() },
+    ),
+  );
+
+  if (!result.ok) {
+    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
+      throw new NoDefaultCredentialError(provider);
+    }
+    throw new Error(
+      `Failed to fetch default credential for provider '${provider}' from Link service: ${result.error}`,
+    );
+  }
+
+  const { credential, status } = result.data;
+
+  if (status === "expired_no_refresh") {
+    throw new LinkCredentialExpiredError(credential.id, "expired_no_refresh");
+  }
+
+  if (status === "refresh_failed") {
+    throw new LinkCredentialExpiredError(credential.id, "refresh_failed");
+  }
+
+  return credential;
 }
 
 /**
@@ -145,7 +188,8 @@ export function hasUnusableCredentialCause(error: unknown): boolean {
   while (current instanceof Error) {
     if (
       current instanceof LinkCredentialNotFoundError ||
-      current instanceof LinkCredentialExpiredError
+      current instanceof LinkCredentialExpiredError ||
+      current instanceof NoDefaultCredentialError
     ) {
       return true;
     }
@@ -178,42 +222,37 @@ export async function resolveEnvValues(
         resolved[envKey] = value;
       }
     } else if (value.from === "link") {
-      let credentialId = value.id;
+      let credential: Credential;
 
-      // Support provider-based resolution (resolve provider to credential ID)
-      if (!credentialId && value.provider) {
-        const credentials = await fetchCredentialsByProvider(value.provider);
-        const firstCredential = credentials.at(0);
-        if (!firstCredential) {
-          throw new Error(`No credentials found for provider '${value.provider}'.`);
-        }
-        credentialId = firstCredential.id;
-        logger.debug("Resolved credential ID from provider", {
+      if (value.id) {
+        // Explicit credential ID — fetch by ID directly
+        credential = await fetchLinkCredential(value.id, logger);
+      } else if (value.provider) {
+        // Provider-only ref — fetch default credential for provider
+        credential = await fetchDefaultCredential(value.provider, logger);
+        logger.debug("Resolved default credential from provider", {
           envKey,
           provider: value.provider,
-          credentialId,
+          credentialId: credential.id,
         });
-      }
-
-      if (!credentialId) {
+      } else {
         throw new Error(
           `Credential reference for '${envKey}' requires either 'id' or 'provider' to be specified.`,
         );
       }
 
-      const credential = await fetchLinkCredential(credentialId, logger);
       const secretValue = credential.secret[value.key];
 
       if (secretValue === undefined) {
         const availableKeys = Object.keys(credential.secret).join(", ");
         throw new Error(
-          `Key '${value.key}' not found in credential '${credentialId}'. Available: ${availableKeys}`,
+          `Key '${value.key}' not found in credential '${credential.id}'. Available: ${availableKeys}`,
         );
       }
 
       if (typeof secretValue !== "string") {
         throw new Error(
-          `Secret key '${value.key}' in credential '${credentialId}' must be a string.`,
+          `Secret key '${value.key}' in credential '${credential.id}' must be a string.`,
         );
       }
 

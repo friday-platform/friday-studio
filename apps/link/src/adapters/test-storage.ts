@@ -21,15 +21,25 @@ export class TestStorageAdapter implements StorageAdapter {
   private credentials = new Map<string, Credential>();
   private idCounter = 0;
 
+  /** Check if a provider already has a default credential among active entries. */
+  private hasDefaultForProvider(provider: string): boolean {
+    for (const cred of this.credentials.values()) {
+      if (cred.provider === provider && cred.isDefault) return true;
+    }
+    return false;
+  }
+
   save(input: CredentialInput, _userId: string): Promise<SaveResult> {
     const id = `cred-${++this.idCounter}`;
+    const isDefault = !this.hasDefaultForProvider(input.provider);
     const credential: Credential = {
       id,
       ...input,
+      isDefault,
       metadata: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     };
     this.credentials.set(id, credential);
-    return Promise.resolve({ id, metadata: credential.metadata });
+    return Promise.resolve({ id, isDefault, metadata: credential.metadata });
   }
 
   update(id: string, input: CredentialInput, _userId: string) {
@@ -58,6 +68,7 @@ export class TestStorageAdapter implements StorageAdapter {
           type: c.type,
           provider: c.provider,
           label: c.label,
+          isDefault: c.isDefault,
           metadata: c.metadata,
         })),
     );
@@ -90,6 +101,24 @@ export class TestStorageAdapter implements StorageAdapter {
   }
   updateMetadata(): Promise<Metadata> {
     throw new Error("TestStorageAdapter.updateMetadata() should not be called");
+  }
+  setDefault(id: string, _userId: string): Promise<void> {
+    const target = this.credentials.get(id);
+    if (!target) return Promise.reject(new Error("Credential not found"));
+    // Clear old default for this provider
+    for (const cred of this.credentials.values()) {
+      if (cred.provider === target.provider && cred.isDefault) {
+        cred.isDefault = false;
+      }
+    }
+    target.isDefault = true;
+    return Promise.resolve();
+  }
+  getDefaultByProvider(provider: string, _userId: string): Promise<Credential | null> {
+    for (const cred of this.credentials.values()) {
+      if (cred.provider === provider && cred.isDefault) return Promise.resolve(cred);
+    }
+    return Promise.resolve(null);
   }
 }
 

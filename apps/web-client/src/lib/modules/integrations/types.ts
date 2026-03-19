@@ -5,12 +5,22 @@ export type ProviderDetailsResponse = InferResponseType<
   200
 >;
 
+export interface AvailableCredential {
+  id: string;
+  label: string;
+  displayName: string | null;
+  userIdentifier: string | null;
+  isDefault: boolean;
+}
+
 export interface Integration {
   provider: string;
   providerDetails: ProviderDetailsResponse;
   connected: boolean;
   paths: Array<{ path: string; credentialId?: string; provider?: string; key: string }>;
   credential?: { id: string; label: string; displayName?: string | null; createdAt: string };
+  /** When unconnected and 2+ credentials exist for the provider, these are the candidates. */
+  availableCredentials?: AvailableCredential[];
 }
 
 /**
@@ -50,32 +60,35 @@ export async function loadWorkspaceIntegrations(workspaceId: string): Promise<In
     providerIds.map((id) => parseResult(client.link.v1.providers[":id"].$get({ param: { id } }))),
   );
 
-  // Collect unique credentialIds for connected integrations
-  const credentialIds = new Set<string>();
-  for (const paths of byProvider.values()) {
-    for (const p of paths) {
-      if (p.credentialId) credentialIds.add(p.credentialId);
-    }
-  }
-
-  // Fetch credential summaries from Link
+  // Fetch credential summaries from Link (needed for both connected lookups and ambiguity detection)
   const credentialMap = new Map<
     string,
     { id: string; label: string; displayName?: string | null; createdAt: string }
   >();
+  const credentialsByProvider = new Map<string, AvailableCredential[]>();
 
-  if (credentialIds.size > 0) {
-    const summaryRes = await parseResult(client.link.v1.summary.$get({ query: {} }));
-    if (summaryRes.ok) {
-      for (const cred of summaryRes.data.credentials) {
-        if (credentialIds.has(cred.id)) {
-          credentialMap.set(cred.id, {
-            id: cred.id,
-            label: cred.label,
-            displayName: cred.displayName,
-            createdAt: cred.createdAt,
-          });
-        }
+  const summaryRes = await parseResult(client.link.v1.summary.$get({ query: {} }));
+  if (summaryRes.ok) {
+    for (const cred of summaryRes.data.credentials) {
+      credentialMap.set(cred.id, {
+        id: cred.id,
+        label: cred.label,
+        displayName: cred.displayName,
+        createdAt: cred.createdAt,
+      });
+
+      const existing = credentialsByProvider.get(cred.provider);
+      const entry: AvailableCredential = {
+        id: cred.id,
+        label: cred.label,
+        displayName: cred.displayName,
+        userIdentifier: cred.userIdentifier,
+        isDefault: cred.isDefault,
+      };
+      if (existing) {
+        existing.push(entry);
+      } else {
+        credentialsByProvider.set(cred.provider, [entry]);
       }
     }
   }
@@ -90,17 +103,24 @@ export async function loadWorkspaceIntegrations(workspaceId: string): Promise<In
     if (!result || !result.ok) continue;
 
     const paths = byProvider.get(providerId)!;
+    const connected = paths.every((p) => p.credentialId !== undefined);
 
     // Use the first connected credential's details
     const connectedCredId = paths.find((p) => p.credentialId)?.credentialId;
     const credential = connectedCredId ? credentialMap.get(connectedCredId) : undefined;
 
+    // Surface all credentials for this provider so the picker can offer selection + "Add new"
+    const providerCreds = credentialsByProvider.get(providerId);
+    const availableCredentials =
+      providerCreds && providerCreds.length >= 1 ? providerCreds : undefined;
+
     integrations.push({
       provider: providerId,
       providerDetails: result.data,
-      connected: paths.every((p) => p.credentialId !== undefined),
+      connected,
       paths,
       credential,
+      availableCredentials,
     });
   }
 

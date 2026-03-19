@@ -337,6 +337,58 @@ describe("FileSystemStorageAdapter tenant isolation", () => {
     expect(await adapter.get(id, "delete-owner")).not.toBeNull();
   });
 
+  it("delete: promotes next-oldest credential when deleting the default", async () => {
+    const user = "delete-promote-user";
+    const first = await adapter.save(
+      { type: "oauth", provider: "delete-promote", label: "First", secret: { token: "1" } },
+      user,
+    );
+    const second = await adapter.save(
+      { type: "oauth", provider: "delete-promote", label: "Second", secret: { token: "2" } },
+      user,
+    );
+
+    expect(first.isDefault).toBe(true);
+    expect(second.isDefault).toBe(false);
+
+    await adapter.delete(first.id, user);
+
+    const promoted = await adapter.get(second.id, user);
+    expect(promoted?.isDefault).toBe(true);
+  });
+
+  it("delete: does not promote when deleting a non-default credential", async () => {
+    const user = "delete-nondefault-user";
+    const first = await adapter.save(
+      { type: "oauth", provider: "delete-nopromotion", label: "Default", secret: { token: "1" } },
+      user,
+    );
+    const second = await adapter.save(
+      { type: "oauth", provider: "delete-nopromotion", label: "Other", secret: { token: "2" } },
+      user,
+    );
+
+    expect(first.isDefault).toBe(true);
+    expect(second.isDefault).toBe(false);
+
+    await adapter.delete(second.id, user);
+
+    const remaining = await adapter.get(first.id, user);
+    expect(remaining?.isDefault).toBe(true);
+  });
+
+  it("delete: no promotion when last credential for provider is deleted", async () => {
+    const user = "delete-last-user";
+    const only = await adapter.save(
+      { type: "oauth", provider: "delete-lastprovider", label: "Only", secret: { token: "1" } },
+      user,
+    );
+
+    await adapter.delete(only.id, user);
+
+    expect(await adapter.get(only.id, user)).toBeNull();
+  });
+
   it("updateMetadata updates displayName and returns updated metadata", async () => {
     const { id, metadata } = await adapter.save(
       {
@@ -381,5 +433,312 @@ describe("FileSystemStorageAdapter tenant isolation", () => {
     await expect(
       adapter.updateMetadata(id, { displayName: "Test" }, "meta-attacker"),
     ).rejects.toThrow("Credential not found");
+  });
+
+  describe("auto-default logic", () => {
+    it("save: first credential for a provider gets isDefault = true", async () => {
+      const result = await adapter.save(
+        {
+          type: "apikey",
+          provider: "auto-default-provider",
+          label: "First Key",
+          secret: { key: "key-1" },
+        },
+        "auto-default-user",
+      );
+
+      expect(result.isDefault).toBe(true);
+
+      const cred = await adapter.get(result.id, "auto-default-user");
+      expect(cred?.isDefault).toBe(true);
+    });
+
+    it("save: second credential for same provider gets isDefault = false", async () => {
+      const result = await adapter.save(
+        {
+          type: "apikey",
+          provider: "auto-default-provider",
+          label: "Second Key",
+          secret: { key: "key-2" },
+        },
+        "auto-default-user",
+      );
+
+      expect(result.isDefault).toBe(false);
+
+      const cred = await adapter.get(result.id, "auto-default-user");
+      expect(cred?.isDefault).toBe(false);
+    });
+
+    it("save: first credential for a different provider also gets isDefault = true", async () => {
+      const result = await adapter.save(
+        {
+          type: "apikey",
+          provider: "auto-default-other-provider",
+          label: "Other Provider Key",
+          secret: { key: "other-key" },
+        },
+        "auto-default-user",
+      );
+
+      expect(result.isDefault).toBe(true);
+    });
+
+    it("upsert: creates new credential as default when no others for provider", async () => {
+      const result = await adapter.upsert(
+        {
+          type: "oauth",
+          provider: "upsert-default-provider",
+          label: "First OAuth",
+          secret: { access_token: "token-1" },
+        },
+        "upsert-default-user",
+      );
+
+      expect(result.isDefault).toBe(true);
+    });
+
+    it("upsert: updates non-default credential to default when no other default exists", async () => {
+      // Create two credentials for same provider
+      const first = await adapter.save(
+        {
+          type: "oauth",
+          provider: "upsert-promote-provider",
+          label: "First",
+          secret: { access_token: "t1" },
+        },
+        "upsert-promote-user",
+      );
+      const second = await adapter.save(
+        {
+          type: "oauth",
+          provider: "upsert-promote-provider",
+          label: "Second",
+          secret: { access_token: "t2" },
+        },
+        "upsert-promote-user",
+      );
+
+      expect(first.isDefault).toBe(true);
+      expect(second.isDefault).toBe(false);
+
+      // Delete the default credential
+      await adapter.delete(first.id, "upsert-promote-user");
+
+      // Re-auth into the non-default — should promote to default
+      const result = await adapter.upsert(
+        {
+          type: "oauth",
+          provider: "upsert-promote-provider",
+          label: "Second",
+          secret: { access_token: "t2-refreshed" },
+        },
+        "upsert-promote-user",
+      );
+
+      expect(result.id).toBe(second.id);
+      expect(result.isDefault).toBe(true);
+    });
+
+    it("upsert: preserves non-default when another default exists", async () => {
+      // Create default credential
+      const first = await adapter.save(
+        {
+          type: "oauth",
+          provider: "upsert-preserve-provider",
+          label: "Default",
+          secret: { access_token: "t1" },
+        },
+        "upsert-preserve-user",
+      );
+      // Create non-default
+      const second = await adapter.save(
+        {
+          type: "oauth",
+          provider: "upsert-preserve-provider",
+          label: "Non-Default",
+          secret: { access_token: "t2" },
+        },
+        "upsert-preserve-user",
+      );
+
+      expect(first.isDefault).toBe(true);
+      expect(second.isDefault).toBe(false);
+
+      // Re-auth into the non-default — should stay non-default
+      const result = await adapter.upsert(
+        {
+          type: "oauth",
+          provider: "upsert-preserve-provider",
+          label: "Non-Default",
+          secret: { access_token: "t2-refreshed" },
+        },
+        "upsert-preserve-user",
+      );
+
+      expect(result.id).toBe(second.id);
+      expect(result.isDefault).toBe(false);
+    });
+  });
+
+  describe("setDefault", () => {
+    it("swaps default from credential A to credential B", async () => {
+      const user = "setdefault-swap-user";
+      const a = await adapter.save(
+        { type: "apikey", provider: "swap-provider", label: "A", secret: { key: "a" } },
+        user,
+      );
+      const b = await adapter.save(
+        { type: "apikey", provider: "swap-provider", label: "B", secret: { key: "b" } },
+        user,
+      );
+
+      expect(a.isDefault).toBe(true);
+      expect(b.isDefault).toBe(false);
+
+      await adapter.setDefault(b.id, user);
+
+      const credA = await adapter.get(a.id, user);
+      const credB = await adapter.get(b.id, user);
+      expect(credA?.isDefault).toBe(false);
+      expect(credB?.isDefault).toBe(true);
+    });
+
+    it("no-op if credential is already the default", async () => {
+      const user = "setdefault-noop-user";
+      const a = await adapter.save(
+        { type: "apikey", provider: "noop-provider", label: "A", secret: { key: "a" } },
+        user,
+      );
+
+      expect(a.isDefault).toBe(true);
+
+      await adapter.setDefault(a.id, user);
+
+      const cred = await adapter.get(a.id, user);
+      expect(cred?.isDefault).toBe(true);
+    });
+
+    it("throws for non-existent credential ID", async () => {
+      const user = "setdefault-missing-user";
+      await adapter.save(
+        { type: "apikey", provider: "missing-provider", label: "A", secret: { key: "a" } },
+        user,
+      );
+
+      await expect(adapter.setDefault("nonexistent-id", user)).rejects.toThrow(
+        "Credential not found",
+      );
+    });
+
+    it("throws for wrong userId (tenant isolation)", async () => {
+      const owner = "setdefault-tenant-owner";
+      const attacker = "setdefault-tenant-attacker";
+      const { id } = await adapter.save(
+        { type: "apikey", provider: "tenant-sd-provider", label: "A", secret: { key: "a" } },
+        owner,
+      );
+
+      await expect(adapter.setDefault(id, attacker)).rejects.toThrow("Credential not found");
+
+      // Original credential unchanged
+      const cred = await adapter.get(id, owner);
+      expect(cred?.isDefault).toBe(true);
+    });
+
+    it("does not affect credentials from a different provider", async () => {
+      const user = "setdefault-cross-provider-user";
+      const providerA = await adapter.save(
+        { type: "apikey", provider: "provider-x", label: "X", secret: { key: "x" } },
+        user,
+      );
+      const providerB = await adapter.save(
+        { type: "apikey", provider: "provider-y", label: "Y", secret: { key: "y" } },
+        user,
+      );
+
+      // Both are defaults for their respective providers
+      expect(providerA.isDefault).toBe(true);
+      expect(providerB.isDefault).toBe(true);
+
+      // Add a second credential for provider-x and swap default
+      const providerA2 = await adapter.save(
+        { type: "apikey", provider: "provider-x", label: "X2", secret: { key: "x2" } },
+        user,
+      );
+      await adapter.setDefault(providerA2.id, user);
+
+      // provider-y default should be untouched
+      const credY = await adapter.get(providerB.id, user);
+      expect(credY?.isDefault).toBe(true);
+    });
+  });
+
+  describe("getDefaultByProvider", () => {
+    it("returns default credential with decrypted secret", async () => {
+      const user = "getdefault-found-user";
+      const saved = await adapter.save(
+        {
+          type: "oauth",
+          provider: "getdefault-provider",
+          label: "OAuth",
+          secret: { access_token: "tok-123" },
+        },
+        user,
+      );
+
+      expect(saved.isDefault).toBe(true);
+
+      const result = await adapter.getDefaultByProvider("getdefault-provider", user);
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe(saved.id);
+      expect(result?.isDefault).toBe(true);
+      expect(result?.secret).toEqual({ access_token: "tok-123" });
+    });
+
+    it("returns null when no default exists for provider", async () => {
+      const user = "getdefault-null-user";
+      const result = await adapter.getDefaultByProvider("nonexistent-provider", user);
+      expect(result).toBeNull();
+    });
+
+    it("returns null for wrong userId (tenant isolation)", async () => {
+      const owner = "getdefault-tenant-owner";
+      await adapter.save(
+        {
+          type: "oauth",
+          provider: "getdefault-tenant-prov",
+          label: "OAuth",
+          secret: { access_token: "tok" },
+        },
+        owner,
+      );
+
+      const result = await adapter.getDefaultByProvider("getdefault-tenant-prov", "different-user");
+      expect(result).toBeNull();
+    });
+
+    it("reflects setDefault swap", async () => {
+      const user = "getdefault-swap-user";
+      const a = await adapter.save(
+        { type: "apikey", provider: "getdefault-swap-prov", label: "A", secret: { key: "a" } },
+        user,
+      );
+      const b = await adapter.save(
+        { type: "apikey", provider: "getdefault-swap-prov", label: "B", secret: { key: "b" } },
+        user,
+      );
+
+      // Before swap — A is default
+      const before = await adapter.getDefaultByProvider("getdefault-swap-prov", user);
+      expect(before?.id).toBe(a.id);
+
+      // Swap default to B
+      await adapter.setDefault(b.id, user);
+
+      const after = await adapter.getDefaultByProvider("getdefault-swap-prov", user);
+      expect(after?.id).toBe(b.id);
+      expect(after?.secret).toEqual({ key: "b" });
+    });
   });
 });

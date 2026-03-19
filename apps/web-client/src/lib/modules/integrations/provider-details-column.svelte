@@ -11,9 +11,10 @@
     displayName?: string | null;
     date: string;
     credentialId: string;
+    isDefault?: boolean;
   };
 
-  let { name, label, displayName, date, credentialId }: Props = $props();
+  let { name, label, displayName, date, credentialId, isDefault }: Props = $props();
 
   const displayLabel = $derived(displayName ?? label);
   const currentName = $derived(displayName ?? label ?? "");
@@ -82,6 +83,9 @@
           <Dialog.Trigger>
             <span class="account">{displayLabel}</span>
           </Dialog.Trigger>
+        {/if}
+        {#if isDefault}
+          <span class="default-badge">Default</span>
         {/if}
       </div>
       {#if date}
@@ -171,6 +175,16 @@
     &:hover {
       opacity: 1;
     }
+  }
+
+  .default-badge {
+    background-color: var(--accent-1);
+    border-radius: var(--radius-round);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    opacity: 1;
+    padding-block: var(--size-0-5);
+    padding-inline: var(--size-2);
   }
 
   time {

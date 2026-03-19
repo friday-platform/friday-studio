@@ -24,9 +24,19 @@
   import { tick } from "svelte";
   import { z } from "zod";
   import ConnectCell from "./connect-cell.svelte";
+  import CredentialPickerCell from "./credential-picker-cell.svelte";
 
-  let { integrations, workspaceId }: { integrations: Integration[]; workspaceId: string } =
-    $props();
+  let {
+    integrations,
+    workspaceId,
+    selectedCredentials = {},
+    onCredentialSelect,
+  }: {
+    integrations: Integration[];
+    workspaceId: string;
+    selectedCredentials?: Record<string, string>;
+    onCredentialSelect?: (provider: string, credentialId: string) => void;
+  } = $props();
 
   const OAuthCallbackMessageSchema = z.object({
     type: z.literal("oauth-callback"),
@@ -295,6 +305,24 @@
         header: "",
         cell: (info) => {
           const integration = info.row.original;
+          if (integration.availableCredentials) {
+            const selectHandler = onCredentialSelect
+              ? (credentialId: string) =>
+                  onCredentialSelect(integration.provider, credentialId)
+              : async (credentialId: string) => {
+                  await bindCredentialToPaths(integration, credentialId);
+                  toast({ title: "Credential updated" });
+                  invalidateAll();
+                };
+            return renderComponent(CredentialPickerCell, {
+              credentials: integration.availableCredentials,
+              selectedId: onCredentialSelect
+                ? (selectedCredentials[integration.provider] ?? null)
+                : (integration.credential?.id ?? null),
+              onselect: selectHandler,
+              onAddNew: () => handleConnect(integration),
+            });
+          }
           return renderComponent(ConnectCell, {
             connected: integration.connected,
             onclick: () => handleConnect(integration),

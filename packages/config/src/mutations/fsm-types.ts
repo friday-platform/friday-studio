@@ -27,15 +27,6 @@ export type { FSMDefinition };
  */
 export type FSMStateDefinition = StateDefinition;
 
-/**
- * Union of all FSM action types.
- */
-/**
- * Bundled agent call in FSM state entry.
- */
-/**
- * Inline LLM action in FSM state entry.
- */
 export type { FSMAction, FSMAgentAction, FSMLLMAction };
 
 /**

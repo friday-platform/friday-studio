@@ -369,18 +369,17 @@ describe("buildBlueprint", () => {
       const result = await buildBlueprint("test", baseOpts());
 
       expect(result.credentials.unresolved).toHaveLength(1);
-      expect(result.credentials.unresolved[0]).toEqual(
-        expect.objectContaining({
-          agentId: "researcher",
-          field: "GITHUB_TOKEN",
-          provider: "github",
-          reason: expect.stringContaining("github"),
-        }),
-      );
+      expect(result.credentials.unresolved[0]).toEqual({
+        provider: "github",
+        targetType: "mcp",
+        targetId: "github",
+        field: "GITHUB_TOKEN",
+        reason: "not_found",
+      });
       expect(result.readiness.ready).toBe(false);
     });
 
-    it("tracks credential ambiguity as unresolved", async () => {
+    it("auto-selects first candidate and returns candidates when ambiguous", async () => {
       setupSuccessfulPipeline();
       mockClassifyAgents.mockResolvedValue({
         agents: PLAN_RESULT.agents,
@@ -401,14 +400,43 @@ describe("buildBlueprint", () => {
           },
         ],
       });
-      // Real resolveCredentials runs — mock the underlying Link API call
-      mockResolveByProvider.mockRejectedValueOnce(new MockCredentialNotFoundError("google"));
+      // Return two credentials, none default — triggers auto-select first
+      mockResolveByProvider.mockResolvedValueOnce([
+        {
+          id: "cred_1",
+          provider: "google",
+          label: "Personal",
+          type: "oauth",
+          displayName: "Personal Google",
+          userIdentifier: "me@gmail.com",
+          isDefault: false,
+        },
+        {
+          id: "cred_2",
+          provider: "google",
+          label: "Work",
+          type: "oauth",
+          displayName: "Work Google",
+          userIdentifier: "me@work.com",
+          isDefault: false,
+        },
+      ]);
 
       const result = await buildBlueprint("test", baseOpts());
 
-      expect(result.credentials.unresolved).toEqual([
-        expect.objectContaining({ provider: "google", reason: expect.stringContaining("google") }),
+      // Auto-selected first candidate into bindings
+      expect(result.credentials.unresolved).toEqual([]);
+      expect(result.credentials.bindings).toEqual([
+        expect.objectContaining({
+          credentialId: "cred_1",
+          provider: "google",
+          targetId: "google-gmail",
+        }),
       ]);
+      // Candidates surfaced for picker UI
+      expect(result.credentials.candidates).toHaveLength(1);
+      expect(result.credentials.candidates[0]?.provider).toBe("google");
+      expect(result.credentials.candidates[0]?.candidates).toHaveLength(2);
     });
   });
 

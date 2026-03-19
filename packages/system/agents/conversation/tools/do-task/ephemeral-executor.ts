@@ -87,7 +87,6 @@ export async function executeTaskViaFSMDirect(
     hasMCPConfigs: !!context.mcpServerConfigs,
   });
 
-  // Check abort signal before starting
   if (context.abortSignal?.aborted) {
     return { success: false, error: "Task cancelled", results: [] };
   }

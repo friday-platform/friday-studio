@@ -2,8 +2,6 @@
  * Expands workspace agent references in FSM definitions at load time.
  * Pure function — returns a new object without mutating the input.
  *
- * Operates on Zod-parsed FSM definitions for full type safety.
- *
  * @module
  */
 
@@ -13,13 +11,8 @@ import type { WorkspaceAgentConfig } from "./agents.ts";
 /**
  * Expand `type: agent` entry actions in a parsed FSM definition.
  *
- * LLM workspace agents are converted to `type: llm` with the agent's
- * provider/model/tools and combined prompt. Atlas, system, and unknown
- * agents pass through unchanged.
- *
- * @param fsmDefinition - Zod-parsed FSM definition
- * @param workspaceAgents - Map of workspace agent configs keyed by agent ID
- * @returns Transformed FSM definition with LLM agents expanded
+ * LLM workspace agents become `type: llm` with provider/model/tools.
+ * Atlas, system, and unknown agents pass through unchanged.
  */
 export function expandAgentActions(
   fsmDefinition: FSMDefinition,
@@ -42,9 +35,7 @@ export function expandAgentActions(
   return { ...fsmDefinition, states: expandedStates };
 }
 
-/**
- * Expand a single action if it's an LLM workspace agent reference.
- */
+/** Expand a single action if it's an LLM workspace agent reference. */
 function expandAction(
   action: Action,
   workspaceAgents: Record<string, WorkspaceAgentConfig>,

@@ -119,6 +119,7 @@ function applyMCPBindings(
     config.env[binding.field] = {
       from: "link" as const,
       id: binding.credentialId,
+      provider: binding.provider,
       key: binding.key,
     };
   }
@@ -161,14 +162,19 @@ function buildAgents(
 function buildAgentEnv(
   agentId: string,
   bindings?: CredentialBinding[],
-): Record<string, { from: "link"; id: string; key: string }> | undefined {
+): Record<string, { from: "link"; id: string; provider: string; key: string }> | undefined {
   if (!bindings) return undefined;
   const agentBindings = bindings.filter((b) => b.targetType === "agent" && b.targetId === agentId);
   if (agentBindings.length === 0) return undefined;
 
-  const env: Record<string, { from: "link"; id: string; key: string }> = {};
+  const env: Record<string, { from: "link"; id: string; provider: string; key: string }> = {};
   for (const binding of agentBindings) {
-    env[binding.field] = { from: "link" as const, id: binding.credentialId, key: binding.key };
+    env[binding.field] = {
+      from: "link" as const,
+      id: binding.credentialId,
+      provider: binding.provider,
+      key: binding.key,
+    };
   }
   return env;
 }

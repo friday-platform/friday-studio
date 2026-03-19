@@ -630,20 +630,30 @@ describe("POST /create — credential resolution", () => {
     );
   });
 
-  test("picks first credential when multiple exist for a provider", async () => {
-    const { app } = createImportTestApp();
+  test("surfaces ambiguousProviders when multiple credentials exist for a provider", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_first", provider: "github", label: "Personal GitHub", type: "oauth" },
-      { id: "cred_second", provider: "github", label: "Work GitHub", type: "oauth" },
+      {
+        id: "cred_first",
+        provider: "github",
+        label: "Personal GitHub",
+        type: "oauth",
+        displayName: "Sara Personal",
+        userIdentifier: "sara@personal.com",
+        isDefault: true,
+      },
+      {
+        id: "cred_second",
+        provider: "github",
+        label: "Work GitHub",
+        type: "oauth",
+        displayName: "Sara Work",
+        userIdentifier: "sara@work.com",
+        isDefault: false,
+      },
     ]);
-    mockFetchLinkCredential.mockResolvedValue({
-      id: "cred_first",
-      provider: "github",
-      type: "oauth",
-      secret: { token: "ghp_xxx" },
-    });
 
     const config = makeConfig({
       tools: {
@@ -668,15 +678,153 @@ describe("POST /create — credential resolution", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
-    // Should pick the first credential
+    // Ambiguous provider should NOT be auto-resolved
+    expect(body.resolvedCredentials).toBeUndefined();
+
+    // Should return ambiguousProviders with candidate list
+    expect(body.ambiguousProviders).toEqual({
+      github: [
+        {
+          id: "cred_first",
+          label: "Personal GitHub",
+          displayName: "Sara Personal",
+          userIdentifier: "sara@personal.com",
+          isDefault: true,
+        },
+        {
+          id: "cred_second",
+          label: "Work GitHub",
+          displayName: "Sara Work",
+          userIdentifier: "sara@work.com",
+          isDefault: false,
+        },
+      ],
+    });
+
+    // Workspace should be created with requires_setup
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
+
+    // The written config should have provider-only refs (no credential IDs pinned)
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    const writtenRef = getWrittenRef("github", "GITHUB_TOKEN");
+    expect(writtenRef).toMatchObject({ from: "link", provider: "github", key: "token" });
+    expect(writtenRef).not.toHaveProperty("id");
+  });
+
+  test("mix of single and multi-credential providers: single auto-selects, multi surfaces as ambiguous", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
+      if (provider === "github") {
+        return Promise.resolve([
+          {
+            id: "cred_gh",
+            provider: "github",
+            label: "My GitHub",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: true,
+          },
+        ]);
+      }
+      if (provider === "slack") {
+        return Promise.resolve([
+          {
+            id: "cred_sl_1",
+            provider: "slack",
+            label: "Personal Slack",
+            type: "oauth",
+            displayName: "Personal",
+            userIdentifier: "sara@personal.slack",
+            isDefault: true,
+          },
+          {
+            id: "cred_sl_2",
+            provider: "slack",
+            label: "Work Slack",
+            type: "oauth",
+            displayName: "Work",
+            userIdentifier: "sara@work.slack",
+            isDefault: false,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", provider: "github", key: "token" } },
+            },
+            slack: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-slack"] },
+              env: { SLACK_TOKEN: { from: "link", provider: "slack", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+
+    // GitHub (single) should be auto-resolved
     expect(body.resolvedCredentials).toEqual([
       {
         path: "mcp:github:GITHUB_TOKEN",
         provider: "github",
-        credentialId: "cred_first",
-        label: "Personal GitHub",
+        credentialId: "cred_gh",
+        label: "My GitHub",
       },
     ]);
+
+    // Slack (multi) should surface as ambiguous
+    expect(body.ambiguousProviders).toEqual({
+      slack: [
+        {
+          id: "cred_sl_1",
+          label: "Personal Slack",
+          displayName: "Personal",
+          userIdentifier: "sara@personal.slack",
+          isDefault: true,
+        },
+        {
+          id: "cred_sl_2",
+          label: "Work Slack",
+          displayName: "Work",
+          userIdentifier: "sara@work.slack",
+          isDefault: false,
+        },
+      ],
+    });
+
+    // Workspace should require setup due to ambiguous slack
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
   });
 
   test("resolves multiple providers in parallel", async () => {
@@ -1224,5 +1372,245 @@ describe("POST /create — credential resolution", () => {
       provider: "slack",
       key: "access_token",
     });
+  });
+
+  test("import: id-only ref resolves to provider with 2+ credentials → ambiguousProviders", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
+    await mountRoutes(app);
+
+    // Phase 1: id-only preprocessing discovers provider
+    mockFetchLinkCredential.mockResolvedValue({
+      id: "cred_foreign",
+      provider: "github",
+      type: "oauth",
+      secret: { token: "ghp_xxx" },
+    });
+
+    // Phase 2: provider resolution finds multiple credentials for importing user
+    mockResolveCredentialsByProvider.mockResolvedValue([
+      {
+        id: "cred_personal",
+        provider: "github",
+        label: "Personal GitHub",
+        type: "oauth",
+        displayName: "Sara Personal",
+        userIdentifier: "sara@personal.com",
+        isDefault: true,
+      },
+      {
+        id: "cred_work",
+        provider: "github",
+        label: "Work GitHub",
+        type: "oauth",
+        displayName: "Sara Work",
+        userIdentifier: "sara@work.com",
+        isDefault: false,
+      },
+    ]);
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_foreign", key: "token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+
+    // Should NOT auto-resolve — ambiguous
+    expect(body.resolvedCredentials).toBeUndefined();
+
+    // Should surface ambiguousProviders with picker data
+    expect(body.ambiguousProviders).toEqual({
+      github: [
+        {
+          id: "cred_personal",
+          label: "Personal GitHub",
+          displayName: "Sara Personal",
+          userIdentifier: "sara@personal.com",
+          isDefault: true,
+        },
+        {
+          id: "cred_work",
+          label: "Work GitHub",
+          displayName: "Sara Work",
+          userIdentifier: "sara@work.com",
+          isDefault: false,
+        },
+      ],
+    });
+
+    // Workspace should require setup
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
+
+    // Written config should have provider-only ref (no ID pinned)
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    const writtenRef = getWrittenRef("github", "GITHUB_TOKEN");
+    expect(writtenRef).toMatchObject({ from: "link", provider: "github", key: "token" });
+    expect(writtenRef).not.toHaveProperty("id");
+  });
+
+  test("import: mix of id-only refs — one provider single-match, another multi-match", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
+    await mountRoutes(app);
+
+    // Phase 1: both id-only refs resolve to their providers
+    mockFetchLinkCredential.mockImplementation((credId: string) => {
+      if (credId === "cred_gh_foreign") {
+        return Promise.resolve({
+          id: "cred_gh_foreign",
+          provider: "github",
+          type: "oauth",
+          secret: { token: "ghp_xxx" },
+        });
+      }
+      if (credId === "cred_sl_foreign") {
+        return Promise.resolve({
+          id: "cred_sl_foreign",
+          provider: "slack",
+          type: "oauth",
+          secret: { access_token: "xoxb-xxx" },
+        });
+      }
+      throw new Error(`Unexpected credential ID: ${credId}`);
+    });
+
+    // Phase 2: github has 1 credential, slack has 2
+    mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
+      if (provider === "github") {
+        return Promise.resolve([
+          {
+            id: "cred_gh",
+            provider: "github",
+            label: "My GitHub",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: true,
+          },
+        ]);
+      }
+      if (provider === "slack") {
+        return Promise.resolve([
+          {
+            id: "cred_sl_1",
+            provider: "slack",
+            label: "Personal Slack",
+            type: "oauth",
+            displayName: "Personal",
+            userIdentifier: "sara@personal.slack",
+            isDefault: true,
+          },
+          {
+            id: "cred_sl_2",
+            provider: "slack",
+            label: "Work Slack",
+            type: "oauth",
+            displayName: "Work",
+            userIdentifier: "sara@work.slack",
+            isDefault: false,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            github: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
+              env: { GITHUB_TOKEN: { from: "link", id: "cred_gh_foreign", key: "token" } },
+            },
+            slack: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-slack"] },
+              env: { SLACK_TOKEN: { from: "link", id: "cred_sl_foreign", key: "access_token" } },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+
+    // GitHub (single match) should be auto-resolved
+    expect(body.resolvedCredentials).toEqual([
+      {
+        path: "mcp:github:GITHUB_TOKEN",
+        provider: "github",
+        credentialId: "cred_gh",
+        label: "My GitHub",
+      },
+    ]);
+
+    // Slack (multi match) should surface as ambiguous
+    expect(body.ambiguousProviders).toEqual({
+      slack: [
+        {
+          id: "cred_sl_1",
+          label: "Personal Slack",
+          displayName: "Personal",
+          userIdentifier: "sara@personal.slack",
+          isDefault: true,
+        },
+        {
+          id: "cred_sl_2",
+          label: "Work Slack",
+          displayName: "Work",
+          userIdentifier: "sara@work.slack",
+          isDefault: false,
+        },
+      ],
+    });
+
+    // Workspace should require setup due to ambiguous slack
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
+    const workspace = body.workspace as Record<string, unknown>;
+    const metadata = workspace.metadata as Record<string, unknown>;
+    expect(metadata.requires_setup).toBe(true);
+
+    // GitHub should be bound in written config, slack should be provider-only
+    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
+    expect(getWrittenRef("github", "GITHUB_TOKEN")).toMatchObject({
+      from: "link",
+      id: "cred_gh",
+      provider: "github",
+      key: "token",
+    });
+    const slackRef = getWrittenRef("slack", "SLACK_TOKEN");
+    expect(slackRef).toMatchObject({ from: "link", provider: "slack", key: "access_token" });
+    expect(slackRef).not.toHaveProperty("id");
   });
 });

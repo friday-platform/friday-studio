@@ -20,6 +20,7 @@ import {
   AppInstallCredentialSecretSchema,
 } from "../providers/types.ts";
 import {
+  type Credential,
   CredentialCreateRequestSchema,
   type CredentialInput,
   CredentialTypeSchema,
@@ -99,13 +100,13 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
 
           try {
             // Storage generates ID and returns it with metadata
-            const { id, metadata } = await storage.save(
+            const { id, isDefault, metadata } = await storage.save(
               { type, provider, label, secret: secretResult.data },
               userId,
             );
 
             // Return summary without secret
-            return c.json({ id, type, provider, label, metadata }, 201);
+            return c.json({ id, type, provider, label, isDefault, metadata }, 201);
           } catch (error) {
             logger.error("Failed to save credential", { error });
             return c.json({ error: "Failed to save credential" }, 500);
@@ -199,6 +200,25 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
         },
       )
       /**
+       * PATCH /:id/default
+       * Set credential as the default for its provider
+       */
+      .patch("/:id/default", zValidator("param", z.object({ id: z.string() })), async (c) => {
+        const userId = c.get("userId");
+        const { id } = c.req.valid("param");
+
+        try {
+          await storage.setDefault(id, userId);
+          return c.json({ ok: true });
+        } catch (error) {
+          if (error instanceof Error && error.message === "Credential not found") {
+            return c.json({ error: "Credential not found" }, 404);
+          }
+          logger.error("Failed to set default credential", { error });
+          return c.json({ error: "Failed to set default credential" }, 500);
+        }
+      })
+      /**
        * DELETE /:id
        * Delete credential with optional OAuth token revocation
        */
@@ -257,6 +277,96 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
   );
 }
 
+/** Response shape for internal credential endpoints */
+type CredentialResponse = {
+  credential: Credential;
+  status: "ready" | "refreshed" | "expired_no_refresh" | "refresh_failed";
+  error?: string;
+};
+
+/** Resolve a credential with proactive OAuth token refresh. */
+async function resolveCredentialWithRefresh(
+  credential: Credential,
+  storage: StorageAdapter,
+  oauthService: OAuthService,
+  userId: string,
+): Promise<CredentialResponse> {
+  if (credential.type !== "oauth") {
+    return { credential, status: "ready" };
+  }
+
+  const REFRESH_BUFFER_SECONDS = 5 * 60; // 5 minutes
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = credential.secret.expires_at as number | undefined;
+
+  if (!expiresAt || expiresAt > now + REFRESH_BUFFER_SECONDS) {
+    return { credential, status: "ready" };
+  }
+
+  const provider = await registry.get(credential.provider);
+  if (provider?.type === "app_install" && provider.refreshToken) {
+    try {
+      const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
+      if (!secretResult.success) {
+        return {
+          credential,
+          status: "refresh_failed",
+          error: "Credential secret does not match expected schema",
+        };
+      }
+      const secret = secretResult.data;
+      const refreshResult = await provider.refreshToken(secret);
+
+      // Use new refresh_token if provided (Slack token rotation)
+      const updatedSecret: AppInstallCredentialSecret = {
+        ...secret,
+        access_token: refreshResult.access_token,
+        expires_at: refreshResult.expires_at,
+        ...(refreshResult.refresh_token && { refresh_token: refreshResult.refresh_token }),
+      };
+
+      const credentialInput: CredentialInput = {
+        type: credential.type,
+        provider: credential.provider,
+        userIdentifier: credential.userIdentifier,
+        label: credential.label,
+        secret: updatedSecret,
+      };
+
+      const metadata = await storage.update(credential.id, credentialInput, userId);
+
+      return {
+        credential: { ...credential, secret: updatedSecret, metadata },
+        status: "refreshed",
+      };
+    } catch (e) {
+      // NOT_REFRESHABLE is a permanent condition, not a transient failure
+      if (e instanceof AppInstallError && e.code === "NOT_REFRESHABLE") {
+        return { credential, status: "expired_no_refresh" };
+      }
+      logger.error("Credential refresh failed", { credentialId: credential.id, error: e });
+      return { credential, status: "refresh_failed", error: stringifyError(e) };
+    }
+  } else {
+    const oauthCredResult = OAuthCredentialSchema.safeParse(credential);
+    if (!oauthCredResult.success) {
+      return {
+        credential,
+        status: "refresh_failed",
+        error: "Credential does not match OAuth schema",
+      };
+    }
+
+    try {
+      const refreshed = await oauthService.refreshCredential(oauthCredResult.data, userId);
+      return { credential: refreshed, status: "refreshed" };
+    } catch (e) {
+      logger.error("Credential refresh failed", { credentialId: credential.id, error: e });
+      return { credential, status: "refresh_failed", error: stringifyError(e) };
+    }
+  }
+}
+
 /**
  * Create internal credentials router for runtime access.
  * Mounted at /internal/v1/credentials in main app.
@@ -287,90 +397,48 @@ export function createInternalCredentialsRoutes(
             return c.json({ error: "credential_not_found" }, 404);
           }
 
-          // Non-OAuth credentials are always ready
-          if (credential.type !== "oauth") {
-            return c.json({ credential, status: "ready" });
-          }
-
-          const REFRESH_BUFFER_SECONDS = 5 * 60; // 5 minutes
-          const now = Math.floor(Date.now() / 1000);
-          const expiresAt = credential.secret.expires_at as number | undefined;
-
-          // Not expiring soon (or no expiry set)
-          if (!expiresAt || expiresAt > now + REFRESH_BUFFER_SECONDS) {
-            return c.json({ credential, status: "ready" });
-          }
-
-          // Try refresh - check if this is an app_install provider
-          const provider = await registry.get(credential.provider);
-          if (provider?.type === "app_install" && provider.refreshToken) {
-            // App install provider with refresh support
-            try {
-              const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
-              if (!secretResult.success) {
-                return c.json({
-                  credential,
-                  status: "refresh_failed",
-                  error: "Credential secret does not match expected schema",
-                });
-              }
-              const secret = secretResult.data;
-              const refreshResult = await provider.refreshToken(secret);
-
-              // Update credential with new tokens, preserving platform-specific data
-              // Use new refresh_token if provided (Slack token rotation)
-              const updatedSecret: AppInstallCredentialSecret = {
-                ...secret,
-                access_token: refreshResult.access_token,
-                expires_at: refreshResult.expires_at,
-                ...(refreshResult.refresh_token && { refresh_token: refreshResult.refresh_token }),
-              };
-
-              const credentialInput: CredentialInput = {
-                type: credential.type,
-                provider: credential.provider,
-                userIdentifier: credential.userIdentifier,
-                label: credential.label,
-                secret: updatedSecret,
-              };
-
-              const metadata = await storage.update(credential.id, credentialInput, userId);
-
-              return c.json({
-                credential: { ...credential, secret: updatedSecret, metadata },
-                status: "refreshed",
-              });
-            } catch (e) {
-              // NOT_REFRESHABLE is a permanent condition, not a transient failure
-              if (e instanceof AppInstallError && e.code === "NOT_REFRESHABLE") {
-                return c.json({ credential, status: "expired_no_refresh" });
-              }
-              logger.error("Credential refresh failed", { credentialId: id, error: e });
-              return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
-            }
-          } else {
-            // Standard OAuth provider
-            const oauthCredResult = OAuthCredentialSchema.safeParse(credential);
-            if (!oauthCredResult.success) {
-              return c.json({
-                credential,
-                status: "refresh_failed",
-                error: "Credential does not match OAuth schema",
-              });
-            }
-
-            try {
-              const refreshed = await oauthService.refreshCredential(oauthCredResult.data, userId);
-              return c.json({ credential: refreshed, status: "refreshed" });
-            } catch (e) {
-              logger.error("Credential refresh failed", { credentialId: id, error: e });
-              return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
-            }
-          }
+          const result = await resolveCredentialWithRefresh(
+            credential,
+            storage,
+            oauthService,
+            userId,
+          );
+          return c.json(result);
         } catch (error) {
           logger.error("Failed to retrieve credential", { error });
           return c.json({ error: "Failed to retrieve credential" }, 500);
         }
       })
+      /**
+       * GET /default/:provider
+       * Get default credential for a provider with secrets and proactive OAuth refresh
+       */
+      .get(
+        "/default/:provider",
+        zValidator("param", z.object({ provider: z.string() })),
+        async (c) => {
+          const userId = c.get("userId");
+          const { provider } = c.req.valid("param");
+
+          try {
+            const credential = await storage.getDefaultByProvider(provider, userId);
+
+            if (!credential) {
+              return c.json({ error: "no_default_credential" }, 404);
+            }
+
+            const result = await resolveCredentialWithRefresh(
+              credential,
+              storage,
+              oauthService,
+              userId,
+            );
+            return c.json(result);
+          } catch (error) {
+            logger.error("Failed to retrieve default credential", { error });
+            return c.json({ error: "Failed to retrieve default credential" }, 500);
+          }
+        },
+      )
   );
 }
