@@ -9,7 +9,8 @@ import { EventEmitter } from "node:events";
 import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import type { ActivityStorageAdapter } from "@atlas/activity";
-import { generateSessionActivityTitle, kebabToSentenceCase } from "@atlas/activity";
+import { generateSessionActivityTitle } from "@atlas/activity/title-generator";
+import { kebabToSentenceCase } from "@atlas/activity/titles";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {

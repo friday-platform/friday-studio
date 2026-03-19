@@ -1,7 +1,12 @@
 {
   "name": "@atlas/activity",
   "version": "0.0.1",
-  "exports": { ".": "./src/mod.ts" },
+  "exports": {
+    ".": "./src/mod.ts",
+    "./titles": "./src/title-utils.ts",
+    "./title-generator": "./src/title-generator.ts",
+    "./local-adapter": "./src/local-adapter.ts"
+  },
   "dependencies": {
     "@atlas/ledger": "workspace:*",
     "@atlas/llm": "workspace:*",

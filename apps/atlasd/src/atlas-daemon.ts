@@ -1,11 +1,8 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import {
-  type ActivityStorageAdapter,
-  createActivityLedgerClient,
-  LocalActivityAdapter,
-} from "@atlas/activity";
+import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
+import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";

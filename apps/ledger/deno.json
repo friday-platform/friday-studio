@@ -7,6 +7,8 @@
     "dev": "DEV_MODE=true deno run --watch --allow-all src/index.ts"
   },
   "imports": {
+    "@atlas/activity": "../../packages/activity/src/mod.ts",
+    "@atlas/activity/local-adapter": "../../packages/activity/src/local-adapter.ts",
     "@atlas/logger": "../../packages/logger/mod.ts",
     "@atlas/sentry": "../../packages/sentry/mod.ts",
     "@atlas/utils": "../../packages/utils/mod.ts",
@@ -20,6 +22,7 @@
     "hono": "npm:hono@^4.11.1",
     "pgsql-parser": "npm:pgsql-parser@^17.9.11",
     "postgres": "npm:postgres@^3.4.7",
+    "ulid": "npm:ulid@^3.0.2",
     "zod": "npm:zod@^4.2.1"
   }
 }

@@ -4,6 +4,7 @@ FROM denoland/deno:alpine-2.7.6 AS builder
 
 WORKDIR /app
 
+COPY packages/activity/ ./packages/activity/
 COPY packages/utils/ ./packages/utils/
 COPY packages/logger/ ./packages/logger/
 COPY packages/sentry/ ./packages/sentry/

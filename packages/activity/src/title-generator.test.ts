@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  generateResourceActivityTitle,
-  generateSessionActivityTitle,
-  generateUserActivityTitle,
-} from "./title-generator.ts";
+import { generateResourceActivityTitle, generateSessionActivityTitle } from "./title-generator.ts";
+import { generateUserActivityTitle } from "./title-utils.ts";
 
 describe("generateSessionActivityTitle", () => {
   it("passes correct context to LLM prompt", async () => {

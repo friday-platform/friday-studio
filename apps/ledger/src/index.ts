@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import type { ActivityStorageAdapter } from "@atlas/activity";
-import { LocalActivityAdapter } from "@atlas/activity";
+import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";

@@ -1,9 +1,9 @@
-// Schemas and types
+// NOTE: This barrel is imported by the ledger Docker build, which does NOT copy
+// packages/llm/ or packages/core/. Do not re-export from title-generator.ts or
+// any module that transitively pulls @atlas/llm or @atlas/core.
 
 // Ledger HTTP client
 export { createActivityLedgerClient } from "./ledger-client.ts";
-// Local adapter (for direct instantiation in tests)
-export { LocalActivityAdapter } from "./local-adapter.ts";
 // Notifier
 export { ActivityNotifier } from "./notifier.ts";
 export type {
@@ -29,16 +29,3 @@ export {
 // Storage
 export type { ActivityListResult, ActivityStorageAdapter } from "./storage.ts";
 export { activityNotifier } from "./storage.ts";
-
-// Title generators
-export type {
-  GenerateResourceActivityTitleInput,
-  GenerateSessionActivityTitleInput,
-  UserActivityAction,
-} from "./title-generator.ts";
-export {
-  generateResourceActivityTitle,
-  generateSessionActivityTitle,
-  generateUserActivityTitle,
-  kebabToSentenceCase,
-} from "./title-generator.ts";

@@ -8383,6 +8383,7 @@
           "npm:hono@^4.11.1",
           "npm:pgsql-parser@^17.9.11",
           "npm:postgres@^3.4.7",
+          "npm:ulid@^3.0.2",
           "npm:zod@^4.2.1"
         ],
         "packageJson": {
@@ -8497,7 +8498,8 @@
       },
       "packages/activity": {
         "dependencies": [
-          "npm:hono@^4.10.4"
+          "npm:hono@^4.10.4",
+          "npm:ulid@^3.0.2"
         ],
         "packageJson": {
           "dependencies": [

@@ -6,5 +6,9 @@
     "./manager": "./src/manager.ts",
     "./storage": "./src/storage.ts",
     "./types": "./src/types.ts"
+  },
+  "imports": {
+    "@atlas/activity/titles": "../activity/src/title-utils.ts",
+    "@atlas/activity/title-generator": "../activity/src/title-generator.ts"
   }
 }

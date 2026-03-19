@@ -1,5 +1,5 @@
 import type { ActivityStorageAdapter } from "@atlas/activity";
-import { generateResourceActivityTitle } from "@atlas/activity";
+import { generateResourceActivityTitle } from "@atlas/activity/title-generator";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { logger } from "@atlas/logger";
 
