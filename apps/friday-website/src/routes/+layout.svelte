@@ -129,7 +129,7 @@ afterNavigate(() => {
 				>
 
 				<DropdownMenu.Item href="mailto:hello@hellofriday.ai" rel="noopener noreferrer"
-					>Contact Us</DropdownMenu.Item
+					>Contact us</DropdownMenu.Item
 				>
 
 				<DropdownMenu.Separator />
@@ -147,7 +147,7 @@ afterNavigate(() => {
 					target="_blank"
 					rel="noopener noreferrer"
 				>
-					Login
+					Log in
 				</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
@@ -166,7 +166,7 @@ afterNavigate(() => {
 				<a href="https://docs.hellofriday.ai" target="_blank" rel="noopener noreferrer">Docs</a>
 			</li>
 
-			<li><a href="mailto:hello@hellofriday.ai">Contact Us</a></li>
+			<li><a href="mailto:hello@hellofriday.ai">Contact us</a></li>
 		</ul>
 	</nav>
 
@@ -175,7 +175,7 @@ afterNavigate(() => {
 			>Join the beta</a
 		>
 
-		<a href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">Login</a>
+		<a href="https://auth.hellofriday.ai" target="_blank" rel="noopener noreferrer">Log in</a>
 	</div>
 </header>
 
