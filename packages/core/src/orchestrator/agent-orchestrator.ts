@@ -377,6 +377,35 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } },
       });
 
+      // Workaround for MCP SDK bug (typescript-sdk#731): when the SSE stream
+      // disconnects (e.g., pod OOMKilled) and reconnection fails, the transport
+      // emits onerror but never calls onclose. This leaves pending callTool()
+      // promises hanging until the 20-minute timeout. By closing the transport
+      // on fatal errors, Protocol._onclose() fires and rejects all pending
+      // requests immediately.
+      // NOTE: "SSE stream disconnected" is intentionally NOT matched here —
+      // it fires on every transient disconnect BEFORE the SDK attempts
+      // reconnection. Closing on that would kill the retry mechanism.
+      transport.onerror = (error) => {
+        const message = stringifyError(error);
+        const isFatal =
+          message.includes("Maximum reconnection attempts") ||
+          message.includes("Failed to reconnect SSE stream");
+        if (isFatal) {
+          this.logger.error("MCP transport fatal error, closing connection", {
+            sessionId,
+            error: message,
+          });
+          this.mcpSessions.delete(sessionId);
+          for (const key of this.activeStreamHandlers.keys()) {
+            if (key.startsWith(`${sessionId}:`)) {
+              this.activeStreamHandlers.delete(key);
+            }
+          }
+          transport.close().catch(() => {});
+        }
+      };
+
       await client.connect(transport);
 
       // Forward streaming notifications from MCP agents to the session's stream handler
