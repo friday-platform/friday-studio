@@ -3,6 +3,7 @@ import type { MCPServerConfig } from "@atlas/config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -140,6 +141,23 @@ describe("createMCPTools", () => {
 
     const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
+    // Should NOT have tried the second server
+    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+  });
+
+  it("re-throws NoDefaultCredentialError immediately", async () => {
+    mockResolveEnvValues.mockRejectedValue(new NoDefaultCredentialError("github"));
+
+    const configs: Record<string, MCPServerConfig> = {
+      "needs-cred": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_123", key: "token" } },
+      },
+      "other-server": { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(NoDefaultCredentialError);
     // Should NOT have tried the second server
     expect(mockCreateMCPClient).not.toHaveBeenCalled();
   });

@@ -19,13 +19,21 @@ import {
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import type { MCPServerConfig } from "@atlas/config";
-import { createErrorCause, isAPIErrorCause } from "@atlas/core";
+import {
+  createErrorCause,
+  hasUnusableCredentialCause,
+  isAPIErrorCause,
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
+  UserConfigurationError,
+} from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import { createMCPTools } from "@atlas/mcp";
+import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import {
   buildResourceGuidance,
@@ -1642,7 +1650,24 @@ export class FSMEngine {
       }
     }
 
-    const mcpResult = await createMCPTools(effectiveConfigs, logger);
+    let mcpResult: MCPToolsResult;
+    try {
+      mcpResult = await createMCPTools(effectiveConfigs, logger);
+    } catch (error) {
+      if (hasUnusableCredentialCause(error)) {
+        let provider = "unknown";
+        if (
+          error instanceof LinkCredentialNotFoundError ||
+          error instanceof LinkCredentialExpiredError
+        ) {
+          provider = error.serverName ?? "unknown";
+        } else if (error instanceof NoDefaultCredentialError) {
+          provider = error.provider;
+        }
+        throw UserConfigurationError.credentialRefreshFailed(this._definition.id, provider, error);
+      }
+      throw error;
+    }
     dispose = mcpResult.dispose;
 
     // Filter: platform tools must be in allowlist, non-platform tools pass through

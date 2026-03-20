@@ -12,6 +12,7 @@ import type { MCPServerConfig, MCPServerToolFilter } from "@atlas/config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
@@ -88,18 +89,19 @@ export async function createMCPTools(
     } catch (error) {
       if (
         error instanceof LinkCredentialNotFoundError ||
-        error instanceof LinkCredentialExpiredError
+        error instanceof LinkCredentialExpiredError ||
+        error instanceof NoDefaultCredentialError
       ) {
         // Clean up any already-connected clients before re-throwing
         await Promise.allSettled(clients.map((c) => c.close()));
 
         // Enrich with server name if not already set
-        if (!error.serverName) {
-          if (error instanceof LinkCredentialNotFoundError) {
-            const enriched = new LinkCredentialNotFoundError(error.credentialId, serverId);
-            enriched.cause = error;
-            throw enriched;
-          }
+        if (error instanceof LinkCredentialNotFoundError && !error.serverName) {
+          const enriched = new LinkCredentialNotFoundError(error.credentialId, serverId);
+          enriched.cause = error;
+          throw enriched;
+        }
+        if (error instanceof LinkCredentialExpiredError && !error.serverName) {
           const enriched = new LinkCredentialExpiredError(
             error.credentialId,
             error.status,
