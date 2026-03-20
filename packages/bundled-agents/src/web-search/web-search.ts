@@ -299,8 +299,14 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     }
 
     const [progressMessage, reportDescription] = await Promise.all([
-      generateResponseProgress(prompt, abortSignal),
-      generateResponseDescription(prompt, abortSignal),
+      generateResponseProgress(prompt, abortSignal).catch((error) => {
+        logger.warn("Failed to generate progress message", { error });
+        return "Searching the web";
+      }),
+      generateResponseDescription(prompt, abortSignal).catch((error) => {
+        logger.warn("Failed to generate report description", { error });
+        return "Web Search Results";
+      }),
     ]);
 
     stream?.emit({

@@ -10,15 +10,20 @@ async function condenseObjective(objective: string, logger: Logger): Promise<str
 
   logger.info("Condensing long objective", { originalLength: objective.length });
 
-  const condensed = await smallLLM({
-    system:
-      "Extract the core search question from this context. Output ONLY the search query, max 500 chars.",
-    prompt: objective,
-    maxOutputTokens: 250,
-  });
+  try {
+    const condensed = await smallLLM({
+      system:
+        "Extract the core search question from this context. Output ONLY the search query, max 500 chars.",
+      prompt: objective,
+      maxOutputTokens: 250,
+    });
 
-  logger.info("Objective condensed", { newLength: condensed.length });
-  return condensed;
+    logger.info("Objective condensed", { newLength: condensed.length });
+    return condensed;
+  } catch (error) {
+    logger.warn("Failed to condense objective, truncating", { error });
+    return objective.slice(0, PARALLEL_MAX_OBJECTIVE);
+  }
 }
 
 export function computeAfterDate(recencyDays: number): string {

@@ -29,9 +29,9 @@ export async function smallLLM(params: {
     });
     return result.text;
   } catch (e) {
-    // All smallLLM() call sites have graceful fallbacks (e.g. deterministic titles),
-    // so 400s from the LiteLLM proxy (budget exceeded, model not found, parameter
-    // rejection, etc.) are expected/benign — log at warn to avoid Sentry noise.
+    // 400s from the LiteLLM proxy or upstream providers (budget exceeded, model not
+    // found, parameter rejection, gpt-oss tool hallucination, etc.) are logged at
+    // warn to avoid Sentry noise. Call sites must handle errors with fallbacks.
     if (APICallError.isInstance(e) && e.statusCode === 400) {
       logger.warn("Small LLM request rejected (400)", { error: e });
       throw e;
