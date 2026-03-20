@@ -130,7 +130,7 @@ async function processSlackSignal(
     const result = await daemon.triggerWorkspaceSignal(workspaceId, signalId, {
       ...payload,
       chatId,
-      sessionId: chatId,
+      streamId: chatId,
     });
     sessionId = result.sessionId;
   } catch (error) {
