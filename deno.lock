@@ -8332,6 +8332,7 @@
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.3.3",
+            "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.156",
             "npm:file-type@^21.3.3",
             "npm:hono-openapi@^1.3.0",
