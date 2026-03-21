@@ -49,6 +49,7 @@
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.8_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.12.8_zod@4.3.6",
     "npm:@hubspot/api-client@^13.4.0": "13.5.0",
+    "npm:@hubspot/api-client@^13.5.0": "13.5.0",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1": "4.7.1_prettier@3.8.1",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.8.0__@types+react@19.2.14__react@19.2.4_@types+react@19.2.14_react@19.2.4",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
@@ -8425,7 +8426,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@hono/zod-validator@0.7.6",
-            "npm:@hubspot/api-client@^13.4.0",
+            "npm:@hubspot/api-client@^13.5.0",
             "npm:@jsr/std__async@1.0.15",
             "npm:@modelcontextprotocol/sdk@^1.27.1",
             "npm:@octokit/auth-app@^8.2.0",
