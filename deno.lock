@@ -66,7 +66,7 @@
     "npm:@jsr/std__yaml@^1.0.9": "1.0.12",
     "npm:@lezer/common@^1.5.1": "1.5.1",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
-    "npm:@libpdf/core@~0.3.3": "0.3.3",
+    "npm:@libpdf/core@~0.3.4": "0.3.4",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.54.0__acorn@8.16.0",
     "npm:@modelcontextprotocol/sdk@^1.27.0": "1.27.1_zod@4.3.6_hono@4.12.8_ajv@8.18.0_express@5.2.1",
     "npm:@modelcontextprotocol/sdk@^1.27.1": "1.27.1_zod@4.3.6_hono@4.12.8_ajv@8.18.0_express@5.2.1",
@@ -1975,8 +1975,8 @@
         "@lezer/highlight"
       ]
     },
-    "@libpdf/core@0.3.3": {
-      "integrity": "sha512-MoyjZ00RPJ1sDgFooerCw3WqXzaaufHFkBYZv6v8qKUaIljdS2MYm1OYvcyV+V1qplo+o8qc0X+0p/JipzJ/Jw==",
+    "@libpdf/core@0.3.4": {
+      "integrity": "sha512-gE8LtgRsUofAMVSY1OVg9jGOfxe7tdUvV2cM4/vp46/TeO1JN4o2rZVIz2bW5rra6JuEzpdgUrdczfwiQft5pQ==",
       "dependencies": [
         "@noble/ciphers",
         "@noble/hashes@2.0.1",
@@ -8351,7 +8351,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@libpdf/core@~0.3.3",
+            "npm:@libpdf/core@~0.3.4",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.157",
             "npm:file-type@^21.3.3",
@@ -8607,7 +8607,7 @@
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
-            "npm:@libpdf/core@~0.3.3",
+            "npm:@libpdf/core@~0.3.4",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
             "npm:@xmldom/xmldom@~0.8.11",
             "npm:ai@^5.0.157",
