@@ -36,7 +36,7 @@
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
     "@opentelemetry/api": "^1.9.0",
-    "ai": "^5.0.156",
+    "ai": "^5.0.157",
     "zod": "^4.3.5"
   },
   "devDependencies": {

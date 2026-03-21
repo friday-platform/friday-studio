@@ -9,7 +9,7 @@
     "@atlas/fsm-engine": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "ai": "^5.0.156",
+    "ai": "^5.0.157",
     "vitest": "^4.1.0",
     "zod": "^4.3.5"
   }
