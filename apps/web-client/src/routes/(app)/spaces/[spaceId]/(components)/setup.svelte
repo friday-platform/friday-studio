@@ -51,9 +51,7 @@
     ambiguousProviders.every((i) => selectedCredentials[i.provider]),
   );
 
-  const allConnected = $derived(
-    integrations.every((i) => i.connected || i.availableCredentials),
-  );
+  const allConnected = $derived(integrations.every((i) => i.connected || i.availableCredentials));
 
   const canComplete = $derived(allConnected && allAmbiguousResolved);
 

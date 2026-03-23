@@ -1,5 +1,15 @@
 export { default as Button } from "./button.svelte";
 export { Collapsible } from "./collapsible/index.js";
+export { Dialog } from "./dialog/index.js";
+export { DropdownMenu } from "./dropdown-menu/index.js";
+export { default as FormattedData } from "./formatted-data.svelte";
 export { IconSmall, Icons } from "./icons/index.js";
+export { default as JsonHighlight } from "./json-highlight.svelte";
+export { jsonHighlighter } from "./json-highlighter.js";
+export { toast, NotificationPortal } from "./notification/index.js";
+export type { ToastData } from "./notification/index.js";
+export { Page } from "./page/index.js";
 export { SegmentedControl } from "./segmented-control/index.js";
+export { default as Separator } from "./separator.svelte";
+export { default as StatusBadge } from "./status-badge.svelte";
 export { default as Tooltip } from "./tooltip.svelte";

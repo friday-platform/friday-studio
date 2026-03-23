@@ -2,7 +2,12 @@
   "name": "@atlas/fsm-engine",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./mod.ts", "./mcp-tools": "./mcp-tools/index.ts" },
+  "exports": {
+    ".": "./mod.ts",
+    "./schema": "./schema.ts",
+    "./types": "./types.ts",
+    "./mcp-tools": "./mcp-tools/index.ts"
+  },
   "main": "./mod.ts",
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",

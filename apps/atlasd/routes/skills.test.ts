@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -642,6 +642,134 @@ describe("Skills API Routes - Global Catalog", () => {
 
       expect(response.status).toBe(201);
       expect(mockSmallLLM).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ARCHIVE FILE LISTING & CONTENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Skills API Routes - Archive Files", () => {
+  /**
+   * Publishes a skill with a real tarball archive containing the given files.
+   * Uses the multipart upload endpoint so the archive is stored.
+   */
+  async function publishWithArchive(
+    namespace: string,
+    name: string,
+    files: Record<string, string>,
+  ): Promise<void> {
+    const { packSkillArchive } = await import("@atlas/skills/archive");
+    const archiveDir = join(tmpdir(), `skills-test-archive-${Date.now()}`);
+    mkdirSync(archiveDir, { recursive: true });
+
+    for (const [filePath, content] of Object.entries(files)) {
+      const fullPath = join(archiveDir, filePath);
+      mkdirSync(join(fullPath, ".."), { recursive: true });
+      writeFileSync(fullPath, content);
+    }
+
+    const archiveBuffer = await packSkillArchive(archiveDir);
+    rmSync(archiveDir, { recursive: true, force: true });
+
+    const formData = new FormData();
+    formData.append(
+      "archive",
+      new File([new Uint8Array(archiveBuffer)], "skill.tar.gz", { type: "application/gzip" }),
+    );
+    formData.append("description", "Skill with archive");
+    formData.append("instructions", "Test instructions.");
+
+    const response = await skillsRoutes.request(`/@${namespace}/${name}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    expect(response.status).toBe(201);
+  }
+
+  // ─── LIST FILES ──────────────────────────────────────────────────────────────
+
+  describe("GET /@:namespace/:name/files (list archive files)", () => {
+    it("returns file paths for skill with archive", async () => {
+      await publishWithArchive("atlas", "with-archive", {
+        "references/foo.md": "# Foo\nSome content.",
+        "references/bar.md": "# Bar\nOther content.",
+        "data/schema.json": '{"type": "object"}',
+      });
+
+      const response = await skillsRoutes.request("/@atlas/with-archive/files");
+      expect(response.status).toBe(200);
+
+      const body = z.object({ files: z.array(z.string()) }).parse(await response.json());
+      expect(body.files).toContain("references/foo.md");
+      expect(body.files).toContain("references/bar.md");
+      expect(body.files).toContain("data/schema.json");
+    });
+
+    it("returns empty array for skill without archive", async () => {
+      // code-review was published via JSON (no archive)
+      const response = await skillsRoutes.request("/@atlas/code-review/files");
+      expect(response.status).toBe(200);
+
+      const body = z.object({ files: z.array(z.string()) }).parse(await response.json());
+      expect(body.files).toHaveLength(0);
+    });
+
+    it("returns 404 for nonexistent skill", async () => {
+      const response = await skillsRoutes.request("/@atlas/nonexistent-archive/files");
+      expect(response.status).toBe(404);
+
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("Skill not found");
+    });
+  });
+
+  // ─── GET FILE CONTENT ────────────────────────────────────────────────────────
+
+  describe("GET /@:namespace/:name/files/* (archive file content)", () => {
+    it("returns file content from archive", async () => {
+      const response = await skillsRoutes.request("/@atlas/with-archive/files/references/foo.md");
+      expect(response.status).toBe(200);
+
+      const body = z.object({ path: z.string(), content: z.string() }).parse(await response.json());
+      expect(body.path).toBe("references/foo.md");
+      expect(body.content).toContain("# Foo");
+    });
+
+    it("returns 404 for nonexistent file in archive", async () => {
+      const response = await skillsRoutes.request("/@atlas/with-archive/files/nonexistent.md");
+      expect(response.status).toBe(404);
+
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("File not found in archive");
+    });
+
+    it("rejects path traversal attempt", async () => {
+      // URL normalization resolves /../ before it reaches the handler,
+      // so the path becomes /@atlas/with-archive/etc/passwd which doesn't
+      // match the /files/* route. Verify with an encoded traversal that
+      // bypasses URL normalization but is caught by the handler's guard.
+      const req = new Request("http://localhost/@atlas/with-archive/files/..%2Fetc%2Fpasswd");
+      const response = await skillsRoutes.request(req);
+      // Either 400 (handler catches ..) or route doesn't match — both prevent traversal
+      expect(response.status).not.toBe(200);
+    });
+
+    it("returns 404 for nonexistent skill", async () => {
+      const response = await skillsRoutes.request("/@atlas/nonexistent-archive/files/any.md");
+      expect(response.status).toBe(404);
+
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("Skill not found");
+    });
+
+    it("returns 404 when skill has no archive", async () => {
+      const response = await skillsRoutes.request("/@atlas/code-review/files/any.md");
+      expect(response.status).toBe(404);
+
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("No archive available");
     });
   });
 });

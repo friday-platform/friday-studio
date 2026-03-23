@@ -215,6 +215,15 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       .get(skillId) as { max_version: number | null } | undefined;
     const version = (row?.max_version ?? 0) + 1;
 
+    // Preserve archive from previous version when not provided
+    let archive = input.archive ?? null;
+    if (!archive && version > 1) {
+      const prev = db
+        .prepare("SELECT archive FROM skills WHERE skill_id = ? AND version = ? LIMIT 1")
+        .get(skillId, version - 1) as { archive: Uint8Array | null } | undefined;
+      archive = prev?.archive ? new Uint8Array(prev.archive) : null;
+    }
+
     try {
       // If skillId was explicitly provided and name changed, update all previous versions
       if (input.skillId) {
@@ -236,7 +245,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
         0,
         JSON.stringify(input.frontmatter ?? {}),
         input.instructions,
-        input.archive ?? null,
+        archive,
         createdBy,
         now,
       );

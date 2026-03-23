@@ -9,7 +9,7 @@ export type OAuthConfig =
   | {
       /** Discovery mode via Protected Resource Metadata */
       mode: "discovery";
-      /** MCP server URL (e.g., https://mcp.atlassian.com/v1/sse) */
+      /** MCP server URL (e.g., https://mcp.atlassian.com/v1/mcp) */
       serverUrl: string;
       /** Default scopes to request during authorization */
       scopes?: string[];
@@ -261,7 +261,7 @@ export type OAuthProvider = BaseProviderDefinition & {
  *   description: "Atlassian workspace access via MCP",
  *   oauthConfig: {
  *     mode: "discovery",
- *     serverUrl: "https://mcp.atlassian.com/v1/sse",
+ *     serverUrl: "https://mcp.atlassian.com/v1/mcp",
  *     scopes: ["read:jira-work", "write:jira-work"]
  *   },
  *   async health(tokens) {

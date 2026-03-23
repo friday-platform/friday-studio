@@ -1,7 +1,11 @@
 import { parseResult, client as v2Client } from "@atlas/client/v2";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
+import { z } from "zod";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
+
+const jsonRecordSchema = z.record(z.string(), z.unknown());
 
 interface TriggerSignalOptions {
   workspaceId: string;
@@ -49,7 +53,8 @@ interface BatchTriggerResult {
  */
 export function validateSignalPayload(data: string): Record<string, unknown> {
   try {
-    return { payload: JSON.parse(data) };
+    const parsed: unknown = JSON.parse(data);
+    return jsonRecordSchema.parse(parsed);
   } catch (error) {
     throw new Error(`Invalid JSON data: ${stringifyError(error)}`);
   }
@@ -214,4 +219,71 @@ export async function batchTriggerSignal(
   }
 
   return { signal: options.signalName, timestamp: new Date().toISOString(), results };
+}
+
+interface StreamTriggerOptions {
+  signalName: string;
+  payload?: Record<string, unknown>;
+  workspaceIds?: string[];
+  all?: boolean;
+  exclude?: string[];
+  onEvent: (event: Record<string, unknown>) => void;
+}
+
+/**
+ * Triggers a signal on a single workspace via SSE and streams events back.
+ * Only targets the first resolved workspace (SSE is a single-connection protocol).
+ */
+export async function streamTriggerSignal(options: StreamTriggerOptions): Promise<void> {
+  const targets = await resolveWorkspaceTargets(options.workspaceIds, options.exclude, options.all);
+  const target = targets[0];
+  if (!target) {
+    throw new Error("No target workspaces found");
+  }
+
+  const baseUrl = getAtlasDaemonUrl();
+  const url = `${baseUrl}/api/workspaces/${encodeURIComponent(target.id)}/signals/${encodeURIComponent(options.signalName)}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ payload: options.payload }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Signal trigger failed (${response.status}): ${text}`);
+  }
+
+  if (!response.body) {
+    throw new Error("No response body from SSE stream");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+
+    for (
+      let newlineIdx = buffer.indexOf("\n");
+      newlineIdx !== -1;
+      newlineIdx = buffer.indexOf("\n")
+    ) {
+      const line = buffer.slice(0, newlineIdx).trim();
+      buffer = buffer.slice(newlineIdx + 1);
+
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6);
+      if (data === "[DONE]") return;
+
+      try {
+        const parsed = jsonRecordSchema.parse(JSON.parse(data));
+        options.onEvent(parsed);
+      } catch {
+        // Non-JSON SSE data line — print raw
+        options.onEvent({ type: "raw", data });
+      }
+    }
+  }
 }

@@ -1,3 +1,10 @@
+// Archive
+export {
+  extractSkillArchive,
+  listArchiveFiles,
+  packSkillArchive,
+  readArchiveFile,
+} from "./archive.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
 export type {

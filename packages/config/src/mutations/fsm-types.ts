@@ -4,14 +4,14 @@
  * Re-exports types and schemas from @atlas/fsm-engine for use in mutation functions.
  */
 
-import {
-  type Action as FSMAction,
-  type AgentAction as FSMAgentAction,
-  type FSMDefinition,
-  FSMDefinitionSchema,
-  type LLMAction as FSMLLMAction,
-  type StateDefinition,
-} from "@atlas/fsm-engine";
+import { FSMDefinitionSchema } from "@atlas/fsm-engine/schema";
+import type {
+  Action as FSMAction,
+  AgentAction as FSMAgentAction,
+  FSMDefinition,
+  LLMAction as FSMLLMAction,
+  StateDefinition,
+} from "@atlas/fsm-engine/types";
 
 // ==============================================================================
 // RE-EXPORTED TYPES FROM FSM-ENGINE

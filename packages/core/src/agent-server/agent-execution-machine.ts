@@ -31,6 +31,7 @@ type PrepareContextInput = {
   sessionData: AgentSessionData;
   abortSignal?: AbortSignal;
   outputSchema?: Record<string, unknown>;
+  config?: Record<string, unknown>;
 };
 
 export type PrepareContextOutput = {
@@ -64,6 +65,7 @@ interface AgentExecutionContext {
   sessionData?: AgentSessionData;
   abortSignal?: AbortSignal;
   outputSchema?: Record<string, unknown>;
+  config?: Record<string, unknown>;
   preparedContext?: AgentContext;
   releaseMCPTools?: () => Promise<void>;
   result?: AgentPayload<unknown>;
@@ -82,6 +84,7 @@ type AgentExecutionEvents =
       sessionData: AgentSessionData;
       abortSignal?: AbortSignal;
       outputSchema?: Record<string, unknown>;
+      config?: Record<string, unknown>;
     }
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
@@ -133,10 +136,11 @@ export function createAgentExecutionMachine(
       }),
 
       prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
-        // Pass abortSignal and outputSchema as overrides if present
+        // Pass abortSignal, outputSchema, and config as overrides if present
         const overrides: Partial<AgentContext> = {};
         if (input.abortSignal) overrides.abortSignal = input.abortSignal;
         if (input.outputSchema) overrides.outputSchema = input.outputSchema;
+        if (input.config) overrides.config = input.config;
         return await contextBuilder(
           input.agent,
           input.sessionData,
@@ -194,6 +198,12 @@ export function createAgentExecutionMachine(
             return undefined;
           }
           return event.outputSchema;
+        },
+        config: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.config;
         },
         startTime: () => Date.now(),
       }),
@@ -364,6 +374,7 @@ export function createAgentExecutionMachine(
               sessionData: context.sessionData,
               abortSignal: context.abortSignal,
               outputSchema: context.outputSchema,
+              config: context.config,
             };
           },
           onDone: { target: "executing", actions: "assignPreparedContext" },

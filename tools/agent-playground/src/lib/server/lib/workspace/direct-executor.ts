@@ -13,7 +13,7 @@ import type { MCPServerConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { AgentAction, AgentResult, Context, SignalWithContext } from "@atlas/fsm-engine";
 import { registry, traceModel } from "@atlas/llm";
-import { logger } from "@atlas/logger";
+import { logger } from "@atlas/logger/console";
 import { createMCPTools } from "@atlas/mcp";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { generateText, stepCountIs, type Tool } from "ai";

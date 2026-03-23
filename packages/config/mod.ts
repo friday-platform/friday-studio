@@ -34,6 +34,7 @@ export {
   supervisorDefaults,
   supervisorDefaultsWrapped,
 } from "./src/supervisor-defaults.ts";
+export * from "./src/topology.ts";
 export * from "./src/workspace.ts";
 
 // ==============================================================================

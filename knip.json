@@ -135,7 +135,7 @@
     "**/$lib/build-info"
   ],
   "ignoreDependencies": ["@types/deno"],
-  "ignoreBinaries": ["svelte-kit", "prettier"],
+  "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",

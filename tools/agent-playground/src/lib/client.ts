@@ -8,7 +8,7 @@ export type Client = ReturnType<typeof makeClient>;
  * Creates a typed Hono RPC client for the playground API.
  * @param customFetch - Fetch implementation (use SvelteKit's `fetch` in load functions)
  */
-export function makeClient(customFetch: typeof globalThis.fetch) {
+function makeClient(customFetch: typeof globalThis.fetch) {
   return hc<Router>("/", { fetch: customFetch });
 }
 

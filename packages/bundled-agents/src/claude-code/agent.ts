@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 import { type HookCallback, query } from "@anthropic-ai/claude-agent-sdk";
@@ -238,6 +240,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
     constraints:
       "Runs in isolated sandbox. Requires Anthropic API key and GitHub token. Cannot access workspace resource tables or artifacts directly. For reading GitHub data (PRs, issues, commits, repos), use the github MCP server. For data analysis, use data-analyst.",
     outputSchema: ClaudeCodeOutputSchema,
+    useWorkspaceSkills: true,
     expertise: {
       examples: [
         "Write a TypeScript function to parse JSON",
@@ -260,7 +263,10 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
         },
       ],
     },
-    handler: async (prompt, { logger, abortSignal, stream, session, env, outputSchema }) => {
+    handler: async (
+      prompt,
+      { logger, abortSignal, stream, session, env, config, outputSchema, skills },
+    ) => {
       const apiKey = env.ANTHROPIC_API_KEY;
       if (!apiKey) {
         return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
@@ -274,21 +280,45 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
       const controller = new AbortController();
       abortSignal?.addEventListener("abort", () => controller.abort(), { once: true });
 
-      // Run sandbox creation and prompt extraction in parallel to reduce latency
-      const [sandbox, prep] = await Promise.all([
-        createSandbox(session.sessionId),
-        extractRepoAndTask(prompt, abortSignal).catch((error: unknown) => {
-          logger.warn("Repo extraction failed, using original prompt", {
-            error: stringifyError(error),
-          });
-          return undefined;
-        }),
-      ]);
+      // If a prior FSM step (gh/bb agent) already cloned the repo, the runtime
+      // passes the clone path as config.workDir. Use it directly instead of
+      // creating a fresh sandbox and re-cloning.
+      const existingWorkDir = typeof config?.workDir === "string" ? config.workDir : undefined;
+
+      // When a prior FSM step already cloned the repo, reuse it and skip
+      // sandbox creation. Still run Haiku extraction for effort classification.
+      const [sandbox, prep] = existingWorkDir
+        ? await Promise.all([
+            Promise.resolve({
+              workDir: existingWorkDir,
+              // Do NOT clean up — the caller (workspace pipeline) owns this directory.
+              // Other steps (e.g. repo-push) may still need it after claude-code finishes.
+              cleanup: () => Promise.resolve(),
+            }),
+            extractRepoAndTask(prompt, abortSignal).catch((error: unknown) => {
+              logger.warn("Repo extraction failed, using original prompt", {
+                error: stringifyError(error),
+              });
+              return undefined;
+            }),
+          ])
+        : await Promise.all([
+            createSandbox(session.sessionId),
+            extractRepoAndTask(prompt, abortSignal).catch((error: unknown) => {
+              logger.warn("Repo extraction failed, using original prompt", {
+                error: stringifyError(error),
+              });
+              return undefined;
+            }),
+          ]);
 
       // Apply extraction results: repo cloning and effort classification
       let effectivePrompt = prompt;
       let effort: "low" | "medium" | "high" = "medium";
-      if (prep) {
+      if (existingWorkDir) {
+        if (prep) effort = prep.effort;
+        logger.info("Using clone from previous FSM step", { workDir: existingWorkDir, effort });
+      } else if (prep) {
         effort = prep.effort;
         if (prep.repo) {
           logger.info("Pre-cloning repository", { repo: prep.repo, targetDir: sandbox.workDir });
@@ -307,6 +337,23 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
         } else {
           logger.debug("No repository detected in prompt, skipping pre-clone");
         }
+      }
+
+      // Write workspace skills to sandbox for SDK native Skill tool discovery.
+      // Written AFTER cloneRepo so repo's own .claude/skills/ are preserved alongside.
+      if (skills && skills.length > 0) {
+        for (const skill of skills) {
+          const skillDir = join(sandbox.workDir, ".claude", "skills", skill.name);
+          await mkdir(skillDir, { recursive: true });
+          await writeFile(
+            join(skillDir, "SKILL.md"),
+            `---\nname: ${skill.name}\ndescription: ${skill.description}\nuser-invocable: false\n---\n\n${skill.instructions}`,
+          );
+        }
+        logger.info("Wrote workspace skills to sandbox", {
+          count: skills.length,
+          names: skills.map((s) => s.name),
+        });
       }
 
       let sdkStream: ReturnType<typeof query> | undefined;
@@ -333,6 +380,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
             tools: { type: "preset", preset: "claude_code" },
             disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
             permissionMode: "bypassPermissions",
+            settings: { attribution: { commit: "", pr: "" }, includeCoAuthoredBy: false },
             settingSources: ["project"],
             maxTurns: 500,
             sandbox: sandboxOptions,

@@ -1,0 +1,9 @@
+{
+  "name": "@atlas/pty-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "server.ts",
+  "dependencies": { "node-pty": "^1.0.0", "ws": "^8.18.0" },
+  "devDependencies": { "@types/ws": "^8.18.0" }
+}

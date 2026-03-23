@@ -13,7 +13,7 @@
    *
    * @component
    */
-  import { Collapsible, IconSmall } from "@atlas/ui";
+  import { Collapsible, IconSmall, JsonHighlight } from "@atlas/ui";
   import { useExecutionState, type ActionEntry } from "$lib/execution-context.svelte.ts";
   import ExecutionDrawer from "./execution-drawer.svelte";
 
@@ -108,22 +108,22 @@
   /** Action type short label and color (matches diagram: fn=amber, AI=blue, agent=green, emit=gray). */
   function actionTypeInfo(actionType: string): { label: string; color: string } {
     const lower = actionType.toLowerCase();
-    if (lower.includes("agent")) return { label: "agent", color: "#22c55e" };
-    if (lower.includes("llm") || lower.includes("ai")) return { label: "AI", color: "#3b82f6" };
+    if (lower.includes("agent")) return { label: "agent", color: "var(--color-success)" };
+    if (lower.includes("llm") || lower.includes("ai")) return { label: "AI", color: "var(--color-info)" };
     if (lower.includes("emit") || lower.includes("signal"))
-      return { label: "emit", color: "#6b7280" };
-    return { label: "fn", color: "#d97706" };
+      return { label: "emit", color: "color-mix(in srgb, var(--color-text), transparent 50%)" };
+    return { label: "fn", color: "var(--color-warning)" };
   }
 
   /** Status indicator character and color. */
   function statusIndicator(status: ActionEntry["status"]): { icon: string; color: string } {
     switch (status) {
       case "completed":
-        return { icon: "\u2713", color: "#22c55e" };
+        return { icon: "\u2713", color: "var(--color-success)" };
       case "failed":
-        return { icon: "\u2717", color: "#ef4444" };
+        return { icon: "\u2717", color: "var(--color-error)" };
       case "started":
-        return { icon: "\u25CB", color: "#9ca3af" };
+        return { icon: "\u25CB", color: "color-mix(in srgb, var(--color-text), transparent 40%)" };
     }
   }
 
@@ -208,7 +208,9 @@
                   {/snippet}
                 </Collapsible.Trigger>
                 <Collapsible.Content>
-                  <pre class="snapshot-value">{JSON.stringify(value, null, 2)}</pre>
+                  <div class="snapshot-value">
+                    <JsonHighlight code={JSON.stringify(value, null, 2)} />
+                  </div>
                 </Collapsible.Content>
               </Collapsible.Root>
             </div>
@@ -272,15 +274,15 @@
   }
 
   .result-pill.filled {
-    background-color: color-mix(in srgb, #22c55e, transparent 88%);
-    border-color: color-mix(in srgb, #22c55e, transparent 60%);
+    background-color: color-mix(in srgb, var(--color-success), transparent 88%);
+    border-color: color-mix(in srgb, var(--color-success), transparent 60%);
     color: color-mix(in srgb, var(--color-text), transparent 20%);
   }
 
   .result-pill.just-filled {
     animation: pill-pop 300ms ease-out;
-    background-color: color-mix(in srgb, #22c55e, transparent 75%);
-    border-color: color-mix(in srgb, #22c55e, transparent 40%);
+    background-color: color-mix(in srgb, var(--color-success), transparent 75%);
+    border-color: color-mix(in srgb, var(--color-success), transparent 40%);
     color: var(--color-text);
     font-weight: var(--font-weight-6);
   }
@@ -347,7 +349,7 @@
   }
 
   .action-row.failed {
-    background-color: color-mix(in srgb, #ef4444, transparent 95%);
+    background-color: color-mix(in srgb, var(--color-error), transparent 95%);
     border-radius: var(--radius-1);
   }
 
@@ -359,12 +361,12 @@
 
   .action-type-marker {
     border-radius: var(--radius-1);
-    color: #fff;
+    color: var(--color-white);
     flex-shrink: 0;
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-6);
     letter-spacing: var(--font-letterspacing-1);
-    padding-block: 1px;
+    padding-block: var(--size-px);
     padding-inline: var(--size-1);
     text-transform: uppercase;
   }
@@ -407,7 +409,7 @@
   }
 
   .snapshot-entry.new-entry {
-    border-inline-start: 3px solid #f59e0b;
+    border-inline-start: 3px solid var(--color-warning);
   }
 
   .snapshot-entry :global(button) {
@@ -437,8 +439,8 @@
   }
 
   .snapshot-chevron :global(svg) {
-    block-size: 12px;
-    inline-size: 12px;
+    block-size: var(--size-3);
+    inline-size: var(--size-3);
   }
 
   .snapshot-chevron.expanded {
@@ -452,9 +454,9 @@
   }
 
   .new-badge {
-    background-color: color-mix(in srgb, #f59e0b, transparent 80%);
+    background-color: color-mix(in srgb, var(--color-warning), transparent 80%);
     border-radius: var(--radius-1);
-    color: #f59e0b;
+    color: var(--color-warning);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-6);
     letter-spacing: var(--font-letterspacing-2);
@@ -464,14 +466,9 @@
 
   .snapshot-value {
     border-block-start: 1px solid var(--color-border-2);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    line-height: var(--font-lineheight-3);
     max-block-size: 200px;
     overflow-y: auto;
     padding: var(--size-2) var(--size-3);
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   /* Summary */
@@ -489,11 +486,11 @@
   }
 
   .summary-indicator.success {
-    color: #22c55e;
+    color: var(--color-success);
   }
 
   .summary-indicator.failure {
-    color: #ef4444;
+    color: var(--color-error);
   }
 
   .summary-state {

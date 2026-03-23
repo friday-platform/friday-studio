@@ -43,6 +43,7 @@ export type {
   AgentResult,
   AgentSessionData,
   AgentSessionState,
+  AgentSkill,
   AgentTelemetryConfig,
   ArtifactRef,
   AtlasAgent,

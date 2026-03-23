@@ -1,7 +1,31 @@
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { agentIdParamsSchema, agentMetadataSchema, errorResponseSchema } from "./schemas.ts";
+
+/**
+ * Type guard for Zod schema objects — checks for Zod v4's internal `_zod` brand.
+ */
+function isZodSchema(value: unknown): value is z.ZodType {
+  return value != null && typeof value === "object" && "_zod" in value;
+}
+
+/**
+ * Convert a Zod schema to JSON Schema for serialization.
+ * Returns the value as-is if already serializable, undefined if conversion fails.
+ */
+function serializeSchema(schema: unknown): unknown {
+  if (schema == null) return undefined;
+  if (isZodSchema(schema)) {
+    try {
+      return z.toJSONSchema(schema);
+    } catch {
+      return undefined;
+    }
+  }
+  return schema;
+}
 
 const getAgent = daemonFactory.createApp();
 
@@ -37,7 +61,12 @@ getAgent.get(
         return c.json({ error: "Agent not found" }, 404);
       }
 
-      return c.json(agent.metadata);
+      const { metadata } = agent;
+      return c.json({
+        ...metadata,
+        inputSchema: serializeSchema(metadata.inputSchema),
+        outputSchema: serializeSchema(metadata.outputSchema),
+      });
     } catch (error) {
       return c.json({ error: `Failed to get agent: ${stringifyError(error)}` }, 500);
     }

@@ -128,8 +128,6 @@ export interface ITempestMessage {
 }
 
 export enum MessageUser {
-  HUMAN = "human",
-  AGENT = "agent",
   SYSTEM = "system",
 }
 

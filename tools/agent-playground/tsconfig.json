@@ -10,14 +10,15 @@
     "strict": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "types": ["svelte", "vite/client"]
+    "types": ["svelte", "vite/client", "deno"]
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.js",
     "src/**/*.svelte",
     ".svelte-kit/ambient.d.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "../../types/deno-compat.d.ts"
   ],
   "exclude": ["node_modules", "build", "dist", ".svelte-kit/types"]
 }

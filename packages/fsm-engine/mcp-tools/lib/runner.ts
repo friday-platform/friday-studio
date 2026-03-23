@@ -75,7 +75,7 @@ async function runCustomValidation(
   const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
   try {
     await writeFile(tempFile, code, "utf-8");
-    const module = await import(`file://${tempFile}`);
+    const module = await import(/* @vite-ignore */ `file://${tempFile}`);
     const validate = module.validate ?? module.default;
 
     if (!validate || typeof validate !== "function") {

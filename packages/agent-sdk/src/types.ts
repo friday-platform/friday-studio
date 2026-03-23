@@ -260,6 +260,13 @@ export interface AgentTelemetryConfig {
   recordOutputs: boolean;
 }
 
+/** Resolved workspace skill passed to agent handlers */
+export interface AgentSkill {
+  name: string;
+  description: string;
+  instructions: string;
+}
+
 /** Built by AtlasAgentsMCPServer before agent.execute() */
 export interface AgentContext {
   tools: AtlasTools;
@@ -268,6 +275,8 @@ export interface AgentContext {
   config?: Record<string, unknown>;
   /** JSON Schema for structured output. When provided, agents should use it to return validated data. */
   outputSchema?: Record<string, unknown>;
+  /** Workspace skills resolved for the agent (when useWorkspaceSkills is true) */
+  skills?: AgentSkill[];
   stream: StreamEmitter | undefined;
   logger: Logger;
   abortSignal?: AbortSignal;

@@ -1,13 +1,16 @@
 import type { AgentEnvironmentConfig, AtlasAgent } from "@atlas/agent-sdk";
 import type { ValidatedJSONSchema } from "@atlas/schemas/json-schema";
 import { z } from "zod";
+import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
 import { dataAnalystAgent } from "./data-analyst/agent.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
+import { ghAgent } from "./gh/agent.ts";
 import { googleCalendarAgent } from "./google/calendar.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
+import { jiraAgent } from "./jira/agent.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { snowflakeAnalystAgent } from "./snowflake-analyst/agent.ts";
 import { summaryAgent } from "./summary.ts";
@@ -28,6 +31,9 @@ export const bundledAgents: AtlasAgent[] = [
   emailAgent,
   fathomGetTranscriptAgent,
   claudeCodeAgent,
+  ghAgent,
+  bbAgent,
+  jiraAgent,
   csvFilterSamplerAgent,
   dataAnalystAgent,
   snowflakeAnalystAgent,

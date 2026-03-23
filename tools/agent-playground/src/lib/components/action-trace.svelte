@@ -11,7 +11,7 @@
    * @param {number} stepIndex - current stepper position (-1 = all actions visible)
    * @param {string[]} stateOrder - ordered state names from stateTransitions
    */
-  import { Collapsible, IconSmall } from "@atlas/ui";
+  import { Collapsible, IconSmall, JsonHighlight } from "@atlas/ui";
 
   type ActionEntry = {
     state: string;
@@ -65,11 +65,11 @@
   function statusColor(status: ActionEntry["status"]): string {
     switch (status) {
       case "completed":
-        return "#22c55e";
+        return "var(--color-success)";
       case "failed":
         return "var(--color-error)";
       case "started":
-        return "#f59e0b";
+        return "var(--color-warning)";
     }
   }
 
@@ -142,11 +142,7 @@
                       {#if action.input?.config}
                         <div class="detail-col">
                           <span class="detail-label">Config</span>
-                          <pre class="detail-pre">{JSON.stringify(
-                              action.input.config,
-                              null,
-                              2,
-                            )}</pre>
+                          <JsonHighlight code={JSON.stringify(action.input.config, null, 2)} />
                         </div>
                       {/if}
                       {#if action.error}
@@ -176,8 +172,8 @@
   }
 
   .action-chevron :global(svg) {
-    block-size: 12px;
-    inline-size: 12px;
+    block-size: var(--size-3);
+    inline-size: var(--size-3);
   }
 
   .action-details {
@@ -235,10 +231,10 @@
   }
 
   .action-status-dot {
-    block-size: 6px;
+    block-size: var(--size-1-5);
     border-radius: var(--radius-round);
     flex-shrink: 0;
-    inline-size: 6px;
+    inline-size: var(--size-1-5);
   }
 
   .action-trace-panel {

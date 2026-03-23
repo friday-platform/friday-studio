@@ -17,9 +17,9 @@
   import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
   import { onMount } from "svelte";
   import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
+  import CredentialActionsCell from "./(components)/credential-actions-cell.svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
-  import CredentialActionsCell from "./(components)/credential-actions-cell.svelte";
   import ValueInputCell from "./(components)/value-input-cell.svelte";
   import type { PageData } from "./$types";
 

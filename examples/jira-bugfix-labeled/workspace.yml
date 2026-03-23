@@ -1,0 +1,713 @@
+version: '1.0'
+workspace:
+  name: Jira Labeled Bug Fix Pipeline
+  description: >-
+    Searches a Jira project for tickets labeled "ai-fix" that are in "To Do"
+    status, picks the highest-priority one, claims it by transitioning to
+    "In Progress", clones the Bitbucket repo, implements the fix with Claude
+    Code, creates a PR, and transitions the ticket to "In Review" with a
+    comment linking the PR.
+
+signals:
+  process-labeled-bugs:
+    provider: http
+    title: Process AI-Flagged Bugs
+    description: >-
+      Searches the given Jira project for tickets with the "ai-fix" label
+      in "To Do" status. Picks the highest-priority ticket and runs the
+      full fix pipeline: claim, clone, implement, PR, update ticket.
+      Exits cleanly if no matching tickets are found.
+    config:
+      path: /webhooks/process-labeled-bugs
+    schema:
+      type: object
+      properties:
+        project_key:
+          type: string
+          title: Jira project key
+          description: >-
+            The Jira project key to search in (e.g., PROJ, DEV).
+        repo_url:
+          type: string
+          title: Bitbucket repository URL
+          description: >-
+            Full Bitbucket repository URL
+            (e.g., https://bitbucket.org/workspace/repo)
+      required:
+        - project_key
+        - repo_url
+
+agents:
+  jira:
+    type: atlas
+    agent: jira
+    description: >-
+      Executes Jira Cloud operations: search issues by JQL, read issues,
+      transition statuses, add comments. Deterministic API calls — no LLM.
+    prompt: Execute Jira Cloud operation.
+
+  bb:
+    type: atlas
+    agent: bb
+    description: >-
+      Executes Bitbucket Cloud operations: clone repos, create PRs.
+      Deterministic API calls — no LLM.
+    prompt: Execute Bitbucket Cloud operation.
+
+  claude-code:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Implements bug fixes in the cloned repository. Reads the bug
+      description, explores the codebase, writes the fix, and commits
+      on a feature branch.
+    prompt: >-
+      You are a senior software engineer. Implement bug fixes based on
+      the Jira ticket description. Write clean, well-tested code.
+
+jobs:
+  labeled-bugfix:
+    title: Labeled Bug Fix
+    description: >-
+      Searches for ai-fix labeled tickets, claims the highest-priority one,
+      implements the fix, creates a PR, and updates the ticket status.
+    triggers:
+      - signal: process-labeled-bugs
+    fsm:
+      id: labeled-bugfix-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            process-labeled-bugs:
+              target: step_search_tickets
+
+        step_search_tickets:
+          entry:
+            - type: code
+              function: prepare_search
+            - type: agent
+              agentId: jira
+              outputTo: search-output
+              outputType: search-result
+              prompt: Execute Jira issue-search operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              - target: step_claim_ticket
+                guards:
+                  - guard_has_tickets
+              - target: completed
+                guards:
+                  - guard_no_tickets
+
+        step_claim_ticket:
+          entry:
+            - type: code
+              function: prepare_claim
+            - type: agent
+              agentId: jira
+              outputTo: claim-output
+              outputType: transition-result
+              prompt: Execute Jira issue-transition operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_clone_repo
+              guards:
+                - guard_claim_done
+
+        step_clone_repo:
+          entry:
+            - type: code
+              function: prepare_clone
+            - type: agent
+              agentId: bb
+              outputTo: clone-output
+              outputType: clone-result
+              prompt: Execute Bitbucket repo-clone operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement_fix
+              guards:
+                - guard_clone_done
+
+        step_implement_fix:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: claude-code
+              outputTo: fix-output
+              outputType: fix-result
+              prompt: >-
+                You are implementing a bug fix. The repository has been
+                cloned and the main branch is checked out. Your input
+                contains the clone_path, bug details from the Jira ticket,
+                and the repo URL.
+
+                Follow these steps:
+
+                1. Read the bug description carefully to understand the
+                   issue.
+
+                2. Create a new branch named `fix/<issue_key>` (lowercase,
+                   e.g., `fix/proj-123`).
+
+                3. Explore the codebase to understand the relevant code.
+                   Read full files, not just grep results.
+
+                4. Implement the fix. Write clean, minimal code that
+                   addresses the bug without unnecessary refactoring.
+
+                5. If the project has tests, add or update tests to cover
+                   the fix.
+
+                6. Commit the changes with a descriptive message
+                   referencing the Jira issue key.
+
+                7. Do NOT push the branch — a separate agent handles that.
+
+                8. Use the `complete` tool to output:
+                   {
+                     "branch_name": "fix/proj-123",
+                     "commit_message": "fix: description (PROJ-123)",
+                     "files_changed": ["path/to/file.ts"],
+                     "summary": "Brief description of the fix"
+                   }
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_push_branch
+              guards:
+                - guard_fix_done
+
+        step_push_branch:
+          entry:
+            - type: code
+              function: prepare_push
+            - type: agent
+              agentId: bb
+              outputTo: push-output
+              outputType: push-result
+              prompt: Execute Bitbucket repo-push operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_create_pr
+              guards:
+                - guard_push_done
+
+        step_create_pr:
+          entry:
+            - type: code
+              function: prepare_create_pr
+            - type: agent
+              agentId: bb
+              outputTo: pr-output
+              outputType: pr-create-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_update_ticket
+              guards:
+                - guard_pr_done
+
+        step_update_ticket:
+          entry:
+            - type: code
+              function: prepare_update_ticket
+            - type: agent
+              agentId: jira
+              outputTo: comment-output
+              outputType: comment-result
+              prompt: Execute Jira issue-comment operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_transition_review
+              guards:
+                - guard_comment_done
+
+        step_transition_review:
+          entry:
+            - type: code
+              function: prepare_transition_review
+            - type: agent
+              agentId: jira
+              outputTo: transition-output
+              outputType: transition-result
+              prompt: Execute Jira issue-transition operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_transition_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+
+        prepare_search:
+          type: action
+          code: |
+            export default function prepare_search(context, event) {
+              const projectKey = event.data?.project_key;
+              const repoUrl = event.data?.repo_url;
+
+              if (!projectKey || typeof projectKey !== 'string') {
+                throw new Error('Missing required input: project_key');
+              }
+              if (!repoUrl || typeof repoUrl !== 'string') {
+                throw new Error('Missing required input: repo_url');
+              }
+
+              context.setResult('pipeline-input', {
+                project_key: projectKey,
+                repo_url: repoUrl,
+              });
+
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-search',
+                  jql: 'project = "' + projectKey + '" AND labels = "ai-fix" AND status = "To Do" ORDER BY priority DESC',
+                  max_results: 1,
+                },
+              });
+            }
+
+        guard_has_tickets:
+          type: guard
+          code: |
+            export default function guard_has_tickets(context, event) {
+              const result = context.results['search-output'];
+              if (!result) return false;
+              var data = result.data || result;
+              var issues = data.issues || [];
+              return issues.length > 0;
+            }
+
+        guard_no_tickets:
+          type: guard
+          code: |
+            export default function guard_no_tickets(context, event) {
+              const result = context.results['search-output'];
+              if (!result) return false;
+              var data = result.data || result;
+              var issues = data.issues || [];
+              return issues.length === 0;
+            }
+
+        prepare_claim:
+          type: action
+          code: |
+            export default function prepare_claim(context, event) {
+              const searchResult = context.results['search-output'];
+              var data = searchResult.data || searchResult;
+              var issues = data.issues || [];
+              var ticket = issues[0];
+
+              if (!ticket || !ticket.key) {
+                throw new Error('No ticket found in search results');
+              }
+
+              // Store selected ticket for downstream steps
+              context.setResult('selected-ticket', ticket);
+
+              context.deleteDoc('jira-operation');
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-transition',
+                  issue_key: ticket.key,
+                  transition_name: 'In Progress',
+                },
+              });
+            }
+
+        guard_claim_done:
+          type: guard
+          code: |
+            export default function guard_claim_done(context, event) {
+              return context.results['claim-output'] !== undefined;
+            }
+
+        prepare_clone:
+          type: action
+          code: |
+            export default function prepare_clone(context, event) {
+              const repoUrl = context.results['pipeline-input']?.repo_url;
+
+              context.deleteDoc('jira-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'repo-clone',
+                  repo_url: repoUrl,
+                },
+              });
+            }
+
+        guard_clone_done:
+          type: guard
+          code: |
+            export default function guard_clone_done(context, event) {
+              return context.results['clone-output'] !== undefined;
+            }
+
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              const ticket = context.results['selected-ticket'];
+              const cloneOutput = context.results['clone-output'];
+
+              if (!ticket) {
+                throw new Error('Selected ticket not found');
+              }
+              if (!cloneOutput) {
+                throw new Error('Clone output not found');
+              }
+
+              var cloneData = cloneOutput.data || {};
+
+              return {
+                task: 'Fix bug ' + ticket.key + ': ' + (ticket.summary || ''),
+                config: {
+                  workDir: cloneData.path,
+                  repo: cloneData.repo,
+                  branch: cloneData.branch,
+                  issue_key: ticket.key,
+                  bug_title: ticket.summary || '',
+                  bug_description: ticket.description || '',
+                },
+              };
+            }
+
+        guard_fix_done:
+          type: guard
+          code: |
+            export default function guard_fix_done(context, event) {
+              return context.results['fix-output'] !== undefined;
+            }
+
+        prepare_push:
+          type: action
+          code: |
+            export default function prepare_push(context, event) {
+              const fix = context.results['fix-output'];
+              const cloneOutput = context.results['clone-output'];
+              const input = context.results['pipeline-input'];
+
+              if (!fix || !fix.branch_name) {
+                throw new Error('Fix output with branch_name not found');
+              }
+
+              var cloneData = cloneOutput?.data || {};
+
+              context.deleteDoc('bb-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'repo-push',
+                  path: cloneData.path,
+                  branch: fix.branch_name,
+                  repo_url: input.repo_url,
+                },
+              });
+            }
+
+        guard_push_done:
+          type: guard
+          code: |
+            export default function guard_push_done(context, event) {
+              return context.results['push-output'] !== undefined;
+            }
+
+        prepare_create_pr:
+          type: action
+          code: |
+            export default function prepare_create_pr(context, event) {
+              const fix = context.results['fix-output'];
+              const ticket = context.results['selected-ticket'];
+              const input = context.results['pipeline-input'];
+
+              if (!fix) {
+                throw new Error('Fix output not found');
+              }
+
+              var issueKey = ticket?.key || '';
+              var title = issueKey + ': ' + (fix.commit_message || fix.summary || 'Bug fix');
+
+              context.deleteDoc('bb-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'pr-create',
+                  repo_url: input.repo_url,
+                  source_branch: fix.branch_name,
+                  destination_branch: 'main',
+                  title: title,
+                  issue_key: issueKey,
+                  summary: fix.summary || fix.commit_message || '',
+                  files_changed: fix.files_changed || [],
+                  close_source_branch: true,
+                },
+              });
+            }
+
+        guard_pr_done:
+          type: guard
+          code: |
+            export default function guard_pr_done(context, event) {
+              return context.results['pr-output'] !== undefined;
+            }
+
+        prepare_update_ticket:
+          type: action
+          code: |
+            export default function prepare_update_ticket(context, event) {
+              const ticket = context.results['selected-ticket'];
+              const prOutput = context.results['pr-output'];
+
+              var prData = prOutput?.data || {};
+              var prUrl = prData.pr_url || '';
+              var prNumber = prData.pr_number || '';
+
+              context.deleteDoc('bb-operation');
+              context.deleteDoc('jira-operation');
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-comment',
+                  issue_key: ticket.key,
+                  body: 'Fix implemented by Friday: [PR #' + prNumber + '](' + prUrl + ')',
+                },
+              });
+            }
+
+        guard_comment_done:
+          type: guard
+          code: |
+            export default function guard_comment_done(context, event) {
+              return context.results['comment-output'] !== undefined;
+            }
+
+        prepare_transition_review:
+          type: action
+          code: |
+            export default function prepare_transition_review(context, event) {
+              const ticket = context.results['selected-ticket'];
+
+              context.deleteDoc('jira-operation');
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-transition',
+                  issue_key: ticket.key,
+                  transition_name: 'Done',
+                },
+              });
+            }
+
+        guard_transition_done:
+          type: guard
+          code: |
+            export default function guard_transition_done(context, event) {
+              return context.results['transition-output'] !== undefined;
+            }
+
+      documentTypes:
+        jira-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            issue_key:
+              type: string
+            jql:
+              type: string
+            max_results:
+              type: number
+            transition_name:
+              type: string
+            body:
+              type: string
+          required:
+            - operation
+
+        search-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                issues:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key: { type: string }
+                      summary: { type: string }
+                      description: { type: string }
+                      status: { type: string }
+                      priority: { type: string }
+                      labels:
+                        type: array
+                        items: { type: string }
+                total: { type: number }
+          required:
+            - operation
+            - success
+
+        transition-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                issue_key: { type: string }
+                from_status: { type: string }
+                to_status: { type: string }
+          required:
+            - operation
+            - success
+
+        comment-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                issue_key: { type: string }
+                comment_id: { type: string }
+          required:
+            - operation
+            - success
+
+        bb-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            repo_url:
+              type: string
+            source_branch:
+              type: string
+            destination_branch:
+              type: string
+            title:
+              type: string
+            close_source_branch:
+              type: boolean
+          required:
+            - operation
+
+        push-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                repo: { type: string }
+                branch: { type: string }
+          required:
+            - operation
+            - success
+
+        clone-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                path: { type: string }
+                repo: { type: string }
+                branch: { type: string }
+          required:
+            - operation
+            - success
+
+        fix-result:
+          type: object
+          properties:
+            branch_name:
+              type: string
+            commit_message:
+              type: string
+            files_changed:
+              type: array
+              items: { type: string }
+            summary:
+              type: string
+          required: [branch_name, summary]
+
+        pr-create-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                pr_number: { type: number }
+                pr_url: { type: string }
+                repo: { type: string }
+                source_branch: { type: string }
+                title: { type: string }
+          required:
+            - operation
+            - success
+            - data
+
+      tools: {}

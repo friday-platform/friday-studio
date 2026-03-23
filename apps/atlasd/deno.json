@@ -6,5 +6,5 @@
     "@atlas/activity/local-adapter": "../../packages/activity/src/local-adapter.ts",
     "@db/sqlite": "jsr:@db/sqlite@0.13"
   },
-  "exports": "./mod.ts"
+  "exports": { ".": "./mod.ts", "./types": "./types.ts" }
 }

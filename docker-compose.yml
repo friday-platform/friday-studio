@@ -1,0 +1,47 @@
+# Atlas Platform — single-container docker compose
+#
+# Usage:
+#   docker compose up          # build + start
+#   docker compose up -d       # detached
+#   docker compose down        # stop + remove container
+#   docker compose logs -f     # tail logs
+#
+# Copy .env.example to .env and fill in your API keys before starting.
+
+services:
+  platform:
+    build:
+      context: .
+      dockerfile: Dockerfile-platform
+    image: atlas-platform
+    ports:
+      - "8080:8080"  # atlasd daemon API
+      - "3100:3100"  # link (credential/auth service)
+      - "5200:5200"  # agent-playground (web UI)
+      - "7681:7681"  # pty-server (WebSocket PTY)
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ATLAS_LOG_LEVEL: ${ATLAS_LOG_LEVEL:-info}
+    volumes:
+      - atlas-data:/data/atlas
+      - link-data:/data/link
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - >
+          curl -sf http://localhost:8080/health &&
+          curl -sf http://localhost:3100/health &&
+          curl -sf http://localhost:7681/health
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  atlas-data:
+  link-data:

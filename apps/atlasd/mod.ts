@@ -16,6 +16,7 @@ export type { SkillsRoutes } from "./routes/skills.ts";
 export type { WorkspaceChatRoutes } from "./routes/workspaces/chat.ts";
 export type { WorkspaceConfigRoutes } from "./routes/workspaces/config.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
+export type { IntegrationRoutes } from "./routes/workspaces/integrations.ts";
 export * from "./src/atlas-daemon.ts";
 export { type AppContext, type AppVariables, createApp } from "./src/factory.ts";
 export { OPENAPI_DOCUMENTATION } from "./src/openapi-config.ts";

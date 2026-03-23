@@ -67,6 +67,10 @@ export function llmAgent(
     tools: string[];
     temperature: number;
     max_tokens: number;
+    tool_choice: "auto" | "required" | "none";
+    timeout: string;
+    max_retries: number;
+    provider_options: Record<string, unknown>;
     provider: string;
     model: string;
   }> = {},
@@ -81,6 +85,12 @@ export function llmAgent(
       ...(overrides.temperature !== undefined && { temperature: overrides.temperature }),
       ...(overrides.max_tokens !== undefined && { max_tokens: overrides.max_tokens }),
       ...(overrides.tools !== undefined && { tools: overrides.tools }),
+      ...(overrides.tool_choice !== undefined && { tool_choice: overrides.tool_choice }),
+      ...(overrides.timeout !== undefined && { timeout: overrides.timeout }),
+      ...(overrides.max_retries !== undefined && { max_retries: overrides.max_retries }),
+      ...(overrides.provider_options !== undefined && {
+        provider_options: overrides.provider_options,
+      }),
     },
   });
 }

@@ -24,9 +24,7 @@
     isSettingDefault = true;
     try {
       const res = await parseResult(
-        client.link.v1.credentials[":id"].default.$patch({
-          param: { id: credentialId },
-        }),
+        client.link.v1.credentials[":id"].default.$patch({ param: { id: credentialId } }),
       );
 
       if (!res.ok) {

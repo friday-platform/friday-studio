@@ -29,8 +29,17 @@ export type {
   FSMOtherAction,
   FSMStateDefinition,
 } from "./fsm-types.ts";
+// Integration derivation
+export type {
+  IntegrationCredential,
+  IntegrationMCPServer,
+  IntegrationsData,
+} from "./integrations.ts";
+export { deriveIntegrations } from "./integrations.ts";
 // Signal mutations
 export { createSignal, deleteSignal, patchSignalConfig, updateSignal } from "./signals.ts";
+// Skill mutations
+export { addSkill, removeSkill } from "./skills.ts";
 // Types
 export type {
   CascadeTarget,
@@ -46,3 +55,6 @@ export type {
   ValidationError,
   WriteError,
 } from "./types.ts";
+// Workspace-level agent extraction
+export type { WorkspaceAgent } from "./workspace-agents.ts";
+export { deriveWorkspaceAgents } from "./workspace-agents.ts";

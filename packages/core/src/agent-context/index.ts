@@ -1,4 +1,10 @@
-import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
+import type {
+  AgentContext,
+  AgentSessionData,
+  AgentSkill,
+  AtlasAgent,
+  AtlasTool,
+} from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type {
   GlobalSkillRefConfig,
@@ -86,6 +92,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
       let enrichedPrompt = prompt;
       let cleanupSkills: (() => Promise<void>) | undefined;
+      let resolvedSkills: AgentSkill[] | undefined;
 
       if (agent.useWorkspaceSkills) {
         const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
@@ -101,6 +108,15 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
             description: s.description,
           })),
         ];
+
+        // Expose inline skills to handler (global skills are lazily loaded via load_skill tool)
+        if (inlineSkills.length > 0) {
+          resolvedSkills = inlineSkills.map((s) => ({
+            name: s.name,
+            description: s.description,
+            instructions: s.instructions,
+          }));
+        }
 
         if (availableSkills.length > 0) {
           // Add load_skill tool only if one doesn't already exist.
@@ -137,6 +153,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         env: envContext,
         session: sessionData,
         stream: streamEmitter,
+        skills: resolvedSkills,
         logger: logger.child({
           workspaceId: sessionData.workspaceId,
           sessionId: sessionData.sessionId,

@@ -1,0 +1,884 @@
+version: '1.0'
+workspace:
+  name: PR Code Review Pipeline
+  description: >-
+    Accepts a GitHub pull request URL, clones the repository, performs a thorough
+    code review using Claude Code, and posts structured review comments back on
+    the PR via the gh CLI.
+
+signals:
+  review-pr:
+    provider: http
+    title: Review a Pull Request
+    description: >-
+      Accepts a GitHub pull request URL and triggers an automated code review.
+      The full review lifecycle — clone, analyze, comment — runs end to end.
+    config:
+      path: /webhooks/review-pr
+    schema:
+      type: object
+      properties:
+        pr_url:
+          type: string
+          title: Pull request URL
+          description: >-
+            Full GitHub pull request URL
+            (e.g., https://github.com/owner/repo/pull/123)
+      required:
+        - pr_url
+
+  continue-review:
+    provider: http
+    title: Continue PR Review
+    description: >-
+      Re-reviews a previously reviewed PR. Reads existing review threads,
+      responds to author feedback, and reviews new changes.
+    config:
+      path: /webhooks/continue-review
+    schema:
+      type: object
+      properties:
+        pr_url:
+          type: string
+          title: Pull request URL
+          description: >-
+            Full GitHub pull request URL
+            (e.g., https://github.com/owner/repo/pull/123)
+      required:
+        - pr_url
+
+skills:
+  - name: "@tempest/pr-code-review"
+
+agents:
+  gh:
+    type: atlas
+    agent: gh
+    description: >-
+      Executes GitHub CLI operations: clone repos, fetch PR metadata, post
+      reviews. No LLM needed — deterministic shell commands only.
+    prompt: Execute GitHub CLI operation.
+    env:
+      GH_TOKEN:
+        from: link
+        provider: github
+        key: access_token
+
+  claude-code:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reviews the pull request diff in the already-cloned repository. Reads
+      full changed files for context and analyzes against correctness, security,
+      performance, error handling, testing, and style criteria. Produces a
+      structured review report with file-level and line-level findings.
+    prompt: >-
+      You are Code Reviewer. Reviews the pull request diff in the already-cloned
+      repository. Reads full changed files for context and produces a structured
+      review report with file-level and line-level findings.
+    env:
+      ANTHROPIC_API_KEY:
+        from: link
+        provider: anthropic
+        key: access_token
+
+jobs:
+  pr-code-review:
+    title: PR Code Review
+    description: >-
+      End-to-end pull request code review: clone the repository, analyze the
+      diff with Claude Code, and post review comments on the PR.
+    triggers:
+      - signal: review-pr
+    fsm:
+      id: pr-code-review-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            review-pr:
+              target: step_clone_repo
+
+        step_clone_repo:
+          entry:
+            - type: code
+              function: prepare_clone
+            - type: agent
+              agentId: gh
+              outputTo: clone-output
+              outputType: clone-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review_pr
+              guards:
+                - guard_clone_done
+
+        step_review_pr:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: claude-code
+              outputTo: review-output
+              outputType: code-review-result
+              prompt: >-
+                You are an expert code reviewer. The repository has already been
+                cloned and the PR branch checked out by a previous step. Your
+                input contains the PR metadata, changed file list, clone_path,
+                and base_branch.
+
+                Follow these steps:
+
+                1. Run `git diff <base_branch>...HEAD` in the clone_path to get
+                   the full diff.
+
+                2. For every changed file, read the FULL file content (not just
+                   the diff hunks) so you understand the surrounding context,
+                   imports, type definitions, and how each change fits into the
+                   broader module.
+
+                3. Review against these criteria: correctness, security,
+                   performance, error handling, testing, and style.
+
+                4. Use the `complete` tool to output your review as structured
+                   JSON with this shape:
+
+                   {
+                     "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+                     "summary": "2-3 sentence summary of the PR and your assessment",
+                     "findings": [
+                       {
+                         "severity": "CRITICAL" | "WARNING" | "SUGGESTION" | "NITPICK",
+                         "category": "correctness" | "security" | "performance" | "error-handling" | "testing" | "style",
+                         "file": "path/to/file.ts",
+                         "line": 42,
+                         "start_line": 40,
+                         "title": "One-line title of the finding",
+                         "description": "Explanation of the issue and its impact.",
+                         "suggestion": "const name = user?.name ?? \"anonymous\";"
+                       }
+                     ]
+                   }
+
+                Rules for findings:
+                - `line` is required: the line to comment on (single-line), or
+                  end line of a multi-line range.
+                - `start_line` is optional: set it for multi-line findings where
+                  the issue spans multiple lines. Omit for single-line findings.
+                - `suggestion` is optional: when provided, it MUST be the exact
+                  replacement source code for the line range (start_line..line).
+                  GitHub renders this as an "Apply suggestion" button that
+                  literally replaces those lines with your text. Therefore:
+                  • It must be syntactically valid, compilable code — NOT
+                    English prose, advice, or commentary.
+                  • Do NOT wrap in markdown fences — raw code only.
+                  • If you cannot provide a concrete code fix, OMIT the
+                    `suggestion` field entirely and put your advice in
+                    `description` instead.
+                  WRONG: "suggestion": "Consider adding error handling here"
+                  RIGHT: "suggestion": "if (!user) throw new Error(\"missing user\");\nconst name = user.name;"
+                  WRONG: "suggestion": "Add '422: \"unprocessable entity\"' to the map"
+                  RIGHT: "suggestion": "const STATUS: Record<number, string> = {\n  400: \"bad request\",\n  422: \"unprocessable entity\",\n};"
+                - Lines must be actual lines in the changed files (from the
+                  diff). Use the diff output to verify line numbers.
+                - Order findings by severity: CRITICAL first, NITPICK last.
+                - Cap at 15 findings. Keep highest severity if more exist.
+
+                Verdict decision tree:
+                - Any CRITICAL → REQUEST_CHANGES
+                - Multiple WARNING → REQUEST_CHANGES
+                - Only SUGGESTION/NITPICK → COMMENT
+                - No findings or all minor → APPROVE
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_post_review
+              guards:
+                - guard_review_done
+
+        step_post_review:
+          entry:
+            - type: code
+              function: prepare_post_review
+            - type: agent
+              agentId: gh
+              outputTo: post-review-output
+              outputType: post-review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_post_review_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+
+        prepare_clone:
+          type: action
+          code: |
+            export default function prepare_clone(context, event) {
+              const prUrl = event.data?.pr_url;
+              if (!prUrl || typeof prUrl !== 'string') {
+                throw new Error('Missing required input: pr_url');
+              }
+
+              // Store pr_url for downstream steps
+              context.setResult('pr-details', { pr_url: prUrl });
+
+              // The gh agent parses owner/repo/pr_number from the URL internally
+              context.createDoc({
+                id: 'gh-operation',
+                type: 'gh-operation',
+                data: {
+                  operation: 'clone',
+                  pr_url: prUrl,
+                },
+              });
+            }
+
+        guard_clone_done:
+          type: guard
+          code: |
+            export default function guard_clone_done(context, event) {
+              return context.results['clone-output'] !== undefined;
+            }
+
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              const prUrl = context.results['pr-details']?.pr_url;
+              const cloneOutput = context.results['clone-output'];
+
+              if (!prUrl) {
+                throw new Error('PR URL not found — prepare_clone must run first');
+              }
+              if (!cloneOutput) {
+                throw new Error('Clone output not found — clone step must complete first');
+              }
+
+              var cloneData = cloneOutput.data || {};
+
+              return {
+                task: 'Review ' + prUrl,
+                config: {
+                  workDir: cloneData.path,
+                  pr_url: prUrl,
+                  base_branch: cloneData.base_branch,
+                  pr_metadata: cloneData.pr_metadata || {},
+                  changed_files: cloneData.changed_files || [],
+                },
+              };
+            }
+
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              return context.results['review-output'] !== undefined;
+            }
+
+        prepare_post_review:
+          type: action
+          code: |
+            export default function prepare_post_review(context, event) {
+              const prUrl = context.results['pr-details']?.pr_url;
+              const review = context.results['review-output'];
+              const headSha = context.results['clone-output']?.data?.head_sha;
+
+              if (!prUrl) {
+                throw new Error('PR URL not found — prepare_clone must run first');
+              }
+              if (!review) {
+                throw new Error('Review output not found — review step must complete first');
+              }
+
+              context.deleteDoc('gh-operation');
+              context.createDoc({
+                id: 'gh-operation',
+                type: 'gh-operation',
+                data: {
+                  operation: 'pr-inline-review',
+                  pr_url: prUrl,
+                  commit_id: headSha || '',
+                  verdict: review.verdict || 'COMMENT',
+                  summary: review.summary || '',
+                  findings: review.findings || [],
+                },
+              });
+            }
+
+        guard_post_review_done:
+          type: guard
+          code: |
+            export default function guard_post_review_done(context, event) {
+              return context.results['post-review-output'] !== undefined;
+            }
+
+      documentTypes:
+        gh-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            pr_url:
+              type: string
+            body:
+              type: string
+            commit_id:
+              type: string
+            verdict:
+              type: string
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity: { type: string }
+                  category: { type: string }
+                  file: { type: string }
+                  start_line: { type: integer }
+                  line: { type: integer }
+                  title: { type: string }
+                  description: { type: string }
+                  suggestion: { type: string }
+          required:
+            - operation
+            - pr_url
+
+        clone-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                path:
+                  type: string
+                repo:
+                  type: string
+                branch:
+                  type: string
+                head_sha:
+                  type: string
+                pr_number:
+                  type: number
+                pr_metadata:
+                  type: object
+                changed_files:
+                  type: array
+                  items:
+                    type: string
+          required:
+            - operation
+            - success
+            - data
+
+        code-review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity: { type: string }
+                  category: { type: string }
+                  file: { type: string }
+                  start_line: { type: integer }
+                  line: { type: integer }
+                  title: { type: string }
+                  description: { type: string }
+                  suggestion: { type: string }
+                required: [severity, category, file, line, title, description]
+          required: [verdict, summary, findings]
+
+        post-review-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                pr_number:
+                  type: number
+                repo:
+                  type: string
+                posted_comments:
+                  type: integer
+                failed_comments:
+                  type: integer
+          required:
+            - operation
+            - success
+            - data
+
+      tools: {}
+
+  pr-followup-review:
+    title: PR Follow-up Review
+    description: >-
+      Continues a previous review: reads author responses to review threads,
+      replies to each, and reviews new changes since the last review.
+    triggers:
+      - signal: continue-review
+    fsm:
+      id: pr-followup-review-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            continue-review:
+              target: step_clone_repo
+
+        step_clone_repo:
+          entry:
+            - type: code
+              function: prepare_clone
+            - type: agent
+              agentId: gh
+              outputTo: clone-output
+              outputType: clone-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_read_threads
+              guards:
+                - guard_clone_done
+
+        step_read_threads:
+          entry:
+            - type: code
+              function: prepare_read_threads
+            - type: agent
+              agentId: gh
+              outputTo: threads-output
+              outputType: threads-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_followup_review
+              guards:
+                - guard_threads_done
+
+        step_followup_review:
+          entry:
+            - type: code
+              function: prepare_followup_review
+            - type: agent
+              agentId: claude-code
+              outputTo: followup-output
+              outputType: followup-review-result
+              prompt: >-
+                You are continuing a code review on a PR that was previously
+                reviewed. Your input contains the previous review threads
+                (with author replies), clone_path, base_branch, and
+                changed_files.
+
+                Follow these steps:
+
+                1. Run `git diff <base_branch>...HEAD` in the clone_path to
+                   see the current diff.
+
+                2. For each thread in thread_data:
+                   a. If the thread has NO replies and the code is unchanged
+                      — skip it.
+                   b. If the thread has replies:
+                      - Read the author's response.
+                      - Check the current code at that file:line.
+                      - If the finding is addressed → reply
+                        "Looks good, resolved."
+                      - If the author disagrees → engage with their argument
+                        (concede or explain).
+                      - If the author asks a question → answer it with code
+                        context.
+                   c. If the code at that location changed but no reply →
+                      check if the change addresses the finding, reply
+                      accordingly.
+
+                3. Review the full diff for any NEW issues not covered by
+                   existing threads. Apply the same criteria: correctness,
+                   security, performance, error handling, testing, style.
+
+                4. Use the `complete` tool to output your follow-up as
+                   structured JSON:
+
+                   {
+                     "thread_replies": [
+                       { "comment_id": 123, "body": "Confirmed fixed — the null check is correct." },
+                       { "comment_id": 456, "body": "Good point. The assertion is safe here because..." }
+                     ],
+                     "new_findings": [
+                       {
+                         "severity": "WARNING",
+                         "category": "correctness",
+                         "file": "path/to/file.ts",
+                         "line": 10,
+                         "title": "...",
+                         "description": "...",
+                         "suggestion": "..."
+                       }
+                     ],
+                     "summary": "Follow-up: 3 of 5 findings resolved. 2 new issues found."
+                   }
+
+                Rules:
+                - Don't repeat findings that are already in threads (even if
+                  unresolved and unchanged) — the original inline comment is
+                  still visible.
+                - Be conversational in thread replies — this is a dialog, not
+                  a report.
+                - Keep replies concise (1-3 sentences).
+                - New findings follow the same schema as the initial review.
+                - `line` is required for new findings. `start_line` is
+                  optional for multi-line ranges. `suggestion` is optional —
+                  when provided it MUST be exact replacement code, never
+                  English advice (see initial review rules).
+                - Cap at 15 new findings. Keep highest severity if more exist.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_post_followup
+              guards:
+                - guard_followup_done
+
+        step_post_followup:
+          entry:
+            - type: code
+              function: prepare_post_followup
+            - type: agent
+              agentId: gh
+              outputTo: post-followup-output
+              outputType: post-followup-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_post_followup_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+
+        prepare_clone:
+          type: action
+          code: |
+            export default function prepare_clone(context, event) {
+              const prUrl = event.data?.pr_url;
+              if (!prUrl || typeof prUrl !== 'string') {
+                throw new Error('Missing required input: pr_url');
+              }
+
+              context.setResult('pr-details', { pr_url: prUrl });
+
+              context.createDoc({
+                id: 'gh-operation',
+                type: 'gh-operation',
+                data: {
+                  operation: 'clone',
+                  pr_url: prUrl,
+                },
+              });
+            }
+
+        guard_clone_done:
+          type: guard
+          code: |
+            export default function guard_clone_done(context, event) {
+              return context.results['clone-output'] !== undefined;
+            }
+
+        prepare_read_threads:
+          type: action
+          code: |
+            export default function prepare_read_threads(context, event) {
+              const prUrl = context.results['pr-details']?.pr_url;
+              if (!prUrl) {
+                throw new Error('PR URL not found — prepare_clone must run first');
+              }
+
+              context.deleteDoc('gh-operation');
+              context.createDoc({
+                id: 'gh-operation',
+                type: 'gh-operation',
+                data: {
+                  operation: 'pr-read-threads',
+                  pr_url: prUrl,
+                },
+              });
+            }
+
+        guard_threads_done:
+          type: guard
+          code: |
+            export default function guard_threads_done(context, event) {
+              return context.results['threads-output'] !== undefined;
+            }
+
+        prepare_followup_review:
+          type: action
+          code: |
+            export default function prepare_followup_review(context, event) {
+              const prUrl = context.results['pr-details']?.pr_url;
+              const cloneData = context.results['clone-output']?.data || {};
+              const threadsData = context.results['threads-output']?.data || {};
+
+              if (!prUrl) {
+                throw new Error('PR URL not found — prepare_clone must run first');
+              }
+
+              return {
+                task: 'Follow-up review of ' + prUrl,
+                config: {
+                  workDir: cloneData.path,
+                  pr_url: prUrl,
+                  base_branch: cloneData.base_branch,
+                  changed_files: cloneData.changed_files || [],
+                  thread_data: threadsData.threads || [],
+                },
+              };
+            }
+
+        guard_followup_done:
+          type: guard
+          code: |
+            export default function guard_followup_done(context, event) {
+              return context.results['followup-output'] !== undefined;
+            }
+
+        prepare_post_followup:
+          type: action
+          code: |
+            export default function prepare_post_followup(context, event) {
+              const prUrl = context.results['pr-details']?.pr_url;
+              const headSha = context.results['clone-output']?.data?.head_sha;
+              const followup = context.results['followup-output'];
+
+              if (!prUrl) {
+                throw new Error('PR URL not found — prepare_clone must run first');
+              }
+              if (!followup) {
+                throw new Error('Follow-up output not found — review step must complete first');
+              }
+
+              context.deleteDoc('gh-operation');
+              context.createDoc({
+                id: 'gh-operation',
+                type: 'gh-operation',
+                data: {
+                  operation: 'pr-post-followup',
+                  pr_url: prUrl,
+                  commit_id: headSha || '',
+                  thread_replies: followup.thread_replies || [],
+                  new_findings: followup.new_findings || [],
+                  summary: followup.summary || '',
+                },
+              });
+            }
+
+        guard_post_followup_done:
+          type: guard
+          code: |
+            export default function guard_post_followup_done(context, event) {
+              return context.results['post-followup-output'] !== undefined;
+            }
+
+      documentTypes:
+        gh-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            pr_url:
+              type: string
+            commit_id:
+              type: string
+            summary:
+              type: string
+            thread_replies:
+              type: array
+              items:
+                type: object
+                properties:
+                  comment_id: { type: number }
+                  body: { type: string }
+            new_findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity: { type: string }
+                  category: { type: string }
+                  file: { type: string }
+                  start_line: { type: integer }
+                  line: { type: integer }
+                  title: { type: string }
+                  description: { type: string }
+                  suggestion: { type: string }
+          required:
+            - operation
+            - pr_url
+
+        clone-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                path:
+                  type: string
+                repo:
+                  type: string
+                branch:
+                  type: string
+                head_sha:
+                  type: string
+                pr_number:
+                  type: number
+                pr_metadata:
+                  type: object
+                changed_files:
+                  type: array
+                  items:
+                    type: string
+          required:
+            - operation
+            - success
+            - data
+
+        threads-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                bot_user:
+                  type: string
+                threads:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      comment_id: { type: number }
+                      path: { type: string }
+                      line: { type: number }
+                      body: { type: string }
+                      replies:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            user: { type: string }
+                            body: { type: string }
+                            created_at: { type: string }
+                total_threads:
+                  type: number
+                threads_with_replies:
+                  type: number
+
+        followup-review-result:
+          type: object
+          properties:
+            thread_replies:
+              type: array
+              items:
+                type: object
+                properties:
+                  comment_id: { type: number }
+                  body: { type: string }
+                required: [comment_id, body]
+            new_findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity: { type: string }
+                  category: { type: string }
+                  file: { type: string }
+                  start_line: { type: integer }
+                  line: { type: integer }
+                  title: { type: string }
+                  description: { type: string }
+                  suggestion: { type: string }
+                required: [severity, category, file, line, title, description]
+            summary:
+              type: string
+          required: [thread_replies, new_findings, summary]
+
+        post-followup-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                pr_number:
+                  type: number
+                repo:
+                  type: string
+                thread_replies_posted:
+                  type: integer
+                new_comments_posted:
+                  type: integer
+                failed_comments:
+                  type: integer
+          required:
+            - operation
+            - success
+            - data
+
+      tools: {}

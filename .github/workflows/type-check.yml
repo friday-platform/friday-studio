@@ -41,5 +41,8 @@ jobs:
       - name: Install dependencies
         run: deno install --frozen
 
+      - name: Build @atlas/ui
+        run: cd packages/ui && npx svelte-kit sync && npx svelte-package
+
       - name: Run type check
         run: deno task typecheck

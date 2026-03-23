@@ -307,8 +307,7 @@
           const integration = info.row.original;
           if (integration.availableCredentials) {
             const selectHandler = onCredentialSelect
-              ? (credentialId: string) =>
-                  onCredentialSelect(integration.provider, credentialId)
+              ? (credentialId: string) => onCredentialSelect(integration.provider, credentialId)
               : async (credentialId: string) => {
                   await bindCredentialToPaths(integration, credentialId);
                   toast({ title: "Credential updated" });

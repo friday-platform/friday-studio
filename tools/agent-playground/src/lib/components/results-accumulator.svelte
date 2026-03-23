@@ -12,6 +12,8 @@
    * @param {number} stepIndex - current stepper position (-1 = initial, before any transition)
    */
 
+  import { JsonHighlight } from "@atlas/ui";
+
   type ResultSnapshots = Record<string, Record<string, Record<string, unknown>>>;
 
   type Props = { snapshots: ResultSnapshots; stateOrder: string[]; stepIndex: number };
@@ -68,7 +70,9 @@
               <span class="new-badge">new</span>
             {/if}
           </div>
-          <pre class="result-value">{formatValue(value)}</pre>
+          <div class="result-value">
+            <JsonHighlight code={formatValue(value)} />
+          </div>
         </div>
       {/each}
     </div>
@@ -83,9 +87,9 @@
   }
 
   .new-badge {
-    background-color: color-mix(in srgb, #22c55e, transparent 80%);
+    background-color: color-mix(in srgb, var(--color-success), transparent 80%);
     border-radius: var(--radius-1);
-    color: #22c55e;
+    color: var(--color-success);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -95,7 +99,7 @@
   }
 
   .new-key {
-    border-color: color-mix(in srgb, #22c55e, transparent 60%);
+    border-color: color-mix(in srgb, var(--color-success), transparent 60%);
   }
 
   .result-entry {
@@ -119,14 +123,9 @@
   }
 
   .result-value {
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    line-height: var(--font-lineheight-3);
     max-block-size: 200px;
     overflow-y: auto;
     padding: var(--size-3);
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   .results-list {

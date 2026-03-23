@@ -18,7 +18,9 @@
   "files": [
     "dist",
     "!dist/**/*.test.*",
-    "!dist/**/*.spec.*"
+    "!dist/**/*.spec.*",
+    "./eslint.config.base.js",
+    "./prettier.config.js"
   ],
   "sideEffects": [
     "**/*.css"
@@ -39,7 +41,8 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "@melt-ui/svelte": "^0.86.6"
+    "@melt-ui/svelte": "^0.86.6",
+    "shiki": "^4.0.2"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",

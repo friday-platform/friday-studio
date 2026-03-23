@@ -286,7 +286,7 @@
   .fsm-canvas.has-execution .diagram-transform :global(polyline.edge[data-traversed="true"]) {
     animation: edge-flow 1s ease-out both;
     opacity: 1;
-    stroke: #22c55e;
+    stroke: var(--color-success);
     stroke-dasharray: 8 4;
   }
 
@@ -380,15 +380,15 @@
   }
 
   .legend-swatch--fn {
-    background: #d97706;
+    background: var(--color-warning);
   }
 
   .legend-swatch--ai {
-    background: #3b82f6;
+    background: var(--color-info);
   }
 
   .legend-swatch--agent {
-    background: #22c55e;
+    background: var(--color-success);
   }
 
   .legend-swatch--emit {

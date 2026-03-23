@@ -1126,6 +1126,18 @@ export class WorkspaceRuntime {
     // Resolve workspace agent key → runtime agent ID (e.g. "my-gh-agent" → "github")
     const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
 
+    // Merge workspace agent config with prepare function's config.
+    // Prepare config (from FSM `return { task, config }`) takes precedence
+    // so workspace.yml prepare functions can pass data like workDir to agents.
+    const prepareConfig =
+      fsmContext.input && typeof fsmContext.input === "object" && "config" in fsmContext.input
+        ? fsmContext.input.config
+        : undefined;
+    const mergedConfig =
+      prepareConfig && typeof prepareConfig === "object"
+        ? { ...agentCustomConfig, ...(prepareConfig as Record<string, unknown>) }
+        : agentCustomConfig;
+
     // Execute agent via orchestrator - returns AgentResult directly
     const result = await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
       sessionId,
@@ -1136,7 +1148,7 @@ export class WorkspaceRuntime {
       // keeping the FSM onEvent callback clean (FSMEvent types only)
       onStreamEvent: signal._context?.onStreamEvent,
       additionalContext: { documents: fsmContext.documents },
-      config: agentCustomConfig,
+      config: mergedConfig,
       outputSchema: options?.outputSchema,
     });
     // Map "atlas" config type to "sdk" for consistency with function parameter

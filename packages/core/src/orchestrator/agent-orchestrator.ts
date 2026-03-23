@@ -69,10 +69,27 @@ export interface AgentOrchestratorConfig {
   daemonUrl?: string;
 }
 
+const MCPAgentErrorSchema = z.object({
+  type: z.literal("error"),
+  agentId: z.string().optional(),
+  error: z.string().optional(),
+});
+
+const MCPAgentCancelledSchema = z.object({
+  type: z.literal("cancelled"),
+  result: z.string().optional(),
+});
+
 const MCPExecutionResultSchema = z.object({
   type: z.literal("completed"),
   result: z.unknown(), // Agent-specific result
 });
+
+const MCPAgentResponseSchema = z.union([
+  MCPAgentErrorSchema,
+  MCPAgentCancelledSchema,
+  MCPExecutionResultSchema,
+]);
 
 type MCPExecutionResult = z.infer<typeof MCPExecutionResultSchema>;
 
@@ -143,20 +160,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     const textContent = validatedResult.content[0].text;
 
     try {
-      const parsed = JSON.parse(textContent);
+      const response = MCPAgentResponseSchema.parse(JSON.parse(textContent));
 
-      // @ts-expect-error `agents-should-produce-structured-output` - untyped until agents produce structured output
-      if (parsed.type === "error") {
-        // @ts-expect-error `agents-should-produce-structured-output`
-        throw new Error(`Agent ${parsed.agentId || "unknown"} failed: ${parsed.error}`);
+      switch (response.type) {
+        case "error":
+          throw new Error(
+            `Agent ${response.agentId ?? "unknown"} failed: ${response.error ?? "unknown"}`,
+          );
+        case "cancelled":
+          return { type: "completed", result: response.result ?? "Cancelled by user" };
+        case "completed":
+          return response;
       }
-      // @ts-expect-error `agents-should-produce-structured-output`
-      if (parsed.type === "cancelled") {
-        // @ts-expect-error `agents-should-produce-structured-output`
-        return { type: "completed", result: parsed.result || "Cancelled by user" };
-      }
-
-      return MCPExecutionResultSchema.parse(parsed);
     } catch (error) {
       // Legacy format from before structured cancellation was added
       if (textContent.includes("No output generated. Check the stream for errors.")) {
@@ -298,6 +313,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           datetime: context.datetime,
         },
         outputSchema: context.outputSchema,
+        config: context.config,
       };
 
       let toolResult: unknown;

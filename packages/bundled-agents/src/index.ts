@@ -1,11 +1,14 @@
+import { BbOutputSchema, bbAgent } from "./bb/agent.ts";
 import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
 import { CsvFilterSamplerOutputSchema, csvFilterSamplerAgent } from "./csv/filter.ts";
 import { type DataAnalystResult, dataAnalystAgent } from "./data-analyst/agent.ts";
 import type { QueryExecution } from "./data-analyst/sql-tools.ts";
 import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
+import { GhOutputSchema, ghAgent } from "./gh/agent.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
+import { JiraOutputSchema, jiraAgent } from "./jira/agent.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import {
   SnowflakeAnalystOutputSchema,
@@ -27,6 +30,8 @@ export {
 
 export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
 export {
+  BbOutputSchema,
+  bbAgent,
   ClaudeCodeOutputSchema,
   CsvFilterSamplerOutputSchema,
   claudeCodeAgent,
@@ -37,10 +42,14 @@ export {
   emailAgent,
   FathomOutputSchema,
   fathomGetTranscriptAgent,
+  GhOutputSchema,
   GoogleCalendarOutputSchema,
+  ghAgent,
   googleCalendarAgent,
   HubSpotOutputSchema,
   hubspotAgent,
+  JiraOutputSchema,
+  jiraAgent,
   ResearchOutputSchema,
   SlackOutputSchema,
   SnowflakeAnalystOutputSchema,

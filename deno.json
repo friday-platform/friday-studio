@@ -23,7 +23,13 @@
     "apps/friday-website/.svelte-kit",
     "apps/friday-website/src/**",
     "tools/agent-playground/.svelte-kit",
+    "tools/pty-server/**",
     "tools/agent-playground/src/routes/**",
+    "tools/agent-playground/src/**/*.svelte.ts",
+    "tools/agent-playground/src/lib/editor/**",
+    "tools/agent-playground/src/lib/queries/**",
+    "tools/agent-playground/src/lib/stores/**",
+    "tools/agent-playground/src/lib/utils/markdown.ts",
     "opensrc",
     "types"
   ],

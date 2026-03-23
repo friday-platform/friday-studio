@@ -9,7 +9,17 @@ import { getVersionInfo, stringifyError } from "@atlas/utils";
  * As commands are migrated to native gunshi, they move from LEGACY_COMMANDS to NATIVE_COMMANDS.
  */
 
-const NATIVE_COMMANDS = new Set(["version", "v"]);
+const NATIVE_COMMANDS = new Set([
+  "version",
+  "v",
+  "skill",
+  "sk",
+  "signal",
+  "sig",
+  "workspace",
+  "work",
+  "w",
+]);
 
 const LEGACY_COMMANDS = new Set([
   "prompt",
@@ -26,13 +36,8 @@ const LEGACY_COMMANDS = new Set([
   "session",
   "sesh",
   "sess",
-  "workspace",
-  "work",
-  "w",
   "agent",
   "ag",
-  "signal",
-  "sig",
   "library",
   "lib",
   "artifacts",
@@ -48,6 +53,9 @@ if (cmd && NATIVE_COMMANDS.has(cmd)) {
   // Native gunshi path — let gunshi handle --help/--version flags naturally
   const { cli, define } = await import("gunshi");
   const { versionCommand } = await import("./cli/commands/version.ts");
+  const { skillCommand } = await import("./cli/commands/skill/index.ts");
+  const { signalCommand } = await import("./cli/commands/signal/index.ts");
+  const { workspaceCommand } = await import("./cli/commands/workspace/index.ts");
 
   const mainCommand = define({
     name: "atlas",
@@ -59,7 +67,17 @@ if (cmd && NATIVE_COMMANDS.has(cmd)) {
     await cli(argv, mainCommand, {
       name: "atlas",
       version: getVersionInfo().version,
-      subCommands: { version: versionCommand, v: versionCommand },
+      subCommands: {
+        version: versionCommand,
+        v: versionCommand,
+        skill: skillCommand,
+        sk: skillCommand,
+        signal: signalCommand,
+        sig: signalCommand,
+        workspace: workspaceCommand,
+        work: workspaceCommand,
+        w: workspaceCommand,
+      },
     });
   } catch (error: unknown) {
     console.error(stringifyError(error));

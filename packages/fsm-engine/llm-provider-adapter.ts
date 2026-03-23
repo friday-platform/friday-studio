@@ -7,7 +7,7 @@ import {
   repairToolCall,
 } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
-import { createErrorCause, getErrorDisplayMessage, isAPIErrorCause } from "@atlas/core";
+import { createErrorCause, getErrorDisplayMessage, isAPIErrorCause } from "@atlas/core/errors";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";

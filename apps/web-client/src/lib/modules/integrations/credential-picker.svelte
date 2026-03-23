@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { DropdownMenu } from "$lib/components/dropdown-menu";
   import Button from "$lib/components/button.svelte";
+  import { DropdownMenu } from "$lib/components/dropdown-menu";
   import type { AvailableCredential } from "./types";
 
   type Props = {
@@ -15,7 +15,9 @@
   const selectedCredential = $derived(credentials.find((c) => c.id === selectedId));
   const selectedLabel = $derived(
     selectedCredential
-      ? (selectedCredential.displayName ?? selectedCredential.userIdentifier ?? selectedCredential.label)
+      ? (selectedCredential.displayName ??
+          selectedCredential.userIdentifier ??
+          selectedCredential.label)
       : "Select credential",
   );
 </script>
@@ -46,9 +48,7 @@
     {/each}
     {#if onAddNew}
       <DropdownMenu.Separator />
-      <DropdownMenu.Item onclick={onAddNew}>
-        Add new
-      </DropdownMenu.Item>
+      <DropdownMenu.Item onclick={onAddNew}>Add new</DropdownMenu.Item>
     {/if}
   </DropdownMenu.Content>
 </DropdownMenu.Root>

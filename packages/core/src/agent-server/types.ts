@@ -142,6 +142,9 @@ export const AgentToolParamsSchema = z.object({
 
   /** JSON Schema for structured output — resolved from FSM documentTypes */
   outputSchema: z.record(z.string(), z.unknown()).optional(),
+
+  /** Agent-specific config from workspace runtime (e.g. workDir from clone step) */
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type AgentToolParams = z.infer<typeof AgentToolParamsSchema>;

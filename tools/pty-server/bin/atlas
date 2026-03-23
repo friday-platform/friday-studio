@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper so `atlas` works in the cheatsheet terminal without a compiled binary.
+# Delegates to `deno task atlas` from the monorepo root.
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+exec deno task --cwd "$REPO_ROOT" atlas "$@"

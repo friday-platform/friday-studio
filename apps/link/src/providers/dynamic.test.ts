@@ -78,7 +78,7 @@ describe("hydrateDynamicProvider", () => {
       description: "OAuth test",
       oauthConfig: {
         mode: "discovery",
-        serverUrl: "https://mcp.example.com/v1/sse",
+        serverUrl: "https://mcp.example.com/v1/mcp",
         scopes: ["read", "write"],
       },
     };
@@ -96,7 +96,7 @@ describe("hydrateDynamicProvider", () => {
     if (provider.oauthConfig.mode !== "discovery") {
       throw new Error("Expected discovery mode");
     }
-    expect(provider.oauthConfig.serverUrl).toEqual("https://mcp.example.com/v1/sse");
+    expect(provider.oauthConfig.serverUrl).toEqual("https://mcp.example.com/v1/mcp");
     expect(provider.identify).toBeDefined();
   });
 
@@ -124,7 +124,7 @@ describe("hydrateDynamicProvider", () => {
       id: "oauth-success",
       displayName: "Success Test",
       description: "Tests userinfo success path",
-      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/sse" },
+      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/mcp" },
     };
 
     const provider = hydrateDynamicProvider(input);
@@ -156,7 +156,7 @@ describe("hydrateDynamicProvider", () => {
       id: "oauth-ssrf",
       displayName: "SSRF Test",
       description: "Tests SSRF origin check",
-      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/sse" },
+      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/mcp" },
     };
 
     const provider = hydrateDynamicProvider(input);
@@ -187,7 +187,7 @@ describe("hydrateDynamicProvider", () => {
       id: "oauth-fallback",
       displayName: "Fallback Test",
       description: "Tests token hash fallback",
-      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/sse" },
+      oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/mcp" },
     };
 
     const provider = hydrateDynamicProvider(input);

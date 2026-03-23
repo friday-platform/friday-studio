@@ -1,0 +1,76 @@
+# Webhook payload mappings — defines how external webhook payloads
+# are transformed into Friday signal payloads.
+#
+# Each provider has:
+#   - event_header: HTTP header containing event type (GitHub, Bitbucket)
+#   - event_field: body field containing event type (Jira) — use when no header
+#   - signature_header: header for HMAC-SHA256 verification
+#   - events: mapping of event names to actions filter + field extraction
+#
+# Dot-path notation extracts nested values: "pull_request.html_url"
+# Array index notation: "push.changes[0].new.name"
+
+providers:
+  github:
+    event_header: x-github-event
+    signature_header: x-hub-signature-256
+
+    events:
+      pull_request:
+        actions: [opened, reopened, synchronize]
+        mapping:
+          pr_url: "pull_request.html_url"
+
+      issues:
+        actions: [opened, labeled]
+        mapping:
+          issue_url: "issue.html_url"
+          issue_key: "issue.number"
+          title: "issue.title"
+          action: "action"
+
+      push:
+        mapping:
+          ref: "ref"
+          repo: "repository.full_name"
+          sha: "after"
+          pusher: "pusher.name"
+
+  bitbucket:
+    event_header: x-event-key
+    signature_header: x-hub-signature
+
+    events:
+      "pullrequest:created":
+        mapping:
+          pr_url: "pullrequest.links.html.href"
+
+      "pullrequest:updated":
+        mapping:
+          pr_url: "pullrequest.links.html.href"
+
+      "repo:push":
+        mapping:
+          repo: "repository.full_name"
+          branch: "push.changes[0].new.name"
+          sha: "push.changes[0].new.target.hash"
+
+  jira:
+    # Jira sends event type in the body (webhookEvent field), not a header
+    event_field: webhookEvent
+    signature_header: x-hub-signature
+
+    events:
+      "jira:issue_created":
+        mapping:
+          issue_key: "issue.key"
+          project_key: "issue.fields.project.key"
+          summary: "issue.fields.summary"
+          repo_url: "issue.fields.customfield_10000"
+
+      "jira:issue_updated":
+        mapping:
+          issue_key: "issue.key"
+          project_key: "issue.fields.project.key"
+          summary: "issue.fields.summary"
+          repo_url: "issue.fields.customfield_10000"

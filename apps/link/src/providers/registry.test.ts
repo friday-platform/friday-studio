@@ -53,7 +53,7 @@ describe("ProviderRegistry static providers", () => {
         setupInstructions: "# OAuth Setup",
         oauthConfig: {
           mode: "discovery" as const,
-          serverUrl: "https://mcp.example.com/v1/sse",
+          serverUrl: "https://mcp.example.com/v1/mcp",
           scopes: ["read", "write"],
         },
         identify: () => Promise.resolve("test-user-id"),
@@ -83,7 +83,7 @@ describe("ProviderRegistry static providers", () => {
         displayName: "OAuth Test",
         description: "Test OAuth provider",
         setupInstructions: "# OAuth Setup",
-        oauthConfig: { mode: "discovery" as const, serverUrl: "https://mcp.example.com/v1/sse" },
+        oauthConfig: { mode: "discovery" as const, serverUrl: "https://mcp.example.com/v1/mcp" },
         identify: () => Promise.resolve("test-user-id"),
       };
 
@@ -125,7 +125,7 @@ describe("ProviderRegistry dynamic providers", () => {
     id: "dynamic-oauth",
     displayName: "Dynamic OAuth",
     description: "A dynamic OAuth provider",
-    oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/sse" },
+    oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/mcp" },
   };
 
   it("storeDynamicProvider() stores new provider successfully", async () => {

@@ -1,6 +1,6 @@
 /**
  * Integration tests verifying expandAgentActions, resolveRuntimeAgentId,
- * and resolveRuntimeAgentId compose correctly against real workspace config
+ * and deriveAgentJobUsage compose correctly against real workspace config
  * shapes (pr-review and notion-research).
  *
  * Tests cover both legacy formats (backward compat) and rewritten delegate
@@ -8,10 +8,11 @@
  */
 
 import type { Action, FSMDefinition } from "@atlas/fsm-engine";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { deriveAgentJobUsage } from "./agent-job-usage.ts";
 import type { WorkspaceAgentConfig } from "./agents.ts";
 import { expandAgentActions } from "./expand-agent-actions.ts";
-import { atlasAgent, llmAgent } from "./mutations/test-fixtures.ts";
+import { atlasAgent, createTestConfig, llmAgent } from "./mutations/test-fixtures.ts";
 import { resolveRuntimeAgentId } from "./resolve-runtime-agent.ts";
 
 // ==============================================================================
@@ -24,6 +25,14 @@ function getEntry(result: FSMDefinition, stateId: string): Action[] {
   if (!state?.entry) throw new Error(`Expected entry actions on state ${stateId}`);
   return state.entry;
 }
+
+const mockLogger = vi.hoisted(() => {
+  const log = { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn(), child: vi.fn() };
+  log.child.mockReturnValue(log);
+  return log;
+});
+
+vi.mock("@atlas/logger", () => ({ logger: mockLogger, createLogger: vi.fn(() => mockLogger) }));
 
 // ==============================================================================
 // FIXTURES — real workspace config shapes
@@ -438,6 +447,44 @@ describe("delegate model (rewritten configs)", () => {
           "You are Notion Research Agent.\n\nCreate a new Notion page with the summarized findings.",
         );
       }
+    });
+
+    test("deriveAgentJobUsage maps notion-research-agent to all 3 steps", () => {
+      const config = createTestConfig({
+        agents: {
+          "notion-research-agent": {
+            type: "llm",
+            description: "Notion research agent",
+            config: {
+              provider: "anthropic",
+              model: "claude-sonnet-4-6",
+              prompt: "You are Notion Research Agent.",
+              tools: ["notion"],
+            },
+          },
+        },
+        jobs: { "notion-research": { fsm: notionResearchDelegateFSM() } },
+      });
+
+      const usage = deriveAgentJobUsage(config);
+
+      expect(usage.get("notion-research-agent")).toEqual([
+        {
+          jobId: "notion-research",
+          stepId: "step_search_notion_pages",
+          stepName: "Search Notion Pages",
+        },
+        {
+          jobId: "notion-research",
+          stepId: "step_summarize_findings",
+          stepName: "Summarize Findings",
+        },
+        {
+          jobId: "notion-research",
+          stepId: "step_create_summary_page",
+          stepName: "Create Summary Page",
+        },
+      ]);
     });
   });
 });

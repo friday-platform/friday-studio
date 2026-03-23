@@ -17,7 +17,7 @@ import { z } from "zod";
  * Excludes stream lifecycle events (start, finish, abort) which would interfere
  * with the outer conversation stream.
  */
-const BASE_CHUNK_TYPES = new Set([
+const BASE_CHUNK_TYPES: ReadonlySet<string> = new Set([
   "text-start",
   "text-delta",
   "text-end",
@@ -37,7 +37,7 @@ const BASE_CHUNK_TYPES = new Set([
   "start-step",
   "finish-step",
   "message-metadata",
-] as const);
+]);
 
 /**
  * Data event type prefixes that must NOT be forwarded from inner workspace streams.

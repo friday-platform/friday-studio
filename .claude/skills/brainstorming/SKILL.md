@@ -34,13 +34,42 @@ looks right so far.
 - Propose 2-3 different approaches with trade-offs
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
+- For each approach, evaluate module boundaries (see below)
+
+**Evaluating module boundaries (Ousterhout's "deep modules"):**
+
+When comparing approaches, stress-test each one's module boundaries using
+Ousterhout's deep modules framework from *A Philosophy of Software Design*.
+
+A deep module has an interface simpler than its implementation — it hides real
+design decisions (data format, protocol, caching strategy) behind a small
+surface area. A shallow module wraps a single call and adds no abstraction. When
+the same design decision (schema shape, encoding format, retry policy) appears
+in multiple modules, that's information leakage — the boundary is drawn wrong.
+Watch especially for temporal decomposition: structuring code as
+parse → validate → transform → store mirrors execution order, not information
+boundaries, and scatters related knowledge across phases. A single
+`Config.load(raw)` that hides all three phases is deeper than three functions
+that each need to know the schema.
+
+The exception: shallow wrappers earn their keep at system boundaries where
+bridging the abstraction gap *is* the point — adapting one protocol to another,
+not hiding complexity.
+
+Integrate this thinking into your recommendation naturally. Don't enumerate
+these as criteria to the user — just prefer the approach that produces deeper
+modules with less leakage, and explain why the boundaries are drawn where they
+are.
 
 **Presenting the design:**
 
 - Once you believe you understand what you're building, present the design
 - Break it into sections
 - Ask after each section whether it looks right so far
-- Cover: architecture, components, data flow, error handling, testing
+- Cover: architecture, components, data flow, module boundaries, error handling,
+  testing
+- For module boundaries: state what each module hides, what its interface
+  promises, and why a consumer can trust it without reading internals
 - Be ready to go back and clarify if something doesn't make sense
 
 ## After the Design
@@ -84,6 +113,17 @@ A list of implementation decisions that were made. This can include:
 - API contracts
 - Specific interactions
 
+### Module Boundaries
+
+For each module or component boundary in the design:
+
+- **Interface:** What the consumer sees (method signatures, props, API shape)
+- **Hides:** What design decisions are encapsulated (the "why this boundary
+  exists" — not just "what it does")
+- **Trust contract:** What a consumer can assume without reading internals
+
+Omit for trivial changes that don't introduce or modify boundaries.
+
 ### Data Isolation (if applicable)
 
 If the feature involves user-scoped database tables, note which tables need
@@ -118,6 +158,9 @@ Any further notes about the feature.
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
+- **Deep over shallow** - Prefer fewer modules with simple interfaces hiding
+  real complexity over many thin wrappers. If a boundary doesn't hide a design
+  decision, it's not earning its keep
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design in sections, validate each
 - **Be flexible** - Go back and clarify when something doesn't make sense

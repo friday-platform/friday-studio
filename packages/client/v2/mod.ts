@@ -5,6 +5,7 @@ import type {
   ChatStorageRoutes,
   DaemonRoutes,
   HealthRoutes,
+  IntegrationRoutes,
   JobsRoutes,
   MCPRegistryRoutes,
   MeRoutes,
@@ -47,6 +48,8 @@ export const client = {
     hc<WorkspaceChatRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/chat`),
   workspaceConfig: (workspaceId: string) =>
     hc<WorkspaceConfigRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/config`),
+  workspaceIntegrations: (workspaceId: string) =>
+    hc<IntegrationRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/integrations`),
   mcpRegistry: hc<MCPRegistryRoutes>(`${baseUrl}/api/mcp-registry`),
 };
 

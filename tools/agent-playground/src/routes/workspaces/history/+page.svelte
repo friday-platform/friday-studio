@@ -133,7 +133,7 @@
   }
 
   .status-text.error {
-    color: var(--color-danger, #ef4444);
+    color: var(--color-error);
   }
 
   .empty-state {
@@ -205,8 +205,8 @@
     font-weight: var(--font-weight-5);
     padding-block: var(--size-0-5);
     padding-inline: var(--size-2);
-    background-color: color-mix(in srgb, #3b82f6, transparent 85%);
-    color: #3b82f6;
+    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
+    color: var(--color-info);
   }
 
   .run-status {
@@ -218,13 +218,13 @@
     padding-inline: var(--size-2);
 
     /* success default */
-    background-color: color-mix(in srgb, #22c55e, transparent 85%);
-    color: #22c55e;
+    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
+    color: var(--color-success);
   }
 
   .run-status.run-error {
-    background-color: color-mix(in srgb, #ef4444, transparent 85%);
-    color: #ef4444;
+    background-color: color-mix(in srgb, var(--color-error), transparent 85%);
+    color: var(--color-error);
   }
 
   .run-meta {

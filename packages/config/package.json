@@ -4,8 +4,18 @@
   "type": "module",
   "exports": {
     ".": "./mod.ts",
+    "./entry-actions": "./src/entry-actions.ts",
     "./mutations": "./src/mutations/index.ts",
-    "./testing": "./src/mutations/test-fixtures.ts"
+    "./workspace-agents": "./src/mutations/workspace-agents.ts",
+    "./testing": "./src/mutations/test-fixtures.ts",
+    "./map-session-status": "./src/map-session-status.ts",
+    "./pipeline-utils": "./src/pipeline-utils.ts",
+    "./integrations": "./src/mutations/integrations.ts",
+    "./data-contracts": "./src/data-contracts.ts",
+    "./signal-details": "./src/signal-details.ts",
+    "./agent-job-usage": "./src/agent-job-usage.ts",
+    "./job-agents": "./src/job-agents.ts",
+    "./topology": "./src/topology.ts"
   },
   "main": "./mod.ts",
   "dependencies": {

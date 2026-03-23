@@ -174,8 +174,22 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             .catch(() => undefined)
             .parse(args.outputSchema);
 
+          // Extract agent config if provided (e.g. workDir from clone step)
+          const agentConfig = z
+            .record(z.string(), z.unknown())
+            .optional()
+            .catch(() => undefined)
+            .parse(args.config);
+
           // Pass requestId directly to executeAgent - no instance variable
-          const result = await this.executeAgent(agentId, input, session, requestId, outputSchema);
+          const result = await this.executeAgent(
+            agentId,
+            input,
+            session,
+            requestId,
+            outputSchema,
+            agentConfig,
+          );
 
           this.#logger.debug("Agent execution result", {
             agentId,
@@ -315,6 +329,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     sessionData: AgentSessionData,
     requestId?: string,
     outputSchema?: Record<string, unknown>,
+    config?: Record<string, unknown>,
   ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
@@ -334,6 +349,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       sessionData,
       requestId,
       outputSchema,
+      config,
     );
 
     return {

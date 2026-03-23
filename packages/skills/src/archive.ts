@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { create, extract } from "tar";
+import { create, extract, list } from "tar";
 
 const logger = createLogger({ name: "skill-archive" });
 
@@ -40,6 +40,74 @@ export async function extractSkillArchive(archive: Buffer, prefix?: string): Pro
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
   return dir;
+}
+
+/**
+ * Lists file paths inside a gzipped tarball without extracting.
+ * Filters out unsafe paths (absolute or containing `..`).
+ */
+export async function listArchiveFiles(archive: Uint8Array): Promise<string[]> {
+  const tmpDir = makeTempDir({ prefix: "atlas-list-" });
+  const tmpFile = join(tmpDir, "skill.tar.gz");
+  await writeFile(tmpFile, archive);
+
+  const files: string[] = [];
+  await list({
+    file: tmpFile,
+    onReadEntry: (entry) => {
+      const p = entry.path;
+      const basename = p.split("/").pop() ?? "";
+      if (
+        p !== "./" &&
+        p !== "." &&
+        !p.startsWith("/") &&
+        !p.includes("..") &&
+        !basename.startsWith("._")
+      ) {
+        files.push(p.replace(/^\.\//, ""));
+      }
+    },
+  });
+
+  await rm(tmpDir, { recursive: true, force: true }).catch((e) =>
+    logger.debug("cleanup failed", { error: stringifyError(e) }),
+  );
+  return files;
+}
+
+/**
+ * Reads a single file's content from a gzipped tarball.
+ * Returns null if the file is not found in the archive.
+ */
+export async function readArchiveFile(
+  archive: Uint8Array,
+  filePath: string,
+): Promise<string | null> {
+  const tmpDir = makeTempDir({ prefix: "atlas-read-" });
+  const tmpFile = join(tmpDir, "__archive.tar.gz");
+  await writeFile(tmpFile, archive);
+
+  const normalized = filePath.replace(/^\.\//, "");
+  await extract({
+    file: tmpFile,
+    cwd: tmpDir,
+    filter: (p) => {
+      const clean = p.replace(/^\.\//, "");
+      return clean === normalized;
+    },
+  });
+
+  const targetPath = join(tmpDir, normalized);
+  try {
+    const content = await readFile(targetPath, "utf-8");
+    return content;
+  } catch {
+    return null;
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true }).catch((e) =>
+      logger.debug("cleanup failed", { error: stringifyError(e) }),
+    );
+  }
 }
 
 /**

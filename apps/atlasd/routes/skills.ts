@@ -1,7 +1,16 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config";
 import { smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import { parseSkillMd, SkillStorage } from "@atlas/skills";
+import {
+  extractSkillArchive,
+  listArchiveFiles,
+  packSkillArchive,
+  parseSkillMd,
+  readArchiveFile,
+  SkillStorage,
+} from "@atlas/skills";
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -101,6 +110,102 @@ export const skillsRoutes = daemonFactory
     const result = await SkillStorage.listVersions(namespace, name);
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
+  })
+  // ─── LIST ARCHIVE FILES ────────────────────────────────────────────────────
+  .get("/:namespace/:name/files", zValidator("param", NamespacedParams), async (c) => {
+    const { namespace, name } = c.req.valid("param");
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+
+    if (!result.data.archive) return c.json({ files: [] });
+
+    const files = await listArchiveFiles(result.data.archive);
+    return c.json({ files });
+  })
+  // ─── GET ARCHIVE FILE CONTENT ─────────────────────────────────────────────
+  .get("/:namespace/:name/files/*", async (c) => {
+    const params = NamespacedParams.safeParse({
+      namespace: c.req.param("namespace"),
+      name: c.req.param("name"),
+    });
+    if (!params.success) return c.json({ error: params.error.message }, 400);
+    const { namespace, name } = params.data;
+
+    // Wildcard params aren't accessible via c.req.param() in Hono v4 —
+    // extract file path from URL after the /files/ segment.
+    const urlPath = new URL(c.req.url).pathname;
+    const marker = "/files/";
+    const markerIdx = urlPath.indexOf(marker);
+    const filePath = markerIdx >= 0 ? urlPath.slice(markerIdx + marker.length) : "";
+    if (!filePath || filePath.startsWith("/") || filePath.includes("..")) {
+      return c.json({ error: "Invalid file path" }, 400);
+    }
+
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+    if (!result.data.archive) return c.json({ error: "No archive available" }, 404);
+
+    const content = await readArchiveFile(result.data.archive, filePath);
+    if (content === null) return c.json({ error: "File not found in archive" }, 404);
+
+    return c.json({ path: filePath, content });
+  })
+  // ─── UPDATE ARCHIVE FILE CONTENT ───────────────────────────────────────────
+  .put("/:namespace/:name/files/*", async (c) => {
+    const auth = await requireUser();
+    if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+    const params = NamespacedParams.safeParse({
+      namespace: c.req.param("namespace"),
+      name: c.req.param("name"),
+    });
+    if (!params.success) return c.json({ error: params.error.message }, 400);
+    const { namespace, name } = params.data;
+
+    const urlPath = new URL(c.req.url).pathname;
+    const marker = "/files/";
+    const markerIdx = urlPath.indexOf(marker);
+    const filePath = markerIdx >= 0 ? urlPath.slice(markerIdx + marker.length) : "";
+    if (!filePath || filePath.startsWith("/") || filePath.includes("..")) {
+      return c.json({ error: "Invalid file path" }, 400);
+    }
+
+    const body = await c.req.json<{ content: string }>();
+    if (typeof body.content !== "string") {
+      return c.json({ error: "content field is required" }, 400);
+    }
+
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+    if (!result.data.archive) return c.json({ error: "No archive available" }, 404);
+
+    // Extract archive, update file, repack
+    const { Buffer } = await import("node:buffer");
+    const extractDir = await extractSkillArchive(Buffer.from(result.data.archive));
+    try {
+      const targetPath = join(extractDir, filePath);
+      await mkdir(dirname(targetPath), { recursive: true });
+      await writeFile(targetPath, body.content, "utf-8");
+      const newArchive = await packSkillArchive(extractDir);
+
+      const publishResult = await SkillStorage.publish(namespace, name, auth.userId, {
+        title: result.data.title ?? undefined,
+        description: result.data.description,
+        instructions: result.data.instructions,
+        frontmatter: result.data.frontmatter,
+        archive: new Uint8Array(newArchive),
+        skillId: result.data.skillId,
+        descriptionManual: result.data.descriptionManual,
+      });
+
+      if (!publishResult.ok) return c.json({ error: publishResult.error }, 500);
+      return c.json({ path: filePath, version: publishResult.data.version });
+    } finally {
+      await rm(extractDir, { recursive: true, force: true }).catch(() => {});
+    }
   })
   // ─── GET SPECIFIC VERSION ──────────────────────────────────────────────────
   .get(

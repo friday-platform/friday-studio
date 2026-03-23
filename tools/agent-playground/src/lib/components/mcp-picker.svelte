@@ -11,16 +11,12 @@
   import { SvelteSet } from "svelte/reactivity";
 
   type ServersEndpoint = Client["api"]["mcp"]["servers"]["$get"];
-  type ServersResponse = InferResponseType<ServersEndpoint>;
+  type ServersResponse = InferResponseType<ServersEndpoint, 200>;
   type ServerInfo = ServersResponse[number];
 
   type ToolsEndpoint = Client["api"]["mcp"]["tools"]["$post"];
-  type ToolsResponse = InferResponseType<ToolsEndpoint>;
-  type ToolDefinition = ToolsResponse extends { tools: infer T }
-    ? T extends Array<infer U>
-      ? U
-      : never
-    : never;
+  type ToolsSuccessResponse = InferResponseType<ToolsEndpoint, 200>;
+  type ToolDefinition = ToolsSuccessResponse["tools"][number];
 
   type Props = {
     env: Record<string, string>;
@@ -85,10 +81,7 @@
         return;
       }
       const data = await res.json();
-      tools = "tools" in data ? data.tools : [];
-      if ("errors" in data && data.errors) {
-        toolErrors = data.errors;
-      }
+      tools = data.tools;
       onToolsResolved(tools);
     } catch (e) {
       toolErrors = [
@@ -213,8 +206,8 @@
   }
 
   .chevron :global(svg) {
-    block-size: 12px;
-    inline-size: 12px;
+    block-size: var(--size-3);
+    inline-size: var(--size-3);
   }
 
   .chevron.expanded {
@@ -226,10 +219,10 @@
     background-color: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-1);
-    block-size: 16px;
+    block-size: var(--size-4);
     display: flex;
     flex-shrink: 0;
-    inline-size: 16px;
+    inline-size: var(--size-4);
     justify-content: center;
     transition:
       border-color 0.1s,
@@ -237,8 +230,8 @@
   }
 
   .checkbox :global(svg) {
-    block-size: 12px;
-    inline-size: 12px;
+    block-size: var(--size-3);
+    inline-size: var(--size-3);
   }
 
   .checkbox.checked {
@@ -287,7 +280,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-3);
-    padding-inline-start: calc(16px + var(--size-2));
+    padding-inline-start: calc(var(--size-4) + var(--size-2));
   }
 
   .server-header {

@@ -1,6 +1,5 @@
 <script lang="ts">
-  import type { ProviderCredentialCandidates } from "@atlas/schemas/workspace";
-  import type { ResourceDeclaration } from "@atlas/schemas/workspace";
+  import type { ProviderCredentialCandidates, ResourceDeclaration } from "@atlas/schemas/workspace";
   import Button from "$lib/components/button.svelte";
   import { Collapsible } from "$lib/components/collapsible";
   import CaretRight from "$lib/components/icons/small/caret-right.svelte";
@@ -252,7 +251,8 @@
         <Button
           size="small"
           onclick={() => {
-            if (onApprove) onApprove(resolvedCredentials.size > 0 ? resolvedCredentials : undefined);
+            if (onApprove)
+              onApprove(resolvedCredentials.size > 0 ? resolvedCredentials : undefined);
           }}
         >
           Approve
