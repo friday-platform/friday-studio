@@ -17,6 +17,7 @@ import {
   UserConfigurationError,
   WorkspaceNotFoundError,
 } from "@atlas/core";
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
@@ -25,10 +26,13 @@ import {
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { createLogger, logger } from "@atlas/logger";
-import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
+import { FilesystemWorkspaceCreationAdapter, storeWorkspaceHistory } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { compileBlueprint, WorkspaceBlueprintSchema } from "@atlas/workspace-builder";
 import { zValidator } from "@hono/zod-validator";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
@@ -843,6 +847,8 @@ const workspacesRoutes = daemonFactory
         name: z.string().min(1).optional(),
         color: ColorSchema.optional(),
         description: z.string().optional(),
+        blueprintArtifactId: z.string().optional(),
+        blueprintRevision: z.number().optional(),
       }),
     ),
     async (c) => {
@@ -917,6 +923,131 @@ const workspacesRoutes = daemonFactory
         return c.json({ ok: true }, 200);
       } catch (error) {
         return c.json({ error: `Failed to complete setup: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Recompile workspace.yml from blueprint artifact
+  .post(
+    "/:workspaceId/recompile",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator(
+      "json",
+      z.object({ artifactId: z.string().optional(), revision: z.number().optional() }),
+    ),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        // Resolve artifact ID: explicit param > workspace metadata > error
+        const artifactId = body.artifactId ?? workspace.metadata?.blueprintArtifactId;
+        if (!artifactId) {
+          return c.json(
+            {
+              error:
+                "No blueprint artifact ID provided and workspace has no linked blueprint. " +
+                "Pass artifactId in the request body.",
+            },
+            400,
+          );
+        }
+
+        // Load blueprint artifact (specific revision or latest)
+        const artifactResult = await ArtifactStorage.get({
+          id: artifactId,
+          revision: body.revision,
+        });
+        if (!artifactResult.ok) {
+          return c.json({ error: `Failed to load artifact: ${artifactResult.error}` }, 500);
+        }
+        const artifact = artifactResult.data;
+        if (!artifact) {
+          return c.json({ error: `Artifact not found: ${artifactId}` }, 404);
+        }
+        if (artifact.type !== "workspace-plan") {
+          return c.json({ error: `Artifact is not a workspace plan (got: ${artifact.type})` }, 400);
+        }
+        if (artifact.data.version !== 2) {
+          return c.json(
+            {
+              error: `Unsupported blueprint version: ${artifact.data.version}. Only v2 is supported.`,
+            },
+            400,
+          );
+        }
+
+        const blueprintParse = WorkspaceBlueprintSchema.safeParse(artifact.data.data);
+        if (!blueprintParse.success) {
+          return c.json({ error: `Invalid blueprint data: ${blueprintParse.error.message}` }, 400);
+        }
+        const blueprint = blueprintParse.data;
+
+        // Load dynamic MCP servers (agents may reference KV-registered servers)
+        let dynamicServers: MCPServerMetadata[] | undefined;
+        try {
+          const mcpAdapter = await getMCPRegistryAdapter();
+          dynamicServers = await mcpAdapter.list();
+        } catch {
+          // Non-fatal — compile without dynamic servers
+        }
+
+        // Compile blueprint → YAML
+        const compiled = compileBlueprint(blueprint, dynamicServers);
+        if (!compiled.ok) {
+          return c.json({ error: `Compilation failed: ${compiled.error}` }, 422);
+        }
+
+        // Store history before overwriting
+        const currentConfig = await manager.getWorkspaceConfig(workspace.id);
+        if (currentConfig) {
+          await storeWorkspaceHistory(workspace, currentConfig.workspace, "full-update", {
+            throwOnError: true,
+          });
+        }
+
+        // Write workspace.yml
+        const ymlPath = join(workspace.path, "workspace.yml");
+        await writeFile(ymlPath, compiled.yaml, "utf-8");
+
+        // Update blueprint tracking metadata
+        const newMetadata = {
+          ...workspace.metadata,
+          blueprintArtifactId: artifactId,
+          blueprintRevision: artifact.revision,
+        };
+        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
+          metadata: newMetadata,
+        });
+
+        // Destroy runtime if active — file watcher handles lazy reload
+        const runtime = ctx.getWorkspaceRuntime(workspace.id);
+        if (runtime) {
+          await ctx.destroyWorkspaceRuntime(workspace.id);
+        }
+
+        logger.info("Workspace recompiled from blueprint", {
+          workspaceId,
+          artifactId,
+          revision: artifact.revision,
+        });
+
+        return c.json({
+          ok: true,
+          workspaceId,
+          artifactId,
+          revision: artifact.revision,
+          runtimeReloaded: !!runtime,
+        });
+      } catch (error) {
+        logger.error("Failed to recompile workspace", { workspaceId, error });
+        return c.json({ error: `Recompile failed: ${stringifyError(error)}` }, 500);
       }
     },
   )

@@ -26,6 +26,7 @@ import type {
   MutationError,
   MutationResult,
   NotFoundError,
+  NotSupportedError,
   ValidationError,
   WriteError,
 } from "./types.ts";
@@ -229,6 +230,7 @@ type ErrorTypeMap = {
   validation: ValidationError;
   conflict: ConflictError;
   invalid_operation: InvalidOperationError;
+  not_supported: NotSupportedError;
   write: WriteError;
 };
 

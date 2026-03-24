@@ -23,6 +23,7 @@
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
+    "@atlas/workspace-builder": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/link": "workspace:*",
     "@hono/mcp": "^0.2.4",

@@ -51,6 +51,13 @@ export {
 export { buildWorkspaceYaml } from "./assembler/build-workspace.ts";
 
 // ---------------------------------------------------------------------------
+// Blueprint compiler (pure: blueprint → YAML)
+// ---------------------------------------------------------------------------
+
+export type { CompileBlueprintResult } from "./compile-blueprint.ts";
+export { compileBlueprint } from "./compile-blueprint.ts";
+
+// ---------------------------------------------------------------------------
 // FSMBuilder fluent API
 // ---------------------------------------------------------------------------
 

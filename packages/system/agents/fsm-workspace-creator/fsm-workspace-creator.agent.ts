@@ -14,11 +14,7 @@ import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { createLedgerClient } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import {
-  buildFSMFromPlan,
-  buildWorkspaceYaml,
-  ClassifiedDAGStepSchema,
-  type CompileWarning,
-  PipelineError,
+  compileBlueprint,
   type WorkspaceBlueprint,
   WorkspaceBlueprintSchema,
 } from "@atlas/workspace-builder";
@@ -65,59 +61,19 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         data: { toolName: "FSM Creator", content: "Loading workspace blueprint" },
       });
 
-      const blueprint = await loadBlueprint(input.artifactId);
+      const { blueprint, revision } = await loadBlueprint(input.artifactId);
 
       logger.info("Loaded workspace blueprint", {
         signals: blueprint.signals.length,
         agents: blueprint.agents.length,
         jobs: blueprint.jobs.length,
+        revision,
       });
 
-      // 2. Compile FSMs — deterministic, no LLM
+      // 2-3. Compile blueprint → YAML (pure function)
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "FSM Creator", content: "Compiling FSM definitions" },
-      });
-
-      const fsms = [];
-      for (const job of blueprint.jobs) {
-        logger.info("Compiling FSM for job", { jobId: job.id });
-        // Jobs carry classified steps at runtime (from stampExecutionTypes); parse to narrow the type
-        const classifiedJob = {
-          ...job,
-          steps: job.steps.map((s) => ClassifiedDAGStepSchema.parse(s)),
-        };
-        const result = buildFSMFromPlan(classifiedJob);
-        if (!result.success) {
-          return err(`FSM compilation failed for job '${job.id}': ${JSON.stringify(result.error)}`);
-        }
-
-        // Compiler warnings are fatal — upstream gates should prevent them
-        if (result.value.warnings.length > 0) {
-          const warningMessages = result.value.warnings
-            .map((w: CompileWarning) => `  ${w.type}: ${w.message}`)
-            .join("\n");
-          throw new PipelineError(
-            "compile",
-            new Error(`Compiler warnings for job '${job.id}':\n${warningMessages}`),
-          );
-        }
-
-        logger.info("FSM compiled successfully", {
-          jobId: job.id,
-          fsmId: result.value.fsm.id,
-          stateCount: Object.keys(result.value.fsm.states).length,
-        });
-
-        fsms.push(result.value.fsm);
-      }
-
-      logger.info("All FSMs compiled successfully", { count: fsms.length });
-
-      // 3. Assemble workspace.yml — deterministic, no LLM
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "FSM Creator", content: "Assembling workspace configuration" },
       });
 
       // Load dynamic MCP servers for assembly (agents may reference KV-registered servers)
@@ -131,13 +87,12 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         });
       }
 
-      const workspaceYml = buildWorkspaceYaml(
-        { workspace: blueprint.workspace, signals: blueprint.signals, agents: blueprint.agents },
-        blueprint,
-        fsms,
-        blueprint.credentialBindings,
-        dynamicServers,
-      );
+      const compiled = compileBlueprint(blueprint, dynamicServers);
+      if (!compiled.ok) {
+        return err(compiled.error);
+      }
+
+      const workspaceYml = compiled.yaml;
 
       // 4. Write to disk
       stream?.emit({
@@ -181,7 +136,22 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         );
       }
 
-      // 6. Provision resources
+      // 6. Update workspace metadata with blueprint tracking
+      const metadataResponse = await parseResult(
+        client.workspace[":workspaceId"].metadata.$patch({
+          param: { workspaceId: registrationResponse.data.id },
+          json: { blueprintArtifactId: input.artifactId, blueprintRevision: revision },
+        }),
+      );
+
+      if (!metadataResponse.ok) {
+        logger.warn("Failed to update workspace metadata with blueprint info", {
+          workspaceId: registrationResponse.data.id,
+          error: stringifyError(metadataResponse.error),
+        });
+      }
+
+      // 7. Provision resources
       if (blueprint.resources && blueprint.resources.length > 0) {
         stream?.emit({
           type: "data-tool-progress",
@@ -218,7 +188,6 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         ymlPath,
         signals: blueprint.signals.length,
         jobCount: blueprint.jobs.length,
-        totalStates: fsms.reduce((sum, fsm) => sum + Object.keys(fsm.states).length, 0),
       });
 
       return ok({
@@ -230,13 +199,6 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
         metadata: { generatedCode: {}, codegenAttempts: {} },
       });
     } catch (error) {
-      if (error instanceof PipelineError) {
-        logger.error("Pipeline error during FSM creation", {
-          phase: error.phase,
-          cause: error.cause?.message,
-        });
-        return err(`Compilation failed at "${error.phase}": ${error.cause?.message}`);
-      }
       logger.error("FSM creation failed", { error: stringifyError(error) });
       return err(stringifyError(error));
     }
@@ -247,7 +209,9 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
  * Load v2 workspace blueprint artifact from storage.
  * Returns error on v1 artifacts, telling user to re-plan.
  */
-async function loadBlueprint(artifactId: string): Promise<WorkspaceBlueprint> {
+async function loadBlueprint(
+  artifactId: string,
+): Promise<{ blueprint: WorkspaceBlueprint; revision: number }> {
   const response = await parseResult(
     client.artifactsStorage[":id"].$get({ param: { id: artifactId } }),
   );
@@ -256,6 +220,7 @@ async function loadBlueprint(artifactId: string): Promise<WorkspaceBlueprint> {
     throw new Error("Failed to load workspace plan artifact");
   }
 
+  const { revision } = response.data.artifact;
   const artifactData = response.data.artifact.data;
 
   // Reject v1 artifacts — user must re-plan with the new planner
@@ -278,5 +243,5 @@ async function loadBlueprint(artifactId: string): Promise<WorkspaceBlueprint> {
     throw new Error(`Invalid workspace blueprint data: ${validationResult.error.message}`);
   }
 
-  return validationResult.data;
+  return { blueprint: validationResult.data, revision };
 }

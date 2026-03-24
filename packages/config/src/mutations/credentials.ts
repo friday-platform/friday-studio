@@ -64,16 +64,16 @@ export function extractCredentials(config: WorkspaceConfig): CredentialUsage[] {
   return usages;
 }
 
-type CredentialPathType = "mcp" | "agent";
+export type CredentialPathType = "mcp" | "agent";
 
-interface ParsedCredentialPath {
+export interface ParsedCredentialPath {
   type: CredentialPathType;
   entityId: string;
   envVar: string;
 }
 
 /** Parses "{type}:{entityId}:{envVar}" into components, or null if invalid. */
-function parseCredentialPath(path: string): ParsedCredentialPath | null {
+export function parseCredentialPath(path: string): ParsedCredentialPath | null {
   const parts = path.split(":");
   if (parts.length !== 3) return null;
 

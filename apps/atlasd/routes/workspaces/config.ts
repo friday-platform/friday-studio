@@ -16,8 +16,13 @@ import {
   FSMAgentUpdateSchema,
   type MutationError,
   type MutationResult,
+  parseCredentialPath,
+  patchBlueprintSignalConfig,
   patchSignalConfig,
   removeSkill,
+  updateBlueprintCredential,
+  updateBlueprintFSMAgent,
+  updateBlueprintSignalConfig,
   updateCredential,
   updateFSMAgent,
   updateSignal,
@@ -30,11 +35,17 @@ import {
 import { createLogger } from "@atlas/logger";
 import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
+import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { type AppVariables, daemonFactory } from "../../src/factory.ts";
+import {
+  loadWorkspaceBlueprint,
+  saveAndRecompileBlueprint,
+  withBlueprintMutation,
+} from "./blueprint-recompile.ts";
 import { injectBundledAgentRefs } from "./index.ts";
 
 /**
@@ -272,6 +283,7 @@ async function handleListCredentials(c: Context<AppVariables>) {
   }
 }
 
+const configLogger = createLogger({ component: "config-mutations" });
 const credentialLogger = createLogger({ component: "config-credentials" });
 
 /**
@@ -284,8 +296,9 @@ const UpdateCredentialInputSchema = z.object({
 /**
  * PUT /credentials/:path - Update a credential reference with Link validation.
  *
- * Validates that the new credential exists in Link and matches the expected provider
- * before applying the mutation.
+ * Blueprint-aware: when the workspace has a linked blueprint, updates the
+ * credential binding in the blueprint and recompiles. Falls back to direct
+ * workspace.yml mutation for non-blueprint workspaces.
  *
  * Custom handler (not using createMutationHandler) because:
  * 1. Needs async Link validation before mutation
@@ -341,6 +354,7 @@ async function handleUpdateCredential(
       );
     }
 
+    // Validate new credential exists in Link
     let newCredential: Credential;
     try {
       newCredential = await fetchLinkCredential(newCredentialId, credentialLogger);
@@ -376,6 +390,55 @@ async function handleUpdateCredential(
       );
     }
 
+    // Try blueprint path
+    if (workspace.metadata?.blueprintArtifactId) {
+      const parsed = parseCredentialPath(path);
+      if (parsed) {
+        const loaded = await loadWorkspaceBlueprint(workspace);
+        if (loaded.ok) {
+          const mutationResult = updateBlueprintCredential(
+            loaded.blueprint,
+            parsed.type,
+            parsed.entityId,
+            parsed.envVar,
+            newCredentialId,
+            newCredential.provider,
+          );
+
+          if (mutationResult.ok) {
+            const recompileResult = await saveAndRecompileBlueprint(
+              workspace,
+              mutationResult.value,
+              loaded.artifactId,
+              ctx,
+              `Update credential: ${path}`,
+            );
+
+            if (!recompileResult.ok) {
+              return c.json(
+                { success: false, error: "internal", message: recompileResult.error },
+                recompileResult.status,
+              );
+            }
+
+            return c.json({ ok: true });
+          }
+
+          // Binding not found in blueprint — fall through to direct mutation
+          configLogger.warn(
+            "Blueprint credential binding not found, falling back to direct mutation",
+            { workspaceId, path, error: mutationResult.error },
+          );
+        } else {
+          configLogger.warn("Blueprint load failed, falling back to direct mutation", {
+            workspaceId,
+            error: loaded.error,
+          });
+        }
+      }
+    }
+
+    // No blueprint or blueprint path failed — direct workspace.yml mutation
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
     const result = await applyMutation(workspace.path, mutationFn, {
@@ -412,10 +475,6 @@ async function handleUpdateCredential(
     }
 
     // Destroy runtime if active so it reloads config on next request.
-    // INTENTIONAL HOT-RELOAD: destroying the runtime forces the next signal/request
-    // to re-create it from the updated workspace.yml on disk. This is a deliberate
-    // design choice — not a bug. See also: WorkspaceManager.handleWorkspaceConfigChange
-    // for the file-watcher equivalent.
     const runtime = ctx.getWorkspaceRuntime(workspace.id);
     if (runtime) {
       await ctx.destroyWorkspaceRuntime(workspace.id);
@@ -499,7 +558,7 @@ interface MutationHandlerConfigWithoutSchema<TParams> extends MutationHandlerCon
  * @param conflictMessage - Message for conflict errors
  * @returns HTTP response with appropriate status code
  */
-function mapMutationError(c: Context, error: MutationError, conflictMessage: string) {
+function mapMutationError(c: Context, error: MutationError, conflictMessage: string): Response {
   switch (error.type) {
     case "not_found":
       return c.json(
@@ -528,6 +587,8 @@ function mapMutationError(c: Context, error: MutationError, conflictMessage: str
       );
     case "invalid_operation":
       return c.json({ success: false, error: "invalid_operation", message: error.message }, 422);
+    case "not_supported":
+      return c.json({ success: false, error: "not_supported", message: error.message }, 422);
     case "write":
       return c.json({ success: false, error: "write", message: error.message }, 500);
   }
@@ -679,8 +740,8 @@ const handleAgentDeleteMethodNotAllowed = (c: Context) => {
 // MUTATION HANDLER DEFINITIONS
 // ==============================================================================
 
-/** PUT /signals/:signalId - Update existing signal */
-const handleUpdateSignal = createMutationHandler({
+/** PUT /signals/:signalId - Update existing signal (legacy direct mutation) */
+const handleUpdateSignalLegacy = createMutationHandler({
   schema: WorkspaceSignalConfigSchema,
   extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
   buildMutation:
@@ -691,8 +752,41 @@ const handleUpdateSignal = createMutationHandler({
   entityName: "Signal",
 });
 
-/** PATCH /signals/:signalId - Patch signal config (schedule, timezone, etc.) */
-const handlePatchSignal = createMutationHandler({
+/**
+ * PUT /signals/:signalId - Blueprint-aware signal update.
+ *
+ * When the workspace has a linked blueprint, updates the blueprint signal's
+ * signalConfig, saves the new revision, and recompiles workspace.yml.
+ * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
+ */
+async function handleUpdateSignal(
+  c: Context<AppVariables>,
+  input: z.infer<typeof WorkspaceSignalConfigSchema>,
+) {
+  const signalId = requireParam(c, "signalId");
+
+  // Map workspace signal config to blueprint signal config.
+  // Only schedule and http providers have config — system/fs-watch don't exist in blueprints.
+  let blueprintSignalConfig: WorkspaceBlueprint["signals"][number]["signalConfig"];
+  if (input.provider === "schedule") {
+    blueprintSignalConfig = { provider: "schedule", config: input.config };
+  } else if (input.provider === "http") {
+    blueprintSignalConfig = { provider: "http", config: input.config };
+  } else {
+    blueprintSignalConfig = undefined;
+  }
+
+  const result = await withBlueprintMutation(c, {
+    revisionMessage: `Update signal: ${signalId}`,
+    mutate: (blueprint) => updateBlueprintSignalConfig(blueprint, signalId, blueprintSignalConfig),
+  });
+
+  if (result.mode === "blueprint") return result.response;
+  return handleUpdateSignalLegacy(c, input);
+}
+
+/** PATCH /signals/:signalId - Patch signal config, legacy (schedule, timezone, etc.) */
+const handlePatchSignalLegacy = createMutationHandler({
   schema: SignalConfigPatchSchema,
   extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
   buildMutation:
@@ -702,6 +796,29 @@ const handlePatchSignal = createMutationHandler({
   successStatus: 200,
   entityName: "Signal",
 });
+
+/**
+ * PATCH /signals/:signalId - Blueprint-aware signal config patch.
+ *
+ * When the workspace has a linked blueprint, patches the blueprint signal's
+ * config sub-object, saves the new revision, and recompiles workspace.yml.
+ * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
+ */
+async function handlePatchSignal(
+  c: Context<AppVariables>,
+  input: z.infer<typeof SignalConfigPatchSchema>,
+) {
+  const signalId = requireParam(c, "signalId");
+
+  const result = await withBlueprintMutation(c, {
+    revisionMessage: `Patch signal config: ${signalId}`,
+    mutate: (blueprint) =>
+      patchBlueprintSignalConfig(blueprint, signalId, input as Record<string, unknown>),
+  });
+
+  if (result.mode === "blueprint") return result.response;
+  return handlePatchSignalLegacy(c, input);
+}
 
 /** DELETE /signals/:signalId - Delete signal */
 const handleDeleteSignal = createMutationHandler({
@@ -764,7 +881,7 @@ const handleRemoveSkill = createMutationHandler({
 });
 
 /** PUT /agents/:agentId - Update existing FSM-embedded agent */
-const handleUpdateAgent = createMutationHandler({
+const handleUpdateAgentLegacy = createMutationHandler({
   schema: FSMAgentUpdateSchema,
   extractParams: (c) => ({ agentId: requireParam(c, "agentId") }),
   buildMutation:
@@ -774,6 +891,32 @@ const handleUpdateAgent = createMutationHandler({
   successStatus: 200,
   entityName: "Agent",
 });
+
+/**
+ * PUT /agents/:agentId - Blueprint-aware agent update.
+ *
+ * When the workspace has a linked blueprint, routes prompt updates through the
+ * blueprint path (updating the DAG step description, which the compiler uses as
+ * the FSM action prompt). Other fields (e.g. model) are not represented in the
+ * blueprint schema — updateBlueprintFSMAgent returns not_supported for those,
+ * which surfaces as a 422.
+ *
+ * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
+ */
+async function handleUpdateAgent(
+  c: Context<AppVariables>,
+  input: z.infer<typeof FSMAgentUpdateSchema>,
+) {
+  const agentId = requireParam(c, "agentId");
+
+  const result = await withBlueprintMutation(c, {
+    revisionMessage: `Update agent prompt: ${agentId}`,
+    mutate: (blueprint) => updateBlueprintFSMAgent(blueprint, agentId, input),
+  });
+
+  if (result.mode === "blueprint") return result.response;
+  return handleUpdateAgentLegacy(c, input);
+}
 
 // ==============================================================================
 // ROUTE DEFINITIONS

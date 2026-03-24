@@ -8,10 +8,21 @@
 export type { ApplyMutationOptions } from "./apply.ts";
 // Orchestrator
 export { applyMutation, FilesystemConfigWriter } from "./apply.ts";
+// Blueprint mutations (preferred path for UI edits)
+export type { BlueprintAgentUpdate } from "./blueprint.ts";
+export {
+  patchBlueprintSignalConfig,
+  updateBlueprintAgent,
+  updateBlueprintCredential,
+  updateBlueprintFSMAgent,
+  updateBlueprintFSMAgentPrompt,
+  updateBlueprintSignalConfig,
+} from "./blueprint.ts";
 // Credential extraction and mutation
-export type { CredentialUsage } from "./credentials.ts";
+export type { CredentialPathType, CredentialUsage, ParsedCredentialPath } from "./credentials.ts";
 export {
   extractCredentials,
+  parseCredentialPath,
   stripCredentialRefs,
   toIdRefs,
   toProviderRefs,
@@ -52,6 +63,7 @@ export type {
   MutationFn,
   MutationResult,
   NotFoundError,
+  NotSupportedError,
   ValidationError,
   WriteError,
 } from "./types.ts";

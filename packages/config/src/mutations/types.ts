@@ -85,6 +85,19 @@ export interface WriteError {
 }
 
 /**
+ * Error when a mutation is not representable in the target format.
+ *
+ * Used by blueprint mutations to signal that the requested change cannot be
+ * expressed in the blueprint schema (e.g., non-prompt agent fields, system
+ * signal providers). Callers should surface this as a 422 — not silently
+ * fall back to a different code path.
+ */
+export interface NotSupportedError {
+  type: "not_supported";
+  message: string;
+}
+
+/**
  * Discriminated union of all mutation error types.
  */
 export type MutationError =
@@ -92,7 +105,8 @@ export type MutationError =
   | ValidationError
   | ConflictError
   | InvalidOperationError
-  | WriteError;
+  | WriteError
+  | NotSupportedError;
 
 // ==============================================================================
 // ERROR CONSTRUCTION HELPERS
@@ -125,6 +139,15 @@ export function validationError(message: string, issues: z.ZodIssue[] = []): Val
  */
 export function conflictError(willUnlinkFrom: CascadeTarget[] = []): ConflictError {
   return { type: "conflict", willUnlinkFrom };
+}
+
+/**
+ * Creates a NotSupportedError for mutations that can't be represented in the target format.
+ *
+ * @param message - Human-readable explanation of why the mutation isn't supported
+ */
+export function notSupportedError(message: string): NotSupportedError {
+  return { type: "not_supported", message };
 }
 
 /**
