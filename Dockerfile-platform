@@ -4,13 +4,14 @@
 #   docker build -f Dockerfile-platform -t atlas-platform .
 #
 # Run:
-#   docker run --env-file .env -p 8080:8080 -p 3100:3100 -p 5200:5200 -p 7681:7681 atlas-platform
+#   docker run --env-file .env -p 8080:8080 -p 3100:3100 -p 5200:5200 -p 7681:7681 -p 9090:9090 atlas-platform
 #
 # Ports:
 #   8080  atlasd (daemon API)
 #   3100  link (credential/auth service)
 #   5200  agent-playground (web UI)
 #   7681  pty-server (WebSocket PTY for CLI cheatsheet terminal)
+#   9090  webhook-tunnel
 
 # ============================================================================
 # Stage 1: Install dependencies
@@ -140,11 +141,12 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     DEV_MODE=true \
     SHELL=/bin/bash
 
-EXPOSE 8080 3100 5200 7681
+EXPOSE 8080 3100 5200 7681 9090
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -sf http://localhost:8080/health > /dev/null && \
         curl -sf http://localhost:3100/health > /dev/null && \
-        curl -sf http://localhost:7681/health > /dev/null || exit 1
+        curl -sf http://localhost:7681/health > /dev/null && \
+        curl -sf http://localhost:9090/health > /dev/null || exit 1
 
 ENTRYPOINT ["/app/run-platform.sh"]

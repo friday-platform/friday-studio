@@ -19,6 +19,7 @@ services:
       - "3100:3100"  # link (credential/auth service)
       - "5200:5200"  # agent-playground (web UI)
       - "7681:7681"  # pty-server (WebSocket PTY)
+      - "9090:9090"  # webhook-tunnel
     env_file:
       - path: .env
         required: false
@@ -36,7 +37,8 @@ services:
         - >
           curl -sf http://localhost:8080/health &&
           curl -sf http://localhost:3100/health &&
-          curl -sf http://localhost:7681/health
+          curl -sf http://localhost:7681/health &&
+          curl -sf http://localhost:9090/health
       interval: 10s
       timeout: 5s
       start_period: 60s
