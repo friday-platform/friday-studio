@@ -116,6 +116,7 @@
     "npm:@types/proper-lockfile@^4.1.4": "4.1.4",
     "npm:@types/react@^19.2.14": "19.2.14",
     "npm:@types/turndown@^5.0.6": "5.0.6",
+    "npm:@types/ws@^8.18.0": "8.18.1",
     "npm:@vitest/coverage-v8@4.1.0": "4.1.0_vitest@4.1.0__@opentelemetry+api@1.9.0__@types+node@25.5.0__vite@7.3.1___@types+node@25.5.0___yaml@2.8.2___picomatch@4.0.3__yaml@2.8.2_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.8.11": "0.8.11",
@@ -153,6 +154,8 @@
     "npm:minimatch@^10.2.4": "10.2.4",
     "npm:nanoid@5.1.7": "5.1.7",
     "npm:nanoid@^5.1.6": "5.1.7",
+    "npm:node-pty@1": "1.1.0",
+    "npm:node-pty@1.1.0": "1.1.0",
     "npm:oauth4webapi@3.8.5": "3.8.5",
     "npm:oauth4webapi@^3.8.3": "3.8.5",
     "npm:openapi-fetch@0.15": "0.15.2",
@@ -202,6 +205,8 @@
     "npm:vite-plugin-compression2@^2.5.2": "2.5.2",
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.5.0_yaml@2.8.2_picomatch@4.0.3",
     "npm:vitest@^4.1.0": "4.1.0_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.2__picomatch@4.0.3_yaml@2.8.2",
+    "npm:ws@8.19.0": "8.19.0",
+    "npm:ws@^8.18.0": "8.19.0",
     "npm:xstate@^5.28.0": "5.28.0",
     "npm:yaml@^2.8.2": "2.8.2",
     "npm:yargs@18": "18.0.0",
@@ -4227,6 +4232,12 @@
     "@types/unist@3.0.3": {
       "integrity": "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="
     },
+    "@types/ws@8.18.1": {
+      "integrity": "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==",
+      "dependencies": [
+        "@types/node"
+      ]
+    },
     "@typescript-eslint/eslint-plugin@8.57.1_@typescript-eslint+parser@8.57.1__eslint@10.1.0__typescript@5.9.3_eslint@10.1.0_typescript@5.9.3": {
       "integrity": "sha512-Gn3aqnvNl4NGc6x3/Bqk1AOn0thyTU9bqDRhiRnUWezgvr2OnhYCWCgC8zXXRVqBsIL1pSDt7T9nJUe0oM0kDQ==",
       "dependencies": [
@@ -6783,6 +6794,9 @@
     "nested-obj@0.1.10": {
       "integrity": "sha512-5V2kUPrBee/tmoS2p0IJ35BcaJuW1p1yXF5GP8JpXIkDoPbaYeYypAHizUeZkAUxcC7Rago7izWmEq7qa8+Mhw=="
     },
+    "node-addon-api@7.1.1": {
+      "integrity": "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="
+    },
     "node-domexception@1.0.0": {
       "integrity": "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==",
       "deprecated": true
@@ -6800,6 +6814,13 @@
         "fetch-blob",
         "formdata-polyfill"
       ]
+    },
+    "node-pty@1.1.0": {
+      "integrity": "sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==",
+      "dependencies": [
+        "node-addon-api"
+      ],
+      "scripts": true
     },
     "node-releases@2.0.36": {
       "integrity": "sha512-TdC8FSgHz8Mwtw9g5L4gR/Sh9XhSP/0DEkQxfEFXOpiul5IiHgHan2VhYYb6agDSfp4KuvltmGApc8HMgUrIkA=="
@@ -9176,6 +9197,19 @@
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
+          ]
+        }
+      },
+      "tools/pty-server": {
+        "dependencies": [
+          "npm:node-pty@1.1.0",
+          "npm:ws@8.19.0"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/ws@^8.18.0",
+            "npm:node-pty@1",
+            "npm:ws@^8.18.0"
           ]
         }
       }
