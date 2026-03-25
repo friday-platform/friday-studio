@@ -77,6 +77,7 @@ Create a `docker-compose.yml` in the same directory as your `.env` file:
 services:
   platform:
     image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
+    pull_policy: always   # always pull latest; set to "never" for local builds
     platform: linux/amd64  # required on Apple Silicon Macs
     ports:
       - "8080:8080"  # atlasd daemon API
@@ -114,6 +115,10 @@ volumes:
   atlas-data:
   link-data:
 ```
+
+> **Using a local build instead of the registry image:** Build with
+> `docker build -f Dockerfile-platform -t atlas-platform:local .`, then change
+> the `image:` line to `atlas-platform:local` and set `pull_policy: never`.
 
 ## 4. Start the platform
 

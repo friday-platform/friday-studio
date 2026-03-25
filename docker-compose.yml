@@ -11,6 +11,9 @@
 services:
   platform:
     image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
+    pull_policy: always   # always pull latest; set to "never" for local builds:
+                          #   docker build -f Dockerfile-platform -t atlas-platform:local .
+                          #   then change image above to atlas-platform:local
     platform: linux/amd64
     ports:
       - "8080:8080"  # atlasd daemon API

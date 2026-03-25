@@ -6,12 +6,13 @@ import type {
   AtlasTool,
 } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type {
-  GlobalSkillRefConfig,
-  InlineSkillConfig,
-  MCPServerConfig,
-  SkillEntry,
-  WorkspaceConfig,
+import {
+  type GlobalSkillRefConfig,
+  type InlineSkillConfig,
+  type MCPServerConfig,
+  parseSkillRef,
+  type SkillEntry,
+  type WorkspaceConfig,
 } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -109,13 +110,55 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           })),
         ];
 
-        // Expose inline skills to handler (global skills are lazily loaded via load_skill tool)
-        if (inlineSkills.length > 0) {
-          resolvedSkills = inlineSkills.map((s) => ({
-            name: s.name,
-            description: s.description,
-            instructions: s.instructions,
-          }));
+        // Resolve all workspace skills eagerly so agents that use their own tool systems
+        // (e.g. claude-code with Claude Code SDK) can access skill content via context.skills.
+        // Global skills are also still available via load_skill tool for LLM-based agents.
+        const allResolved: AgentSkill[] = inlineSkills.map((s) => ({
+          name: s.name,
+          description: s.description,
+          instructions: s.instructions,
+        }));
+
+        if (globalRefs.length > 0) {
+          const fetchResults = await Promise.allSettled(
+            globalRefs.map(async (ref) => {
+              const { namespace, name } = parseSkillRef(ref.name);
+              const result = await SkillStorage.get(namespace, name, ref.version);
+              if (!result.ok) {
+                agentLogger.warn("Failed to resolve global skill", {
+                  skill: ref.name,
+                  error: result.error,
+                });
+                return null;
+              }
+              if (!result.data) {
+                agentLogger.warn("Global skill not found", {
+                  skill: ref.name,
+                  version: ref.version,
+                });
+                return null;
+              }
+              agentLogger.info("Resolved global skill", {
+                skill: ref.name,
+                version: result.data.version,
+              });
+              return {
+                // Use short name (not @namespace/name) for sandbox path compatibility
+                name: result.data.name ?? name,
+                description: result.data.description,
+                instructions: result.data.instructions,
+              };
+            }),
+          );
+          for (const fetchResult of fetchResults) {
+            if (fetchResult.status === "fulfilled" && fetchResult.value) {
+              allResolved.push(fetchResult.value);
+            }
+          }
+        }
+
+        if (allResolved.length > 0) {
+          resolvedSkills = allResolved;
         }
 
         if (availableSkills.length > 0) {
