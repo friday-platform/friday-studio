@@ -259,19 +259,11 @@
     </div>
 
     {#if featureFlags.ENABLE_SKILL_ASSETS}
-      <div class="section">
-        <h2>Assets</h2>
-        <span class="empty">Upload assets for this skill</span>
-        <button>Upload</button>
-      </div>
+      <Page.SidebarSection title="Assets" empty="Upload assets for this skill" />
     {/if}
 
     {#if featureFlags.ENABLE_SKILL_REFERENCES}
-      <div class="section">
-        <h2>References</h2>
-        <span class="empty">Upload additional references for this skill</span>
-        <button>Upload</button>
-      </div>
+      <Page.SidebarSection title="References" empty="Upload additional references for this skill" />
     {/if}
   </Page.Sidebar>
 </Page.Root>
@@ -361,23 +353,6 @@
       padding: 0;
       width: 100%;
       word-break: break-word;
-    }
-
-    .empty {
-      font-size: var(--font-size-2);
-      font-weight: var(--font-weight-4);
-      line-height: var(--font-lineheight-1);
-      opacity: 0.6;
-    }
-
-    button {
-      display: block;
-      font-size: var(--font-size-2);
-      font-weight: var(--font-weight-5);
-      line-height: var(--font-lineheight-1);
-      margin-block: var(--size-2-5) 0;
-      opacity: 0.8;
-      text-decoration-line: underline;
     }
   }
 </style>

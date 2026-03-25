@@ -33,4 +33,12 @@ export type TaskProgressEvent =
   | { type: "step-start"; stepIndex: number; totalSteps: number; description: string }
   | { type: "step-complete"; stepIndex: number; success: boolean };
 
+/** Forwarded tool call from an inner agent execution */
+export interface InnerToolCallEvent {
+  toolName: string;
+  status: "started" | "completed" | "failed";
+  input?: string;
+  result?: string;
+}
+
 export type { DatetimeContext };

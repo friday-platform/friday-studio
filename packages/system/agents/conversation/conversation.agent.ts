@@ -492,12 +492,21 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               },
               required: ["artifactId"],
             }),
-            execute: ({ artifactId, workspacePath }) => {
+            execute: async ({ artifactId, workspacePath }) => {
               logger.debug("Executing fsm-workspace-creator directly", {
                 artifactId,
                 workspacePath,
               });
-              return fsmWorkspaceCreatorAgent.execute({ artifactId, workspacePath }, agentContext);
+              const result = await fsmWorkspaceCreatorAgent.execute(
+                { artifactId, workspacePath },
+                agentContext,
+              );
+              return {
+                ...result,
+                progress: result.ok
+                  ? { label: "Workspace created", status: "completed" as const }
+                  : { label: "Workspace creation failed", status: "failed" as const },
+              };
             },
           }),
           "skill-distiller": tool({
@@ -812,6 +821,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
 
         let result: Awaited<ReturnType<typeof streamText<typeof allTools>>>;
         let errorEmitted = false;
+        const collectedToolNames: string[] = [];
 
         // Set up unhandled rejection interceptor to catch API errors that escape the SDK
         // This is necessary because Vercel AI SDK doesn't properly propagate auth errors in streaming mode
@@ -931,9 +941,18 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                   }
                 }
               },
-              onFinish: ({ text, finishReason }) => {
+              onFinish: ({ text, finishReason, steps }) => {
                 finalText = text;
                 finalFinishReason = finishReason;
+
+                // Collect tool call names for post-turn summary
+                if (steps) {
+                  for (const step of steps) {
+                    for (const tc of step.toolCalls) {
+                      collectedToolNames.push(tc.toolName);
+                    }
+                  }
+                }
 
                 if (finishReason === "content-filter") {
                   logger.warn("Content filter triggered", {
@@ -1050,6 +1069,31 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               },
             }),
           );
+
+          // Wait for stream to complete, then generate action summary
+          try {
+            await result.text;
+          } catch {
+            // Stream errors handled elsewhere
+          }
+
+          // Generate post-turn summary if tool calls happened
+          const summarizableTools = collectedToolNames.filter((n) => n !== "load_skill");
+
+          if (summarizableTools.length > 0 && !errorEmitted) {
+            try {
+              const summaryText = await generateActionSummary(
+                summarizableTools,
+                finalText ?? "",
+                logger,
+              );
+              if (summaryText) {
+                writer.write({ type: "data-action-summary", data: { summary: summaryText } });
+              }
+            } catch (err) {
+              logger.warn("Failed to generate action summary", { error: err });
+            }
+          }
         } catch (error) {
           // Handle API errors with user-friendly messages
           // Use the intercepted API error first (actual auth error), then others
@@ -1114,3 +1158,31 @@ export const conversationAgent = createAgent<string, ConversationResult>({
     optional: [{ name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" }],
   },
 });
+
+/**
+ * Generate a short, user-facing action summary using a fast LLM.
+ * Called after the main turn completes if tool calls were made.
+ */
+async function generateActionSummary(
+  toolNames: string[],
+  responseText: string,
+  log: Logger,
+): Promise<string | undefined> {
+  const toolList = toolNames.join(", ");
+  const truncatedResponse = responseText.slice(0, 500);
+
+  try {
+    const summary = await smallLLM({
+      system:
+        "Summarize what tools were used in one short sentence (max 10 words). Focus on which tools and services were used, not what was accomplished. Examples: 'Used Notion search tools and created an artifact', 'Searched Linear issues and posted to Slack', 'Ran a task with Notion and Google Calendar'. Write ONLY the summary sentence, nothing else.",
+      prompt: `Tools used: ${toolList}\nResponse to user: ${truncatedResponse}`,
+      maxOutputTokens: 250,
+    });
+
+    const trimmed = summary.trim();
+    return trimmed || undefined;
+  } catch (err) {
+    log.warn("Action summary generation failed", { error: err });
+    return undefined;
+  }
+}

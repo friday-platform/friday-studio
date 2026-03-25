@@ -105,14 +105,18 @@ export interface Intent {
   id: string;
   timestamp: string;
   content: string;
+  details?: unknown;
 }
 
-/** Generic/other tools */
-export interface GenericToolEntry {
-  type: "tool_call";
+/** Grouped tool calls within an assistant turn */
+export interface ToolCallGroupEntry {
+  type: "tool_call_group";
   id: string;
   timestamp: string;
-  toolName: string;
+  /** Summary from action-summary data event, if available */
+  summary: string | undefined;
+  /** Individual tool call intent entries */
+  items: Intent[];
 }
 
 /** Discriminated union of all output entry types */
@@ -129,7 +133,7 @@ export type OutputEntry =
   | ConnectServiceEntry
   | TableOutputEntry
   | Intent
-  | GenericToolEntry;
+  | ToolCallGroupEntry;
 
 /** Schema for MCP tool result outer structure (used by system agent tools) */
 const MCPToolResultSchema = z.object({

@@ -13,16 +13,16 @@
   import { resolve } from "$app/paths";
   import Button from "$lib/components/button.svelte";
   import Dot from "$lib/components/dot.svelte";
+  import FormattedData from "$lib/components/formatted-data.svelte";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import JsonHighlight from "$lib/components/json-highlight.svelte";
   import { Page } from "$lib/components/page";
   import { getServiceIcon, type ServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { fetchSessionView, sessionEventStream } from "$lib/utils/session-event-stream";
   import { onMount } from "svelte";
   import AgentBlockCard from "../(components)/agent-block-card.svelte";
-  import FormattedData from "../(components)/formatted-data.svelte";
-  import JsonHighlight from "../(components)/json-highlight.svelte";
   import { parseError } from "../(components)/parse-error";
   import { StepBlock } from "../(components)/step-block";
   import type { PageData } from "./$types";

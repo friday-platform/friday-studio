@@ -30,6 +30,7 @@ import Settings from "./settings.svelte";
 import Share from "./share.svelte";
 import Slack from "./slack.svelte";
 import StyledCheckmark from "./styled-checkmark.svelte";
+import StyledUnchecked from "./styled-unchecked.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
 import TripleDots from "./triple-dots.svelte";
@@ -69,6 +70,7 @@ export const Icons = {
   Share,
   Slack,
   StyledCheckmark,
+  StyledUnchecked,
   Trash,
   TriangleRight,
   TripleDots,

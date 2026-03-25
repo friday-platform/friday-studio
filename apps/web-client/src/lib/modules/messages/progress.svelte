@@ -1,164 +1,34 @@
 <script lang="ts">
-  import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
-  import { GA4, trackEvent } from "@atlas/analytics/ga4";
-  import { IconSmall } from "$lib/components/icons/small";
   import { formatDuration } from "$lib/utils/date";
   import MessageWrapper from "./wrapper.svelte";
 
   interface Props {
-    actions: AtlasUIMessagePart[];
     turnStartedAt?: number | null;
   }
 
-  const { actions, turnStartedAt }: Props = $props();
+  const { turnStartedAt }: Props = $props();
 
-  // Collapse consecutive identical messages into single entries
-  const dedupedActions = $derived.by(() => {
-    const result: AtlasUIMessagePart[] = [];
-    let lastMsg: string | undefined;
-
-    for (const action of actions) {
-      // @ts-expect-error action is poorly typed
-      const msg = getMessage(action.type, action.data?.content);
-      if (msg !== lastMsg) {
-        result.push(action);
-        lastMsg = msg;
-      }
-    }
-
-    return result;
-  });
-
-  let displayStart = $state(turnStartedAt ?? Date.now());
+  const startTime = $derived(turnStartedAt ?? Date.now());
   let endTime = $state(Date.now());
-  let open = $state(false);
-  let hiddenAt = $state<number | null>(null);
-  let prevActionsLength = 0;
-
-  // Reset timer when a new streaming session starts (actions goes from 0 to >0)
-  // Only reset if we don't have a server-provided timestamp
-  $effect(() => {
-    if (prevActionsLength === 0 && actions.length > 0 && !turnStartedAt) {
-      displayStart = endTime = Date.now();
-    }
-    prevActionsLength = actions.length;
-  });
-
-  // Update displayStart when server provides a timestamp
-  $effect(() => {
-    if (turnStartedAt) {
-      displayStart = turnStartedAt;
-    }
-  });
 
   $effect(() => {
     const interval = setInterval(() => {
       endTime = Date.now();
     }, 1000);
 
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        hiddenAt = Date.now();
-      } else if (hiddenAt !== null) {
-        // Reset timer display if hidden for 30+ seconds, unless we have server timestamp
-        if (Date.now() - hiddenAt > 30_000 && !turnStartedAt) {
-          displayStart = endTime = Date.now();
-        }
-        hiddenAt = null;
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   });
-
-  function getMessage(
-    type:
-      | "text"
-      | "reasoning"
-      | "dynamic-tool"
-      | "source-url"
-      | "source-document"
-      | "file"
-      | "step-start"
-      | `tool-${string}`
-      | "data-session-start"
-      | "data-session-finish"
-      | "data-session-cancel"
-      | "data-agent-start"
-      | "data-agent-finish"
-      | "data-agent-error"
-      | "data-agent-timeout"
-      | "data-error"
-      | "data-user-message"
-      | "data-tool-progress",
-    content?: string,
-  ) {
-    if (type === "data-session-start") {
-      return "Working";
-    } else if (type === "data-session-finish") {
-      return "Finishing";
-    } else if (type === "data-session-cancel") {
-      return "Cancelling";
-    } else if (type === "text") {
-      return "Typing";
-    } else if (type === "step-start") {
-      return "Processing";
-    } else if (type.startsWith("tool-")) {
-      return "Calling Tools";
-    } else if (type === "data-error") {
-      return "Error";
-    } else if (type === "data-tool-progress" && content) {
-      return content;
-    } else {
-      return "Reasoning";
-    }
-  }
 </script>
 
 <MessageWrapper>
   <div class="container">
-    <button
-      onclick={() => {
-        if (!open) trackEvent(GA4.PROGRESS_EXPAND);
-        open = !open;
-      }}
-      class:open
-    >
-      <span class="thinking">Thinking... <IconSmall.CaretRight /></span>
+    <span class="thinking">Thinking...</span>
 
-      {#if open}
-        <footer>
-          <time>{formatDuration(displayStart, endTime)}</time>
-        </footer>
-
-        <ul class="steps">
-          {#each dedupedActions as action, index (index)}
-            <li>
-              {/* @ts-expect-error action is poorly typed */
-              getMessage(action.type, action.data?.content)}
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <footer>
-          <time>{formatDuration(displayStart, endTime)}</time>
-          {#if dedupedActions.length > 0}•{/if}
-
-          <div class="actions">
-            {#each dedupedActions as action, index (index)}
-              <span class:inactive={index !== dedupedActions.length - 1}>
-                {/* @ts-expect-error action is poorly typed */
-                getMessage(action.type, action.data?.content)}
-              </span>
-            {/each}
-          </div>
-        </footer>
-      {/if}
-    </button>
+    <footer>
+      <time>{formatDuration(startTime, endTime)}</time>
+    </footer>
   </div>
 </MessageWrapper>
 
@@ -171,27 +41,9 @@
     margin-block-start: var(--size-2);
   }
 
-  button {
-    display: flex;
-    flex-direction: column;
+  .thinking {
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
-    inline-size: max-content;
-    text-align: left;
-
-    .thinking {
-      align-items: center;
-      display: flex;
-      gap: var(--size-1-5);
-    }
-
-    & :global(svg) {
-      transition: transform 150ms ease-in-out;
-    }
-
-    &.open :global(svg) {
-      transform: rotate(90deg);
-    }
   }
 
   footer {
@@ -200,62 +52,5 @@
     gap: var(--size-1);
     font-size: var(--font-size-1);
     opacity: 0.5;
-  }
-
-  .actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    inline-size: max-content;
-
-    span {
-      animation-name: fadeIn;
-      animation-duration: 250ms;
-      animation-timing-function: ease-in-out;
-      animation-fill-mode: forwards;
-      grid-column: 1 / -1;
-      grid-row: 1 / -1;
-
-      &.inactive {
-        animation-name: fadeOut;
-      }
-    }
-  }
-
-  .steps {
-    border-inline-start: var(--size-px) solid var(--color-border-1);
-    margin-inline-start: var(--size-1-5);
-    margin-block-start: var(--size-1);
-    padding-inline-start: var(--size-3);
-
-    li {
-      font-size: var(--font-size-2);
-      font-weight: var(--font-weight-4-5);
-      opacity: 0.8;
-    }
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(var(--size-1));
-    }
-
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes fadeOut {
-    from {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    to {
-      opacity: 0;
-      transform: translateY(calc(var(--size-1) * -1));
-    }
   }
 </style>

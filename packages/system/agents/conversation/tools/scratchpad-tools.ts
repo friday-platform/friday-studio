@@ -1,3 +1,4 @@
+import type { ToolProgress } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
@@ -12,7 +13,7 @@ export const takeNoteTool = tool({
     streamId: z.string().describe("Stream identifier"),
     note: z.string().describe("A note to remember"),
   }),
-  execute: async ({ streamId, note }) => {
+  execute: async ({ streamId, note }): Promise<{ stored: boolean; progress: ToolProgress }> => {
     const client = createAtlasClient();
     const response = await client.POST("/api/scratchpad/{streamId}", {
       params: { path: { streamId } },
@@ -23,7 +24,8 @@ export const takeNoteTool = tool({
       throw new Error(`Failed to store note: ${stringifyError(response.error)}`);
     }
 
-    return { stored: true };
+    const label = note.length > 60 ? `${note.slice(0, 57)}...` : note;
+    return { stored: true, progress: { label, status: "completed" } };
   },
 });
 

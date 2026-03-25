@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createTabs } from "@melt-ui/svelte";
-  import { deepParseJson } from "./deep-parse-json";
-  import FormattedData from "./formatted-data.svelte";
-  import JsonHighlight from "./json-highlight.svelte";
+  import FormattedData from "$lib/components/formatted-data.svelte";
+  import JsonHighlight from "$lib/components/json-highlight.svelte";
+  import { deepParseJson } from "$lib/utils/deep-parse-json";
 
   interface Props {
     args: unknown;

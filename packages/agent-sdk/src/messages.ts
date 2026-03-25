@@ -104,6 +104,14 @@ export const AtlasDataEventSchemas = {
     filenames: z.array(z.string()), // Original filenames for display
     mimeTypes: z.array(z.string()).optional(), // MIME types of attached artifacts
   }),
+  /** Forwarded tool call from an inner (sub-agent) execution */
+  "inner-tool-call": z.object({
+    toolName: z.string(), // e.g., "search_pages"
+    status: z.enum(["started", "completed", "failed"]),
+    input: z.string().optional(), // Tool input/args as JSON string
+    result: z.string().optional(), // Tool output as JSON string
+  }),
+  "action-summary": z.object({ summary: z.string() }),
 };
 
 /**
@@ -129,6 +137,8 @@ export type AtlasDataEvents = {
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
+  "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;
+  "action-summary": z.infer<(typeof AtlasDataEventSchemas)["action-summary"]>;
 };
 
 /**

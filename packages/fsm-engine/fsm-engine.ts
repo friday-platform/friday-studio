@@ -1227,6 +1227,7 @@ export class FSMEngine {
               tools,
               toolChoice: "auto", // Let LLM decide when to stop calling tools
               stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+              onStreamEvent: sig._context?.onStreamEvent,
             });
 
             // Check for adapter-level errors (network, API, etc.)
@@ -1234,8 +1235,10 @@ export class FSMEngine {
               throw new Error(`LLM call failed: ${result.error.reason}`);
             }
 
-            // Emit tool events for UI visibility
-            this.emitToolEvents(result, action, sig, currentState);
+            // Emit tool events for UI visibility (skip when streaming — events already emitted in real-time)
+            if (!sig._context?.onStreamEvent) {
+              this.emitToolEvents(result, action, sig, currentState);
+            }
 
             // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
             const failArgs = findFailStepToolArgs(result);
@@ -1294,6 +1297,7 @@ export class FSMEngine {
                   tools,
                   toolChoice: "auto", // Let LLM decide when to stop calling tools
                   stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+                  onStreamEvent: sig._context?.onStreamEvent,
                 });
 
                 // Check for adapter-level errors on retry
@@ -1301,8 +1305,10 @@ export class FSMEngine {
                   throw new Error(`LLM call failed on retry: ${result.error.reason}`);
                 }
 
-                // Emit tool events for UI visibility (retry call)
-                this.emitToolEvents(result, action, sig, currentState);
+                // Emit tool events for UI visibility (retry — skip when streaming)
+                if (!sig._context?.onStreamEvent) {
+                  this.emitToolEvents(result, action, sig, currentState);
+                }
 
                 // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
                 const retryFailArgs = findFailStepToolArgs(result);

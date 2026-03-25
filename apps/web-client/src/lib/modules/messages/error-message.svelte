@@ -9,45 +9,34 @@
 </script>
 
 <MessageWrapper>
-  <article class="message">
-    <button
-      onclick={() => {
-        if (!open) trackEvent(GA4.ERROR_DETAILS_EXPAND);
-        open = !open;
-      }}
-      class:open
-    >
-      <span class="header">
-        An error happened
-        <IconSmall.CaretRight />
-      </span>
+  <button
+    onclick={() => {
+      if (!open) trackEvent(GA4.ERROR_DETAILS_EXPAND);
+      open = !open;
+    }}
+    class:open
+  >
+    <span class="header">
+      An error happened
+      <IconSmall.CaretRight />
+    </span>
 
-      {#if open}
-        <div class="details">
-          <p>
-            {message.content}
-          </p>
-        </div>
-      {/if}
-    </button>
-  </article>
+    {#if open}
+      <div class="details">
+        <p>
+          {message.content}
+        </p>
+      </div>
+    {/if}
+  </button>
 </MessageWrapper>
 
 <style>
-  .message {
-    display: flex;
-    inline-size: var(--size-160);
-    margin-inline: auto;
-    padding-inline: var(--size-8);
-  }
-
   button {
-    border-radius: var(--radius-round);
     display: flex;
     flex-direction: column;
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
-    inline-size: max-content;
     text-align: left;
 
     .header {

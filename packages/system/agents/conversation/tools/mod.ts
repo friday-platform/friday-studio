@@ -14,7 +14,6 @@ import { connectMcpServerTool } from "./connect-mcp-server.ts";
 import { createSkillTool } from "./create-skill.ts";
 import { displayArtifact } from "./display-artifact.ts";
 import { takeNoteTool } from "./scratchpad-tools.ts";
-
 /**
  * All conversation agent tools exported as AtlasTools.
  * These can be spread directly onto the tools object in the agent handler.

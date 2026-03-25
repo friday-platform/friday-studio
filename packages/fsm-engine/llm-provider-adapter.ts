@@ -1,5 +1,6 @@
 /** Adapts @atlas/llm registry to FSM engine's LLMProvider interface */
 
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import {
   type AgentExecutionError,
   type AgentExecutionSuccess,
@@ -12,7 +13,7 @@ import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { CoreMessage, StopCondition, Tool } from "ai";
-import { generateText, hasToolCall, stepCountIs } from "ai";
+import { hasToolCall, stepCountIs, streamText } from "ai";
 import type { FSMLLMOutput, LLMProvider } from "./types.ts";
 
 export class AtlasLLMProviderAdapter implements LLMProvider {
@@ -36,6 +37,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     toolChoice?: "auto" | "required" | "none";
     stopOnToolCall?: string[];
     providerOptions?: Record<string, unknown>;
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
   }): Promise<AgentResult<string, FSMLLMOutput>> {
     const startMs = Date.now();
     const modelId = `${this.provider}:${params.model || this.defaultModel}` as
@@ -64,7 +66,8 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
             ],
           };
 
-      const response = await generateText({
+      const emitChunk = params.onStreamEvent;
+      const result = streamText({
         model: traceModel(registry.languageModel(modelId)),
         ...promptOrMessages,
         tools: params.tools,
@@ -73,13 +76,42 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         stopWhen: stopConditions,
         ...(this.providerOptions || {}),
         ...(params.providerOptions || {}),
+        onChunk: emitChunk
+          ? ({ chunk }) => {
+              if (chunk.type === "tool-call") {
+                emitChunk({
+                  type: "tool-input-available",
+                  toolCallId: chunk.toolCallId,
+                  toolName: chunk.toolName,
+                  input: chunk.input,
+                });
+              } else if (chunk.type === "tool-result") {
+                emitChunk({
+                  type: "tool-output-available",
+                  toolCallId: chunk.toolCallId,
+                  output: chunk.output,
+                });
+              }
+            }
+          : undefined,
       });
 
-      // Flatten tool calls across all steps (response.toolCalls only has last step)
-      const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps(response);
+      const [text, steps, toolCalls, toolResults] = await Promise.all([
+        result.text,
+        result.steps,
+        result.toolCalls,
+        result.toolResults,
+      ]);
+
+      // Flatten tool calls across all steps (toolCalls only has last step)
+      const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
+        steps,
+        toolCalls,
+        toolResults,
+      });
 
       // Raw text response - FSM engine extracts structured output from toolCalls
-      const data: FSMLLMOutput = { response: response.text };
+      const data: FSMLLMOutput = { response: text };
 
       return {
         agentId: params.agentId,

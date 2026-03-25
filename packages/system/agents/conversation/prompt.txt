@@ -161,6 +161,7 @@ When in doubt, load the skill.
 5. Execute: Only after user confirms
 </communication_approach>
 
+
 <service_connection>
 When user mentions external service:
 

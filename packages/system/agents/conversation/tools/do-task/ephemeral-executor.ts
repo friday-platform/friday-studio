@@ -3,6 +3,7 @@
  * No workspace.yml, no daemon registration. Session history still persisted for debugging.
  */
 
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import {
   expandAgentActions,
   type MCPServerConfig,
@@ -29,7 +30,12 @@ import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import type { DAGStep, DocumentContract } from "@atlas/workspace-builder";
-import type { DatetimeContext, EnhancedTaskStep, TaskProgressEvent } from "./types.ts";
+import type {
+  DatetimeContext,
+  EnhancedTaskStep,
+  InnerToolCallEvent,
+  TaskProgressEvent,
+} from "./types.ts";
 
 interface ExecutionContext {
   sessionId: string;
@@ -40,6 +46,8 @@ interface ExecutionContext {
   datetime?: DatetimeContext;
   mcpServerConfigs?: Record<string, MCPServerConfig>;
   onProgress?: (event: TaskProgressEvent) => void;
+  /** Callback for forwarding inner agent tool calls to the parent stream */
+  onInnerToolCall?: (event: InnerToolCallEvent) => void;
   abortSignal?: AbortSignal;
   /** Task intent for session history */
   intent?: string;
@@ -66,6 +74,74 @@ export interface ExecutionResult {
     output?: unknown;
     error?: string;
   }>;
+}
+
+/**
+ * Build a handler that converts streaming tool chunks into InnerToolCallEvents.
+ * Reusable across agent actions (via orchestrator) and LLM actions (via FSM engine).
+ */
+function buildToolChunkHandler(
+  onInnerToolCall: (event: InnerToolCallEvent) => void,
+): (chunk: AtlasUIMessageChunk) => void {
+  // Track toolCallId → toolName + input so we can correlate output chunks
+  const toolCallData = new Map<string, { toolName: string; input?: string }>();
+
+  return (chunk: AtlasUIMessageChunk) => {
+    if (chunk.type === "tool-input-available") {
+      const inputStr = chunk.input != null ? JSON.stringify(chunk.input) : undefined;
+      toolCallData.set(chunk.toolCallId, { toolName: chunk.toolName, input: inputStr });
+      onInnerToolCall({ toolName: chunk.toolName, status: "started", input: inputStr });
+    } else if (chunk.type === "tool-output-available") {
+      const data = toolCallData.get(chunk.toolCallId);
+      const toolName = data?.toolName ?? "unknown";
+      toolCallData.delete(chunk.toolCallId);
+      onInnerToolCall({
+        toolName,
+        status: "completed",
+        input: data?.input,
+        result:
+          typeof chunk.output === "string"
+            ? chunk.output
+            : chunk.output != null
+              ? JSON.stringify(chunk.output)
+              : undefined,
+      });
+    } else if (chunk.type === "tool-output-error") {
+      const data = toolCallData.get(chunk.toolCallId);
+      const toolName = data?.toolName ?? "unknown";
+      toolCallData.delete(chunk.toolCallId);
+      onInnerToolCall({ toolName, status: "failed", input: data?.input, result: chunk.errorText });
+    }
+  };
+}
+
+/**
+ * Build a stream event handler that forwards FSM events to the signal context
+ * and intercepts tool-related chunks to emit inner tool call events.
+ */
+function buildStreamEventHandler(
+  signal: SignalWithContext,
+  onInnerToolCall?: (event: InnerToolCallEvent) => void,
+): ((chunk: AtlasUIMessageChunk) => void) | undefined {
+  const hasFSMCallback = !!signal._context?.onEvent;
+  if (!hasFSMCallback && !onInnerToolCall) return undefined;
+
+  const toolHandler = onInnerToolCall ? buildToolChunkHandler(onInnerToolCall) : undefined;
+
+  return (chunk: AtlasUIMessageChunk) => {
+    // Forward to FSM event handler (existing behavior)
+    if (hasFSMCallback) {
+      const callback = signal._context?.onEvent;
+      if (callback) {
+        callback(chunk as unknown as FSMEvent);
+      }
+    }
+
+    // Intercept tool-related chunks and forward as inner tool call events
+    if (toolHandler) {
+      toolHandler(chunk);
+    }
+  };
 }
 
 /**
@@ -179,19 +255,14 @@ export async function executeTaskViaFSMDirect(
       const agentConfig = context.workspaceAgents?.[agentId];
       const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
 
+      const onStreamEvent = buildStreamEventHandler(signal, context.onInnerToolCall);
+
       const result = await orchestrator.executeAgent(runtimeAgentId, prompt, {
         sessionId: taskSessionId,
         workspaceId: context.workspaceId,
         streamId: context.streamId,
         userId: context.userId,
-        onStreamEvent: signal._context?.onEvent
-          ? (chunk) => {
-              const callback = signal._context?.onEvent;
-              if (callback) {
-                callback(chunk as unknown as FSMEvent);
-              }
-            }
-          : undefined,
+        onStreamEvent,
         additionalContext: { documents: fsmContext.documents },
       });
 
@@ -246,6 +317,11 @@ export async function executeTaskViaFSMDirect(
       }
     }
 
+    // Build streaming handler for LLM actions (converts tool chunks to InnerToolCallEvents)
+    const onStreamEvent = context.onInnerToolCall
+      ? buildToolChunkHandler(context.onInnerToolCall)
+      : undefined;
+
     // Handle FSM events for LLM actions (agent actions already handled by agentExecutor)
     const onEvent = (event: FSMEvent) => {
       // Handle progress events for LLM actions
@@ -271,11 +347,43 @@ export async function executeTaskViaFSMDirect(
           });
         }
       }
+
+      // Forward FSM tool events as inner tool call events for UI transparency.
+      // Skip when streaming is active — tool events already emitted in real-time via onStreamEvent.
+      if (context.onInnerToolCall && !onStreamEvent) {
+        if (event.type === "data-fsm-tool-call") {
+          const toolCall = event.data.toolCall;
+          if (toolCall.toolName !== "complete" && toolCall.toolName !== "failStep") {
+            const inputStr = toolCall.input != null ? JSON.stringify(toolCall.input) : undefined;
+            context.onInnerToolCall({
+              toolName: toolCall.toolName,
+              status: "started",
+              input: inputStr,
+            });
+          }
+        } else if (event.type === "data-fsm-tool-result") {
+          const toolResult = event.data.toolResult;
+          if (toolResult.toolName !== "complete" && toolResult.toolName !== "failStep") {
+            const output = toolResult.output;
+            const resultStr =
+              typeof output === "string"
+                ? output
+                : output != null
+                  ? JSON.stringify(output)
+                  : undefined;
+            context.onInnerToolCall({
+              toolName: toolResult.toolName,
+              status: "completed",
+              result: resultStr,
+            });
+          }
+        }
+      }
     };
 
     await engine.signal(
       { type: triggerSignalType },
-      { sessionId: context.sessionId, workspaceId: context.workspaceId, onEvent },
+      { sessionId: context.sessionId, workspaceId: context.workspaceId, onEvent, onStreamEvent },
     );
 
     const engineResults = engine.results;

@@ -629,7 +629,11 @@ describe("createDoTaskTool fastpath wiring", () => {
     const execute = getExecute(controller.signal);
     const result = await execute({ intent: "should not run" });
 
-    expect(result).toEqual({ success: false, error: "Task cancelled" });
+    expect(result).toEqual({
+      success: false,
+      progress: { label: "Task cancelled", status: "failed" },
+      error: "Task cancelled",
+    });
     expect(mockGeneratePlan).not.toHaveBeenCalled();
     expect(mockExecuteTaskViaFSMDirect).not.toHaveBeenCalled();
   });

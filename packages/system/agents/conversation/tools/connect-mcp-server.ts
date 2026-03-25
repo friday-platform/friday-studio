@@ -1,3 +1,4 @@
+import type { ToolProgress } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { registry, traceModel } from "@atlas/llm";
@@ -203,6 +204,10 @@ export const connectMcpServerTool = tool({
             : []),
         ],
         isBlessed: true,
+        progress: {
+          label: `Connected to ${blessedMatch.name}`,
+          status: "completed",
+        } satisfies ToolProgress,
       };
     }
 
@@ -215,6 +220,7 @@ export const connectMcpServerTool = tool({
         missingInfo: result.missingInfo,
         stage: "extraction",
         hint: "Please provide more details about this MCP server.",
+        progress: { label: "Failed to connect server", status: "failed" } satisfies ToolProgress,
       };
     }
 
@@ -258,6 +264,10 @@ export const connectMcpServerTool = tool({
           error: `Cannot set up authentication for "${result.registry.name}"`,
           stage: "provider",
           hint: "The connection service may be unavailable. Please try again later.",
+          progress: {
+            label: `Failed to connect to ${result.registry.name}`,
+            status: "failed",
+          } satisfies ToolProgress,
         };
       }
     }
@@ -300,9 +310,21 @@ export const connectMcpServerTool = tool({
           stage: "registry",
           suggestion: errorParsed.data.suggestion,
           hint: `Try using "${errorParsed.data.suggestion}" instead.`,
+          progress: {
+            label: `Failed to connect to ${result.registry.name}`,
+            status: "failed",
+          } satisfies ToolProgress,
         };
       }
-      return { success: false, error: String(registryResult.error), stage: "registry" };
+      return {
+        success: false,
+        error: String(registryResult.error),
+        stage: "registry",
+        progress: {
+          label: `Failed to connect to ${result.registry.name}`,
+          status: "failed",
+        } satisfies ToolProgress,
+      };
     }
 
     // 5. Return success with next steps
@@ -320,6 +342,10 @@ export const connectMcpServerTool = tool({
           : []),
       ],
       isBlessed: false,
+      progress: {
+        label: `Connected to ${result.registry.name}`,
+        status: "completed",
+      } satisfies ToolProgress,
     };
   },
 });

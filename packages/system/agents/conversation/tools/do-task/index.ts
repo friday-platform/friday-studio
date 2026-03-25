@@ -1,6 +1,8 @@
 /**
  * do_task Tool - Direct tool with progress emission
  */
+
+import type { ToolProgress } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceAgentConfig } from "@atlas/config";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
@@ -39,7 +41,12 @@ import {
   isFastpathEligible,
 } from "./fastpath.ts";
 import { generateFriendlyDescriptions } from "./friendly-descriptions.ts";
-import type { EnhancedTaskPlan, EnhancedTaskStep, TaskProgressEvent } from "./types.ts";
+import type {
+  EnhancedTaskPlan,
+  EnhancedTaskStep,
+  InnerToolCallEvent,
+  TaskProgressEvent,
+} from "./types.ts";
 
 /**
  * Strip UUIDs from user-facing progress messages.
@@ -86,6 +93,8 @@ interface DoTaskResult {
   error?: string;
   /** Artifacts created - call display_artifact for each id */
   artifacts?: Array<{ id: string; type: string; summary: string }>;
+  /** Progress marker for frontend UX */
+  progress?: ToolProgress;
 }
 
 /** Fallback summary when LLM returns empty/whitespace. */
@@ -106,6 +115,20 @@ async function generateTaskSummary(
     });
   } catch {
     return fallbackTaskSummary(intent, stepCount, success);
+  }
+}
+
+async function generateProgressLabel(intent: string): Promise<string> {
+  try {
+    const label = await smallLLM({
+      system:
+        "Summarize what was accomplished in 3-4 words. Use past tense. No punctuation. Examples: 'Searched Notion workspace', 'Created weekly summary', 'Analyzed ticket data'.",
+      prompt: intent,
+      maxOutputTokens: 30,
+    });
+    return label.trim() || "Task completed";
+  } catch {
+    return "Task completed";
   }
 }
 
@@ -312,6 +335,18 @@ export function createDoTaskTool(
     });
   };
 
+  const emitInnerToolCall = (event: InnerToolCallEvent) => {
+    writer.write({
+      type: "data-inner-tool-call",
+      data: {
+        toolName: event.toolName,
+        status: event.status,
+        ...(event.input ? { input: event.input } : {}),
+        ...(event.result ? { result: event.result } : {}),
+      },
+    });
+  };
+
   return tool({
     name: "do_task",
     description: `Execute a task end-to-end, including compound multi-step tasks. A planner internally orchestrates agents across services — never decompose a task into multiple do_task calls. One user goal = one do_task call, always.`,
@@ -327,7 +362,11 @@ export function createDoTaskTool(
     }),
     execute: async ({ intent }): Promise<DoTaskResult> => {
       if (abortSignal?.aborted) {
-        return { success: false, error: "Task cancelled" };
+        return {
+          success: false,
+          error: "Task cancelled",
+          progress: { label: "Task cancelled", status: "failed" },
+        };
       }
 
       // Enrich intent with workspace agent context for priority-aware planning
@@ -388,7 +427,11 @@ export function createDoTaskTool(
                 success: false,
                 reason: "unresolved_credentials",
               });
-              return { success: false, error };
+              return {
+                success: false,
+                error,
+                progress: { label: "Missing credentials", status: "failed" },
+              };
             }
             credentialBindings = credResult.bindings;
 
@@ -413,6 +456,7 @@ export function createDoTaskTool(
               return {
                 success: false,
                 error: `Cannot execute task: missing configuration: ${missing.join(", ")}`,
+                progress: { label: "Missing configuration", status: "failed" },
               };
             }
           }
@@ -441,6 +485,7 @@ export function createDoTaskTool(
               datetime: session.datetime,
               mcpServerConfigs: mcpServerConfigMap,
               onProgress: emitProgress,
+              onInnerToolCall: emitInnerToolCall,
               abortSignal,
               intent,
               dagSteps: [dagStep],
@@ -509,12 +554,14 @@ export function createDoTaskTool(
             };
 
             if (execResult.success) {
+              const progressLabel = await generateProgressLabel(intent);
               return {
                 success: true,
-                summary: `Executed ${execResult.results.length} step(s)`,
+                summary: progressLabel,
                 plan: planInfo,
                 results: sanitizedResults,
                 artifacts: artifacts.length > 0 ? artifacts : undefined,
+                progress: { label: progressLabel, status: "completed" },
               };
             }
 
@@ -525,6 +572,7 @@ export function createDoTaskTool(
               plan: planInfo,
               results: sanitizedResults,
               artifacts: artifacts.length > 0 ? artifacts : undefined,
+              progress: { label: "Task failed", status: "failed" },
             };
           }
         }
@@ -558,6 +606,7 @@ export function createDoTaskTool(
             return {
               success: false,
               error: `Planning failed at "${err.phase}": ${err.cause.message}`,
+              progress: { label: "Planning failed", status: "failed" },
             };
           }
           throw err;
@@ -574,17 +623,26 @@ export function createDoTaskTool(
           const msgs = blockingClarifications.map(
             (c) => `Agent "${c.agentName}" capability "${c.capability}": no matching capability`,
           );
-          return { success: false, error: `Cannot plan task: ${msgs.join("; ")}` };
+          return {
+            success: false,
+            error: `Cannot plan task: ${msgs.join("; ")}`,
+            progress: { label: "Planning failed", status: "failed" },
+          };
         }
 
         // Bail on unresolved credentials
         if (blueprintResult.credentials.unresolved.length > 0) {
           const first = blueprintResult.credentials.unresolved[0];
           if (!first)
-            return { success: false, error: "Cannot execute task: unresolved credentials" };
+            return {
+              success: false,
+              error: "Cannot execute task: unresolved credentials",
+              progress: { label: "Missing credentials", status: "failed" },
+            };
           return {
             success: false,
             error: `Cannot execute task: ${first.reason}. Provider '${first.provider}' requires credentials for field '${first.field}'.`,
+            progress: { label: "Missing credentials", status: "failed" },
           };
         }
 
@@ -596,7 +654,11 @@ export function createDoTaskTool(
         // Task mode produces one job — classify and compile it
         const rawJob = blueprintResult.blueprint.jobs[0];
         if (!rawJob) {
-          return { success: false, error: "Pipeline produced no jobs" };
+          return {
+            success: false,
+            error: "Pipeline produced no jobs",
+            progress: { label: "Planning failed", status: "failed" },
+          };
         }
         // Jobs carry classified steps at runtime (from stampExecutionTypes); parse to narrow the type
         const classifiedJob = {
@@ -625,13 +687,21 @@ export function createDoTaskTool(
         const compiled = buildFSMFromPlan(classifiedJob);
         if (!compiled.success) {
           const errors = compiled.error.map((e) => `${e.type}: ${e.message}`).join("; ");
-          return { success: false, error: `FSM compilation failed: ${errors}` };
+          return {
+            success: false,
+            error: `FSM compilation failed: ${errors}`,
+            progress: { label: "Task setup failed", status: "failed" },
+          };
         }
         // Compiler warnings are fatal — upstream gates should prevent them
         if (compiled.value.warnings.length > 0) {
           const warnings = compiled.value.warnings.map((w) => w.message).join("; ");
           logger.error("Compiler warnings (fatal)", { warnings: compiled.value.warnings });
-          return { success: false, error: `FSM compilation produced warnings: ${warnings}` };
+          return {
+            success: false,
+            error: `FSM compilation produced warnings: ${warnings}`,
+            progress: { label: "Task setup failed", status: "failed" },
+          };
         }
         const fsmDefinition = compiled.value.fsm;
 
@@ -650,6 +720,7 @@ export function createDoTaskTool(
             datetime: session.datetime,
             mcpServerConfigs: fullPipelineConfigs,
             onProgress: emitProgress,
+            onInnerToolCall: emitInnerToolCall,
             abortSignal,
             intent,
             dagSteps: classifiedJob.steps,
@@ -716,12 +787,14 @@ export function createDoTaskTool(
           };
 
           if (execResult.success) {
+            const progressLabel = await generateProgressLabel(intent);
             return {
               success: true,
-              summary: `Executed ${execResult.results.length} step(s)`,
+              summary: progressLabel,
               plan: planInfo,
               results: sanitizedResults,
               artifacts: artifacts.length > 0 ? artifacts : undefined,
+              progress: { label: progressLabel, status: "completed" },
             };
           }
 
@@ -732,6 +805,7 @@ export function createDoTaskTool(
             plan: planInfo,
             results: sanitizedResults,
             artifacts: artifacts.length > 0 ? artifacts : undefined,
+            progress: { label: "Task failed", status: "failed" },
           };
         }
       } catch (error) {
@@ -741,11 +815,16 @@ export function createDoTaskTool(
           return {
             success: false,
             error: `Planning failed at "${error.phase}": ${error.cause.message}`,
+            progress: { label: "Planning failed", status: "failed" },
           };
         }
         const errorObj = error instanceof Error ? error : new Error(String(error));
         logger.error("do_task failed", { error: errorObj });
-        return { success: false, error: `Task failed: ${errorObj.message}` };
+        return {
+          success: false,
+          error: `Task failed: ${errorObj.message}`,
+          progress: { label: "Task failed", status: "failed" },
+        };
       }
     },
   });

@@ -62,6 +62,7 @@ export type {
   StreamEmitter,
   ToolCall,
   ToolContext,
+  ToolProgress,
   ToolResult,
 } from "./types.ts";
 export {

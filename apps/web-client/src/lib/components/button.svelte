@@ -173,7 +173,7 @@
 
   /* DEFAULT */
   .variant-primary {
-    --button-variant-default-color: var(--accent-1);
+    --button-variant-default-color: var(--color-text);
 
     /* Due to snippets, this selector isn't captured without :global() */
     & :global(.prepend) {
@@ -195,7 +195,7 @@
     &:not([disabled=""]):hover {
       background-color: color-mix(
         in srgb,
-        var(--background-1),
+        var(--color-surface-1),
         var(--button-variant-default-color) 3%
       );
     }

@@ -295,5 +295,7 @@ export interface LLMProvider {
     stopOnToolCall?: string[];
     /** Provider-specific options (e.g., Anthropic thinking config) */
     providerOptions?: Record<string, unknown>;
+    /** Callback for real-time streaming events (tool calls, tool results) during LLM execution */
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
   }): Promise<AgentResult<string, FSMLLMOutput>>;
 }

@@ -67,13 +67,13 @@ describe("formatMessage - display_artifact tool", () => {
 });
 
 describe("formatMessage - fsm-workspace-creator tool", () => {
-  it("falls through to tool_call when output has neither format", () => {
+  it("falls through to intent when output has neither format", () => {
     const message = createMessage("assistant");
     const part = createToolPart("tool-fsm-workspace-creator", { result: {} });
 
     const result = formatMessage(message as AtlasUIMessage, part);
 
-    expect(result).toMatchObject({ type: "tool_call" });
+    expect(result).toMatchObject({ type: "intent", content: "fsm-workspace-creator" });
   });
 
   it("returns workspace_creator for direct invocation format", () => {

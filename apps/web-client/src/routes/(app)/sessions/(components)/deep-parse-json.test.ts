@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deepParseJson } from "./deep-parse-json.ts";
+import { deepParseJson } from "../../../../lib/utils/deep-parse-json.ts";
 
 describe("deepParseJson", () => {
   it("parses a JSON string value into an object", () => {

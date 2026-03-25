@@ -1,3 +1,4 @@
+import type { ToolProgress } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { tool } from "ai";
 import { z } from "zod";
@@ -13,7 +14,9 @@ export function createConnectServiceTool(providers: string[]) {
     inputSchema: z.object({
       provider: z.enum(providers).describe("Provider ID from the available services list"),
     }),
-    execute: async ({ provider }) => {
+    execute: async ({
+      provider,
+    }): Promise<{ provider: string; progress: ToolProgress } | { error: string }> => {
       if (provider === "slack-app") {
         const result = await parseResult(
           client.link.v1.summary.$get({ query: { provider: "slack-user" } }),
@@ -29,7 +32,7 @@ export function createConnectServiceTool(providers: string[]) {
           };
         }
       }
-      return { provider };
+      return { provider, progress: { label: `Connecting to ${provider}`, status: "active" } };
     },
   });
 }

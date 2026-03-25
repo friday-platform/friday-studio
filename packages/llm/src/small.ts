@@ -27,6 +27,7 @@ export async function smallLLM(params: {
       temperature: 0.4,
       maxOutputTokens: params.maxOutputTokens ?? 250,
     });
+
     return result.text;
   } catch (e) {
     // 400s from the LiteLLM proxy or upstream providers (budget exceeded, model not

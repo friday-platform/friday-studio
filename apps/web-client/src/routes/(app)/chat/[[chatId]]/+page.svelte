@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { replaceState } from "$app/navigation";
+  import { client, parseResult } from "@atlas/client/v2";
+  import { createQuery } from "@tanstack/svelte-query";
+  import { goto } from "$app/navigation";
   import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
   import { Page } from "$lib/components/page";
   import Catalog from "$lib/modules/conversation/catalog.svelte";
@@ -8,9 +10,29 @@
   import Footer from "$lib/modules/conversation/footer.svelte";
   import Form from "$lib/modules/conversation/form.svelte";
   import Messages from "$lib/modules/conversation/messages.svelte";
+  import SidebarAccounts from "$lib/modules/messages/sidebar-accounts.svelte";
+  import SidebarProgress from "$lib/modules/messages/sidebar-progress.svelte";
+  import { formatSessionDate } from "$lib/utils/date";
   import type { PageData } from "./$types";
 
   const { data }: { data: PageData } = $props();
+
+  const chatMetaQuery = createQuery(() => ({
+    queryKey: ["chat-meta", data.chatId],
+    queryFn: async () => {
+      const res = await parseResult(
+        client.chat[":chatId"].$get({ param: { chatId: data.chatId } }),
+      );
+      if (!res.ok) return null;
+      return res.data.chat;
+    },
+    enabled: !data.isNew,
+  }));
+
+  const title = $derived(chatMetaQuery.data?.title);
+  const updatedAt = $derived(
+    chatMetaQuery.data?.updatedAt ? formatSessionDate(chatMetaQuery.data.updatedAt) : undefined,
+  );
 </script>
 
 <ChatProvider
@@ -18,7 +40,7 @@
   isNew={data.isNew}
   initialMessages={data.messages}
   artifacts={data.artifacts}
-  onPostSuccess={(id) => replaceState(`/chat/${id}`, {})}
+  onPostSuccess={(id) => goto(`/chat/${id}`, { replaceState: true })}
 >
   {#snippet children(context)}
     <Page.Root>
@@ -33,6 +55,13 @@
             <Catalog />
           </div>
         {:else}
+          <header class="chat-header">
+            <h1>{title ?? "New conversation"}</h1>
+            {#if updatedAt}
+              <p>Updated {updatedAt}</p>
+            {/if}
+          </header>
+
           <Messages />
           <Footer>
             <Form />
@@ -42,12 +71,20 @@
         {/if}
       </Page.Content>
 
-      <!-- TODO: add back when sidbar is more complete -->
-      <!-- {#if !data.isNew}
+      {#if !data.isNew}
         <Page.Sidebar>
-          <Outline />
+          <SidebarProgress messages={context.chat.messages} />
+
+          <!-- TODO: Enable this in a future ticket -->
+          <!-- <Page.SidebarSection title="Resources">
+            {#if false}
+            {:else}
+              <a class="sidebar-link" href="https://docs.hellofriday.ai/core-concepts/resources" target="_blank" rel="noopener noreferrer">Learn more about Resources</a>
+            {/if}
+          </Page.SidebarSection> -->
+          <SidebarAccounts messages={context.chat.messages} />
         </Page.Sidebar>
-      {/if} -->
+      {/if}
     </Page.Root>
   {/snippet}
 </ChatProvider>
@@ -65,7 +102,7 @@
     scroll-behavior: smooth;
   }
 
-  h1 {
+  .wrapper h1 {
     font-size: var(--font-size-8);
     font-weight: var(--font-weight-6);
     padding-block: var(--size-16) var(--size-4);
@@ -77,5 +114,36 @@
     inline-size: 100%;
     max-inline-size: var(--size-160);
     padding-inline: var(--size-8);
+  }
+
+  .chat-header {
+    inline-size: 100%;
+    margin: 0 auto;
+    max-inline-size: var(--size-272);
+    padding-block: var(--size-14) 0;
+    padding-inline: var(--size-16);
+
+    h1 {
+      font-size: var(--font-size-8);
+      font-weight: var(--font-weight-6);
+      line-height: var(--font-lineheight-1);
+    }
+
+    p {
+      font-size: var(--font-size-5);
+      font-weight: var(--font-weight-5);
+      line-height: var(--font-lineheight-3);
+      margin-block: var(--size-1-5) 0;
+      opacity: 0.6;
+    }
+  }
+
+  .sidebar-link {
+    color: var(--color-text);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-4-5);
+    line-height: var(--font-lineheight-1);
+    opacity: 0.6;
+    text-decoration: underline;
   }
 </style>

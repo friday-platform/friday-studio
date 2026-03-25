@@ -70,9 +70,10 @@ export default {
         !DENO_LINT_EXCLUDED.some((dir) => f.includes(dir)),
     );
     if (filtered.length === 0) return [];
-    // deno lint treats parentheses in paths as glob chars — lint the directory instead
-    const normal = filtered.filter((f) => !f.includes("("));
-    const parenDirs = [...new Set(filtered.filter((f) => f.includes("(")).map((f) => dirname(f)))];
+    // deno lint treats parentheses and brackets in paths as glob chars — lint the directory instead
+    const hasGlobChars = (f) => f.includes("(") || f.includes("[");
+    const normal = filtered.filter((f) => !hasGlobChars(f));
+    const parenDirs = [...new Set(filtered.filter((f) => hasGlobChars(f)).map((f) => dirname(f)))];
     const args = [...normal.map((f) => `"${f}"`), ...parenDirs.map((d) => `"${d}"`)];
     return [`deno lint --fix ${args.join(" ")}`];
   },

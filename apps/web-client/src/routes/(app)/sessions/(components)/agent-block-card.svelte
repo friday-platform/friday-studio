@@ -2,15 +2,15 @@
   import type { AgentBlock } from "@atlas/core/session/session-events";
   import { createCollapsible } from "@melt-ui/svelte";
   import { Collapsible } from "$lib/components/collapsible";
+  import FormattedData from "$lib/components/formatted-data.svelte";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import JsonHighlight from "$lib/components/json-highlight.svelte";
   import { formatDuration } from "$lib/utils/date";
+  import { deepParseJson } from "$lib/utils/deep-parse-json";
   import type { Component } from "svelte";
   import { sineOut } from "svelte/easing";
   import { slide } from "svelte/transition";
-  import { deepParseJson } from "./deep-parse-json";
-  import FormattedData from "./formatted-data.svelte";
-  import JsonHighlight from "./json-highlight.svelte";
   import { parseError } from "./parse-error";
   import ToolCallData from "./tool-call-data.svelte";
 

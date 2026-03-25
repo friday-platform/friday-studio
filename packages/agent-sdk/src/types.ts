@@ -367,6 +367,16 @@ export const AtlasAgentConfigSchema = z.strictObject({
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
 
 // ==============================================================================
+// TOOL PROGRESS
+// ==============================================================================
+
+/** Progress marker on tool results — extracted by frontend for progress UX */
+export interface ToolProgress {
+  label: string;
+  status: "active" | "completed" | "failed";
+}
+
+// ==============================================================================
 // AGENT EXECUTION RESULTS
 // ==============================================================================
 
