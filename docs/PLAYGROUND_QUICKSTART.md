@@ -56,14 +56,27 @@ GH_TOKEN=ghp_...
 Only set the keys for the starters you plan to run. `ANTHROPIC_API_KEY` is
 always required.
 
-## 2. Create `docker-compose.yml`
+## 2. Authenticate with the container registry
+
+The platform image is hosted on Google Artifact Registry. You'll receive a
+`key.json` service account key file from Friday — use it to authenticate
+Docker:
+
+```bash
+docker login -u _json_key --password-stdin https://us-west2-docker.pkg.dev < key.json
+```
+
+This only needs to be done once per machine. The credential is stored in your
+Docker config and persists across sessions.
+
+## 3. Create `docker-compose.yml`
 
 Create a `docker-compose.yml` in the same directory as your `.env` file:
 
 ```yaml
 services:
   platform:
-    image: FIXME  # replace with registry URL, e.g. ghcr.io/tempestteam/atlas-platform:latest
+    image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
     ports:
       - "8080:8080"  # atlasd daemon API
       - "3100:3100"  # link (credential/auth service)
@@ -99,7 +112,7 @@ volumes:
   link-data:
 ```
 
-## 3. Start the platform
+## 4. Start the platform
 
 ```bash
 docker compose up
@@ -121,7 +134,7 @@ Wait for the startup banner:
 
 Open **http://localhost:5200** in your browser.
 
-## 4. Add a starter space
+## 5. Add a starter space
 
 Your Friday distribution comes with four starter spaces you can try right away.
 Each one is a `workspace.yml` that defines a complete agentic workflow — agents,
@@ -160,7 +173,7 @@ curl -s -X POST http://localhost:8080/api/workspaces/create \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"PR Code Review (Bitbucket)\"}"
 ```
 
-## 5. Publish skills
+## 6. Publish skills
 
 The PR review starters use the `@tempest/pr-code-review` skill, which must be
 published before running those workspaces. Each starter includes a `skill/`
@@ -190,7 +203,7 @@ curl -X POST http://localhost:8080/api/skills/@tempest/pr-code-review/upload \
 The Jira starters don't use skills — skip this step if you're only running
 those.
 
-## 6. Trigger a job
+## 7. Trigger a job
 
 Once a space is loaded, start a job by sending a signal.
 
@@ -204,7 +217,7 @@ or Jira issue key), then starts the pipeline.
 
 ### Trigger via the API
 
-Replace `<workspace-id>` with the ID returned from step 4.
+Replace `<workspace-id>` with the ID returned from step 5.
 
 #### Bitbucket PR Review
 
@@ -259,7 +272,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
   }'
 ```
 
-## 7. Watch it run
+## 8. Watch it run
 
 After triggering a signal:
 
@@ -276,7 +289,7 @@ ticket, the Bitbucket agent clones the repo, Claude Code implements the fix,
 the Bitbucket agent creates a PR, and the Jira agent comments on the ticket with
 the PR link.
 
-## 8. Connect external webhooks
+## 9. Connect external webhooks
 
 The platform includes a webhook tunnel that creates a public URL via
 Cloudflare, so GitHub or Bitbucket can send webhooks directly to your
