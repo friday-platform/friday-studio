@@ -78,9 +78,7 @@
         cell: (info) => {
           const row = info.row.original;
           const isSlackApp = row.provider === "slack-app";
-          const name = isSlackApp
-            ? (row.displayName ?? row.label)
-            : getProviderName(row.provider);
+          const name = isSlackApp ? (row.displayName ?? row.label) : getProviderName(row.provider);
           return renderComponent(ProviderDetails, {
             name,
             label: row.label,

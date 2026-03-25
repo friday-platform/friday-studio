@@ -11,8 +11,8 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
-  import Logo from "$lib/modules/integrations/logo-column.svelte";
   import { toast } from "$lib/components/notification/notification.svelte";
+  import Logo from "$lib/modules/integrations/logo-column.svelte";
   import { formatFullDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import IntegrationTable from "../(components)/integration-table.svelte";
@@ -177,7 +177,9 @@
         <Logo provider="slack-app" />
         <div class="slack-app-details">
           <div class="slack-app-header">
-            <span class="provider-name">{slackAppIntegration.credential?.displayName ?? "Slack App"}</span>
+            <span class="provider-name">
+              {slackAppIntegration.credential?.displayName ?? "Slack App"}
+            </span>
             {#if slackAppIntegration.credential?.label}
               <span class="slack-separator">•</span>
               <span class="slack-label">{slackAppIntegration.credential.label}</span>

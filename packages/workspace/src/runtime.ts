@@ -57,6 +57,7 @@ import { logger } from "@atlas/logger";
 import { publishDirtyDrafts } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { withOtelSpan } from "@atlas/utils/telemetry.server";
 import { parse as parseYAML } from "@std/yaml";
 import { z } from "zod";
 import {
@@ -633,6 +634,7 @@ export class WorkspaceRuntime {
     if (!job.engine) {
       throw new Error(`Job ${job.name} engine not initialized`);
     }
+    const engine = job.engine;
 
     const isTriggerSignal = this.isTriggerSignal(signal.id);
 
@@ -644,309 +646,95 @@ export class WorkspaceRuntime {
       });
       await this.clearPersistedState(job);
 
-      await job.engine.reset();
+      await engine.reset();
 
       logger.debug("Engine reset to initial state", {
         workspaceId: this.workspace.id,
         jobName: job.name,
-        initialState: job.engine.state,
+        initialState: engine.state,
       });
     } else {
       logger.debug("Continuation signal - state preserved", {
         signalId: signal.id,
-        currentState: job.engine.state,
+        currentState: engine.state,
       });
     }
 
     const sessionId = crypto.randomUUID();
-    const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
-    const session: SessionResult = {
-      id: sessionId,
-      workspaceId: this.workspace.id,
-      status: WorkspaceSessionStatus.ACTIVE,
-      startedAt: new Date(),
-      artifacts: [],
-      userId,
-    };
 
-    // Session history v2: create stream + side-channel for this session
-    const sessionStream = this.options.createSessionStream?.(sessionId);
-    const sideChannel = new Map<string, AgentResultData>();
-    this.agentResultSideChannel.set(sessionId, sideChannel);
-    let stepCounter = 0;
-
-    logger.info("Processing signal via FSM", {
-      sessionId: session.id,
-      signalType: signal.id,
-      currentState: job.engine.state,
-      isTriggerSignal,
-      jobName: job.name,
-    });
-
-    if (userId) {
-      analytics.emit({
-        eventName: EventNames.SESSION_STARTED,
-        userId,
-        workspaceId: this.workspace.id,
-        sessionId: session.id,
-        jobName: job.name,
-      });
-    }
-
-    const rawPlannedSteps = extractPlannedSteps(job.engine.definition);
-    const plannedSteps =
-      rawPlannedSteps.length > 0
-        ? rawPlannedSteps.map((step) => ({
-            agentName: step.agentName,
-            stateId: step.stateId,
-            task: this.config.workspace.agents?.[step.agentName]?.description ?? step.agentName,
-            actionType: step.actionType,
-          }))
-        : undefined;
-
-    sessionStream?.emit({
-      type: "session:start",
-      sessionId,
-      workspaceId: this.workspace.id,
-      jobName: job.name,
-      task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
-      plannedSteps,
-      timestamp: session.startedAt.toISOString(),
-    });
-
-    // Create "running" activity item (skip conversations)
-    const isConversation =
-      this.workspace.id === "atlas-conversation" ||
-      this.workspace.id === "friday-conversation" ||
-      job.name === "handle-chat";
-    if (this.options.activityStorage && !isConversation) {
-      try {
-        const title = `${kebabToSentenceCase(job.name)} is running`;
-        await this.options.activityStorage.create({
-          type: "session",
-          source: "agent",
-          referenceId: sessionId,
+    return withOtelSpan(
+      "session.process",
+      {
+        "atlas.workspace.id": this.workspace.id,
+        "atlas.session.id": sessionId,
+        "atlas.signal.id": signal.id,
+        "atlas.job.name": job.name,
+      },
+      async (otelSpan) => {
+        // Extract userId from signal data for analytics
+        const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
+        const session: SessionResult = {
+          id: sessionId,
           workspaceId: this.workspace.id,
-          jobId: job.name,
-          userId: null,
-          title,
-        });
-      } catch (err) {
-        logger.warn("Failed to create running activity", { sessionId, error: String(err) });
-      }
-    }
+          status: WorkspaceSessionStatus.ACTIVE,
+          startedAt: new Date(),
+          artifacts: [],
+          userId,
+        };
 
-    try {
-      await job.engine.signal(
-        { type: signal.id, data: signal.data || {} },
-        {
+        // Session history v2: create stream + side-channel for this session
+        const sessionStream = this.options.createSessionStream?.(sessionId);
+        const sideChannel = new Map<string, AgentResultData>();
+        this.agentResultSideChannel.set(sessionId, sideChannel);
+        let stepCounter = 0;
+
+        logger.info("Processing signal via FSM", {
           sessionId: session.id,
-          workspaceId: this.workspace.id,
-          abortSignal,
-          skipStates,
-          // FSM lifecycle events only (state transitions, action executions, tool calls/results)
-          onEvent: (event) => {
-            if (onStreamEvent) {
-              const fsmChunk = fsmEventToStreamChunk(event);
-              if (fsmChunk) {
-                onStreamEvent(fsmChunk);
-              }
-            }
-
-            if (
-              sessionStream &&
-              event.type === "data-fsm-action-execution" &&
-              isAgentAction(event as FSMActionExecutionEvent)
-            ) {
-              const actionEvent = event as FSMActionExecutionEvent;
-              if (actionEvent.data.status === "started") {
-                stepCounter++;
-                sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
-              } else if (
-                actionEvent.data.status === "completed" ||
-                actionEvent.data.status === "failed"
-              ) {
-                // LLM actions carry result data directly on the event (populated by FSM engine).
-                // Agent actions use the side-channel (populated by executeAgent callback).
-                let agentResult: AgentResultData | undefined;
-                if (actionEvent.data.llmResult) {
-                  agentResult = actionEvent.data.llmResult;
-                } else {
-                  // Side-channel key must use job.name (workspace-level key) to match
-                  // what executeAgent stores — NOT actionEvent.data.jobName which is
-                  // the FSM definition's id (may differ from the workspace job key).
-                  const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
-                  agentResult = sideChannel.get(sideChannelKey);
-                  sideChannel.delete(sideChannelKey);
-                }
-                sessionStream.emit(mapActionToStepComplete(actionEvent, agentResult, stepCounter));
-              }
-            }
-
-            // Session history v2: map skipped states to step:skipped events
-            if (sessionStream && event.type === "data-fsm-state-skipped") {
-              sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
-            }
-          },
-          // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
-          // this separate channel, bypassing the FSMEvent-typed onEvent callback
-          onStreamEvent: (chunk) => {
-            onStreamEvent?.(chunk);
-            sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
-          },
-        },
-      );
-
-      session.artifacts = this.extractArtifacts(job.engine.documents);
-      session.status = WorkspaceSessionStatus.COMPLETED;
-      session.completedAt = new Date();
-
-      logger.info("Signal processed successfully", {
-        sessionId: session.id,
-        finalState: job.engine.state,
-        artifactCount: session.artifacts.length,
-        jobName: job.name,
-      });
-    } catch (error) {
-      session.completedAt = new Date();
-      session.error = error instanceof Error ? error : new Error(String(error));
-      session.status = classifySessionError(error);
-
-      if (session.status === WorkspaceSessionStatus.SKIPPED) {
-        logger.warn("Session skipped: user configuration issue", {
-          sessionId: session.id,
-          error: session.error.message,
+          signalType: signal.id,
+          currentState: engine.state,
+          isTriggerSignal,
           jobName: job.name,
         });
-      } else {
-        logger.error("Signal processing failed", {
-          sessionId: session.id,
-          error: session.error,
-          currentState: job.engine.state,
-          jobName: job.name,
-        });
-      }
 
-      // Emit error event so the client SSE stream receives it.
-      // Without this, errors are swallowed — the .catch() in chat.ts never
-      // fires because this function always resolves (never rejects).
-      if (onStreamEvent) {
-        try {
-          await onStreamEvent({
-            type: "data-error",
-            data: { error: stringifyError(session.error), errorCause: session.error },
-          });
-        } catch (emitError) {
-          logger.error("Failed to emit error event", { sessionId: session.id, error: emitError });
-        }
-      }
-    } finally {
-      // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
-      if (this.options.resourceStorage) {
-        try {
-          await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
-            jobId: job.name,
-            activityStorage: this.options.activityStorage,
-          });
-        } catch (publishError) {
-          logger.warn("Auto-publish at session teardown failed", {
+        if (userId) {
+          analytics.emit({
+            eventName: EventNames.SESSION_STARTED,
+            userId,
+            workspaceId: this.workspace.id,
             sessionId: session.id,
-            error: publishError instanceof Error ? publishError.message : String(publishError),
-          });
-        }
-      }
-
-      if (onStreamEvent) {
-        try {
-          await onStreamEvent({
-            type: "data-session-finish",
-            data: { sessionId: session.id, workspaceId: this.workspace.id, status: session.status },
-          });
-        } catch (emitError) {
-          logger.error("Failed to emit session-finish event", {
-            sessionId: session.id,
-            error: emitError,
-          });
-        }
-      }
-
-      if (sessionStream) {
-        const durationMs = session.completedAt
-          ? session.completedAt.getTime() - session.startedAt.getTime()
-          : 0;
-
-        sessionStream.emit({
-          type: "session:complete",
-          sessionId,
-          status:
-            session.status === "active"
-              ? "completed"
-              : session.status === "cancelled"
-                ? "failed"
-                : session.status,
-          durationMs,
-          error: session.error?.message,
-          timestamp: (session.completedAt ?? new Date()).toISOString(),
-        });
-
-        const view = buildSessionView(sessionStream.getBufferedEvents());
-
-        const aiSummary = await generateSessionSummary(view, undefined, job.description);
-        if (aiSummary) {
-          sessionStream.emit({
-            type: "session:summary",
-            timestamp: new Date().toISOString(),
-            summary: aiSummary.summary,
-            keyDetails: aiSummary.keyDetails,
+            jobName: job.name,
           });
         }
 
-        // Only count actually-executed blocks in summary metrics
-        const executedBlocks = view.agentBlocks.filter(
-          (b) => b.status !== "skipped" && b.status !== "pending",
-        );
-        const summaryV2: SessionSummaryV2 = {
+        const rawPlannedSteps = extractPlannedSteps(engine.definition);
+        const plannedSteps =
+          rawPlannedSteps.length > 0
+            ? rawPlannedSteps.map((step) => ({
+                agentName: step.agentName,
+                stateId: step.stateId,
+                task: this.config.workspace.agents?.[step.agentName]?.description ?? step.agentName,
+                actionType: step.actionType,
+              }))
+            : undefined;
+
+        sessionStream?.emit({
+          type: "session:start",
           sessionId,
           workspaceId: this.workspace.id,
           jobName: job.name,
           task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
-          status: view.status,
-          startedAt: session.startedAt.toISOString(),
-          completedAt: (session.completedAt ?? new Date()).toISOString(),
-          durationMs,
-          stepCount: executedBlocks.length,
-          agentNames: executedBlocks.map((b) => b.agentName),
-          error: session.error?.message,
-          aiSummary,
-        };
-
-        await sessionStream.finalize(summaryV2).catch((err) => {
-          logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
+          plannedSteps,
+          timestamp: session.startedAt.toISOString(),
         });
 
-        // Replace "running" activity with final activity for terminal sessions
-        if (
-          this.options.activityStorage &&
-          !isConversation &&
-          (view.status === "completed" || view.status === "failed")
-        ) {
-          // Delete the "running" activity first
-          await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
-            logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
-          });
-
+        // Create "running" activity item (skip conversations)
+        const isConversation =
+          this.workspace.id === "atlas-conversation" ||
+          this.workspace.id === "friday-conversation" ||
+          job.name === "handle-chat";
+        if (this.options.activityStorage && !isConversation) {
           try {
-            // Extract final output from the last completed agent block
-            const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
-            const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
-
-            const title = await generateSessionActivityTitle({
-              status: view.status,
-              jobName: job.name,
-              agentNames: executedBlocks.map((b) => b.agentName),
-              finalOutput,
-              error: session.error?.message,
-            });
+            const title = `${kebabToSentenceCase(job.name)} is running`;
             await this.options.activityStorage.create({
               type: "session",
               source: "agent",
@@ -957,15 +745,259 @@ export class WorkspaceRuntime {
               title,
             });
           } catch (err) {
-            logger.warn("Failed to create session activity", { sessionId, error: String(err) });
+            logger.warn("Failed to create running activity", { sessionId, error: String(err) });
           }
         }
-      }
 
-      this.agentResultSideChannel.delete(sessionId);
-    }
+        try {
+          await engine.signal(
+            { type: signal.id, data: signal.data || {} },
+            {
+              sessionId: session.id,
+              workspaceId: this.workspace.id,
+              abortSignal,
+              skipStates,
+              // FSM lifecycle events only (state transitions, action executions, tool calls/results)
+              onEvent: (event) => {
+                if (onStreamEvent) {
+                  const fsmChunk = fsmEventToStreamChunk(event);
+                  if (fsmChunk) {
+                    onStreamEvent(fsmChunk);
+                  }
+                }
 
-    return session;
+                if (
+                  sessionStream &&
+                  event.type === "data-fsm-action-execution" &&
+                  isAgentAction(event as FSMActionExecutionEvent)
+                ) {
+                  const actionEvent = event as FSMActionExecutionEvent;
+                  if (actionEvent.data.status === "started") {
+                    stepCounter++;
+                    sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
+                  } else if (
+                    actionEvent.data.status === "completed" ||
+                    actionEvent.data.status === "failed"
+                  ) {
+                    // LLM actions carry result data directly on the event (populated by FSM engine).
+                    // Agent actions use the side-channel (populated by executeAgent callback).
+                    let agentResult: AgentResultData | undefined;
+                    if (actionEvent.data.llmResult) {
+                      agentResult = actionEvent.data.llmResult;
+                    } else {
+                      // Side-channel key must use job.name (workspace-level key) to match
+                      // what executeAgent stores — NOT actionEvent.data.jobName which is
+                      // the FSM definition's id (may differ from the workspace job key).
+                      const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
+                      agentResult = sideChannel.get(sideChannelKey);
+                      sideChannel.delete(sideChannelKey);
+                    }
+                    sessionStream.emit(
+                      mapActionToStepComplete(actionEvent, agentResult, stepCounter),
+                    );
+                  }
+                }
+
+                // Session history v2: map skipped states to step:skipped events
+                if (sessionStream && event.type === "data-fsm-state-skipped") {
+                  sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
+                }
+              },
+              // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
+              // this separate channel, bypassing the FSMEvent-typed onEvent callback
+              onStreamEvent: (chunk) => {
+                onStreamEvent?.(chunk);
+                sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
+              },
+            },
+          );
+
+          session.artifacts = this.extractArtifacts(engine.documents);
+          session.status = WorkspaceSessionStatus.COMPLETED;
+          session.completedAt = new Date();
+
+          logger.info("Signal processed successfully", {
+            sessionId: session.id,
+            finalState: engine.state,
+            artifactCount: session.artifacts.length,
+            jobName: job.name,
+          });
+        } catch (error) {
+          session.completedAt = new Date();
+          session.error = error instanceof Error ? error : new Error(String(error));
+          session.status = classifySessionError(error);
+
+          if (otelSpan) {
+            if (error instanceof Error) otelSpan.recordException(error);
+            otelSpan.setStatus({ code: 2 /* SpanStatusCode.ERROR */, message: String(error) });
+          }
+
+          if (session.status === WorkspaceSessionStatus.SKIPPED) {
+            logger.warn("Session skipped: user configuration issue", {
+              sessionId: session.id,
+              error: session.error.message,
+              jobName: job.name,
+            });
+          } else {
+            logger.error("Signal processing failed", {
+              sessionId: session.id,
+              error: session.error,
+              currentState: engine.state,
+              jobName: job.name,
+            });
+          }
+
+          // Emit error event so the client SSE stream receives it.
+          // Without this, errors are swallowed — the .catch() in chat.ts never
+          // fires because this function always resolves (never rejects).
+          if (onStreamEvent) {
+            try {
+              await onStreamEvent({
+                type: "data-error",
+                data: { error: stringifyError(session.error), errorCause: session.error },
+              });
+            } catch (emitError) {
+              logger.error("Failed to emit error event", {
+                sessionId: session.id,
+                error: emitError,
+              });
+            }
+          }
+        } finally {
+          // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
+          if (this.options.resourceStorage) {
+            try {
+              await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
+                jobId: job.name,
+                activityStorage: this.options.activityStorage,
+              });
+            } catch (publishError) {
+              logger.warn("Auto-publish at session teardown failed", {
+                sessionId: session.id,
+                error: publishError instanceof Error ? publishError.message : String(publishError),
+              });
+            }
+          }
+
+          if (onStreamEvent) {
+            try {
+              await onStreamEvent({
+                type: "data-session-finish",
+                data: {
+                  sessionId: session.id,
+                  workspaceId: this.workspace.id,
+                  status: session.status,
+                },
+              });
+            } catch (emitError) {
+              logger.error("Failed to emit session-finish event", {
+                sessionId: session.id,
+                error: emitError,
+              });
+            }
+          }
+
+          if (sessionStream) {
+            const durationMs = session.completedAt
+              ? session.completedAt.getTime() - session.startedAt.getTime()
+              : 0;
+
+            sessionStream.emit({
+              type: "session:complete",
+              sessionId,
+              status:
+                session.status === "active"
+                  ? "completed"
+                  : session.status === "cancelled"
+                    ? "failed"
+                    : session.status,
+              durationMs,
+              error: session.error?.message,
+              timestamp: (session.completedAt ?? new Date()).toISOString(),
+            });
+
+            const view = buildSessionView(sessionStream.getBufferedEvents());
+
+            const aiSummary = await generateSessionSummary(view, undefined, job.description);
+            if (aiSummary) {
+              sessionStream.emit({
+                type: "session:summary",
+                timestamp: new Date().toISOString(),
+                summary: aiSummary.summary,
+                keyDetails: aiSummary.keyDetails,
+              });
+            }
+
+            // Only count actually-executed blocks in summary metrics
+            const executedBlocks = view.agentBlocks.filter(
+              (b) => b.status !== "skipped" && b.status !== "pending",
+            );
+            const summaryV2: SessionSummaryV2 = {
+              sessionId,
+              workspaceId: this.workspace.id,
+              jobName: job.name,
+              task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
+              status: view.status,
+              startedAt: session.startedAt.toISOString(),
+              completedAt: (session.completedAt ?? new Date()).toISOString(),
+              durationMs,
+              stepCount: executedBlocks.length,
+              agentNames: executedBlocks.map((b) => b.agentName),
+              error: session.error?.message,
+              aiSummary,
+            };
+
+            await sessionStream.finalize(summaryV2).catch((err) => {
+              logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
+            });
+
+            // Replace "running" activity with final activity for terminal sessions
+            if (
+              this.options.activityStorage &&
+              !isConversation &&
+              (view.status === "completed" || view.status === "failed")
+            ) {
+              // Delete the "running" activity first
+              await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
+                logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
+              });
+
+              try {
+                // Extract final output from the last completed agent block
+                const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
+                const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
+
+                const title = await generateSessionActivityTitle({
+                  status: view.status,
+                  jobName: job.name,
+                  agentNames: executedBlocks.map((b) => b.agentName),
+                  finalOutput,
+                  error: session.error?.message,
+                });
+                await this.options.activityStorage.create({
+                  type: "session",
+                  source: "agent",
+                  referenceId: sessionId,
+                  workspaceId: this.workspace.id,
+                  jobId: job.name,
+                  userId: null,
+                  title,
+                });
+              } catch (err) {
+                logger.warn("Failed to create session activity", { sessionId, error: String(err) });
+              }
+            }
+          }
+
+          this.agentResultSideChannel.delete(sessionId);
+        }
+
+        if (otelSpan) {
+          otelSpan.setAttribute("atlas.session.status", session.status);
+        }
+        return session;
+      }, // end withOtelSpan fn
+    ); // end withOtelSpan
   }
 
   /**
@@ -1072,6 +1104,10 @@ export class WorkspaceRuntime {
 
     const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
 
+    // Map "atlas" config type to "sdk" for consistency with function parameter
+    // Default to "sdk" when agent has no workspace config (code-based agents)
+    const agentType = agentConfig?.type === "atlas" ? "sdk" : (agentConfig?.type ?? "sdk");
+
     // Merge workspace agent config with prepare function's config.
     // Prepare config (from FSM `return { task, config }`) takes precedence
     // so workspace.yml prepare functions can pass data like workDir to agents.
@@ -1085,25 +1121,43 @@ export class WorkspaceRuntime {
         : agentCustomConfig;
 
     // Execute agent via orchestrator - returns AgentResult directly
-    const result = await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
-      sessionId,
-      workspaceId,
-      streamId,
-      datetime,
-      // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
-      // keeping the FSM onEvent callback clean (FSMEvent types only)
-      onStreamEvent: signal._context?.onStreamEvent,
-      additionalContext: { documents: fsmContext.documents },
-      config: mergedConfig,
-      outputSchema: options?.outputSchema,
-    });
-    const agentType = agentConfig?.type === "atlas" ? "sdk" : (agentConfig?.type ?? "sdk");
+    const result = await withOtelSpan(
+      "agent.execute",
+      {
+        "atlas.agent.id": agentId,
+        "atlas.agent.type": agentType,
+        "atlas.workspace.id": workspaceId,
+        "atlas.session.id": sessionId,
+      },
+      async (agentOtelSpan) => {
+        const agentResult = await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
+          sessionId,
+          workspaceId,
+          streamId,
+          datetime,
+          // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
+          // keeping the FSM onEvent callback clean (FSMEvent types only)
+          onStreamEvent: signal._context?.onStreamEvent,
+          additionalContext: { documents: fsmContext.documents },
+          config: mergedConfig,
+          outputSchema: options?.outputSchema,
+        });
 
-    await validateAgentOutput(result, fsmContext, agentType);
+        if (agentOtelSpan) {
+          agentOtelSpan.setAttribute("atlas.agent.result.ok", agentResult.ok);
+        }
 
-    if (this.options.resourceStorage && workspaceId) {
-      await publishDirtyDrafts(this.options.resourceStorage, workspaceId);
-    }
+        // Validate agent output (hallucination detection only runs for LLM agents)
+        await validateAgentOutput(agentResult, fsmContext, agentType);
+
+        // Auto-publish dirty resource drafts after agent turn completion
+        if (this.options.resourceStorage && workspaceId) {
+          await publishDirtyDrafts(this.options.resourceStorage, workspaceId);
+        }
+
+        return agentResult;
+      },
+    );
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
 

@@ -1,6 +1,15 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LanguageModelV2, LanguageModelV2StreamPart } from "@ai-sdk/provider";
+import { type Span, startOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { wrapLanguageModel } from "ai";
+
+/** Record error and end a manually-managed span. */
+function endSpanWithError(span: Span | null, err: unknown): void {
+  if (!span) return;
+  if (err instanceof Error) span.recordException(err);
+  span.setStatus({ code: 2 /* SpanStatusCode.ERROR */, message: String(err) });
+  span.end();
+}
 
 /**
  * A single LLM call captured during an eval trace scope.
@@ -55,54 +64,99 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
   return wrapLanguageModel({
     model,
     middleware: {
+      // deno-lint-ignore require-await
       wrapGenerate: async ({ doGenerate, params, model }) => {
-        const store = traceStorage.getStore();
-        if (!store) return doGenerate();
-
-        const startMs = performance.now() - store.scopeStartTime;
-        const result = await doGenerate();
-        const endMs = performance.now() - store.scopeStartTime;
-
-        const text = result.content
-          .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
-          .map((c) => c.text)
-          .join("");
-
-        const toolCalls = result.content
-          .filter((c): c is Extract<typeof c, { type: "tool-call" }> => c.type === "tool-call")
-          .map((c) => ({ name: c.toolName, input: c.input ? tryParseJson(c.input) : {} }));
-
-        store.traces.push({
-          type: "generate",
-          modelId: model.modelId,
-          input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
-          output: { text, toolCalls },
-          usage: {
-            inputTokens: result.usage.inputTokens ?? 0,
-            outputTokens: result.usage.outputTokens ?? 0,
-            totalTokens: result.usage.totalTokens ?? 0,
+        return withOtelSpan(
+          "llm.generate",
+          {
+            "llm.model": model.modelId,
+            "llm.provider": model.provider,
+            "llm.operation": "generate",
           },
-          startMs,
-          endMs,
-        });
+          async (span) => {
+            const store = traceStorage.getStore();
+            const t0 = performance.now();
+            const result = await doGenerate();
+            const latencyMs = performance.now() - t0;
 
-        return result;
+            if (span) {
+              span.setAttributes({
+                "llm.input_tokens": result.usage.inputTokens ?? 0,
+                "llm.output_tokens": result.usage.outputTokens ?? 0,
+                "llm.generation_latency_ms": latencyMs,
+              });
+            }
+
+            if (store) {
+              const startMs = t0 - store.scopeStartTime;
+              const text = result.content
+                .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+                .map((c) => c.text)
+                .join("");
+
+              const toolCalls = result.content
+                .filter(
+                  (c): c is Extract<typeof c, { type: "tool-call" }> => c.type === "tool-call",
+                )
+                .map((c) => ({ name: c.toolName, input: c.input ? tryParseJson(c.input) : {} }));
+
+              store.traces.push({
+                type: "generate",
+                modelId: model.modelId,
+                input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
+                output: { text, toolCalls },
+                usage: {
+                  inputTokens: result.usage.inputTokens ?? 0,
+                  outputTokens: result.usage.outputTokens ?? 0,
+                  totalTokens: result.usage.totalTokens ?? 0,
+                },
+                startMs,
+                endMs: startMs + latencyMs,
+              });
+            }
+
+            return result;
+          },
+        );
       },
 
       wrapStream: async ({ doStream, params, model }) => {
-        const store = traceStorage.getStore();
-        if (!store) return doStream();
+        // Manual span lifecycle: span must outlive stream setup and cover
+        // the full stream consumption. withOtelSpan can't be used here
+        // because it calls span.end() when the callback returns, which is
+        // before the stream is consumed.
+        const span = await startOtelSpan("llm.stream", {
+          "llm.model": model.modelId,
+          "llm.provider": model.provider,
+          "llm.operation": "stream",
+        });
 
-        const startMs = performance.now() - store.scopeStartTime;
-        const result = await doStream();
+        const store = traceStorage.getStore();
+        const t0 = performance.now();
+
+        let result: Awaited<ReturnType<typeof doStream>>;
+        try {
+          result = await doStream();
+        } catch (err) {
+          endSpanWithError(span, err);
+          throw err;
+        }
 
         let text = "";
+        let spanEnded = false;
         const toolCallOrder: string[] = [];
         const toolCallsById = new Map<string, { name: string; inputJson: string }>();
 
-        const transform = new TransformStream<LanguageModelV2StreamPart, LanguageModelV2StreamPart>(
-          {
-            transform(chunk, controller) {
+        // Extracted to a variable so TypeScript skips excess-property checking.
+        // The cancel() callback is part of the WHATWG Streams spec and works at
+        // runtime in Deno, but some TS lib versions used by svelte-check omit
+        // it from the Transformer interface definition.
+        const transformer = {
+          transform(
+            chunk: LanguageModelV2StreamPart,
+            controller: TransformStreamDefaultController<LanguageModelV2StreamPart>,
+          ) {
+            if (store) {
               switch (chunk.type) {
                 case "text-delta":
                   text += chunk.delta;
@@ -116,36 +170,62 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
                   if (tc) tc.inputJson += chunk.delta;
                   break;
                 }
-                case "finish": {
-                  const endMs = performance.now() - store.scopeStartTime;
-                  store.traces.push({
-                    type: "stream",
-                    modelId: model.modelId,
-                    input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
-                    output: {
-                      text,
-                      toolCalls: toolCallOrder.map((id) => {
-                        const tc = toolCallsById.get(id);
-                        return {
-                          name: tc?.name ?? "unknown",
-                          input: tc?.inputJson ? tryParseJson(tc.inputJson) : {},
-                        };
-                      }),
-                    },
-                    usage: {
-                      inputTokens: chunk.usage.inputTokens ?? 0,
-                      outputTokens: chunk.usage.outputTokens ?? 0,
-                      totalTokens: chunk.usage.totalTokens ?? 0,
-                    },
-                    startMs,
-                    endMs,
-                  });
-                  break;
-                }
               }
-              controller.enqueue(chunk);
-            },
+            }
+
+            if (chunk.type === "finish") {
+              const latencyMs = performance.now() - t0;
+              if (span && !spanEnded) {
+                span.setAttributes({
+                  "llm.input_tokens": chunk.usage.inputTokens ?? 0,
+                  "llm.output_tokens": chunk.usage.outputTokens ?? 0,
+                  "llm.generation_latency_ms": latencyMs,
+                });
+                span.end();
+                spanEnded = true;
+              }
+              if (store) {
+                const startMs = t0 - store.scopeStartTime;
+                store.traces.push({
+                  type: "stream",
+                  modelId: model.modelId,
+                  input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
+                  output: {
+                    text,
+                    toolCalls: toolCallOrder.map((id) => {
+                      const tc = toolCallsById.get(id);
+                      return {
+                        name: tc?.name ?? "unknown",
+                        input: tc?.inputJson ? tryParseJson(tc.inputJson) : {},
+                      };
+                    }),
+                  },
+                  usage: {
+                    inputTokens: chunk.usage.inputTokens ?? 0,
+                    outputTokens: chunk.usage.outputTokens ?? 0,
+                    totalTokens: chunk.usage.totalTokens ?? 0,
+                  },
+                  startMs,
+                  endMs: startMs + latencyMs,
+                });
+              }
+            }
+
+            controller.enqueue(chunk);
           },
+          flush() {
+            if (!spanEnded) span?.end();
+          },
+          cancel(reason?: unknown) {
+            if (!spanEnded) {
+              if (reason) endSpanWithError(span, reason);
+              else span?.end();
+              spanEnded = true;
+            }
+          },
+        };
+        const transform = new TransformStream<LanguageModelV2StreamPart, LanguageModelV2StreamPart>(
+          transformer,
         );
 
         return { ...result, stream: result.stream.pipeThrough(transform) };
