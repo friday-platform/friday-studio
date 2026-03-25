@@ -60,11 +60,20 @@ WORKDIR /app
 
 # ── Compile standalone binaries ──────────────────────────────────────────────
 
-# Atlas daemon CLI
-RUN deno compile -q --no-check --allow-all \
+# Atlas daemon CLI — mirrors main Dockerfile compile flags.
+# Temporarily hide packages/ui (contains .svelte files deno compile can't handle)
+# then restore it for the runtime stage COPY.
+RUN mv packages/ui /tmp/_ui && mv node_modules/@atlas/ui /tmp/_atlas_ui 2>/dev/null; \
+    OTEL_DENO=true deno compile -q --no-check --allow-all \
+    --include=apps/atlas-cli \
+    --include=packages \
+    --include=node_modules/@opentelemetry \
+    --config=deno.json \
+    --unstable-broadcast-channel \
     --unstable-worker-options --unstable-kv --unstable-raw-imports \
     --output /app/bin/atlas \
-    apps/atlas-cli/src/cli.ts
+    apps/atlas-cli/src/cli.ts && \
+    mv /tmp/_ui packages/ui && mv /tmp/_atlas_ui node_modules/@atlas/ui 2>/dev/null; true
 
 # Link service
 RUN deno compile -q --no-check --allow-all \
