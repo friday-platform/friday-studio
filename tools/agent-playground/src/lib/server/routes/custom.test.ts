@@ -71,7 +71,7 @@ describe("POST /custom/execute — server validation", () => {
     const res = await post(validBody({ mcpServerIds: ["nonexistent-server"] }));
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("nonexistent-server");
   });
 
@@ -79,7 +79,7 @@ describe("POST /custom/execute — server validation", () => {
     const res = await post(validBody({ mcpServerIds: ["github"], env: {} }));
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("GH_TOKEN");
     expect(data.error).toContain("github");
   });
@@ -88,7 +88,7 @@ describe("POST /custom/execute — server validation", () => {
     const res = await post(validBody({ mcpServerIds: ["github", "stripe"], env: {} }));
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("github");
     expect(data.error).toContain("GH_TOKEN");
     expect(data.error).toContain("stripe");

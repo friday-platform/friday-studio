@@ -12,10 +12,7 @@
   import IntegrationsSidebar from "$lib/components/integrations-sidebar.svelte";
   import RecentSessions from "$lib/components/recent-sessions.svelte";
 
-  type Props = {
-    workspaceId: string;
-    config: WorkspaceConfig | null;
-  };
+  type Props = { workspaceId: string; config: WorkspaceConfig | null };
 
   let { workspaceId, config }: Props = $props();
 </script>

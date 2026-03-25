@@ -7,8 +7,8 @@
 
 <script lang="ts">
   import { page } from "$app/state";
-  import SkillsTree from "$lib/components/skills-tree.svelte";
   import SkillLoader from "$lib/components/skill-loader.svelte";
+  import SkillsTree from "$lib/components/skills-tree.svelte";
   import { getDirtyFiles } from "$lib/stores/skill-editor-state.svelte";
 
   const { children } = $props();
@@ -26,14 +26,24 @@
   <aside class="skills-sidebar">
     <div class="sidebar-header">
       <h1 class="sidebar-title">Skills</h1>
-      <button class="add-btn" onclick={() => { showUploader = !showUploader; }}>
+      <button
+        class="add-btn"
+        onclick={() => {
+          showUploader = !showUploader;
+        }}
+      >
         {showUploader ? "Cancel" : "+ Add"}
       </button>
     </div>
 
     {#if showUploader}
       <div class="sidebar-uploader">
-        <SkillLoader inline onclose={() => { showUploader = false; }} />
+        <SkillLoader
+          inline
+          onclose={() => {
+            showUploader = false;
+          }}
+        />
       </div>
     {/if}
 

@@ -12,10 +12,7 @@
 <script lang="ts">
   import { schemaToRows } from "$lib/schema-utils";
 
-  type Props = {
-    schema: object | null;
-    emptyMessage?: string;
-  };
+  type Props = { schema: object | null; emptyMessage?: string };
 
   let { schema, emptyMessage = "No schema defined" }: Props = $props();
 

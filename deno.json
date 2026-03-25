@@ -32,6 +32,7 @@
     "tools/pty-server/**",
     "tools/agent-playground/src/routes/**",
     "tools/agent-playground/src/**/*.svelte.ts",
+    "tools/agent-playground/src/lib/inspector-state.test.ts",
     "tools/agent-playground/src/lib/editor/**",
     "tools/agent-playground/src/lib/queries/**",
     "tools/agent-playground/src/lib/stores/**",

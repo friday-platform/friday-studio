@@ -14,10 +14,7 @@
   import type { DataContract } from "@atlas/config/data-contracts";
   import { goto } from "$app/navigation";
 
-  type Props = {
-    contract: DataContract;
-    workspaceId: string;
-  };
+  type Props = { contract: DataContract; workspaceId: string };
 
   let { contract, workspaceId }: Props = $props();
 
@@ -47,7 +44,8 @@
     const fields: SchemaField[] = [];
     for (const [name, def] of Object.entries(props)) {
       const type = typeof def?.type === "string" ? def.type : "unknown";
-      const isArrayOfObjects = type === "array" &&
+      const isArrayOfObjects =
+        type === "array" &&
         typeof def?.items === "object" &&
         def.items !== null &&
         (def.items as Record<string, unknown>).type === "object";
@@ -62,24 +60,32 @@
 
       // Nested object properties
       if (type === "object" && def?.properties && typeof def.properties === "object") {
-        const nestedRequired = new Set(Array.isArray(def.required) ? (def.required as string[]) : []);
-        fields.push(...flattenProperties(
-          def.properties as Record<string, Record<string, unknown>>,
-          nestedRequired,
-          depth + 1,
-        ));
+        const nestedRequired = new Set(
+          Array.isArray(def.required) ? (def.required as string[]) : [],
+        );
+        fields.push(
+          ...flattenProperties(
+            def.properties as Record<string, Record<string, unknown>>,
+            nestedRequired,
+            depth + 1,
+          ),
+        );
       }
 
       // Array of objects — show item properties nested
       if (isArrayOfObjects) {
         const items = def.items as Record<string, unknown>;
         if (items.properties && typeof items.properties === "object") {
-          const nestedRequired = new Set(Array.isArray(items.required) ? (items.required as string[]) : []);
-          fields.push(...flattenProperties(
-            items.properties as Record<string, Record<string, unknown>>,
-            nestedRequired,
-            depth + 1,
-          ));
+          const nestedRequired = new Set(
+            Array.isArray(items.required) ? (items.required as string[]) : [],
+          );
+          fields.push(
+            ...flattenProperties(
+              items.properties as Record<string, Record<string, unknown>>,
+              nestedRequired,
+              depth + 1,
+            ),
+          );
         }
       }
     }

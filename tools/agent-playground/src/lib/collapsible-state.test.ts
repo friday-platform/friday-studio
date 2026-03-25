@@ -9,7 +9,9 @@ function createStorageStub(): Storage {
     setItem: (key: string, value: string) => store.set(key, value),
     removeItem: (key: string) => store.delete(key),
     clear: () => store.clear(),
-    get length() { return store.size; },
+    get length() {
+      return store.size;
+    },
     key: (index: number) => [...store.keys()][index] ?? null,
   };
 }

@@ -6,8 +6,8 @@
  * @module
  */
 
+import { SessionSummarySchema, type SessionSummary } from "@atlas/core/session/session-events";
 import { createQuery } from "@tanstack/svelte-query";
-import { type SessionSummary, SessionSummarySchema } from "@atlas/core/session/session-events";
 import { getDaemonClient } from "$lib/daemon-client";
 import { z } from "zod";
 

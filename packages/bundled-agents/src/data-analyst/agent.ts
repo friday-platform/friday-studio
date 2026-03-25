@@ -266,6 +266,8 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   id: "data-analyst",
   displayName: "Data Analyst",
   version: "1.0.0",
+  summary:
+    "Run read-only SQL queries on uploaded database artifacts via DuckDB. Analyze trends, anomalies, and patterns.",
   description:
     "READ-ONLY analytical engine for uploaded database artifacts. Attaches .db files, runs exploratory SQL via DuckDB subprocess, produces summary + data artifacts. USE FOR: analyzing uploaded CSV/database artifacts — revenue trends, statistical summaries, data exploration.",
   constraints:

@@ -342,7 +342,6 @@ describe("transform integration — single document", () => {
     // Constant
     expect(config.currency).toBe("USD");
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -399,5 +398,4 @@ describe("transform integration — cross-document", () => {
     // Cross-document transform: 100 + (100 * 0.08) = 108
     expect(config.total_with_tax).toBe(108);
   });
-
 });

@@ -72,15 +72,16 @@ it("fails fast without ANTHROPIC_API_KEY", async () => {
   }
 });
 
-it("fails fast without GH_TOKEN", async () => {
+it("works without GH_TOKEN (optional)", async () => {
   const result = await claudeCodeAgent.execute(
     "test prompt",
     createMockContext({ env: { ANTHROPIC_API_KEY: "sk-test" } }),
   );
 
-  expect(result.ok).toEqual(false);
+  // Should not fail due to missing GH_TOKEN — it's optional
+  // (may fail for other reasons like missing claude CLI, but not GH_TOKEN)
   if (!result.ok) {
-    expect(result.error.reason).toContain("GH_TOKEN");
+    expect(result.error.reason).not.toContain("GH_TOKEN");
   }
 });
 

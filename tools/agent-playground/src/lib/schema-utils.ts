@@ -55,7 +55,9 @@ export function flattenSchema(
       const nestedRequired = new Set<string>(
         Array.isArray(def.required) ? (def.required as string[]) : [],
       );
-      rows.push(...flattenSchema(def as Record<string, unknown>, fullName, nestedRequired, depth + 1));
+      rows.push(
+        ...flattenSchema(def as Record<string, unknown>, fullName, nestedRequired, depth + 1),
+      );
     } else if (rawType === "array") {
       const items = def?.items as Record<string, unknown> | undefined;
       const itemType = typeof items?.type === "string" ? items.type : "unknown";
@@ -83,8 +85,6 @@ export function schemaToRows(schema: object | null): SchemaRow[] {
   const s = schema as Record<string, unknown>;
   if (!s.properties || typeof s.properties !== "object") return [];
 
-  const requiredSet = new Set<string>(
-    Array.isArray(s.required) ? (s.required as string[]) : [],
-  );
+  const requiredSet = new Set<string>(Array.isArray(s.required) ? (s.required as string[]) : []);
   return flattenSchema(s, "", requiredSet, 0);
 }

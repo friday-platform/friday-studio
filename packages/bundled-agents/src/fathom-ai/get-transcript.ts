@@ -57,6 +57,8 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
   id: "fathom-get-transcript",
   displayName: "Fathom Get Transcript",
   version: "1.0.0",
+  summary:
+    "Fetch the latest meeting transcript from Fathom AI with speaker attribution and timestamps.",
   description:
     "Fetches the latest meeting recording from Fathom AI and retrieves its full transcript with speaker attribution and timestamps. USE FOR: getting meeting transcripts, reviewing what was discussed in meetings.",
   constraints:

@@ -58,7 +58,11 @@ export default {
   "*.{ts,tsx,js,jsx}": (files) => {
     // Exclude files in directories that deno.json excludes from linting —
     // passing only excluded files causes `deno lint` to fail with "No target files found".
-    const DENO_LINT_EXCLUDED = ["/apps/friday-website/src/", "/apps/atlas-auth-ui/src/"];
+    const DENO_LINT_EXCLUDED = [
+      "/apps/friday-website/src/",
+      "/apps/atlas-auth-ui/src/",
+      "/tools/agent-playground/src/",
+    ];
     const filtered = files.filter(
       (f) =>
         !f.endsWith(".svelte.ts") &&

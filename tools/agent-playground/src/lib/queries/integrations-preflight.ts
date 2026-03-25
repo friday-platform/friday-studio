@@ -26,9 +26,7 @@ const IntegrationPreflightSchema = z.object({
 });
 export type IntegrationPreflight = z.infer<typeof IntegrationPreflightSchema>;
 
-const PreflightResponseSchema = z.object({
-  integrations: z.array(IntegrationPreflightSchema),
-});
+const PreflightResponseSchema = z.object({ integrations: z.array(IntegrationPreflightSchema) });
 type PreflightResponse = z.infer<typeof PreflightResponseSchema>;
 
 // ==============================================================================
@@ -47,9 +45,7 @@ export function useIntegrationsPreflight(workspaceId: () => string | null) {
     return {
       queryKey: ["integrations", "preflight", id],
       queryFn: async (): Promise<PreflightResponse> => {
-        const res = await fetch(
-          `/api/daemon/api/workspaces/${id}/integrations/preflight`,
-        );
+        const res = await fetch(`/api/daemon/api/workspaces/${id}/integrations/preflight`);
         if (!res.ok) throw new Error(`Integration preflight: ${res.status}`);
         const data: unknown = await res.json();
         return PreflightResponseSchema.parse(data);

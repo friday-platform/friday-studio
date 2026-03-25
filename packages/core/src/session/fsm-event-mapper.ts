@@ -128,5 +128,18 @@ export function mapFsmEventToSessionEvent(fsmEvent: FSMEvent): SessionHistoryEve
           status: "completed" as const,
         },
       };
+
+    case "data-fsm-state-skipped":
+      // Skipped states mapped to session events via step:skipped (separate path)
+      return {
+        type: "fsm-action",
+        context: { metadata: { fsmEventType: "state-skipped-ignored" } },
+        data: {
+          jobName: fsmEvent.data.jobName,
+          state: fsmEvent.data.stateId,
+          actionType: "emit" as const,
+          status: "completed" as const,
+        },
+      };
   }
 }

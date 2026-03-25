@@ -23,9 +23,7 @@
 
   let { contracts, workspaceId, onStepClick }: Props = $props();
 
-  const summaryText = $derived(
-    `${contracts.length} ${contracts.length === 1 ? "type" : "types"}`,
-  );
+  const summaryText = $derived(`${contracts.length} ${contracts.length === 1 ? "type" : "types"}`);
 
   /** Extract preview fields from a JSON Schema object. Returns first 3 field names + types. */
   function schemaPreview(schema: object | null): { fields: string[]; remaining: number } {

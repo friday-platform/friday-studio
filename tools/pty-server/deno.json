@@ -3,6 +3,5 @@
   "name": "@atlas/pty-server",
   "exports": "./server.ts",
   "version": "0.1.0",
-  "tasks": { "start": "deno run -A server.ts" },
-  "imports": { "node-pty": "npm:node-pty@1.1.0", "ws": "npm:ws@8.19.0" }
+  "tasks": { "start": "deno run -A server.ts" }
 }

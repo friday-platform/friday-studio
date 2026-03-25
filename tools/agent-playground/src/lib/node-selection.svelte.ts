@@ -7,9 +7,9 @@
  *
  * @module
  */
+import type { TopologyNode } from "@atlas/config/topology";
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
-import type { TopologyNode } from "@atlas/config/topology";
 
 /**
  * Navigate to a node's panel URL. Clicking the already-selected node

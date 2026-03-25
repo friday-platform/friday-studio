@@ -39,9 +39,7 @@ export interface DerivedWorkspaceSkills {
  *
  * @param skills - The `skills` array from workspace config (may be undefined)
  */
-export function deriveWorkspaceSkills(
-  skills: SkillEntry[] | undefined,
-): DerivedWorkspaceSkills {
+export function deriveWorkspaceSkills(skills: SkillEntry[] | undefined): DerivedWorkspaceSkills {
   if (!skills || skills.length === 0) {
     return { globalRefs: [], inlineSkills: [] };
   }
@@ -58,12 +56,7 @@ export function deriveWorkspaceSkills(
       });
     } else {
       const { namespace, name } = parseSkillRef(entry.name);
-      globalRefs.push({
-        ref: entry.name,
-        namespace,
-        name,
-        version: entry.version,
-      });
+      globalRefs.push({ ref: entry.name, namespace, name, version: entry.version });
     }
   }
 
@@ -145,20 +138,14 @@ export function useRemoveWorkspaceSkill(workspaceId: () => string | null) {
       const id = workspaceId();
       if (!id) throw new Error("No workspace selected");
       const configClient = client.workspaceConfig(id);
-      const res = await configClient.skills[":skillName"].$delete({
-        param: { skillName },
-      });
+      const res = await configClient.skills[":skillName"].$delete({ param: { skillName } });
       if (!res.ok) throw new Error(`Failed to remove skill: ${res.status}`);
       return res.json();
     },
     onSuccess: () => {
       const id = workspaceId();
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", id, "skills"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", id, "config"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "skills"] });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "config"] });
     },
   }));
 }
@@ -179,20 +166,14 @@ export function useAddWorkspaceSkill(workspaceId: () => string | null) {
       const id = workspaceId();
       if (!id) throw new Error("No workspace selected");
       const configClient = client.workspaceConfig(id);
-      const res = await configClient.skills.$post({
-        json: { skillRef },
-      });
+      const res = await configClient.skills.$post({ json: { skillRef } });
       if (!res.ok) throw new Error(`Failed to add skill: ${res.status}`);
       return res.json();
     },
     onSuccess: () => {
       const id = workspaceId();
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", id, "skills"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", id, "config"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "skills"] });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "config"] });
     },
   }));
 }
@@ -219,9 +200,7 @@ export function useCatalogSkills() {
   return createQuery(() => ({
     queryKey: ["daemon", "skills", "catalog"],
     queryFn: async (): Promise<CatalogSkill[]> => {
-      const res = await client.skills.index.$get({
-        query: { sort: "name", includeAll: "true" },
-      });
+      const res = await client.skills.index.$get({ query: { sort: "name", includeAll: "true" } });
       if (!res.ok) throw new Error(`Failed to fetch catalog skills: ${res.status}`);
       const data = await res.json();
       return data.skills;
@@ -322,7 +301,9 @@ export function usePublishSkill() {
       return res.json();
     },
     onSuccess: (_data: unknown, variables: PublishSkillInput) => {
-      queryClient.invalidateQueries({ queryKey: ["daemon", "skills", variables.namespace, variables.name] });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name],
+      });
       queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
     },
   }));
@@ -363,9 +344,7 @@ export function useDeleteSkill() {
 
   return createMutation(() => ({
     mutationFn: async (skillId: string) => {
-      const res = await client.skills[":skillId"].$delete({
-        param: { skillId },
-      });
+      const res = await client.skills[":skillId"].$delete({ param: { skillId } });
       if (!res.ok) throw new Error(`Failed to delete skill: ${res.status}`);
       return res.json();
     },
@@ -440,7 +419,9 @@ export function useUpdateSkillFile() {
       if (!res.ok) {
         const body: unknown = await res.json().catch(() => ({}));
         throw new Error(
-          typeof body === "object" && body !== null && "error" in body &&
+          typeof body === "object" &&
+            body !== null &&
+            "error" in body &&
             typeof body.error === "string"
             ? body.error
             : `Failed to save file: ${res.status}`,

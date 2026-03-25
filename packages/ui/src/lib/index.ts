@@ -5,6 +5,8 @@ export { DropdownMenu } from "./dropdown-menu/index.js";
 export { default as FormattedData } from "./formatted-data.svelte";
 export { IconSmall, Icons } from "./icons/index.js";
 export { default as JsonHighlight } from "./json-highlight.svelte";
+export { default as MarkdownRendered } from "./markdown/markdown-rendered.svelte";
+export { markdownToHTML } from "./markdown/markdown.js";
 export { jsonHighlighter } from "./json-highlighter.js";
 export { toast, NotificationPortal } from "./notification/index.js";
 export type { ToastData } from "./notification/index.js";

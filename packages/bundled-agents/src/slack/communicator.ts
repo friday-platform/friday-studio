@@ -39,6 +39,8 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
   id: "slack",
   displayName: "Slack",
   version: "1.0.0",
+  summary:
+    "Post messages to Slack channels and DMs. Reads artifacts and formats them as Slack mrkdwn.",
   description:
     "Post messages to Slack channels and DMs via slack-mcp-server. Reads artifacts and formats them as Slack mrkdwn before posting. USE FOR: sending Slack messages, posting artifacts/summaries to channels, channel notifications.",
   constraints:

@@ -104,7 +104,12 @@
   }
 </script>
 
-<div class="component" id={block.stateId ? `block-${block.stateId}` : undefined} {...$root} use:root>
+<div
+  class="component"
+  id={block.stateId ? `block-${block.stateId}` : undefined}
+  {...$root}
+  use:root
+>
   <button class="header-row" {...$trigger} use:trigger type="button">
     <span class="icon" class:running={isRunning}>
       {#if icon}

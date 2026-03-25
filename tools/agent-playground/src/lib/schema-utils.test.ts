@@ -17,10 +17,7 @@ describe("schemaToRows", () => {
   it("flattens simple string properties", () => {
     const schema = {
       type: "object",
-      properties: {
-        name: { type: "string", description: "The name" },
-        age: { type: "integer" },
-      },
+      properties: { name: { type: "string", description: "The name" }, age: { type: "integer" } },
       required: ["name"],
     };
 
@@ -34,10 +31,7 @@ describe("schemaToRows", () => {
   it("formats array types as itemType[]", () => {
     const schema = {
       type: "object",
-      properties: {
-        tags: { type: "array", items: { type: "string" } },
-        items: { type: "array" },
-      },
+      properties: { tags: { type: "array", items: { type: "string" } }, items: { type: "array" } },
     };
 
     const rows = schemaToRows(schema);
@@ -79,9 +73,7 @@ describe("schemaToRows", () => {
             inner: {
               type: "object",
               description: "Should not recurse further",
-              properties: {
-                deep: { type: "string" },
-              },
+              properties: { deep: { type: "string" } },
             },
           },
         },
@@ -91,20 +83,11 @@ describe("schemaToRows", () => {
     const rows = schemaToRows(schema);
     // outer (depth 0) + inner (depth 1, treated as leaf object — no recursion)
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toMatchObject({
-      name: "outer.inner",
-      type: "object",
-      depth: 1,
-    });
+    expect(rows[1]).toMatchObject({ name: "outer.inner", type: "object", depth: 1 });
   });
 
   it("handles missing type gracefully", () => {
-    const schema = {
-      type: "object",
-      properties: {
-        mystery: { description: "No type declared" },
-      },
-    };
+    const schema = { type: "object", properties: { mystery: { description: "No type declared" } } };
 
     const rows = schemaToRows(schema);
     expect(rows[0]).toMatchObject({ type: "unknown" });
@@ -150,11 +133,7 @@ describe("flattenSchema", () => {
   });
 
   it("uses prefix for dot-notation names", () => {
-    const schema = {
-      properties: {
-        id: { type: "string" },
-      },
-    };
+    const schema = { properties: { id: { type: "string" } } };
     const rows = flattenSchema(schema, "parent", new Set(), 1);
     expect(rows[0]).toMatchObject({ name: "parent.id" });
   });

@@ -8,20 +8,19 @@
 -->
 
 <script lang="ts">
-  import { basicSetup } from "codemirror";
-  import { Decoration, EditorView, keymap } from "@codemirror/view";
-  import { EditorState, StateEffect, StateField } from "@codemirror/state";
-  import { yaml as yamlLang } from "@codemirror/lang-yaml";
-  import { atlasTheme } from "$lib/editor/atlas-theme";
   import { Button } from "@atlas/ui";
-  import { onDestroy } from "svelte";
-  import { untrack } from "svelte";
+  import { yaml as yamlLang } from "@codemirror/lang-yaml";
+  import { EditorState, StateEffect, StateField } from "@codemirror/state";
+  import { Decoration, EditorView, keymap } from "@codemirror/view";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
   import { getDaemonClient } from "$lib/daemon-client.ts";
-  import { isNode, stringify, parse, parseDocument } from "yaml";
+  import { atlasTheme } from "$lib/editor/atlas-theme";
+  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import { basicSetup } from "codemirror";
+  import { onDestroy, untrack } from "svelte";
+  import { isNode, parse, parseDocument, stringify } from "yaml";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const configQuery = useWorkspaceConfig(() => workspaceId);
@@ -191,11 +190,7 @@
   <div class="edit-content">
     <div class="title-row">
       <h1 class="edit-title">Edit Configuration</h1>
-      <Button
-        size="small"
-        disabled={!dirty || saving}
-        onclick={save}
-      >
+      <Button size="small" disabled={!dirty || saving} onclick={save}>
         {saving ? "Saving..." : "Save"}
       </Button>
     </div>
@@ -203,9 +198,7 @@
     {#if errorMessage}
       <div class="error-banner">
         <span class="error-text">{errorMessage}</span>
-        <button class="error-dismiss" onclick={() => (errorMessage = null)}>
-          &times;
-        </button>
+        <button class="error-dismiss" onclick={() => (errorMessage = null)}>&times;</button>
       </div>
     {/if}
 

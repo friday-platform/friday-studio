@@ -5,6 +5,7 @@ import type {
   SessionCompleteEvent,
   SessionStartEvent,
   StepCompleteEvent,
+  StepSkippedEvent,
   StepStartEvent,
 } from "./session-events.ts";
 import { buildSessionView, initialSessionView, reduceSessionEvent } from "./session-reducer.ts";
@@ -62,6 +63,16 @@ function sessionComplete(overrides?: Partial<SessionCompleteEvent>): SessionComp
     status: "completed",
     durationMs: 5000,
     timestamp: LATER,
+    ...overrides,
+  };
+}
+
+function stepSkipped(overrides?: Partial<StepSkippedEvent>): StepSkippedEvent {
+  return {
+    type: "step:skipped",
+    sessionId: "sess-1",
+    stateId: "review",
+    timestamp: NOW,
     ...overrides,
   };
 }
@@ -268,6 +279,28 @@ describe("step:start", () => {
     expect(dynamic).toMatchObject({ agentName: "editor", status: "running", stepNumber: 1 });
   });
 
+  test("captures event.timestamp as startedAt on the running block", () => {
+    const STEP_TIME = "2026-02-13T10:00:02.000Z";
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart({ timestamp: STEP_TIME }));
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.startedAt).toBe(STEP_TIME);
+  });
+
+  test("startedAt remains undefined when step:start has no timestamp (backward compat)", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    // Simulate a legacy event without timestamp by casting — the schema allows
+    // the field but older persisted events may lack it.
+    const legacyEvent = { ...stepStart(), timestamp: undefined } as unknown as StepStartEvent;
+    view = reduceSessionEvent(view, legacyEvent);
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.startedAt).toBeUndefined();
+  });
+
   test("duplicate agent names: matches first unmatched pending block", () => {
     let view = reduceSessionEvent(
       initialSessionView(),
@@ -467,6 +500,132 @@ describe("session:complete", () => {
     // No pending blocks existed, so no skipped blocks
     expect(view.agentBlocks.every((b) => b.status !== "skipped")).toBe(true);
     expect(view.agentBlocks.every((b) => b.status !== "pending")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// step:skipped
+// ---------------------------------------------------------------------------
+
+describe("step:skipped", () => {
+  test("transitions first pending block with matching stateId to skipped", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "fetcher", stateId: "fetch", task: "Fetch data", actionType: "agent" },
+          { agentName: "reviewer", stateId: "review", task: "Review", actionType: "llm" },
+          { agentName: "poster", stateId: "post", task: "Post results", actionType: "agent" },
+        ],
+      }),
+    );
+
+    view = reduceSessionEvent(view, stepSkipped({ stateId: "review" }));
+
+    const fetcher = view.agentBlocks[0];
+    const reviewer = view.agentBlocks[1];
+    const poster = view.agentBlocks[2];
+    expect.assert(fetcher !== undefined);
+    expect.assert(reviewer !== undefined);
+    expect.assert(poster !== undefined);
+    expect(fetcher.status).toBe("pending");
+    expect(reviewer.status).toBe("skipped");
+    expect(poster.status).toBe("pending");
+  });
+
+  test("no-op when stateId has no matching planned block", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "fetcher", stateId: "fetch", task: "Fetch data", actionType: "agent" },
+        ],
+      }),
+    );
+
+    view = reduceSessionEvent(view, stepSkipped({ stateId: "nonexistent" }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    const fetcher = view.agentBlocks[0];
+    expect.assert(fetcher !== undefined);
+    expect(fetcher.status).toBe("pending");
+  });
+
+  test("only transitions first matching pending block (duplicate stateIds)", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "review-1", stateId: "review", task: "First review", actionType: "agent" },
+          { agentName: "review-2", stateId: "review", task: "Second review", actionType: "agent" },
+        ],
+      }),
+    );
+
+    view = reduceSessionEvent(view, stepSkipped({ stateId: "review" }));
+
+    const first = view.agentBlocks[0];
+    const second = view.agentBlocks[1];
+    expect.assert(first !== undefined);
+    expect.assert(second !== undefined);
+    expect(first.status).toBe("skipped");
+    expect(second.status).toBe("pending");
+  });
+
+  test("skips only pending blocks, not running or completed", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "fetcher", stateId: "fetch", task: "Fetch", actionType: "agent" },
+          { agentName: "reviewer", stateId: "fetch", task: "Review", actionType: "agent" },
+        ],
+      }),
+    );
+
+    // Transition first block to running
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "fetcher" }));
+
+    // skip targets stateId "fetch" — first block is running, second is pending
+    view = reduceSessionEvent(view, stepSkipped({ stateId: "fetch" }));
+
+    const running = view.agentBlocks[0];
+    const skipped = view.agentBlocks[1];
+    expect.assert(running !== undefined);
+    expect.assert(skipped !== undefined);
+    expect(running.status).toBe("running");
+    expect(skipped.status).toBe("skipped");
+  });
+
+  test("session:complete still marks remaining pending blocks as skipped", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "fetcher", stateId: "fetch", task: "Fetch", actionType: "agent" },
+          { agentName: "reviewer", stateId: "review", task: "Review", actionType: "llm" },
+          { agentName: "poster", stateId: "post", task: "Post", actionType: "agent" },
+        ],
+      }),
+    );
+
+    // Skip review during run
+    view = reduceSessionEvent(view, stepSkipped({ stateId: "review" }));
+    // Execute fetch
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "fetcher" }));
+    view = reduceSessionEvent(view, stepComplete({ stepNumber: 1 }));
+    // Complete session — poster still pending, should become skipped
+    view = reduceSessionEvent(view, sessionComplete());
+
+    const fetcher = view.agentBlocks[0];
+    const reviewer = view.agentBlocks[1];
+    const poster = view.agentBlocks[2];
+    expect.assert(fetcher !== undefined);
+    expect.assert(reviewer !== undefined);
+    expect.assert(poster !== undefined);
+    expect(fetcher.status).toBe("completed");
+    expect(reviewer.status).toBe("skipped");
+    expect(poster.status).toBe("skipped");
   });
 });
 

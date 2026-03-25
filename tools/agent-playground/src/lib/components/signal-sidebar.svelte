@@ -15,10 +15,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { getDaemonClient } from "$lib/daemon-client";
 
-  type Props = {
-    node: TopologyNode;
-    workspaceId: string;
-  };
+  type Props = { node: TopologyNode; workspaceId: string };
 
   let { node, workspaceId }: Props = $props();
 
@@ -35,9 +32,7 @@
     queryKey: ["daemon", "workspace", workspaceId, "config", "signal", signalId],
     queryFn: async () => {
       const configClient = client.workspaceConfig(workspaceId);
-      const res = await configClient.signals[":signalId"].$get({
-        param: { signalId },
-      });
+      const res = await configClient.signals[":signalId"].$get({ param: { signalId } });
       if (!res.ok) throw new Error(`Failed to fetch signal: ${res.status}`);
       return res.json();
     },
@@ -51,9 +46,7 @@
     if (typeof c !== "object" || c === null) return null;
     return Object.fromEntries(Object.entries(c));
   });
-  const schema = $derived(
-    signal && "schema" in signal ? signal.schema : null,
-  );
+  const schema = $derived(signal && "schema" in signal ? signal.schema : null);
 
   let triggering = $state(false);
   let triggerError = $state<string | null>(null);
@@ -83,7 +76,9 @@
         return;
       }
       triggerSuccess = true;
-      setTimeout(() => { triggerSuccess = false; }, 3000);
+      setTimeout(() => {
+        triggerSuccess = false;
+      }, 3000);
     } catch (e) {
       triggerError = e instanceof Error ? e.message : "Trigger failed";
     } finally {

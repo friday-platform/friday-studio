@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from "@atlas/ui";
+  import { checkDaemonHealth, daemonHealth } from "$lib/daemon-health.svelte";
   import type { Snippet } from "svelte";
-  import { daemonHealth, checkDaemonHealth } from "$lib/daemon-health.svelte";
 
   const { children }: { children: Snippet } = $props();
 
@@ -72,5 +72,4 @@
       padding: var(--size-0-5) var(--size-1);
     }
   }
-
 </style>

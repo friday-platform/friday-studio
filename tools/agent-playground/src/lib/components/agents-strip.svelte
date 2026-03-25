@@ -38,12 +38,7 @@
   function linkCredentialKeys(agent: WorkspaceAgent): string[] {
     const keys: string[] = [];
     for (const [key, value] of Object.entries(agent.env)) {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        "from" in value &&
-        value.from === "link"
-      ) {
+      if (typeof value === "object" && value !== null && "from" in value && value.from === "link") {
         keys.push(key);
       }
     }

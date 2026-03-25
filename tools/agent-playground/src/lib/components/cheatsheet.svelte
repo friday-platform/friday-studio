@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { page } from "$app/state";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import { categories, isRelevant, relevanceScore } from "$lib/cheatsheet-commands";
   import type { Restty as ResttyType } from "restty";
 
@@ -80,7 +80,7 @@
     const OrigWS = window.WebSocket;
     window.WebSocket = function (...args: ConstructorParameters<typeof WebSocket>) {
       const ws = new OrigWS(...args);
-      const url = typeof args[0] === "string" ? args[0] : args[0]?.toString() ?? "";
+      const url = typeof args[0] === "string" ? args[0] : (args[0]?.toString() ?? "");
       if (url.includes("/pty")) {
         ptySocket = ws;
       }
@@ -98,11 +98,7 @@
 
     resttyInstance = new Restty({
       root: terminalContainer,
-      appOptions: {
-        renderer: "auto",
-        fontSize: 13,
-        autoResize: true,
-      },
+      appOptions: { renderer: "auto", fontSize: 13, autoResize: true },
     });
 
     // connectPty creates the WebSocket — our patched constructor captures it
@@ -168,8 +164,7 @@
     if (!terminalContainer) return;
     // restty captures keyboard via a hidden textarea or the canvas itself
     const target =
-      terminalContainer.querySelector("textarea") ??
-      terminalContainer.querySelector("canvas");
+      terminalContainer.querySelector("textarea") ?? terminalContainer.querySelector("canvas");
     if (target instanceof HTMLElement) {
       target.tabIndex = 0;
       target.focus();
@@ -195,10 +190,7 @@
           return true;
         });
         // Max relevance score across commands in this category
-        const score = cmds.reduce(
-          (best, cmd) => Math.max(best, relevanceScore(cmd, pathname)),
-          0,
-        );
+        const score = cmds.reduce((best, cmd) => Math.max(best, relevanceScore(cmd, pathname)), 0);
         return { ...cat, commands: cmds, score };
       })
       .filter((cat) => cat.commands.length > 0)
@@ -210,9 +202,7 @@
   );
 
   /** Flat list of visible commands for keyboard navigation */
-  const flatCommands = $derived(
-    filteredCategories.flatMap((cat) => cat.commands),
-  );
+  const flatCommands = $derived(filteredCategories.flatMap((cat) => cat.commands));
 
   /** Keyboard selection index (-1 = nothing selected) */
   let selectedIndex = $state(-1);
@@ -306,7 +296,6 @@
       onclose();
     }
   }
-
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -344,7 +333,8 @@
 
       {#if !showAllPages}
         <p class="context-hint">
-          Showing commands for <code>{pathname}</code> — toggle "Show all" for everything
+          Showing commands for <code>{pathname}</code>
+           — toggle "Show all" for everything
         </p>
       {/if}
     </header>
@@ -364,8 +354,17 @@
                 <div
                   class="command-row"
                   class:selected={flatIdx === selectedIndex}
-                  onclick={() => { selectedIndex = flatIdx; actOnSelected(); }}
-                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectedIndex = flatIdx; actOnSelected(); } }}
+                  onclick={() => {
+                    selectedIndex = flatIdx;
+                    actOnSelected();
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      selectedIndex = flatIdx;
+                      actOnSelected();
+                    }
+                  }}
                   role="option"
                   tabindex={flatIdx === selectedIndex ? 0 : -1}
                   aria-selected={flatIdx === selectedIndex}
@@ -377,7 +376,10 @@
                   <div class="command-actions">
                     <button
                       class="action-btn"
-                      onclick={(e) => { e.stopPropagation(); copyCommand(cmd.command); }}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        copyCommand(cmd.command);
+                      }}
                       title="Copy to clipboard"
                     >
                       Copy
@@ -385,7 +387,10 @@
                     {#if ptyAvailable && !cmd.copyOnly}
                       <button
                         class="action-btn run-btn"
-                        onclick={(e) => { e.stopPropagation(); dropToTerminal(cmd.command); }}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          dropToTerminal(cmd.command);
+                        }}
                         title="Drop to terminal"
                       >
                         Run
@@ -414,7 +419,15 @@
 
     <footer class="cheatsheet-footer">
       <span class="footer-hint">{totalVisible} commands</span>
-      <span class="footer-hint"><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate · <kbd>Enter</kbd> {ptyAvailable ? "run" : "copy"} · <kbd>Esc</kbd> close</span>
+      <span class="footer-hint">
+        <kbd>&uarr;</kbd>
+        <kbd>&darr;</kbd>
+        navigate ·
+        <kbd>Enter</kbd>
+        {ptyAvailable ? "run" : "copy"} ·
+        <kbd>Esc</kbd>
+         close
+      </span>
     </footer>
   </div>
 </div>

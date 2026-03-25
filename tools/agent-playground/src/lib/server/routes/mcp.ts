@@ -127,4 +127,3 @@ export const mcpRoute = new Hono()
 
     return c.json({ tools });
   });
-

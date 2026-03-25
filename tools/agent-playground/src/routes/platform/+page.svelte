@@ -1,25 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { createQuery } from "@tanstack/svelte-query";
-  import { getDaemonClient } from "$lib/daemon-client";
   import WorkspaceLoader from "$lib/components/workspace-loader.svelte";
+  import { useWorkspaces } from "$lib/queries/workspaces-list";
 
-  const HIDDEN_WORKSPACES = new Set(["atlas-conversation", "friday-conversation"]);
-
-  const client = getDaemonClient();
-
-  const workspacesQuery = createQuery(() => ({
-    queryKey: ["workspaces"],
-    queryFn: async () => {
-      const res = await client.workspace.index.$get();
-      if (!res.ok) throw new Error(`Failed to fetch workspaces: ${res.status}`);
-      return res.json();
-    },
-  }));
-
-  const visibleWorkspaces = $derived(
-    (workspacesQuery.data ?? []).filter((w) => !HIDDEN_WORKSPACES.has(w.id)),
-  );
+  const workspacesQuery = useWorkspaces();
+  const visibleWorkspaces = $derived(workspacesQuery.data ?? []);
 
   $effect(() => {
     if (visibleWorkspaces.length > 0 && visibleWorkspaces[0]) {

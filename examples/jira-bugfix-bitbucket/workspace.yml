@@ -1,19 +1,16 @@
 version: '1.0'
 workspace:
-  name: Jira Bug Fix Pipeline (Bitbucket)
+  name: Jira Bug Fix (Bitbucket)
   description: >-
-    Reads a Jira bug ticket via the Jira agent, clones the Bitbucket repository,
-    implements the fix using Claude Code, and creates a pull request on Bitbucket
-    with the fix.
+    Fixes bugs from Jira tickets. Reads the issue, implements a fix, and opens
+    a PR on Bitbucket.
 
 signals:
   fix-bug:
     provider: http
-    title: Fix a Jira Bug
+    title: Fix bug
     description: >-
-      Accepts a Jira issue key (e.g. PROJ-123) with label "bug" and triggers
-      an automated bug-fix pipeline: read the ticket, clone the repo, implement
-      the fix, and open a PR.
+      Fix a Jira bug ticket — read the issue, implement a fix, and open a PR.
     config:
       path: /webhooks/fix-bug
     schema:
@@ -38,35 +35,41 @@ agents:
     type: atlas
     agent: jira
     description: >-
-      Executes Jira Cloud operations: read issues, search with JQL, create
-      issues, transition statuses. Deterministic API calls only — no LLM needed.
+      Runs Jira Cloud API calls — read issues, search with JQL, create issues,
+      transition statuses.
     prompt: Execute Jira Cloud operation.
+    env:
+      JIRA_SITE: from_environment
+      JIRA_EMAIL: from_environment
+      JIRA_API_TOKEN: from_environment
 
   bb:
     type: atlas
     agent: bb
     description: >-
-      Executes Bitbucket Cloud operations: clone repos, create PRs.
-      Deterministic API calls only — no LLM needed.
+      Runs Bitbucket Cloud API calls — clone repos, push branches, create PRs.
     prompt: Execute Bitbucket Cloud operation.
+    env:
+      BITBUCKET_USERNAME: from_environment
+      BITBUCKET_TOKEN: from_environment
 
   claude-code:
     type: atlas
     agent: claude-code
     description: >-
-      Implements bug fixes in the cloned repository. Reads the bug description,
-      understands the codebase, writes the fix, and commits the changes on a
-      feature branch.
+      Implements bug fixes in a cloned repository. Reads the bug description,
+      explores the codebase, and commits a fix on a feature branch.
     prompt: >-
       You are a senior software engineer. Implement bug fixes based on the Jira
       ticket description. Write clean, well-tested code.
+    env:
+      ANTHROPIC_API_KEY: from_environment
 
 jobs:
   jira-bugfix:
-    title: Jira Bug Fix
+    title: Fix bug
     description: >-
-      End-to-end bug fix pipeline: read the Jira ticket, clone the Bitbucket
-      repo, implement the fix with Claude Code, and create a PR.
+      A committed fix on a feature branch with a PR opened on Bitbucket.
     triggers:
       - signal: fix-bug
     fsm:
@@ -246,6 +249,11 @@ jobs:
                   issue_key: issueKey,
                 },
               });
+
+              return {
+                task: 'Read Jira ticket ' + issueKey,
+                config: { operation: 'issue-view', issue_key: issueKey },
+              };
             }
 
         guard_ticket_done:
@@ -286,6 +294,11 @@ jobs:
                   repo_url: repoUrl,
                 },
               });
+
+              return {
+                task: 'Clone repository from ' + repoUrl,
+                config: { operation: 'repo-clone', repo_url: repoUrl },
+              };
             }
 
         guard_clone_done:
@@ -358,6 +371,11 @@ jobs:
                   repo_url: input.repo_url,
                 },
               });
+
+              return {
+                task: 'Push branch ' + fix.branch_name,
+                config: { operation: 'repo-push', branch: fix.branch_name, repo_url: input.repo_url },
+              };
             }
 
         guard_push_done:
@@ -401,6 +419,11 @@ jobs:
                   close_source_branch: true,
                 },
               });
+
+              return {
+                task: 'Create PR: ' + title,
+                config: { operation: 'pr-create', source_branch: fix.branch_name, issue_key: issueKey },
+              };
             }
 
         guard_pr_done:
@@ -436,6 +459,11 @@ jobs:
                   body: 'Pull request created by Friday: [PR #' + prNumber + '](' + prUrl + ')',
                 },
               });
+
+              return {
+                task: 'Comment on ticket ' + issueKey + ' with PR link',
+                config: { operation: 'issue-comment', issue_key: issueKey },
+              };
             }
 
         guard_ticket_updated:

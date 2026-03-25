@@ -63,10 +63,7 @@
       "entry": ["src/**/*.test.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
-    "apps/atlas-cli": {
-      "entry": ["src/cli.ts!", "src/cli.tsx!"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
-    },
+    "apps/atlas-cli": { "entry": ["src/cli.tsx!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlas-auth-ui": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!"],
@@ -104,7 +101,7 @@
       "project": ["**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/ui": {
-      "entry": ["src/lib/index.ts!", "src/routes/**/*.svelte!"],
+      "entry": ["src/routes/**/*.svelte!"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
       "paths": {
         "$lib": ["./src/lib"],
@@ -124,16 +121,7 @@
       }
     }
   },
-  "ignore": [
-    "**/*.d.ts",
-    "**/vendor/**",
-    "**/node_modules/**",
-    "**/.svelte-kit/**",
-    "**/dist/**",
-    "**/build/**",
-    "packages/vendor/**",
-    "**/$lib/build-info"
-  ],
+  "ignore": [],
   "ignoreDependencies": ["@types/deno"],
   "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },

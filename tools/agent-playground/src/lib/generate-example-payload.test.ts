@@ -23,12 +23,7 @@ describe("generateExamplePayload", () => {
     };
 
     const result = generateExamplePayload(schema);
-    expect(result).toEqual({
-      name: "<full name of the user>",
-      count: 0,
-      active: false,
-      tags: [],
-    });
+    expect(result).toEqual({ name: "<full name of the user>", count: 0, active: false, tags: [] });
   });
 
   it("uses description text before parenthetical as placeholder", () => {
@@ -37,7 +32,8 @@ describe("generateExamplePayload", () => {
       properties: {
         pr_url: {
           type: "string",
-          description: "Full GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)",
+          description:
+            "Full GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)",
         },
       },
     };
@@ -47,12 +43,7 @@ describe("generateExamplePayload", () => {
   });
 
   it("uses default value when present", () => {
-    const schema = {
-      type: "object",
-      properties: {
-        mode: { type: "string", default: "auto" },
-      },
-    };
+    const schema = { type: "object", properties: { mode: { type: "string", default: "auto" } } };
 
     expect(generateExamplePayload(schema)).toEqual({ mode: "auto" });
   });
@@ -60,19 +51,10 @@ describe("generateExamplePayload", () => {
   it("generates nested objects", () => {
     const schema = {
       type: "object",
-      properties: {
-        config: {
-          type: "object",
-          properties: {
-            verbose: { type: "boolean" },
-          },
-        },
-      },
+      properties: { config: { type: "object", properties: { verbose: { type: "boolean" } } } },
     };
 
-    expect(generateExamplePayload(schema)).toEqual({
-      config: { verbose: false },
-    });
+    expect(generateExamplePayload(schema)).toEqual({ config: { verbose: false } });
   });
 
   it("returns empty object when properties is missing", () => {

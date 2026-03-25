@@ -58,10 +58,7 @@
       }
     }
 
-    return [...groups.entries()].map(([dir, dirFiles]) => ({
-      dir,
-      files: dirFiles.sort(),
-    }));
+    return [...groups.entries()].map(([dir, dirFiles]) => ({ dir, files: dirFiles.sort() }));
   });
 
   // Collapsed directories within the file tree
@@ -126,11 +123,7 @@
       {@const name = skill.name ?? ""}
       {@const expanded = isExpanded(ns, name)}
       <div class="skill-node">
-        <button
-          class="skill-trigger"
-          class:expanded
-          onclick={() => handleSkillClick(ns, name)}
-        >
+        <button class="skill-trigger" class:expanded onclick={() => handleSkillClick(ns, name)}>
           <span class="caret" class:caret-expanded={expanded}>&#9662;</span>
           <span class="skill-label">@{ns}/{name}</span>
           {#if skill.disabled}
@@ -158,11 +151,10 @@
             {:else}
               {#each fileTree as group}
                 {#if group.dir}
-                  <button
-                    class="dir-trigger"
-                    onclick={() => toggleDir(group.dir)}
-                  >
-                    <span class="caret" class:caret-expanded={!collapsedDirs.has(group.dir)}>&#9662;</span>
+                  <button class="dir-trigger" onclick={() => toggleDir(group.dir)}>
+                    <span class="caret" class:caret-expanded={!collapsedDirs.has(group.dir)}>
+                      &#9662;
+                    </span>
                     {group.dir}
                   </button>
                 {/if}

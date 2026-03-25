@@ -1,41 +1,25 @@
 <script lang="ts">
   import { Collapsible, IconSmall } from "@atlas/ui";
   import { page } from "$app/state";
-  import { createQuery } from "@tanstack/svelte-query";
-  import { getDaemonClient } from "$lib/daemon-client";
-  import { daemonHealth } from "$lib/daemon-health.svelte";
   import WorkspaceLoader from "$lib/components/workspace-loader.svelte";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
-
-  const HIDDEN_WORKSPACES = new Set(["atlas-conversation", "friday-conversation"]);
+  import { daemonHealth } from "$lib/daemon-health.svelte";
+  import { useWorkspaces } from "$lib/queries/workspaces-list";
 
   const pathname = $derived(page.url.pathname);
+  /** Workspace ID from route param (platform pages). */
   const activeWorkspaceId = $derived(page.params.workspaceId as string | undefined);
 
   let showLoader = $state(false);
   let showTooltip = $state(false);
 
-  const client = getDaemonClient();
-
-  const workspacesQuery = createQuery(() => ({
-    queryKey: ["workspaces"],
-    queryFn: async () => {
-      const res = await client.workspace.index.$get();
-      if (!res.ok) throw new Error(`Failed to fetch workspaces: ${res.status}`);
-      return res.json();
-    },
-    refetchInterval: 10_000,
-  }));
-
-  const visibleWorkspaces = $derived(
-    (workspacesQuery.data ?? []).filter((w) => !HIDDEN_WORKSPACES.has(w.id)),
-  );
+  const workspacesQuery = useWorkspaces();
+  const visibleWorkspaces = $derived(workspacesQuery.data ?? []);
 
   type NavItem = { label: string; href: string };
 
   const toolLinks: NavItem[] = [
-    { label: "Agent Tester", href: "/agents/bundled" },
-    { label: "Inspector", href: "/workspaces" },
+    { label: "Agent Tester", href: "/agents/built-in" },
+    { label: "Job Inspector", href: "/inspector" },
     { label: "Skills", href: "/skills" },
   ];
 
@@ -56,12 +40,6 @@
     return COLORS[color ?? "yellow"] ?? COLORS["yellow"] ?? "#facc15";
   }
 
-  const activeConfigQuery = useWorkspaceConfig(() => activeWorkspaceId ?? null);
-
-  /** Config-defined workspace name for the active workspace (e.g. "PR Code Review Pipeline"). */
-  const activeWorkspaceTitle = $derived(
-    (activeConfigQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined,
-  );
 </script>
 
 <nav class="sidebar">
@@ -108,13 +86,11 @@
           {#each visibleWorkspaces as ws (ws.id)}
             {@const active = activeWorkspaceId === ws.id}
             <li>
-              <a
-                href="/platform/{ws.id}"
-                class="nav-item"
-                class:active
-              >
+              <a href="/platform/{ws.id}" class="nav-item" class:active>
                 <span class="dot" style:background-color={dotColor(ws.metadata?.color)}></span>
-                <span class="text">{active && activeWorkspaceTitle ? activeWorkspaceTitle : ws.name}</span>
+                <span class="text">
+                  {ws.displayName}
+                </span>
               </a>
 
               {#if active}
@@ -122,19 +98,31 @@
                 {@const isBase = pathname === base || pathname === `${base}/`}
                 {@const subPages = [
                   { label: "Overview", href: base, isActive: isBase },
-                  { label: "Agents", href: `${base}/agents`, isActive: pathname.startsWith(`${base}/agents`) },
-                  { label: "Skills", href: `${base}/skills`, isActive: pathname.startsWith(`${base}/skills`) },
-                  { label: "Jobs", href: `${base}/jobs`, isActive: pathname.startsWith(`${base}/jobs`) },
-                  { label: "Runs", href: `${base}/sessions`, isActive: pathname.startsWith(`${base}/sessions`) },
+                  {
+                    label: "Agents",
+                    href: `${base}/agents`,
+                    isActive: pathname.startsWith(`${base}/agents`),
+                  },
+                  {
+                    label: "Skills",
+                    href: `${base}/skills`,
+                    isActive: pathname.startsWith(`${base}/skills`),
+                  },
+                  {
+                    label: "Jobs",
+                    href: `${base}/jobs`,
+                    isActive: pathname.startsWith(`${base}/jobs`),
+                  },
+                  {
+                    label: "Runs",
+                    href: `${base}/sessions`,
+                    isActive: pathname.startsWith(`${base}/sessions`),
+                  },
                 ]}
                 <ul class="sub-nav">
                   {#each subPages as sub (sub.label)}
                     <li>
-                      <a
-                        href={sub.href}
-                        class="nav-item"
-                        class:active={sub.isActive}
-                      >
+                      <a href={sub.href} class="nav-item" class:active={sub.isActive}>
                         {sub.label}
                       </a>
                     </li>
@@ -147,10 +135,22 @@
           <li>
             <button
               class="nav-item as-button"
-              onclick={() => { showLoader = !showLoader; }}
+              onclick={() => {
+                showLoader = !showLoader;
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6.625 3.875H5.1125C4.42905 3.875 3.875 4.42905 3.875 5.1125V6.625M12.125 9.375V10.8875C12.125 11.571 11.571 12.125 10.8875 12.125H9.375M9.375 3.875H10.8875C11.571 3.875 12.125 4.42905 12.125 5.1125V6.625M6.625 12.125H5.1125C4.42905 12.125 3.875 11.571 3.875 10.8875V9.375" stroke="currentColor" stroke-linecap="round" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M6.625 3.875H5.1125C4.42905 3.875 3.875 4.42905 3.875 5.1125V6.625M12.125 9.375V10.8875C12.125 11.571 11.571 12.125 10.8875 12.125H9.375M9.375 3.875H10.8875C11.571 3.875 12.125 4.42905 12.125 5.1125V6.625M6.625 12.125H5.1125C4.42905 12.125 3.875 11.571 3.875 10.8875V9.375"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                />
               </svg>
               Add Space
             </button>
@@ -171,11 +171,7 @@
         <ul class="section-list">
           {#each toolLinks as link (link.href)}
             <li>
-              <a
-                href={link.href}
-                class="nav-item"
-                class:active={isToolActive(link.href)}
-              >
+              <a href={link.href} class="nav-item" class:active={isToolActive(link.href)}>
                 {link.label}
               </a>
             </li>
@@ -188,7 +184,11 @@
 
 {#if showLoader}
   <div class="loader-overlay" role="dialog" aria-label="Load workspace">
-    <WorkspaceLoader onclose={() => { showLoader = false; }} />
+    <WorkspaceLoader
+      onclose={() => {
+        showLoader = false;
+      }}
+    />
   </div>
 {/if}
 

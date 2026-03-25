@@ -68,7 +68,6 @@ describe("runFSM — csv-analysis-reporter", () => {
     );
     expect(documentAssertions).toHaveLength(0);
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -170,6 +169,74 @@ describe("runFSM — llm actions", () => {
     expect(ticketDetails).toHaveProperty("title");
     expect(ticketDetails).toHaveProperty("description");
     expect(ticketDetails).toHaveProperty("acceptance_criteria");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real executor mode (agentExecutor provided)
+// ---------------------------------------------------------------------------
+
+describe("runFSM — real executor mode", () => {
+  it("uses provided agentExecutor instead of mock", async () => {
+    const calls: string[] = [];
+
+    // Schema-compliant stub data per output document. The FSMEngine validates
+    // agent output against the compiled document-type schema, so the custom
+    // executor must return data that matches the expected shape.
+    const stubByOutputTo: Record<string, Record<string, unknown>> = {
+      "analysis-output": {
+        summary: "real-analysis",
+        queries: [
+          {
+            sql: "SELECT 1",
+            success: true,
+            rowCount: 1,
+            error: "",
+            durationMs: 10,
+            tool: "execute_sql",
+          },
+        ],
+      },
+      "email-confirmation": { response: "real-email-sent" },
+    };
+
+    const customExecutor = (
+      action: { agentId: string; outputTo?: string },
+      _context: unknown,
+      _signal: unknown,
+    ) => {
+      calls.push(action.agentId);
+      return Promise.resolve({
+        ok: true as const,
+        agentId: action.agentId,
+        timestamp: new Date().toISOString(),
+        input: {},
+        data: action.outputTo ? (stubByOutputTo[action.outputTo] ?? {}) : {},
+        durationMs: 100,
+      });
+    };
+
+    const report = await runFSM({
+      fsm,
+      plan: phase3,
+      triggerSignal: "csv-uploaded",
+      agentExecutor: customExecutor,
+    });
+
+    // Custom executor should have been called for each agent step
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls).toContain("csv-data-analyst");
+
+    // Results should contain our custom data, NOT mock_ prefixed stubs
+    expect(report.success).toBe(true);
+    const completedResults = report.resultSnapshots.completed;
+    expect(completedResults).toBeDefined();
+    if (!completedResults) throw new Error("Expected completed results");
+
+    const analysisOutput = completedResults["analysis-output"];
+    expect(analysisOutput).toBeDefined();
+    // Custom executor returns schema-compliant data, not mock_ stubs
+    expect(analysisOutput).toHaveProperty("summary", "real-analysis");
   });
 });
 

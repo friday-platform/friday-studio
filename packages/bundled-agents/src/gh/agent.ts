@@ -269,6 +269,8 @@ export const ghAgent = createAgent<string, GhOutput>({
   id: "gh",
   displayName: "GitHub CLI",
   version: "1.0.0",
+  summary:
+    "Execute structured operations against the GitHub CLI — clone repos, view PRs, fetch diffs, and post reviews.",
   description: [
     "<role>",
     "You are a deterministic GitHub CLI agent. You execute structured operations against the",
@@ -407,6 +409,7 @@ export const ghAgent = createAgent<string, GhOutput>({
     ],
   },
   outputSchema: GhOutputSchema,
+  inputSchema: OperationConfigSchema as unknown as z.ZodSchema<string>,
   environment: {
     required: [
       {

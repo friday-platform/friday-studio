@@ -30,6 +30,7 @@ import {
   mapActionToStepComplete,
   mapActionToStepStart,
   mapFsmEventToSessionEvent,
+  mapStateSkippedToStepSkipped,
   ReasoningResultStatus,
   SessionHistoryStorage,
   type SessionStreamEvent,
@@ -50,6 +51,7 @@ import {
   FSMDefinitionSchema,
   type FSMEngine,
   type FSMEvent,
+  type FSMStateSkippedEvent,
   type SignalWithContext,
   validateFSMStructure,
 } from "@atlas/fsm-engine";
@@ -601,6 +603,7 @@ export class WorkspaceRuntime {
     signal: WorkspaceRuntimeSignal,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     abortSignal?: AbortSignal,
+    skipStates?: string[],
   ): Promise<IWorkspaceSession> {
     await this.ensureInitialized();
 
@@ -643,7 +646,13 @@ export class WorkspaceRuntime {
     await this.initializeJobEngine(job);
 
     // Process signal through job's FSM engine
-    const sessionResult = await this.processSignalForJob(job, signal, onStreamEvent, abortSignal);
+    const sessionResult = await this.processSignalForJob(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
 
     return this.finalizeSession(sessionResult, job, signal);
   }
@@ -656,6 +665,7 @@ export class WorkspaceRuntime {
     signal: WorkspaceRuntimeSignal,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     abortSignal?: AbortSignal,
+    skipStates?: string[],
   ): Promise<SessionResult> {
     if (!job.engine) {
       throw new Error(`Job ${job.name} engine not initialized`);
@@ -779,6 +789,7 @@ export class WorkspaceRuntime {
           sessionId: session.id,
           workspaceId: this.workspace.id,
           abortSignal,
+          skipStates,
           // FSM lifecycle events only (state transitions, action executions, tool calls/results)
           onEvent: (event) => {
             // Forward FSM events to the stream as converted chunks
@@ -809,12 +820,20 @@ export class WorkspaceRuntime {
                 if (actionEvent.data.llmResult) {
                   agentResult = actionEvent.data.llmResult;
                 } else {
-                  const sideChannelKey = `${actionEvent.data.jobName}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
+                  // Side-channel key must use job.name (workspace-level key) to match
+                  // what executeAgent stores — NOT actionEvent.data.jobName which is
+                  // the FSM definition's id (may differ from the workspace job key).
+                  const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
                   agentResult = sideChannel.get(sideChannelKey);
                   sideChannel.delete(sideChannelKey);
                 }
                 sessionStream.emit(mapActionToStepComplete(actionEvent, agentResult, stepCounter));
               }
+            }
+
+            // Session history v2: map skipped states to step:skipped events
+            if (sessionStream && event.type === "data-fsm-state-skipped") {
+              sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
             }
           },
           // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
@@ -1388,6 +1407,7 @@ export class WorkspaceRuntime {
     payload?: Record<string, unknown>,
     _streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    skipStates?: string[],
   ): Promise<IWorkspaceSession> {
     const signal: WorkspaceRuntimeSignal = {
       id: signalName,
@@ -1396,7 +1416,7 @@ export class WorkspaceRuntime {
       timestamp: new Date(),
     };
 
-    return await this.processSignal(signal, onStreamEvent);
+    return await this.processSignal(signal, onStreamEvent, undefined, skipStates);
   }
 
   /**

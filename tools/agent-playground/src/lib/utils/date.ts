@@ -25,8 +25,18 @@ export function formatDuration(startMs: number, endMs: number): string {
 export function formatSessionDate(dateString: string | number): string {
   const date = new Date(dateString);
   const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   const month = monthNames[date.getMonth()];

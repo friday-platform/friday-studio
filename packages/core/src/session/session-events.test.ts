@@ -296,6 +296,16 @@ describe("SessionStreamEventSchema", () => {
     expect(result.type).toBe("step:complete");
   });
 
+  test("parses step:skipped", () => {
+    const result = SessionStreamEventSchema.parse({
+      type: "step:skipped",
+      sessionId: "sess-1",
+      stateId: "review",
+      timestamp: NOW,
+    });
+    expect(result.type).toBe("step:skipped");
+  });
+
   test("parses session:complete", () => {
     const result = SessionStreamEventSchema.parse(validSessionComplete());
     expect(result.type).toBe("session:complete");

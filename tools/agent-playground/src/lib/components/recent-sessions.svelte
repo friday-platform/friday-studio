@@ -3,10 +3,10 @@
   Shows last 5 runs with status indicator, timestamp, and duration.
 -->
 <script lang="ts">
+  import { SessionSummarySchema, type SessionSummary } from "@atlas/core/session/session-events";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { getDaemonClient } from "$lib/daemon-client";
-  import { type SessionSummary, SessionSummarySchema } from "@atlas/core/session/session-events";
-  import { createQuery } from "@tanstack/svelte-query";
   import { z } from "zod";
 
   const { workspaceId }: { workspaceId: string } = $props();
@@ -78,7 +78,12 @@
           class:failed={session.status === "failed"}
           onclick={() => navigateToSession(session.sessionId)}
         >
-          <span class="status-dot" class:dot-active={session.status === "active"} class:dot-failed={session.status === "failed"} class:dot-completed={session.status === "completed"}></span>
+          <span
+            class="status-dot"
+            class:dot-active={session.status === "active"}
+            class:dot-failed={session.status === "failed"}
+            class:dot-completed={session.status === "completed"}
+          ></span>
           <span class="session-name">{session.jobName}</span>
           <span class="session-time">{formatTime(session.startedAt)}</span>
           <span class="session-duration">{formatDuration(session.durationMs)}</span>

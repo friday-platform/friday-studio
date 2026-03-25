@@ -45,9 +45,9 @@ BITBUCKET_USERNAME=your-username
 BITBUCKET_TOKEN=your-app-password
 
 # Required for the Jira bug fix example
-JIRA_HOST=your-site.atlassian.net
+JIRA_SITE=your-site.atlassian.net
 JIRA_EMAIL=you@example.com
-JIRA_TOKEN=your-api-token
+JIRA_API_TOKEN=your-api-token
 
 # Optional — only needed for the GitHub PR review example
 GH_TOKEN=ghp_...
@@ -65,19 +65,37 @@ services:
   platform:
     image: FIXME  # replace with registry URL, e.g. ghcr.io/tempestteam/atlas-platform:latest
     ports:
-      - "8080:8080"  # Platform API
-      - "3100:3100"  # Link (credential service)
-      - "5200:5200"  # Friday Playground
-      - "7681:7681"  # Terminal
+      - "8080:8080"  # atlasd daemon API
+      - "3100:3100"  # link (credential/auth service)
+      - "5200:5200"  # agent-playground (web UI)
+      - "7681:7681"  # pty-server (WebSocket PTY)
+      - "9090:9090"  # webhook-tunnel
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      ATLAS_LOG_LEVEL: ${ATLAS_LOG_LEVEL:-info}
     volumes:
-      - friday-data:/data/atlas
+      - atlas-data:/data/atlas
       - link-data:/data/link
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - >
+          curl -sf http://localhost:8080/health &&
+          curl -sf http://localhost:3100/health &&
+          curl -sf http://localhost:7681/health &&
+          curl -sf http://localhost:9090/health
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
 
 volumes:
-  friday-data:
+  atlas-data:
   link-data:
 ```
 
@@ -95,6 +113,9 @@ Wait for the startup banner:
 
   Friday Playground:   http://localhost:5200
   Daemon API:          http://localhost:8080
+  Webhook Tunnel:      http://localhost:9090
+  Link Service:        http://localhost:3100
+  PTY Server:          http://localhost:7681
 ================================================================
 ```
 
@@ -102,7 +123,7 @@ Open **http://localhost:5200** in your browser.
 
 ## 4. Add an example space
 
-Your Friday distribution comes with three example spaces you can try right away.
+Your Friday distribution comes with four example spaces you can try right away.
 Each one is a `workspace.yml` that defines a complete agentic workflow — agents,
 jobs, signals, and data contracts all in one file.
 
@@ -111,8 +132,8 @@ jobs, signals, and data contracts all in one file.
 | Example | What it does | Required `.env` keys |
 | ------- | ------------ | -------------------- |
 | [Bitbucket PR Code Review](../examples/pr-review-bitbucket/workspace.yml) | Clones a Bitbucket repo, reviews the PR diff with Claude Code, posts inline comments back on the PR | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN` |
-| [Jira Bug Fix](../examples/jira-bugfix-bitbucket/workspace.yml) | Reads a Jira bug ticket, clones the Bitbucket repo, implements the fix with Claude Code, opens a PR, and comments on the Jira ticket with the PR link | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_HOST`, `JIRA_EMAIL`, `JIRA_TOKEN` |
-| [Jira Labeled Bug Fix](../examples/jira-bugfix-labeled/workspace.yml) | Searches a Jira project for tickets labeled `ai-fix`, picks the highest-priority one, claims it, implements the fix, creates a PR, and transitions the ticket to Done | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_HOST`, `JIRA_EMAIL`, `JIRA_TOKEN` |
+| [Jira Bug Fix](../examples/jira-bugfix-bitbucket/workspace.yml) | Reads a Jira bug ticket, clones the Bitbucket repo, implements the fix with Claude Code, opens a PR, and comments on the Jira ticket with the PR link | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
+| [Jira Labeled Bug Fix](../examples/jira-bugfix-labeled/workspace.yml) | Searches a Jira project for tickets labeled `ai-fix`, picks the highest-priority one, claims it, implements the fix, creates a PR, and transitions the ticket to Done | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
 | [GitHub PR Code Review](../examples/pr-review/workspace.yml) | Same as the Bitbucket review, but for GitHub PRs | `ANTHROPIC_API_KEY`, `GH_TOKEN` |
 
 ### Load via the UI
@@ -129,28 +150,63 @@ jobs, signals, and data contracts all in one file.
 
 ### Load via the API
 
-You can also load one of the bundled examples directly from the container:
+You can also load a workspace by posting its parsed YAML config:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces \
+# Parse the YAML and POST it
+CONFIG=$(python3 -c "import yaml,json; print(json.dumps(yaml.safe_load(open('pr-review-bitbucket/workspace.yml'))))")
+curl -s -X POST http://localhost:8080/api/workspaces/create \
   -H 'Content-Type: application/json' \
-  -d '{"source": "file", "path": "/app/examples/pr-review-bitbucket/workspace.yml"}'
+  -d "{\"config\":$CONFIG,\"workspaceName\":\"PR Code Review (Bitbucket)\"}"
 ```
 
-Replace the path with the example you want:
-- `/app/examples/pr-review-bitbucket/workspace.yml`
-- `/app/examples/jira-bugfix-bitbucket/workspace.yml`
-- `/app/examples/jira-bugfix-labeled/workspace.yml`
-- `/app/examples/pr-review/workspace.yml`
+## 5. Publish skills
 
-## 5. Trigger a job
+The PR review examples use the `@tempest/pr-code-review` skill, which must be
+published before running those workspaces. Each example includes a `skill/`
+directory with the skill content.
 
-Once a space is loaded, kick off a job by sending a signal. Signals are how
-external events reach your Friday jobs — in this case, an HTTP webhook.
+### Publish via the UI
+
+1. Open **http://localhost:5200** and click **Skills** in the sidebar
+2. Drag the entire `skill/` folder (containing `SKILL.md` and `references/`)
+   onto the drop zone, or click **Browse** to select the folder. Dropping the
+   folder ensures the reference files (`references/*.md`) are included in the
+   skill archive — dropping just `SKILL.md` alone would publish the
+   instructions without the reference materials.
+3. The skill appears in the catalog once published
+
+![Skills page](images/skills-page.png)
+
+### Publish via the API
+
+```bash
+tar czf /tmp/pr-code-review.tar.gz -C pr-review/skill .
+curl -X POST http://localhost:8080/api/skills/@tempest/pr-code-review/upload \
+  -F "archive=@/tmp/pr-code-review.tar.gz" \
+  -F "skillMd=$(cat pr-review/skill/SKILL.md)"
+```
+
+The Jira examples don't use skills — skip this step if you're only running
+those.
+
+## 6. Trigger a job
+
+Once a space is loaded, kick off a job by sending a signal.
+
+### Trigger via the UI
+
+Click into your space, find the job you want to run, and click **Run**. The
+playground prompts you for the required input fields (e.g. a pull request URL
+or Jira issue key), then starts the pipeline.
+
+![Trigger job dialog](images/trigger-job.png)
+
+### Trigger via the API
 
 Replace `<workspace-id>` with the ID returned from step 4.
 
-### Bitbucket PR Review
+#### Bitbucket PR Review
 
 ```bash
 curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-pr \
@@ -162,7 +218,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
   }'
 ```
 
-### Jira Bug Fix (specific ticket)
+#### Jira Bug Fix (specific ticket)
 
 ```bash
 curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/fix-bug \
@@ -175,7 +231,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/fix-bug
   }'
 ```
 
-### Jira Labeled Bug Fix (auto-pick from backlog)
+#### Jira Labeled Bug Fix (auto-pick from backlog)
 
 Searches for tickets with the `ai-fix` label in "To Do" status, picks the
 highest-priority one, and runs the full fix pipeline.
@@ -191,7 +247,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/process
   }'
 ```
 
-### GitHub PR Review
+#### GitHub PR Review
 
 ```bash
 curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-pr \
@@ -203,7 +259,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
   }'
 ```
 
-## 6. Watch it run
+## 7. Watch it run
 
 After triggering a signal:
 
@@ -220,32 +276,45 @@ ticket, the Bitbucket agent clones the repo, Claude Code implements the fix,
 the Bitbucket agent creates a PR, and the Jira agent comments on the ticket with
 the PR link.
 
-## 7. Connect external webhooks
+## 8. Connect external webhooks
 
 The platform includes a webhook tunnel that creates a public URL via
 Cloudflare, so GitHub or Bitbucket can send webhooks directly to your
 Friday instance — even when running locally.
 
-The tunnel starts automatically. Check the startup logs for the public URL:
+The tunnel starts automatically. Open any space in the playground — each HTTP
+signal shows the full webhook URL for your configured providers (GitHub,
+Bitbucket, Jira).
 
-```
-docker compose logs | grep "Public URL"
-```
-
-Or open any space in the playground — each HTTP signal shows the webhook URL
-for your configured providers (GitHub, Bitbucket). Click the URL to see the
-setup dialog with the webhook secret.
+![Webhook URLs in signals section](images/webhook-url.png)
 
 ### Register the webhook
 
 1. Open your space in the playground
 2. Find the signal you want to trigger (e.g. `review-pr`)
-3. Click the webhook URL line (e.g. "Bitbucket https://...trycloudflare.com/...")
-4. Copy the **Webhook URL** and **Secret** from the dialog
-5. In your GitHub or Bitbucket repo settings, add a webhook:
+3. Copy the webhook URL shown under the signal (e.g.
+   `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
+5. In your repo or project settings, add a webhook:
+
+   **GitHub:**
+   - **URL**: paste the webhook URL
+   - **Content type**: select **`application/json`** (required — the default
+     `application/x-www-form-urlencoded` will not work)
+   - **Secret**: paste the secret
+   - **Events**: select "Pull requests"
+
+   **Bitbucket:**
    - **URL**: paste the webhook URL
    - **Secret**: paste the secret
-   - **Events**: select "Pull requests" (or the relevant event)
+   - **Events**: select "Pull Request — Created" (and optionally "Updated")
+   - Content type is always `application/json` — no selector needed
+
+   **Jira:**
+   - **URL**: paste the webhook URL
+   - **Secret**: paste the secret (Jira signs payloads with HMAC via the
+     `X-Hub-Signature` header)
+   - **Events**: select the relevant issue events (e.g. "Issue — updated")
+   - Content type is always `application/json` — no selector needed
 
 Now when a PR is opened in your repo, the webhook fires → tunnel receives it
 → transforms the payload → triggers the signal → your pipeline runs.
@@ -286,7 +355,8 @@ container was restarted after adding it (`docker compose down && docker compose 
 `.env` have the right permissions:
 - **Bitbucket:** App password with `repository:read`, `repository:write`, and
   `pullrequest:write`
-- **Jira:** API token from https://id.atlassian.com/manage-profile/security/api-tokens
+- **Jira:** `JIRA_API_TOKEN` from https://id.atlassian.com/manage-profile/security/api-tokens,
+  `JIRA_SITE` is just the hostname (e.g. `acme.atlassian.net`)
 - **GitHub:** `repo` scope for private repos, or just public repo access
 
 **Logs:** View service logs with:

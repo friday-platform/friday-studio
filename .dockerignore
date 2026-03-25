@@ -48,7 +48,7 @@ Thumbs.db
 # Development scripts
 scripts/
 
-# Examples and demos (keep only essential ones)
+# Examples shipped separately (zip download), not baked into Docker image
 examples/
 specs/
 

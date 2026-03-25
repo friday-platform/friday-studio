@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { NotificationPortal } from "@atlas/ui";
+  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
   import "../app.css";
-  import Sidebar from "$lib/components/sidebar.svelte";
   import Cheatsheet from "$lib/components/cheatsheet.svelte";
+  import Sidebar from "$lib/components/sidebar.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
 
   const { children } = $props();
@@ -29,12 +29,7 @@
   }
 
   const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        enabled: browser,
-        refetchOnReconnect: true,
-      },
-    },
+    defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },
   });
 </script>
 
@@ -56,7 +51,11 @@
 </QueryClientProvider>
 
 {#if cheatsheetOpen}
-  <Cheatsheet onclose={() => { cheatsheetOpen = false; }} />
+  <Cheatsheet
+    onclose={() => {
+      cheatsheetOpen = false;
+    }}
+  />
 {/if}
 
 <NotificationPortal />

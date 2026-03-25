@@ -37,12 +37,12 @@
     },
   }));
 
-  const workspace = $derived(
-    (workspacesQuery.data ?? []).find((w) => w.id === workspaceId),
-  );
+  const workspace = $derived((workspacesQuery.data ?? []).find((w) => w.id === workspaceId));
   const configQuery = useWorkspaceConfig(() => workspaceId);
   const configTitle = $derived(
-    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined,
+    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as
+      | string
+      | undefined,
   );
   const workspaceName = $derived(configTitle ?? workspace?.name ?? workspaceId);
   const workspaceColor = $derived(
@@ -50,9 +50,7 @@
   );
 
   const sectionSlug = $derived(section?.toLowerCase());
-  const sectionPath = $derived(
-    sectionSlug ? `/platform/${workspaceId}/${sectionSlug}` : null,
-  );
+  const sectionPath = $derived(sectionSlug ? `/platform/${workspaceId}/${sectionSlug}` : null);
   // `<` always goes one level up: if we're deeper than the section page, go to section; otherwise go to workspace
   const backHref = $derived.by(() => {
     if (!sectionPath) return `/platform/${workspaceId}`;
@@ -68,8 +66,20 @@
 
 <nav class="breadcrumb-bar">
   <a class="caret-link" href={backHref}>
-    <svg class="caret" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M9.24976 10.75L6.74976 8.25L9.24976 5.75" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
+    <svg
+      class="caret"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M9.24976 10.75L6.74976 8.25L9.24976 5.75"
+        stroke="currentColor"
+        stroke-width="1.25"
+        stroke-linecap="round"
+      />
     </svg>
   </a>
   <a class="crumb workspace" href="/platform/{workspaceId}">

@@ -86,6 +86,7 @@ export const emailAgent = createAgent<string, EmailOutput>({
   id: "email",
   displayName: "Email",
   version: "1.0.0",
+  summary: "Compose and send HTML emails via SendGrid with template support and file attachments.",
   description:
     "Send emails via SendGrid API. Composes HTML email from provided data/context with template support and file attachments. USE FOR: sending notification emails, status updates, reports, or alerts.",
   constraints:

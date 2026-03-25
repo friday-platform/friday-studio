@@ -58,7 +58,7 @@
   {:else if topology}
     <div class="session-list">
       {#each sortedSessions as session (session.sessionId)}
-        <SessionProgressCard {session} {topology} workspaceId={workspaceId} />
+        <SessionProgressCard {session} {topology} {workspaceId} />
       {/each}
     </div>
   {:else}

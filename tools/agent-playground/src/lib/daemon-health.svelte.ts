@@ -9,10 +9,7 @@
  * @module
  */
 
-type DaemonHealthState = {
-  connected: boolean;
-  loading: boolean;
-};
+type DaemonHealthState = { connected: boolean; loading: boolean };
 
 // Svelte 5 $state() runes require `let` for reactivity
 // deno-lint-ignore prefer-const

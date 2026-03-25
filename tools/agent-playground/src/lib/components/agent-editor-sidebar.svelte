@@ -14,36 +14,25 @@
 -->
 
 <script lang="ts">
-  import type { TopologyNode } from "@atlas/config";
-  import type { WorkspaceConfig } from "@atlas/config";
+  import type { TopologyNode, WorkspaceConfig } from "@atlas/config";
   import { deriveAllEntryActions } from "@atlas/config/entry-actions";
-  import { getDaemonClient } from "$lib/daemon-client";
   import { useQueryClient } from "@tanstack/svelte-query";
+  import { getDaemonClient } from "$lib/daemon-client";
   import { z } from "zod";
 
-  type Props = {
-    node: TopologyNode;
-    workspaceId: string;
-    config: WorkspaceConfig | null;
-  };
+  type Props = { node: TopologyNode; workspaceId: string; config: WorkspaceConfig | null };
 
   let { node, workspaceId, config }: Props = $props();
 
   const queryClient = useQueryClient();
   const client = getDaemonClient();
 
-  const agentType = $derived(
-    node.metadata.type === "agent" ? "agent" : "llm",
-  );
+  const agentType = $derived(node.metadata.type === "agent" ? "agent" : "llm");
   const agentId = $derived(node.id);
   const isLLM = $derived(agentType === "llm");
 
-  let prompt = $derived(
-    typeof node.metadata.prompt === "string" ? node.metadata.prompt : "",
-  );
-  let model = $derived(
-    typeof node.metadata.model === "string" ? node.metadata.model : "",
-  );
+  let prompt = $derived(typeof node.metadata.prompt === "string" ? node.metadata.prompt : "");
+  let model = $derived(typeof node.metadata.model === "string" ? node.metadata.model : "");
   let saving = $state(false);
   let saveError = $state<string | null>(null);
 
@@ -105,10 +94,7 @@
         ? { type: "llm" as const, ...updates }
         : { type: "agent" as const, ...updates };
 
-      const res = await configClient.agents[":agentId"].$put({
-        param: { agentId },
-        json: body,
-      });
+      const res = await configClient.agents[":agentId"].$put({ param: { agentId }, json: body });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -118,9 +104,7 @@
       }
 
       // Invalidate config cache so diagram and sidebar refetch
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", workspaceId, "config"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", workspaceId, "config"] });
     } catch (e) {
       saveError = e instanceof Error ? e.message : "Save failed";
     } finally {

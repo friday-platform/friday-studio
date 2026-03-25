@@ -15,13 +15,12 @@
 -->
 
 <script lang="ts">
-  import { basicSetup } from "codemirror";
-  import { EditorView, keymap } from "@codemirror/view";
-  import { EditorState } from "@codemirror/state";
   import { markdown } from "@codemirror/lang-markdown";
+  import { EditorState } from "@codemirror/state";
+  import { EditorView, keymap } from "@codemirror/view";
   import { atlasTheme } from "$lib/editor/atlas-theme";
-  import { onDestroy } from "svelte";
-  import { untrack } from "svelte";
+  import { basicSetup } from "codemirror";
+  import { onDestroy, untrack } from "svelte";
 
   interface Props {
     content: string;
@@ -31,13 +30,7 @@
     ondirtychange?: (dirty: boolean) => void;
   }
 
-  let {
-    content,
-    editedContent = $bindable(""),
-    onsave,
-    oncancel,
-    ondirtychange,
-  }: Props = $props();
+  let { content, editedContent = $bindable(""), onsave, oncancel, ondirtychange }: Props = $props();
 
   let editorContainer: HTMLDivElement | undefined = $state();
   let editorView: EditorView | undefined;

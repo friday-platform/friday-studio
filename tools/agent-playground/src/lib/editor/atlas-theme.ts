@@ -11,8 +11,8 @@
  * @module
  */
 
-import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 
 // Dark-mode color scale from apps/web-client/src/app.css
@@ -28,69 +28,34 @@ const dimmed = "hsl(40 12% 95% / 0.55)";
 /** Editor chrome — backgrounds, cursors, gutters, selections. */
 const atlasEditorTheme = EditorView.theme(
   {
-    "&": {
-      color: "var(--color-text)",
-      backgroundColor: "var(--color-surface-1)",
-    },
+    "&": { color: "var(--color-text)", backgroundColor: "var(--color-surface-1)" },
 
-    ".cm-content": {
-      caretColor: blue,
-    },
+    ".cm-content": { caretColor: blue },
 
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: blue,
-    },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: blue },
 
     "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-      {
-        backgroundColor: "var(--color-highlight-1)",
-      },
+      { backgroundColor: "var(--color-highlight-1)" },
 
-    ".cm-panels": {
-      backgroundColor: "var(--color-surface-2)",
-      color: "var(--color-text)",
-    },
-    ".cm-panels.cm-panels-top": {
-      borderBottom: "1px solid var(--color-border-1)",
-    },
-    ".cm-panels.cm-panels-bottom": {
-      borderTop: "1px solid var(--color-border-1)",
-    },
+    ".cm-panels": { backgroundColor: "var(--color-surface-2)", color: "var(--color-text)" },
+    ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--color-border-1)" },
+    ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--color-border-1)" },
 
-    ".cm-searchMatch": {
-      backgroundColor: "hsl(212 96% 78% / 0.25)",
-      outline: `1px solid ${blue}`,
-    },
-    ".cm-searchMatch.cm-searchMatch-selected": {
-      backgroundColor: "hsl(212 96% 78% / 0.15)",
-    },
+    ".cm-searchMatch": { backgroundColor: "hsl(212 96% 78% / 0.25)", outline: `1px solid ${blue}` },
+    ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "hsl(212 96% 78% / 0.15)" },
 
-    ".cm-activeLine": {
-      backgroundColor: "var(--color-highlight-1)",
-    },
-    ".cm-selectionMatch": {
-      backgroundColor: "hsl(100 79% 78% / 0.12)",
-    },
+    ".cm-activeLine": { backgroundColor: "var(--color-highlight-1)" },
+    ".cm-selectionMatch": { backgroundColor: "hsl(100 79% 78% / 0.12)" },
 
     "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
       backgroundColor: "hsl(212 96% 78% / 0.3)",
     },
 
-    ".cm-gutters": {
-      backgroundColor: "var(--color-surface-1)",
-      color: muted,
-      border: "none",
-    },
+    ".cm-gutters": { backgroundColor: "var(--color-surface-1)", color: muted, border: "none" },
 
-    ".cm-activeLineGutter": {
-      backgroundColor: "var(--color-highlight-1)",
-    },
+    ".cm-activeLineGutter": { backgroundColor: "var(--color-highlight-1)" },
 
-    ".cm-foldPlaceholder": {
-      backgroundColor: "transparent",
-      border: "none",
-      color: dimmed,
-    },
+    ".cm-foldPlaceholder": { backgroundColor: "transparent", border: "none", color: dimmed },
 
     ".cm-tooltip": {
       border: "1px solid var(--color-border-1)",

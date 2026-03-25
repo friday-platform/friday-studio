@@ -14,12 +14,12 @@
   import type { WorkspaceAgent } from "@atlas/config/workspace-agents";
   import { DropdownMenu } from "@atlas/ui";
   import { goto } from "$app/navigation";
-  import { useIntegrationsPreflight, type IntegrationStatus } from "$lib/queries/integrations-preflight";
+  import {
+    useIntegrationsPreflight,
+    type IntegrationStatus,
+  } from "$lib/queries/integrations-preflight";
 
-  type Props = {
-    agents: WorkspaceAgent[];
-    workspaceId: string;
-  };
+  type Props = { agents: WorkspaceAgent[]; workspaceId: string };
 
   let { agents, workspaceId }: Props = $props();
 
@@ -53,7 +53,8 @@
         "from" in value &&
         (value as Record<string, unknown>).from === "link"
       ) {
-        const provider = (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
+        const provider =
+          (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
         if (typeof provider === "string") providers.push(provider);
       }
     }
@@ -100,9 +101,12 @@
 
   function healthTitle(status: IntegrationStatus): string {
     switch (status) {
-      case "connected": return "Credentials connected";
-      case "degraded": return "Credentials degraded";
-      case "disconnected": return "Credentials not connected";
+      case "connected":
+        return "Credentials connected";
+      case "degraded":
+        return "Credentials degraded";
+      case "disconnected":
+        return "Credentials not connected";
     }
   }
 
@@ -150,14 +154,22 @@
           {/if}
 
           {#if status !== null}
-            <span class="health-label" class:connected={status === "connected"} class:degraded={status === "degraded"}>
+            <span
+              class="health-label"
+              class:connected={status === "connected"}
+              class:degraded={status === "degraded"}
+            >
               {healthTitle(status).replace("Credentials ", "")}
             </span>
           {/if}
 
           <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
             {#snippet children()}
-              <DropdownMenu.Trigger class="overflow-btn" aria-label="Agent options" onclick={(e: MouseEvent) => e.preventDefault()}>
+              <DropdownMenu.Trigger
+                class="overflow-btn"
+                aria-label="Agent options"
+                onclick={(e: MouseEvent) => e.preventDefault()}
+              >
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
                   <circle cx="8" cy="3" r="1" />
                   <circle cx="8" cy="8" r="1" />
@@ -166,10 +178,10 @@
               </DropdownMenu.Trigger>
 
               <DropdownMenu.Content>
-                <DropdownMenu.Item onclick={handleViewAgent}>
-                  View agent
-                </DropdownMenu.Item>
-                <DropdownMenu.Item onclick={() => goto(`/platform/${workspaceId}/edit?path=agents.${agent.id}`)}>
+                <DropdownMenu.Item onclick={handleViewAgent}>View agent</DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onclick={() => goto(`/platform/${workspaceId}/edit?path=agents.${agent.id}`)}
+                >
                   Edit configuration
                 </DropdownMenu.Item>
               </DropdownMenu.Content>

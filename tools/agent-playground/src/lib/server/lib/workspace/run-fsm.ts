@@ -17,6 +17,7 @@ import {
   type FSMEvent,
 } from "@atlas/fsm-engine";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
+import { createInlineCodeExecutor } from "./inline-code-executor.ts";
 import { createMockAgentExecutor, createMockLLMProvider } from "./mock-executor.ts";
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,7 @@ export async function runFSM(opts: RunFSMOptions): Promise<ExecutionReport> {
     scope,
     agentExecutor,
     llmProvider,
+    codeExecutor: createInlineCodeExecutor(),
   });
 
   // Event collector for tracing

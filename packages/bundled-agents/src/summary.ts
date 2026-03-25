@@ -25,6 +25,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
   id: "get-summary",
   displayName: "Summarizer",
   version: "1.0.0",
+  summary: "Condense long-form content into formatted summary artifacts with citations preserved.",
   description:
     "Summarizes provided content into a formatted artifact with citations preserved. USE FOR: condensing long-form content, creating TLDRs, producing summary artifacts for downstream agents.",
   constraints:

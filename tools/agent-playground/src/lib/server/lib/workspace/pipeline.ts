@@ -13,13 +13,14 @@ import {
   buildBlueprint,
   buildFSMFromPlan,
   buildWorkspaceYaml,
+  type BlueprintProgressEvent,
   type BlueprintResult,
   type BuildBlueprintOpts,
   type CompileWarning,
   type FSMDefinition,
   type WorkspaceBlueprint,
 } from "@atlas/workspace-builder";
-import { createDirectMCPExecutor } from "./direct-executor.ts";
+import { createDirectMCPExecutor, type AgentTraceEntry } from "./direct-executor.ts";
 import { runFSM, type ExecutionReport } from "./run-fsm.ts";
 
 // ---------------------------------------------------------------------------
@@ -40,12 +41,13 @@ export type { BlueprintResult };
  */
 function generateBlueprint(
   prompt: string,
-  opts: { logger: Logger; abortSignal?: AbortSignal },
+  opts: { logger: Logger; abortSignal?: AbortSignal; onProgress?: (event: BlueprintProgressEvent) => void },
 ): Promise<BlueprintResult> {
   const buildOpts: BuildBlueprintOpts = {
     mode: "workspace",
     logger: opts.logger,
     abortSignal: opts.abortSignal,
+    onProgress: opts.onProgress,
   };
   return buildBlueprint(prompt, buildOpts);
 }
@@ -143,6 +145,8 @@ export interface ExecuteOptions {
     status: "started" | "completed" | "failed";
     error?: string;
   }) => void;
+  /** Called after each agent LLM call with trace data (model, tokens, latency). */
+  onTrace?: (trace: AgentTraceEntry) => void;
 }
 
 /** Result of executing all FSMs in a pipeline. */
@@ -162,14 +166,14 @@ export interface ExecuteResult {
  * @throws {Error} When any FSM execution fails
  */
 export async function executeFSMs(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { plan, fsms, real = false, signalPayload, onTransition, onAction } = opts;
+  const { plan, fsms, real = false, signalPayload, onTransition, onAction, onTrace } = opts;
 
   let realExecutorHandle:
     | { executor: Parameters<typeof runFSM>[0]["agentExecutor"]; shutdown: () => Promise<void> }
     | undefined;
 
   if (real) {
-    realExecutorHandle = createDirectMCPExecutor({ plan });
+    realExecutorHandle = createDirectMCPExecutor({ plan, onTrace });
   }
 
   const reports: ExecutionReport[] = [];
@@ -209,6 +213,12 @@ export async function executeFSMs(opts: ExecuteOptions): Promise<ExecuteResult> 
 /** Stop-at control for partial pipeline execution. */
 export type StopAt = "plan" | "fsm" | undefined;
 
+/** Phase progress events emitted at pipeline phase boundaries. */
+export type PhaseEvent =
+  | { name: "blueprint"; blueprint: WorkspaceBlueprint }
+  | { name: "compile"; compilation: CompileResult }
+  | { name: "assemble"; yaml: string | undefined };
+
 /** Options for the full pipeline. */
 export interface PipelineOptions {
   prompt: string;
@@ -218,6 +228,10 @@ export interface PipelineOptions {
   stopAt?: StopAt;
   real?: boolean;
   abortSignal?: AbortSignal;
+  /** Called at pipeline phase boundaries for incremental progress reporting. */
+  onPhase?: (phase: PhaseEvent) => void;
+  /** Called at sub-phase milestones during blueprint generation for progressive UI. */
+  onBlueprintProgress?: (event: BlueprintProgressEvent) => void;
   /** Called on each state transition for live SSE streaming. */
   onTransition?: (transition: {
     from: string;
@@ -235,6 +249,8 @@ export interface PipelineOptions {
     status: "started" | "completed" | "failed";
     error?: string;
   }) => void;
+  /** Called after each agent LLM call with trace data. */
+  onTrace?: (trace: AgentTraceEntry) => void;
 }
 
 /** Full pipeline result — each phase is present only if it ran. */
@@ -259,10 +275,12 @@ export interface PipelineResult {
  * @throws {Error} From FSM compilation or execution
  */
 export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult> {
-  const { prompt, input, logger, stopAt, real, abortSignal, onTransition, onAction } = opts;
+  const { prompt, input, logger, stopAt, real, abortSignal, onPhase, onBlueprintProgress, onTransition, onAction, onTrace } =
+    opts;
 
   // Phase 1: Blueprint
-  const blueprint = await generateBlueprint(prompt, { logger, abortSignal });
+  const blueprint = await generateBlueprint(prompt, { logger, abortSignal, onProgress: onBlueprintProgress });
+  onPhase?.({ name: "blueprint", blueprint: blueprint.blueprint });
 
   if (stopAt === "plan") {
     return { blueprint };
@@ -270,6 +288,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
 
   // Phase 2: Compile
   const compilation = compileFSMs(blueprint.blueprint);
+  onPhase?.({ name: "compile", compilation });
 
   // Phase 3: Workspace YAML (non-fatal)
   let workspaceYaml: string | undefined;
@@ -285,6 +304,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
       // workspace.yml assembly failure is non-fatal
     }
   }
+  onPhase?.({ name: "assemble", yaml: workspaceYaml });
 
   if (stopAt === "fsm") {
     return { blueprint, compilation, workspaceYaml };
@@ -319,6 +339,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
       signalPayload,
       onTransition,
       onAction,
+      onTrace,
     });
   }
 

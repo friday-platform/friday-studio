@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 export type {
+  BlueprintProgressEvent,
   BlueprintResult,
   BuildBlueprintOpts,
 } from "./planner/build-blueprint.ts";

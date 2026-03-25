@@ -10,11 +10,12 @@
 -->
 
 <script lang="ts">
-  import { useIntegrationsPreflight, type IntegrationPreflight } from "$lib/queries/integrations-preflight";
+  import {
+    useIntegrationsPreflight,
+    type IntegrationPreflight,
+  } from "$lib/queries/integrations-preflight";
 
-  type Props = {
-    workspaceId: string | null;
-  };
+  type Props = { workspaceId: string | null };
 
   let { workspaceId }: Props = $props();
 

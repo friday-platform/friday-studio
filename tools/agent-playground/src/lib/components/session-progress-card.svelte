@@ -15,10 +15,10 @@
 -->
 
 <script lang="ts">
-  import type { SessionSummary } from "@atlas/core/session/session-events";
-  import type { Topology } from "@atlas/config/topology";
   import { mapSessionToStepStatus, type StepStatus } from "@atlas/config/map-session-status";
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
+  import type { Topology } from "@atlas/config/topology";
+  import type { SessionSummary } from "@atlas/core/session/session-events";
   import { StatusBadge } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { fetchSessionView } from "$lib/utils/session-event-stream";
@@ -53,9 +53,7 @@
   /** Agent-step nodes for this session's job — rendered as status pills. */
   const agentSteps = $derived.by(() => {
     const jobId = session.jobName;
-    return topology.nodes.filter((n) =>
-      n.type === "agent-step" && n.jobId === jobId,
-    );
+    return topology.nodes.filter((n) => n.type === "agent-step" && n.jobId === jobId);
   });
 
   /**
@@ -108,17 +106,18 @@
     });
   }
 
-  const sessionHref = $derived(
-    `/platform/${workspaceId}/sessions/${session.sessionId}`,
-  );
+  const sessionHref = $derived(`/platform/${workspaceId}/sessions/${session.sessionId}`);
 
   const isActive = $derived(session.status === "active");
   const isFailed = $derived(session.status === "failed");
   const badgeStatus = $derived(
-    session.status === "skipped" ? "skipped" as const :
-    session.status === "active" ? "active" as const :
-    session.status === "failed" ? "failed" as const :
-    "completed" as const,
+    session.status === "skipped"
+      ? ("skipped" as const)
+      : session.status === "active"
+        ? ("active" as const)
+        : session.status === "failed"
+          ? ("failed" as const)
+          : ("completed" as const),
   );
 </script>
 
@@ -144,7 +143,13 @@
         {/each}
         <span class="trigger-arrow">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M2 6H10M10 6L7 3M10 6L7 9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+            <path
+              d="M2 6H10M10 6L7 3M10 6L7 9"
+              stroke="currentColor"
+              stroke-width="1.25"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </span>
       </div>
@@ -169,17 +174,28 @@
           <span class="step-icon">
             {#if status === "completed"}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path
+                  d="M2.5 6L5 8.5L9.5 3.5"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             {:else if status === "active"}
               <span class="pulse-dot"></span>
             {:else if status === "failed"}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path
+                  d="M3 3L9 9M9 3L3 9"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                />
               </svg>
             {:else}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.25" fill="none"/>
+                <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.25" fill="none" />
               </svg>
             {/if}
           </span>
@@ -194,7 +210,8 @@
       Started {formatTime(session.startedAt)}
       {#if session.durationMs}
         <span class="meta-sep">&middot;</span>
-        {isActive ? "Running" : "Ran"} {formatDuration(session.durationMs)}
+        {isActive ? "Running" : "Ran"}
+        {formatDuration(session.durationMs)}
       {/if}
     </span>
   </div>
@@ -214,9 +231,11 @@
     text-decoration: none;
   }
 
-  .progress-card--active {}
+  .progress-card--active {
+  }
 
-  .progress-card--failed {}
+  .progress-card--failed {
+  }
 
   /* Header */
   .card-header {
@@ -305,21 +324,27 @@
     border-color: var(--color-border-1);
     color: color-mix(in srgb, var(--color-text), transparent 30%);
 
-    .step-icon { color: var(--color-success); }
+    .step-icon {
+      color: var(--color-success);
+    }
   }
 
   .step-pill--active {
     border-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-border-1));
     color: color-mix(in srgb, var(--color-text), transparent 30%);
 
-    .step-icon { color: var(--color-warning); }
+    .step-icon {
+      color: var(--color-warning);
+    }
   }
 
   .step-pill--failed {
     border-color: var(--color-border-1);
     color: color-mix(in srgb, var(--color-text), transparent 30%);
 
-    .step-icon { color: var(--color-error); }
+    .step-icon {
+      color: var(--color-error);
+    }
   }
 
   .step-pill--pending {
@@ -352,8 +377,13 @@
   }
 
   @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   /* Footer */
@@ -374,5 +404,4 @@
   .meta-sep {
     opacity: 0.5;
   }
-
 </style>

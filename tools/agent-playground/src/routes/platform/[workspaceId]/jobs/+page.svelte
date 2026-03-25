@@ -10,7 +10,11 @@
 <script lang="ts">
   import { deriveDataContracts, type DataContract } from "@atlas/config/data-contracts";
   import { deriveJobAgents } from "@atlas/config/job-agents";
-  import { extractInitialStateIds, filterNoiseNodes, humanizeStepName } from "@atlas/config/pipeline-utils";
+  import {
+    extractInitialStateIds,
+    filterNoiseNodes,
+    humanizeStepName,
+  } from "@atlas/config/pipeline-utils";
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
@@ -20,9 +24,12 @@
   import PipelineDiagram from "$lib/components/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/run-job-dialog.svelte";
   import SchemaBlock from "$lib/components/schema-block.svelte";
-  import { useIntegrationsPreflight, type IntegrationStatus } from "$lib/queries/integrations-preflight";
   import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
   import { DAEMON_BASE_URL } from "$lib/daemon-url";
+  import {
+    useIntegrationsPreflight,
+    type IntegrationStatus,
+  } from "$lib/queries/integrations-preflight";
   import { useWorkspaceConfig } from "$lib/queries/workspace-config";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -55,8 +62,7 @@
       const description = typeof rec?.description === "string" ? rec.description : null;
       const triggers = Array.isArray(rec?.triggers)
         ? (rec.triggers as unknown[]).filter(
-            (t): t is { signal: string } =>
-              typeof t === "object" && t !== null && "signal" in t,
+            (t): t is { signal: string } => typeof t === "object" && t !== null && "signal" in t,
           )
         : [];
       return { id, title, description, triggers };
@@ -64,19 +70,23 @@
   });
 
   /** Workspace signals keyed by ID for the RunJobDialog. */
-  const workspaceSignals = $derived.by((): Record<string, { description: string; title?: string; schema?: Record<string, unknown> }> => {
-    const data = configQuery.data;
-    if (!data?.config.signals) return {};
-    const result: Record<string, { description: string; title?: string; schema?: Record<string, unknown> }> = {};
-    for (const [id, sig] of Object.entries(data.config.signals)) {
-      result[id] = {
-        description: sig.description,
-        title: sig.title,
-        schema: sig.schema,
-      };
-    }
-    return result;
-  });
+  const workspaceSignals = $derived.by(
+    (): Record<
+      string,
+      { description: string; title?: string; schema?: Record<string, unknown> }
+    > => {
+      const data = configQuery.data;
+      if (!data?.config.signals) return {};
+      const result: Record<
+        string,
+        { description: string; title?: string; schema?: Record<string, unknown> }
+      > = {};
+      for (const [id, sig] of Object.entries(data.config.signals)) {
+        result[id] = { description: sig.description, title: sig.title, schema: sig.schema };
+      }
+      return result;
+    },
+  );
 
   const signalDetails = $derived.by(() => {
     const data = configQuery.data;
@@ -139,7 +149,8 @@
         "from" in value &&
         (value as Record<string, unknown>).from === "link"
       ) {
-        const provider = (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
+        const provider =
+          (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
         if (typeof provider === "string") providers.push(provider);
       }
     }
@@ -167,7 +178,9 @@
   }
 
   /** Extract schema properties for rendering. */
-  function schemaFields(schema: object | null): Array<{ name: string; type: string; required: boolean; description?: string }> {
+  function schemaFields(
+    schema: object | null,
+  ): Array<{ name: string; type: string; required: boolean; description?: string }> {
     if (!schema) return [];
     const s = schema as Record<string, unknown>;
     const props = s.properties;
@@ -219,7 +232,13 @@
       else if (t === "object") entries[key] = {};
       else entries[key] = "";
     }
-    return "{ " + Object.entries(entries).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(", ") + " }";
+    return (
+      "{ " +
+      Object.entries(entries)
+        .map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+        .join(", ") +
+      " }"
+    );
   }
 
   function handleMenuAction(job: JobEntry, action: string) {
@@ -256,7 +275,10 @@
 
   <header class="page-header">
     <h1>Jobs</h1>
-    <p class="page-subtitle">Jobs define the execution pipelines in your workspace. Each job orchestrates a sequence of agent steps.</p>
+    <p class="page-subtitle">
+      Jobs define the execution pipelines in your workspace. Each job orchestrates a sequence of
+      agent steps.
+    </p>
   </header>
 
   {#if configQuery.isLoading}
@@ -292,13 +314,21 @@
                   </DropdownMenu.Trigger>
 
                   <DropdownMenu.Content>
+                    <DropdownMenu.Item
+                      onclick={() =>
+                        goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
+                    >
+                      Open in Job Inspector
+                    </DropdownMenu.Item>
                     <DropdownMenu.Item onclick={() => handleMenuAction(job, "copy-curl")}>
                       Copy as cURL
                     </DropdownMenu.Item>
                     <DropdownMenu.Item onclick={() => handleMenuAction(job, "copy-cli")}>
                       Copy CLI command
                     </DropdownMenu.Item>
-                    <DropdownMenu.Item onclick={() => goto(`/platform/${workspaceId}/edit?path=jobs.${job.id}`)}>
+                    <DropdownMenu.Item
+                      onclick={() => goto(`/platform/${workspaceId}/edit?path=jobs.${job.id}`)}
+                    >
                       Edit configuration
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
@@ -485,6 +515,7 @@
     flex-shrink: 0;
     gap: var(--size-1);
   }
+
 
   .card-actions :global(.overflow-trigger) {
     border-radius: var(--radius-2);

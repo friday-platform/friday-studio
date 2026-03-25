@@ -38,7 +38,9 @@ function parseSSE(raw: string): Array<{ event: string; data: string }> {
 
 describe("createSSEStream", () => {
   it("returns a Response with correct SSE headers", () => {
-    const response = createSSEStream(async () => { await Promise.resolve(); });
+    const response = createSSEStream(async () => {
+      await Promise.resolve();
+    });
     expect(response.headers.get("Content-Type")).toBe("text/event-stream");
     expect(response.headers.get("Cache-Control")).toBe("no-cache");
     expect(response.headers.get("Connection")).toBe("keep-alive");
@@ -109,6 +111,28 @@ describe("createSSEStream", () => {
     });
     await readAll(response);
     expect(receivedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("silently drops events after stream cancel (no throw)", async () => {
+    let emitterRef: Parameters<Parameters<typeof createSSEStream>[0]>[0] | undefined;
+    const response = createSSEStream(async (emitter) => {
+      emitterRef = emitter;
+      emitter.send("before", { ok: true });
+      // Wait a tick for the cancel to propagate
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // This should NOT throw — just silently drop
+      emitter.send("after", { ok: true });
+    });
+
+    // Cancel the stream immediately after getting the reader
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toContain("event: before");
+    await reader.cancel();
+
+    // Executor is still running — the "after" send should not throw
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(emitterRef).toBeDefined();
   });
 
   it("emits error event for non-Error throws", async () => {

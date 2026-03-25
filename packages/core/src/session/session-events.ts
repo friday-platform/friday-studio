@@ -86,6 +86,14 @@ export const StepCompleteEventSchema = z.object({
 });
 export type StepCompleteEvent = z.infer<typeof StepCompleteEventSchema>;
 
+export const StepSkippedEventSchema = z.object({
+  type: z.literal("step:skipped"),
+  sessionId: z.string(),
+  stateId: z.string(),
+  timestamp: z.string(),
+});
+export type StepSkippedEvent = z.infer<typeof StepSkippedEventSchema>;
+
 export const SessionCompleteEventSchema = z.object({
   type: z.literal("session:complete"),
   sessionId: z.string(),
@@ -110,6 +118,7 @@ export const SessionStreamEventSchema = z.discriminatedUnion("type", [
   SessionStartEventSchema,
   StepStartEventSchema,
   StepCompleteEventSchema,
+  StepSkippedEventSchema,
   SessionCompleteEventSchema,
   SessionSummaryEventSchema,
 ]);
@@ -161,6 +170,8 @@ export const AgentBlockSchema = z.object({
   /** Input context from prepare function (accumulated results from prior steps) */
   input: z.record(z.string(), z.unknown()).optional(),
   status: z.enum(["pending", "running", "completed", "failed", "skipped"]),
+  /** Timestamp when step:start fired — enables waterfall timeline positioning */
+  startedAt: z.string().optional(),
   durationMs: z.number().optional(),
   toolCalls: z.array(ToolCallSummarySchema),
   reasoning: z.string().optional(),

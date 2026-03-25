@@ -136,6 +136,8 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
   id: "hubspot",
   displayName: "HubSpot",
   version: "1.0.0",
+  summary:
+    "Search, read, create, and update HubSpot CRM records — contacts, companies, deals, tickets, and more.",
   description:
     "Search, read, create, update, and manage HubSpot CRM records across all object types " +
     "(contacts, companies, deals, tickets, and more). USE FOR: CRM lookups, creating/updating " +

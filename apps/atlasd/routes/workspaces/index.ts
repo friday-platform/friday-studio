@@ -53,6 +53,7 @@ const signalParamSchema = z.object({ workspaceId: z.string(), signalId: z.string
 const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
+  skipStates: z.array(z.string()).optional(),
 });
 
 export * from "./schemas.ts";
@@ -1091,17 +1092,24 @@ const workspacesRoutes = daemonFactory
     const sseStream = new ReadableStream({
       start(controller) {
         ctx.daemon
-          .triggerWorkspaceSignal(workspaceId, signalId, body.payload, body.streamId, (chunk) => {
-            try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-            } catch (error) {
-              logger.debug("Client disconnected during signal SSE stream", {
-                workspaceId,
-                signalId,
-                error,
-              });
-            }
-          })
+          .triggerWorkspaceSignal(
+            workspaceId,
+            signalId,
+            body.payload,
+            body.streamId,
+            (chunk) => {
+              try {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+              } catch (error) {
+                logger.debug("Client disconnected during signal SSE stream", {
+                  workspaceId,
+                  signalId,
+                  error,
+                });
+              }
+            },
+            body.skipStates,
+          )
           .then((result) => {
             try {
               controller.enqueue(
@@ -1170,7 +1178,7 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId } = c.req.valid("json");
+      const { payload, streamId, skipStates } = c.req.valid("json");
       const ctx = c.get("app");
 
       try {
@@ -1179,6 +1187,8 @@ const workspacesRoutes = daemonFactory
           signalId,
           payload,
           streamId,
+          undefined,
+          skipStates,
         );
         return c.json({
           message: "Signal completed",

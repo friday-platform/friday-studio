@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { deriveAgentJobUsage } from "@atlas/config/agent-job-usage";
+  import { humanizeStepName } from "@atlas/config/pipeline-utils";
+  import { deriveSignalDetails } from "@atlas/config/signal-details";
+  import { deriveTopology } from "@atlas/config/topology";
+  import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Page } from "@atlas/ui";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import AgentEditorSidebar from "$lib/components/agent-editor-sidebar.svelte";
   import AgentIndexSidebar from "$lib/components/agent-index-sidebar.svelte";
   import JobIndexSidebar, { type JobEntry } from "$lib/components/job-index-sidebar.svelte";
@@ -7,14 +14,10 @@
   import SignalSidebar from "$lib/components/signal-sidebar.svelte";
   import SkillIndexSidebar from "$lib/components/skill-index-sidebar.svelte";
   import WorkspaceAgentSidebar from "$lib/components/workspace-agent-sidebar.svelte";
-  import { deriveAgentJobUsage } from "@atlas/config/agent-job-usage";
-  import { humanizeStepName } from "@atlas/config/pipeline-utils";
-  import { deriveSignalDetails } from "@atlas/config/signal-details";
-  import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { deriveTopology } from "@atlas/config/topology";
-  import { goto } from "$app/navigation";
-  import { page } from "$app/state";
-  import { useIntegrationsPreflight, type IntegrationStatus } from "$lib/queries/integrations-preflight";
+  import {
+    useIntegrationsPreflight,
+    type IntegrationStatus,
+  } from "$lib/queries/integrations-preflight";
   import { useWorkspaceSkills } from "$lib/queries/skills";
   import { useWorkspaceConfig } from "$lib/queries/workspace-config";
 
@@ -90,8 +93,7 @@
       const title = typeof rec?.title === "string" ? rec.title : humanizeStepName(id);
       const triggers = Array.isArray(rec?.triggers)
         ? (rec.triggers as unknown[]).filter(
-            (t): t is { signal: string } =>
-              typeof t === "object" && t !== null && "signal" in t,
+            (t): t is { signal: string } => typeof t === "object" && t !== null && "signal" in t,
           )
         : [];
       return { id, title, triggers };

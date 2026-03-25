@@ -21,11 +21,7 @@
   import type { SignalDetail } from "@atlas/config/signal-details";
   import RecentSessions from "$lib/components/recent-sessions.svelte";
 
-  type Props = {
-    jobs: JobEntry[];
-    signalDetails: SignalDetail[];
-    workspaceId: string;
-  };
+  type Props = { jobs: JobEntry[]; signalDetails: SignalDetail[]; workspaceId: string };
 
   let { jobs, signalDetails, workspaceId }: Props = $props();
 
@@ -47,8 +43,8 @@
     <section class="explainer">
       <h3 class="section-title">How jobs work</h3>
       <p class="explainer-text">
-        Jobs are autonomous workflows triggered by signals — an HTTP request, a cron schedule,
-        or a file change. Each job runs a pipeline of agents to completion.
+        Jobs are autonomous workflows triggered by signals — an HTTP request, a cron schedule, or a
+        file change. Each job runs a pipeline of agents to completion.
       </p>
       <a class="learn-more" href="https://fridayagent.ai/docs/jobs">Learn more →</a>
     </section>

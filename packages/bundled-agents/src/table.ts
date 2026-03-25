@@ -29,6 +29,8 @@ export const tableAgent = createAgent<string, TableAgentResult>({
   id: "table",
   displayName: "Table Generator",
   version: "1.0.0",
+  summary:
+    "Generate structured table artifacts from LLM knowledge for comparison charts and reference tables.",
   description:
     "Generates a static table artifact from LLM knowledge. USE FOR: comparison charts, reference tables, structured lists for presentation.",
   constraints:

@@ -16,7 +16,7 @@ describe("GET /servers", () => {
     const res = await mcpRoute.request("/servers");
     expect(res.status).toBe(200);
 
-    const data = await res.json() as ServerEntry[];
+    const data = (await res.json()) as ServerEntry[];
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBe(Object.keys(mcpServersRegistry.servers).length);
 
@@ -33,7 +33,7 @@ describe("GET /servers", () => {
 
   test("github entry has correct metadata", async () => {
     const res = await mcpRoute.request("/servers");
-    const data = await res.json() as ServerEntry[];
+    const data = (await res.json()) as ServerEntry[];
     const github = data.find((s) => s.id === "github");
     if (!github) throw new Error("expected github server");
 
@@ -43,7 +43,7 @@ describe("GET /servers", () => {
 
   test("requiredConfig entries have key and description", async () => {
     const res = await mcpRoute.request("/servers");
-    const data = await res.json() as ServerEntry[];
+    const data = (await res.json()) as ServerEntry[];
     const withConfig = data.filter((s) => s.requiredConfig.length > 0);
 
     expect(withConfig.length).toBeGreaterThan(0);
@@ -59,7 +59,7 @@ describe("GET /servers", () => {
 
   test("servers without requiredConfig return empty array", async () => {
     const res = await mcpRoute.request("/servers");
-    const data = await res.json() as ServerEntry[];
+    const data = (await res.json()) as ServerEntry[];
     const playwright = data.find((s) => s.id === "playwright");
     if (!playwright) throw new Error("expected playwright server");
 
@@ -103,7 +103,7 @@ describe("POST /tools — validation", () => {
     });
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("nonexistent-server");
   });
 
@@ -115,7 +115,7 @@ describe("POST /tools — validation", () => {
     });
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("GH_TOKEN");
     expect(data.error).toContain("github");
   });
@@ -128,7 +128,7 @@ describe("POST /tools — validation", () => {
     });
     expect(res.status).toBe(400);
 
-    const data = await res.json() as { error: string };
+    const data = (await res.json()) as { error: string };
     expect(data.error).toContain("github");
     expect(data.error).toContain("GH_TOKEN");
     expect(data.error).toContain("stripe");
@@ -147,7 +147,7 @@ describe("POST /tools — validation", () => {
 
     // time server has no requiredConfig, so validation passes
     // Response will either succeed or have connection errors (not 400)
-    const data = await res.json() as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     if (res.status === 200) {
       expect(data).toHaveProperty("tools");
     } else {
@@ -155,5 +155,4 @@ describe("POST /tools — validation", () => {
       expect(data).not.toHaveProperty("error", expect.stringContaining("Missing required"));
     }
   });
-
 });

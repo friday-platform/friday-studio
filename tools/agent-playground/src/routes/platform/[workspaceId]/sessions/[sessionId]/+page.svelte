@@ -4,36 +4,28 @@
     SessionStreamEvent,
     SessionView,
   } from "@atlas/core/session/session-events";
-  import {
-    initialSessionView,
-    reduceSessionEvent,
-  } from "@atlas/core/session/session-reducer";
+  import { initialSessionView, reduceSessionEvent } from "@atlas/core/session/session-reducer";
   import { Button, FormattedData, Icons, IconSmall, JsonHighlight, StatusBadge } from "@atlas/ui";
   import { experimental_streamedQuery } from "@tanstack/query-core";
   import { createQuery } from "@tanstack/svelte-query";
-  import { tick } from "svelte";
   import { page } from "$app/state";
   import { AgentBlockCard, parseError, StepBlock } from "$lib/components/session";
   import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
   import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { sessionEventStream } from "$lib/utils/session-event-stream";
+  import { tick } from "svelte";
 
   const sessionId = $derived(page.params.sessionId);
   const workspaceId = $derived(page.params.workspaceId);
 
   /** Hash fragment target block ID (e.g. "block-step_clone_repo") */
   const hashTarget = $derived(
-    typeof window !== "undefined" && window.location.hash
-      ? window.location.hash.slice(1)
-      : null,
+    typeof window !== "undefined" && window.location.hash ? window.location.hash.slice(1) : null,
   );
 
   const query = createQuery<SessionView>(() => ({
     queryKey: ["session-detail", sessionId],
-    queryFn: experimental_streamedQuery<
-      SessionStreamEvent | EphemeralChunk,
-      SessionView
-    >({
+    queryFn: experimental_streamedQuery<SessionStreamEvent | EphemeralChunk, SessionView>({
       streamFn: () => sessionEventStream(sessionId),
       reducer: reduceSessionEvent,
       initialValue: initialSessionView(),
@@ -114,7 +106,11 @@
         {#each query.data.agentBlocks as block, i (i)}
           <AgentBlockCard
             {block}
-            defaultOpen={!query.isFetching || block.status === "running" || (hashTarget != null && block.stateId != null && hashTarget === `block-${block.stateId}`)}
+            defaultOpen={!query.isFetching ||
+              block.status === "running" ||
+              (hashTarget != null &&
+                block.stateId != null &&
+                hashTarget === `block-${block.stateId}`)}
           />
         {/each}
         {#if isFinished}

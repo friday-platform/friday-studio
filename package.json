@@ -31,6 +31,7 @@
     "nanoid": "^5.1.6"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "~6.2.4",
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/proper-lockfile": "^4.1.4",
     "@types/turndown": "^5.0.6",

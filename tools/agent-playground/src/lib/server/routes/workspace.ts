@@ -15,10 +15,10 @@ import { createSSEStream } from "../lib/sse.ts";
 import {
   executeFSMs,
   runPipeline,
-  type CompileResult,
   type ExecuteResult,
   type PipelineResult,
 } from "../lib/workspace/pipeline.ts";
+import { runStep } from "../lib/workspace/run-step.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -114,6 +114,11 @@ const ExecuteBody = z.object({
   real: z.boolean().optional(),
 });
 
+const StepExecuteBody = z.object({
+  input: z.record(z.string(), z.unknown()),
+  real: z.boolean().optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -195,7 +200,7 @@ export const workspaceRoute = new Hono()
 
       const startTime = performance.now();
 
-      emitter.send("log", { message: "Starting pipeline...", phase: "init" });
+      emitter.send("log", { level: "info", message: "Starting pipeline...", phase: "init" });
 
       let pipelineResult: PipelineResult;
       try {
@@ -206,11 +211,71 @@ export const workspaceRoute = new Hono()
           stopAt,
           real,
           abortSignal: signal,
+          onBlueprintProgress: (event) => {
+            emitter.send("progress", { type: "blueprint-progress", ...event });
+          },
+          onPhase: (phase) => {
+            switch (phase.name) {
+              case "blueprint": {
+                const bp = phase.blueprint;
+                writeFileSync(join(runDir, "phase3.json"), JSON.stringify(bp, null, 2));
+                emitter.send("progress", {
+                  type: "artifact",
+                  name: "blueprint",
+                  content: JSON.stringify(bp),
+                });
+                emitter.send("log", {
+                  level: "info",
+                  message: `Blueprint: ${bp.workspace.name} (${bp.jobs.length} jobs)`,
+                  phase: "blueprint",
+                });
+                break;
+              }
+              case "compile": {
+                const { fsms, warnings } = phase.compilation;
+                writeFileSync(join(runDir, "fsm.json"), JSON.stringify(fsms, null, 2));
+                emitter.send("progress", {
+                  type: "artifact",
+                  name: "fsm",
+                  content: JSON.stringify(fsms),
+                });
+                emitter.send("log", {
+                  level: "info",
+                  message: `Compiled ${fsms.length} FSM(s)${warnings.length > 0 ? ` (${warnings.length} warnings)` : ""}`,
+                  phase: "compile",
+                });
+                break;
+              }
+              case "assemble": {
+                if (phase.yaml) {
+                  writeFileSync(join(runDir, "workspace.yml"), phase.yaml);
+                  emitter.send("progress", {
+                    type: "artifact",
+                    name: "workspace.yml",
+                    content: phase.yaml,
+                  });
+                }
+                break;
+              }
+            }
+          },
           onTransition: (transition) => {
             emitter.send("progress", { type: "state-transition", ...transition });
           },
           onAction: (action) => {
             emitter.send("progress", { type: "action-execution", ...action });
+          },
+          onTrace: (trace) => {
+            emitter.trace({
+              spanId: `${trace.agentId}-${Date.now()}`,
+              name: trace.modelId,
+              durationMs: trace.durationMs,
+              agentId: trace.agentId,
+              modelId: trace.modelId,
+              usage: trace.usage,
+              steps: trace.steps,
+              toolCalls: trace.toolCalls,
+            });
           },
         });
       } catch (err: unknown) {
@@ -219,33 +284,7 @@ export const workspaceRoute = new Hono()
         throw err;
       }
 
-      // Persist and emit blueprint
-      const blueprint = pipelineResult.blueprint.blueprint;
-      writeFileSync(join(runDir, "phase3.json"), JSON.stringify(blueprint, null, 2));
-      emitter.send("artifact", { name: "blueprint", content: JSON.stringify(blueprint) });
-      emitter.send("log", {
-        message: `Blueprint: ${blueprint.workspace.name} (${blueprint.jobs.length} jobs)`,
-        phase: "blueprint",
-      });
-
-      // Persist and emit compilation artifacts
-      if (pipelineResult.compilation) {
-        const compilation: CompileResult = pipelineResult.compilation;
-        writeFileSync(join(runDir, "fsm.json"), JSON.stringify(compilation.fsms, null, 2));
-        emitter.send("artifact", { name: "fsm", content: JSON.stringify(compilation.fsms) });
-        emitter.send("log", {
-          message: `Compiled ${compilation.fsms.length} FSM(s)`,
-          phase: "compile",
-        });
-      }
-
-      // Persist and emit workspace.yml
-      if (pipelineResult.workspaceYaml) {
-        writeFileSync(join(runDir, "workspace.yml"), pipelineResult.workspaceYaml);
-        emitter.send("artifact", { name: "workspace.yml", content: pipelineResult.workspaceYaml });
-      }
-
-      // Persist execution report
+      // Persist execution report (phases 1-3 persisted incrementally via onPhase)
       if (pipelineResult.execution) {
         const execution: ExecuteResult = pipelineResult.execution;
         writeFileSync(
@@ -259,6 +298,7 @@ export const workspaceRoute = new Hono()
       }
 
       // Write summary
+      const blueprint = pipelineResult.blueprint.blueprint;
       const summaryLines = [
         `Workspace: ${blueprint.workspace.name}`,
         `Jobs: ${blueprint.jobs.length}`,
@@ -296,7 +336,13 @@ export const workspaceRoute = new Hono()
         if (existsSync(inputPath)) {
           try {
             const input: unknown = JSON.parse(readFileSync(inputPath, "utf-8"));
-            if (typeof input === "object" && input !== null && "source" in input && input.source === "loaded") source = "loaded";
+            if (
+              typeof input === "object" &&
+              input !== null &&
+              "source" in input &&
+              input.source === "loaded"
+            )
+              source = "loaded";
           } catch {
             // ignore parse errors
           }
@@ -323,10 +369,14 @@ export const workspaceRoute = new Hono()
   // POST /runs/:slug/execute — execute FSMs from a saved run (skip generation)
   .post(
     "/runs/:slug/execute",
-    zValidator("json", z.object({ real: z.boolean().optional(), input: z.string().optional() })),
+    zValidator("json", z.object({
+      real: z.boolean().optional(),
+      input: z.string().optional(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+    })),
     (c) => {
       const slug = c.req.param("slug");
-      const { real, input } = c.req.valid("json");
+      const { real, input, payload } = c.req.valid("json");
       const runDir = join(RUNS_DIR, slug);
 
       if (!existsSync(runDir)) {
@@ -337,9 +387,11 @@ export const workspaceRoute = new Hono()
         let plan: WorkspaceBlueprint;
         let fsms: FSMDefinition[];
 
-        // Build signal payload from workspace.yml signal schema
+        // Build signal payload — structured payload takes precedence over string input
         let signalPayload: Record<string, unknown> | undefined;
-        if (input) {
+        if (payload && Object.keys(payload).length > 0) {
+          signalPayload = payload;
+        } else if (input) {
           const ymlPath = join(runDir, "workspace.yml");
           if (existsSync(ymlPath)) {
             const yml = readFileSync(ymlPath, "utf-8");
@@ -418,11 +470,40 @@ export const workspaceRoute = new Hono()
             }
             jobs.push({ id: jobId, triggerSignalId, steps: [], documentContracts });
           }
+          // Build agents array from workspace.yml agent configs so the
+          // direct executor can look up agents by ID in real mode.
+          const agents: Array<{
+            id: string;
+            name: string;
+            description: string;
+            capabilities: string[];
+            bundledId?: string;
+            mcpServers?: Array<{ serverId: string; name: string }>;
+          }> = [];
+          for (const [agentId, agentConfig] of Object.entries(config.agents ?? {})) {
+            const entry: (typeof agents)[number] = {
+              id: agentId,
+              name: agentId,
+              description: agentConfig.description,
+              capabilities: [],
+            };
+            if (agentConfig.type === "atlas" && "agent" in agentConfig) {
+              entry.bundledId = agentConfig.agent;
+            }
+            if (agentConfig.type === "llm" && agentConfig.config.tools?.length) {
+              entry.mcpServers = agentConfig.config.tools.map((t) => ({
+                serverId: t,
+                name: t,
+              }));
+            }
+            agents.push(entry);
+          }
+
           // Cast to WorkspaceBlueprint — mock executor tolerates missing fields
           plan = {
             workspace: { name: "", purpose: "" },
             signals: [],
-            agents: [],
+            agents,
             jobs,
           } as unknown as WorkspaceBlueprint;
 
@@ -431,7 +512,7 @@ export const workspaceRoute = new Hono()
         }
 
         const startTime = performance.now();
-        emitter.send("log", { message: `Executing ${fsms.length} FSM(s)...`, phase: "execute" });
+        emitter.send("log", { level: "info", message: `Executing ${fsms.length} FSM(s)...`, phase: "execute" });
 
         const execution = await executeFSMs({
           plan,
@@ -443,6 +524,18 @@ export const workspaceRoute = new Hono()
           },
           onAction: (action) => {
             emitter.send("progress", { type: "action-execution", ...action });
+          },
+          onTrace: (trace) => {
+            emitter.trace({
+              spanId: `${trace.agentId}-${Date.now()}`,
+              name: trace.modelId,
+              durationMs: trace.durationMs,
+              agentId: trace.agentId,
+              modelId: trace.modelId,
+              usage: trace.usage,
+              steps: trace.steps,
+              toolCalls: trace.toolCalls,
+            });
           },
         });
 
@@ -460,5 +553,78 @@ export const workspaceRoute = new Hono()
         emitter.send("done", { success: true, slug, durationMs });
       });
     },
-  );
+  )
 
+  // POST /runs/:slug/step/:stateId/execute — re-run a single step with (possibly edited) input
+  .post(
+    "/runs/:slug/step/:stateId/execute",
+    zValidator("json", StepExecuteBody),
+    (c) => {
+      const slug = c.req.param("slug");
+      const stateId = c.req.param("stateId");
+      const { input, real } = c.req.valid("json");
+      const runDir = join(RUNS_DIR, slug);
+
+      if (!existsSync(runDir)) {
+        return c.json({ error: "Run not found" }, 404);
+      }
+
+      return createSSEStream(async (emitter) => {
+        // Load FSM definition
+        const fsmPath = join(runDir, "fsm.json");
+        if (!existsSync(fsmPath)) {
+          throw new Error("Run has no compiled FSM artifacts");
+        }
+        const rawFsms: unknown = JSON.parse(readFileSync(fsmPath, "utf-8"));
+        const fsms = z
+          .array(z.object({ id: z.string() }).passthrough())
+          .parse(rawFsms) as unknown as FSMDefinition[];
+
+        // Find the FSM that contains this state
+        const fsm = fsms.find((f) => f.states[stateId] !== undefined);
+        if (!fsm) {
+          throw new Error(`State "${stateId}" not found in any FSM`);
+        }
+
+        // Load blueprint for plan context
+        const blueprintPath = join(runDir, "phase3.json");
+        let plan: WorkspaceBlueprint;
+        if (existsSync(blueprintPath)) {
+          const rawPlan: unknown = JSON.parse(readFileSync(blueprintPath, "utf-8"));
+          plan = WorkspaceBlueprintSchema.parse(rawPlan);
+        } else {
+          plan = {
+            workspace: { name: "", purpose: "" },
+            signals: [],
+            agents: [],
+            jobs: [],
+          } as unknown as WorkspaceBlueprint;
+        }
+
+        emitter.send("log", { level: "info", message: `Re-running step "${stateId}"...`, phase: "step-rerun" });
+
+        const result = await runStep({
+          fsm,
+          plan,
+          stateId,
+          input,
+          real,
+          onAction: (action) => {
+            emitter.send("progress", { type: "action-execution", ...action });
+          },
+        });
+
+        if (result.output !== null && result.output !== undefined) {
+          emitter.send("result", result.output);
+        }
+
+        emitter.send("done", {
+          success: result.success,
+          durationMs: result.durationMs,
+          rerun: true,
+          stateId,
+          error: result.error,
+        });
+      });
+    },
+  );

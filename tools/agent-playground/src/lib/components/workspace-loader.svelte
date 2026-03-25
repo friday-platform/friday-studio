@@ -64,7 +64,8 @@
       }
 
       const name = (config as Record<string, unknown>).name;
-      const workspaceName = typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
+      const workspaceName =
+        typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
 
       const res = await client.workspace.create.$post({
         json: { config: config as Record<string, unknown>, workspaceName },
@@ -78,7 +79,9 @@
 
       const result: unknown = await res.json();
       const wsId =
-        result && typeof result === "object" && "id" in result ? (result as { id: string }).id : null;
+        result && typeof result === "object" && "id" in result
+          ? (result as { id: string }).id
+          : null;
 
       await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
 
@@ -115,12 +118,7 @@
       <p class="drop-hint">or</p>
       <label class="browse-btn">
         Browse files
-        <input
-          type="file"
-          accept=".yml,.yaml"
-          hidden
-          onchange={handleFileInput}
-        />
+        <input type="file" accept=".yml,.yaml" hidden onchange={handleFileInput} />
       </label>
     {/if}
 

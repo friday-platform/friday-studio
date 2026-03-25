@@ -17,6 +17,31 @@ export ATLAS_SQLITE3_PATH=/usr/bin/sqlite3
 # No OTEL collector in this container — disable to avoid dangling metrics
 unset OTEL_DENO
 
+# ── Auto-generate ATLAS_KEY if not provided ──────────────────────────────────
+# ATLAS_KEY provides user identity for authenticated endpoints (skill publish,
+# workspace creation). In single-user Docker mode, auto-generate a local JWT
+# so everything works out of the box without extra configuration.
+# ── Local-only mode ──────────────────────────────────────────────────────────
+# In Docker, credentials come from .env (not the Atlas API). Set local-only
+# mode to skip remote credential fetching, and auto-generate ATLAS_KEY for
+# user identity if not provided.
+export ATLAS_LOCAL_ONLY="${ATLAS_LOCAL_ONLY:-true}"
+
+if [ -z "${ATLAS_KEY:-}" ]; then
+    ATLAS_KEY=$(node -e "
+        const h = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+        const p = Buffer.from(JSON.stringify({
+            iss: 'friday-platform',
+            email: 'platform-local@hellofriday.ai',
+            sub: 'local-user',
+            user_metadata: { tempest_user_id: 'local-user' }
+        })).toString('base64url');
+        console.log(h + '.' + p + '.local');
+    ")
+    export ATLAS_KEY
+    echo "[platform] Auto-generated ATLAS_KEY for local user identity"
+fi
+
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 shutdown() {
     echo "[platform] Shutting down..."

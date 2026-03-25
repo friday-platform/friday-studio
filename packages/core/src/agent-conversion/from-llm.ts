@@ -1,3 +1,4 @@
+import process from "node:process";
 import { APICallError } from "@ai-sdk/provider";
 import type { AtlasAgent, LinkCredentialRef } from "@atlas/agent-sdk";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
@@ -201,13 +202,25 @@ export function wrapAtlasAgent(
   description?: string,
   logger?: Logger,
 ): AtlasAgent<string, unknown> {
-  // Filter out Link credential refs - only pass string values
-  // Link refs should be resolved by the agent credential enricher
+  // Resolve env values: "from_environment" reads from process.env,
+  // plain strings pass through, Link credential refs are skipped
+  // (resolved by the agent credential enricher at execution time)
   const resolvedEnv: Record<string, string> = {};
   if (customEnv) {
     for (const [key, value] of Object.entries(customEnv)) {
       if (typeof value === "string") {
-        resolvedEnv[key] = value;
+        if (value === "from_environment" || value === "auto") {
+          const envValue = process.env[key];
+          if (envValue) {
+            resolvedEnv[key] = envValue;
+          } else {
+            logger?.warn(`Environment variable '${key}' not found (from_environment)`, {
+              wrapperId,
+            });
+          }
+        } else {
+          resolvedEnv[key] = value;
+        }
       }
     }
   }

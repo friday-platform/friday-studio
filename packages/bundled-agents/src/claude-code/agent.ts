@@ -256,6 +256,8 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
           description: "Anthropic API key for Claude API access",
           linkRef: { provider: "anthropic", key: "api_key" },
         },
+      ],
+      optional: [
         {
           name: "GH_TOKEN",
           description: "GitHub token for gh CLI access to private repos",
@@ -272,10 +274,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
         return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
       }
 
-      const ghToken = env.GH_TOKEN;
-      if (!ghToken) {
-        return err("GH_TOKEN not set. Connect GitHub in Link.");
-      }
+      const ghToken = env.GH_TOKEN ?? "";
 
       const controller = new AbortController();
       abortSignal?.addEventListener("abort", () => controller.abort(), { once: true });

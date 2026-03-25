@@ -1148,6 +1148,7 @@ export class AtlasDaemon {
    * @param payload - Signal payload data
    * @param streamId - Optional stream ID for conversation context
    * @param onStreamEvent - Optional callback for streaming responses (used by Discord, web chat, etc)
+   * @param skipStates - Optional state IDs to skip during FSM execution
    * @returns Session ID for tracking the triggered signal
    */
   public async triggerWorkspaceSignal(
@@ -1156,6 +1157,7 @@ export class AtlasDaemon {
     payload?: Record<string, unknown>,
     streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    skipStates?: string[],
   ): Promise<{ sessionId: string }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
@@ -1176,6 +1178,7 @@ export class AtlasDaemon {
       payload || {},
       streamId,
       onStreamEvent,
+      skipStates,
     );
 
     // Record signal trigger metric by provider type (http, schedule, slack, etc.)

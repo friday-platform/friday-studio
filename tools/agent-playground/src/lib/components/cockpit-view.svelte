@@ -13,10 +13,14 @@
   import { deriveDataContracts } from "@atlas/config/data-contracts";
   import { deriveAllEntryActions, type EntryAction } from "@atlas/config/entry-actions";
   import { mapSessionToStepStatus, type StepStatus } from "@atlas/config/map-session-status";
-  import { extractInitialStateIds, filterNoiseNodes, humanizeStepName } from "@atlas/config/pipeline-utils";
+  import {
+    extractInitialStateIds,
+    filterNoiseNodes,
+    humanizeStepName,
+  } from "@atlas/config/pipeline-utils";
   import { deriveSignalDetails } from "@atlas/config/signal-details";
-  import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { deriveTopology } from "@atlas/config/topology";
+  import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import type { SessionSummary } from "@atlas/core/session/session-events";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
@@ -128,8 +132,10 @@
       edges: topology.edges.filter((e) => {
         const from = topology.nodes.find((n) => n.id === e.from);
         const to = topology.nodes.find((n) => n.id === e.to);
-        return (!from?.jobId || from.jobId === selectedJobId) &&
-               (!to?.jobId || to.jobId === selectedJobId);
+        return (
+          (!from?.jobId || from.jobId === selectedJobId) &&
+          (!to?.jobId || to.jobId === selectedJobId)
+        );
       }),
     };
   });
@@ -177,47 +183,58 @@
   // ---------------------------------------------------------------------------
 
   /** Current job metadata for the JOBS section header. */
-  const currentJob = $derived.by((): {
-    id: string;
-    title: string;
-    description: string | null;
-    triggers: { signal: string }[];
-  } | null => {
-    const data = configQuery.data;
-    if (!data) return null;
-    const jobs = data.config.jobs;
-    if (!jobs) return null;
+  const currentJob = $derived.by(
+    (): {
+      id: string;
+      title: string;
+      description: string | null;
+      triggers: { signal: string }[];
+    } | null => {
+      const data = configQuery.data;
+      if (!data) return null;
+      const jobs = data.config.jobs;
+      if (!jobs) return null;
 
-    const jobIds = Object.keys(jobs);
-    if (jobIds.length === 0) return null;
+      const jobIds = Object.keys(jobs);
+      if (jobIds.length === 0) return null;
 
-    // Multi-job: use selectedJobId; single-job: use the only job
-    const jobId = selectedJobId ?? jobIds[0];
-    const job = jobs[jobId];
-    if (!job || typeof job !== "object") return null;
+      // Multi-job: use selectedJobId; single-job: use the only job
+      const jobId = selectedJobId ?? jobIds[0];
+      const job = jobs[jobId];
+      if (!job || typeof job !== "object") return null;
 
-    const title = "title" in job && typeof job.title === "string" ? job.title : humanizeStepName(jobId);
-    const description = "description" in job && typeof job.description === "string" ? job.description : null;
-    const triggers = "triggers" in job && Array.isArray(job.triggers)
-      ? job.triggers.filter((t): t is { signal: string } => typeof t === "object" && t !== null && "signal" in t)
-      : [];
-    return { id: jobId, title, description, triggers };
-  });
+      const title =
+        "title" in job && typeof job.title === "string" ? job.title : humanizeStepName(jobId);
+      const description =
+        "description" in job && typeof job.description === "string" ? job.description : null;
+      const triggers =
+        "triggers" in job && Array.isArray(job.triggers)
+          ? job.triggers.filter(
+              (t): t is { signal: string } => typeof t === "object" && t !== null && "signal" in t,
+            )
+          : [];
+      return { id: jobId, title, description, triggers };
+    },
+  );
 
   /** All workspace signals, keyed by ID. */
-  const workspaceSignals = $derived.by((): Record<string, { description: string; title?: string; schema?: Record<string, unknown> }> => {
-    const data = configQuery.data;
-    if (!data?.config.signals) return {};
-    const result: Record<string, { description: string; title?: string; schema?: Record<string, unknown> }> = {};
-    for (const [id, sig] of Object.entries(data.config.signals)) {
-      result[id] = {
-        description: sig.description,
-        title: sig.title,
-        schema: sig.schema,
-      };
-    }
-    return result;
-  });
+  const workspaceSignals = $derived.by(
+    (): Record<
+      string,
+      { description: string; title?: string; schema?: Record<string, unknown> }
+    > => {
+      const data = configQuery.data;
+      if (!data?.config.signals) return {};
+      const result: Record<
+        string,
+        { description: string; title?: string; schema?: Record<string, unknown> }
+      > = {};
+      for (const [id, sig] of Object.entries(data.config.signals)) {
+        result[id] = { description: sig.description, title: sig.title, schema: sig.schema };
+      }
+      return result;
+    },
+  );
 
   const hasOnlyUnsupported = $derived(
     topology !== null &&
@@ -267,10 +284,7 @@
   const sessionInfo = $derived.by(() => {
     const session = latestSession;
     if (!session) return null;
-    return {
-      status: session.status,
-      durationMs: session.durationMs,
-    };
+    return { status: session.status, durationMs: session.durationMs };
   });
 
   /** Derive data contracts for the below-pipeline section. */
@@ -313,8 +327,8 @@
     <div class="empty-state">
       <p>Execution-mode jobs only</p>
       <p class="hint">
-        This workspace uses execution-mode jobs which aren't supported in the pipeline view.
-        Migrate to FSM-based jobs to see them here.
+        This workspace uses execution-mode jobs which aren't supported in the pipeline view. Migrate
+        to FSM-based jobs to see them here.
       </p>
     </div>
   {:else if topology}
@@ -345,7 +359,9 @@
       <JobSelector
         jobs={jobInfos}
         {selectedJobId}
-        onJobSelect={(id) => { selectedJobId = id; }}
+        onJobSelect={(id) => {
+          selectedJobId = id;
+        }}
       />
     {/if}
 
@@ -373,15 +389,14 @@
     {/if}
 
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div class="diagram-area" onclick={(e) => {
-      if (e.target === e.currentTarget) clearSelection();
-    }}>
+    <div
+      class="diagram-area"
+      onclick={(e) => {
+        if (e.target === e.currentTarget) clearSelection();
+      }}
+    >
       {#if scopedTopology}
-      <PipelineDiagram
-        topology={scopedTopology}
-        {selectedNodeId}
-        onNodeClick={selectNode}
-      />
+        <PipelineDiagram topology={scopedTopology} {selectedNodeId} onNodeClick={selectNode} />
       {/if}
     </div>
 
@@ -394,11 +409,7 @@
     {/if}
 
     {#if workspaceId && signalDetails.length > 0}
-      <SignalsPanel
-        signals={signalDetails}
-        {workspaceId}
-        highlightedJobId={selectedJobId}
-      />
+      <SignalsPanel signals={signalDetails} {workspaceId} highlightedJobId={selectedJobId} />
     {/if}
   {/if}
 </div>

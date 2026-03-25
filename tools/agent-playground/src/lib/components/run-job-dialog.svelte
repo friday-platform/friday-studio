@@ -22,11 +22,7 @@
     type FieldDef,
   } from "$lib/utils/field-helpers";
 
-  type Signal = {
-    description: string;
-    title?: string;
-    schema?: Record<string, unknown>;
-  };
+  type Signal = { description: string; title?: string; schema?: Record<string, unknown> };
 
   type Props = {
     workspaceId: string;
@@ -109,26 +105,33 @@
     isRunning = true;
     error = null;
 
-    // Close the dialog immediately — the pipeline runs in the background
-    // and the user can watch progress on the dashboard.
-    open.set(false);
-    resetForm();
+    try {
+      const client = getDaemonClient();
+      const res = await client.workspace[":workspaceId"].signals[":signalId"].$post({
+        param: { workspaceId, signalId },
+        json: { payload },
+      });
 
-    const client = getDaemonClient();
-    client.workspace[":workspaceId"].signals[":signalId"].$post({
-      param: { workspaceId, signalId },
-      json: { payload },
-    }).then(async (res) => {
-      isRunning = false;
-      if (res.ok) {
-        const data = await res.json();
-        if (data.sessionId) {
-          goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
-        }
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => null);
+        const hasErr = typeof body === "object" && body !== null && "error" in body;
+        error = hasErr
+          ? String((body as Record<string, unknown>).error)
+          : `Trigger failed (${res.status})`;
+        return;
       }
-    }).catch(() => {
+
+      const data = await res.json();
       isRunning = false;
-    });
+      open.set(false);
+      resetForm();
+      if (data.sessionId) {
+        goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to trigger signal";
+      isRunning = false;
+    }
   }
 </script>
 
@@ -242,11 +245,7 @@
           {/if}
 
           <div class="buttons">
-            <Dialog.Button
-              type="submit"
-              closeOnClick={false}
-              disabled={isRunning}
-            >
+            <Dialog.Button type="submit" closeOnClick={false} disabled={isRunning}>
               {isRunning ? "Running..." : "Run"}
             </Dialog.Button>
             <Dialog.Cancel onclick={resetForm}>Cancel</Dialog.Cancel>

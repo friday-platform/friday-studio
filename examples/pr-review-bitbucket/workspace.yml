@@ -1,18 +1,15 @@
 version: '1.0'
 workspace:
-  name: PR Code Review Pipeline (Bitbucket)
+  name: PR Review (Bitbucket)
   description: >-
-    Accepts a Bitbucket Cloud pull request URL, clones the repository, performs a
-    thorough code review using Claude Code, and posts structured review comments
-    back on the PR via the Bitbucket API.
+    Reviews pull requests and posts inline comments on Bitbucket. Supports
+    initial reviews and follow-up rounds where it responds to author feedback.
 
 signals:
   review-pr:
     provider: http
-    title: Review a Pull Request
-    description: >-
-      Accepts a Bitbucket pull request URL and triggers an automated code review.
-      The full review lifecycle — clone, analyze, comment — runs end to end.
+    title: Review PR
+    description: Run a fresh code review on a pull request.
     config:
       path: /webhooks/review-pr
     schema:
@@ -29,10 +26,10 @@ signals:
 
   continue-review:
     provider: http
-    title: Continue PR Review
+    title: Continue review
     description: >-
-      Re-reviews a previously reviewed PR. Reads existing review threads,
-      responds to author feedback, and reviews new changes.
+      Pick up where the last review left off — respond to author replies and
+      review new changes.
     config:
       path: /webhooks/continue-review
     schema:
@@ -55,43 +52,30 @@ agents:
     type: atlas
     agent: bb
     description: >-
-      Executes Bitbucket Cloud operations: clone repos, fetch PR metadata, post
-      reviews. No LLM needed — deterministic API calls only.
+      Runs Bitbucket Cloud API calls — clone repos, fetch PR metadata, post
+      reviews.
     prompt: Execute Bitbucket Cloud operation.
     env:
-      BITBUCKET_USERNAME:
-        from: link
-        provider: bitbucket
-        key: username
-      BITBUCKET_TOKEN:
-        from: link
-        provider: bitbucket
-        key: app_password
+      BITBUCKET_USERNAME: from_environment
+      BITBUCKET_TOKEN: from_environment
 
   claude-code:
     type: atlas
     agent: claude-code
     description: >-
-      Reviews the pull request diff in the already-cloned repository. Reads
-      full changed files for context and analyzes against correctness, security,
-      performance, error handling, testing, and style criteria. Produces a
-      structured review report with file-level and line-level findings.
+      Reviews code in a cloned repository. Reads full files for context,
+      analyzes the diff, and produces a structured review.
     prompt: >-
       You are Code Reviewer. Reviews the pull request diff in the already-cloned
       repository. Reads full changed files for context and produces a structured
       review report with file-level and line-level findings.
     env:
-      ANTHROPIC_API_KEY:
-        from: link
-        provider: anthropic
-        key: access_token
+      ANTHROPIC_API_KEY: from_environment
 
 jobs:
   pr-code-review:
-    title: PR Code Review
-    description: >-
-      End-to-end pull request code review: clone the repository, analyze the
-      diff with Claude Code, and post review comments on the PR.
+    title: Review PR
+    description: Inline review comments posted on the pull request.
     triggers:
       - signal: review-pr
     fsm:
@@ -251,6 +235,11 @@ jobs:
                   pr_url: prUrl,
                 },
               });
+
+              return {
+                task: 'Clone PR repository from ' + prUrl,
+                config: { operation: 'clone', pr_url: prUrl },
+              };
             }
 
         guard_clone_done:
@@ -323,6 +312,16 @@ jobs:
                   findings: review.findings || [],
                 },
               });
+
+              return {
+                task: 'Post review to ' + prUrl,
+                config: {
+                  operation: 'pr-inline-review',
+                  pr_url: prUrl,
+                  verdict: review.verdict || 'COMMENT',
+                  findings_count: (review.findings || []).length,
+                },
+              };
             }
 
         guard_post_review_done:
@@ -445,10 +444,8 @@ jobs:
       tools: {}
 
   pr-followup-review:
-    title: PR Follow-up Review
-    description: >-
-      Continues a previous review: reads author responses to review threads,
-      replies to each, and reviews new changes since the last review.
+    title: Continue review
+    description: Replies to author feedback and comments on new changes.
     triggers:
       - signal: continue-review
     fsm:

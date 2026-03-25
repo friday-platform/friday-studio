@@ -63,6 +63,7 @@ export {
   isAgentAction,
   mapActionToStepComplete,
   mapActionToStepStart,
+  mapStateSkippedToStepSkipped,
 } from "./src/session/event-emission-mapper.ts";
 // Session History
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";

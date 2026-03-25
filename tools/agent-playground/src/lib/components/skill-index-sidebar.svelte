@@ -10,10 +10,7 @@
 <script lang="ts">
   import { Button } from "@atlas/ui";
 
-  type Props = {
-    onadd: () => void;
-    skillCount: number;
-  };
+  type Props = { onadd: () => void; skillCount: number };
 
   let { onadd, skillCount }: Props = $props();
 </script>
@@ -22,7 +19,8 @@
   <section class="explainer">
     <h3 class="section-title">Skills</h3>
     <p class="explainer-body">
-      Skills give agents specialized knowledge on demand. They load only when a task matches — keeping agents fast while extending what they can do.
+      Skills give agents specialized knowledge on demand. They load only when a task matches —
+      keeping agents fast while extending what they can do.
     </p>
     <a class="learn-more" href="https://agentskills.io/what-are-skills">Learn more →</a>
   </section>
@@ -86,5 +84,4 @@
   .learn-more:hover {
     text-decoration: underline;
   }
-
 </style>

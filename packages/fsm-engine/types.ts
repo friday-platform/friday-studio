@@ -205,11 +205,27 @@ export interface FSMToolResultEvent {
   };
 }
 
+/**
+ * Emitted when a state is skipped due to `skipStates` configuration.
+ * The engine chains through skipped states without executing their entry actions.
+ */
+export interface FSMStateSkippedEvent {
+  type: "data-fsm-state-skipped";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    stateId: string;
+    timestamp: number;
+  };
+}
+
 export type FSMEvent =
   | FSMStateTransitionEvent
   | FSMActionExecutionEvent
   | FSMToolCallEvent
-  | FSMToolResultEvent;
+  | FSMToolResultEvent
+  | FSMStateSkippedEvent;
 
 /**
  * Signal with additional context for execution tracking and event streaming
@@ -222,6 +238,8 @@ export interface SignalWithContext extends Signal {
     /** Separate channel for agent UIMessageChunks (text, reasoning, tool-call, etc.) */
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
     abortSignal?: AbortSignal;
+    /** State IDs to skip — their entry actions won't execute, engine chains through */
+    skipStates?: string[];
   };
 }
 

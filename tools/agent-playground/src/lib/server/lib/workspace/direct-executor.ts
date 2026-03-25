@@ -45,10 +45,22 @@ type RegistryModelId =
   | `groq:${string}`
   | `openai:${string}`;
 
+/** Trace entry emitted after each agent LLM call completes. */
+export interface AgentTraceEntry {
+  agentId: string;
+  modelId: string;
+  durationMs: number;
+  steps: number;
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
+  toolCalls: string[];
+}
+
 export interface DirectExecutorOptions {
   plan: WorkspaceBlueprint;
   /** Model ID (default: anthropic:claude-sonnet-4-6) */
   model?: RegistryModelId;
+  /** Called after each agent completes with LLM trace data. */
+  onTrace?: (trace: AgentTraceEntry) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +86,7 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
   ) => Promise<AgentResult>;
   shutdown: () => Promise<void>;
 } {
-  const { plan, model: modelId = "anthropic:claude-sonnet-4-6" } = opts;
+  const { plan, model: modelId = "anthropic:claude-sonnet-4-6", onTrace } = opts;
 
   // Lookups — key by both plan ID and bundledId so FSM actions
   // (which use executionRef as agentId) resolve correctly.
@@ -101,19 +113,15 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
     const agent = agentMap.get(action.agentId);
 
     if (!agent) {
-      return {
-        ok: false,
+      logger.warn("Agent not found in plan — executing with action metadata only", {
         agentId: action.agentId,
-        timestamp: new Date().toISOString(),
-        input: fsmContext.input ?? {},
-        error: { reason: `Agent "${action.agentId}" not found in plan` },
-        durationMs: Date.now() - startTime,
-      };
+        availableAgents: [...agentMap.keys()],
+      });
     }
 
     // Build server configs from the agent's MCP server references
     const serverConfigs: Record<string, MCPServerConfig> = {};
-    if (agent.mcpServers?.length) {
+    if (agent?.mcpServers?.length) {
       for (const serverRef of agent.mcpServers) {
         const serverMeta = mcpServersRegistry.servers[serverRef.serverId];
         if (!serverMeta) {
@@ -168,9 +176,12 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
       });
 
       // Agentic loop
+      const systemPrompt = agent
+        ? `You are ${agent.name}. ${agent.description}\n\nYou have access to tools. Use them to accomplish your task.`
+        : `You are agent "${action.agentId}". You have access to tools. Use them to accomplish your task.`;
       const result = await generateText({
         model: traceModel(registry.languageModel(modelId)),
-        system: `You are ${agent.name}. ${agent.description}\n\nYou have access to tools. Use them to accomplish your task.`,
+        system: systemPrompt,
         prompt,
         tools: allTools,
         stopWhen: stepCountIs(50),
@@ -202,6 +213,20 @@ export function createDirectMCPExecutor(opts: DirectExecutorOptions): {
         toolCalls: toolCallNames,
         finishReason: result.finishReason,
         textLength: result.text.length,
+      });
+
+      // Emit trace data for observability
+      const u = result.totalUsage;
+      onTrace?.({
+        agentId: action.agentId,
+        modelId,
+        durationMs: Date.now() - startTime,
+        steps: result.steps.length,
+        usage:
+          u.inputTokens != null && u.outputTokens != null && u.totalTokens != null
+            ? { inputTokens: u.inputTokens, outputTokens: u.outputTokens, totalTokens: u.totalTokens }
+            : undefined,
+        toolCalls: toolCallNames,
       });
 
       // Extract structured output from `complete` tool call

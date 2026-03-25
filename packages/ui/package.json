@@ -25,15 +25,16 @@
   "sideEffects": [
     "**/*.css"
   ],
-  "svelte": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "svelte": "./src/lib/index.ts",
+  "types": "./src/lib/index.ts",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "svelte": "./dist/index.js"
+      "types": "./src/lib/index.ts",
+      "svelte": "./src/lib/index.ts"
     },
-    "./tokens.css": "./dist/tokens.css",
+    "./markdown.css": "./src/lib/markdown/markdown.css",
+    "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
   },
@@ -41,6 +42,8 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
+    "@lezer/common": "^1.5.1",
+    "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
     "shiki": "^4.0.2"
   },

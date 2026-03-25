@@ -27,7 +27,9 @@
       const res = await fetch("/api/agents");
       if (!res.ok) throw new Error(`Failed to fetch agents: ${res.status}`);
       const data: unknown = await res.json();
-      return (data as { agents: Array<{ id: string; inputSchema?: unknown; outputSchema?: unknown }> }).agents;
+      return (
+        data as { agents: Array<{ id: string; inputSchema?: unknown; outputSchema?: unknown }> }
+      ).agents;
     },
     staleTime: 60_000,
   }));

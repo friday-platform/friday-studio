@@ -9,12 +9,12 @@
   import { Dialog, DropdownMenu, toast } from "@atlas/ui";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { writable } from "svelte/store";
-  import SkillLoader from "$lib/components/skill-loader.svelte";
   import MarkdownContent from "$lib/components/markdown-content.svelte";
   import SkillFileEditor from "$lib/components/skill-file-editor.svelte";
+  import SkillLoader from "$lib/components/skill-loader.svelte";
   import { useDeleteSkill, useDisableSkill, usePublishSkill, useSkill } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
+  import { writable } from "svelte/store";
 
   const namespace = $derived(page.params.namespace ?? "");
   const name = $derived(page.params.name ?? "");
@@ -104,10 +104,7 @@
 
   function toggleDisabled() {
     if (!skill || disableMut.isPending) return;
-    disableMut.mutate({
-      skillId: skill.skillId,
-      disabled: !skill.disabled,
-    });
+    disableMut.mutate({ skillId: skill.skillId, disabled: !skill.disabled });
   }
 
   // ---------------------------------------------------------------------------
@@ -224,7 +221,13 @@
           {#snippet children()}
             <DropdownMenu.Trigger class="action-trigger">
               Actions
-              <svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                class="caret"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <path d="M4 6l4 4 4-4" />
               </svg>
             </DropdownMenu.Trigger>
@@ -232,8 +235,12 @@
             <DropdownMenu.Content>
               <DropdownMenu.Item onclick={toggleDisabled}>
                 {disableMut.isPending
-                  ? (skill.disabled ? "Enabling..." : "Disabling...")
-                  : (skill.disabled ? "Enable" : "Disable")}
+                  ? skill.disabled
+                    ? "Enabling..."
+                    : "Disabling..."
+                  : skill.disabled
+                    ? "Enable"
+                    : "Disable"}
               </DropdownMenu.Item>
               <DropdownMenu.Item onclick={() => goto(`/skills/${namespace}/${name}/edit`)}>
                 Edit YAML
@@ -279,7 +286,8 @@
       {#snippet header()}
         <Dialog.Title>Delete skill</Dialog.Title>
         <Dialog.Description>
-          Are you sure you want to delete <strong>@{namespace}/{name}</strong>? This removes all versions and cannot be undone.
+          Are you sure you want to delete <strong>@{namespace}/{name}</strong>
+          ? This removes all versions and cannot be undone.
         </Dialog.Description>
       {/snippet}
 
@@ -301,11 +309,19 @@
       {#snippet header()}
         <Dialog.Title>Upload new version</Dialog.Title>
         <Dialog.Description>
-          Upload a SKILL.md file or folder to publish a new version of <strong>@{namespace}/{name}</strong>.
+          Upload a SKILL.md file or folder to publish a new version of <strong>
+            @{namespace}/{name}
+          </strong>
+          .
         </Dialog.Description>
       {/snippet}
 
-      <SkillLoader inline forceNamespace={namespace} forceName={name} onclose={() => uploadDialogOpen.set(false)} />
+      <SkillLoader
+        inline
+        forceNamespace={namespace}
+        forceName={name}
+        onclose={() => uploadDialogOpen.set(false)}
+      />
 
       {#snippet footer()}
         <Dialog.Cancel>Cancel</Dialog.Cancel>
@@ -415,7 +431,10 @@
     cursor: default;
     font-size: var(--font-size-1);
     padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+    transition:
+      background-color 100ms ease,
+      border-color 100ms ease,
+      color 100ms ease;
   }
 
   .save-btn.has-changes {

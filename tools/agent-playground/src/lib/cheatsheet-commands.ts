@@ -167,27 +167,27 @@ export const categories: CheatsheetCategory[] = [
       {
         command: "atlas workspace list",
         description: "List registered workspaces",
-        pages: ["/workspaces", "/platform"],
+        pages: ["/inspector", "/platform"],
       },
       {
         command: "atlas workspace add -p ~/path/to/workspace",
         description: "Register a workspace directory",
-        pages: ["/workspaces", "/platform"],
+        pages: ["/inspector", "/platform"],
       },
       {
         command: "atlas workspace add --scan ~/code",
         description: "Scan a directory tree for workspace.yml files",
-        pages: ["/workspaces", "/platform"],
+        pages: ["/inspector", "/platform"],
       },
       {
         command: "atlas workspace status -w <id>",
         description: "Show workspace config and status",
-        pages: ["/workspaces", "/platform"],
+        pages: ["/inspector", "/platform"],
       },
       {
         command: "atlas workspace cleanup",
         description: "Remove workspaces with missing directories",
-        pages: ["/workspaces", "/platform"],
+        pages: ["/inspector", "/platform"],
       },
     ],
   },
@@ -204,11 +204,7 @@ export const categories: CheatsheetCategory[] = [
         description: "Continue an existing chat",
         pages: ["/agents"],
       },
-      {
-        command: "atlas chat",
-        description: "List recent chats",
-        pages: ["/agents"],
-      },
+      { command: "atlas chat", description: "List recent chats", pages: ["/agents"] },
       {
         command: "atlas chat <id> --human",
         description: "View chat transcript (readable)",
@@ -229,11 +225,7 @@ export const categories: CheatsheetCategory[] = [
         description: "Recent logs (human-readable)",
         pages: [],
       },
-      {
-        command: "atlas logs --level error",
-        description: "Error logs only",
-        pages: [],
-      },
+      { command: "atlas logs --level error", description: "Error logs only", pages: [] },
       {
         command: "atlas logs --session <id>",
         description: "Logs for a specific session",
@@ -249,11 +241,7 @@ export const categories: CheatsheetCategory[] = [
   {
     name: "Daemon",
     commands: [
-      {
-        command: "atlas daemon status",
-        description: "Check if daemon is running",
-        pages: [],
-      },
+      { command: "atlas daemon status", description: "Check if daemon is running", pages: [] },
       {
         command: "atlas daemon start --detached",
         description: "Start daemon in background",
@@ -266,12 +254,7 @@ export const categories: CheatsheetCategory[] = [
         pages: [],
         copyOnly: true,
       },
-      {
-        command: "atlas daemon restart",
-        description: "Restart daemon",
-        pages: [],
-        copyOnly: true,
-      },
+      { command: "atlas daemon restart", description: "Restart daemon", pages: [], copyOnly: true },
     ],
   },
   {
@@ -282,21 +265,9 @@ export const categories: CheatsheetCategory[] = [
         description: "Start full dev environment (daemon + link + ledger + web)",
         pages: [],
       },
-      {
-        command: "deno task typecheck",
-        description: "Type check everything",
-        pages: [],
-      },
-      {
-        command: "deno task lint",
-        description: "Lint and auto-fix",
-        pages: [],
-      },
-      {
-        command: "deno task test",
-        description: "Run tests",
-        pages: [],
-      },
+      { command: "deno task typecheck", description: "Type check everything", pages: [] },
+      { command: "deno task lint", description: "Lint and auto-fix", pages: [] },
+      { command: "deno task test", description: "Run tests", pages: [] },
     ],
   },
 ];

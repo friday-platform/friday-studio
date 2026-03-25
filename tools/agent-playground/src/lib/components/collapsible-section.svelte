@@ -12,8 +12,8 @@
 -->
 
 <script lang="ts">
-  import type { Snippet } from "svelte";
   import { readSectionState, writeSectionState } from "$lib/collapsible-state";
+  import type { Snippet } from "svelte";
 
   type Props = {
     title: string;

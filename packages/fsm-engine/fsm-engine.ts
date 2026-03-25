@@ -358,6 +358,20 @@ export type AgentExecutor = (
   options?: { outputSchema?: Record<string, unknown> },
 ) => Promise<AgentSDKExecutionResult>;
 
+/**
+ * Executor for compiled code functions (guards, actions, tools).
+ * Default implementation uses Deno Web Workers for sandboxed execution.
+ * Provide a custom implementation for environments without Deno Workers.
+ */
+export interface CodeExecutor {
+  execute(
+    functionCode: string,
+    functionName: string,
+    context: Context,
+    signal: Signal,
+  ): Promise<unknown>;
+}
+
 export interface FSMEngineOptions {
   llmProvider?: LLMProvider;
   documentStore: DocumentStore;
@@ -370,6 +384,8 @@ export interface FSMEngineOptions {
   artifactStorage?: ArtifactStorageAdapter;
   /** Ledger storage adapter for versioned workspace resources */
   resourceAdapter?: ResourceStorageAdapter;
+  /** Custom code executor for guards, actions, and tools. Defaults to WorkerExecutor (requires Deno). */
+  codeExecutor?: CodeExecutor;
 }
 
 export class FSMEngine {
@@ -384,9 +400,9 @@ export class FSMEngine {
   private _emittedEvents: EmittedEvent[] = [];
   private _guardFunctions = new Map<string, string>(); // Store CODE, not compiled fn
   private _actionFunctions = new Map<string, string>(); // Store CODE, not compiled fn
-  private _guardExecutor: WorkerExecutor;
-  private _actionExecutor: WorkerExecutor;
-  private _toolExecutor: WorkerExecutor;
+  private _guardExecutor: CodeExecutor;
+  private _actionExecutor: CodeExecutor;
+  private _toolExecutor: CodeExecutor;
   private static readonly MAX_RECURSION_DEPTH = 10;
   private static readonly MAX_PROCESSED_SIGNALS = 100;
   private _processedSignalsCount = 0;
@@ -400,13 +416,16 @@ export class FSMEngine {
     // Documents will be loaded in initialize() to avoid race condition
     // between definition and persistent storage
 
-    this._guardExecutor = new WorkerExecutor({ timeout: 1000, functionType: "guard" });
-    this._actionExecutor = new WorkerExecutor({ timeout: 10000, functionType: "action" });
-    this._toolExecutor = new WorkerExecutor({
-      timeout: 180000,
-      functionType: "tool",
-      permissions: { net: true, read: true, env: true },
-    });
+    const ce = options.codeExecutor;
+    this._guardExecutor = ce ?? new WorkerExecutor({ timeout: 1000, functionType: "guard" });
+    this._actionExecutor = ce ?? new WorkerExecutor({ timeout: 10000, functionType: "action" });
+    this._toolExecutor =
+      ce ??
+      new WorkerExecutor({
+        timeout: 180000,
+        functionType: "tool",
+        permissions: { net: true, read: true, env: true },
+      });
   }
 
   async initialize(): Promise<void> {
@@ -565,6 +584,8 @@ export class FSMEngine {
       /** Separate channel for agent UIMessageChunks (text, reasoning, tool-call, etc.) */
       onStreamEvent?: (chunk: import("@atlas/agent-sdk").AtlasUIMessageChunk) => void;
       abortSignal?: AbortSignal;
+      /** State IDs to skip — their entry actions won't execute, engine chains through */
+      skipStates?: string[];
     },
   ): Promise<void> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
@@ -666,6 +687,77 @@ export class FSMEngine {
 
     if (!selectedTransition) return; // No valid transition found
 
+    // Skip chain-through: resolve the effective target by chaining through skipped states
+    const skipStates = sig._context?.skipStates ?? [];
+
+    // Warn about unknown state IDs (catches typos from direct API callers)
+    for (const id of skipStates) {
+      if (!this._definition.states[id]) {
+        logger.warn("skipStates contains unknown state ID", {
+          stateId: id,
+          knownStates: Object.keys(this._definition.states),
+        });
+      }
+    }
+
+    let resolvedTarget = selectedTransition.target;
+    const visited = new Set<string>();
+
+    while (
+      skipStates.includes(resolvedTarget) &&
+      resolvedTarget !== this._definition.initial &&
+      this._definition.states[resolvedTarget]?.type !== "final"
+    ) {
+      if (visited.has(resolvedTarget)) {
+        throw new Error(`Circular skip chain detected: "${resolvedTarget}" already visited`);
+      }
+      visited.add(resolvedTarget);
+
+      // Emit skip event before chaining through
+      if (sig._context?.onEvent) {
+        sig._context.onEvent({
+          type: "data-fsm-state-skipped",
+          data: {
+            sessionId: sig._context.sessionId,
+            workspaceId: sig._context.workspaceId,
+            jobName: this._definition.id,
+            stateId: resolvedTarget,
+            timestamp: Date.now(),
+          },
+        });
+      }
+
+      const skippedStateDef = this._definition.states[resolvedTarget];
+      const transitions = skippedStateDef?.on;
+      if (!transitions) {
+        throw new Error(`Cannot skip state "${resolvedTarget}": no outgoing transitions`);
+      }
+
+      const transitionKeys = Object.keys(transitions);
+      if (transitionKeys.length !== 1) {
+        throw new Error(
+          `Cannot skip state with ${transitionKeys.length} outgoing transitions: ${resolvedTarget}`,
+        );
+      }
+
+      const transitionKey = transitionKeys[0];
+      if (!transitionKey) {
+        throw new Error(`Cannot skip state "${resolvedTarget}": no outgoing transitions`);
+      }
+      const transitionValue = transitions[transitionKey];
+      const singleTransition = Array.isArray(transitionValue)
+        ? transitionValue.length === 1
+          ? transitionValue[0]
+          : null
+        : transitionValue;
+
+      if (!singleTransition) {
+        throw new Error(`Cannot skip state with multiple guarded transitions: ${resolvedTarget}`);
+      }
+
+      resolvedTarget = singleTransition.target;
+    }
+
     // Transactional execution:
     // Create pending state copies. Only commit if everything succeeds.
     const pendingDocuments = new Map<string, Document>();
@@ -694,9 +786,9 @@ export class FSMEngine {
         );
       }
 
-      // Transition to new state
+      // Transition to new state (using resolved target that accounts for skip chain)
       const previousState = pendingState;
-      pendingState = selectedTransition.target;
+      pendingState = resolvedTarget;
 
       logger.debug(`FSM transitioned: ${previousState} -> ${pendingState}`, { event: sig.type });
 

@@ -1,18 +1,15 @@
 version: '1.0'
 workspace:
-  name: PR Code Review Pipeline
+  name: PR Review
   description: >-
-    Accepts a GitHub pull request URL, clones the repository, performs a thorough
-    code review using Claude Code, and posts structured review comments back on
-    the PR via the gh CLI.
+    Reviews pull requests and posts inline comments on GitHub. Supports initial
+    reviews and follow-up rounds where it responds to author feedback.
 
 signals:
   review-pr:
     provider: http
-    title: Review a Pull Request
-    description: >-
-      Accepts a GitHub pull request URL and triggers an automated code review.
-      The full review lifecycle — clone, analyze, comment — runs end to end.
+    title: Review PR
+    description: Run a fresh code review on a pull request.
     config:
       path: /webhooks/review-pr
     schema:
@@ -29,10 +26,10 @@ signals:
 
   continue-review:
     provider: http
-    title: Continue PR Review
+    title: Continue review
     description: >-
-      Re-reviews a previously reviewed PR. Reads existing review threads,
-      responds to author feedback, and reviews new changes.
+      Pick up where the last review left off — respond to author replies and
+      review new changes.
     config:
       path: /webhooks/continue-review
     schema:
@@ -55,39 +52,29 @@ agents:
     type: atlas
     agent: gh
     description: >-
-      Executes GitHub CLI operations: clone repos, fetch PR metadata, post
-      reviews. No LLM needed — deterministic shell commands only.
+      Runs GitHub CLI commands — clone repos, fetch PR metadata, post reviews.
     prompt: Execute GitHub CLI operation.
     env:
-      GH_TOKEN:
-        from: link
-        provider: github
-        key: access_token
+      GH_TOKEN: from_environment
 
   claude-code:
     type: atlas
     agent: claude-code
     description: >-
-      Reviews the pull request diff in the already-cloned repository. Reads
-      full changed files for context and analyzes against correctness, security,
-      performance, error handling, testing, and style criteria. Produces a
-      structured review report with file-level and line-level findings.
+      Reviews code in a cloned repository. Reads full files for context,
+      analyzes the diff, and produces a structured review.
     prompt: >-
       You are Code Reviewer. Reviews the pull request diff in the already-cloned
       repository. Reads full changed files for context and produces a structured
       review report with file-level and line-level findings.
     env:
-      ANTHROPIC_API_KEY:
-        from: link
-        provider: anthropic
-        key: access_token
+      ANTHROPIC_API_KEY: from_environment
+      GH_TOKEN: from_environment
 
 jobs:
   pr-code-review:
-    title: PR Code Review
-    description: >-
-      End-to-end pull request code review: clone the repository, analyze the
-      diff with Claude Code, and post review comments on the PR.
+    title: Review PR
+    description: Inline review comments posted on the pull request.
     triggers:
       - signal: review-pr
     fsm:
@@ -250,6 +237,11 @@ jobs:
                   pr_url: prUrl,
                 },
               });
+
+              return {
+                task: 'Clone PR repository from ' + prUrl,
+                config: { operation: 'clone', pr_url: prUrl },
+              };
             }
 
         guard_clone_done:
@@ -322,6 +314,16 @@ jobs:
                   findings: review.findings || [],
                 },
               });
+
+              return {
+                task: 'Post review to ' + prUrl,
+                config: {
+                  operation: 'pr-inline-review',
+                  pr_url: prUrl,
+                  verdict: review.verdict || 'COMMENT',
+                  findings_count: (review.findings || []).length,
+                },
+              };
             }
 
         guard_post_review_done:
@@ -444,10 +446,8 @@ jobs:
       tools: {}
 
   pr-followup-review:
-    title: PR Follow-up Review
-    description: >-
-      Continues a previous review: reads author responses to review threads,
-      replies to each, and reviews new changes since the last review.
+    title: Continue review
+    description: Replies to author feedback and comments on new changes.
     triggers:
       - signal: continue-review
     fsm:

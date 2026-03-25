@@ -132,6 +132,10 @@ export const AgentMetadataSchema = z.object({
   displayName: z.string().optional().meta({ description: "Agent display name" }),
   version: z.string().meta({ description: "Agent version" }),
   description: z.string().min(1).meta({ description: "What this agent does" }),
+  summary: z
+    .string()
+    .optional()
+    .meta({ description: "Short human-readable one-liner for UI display" }),
   constraints: z
     .string()
     .optional()
@@ -192,6 +196,9 @@ export const AgentEnvironmentConfigSchema = z.object({
         name: z.string().min(1, { message: "Environment variable name is required" }),
         description: z.string().optional(),
         default: z.string().optional(),
+        linkRef: SimpleLinkRefSchema.optional().describe(
+          "Link credential reference for automatic resolution",
+        ),
       }),
     )
     .optional(),

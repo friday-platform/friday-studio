@@ -12,10 +12,7 @@
   import type { WorkspaceAgent } from "@atlas/config/workspace-agents";
   import type { IntegrationStatus } from "$lib/queries/integrations-preflight";
 
-  type Props = {
-    agents: WorkspaceAgent[];
-    providerStatus: Map<string, IntegrationStatus>;
-  };
+  type Props = { agents: WorkspaceAgent[]; providerStatus: Map<string, IntegrationStatus> };
 
   let { agents, providerStatus }: Props = $props();
 
@@ -31,7 +28,8 @@
         "from" in value &&
         (value as Record<string, unknown>).from === "link"
       ) {
-        const provider = (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
+        const provider =
+          (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
         if (typeof provider === "string") providers.push(provider);
       }
     }
@@ -70,9 +68,12 @@
 
   function healthTitle(status: IntegrationStatus): string {
     switch (status) {
-      case "connected": return "Credentials connected";
-      case "degraded": return "Credentials degraded";
-      case "disconnected": return "Credentials not connected";
+      case "connected":
+        return "Credentials connected";
+      case "degraded":
+        return "Credentials degraded";
+      case "disconnected":
+        return "Credentials not connected";
     }
   }
 </script>
@@ -83,10 +84,12 @@
       <h3 class="section-title">Agent types</h3>
       <div class="type-list">
         <p class="type-entry">
-          <strong>Built-in</strong> agents ship with Friday — tested, versioned, and ready to use.
+          <strong>Built-in</strong>
+           agents ship with Friday — tested, versioned, and ready to use.
         </p>
         <p class="type-entry">
-          <strong>Custom</strong> agents are defined in your workspace config with a model, tools, and prompt.
+          <strong>Custom</strong>
+           agents are defined in your workspace config with a model, tools, and prompt.
         </p>
       </div>
       <a class="learn-more" href="https://fridayagent.ai/docs/agents">Learn more →</a>

@@ -4,5 +4,13 @@ import CaretRight from "./caret-right.svelte";
 import Check from "./check.svelte";
 import Close from "./close.svelte";
 import Plus from "./plus.svelte";
+import Progress from "./progress.svelte";
 
-export const IconSmall: Record<string, Component> = { CaretDown, CaretRight, Check, Close, Plus };
+export const IconSmall: Record<string, Component> = {
+  CaretDown,
+  CaretRight,
+  Check,
+  Close,
+  Plus,
+  Progress,
+};

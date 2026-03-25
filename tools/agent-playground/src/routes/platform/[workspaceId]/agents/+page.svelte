@@ -16,7 +16,10 @@
   import { page } from "$app/state";
   import AgentIoSchemas from "$lib/components/agent-io-schemas.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
-  import { useIntegrationsPreflight, type IntegrationStatus } from "$lib/queries/integrations-preflight";
+  import {
+    useIntegrationsPreflight,
+    type IntegrationStatus,
+  } from "$lib/queries/integrations-preflight";
   import { useWorkspaceConfig } from "$lib/queries/workspace-config";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -71,11 +74,14 @@
     const rows: Array<{ label: string; value: string }> = [];
     if (agent.provider) rows.push({ label: "Provider", value: agent.provider });
     if (agent.model) rows.push({ label: "Model", value: agent.model });
-    if (agent.temperature !== undefined) rows.push({ label: "Temperature", value: String(agent.temperature) });
-    if (agent.maxTokens !== undefined) rows.push({ label: "Max Tokens", value: String(agent.maxTokens) });
+    if (agent.temperature !== undefined)
+      rows.push({ label: "Temperature", value: String(agent.temperature) });
+    if (agent.maxTokens !== undefined)
+      rows.push({ label: "Max Tokens", value: String(agent.maxTokens) });
     if (agent.toolChoice) rows.push({ label: "Tool Choice", value: agent.toolChoice });
     if (agent.timeout) rows.push({ label: "Timeout", value: agent.timeout });
-    if (agent.maxRetries !== undefined) rows.push({ label: "Max Retries", value: String(agent.maxRetries) });
+    if (agent.maxRetries !== undefined)
+      rows.push({ label: "Max Retries", value: String(agent.maxRetries) });
     if (agent.providerOptions && Object.keys(agent.providerOptions).length > 0) {
       rows.push({ label: "Provider Options", value: JSON.stringify(agent.providerOptions) });
     }
@@ -109,7 +115,8 @@
         "from" in value &&
         (value as Record<string, unknown>).from === "link"
       ) {
-        const provider = (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
+        const provider =
+          (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
         if (typeof provider === "string") providers.push(provider);
       }
     }
@@ -142,9 +149,12 @@
 
   function healthTitle(status: IntegrationStatus): string {
     switch (status) {
-      case "connected": return "Credentials connected";
-      case "degraded": return "Credentials degraded";
-      case "disconnected": return "Credentials not connected";
+      case "connected":
+        return "Credentials connected";
+      case "degraded":
+        return "Credentials degraded";
+      case "disconnected":
+        return "Credentials not connected";
     }
   }
 
@@ -165,7 +175,8 @@
         "from" in value &&
         (value as Record<string, unknown>).from === "link"
       ) {
-        const provider = (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
+        const provider =
+          (value as Record<string, unknown>).provider ?? (value as Record<string, unknown>).id;
         const providerStr = typeof provider === "string" ? provider : null;
         const status = providerStr ? (providerStatus.get(providerStr) ?? "disconnected") : null;
         rows.push({ key, source: "link", provider: providerStr, status });
@@ -184,7 +195,9 @@
 
   <header class="page-header">
     <h1>Agents</h1>
-    <p class="page-subtitle">Agents handle individual steps in your workspace jobs. Each one runs a specific task.</p>
+    <p class="page-subtitle">
+      Agents handle individual steps in your workspace jobs. Each one runs a specific task.
+    </p>
   </header>
 
   {#if configQuery.isLoading}
@@ -670,6 +683,4 @@
     font-weight: var(--font-weight-5);
     padding: var(--size-0-5) var(--size-1);
   }
-
-
 </style>

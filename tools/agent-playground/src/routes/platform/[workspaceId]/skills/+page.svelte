@@ -8,9 +8,9 @@
 -->
 
 <script lang="ts">
+  import { DropdownMenu } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { DropdownMenu } from "@atlas/ui";
   import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
   import {
     useAddWorkspaceSkill,
@@ -536,7 +536,9 @@
     gap: var(--size-1);
     padding: var(--size-3);
     text-align: start;
-    transition: background-color 150ms ease, border-color 150ms ease;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease;
   }
 
   .picker-item:hover:not(:disabled) {

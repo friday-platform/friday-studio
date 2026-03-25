@@ -217,7 +217,10 @@
     cursor: default;
     font-size: var(--font-size-1);
     padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+    transition:
+      background-color 100ms ease,
+      border-color 100ms ease,
+      color 100ms ease;
   }
 
   .save-btn.has-changes {

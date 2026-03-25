@@ -1,22 +1,17 @@
 version: '1.0'
 workspace:
-  name: Jira Labeled Bug Fix Pipeline
+  name: Jira Bug Fix (Labeled)
   description: >-
-    Searches a Jira project for tickets labeled "ai-fix" that are in "To Do"
-    status, picks the highest-priority one, claims it by transitioning to
-    "In Progress", clones the Bitbucket repo, implements the fix with Claude
-    Code, creates a PR, and transitions the ticket to "In Review" with a
-    comment linking the PR.
+    Picks up Jira tickets labeled "ai-fix" and fixes them. Claims the
+    highest-priority bug, implements a fix, and opens a PR on Bitbucket.
 
 signals:
   process-labeled-bugs:
     provider: http
-    title: Process AI-Flagged Bugs
+    title: Process labeled bugs
     description: >-
-      Searches the given Jira project for tickets with the "ai-fix" label
-      in "To Do" status. Picks the highest-priority ticket and runs the
-      full fix pipeline: claim, clone, implement, PR, update ticket.
-      Exits cleanly if no matching tickets are found.
+      Search a Jira project for "ai-fix" tickets in To Do. Picks the
+      highest-priority one, implements a fix, and opens a PR.
     config:
       path: /webhooks/process-labeled-bugs
     schema:
@@ -42,35 +37,42 @@ agents:
     type: atlas
     agent: jira
     description: >-
-      Executes Jira Cloud operations: search issues by JQL, read issues,
-      transition statuses, add comments. Deterministic API calls — no LLM.
+      Runs Jira Cloud API calls — search issues by JQL, read issues, transition
+      statuses, add comments.
     prompt: Execute Jira Cloud operation.
+    env:
+      JIRA_SITE: from_environment
+      JIRA_EMAIL: from_environment
+      JIRA_API_TOKEN: from_environment
 
   bb:
     type: atlas
     agent: bb
     description: >-
-      Executes Bitbucket Cloud operations: clone repos, create PRs.
-      Deterministic API calls — no LLM.
+      Runs Bitbucket Cloud API calls — clone repos, push branches, create PRs.
     prompt: Execute Bitbucket Cloud operation.
+    env:
+      BITBUCKET_USERNAME: from_environment
+      BITBUCKET_TOKEN: from_environment
 
   claude-code:
     type: atlas
     agent: claude-code
     description: >-
-      Implements bug fixes in the cloned repository. Reads the bug
-      description, explores the codebase, writes the fix, and commits
-      on a feature branch.
+      Implements bug fixes in a cloned repository. Reads the bug description,
+      explores the codebase, and commits a fix on a feature branch.
     prompt: >-
       You are a senior software engineer. Implement bug fixes based on
       the Jira ticket description. Write clean, well-tested code.
+    env:
+      ANTHROPIC_API_KEY: from_environment
 
 jobs:
   labeled-bugfix:
-    title: Labeled Bug Fix
+    title: Fix labeled bug
     description: >-
-      Searches for ai-fix labeled tickets, claims the highest-priority one,
-      implements the fix, creates a PR, and updates the ticket status.
+      Highest-priority "ai-fix" ticket claimed, fixed, and PR opened on
+      Bitbucket.
     triggers:
       - signal: process-labeled-bugs
     fsm:
@@ -296,6 +298,11 @@ jobs:
                   max_results: 1,
                 },
               });
+
+              return {
+                task: 'Search for ai-fix bugs in ' + projectKey,
+                config: { operation: 'issue-search', project_key: projectKey },
+              };
             }
 
         guard_has_tickets:
@@ -346,6 +353,11 @@ jobs:
                   transition_name: 'In Progress',
                 },
               });
+
+              return {
+                task: 'Claim ticket ' + ticket.key,
+                config: { operation: 'issue-transition', issue_key: ticket.key, transition_name: 'In Progress' },
+              };
             }
 
         guard_claim_done:
@@ -370,6 +382,11 @@ jobs:
                   repo_url: repoUrl,
                 },
               });
+
+              return {
+                task: 'Clone repository from ' + repoUrl,
+                config: { operation: 'repo-clone', repo_url: repoUrl },
+              };
             }
 
         guard_clone_done:
@@ -440,6 +457,11 @@ jobs:
                   repo_url: input.repo_url,
                 },
               });
+
+              return {
+                task: 'Push branch ' + fix.branch_name,
+                config: { operation: 'repo-push', branch: fix.branch_name, repo_url: input.repo_url },
+              };
             }
 
         guard_push_done:
@@ -480,6 +502,11 @@ jobs:
                   close_source_branch: true,
                 },
               });
+
+              return {
+                task: 'Create PR: ' + title,
+                config: { operation: 'pr-create', source_branch: fix.branch_name, issue_key: issueKey },
+              };
             }
 
         guard_pr_done:
@@ -511,6 +538,11 @@ jobs:
                   body: 'Fix implemented by Friday: [PR #' + prNumber + '](' + prUrl + ')',
                 },
               });
+
+              return {
+                task: 'Comment on ticket ' + ticket.key + ' with PR link',
+                config: { operation: 'issue-comment', issue_key: ticket.key },
+              };
             }
 
         guard_comment_done:
@@ -536,6 +568,11 @@ jobs:
                   transition_name: 'Done',
                 },
               });
+
+              return {
+                task: 'Transition ticket ' + ticket.key + ' to Done',
+                config: { operation: 'issue-transition', issue_key: ticket.key, transition_name: 'Done' },
+              };
             }
 
         guard_transition_done:

@@ -53,10 +53,13 @@ export function createSSEStream(
   const abortController = new AbortController();
   const encoder = new TextEncoder();
 
+  let closed = false;
+
   const stream = new ReadableStream({
     async start(controller) {
-      /** Encode and enqueue a single SSE frame. */
+      /** Encode and enqueue a single SSE frame. Silently drops if stream is closed. */
       function enqueue(event: string, data: unknown): void {
+        if (closed) return;
         const json = JSON.stringify(data);
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${json}\n\n`));
       }
@@ -76,10 +79,12 @@ export function createSSEStream(
         const message = err instanceof Error ? err.message : String(err);
         enqueue("error", { error: message });
       } finally {
+        closed = true;
         controller.close();
       }
     },
     cancel() {
+      closed = true;
       abortController.abort();
     },
   });

@@ -24,7 +24,10 @@
   type Props = {
     workspaceId: string;
     job: Job;
-    signals: Record<string, { description: string; title?: string; schema?: Record<string, unknown> }>;
+    signals: Record<
+      string,
+      { description: string; title?: string; schema?: Record<string, unknown> }
+    >;
   };
 
   let { workspaceId, job, signals }: Props = $props();
@@ -44,7 +47,13 @@
       else if (t === "object") entries[key] = {};
       else entries[key] = "";
     }
-    return "{ " + Object.entries(entries).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(", ") + " }";
+    return (
+      "{ " +
+      Object.entries(entries)
+        .map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+        .join(", ") +
+      " }"
+    );
   }
 
   function handleMenuAction(action: string) {
@@ -79,9 +88,7 @@
     <span class="job-name">{job.title}</span>
 
     <div class="job-actions">
-      <DropdownMenu.Root
-        positioning={{ placement: "bottom-end" }}
-      >
+      <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
         {#snippet children()}
           <DropdownMenu.Trigger class="overflow-trigger" aria-label="Job options">
             <span class="overflow-btn">&hellip;</span>
@@ -91,13 +98,21 @@
             <DropdownMenu.Item onclick={() => goto(`/platform/${workspaceId}/jobs`)}>
               View job
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onclick={() =>
+                goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
+            >
+              Open in Job Inspector
+            </DropdownMenu.Item>
             <DropdownMenu.Item onclick={() => handleMenuAction("copy-curl")}>
               Copy as cURL
             </DropdownMenu.Item>
             <DropdownMenu.Item onclick={() => handleMenuAction("copy-cli")}>
               Copy CLI command
             </DropdownMenu.Item>
-            <DropdownMenu.Item onclick={() => goto(`/platform/${workspaceId}/edit?path=jobs.${job.id}`)}>
+            <DropdownMenu.Item
+              onclick={() => goto(`/platform/${workspaceId}/edit?path=jobs.${job.id}`)}
+            >
               Edit configuration
             </DropdownMenu.Item>
           </DropdownMenu.Content>

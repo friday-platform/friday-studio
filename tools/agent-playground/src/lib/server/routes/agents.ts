@@ -43,6 +43,7 @@ export const agentsRoute = new Hono().get("/", (c) => {
       id: entry.id,
       displayName: entry.name,
       description: entry.description,
+      summary: entry.summary ?? "",
       constraints: agent.metadata.constraints ?? "",
       version: entry.version,
       examples: entry.examples,
@@ -55,4 +56,3 @@ export const agentsRoute = new Hono().get("/", (c) => {
 
   return c.json({ agents });
 });
-

@@ -8,19 +8,18 @@
 -->
 
 <script lang="ts">
-  import { basicSetup } from "codemirror";
-  import { EditorView, keymap } from "@codemirror/view";
-  import { EditorState } from "@codemirror/state";
-  import { yaml as yamlLang } from "@codemirror/lang-yaml";
-  import { atlasTheme } from "$lib/editor/atlas-theme";
   import { Button } from "@atlas/ui";
-  import { onDestroy } from "svelte";
-  import { untrack } from "svelte";
+  import { yaml as yamlLang } from "@codemirror/lang-yaml";
+  import { EditorState } from "@codemirror/state";
+  import { EditorView, keymap } from "@codemirror/view";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import { useSkill } from "$lib/queries/skills";
   import { getDaemonClient } from "$lib/daemon-client.ts";
-  import { stringify, parse } from "yaml";
+  import { atlasTheme } from "$lib/editor/atlas-theme";
+  import { useSkill } from "$lib/queries/skills";
+  import { basicSetup } from "codemirror";
+  import { onDestroy, untrack } from "svelte";
+  import { parse, stringify } from "yaml";
 
   const namespace = $derived(page.params.namespace ?? "");
   const name = $derived(page.params.name ?? "");
@@ -96,10 +95,7 @@
       throw new Error("Frontmatter must be a YAML mapping");
     }
 
-    return {
-      frontmatter: parsed as Record<string, unknown>,
-      instructions: body.trim(),
-    };
+    return { frontmatter: parsed as Record<string, unknown>, instructions: body.trim() };
   }
 
   async function save() {
@@ -111,9 +107,8 @@
       const { frontmatter, instructions } = parseSkillMdClient(currentContent);
 
       const title = typeof frontmatter.title === "string" ? frontmatter.title : undefined;
-      const description = typeof frontmatter.description === "string"
-        ? frontmatter.description
-        : skill.description;
+      const description =
+        typeof frontmatter.description === "string" ? frontmatter.description : skill.description;
 
       const { name: _n, description: _d, title: _t, ...remainingFrontmatter } = frontmatter;
 
@@ -137,12 +132,8 @@
         );
       }
 
-      await queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", namespace, name],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills"],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["daemon", "skills", namespace, name] });
+      await queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
       initialSnapshot = currentContent;
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
@@ -219,11 +210,7 @@
   <div class="edit-content">
     <div class="title-row">
       <h1 class="edit-title">Edit @{namespace}/{name}</h1>
-      <Button
-        size="small"
-        disabled={!dirty || saving}
-        onclick={save}
-      >
+      <Button size="small" disabled={!dirty || saving} onclick={save}>
         {saving ? "Saving..." : "Save"}
       </Button>
     </div>
@@ -231,9 +218,7 @@
     {#if errorMessage}
       <div class="error-banner">
         <span class="error-text">{errorMessage}</span>
-        <button class="error-dismiss" onclick={() => (errorMessage = null)}>
-          &times;
-        </button>
+        <button class="error-dismiss" onclick={() => (errorMessage = null)}>&times;</button>
       </div>
     {/if}
 

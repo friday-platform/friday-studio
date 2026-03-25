@@ -1,10 +1,11 @@
-import type { FSMActionExecutionEvent } from "@atlas/fsm-engine";
+import type { FSMActionExecutionEvent, FSMStateSkippedEvent } from "@atlas/fsm-engine";
 import { describe, expect, test } from "vitest";
 import {
   type AgentResultData,
   isAgentAction,
   mapActionToStepComplete,
   mapActionToStepStart,
+  mapStateSkippedToStepSkipped,
 } from "./event-emission-mapper.ts";
 
 // ---------------------------------------------------------------------------
@@ -192,5 +193,42 @@ describe("mapActionToStepComplete", () => {
     const result = mapActionToStepComplete(event, ar, 1);
 
     expect(result.reasoning).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapStateSkippedToStepSkipped
+// ---------------------------------------------------------------------------
+
+function stateSkippedEvent(
+  overrides: Partial<FSMStateSkippedEvent["data"]> = {},
+): FSMStateSkippedEvent {
+  return {
+    type: "data-fsm-state-skipped",
+    data: {
+      sessionId: "sess-1",
+      workspaceId: "ws-1",
+      jobName: "my-job",
+      stateId: "review",
+      timestamp: 1707820800000,
+      ...overrides,
+    },
+  };
+}
+
+describe("mapStateSkippedToStepSkipped", () => {
+  test("maps FSMStateSkippedEvent to step:skipped", () => {
+    const event = stateSkippedEvent();
+    const result = mapStateSkippedToStepSkipped(event);
+
+    expect(result).toMatchObject({ type: "step:skipped", sessionId: "sess-1", stateId: "review" });
+    expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("preserves stateId from event data", () => {
+    const event = stateSkippedEvent({ stateId: "deploy" });
+    const result = mapStateSkippedToStepSkipped(event);
+
+    expect(result.stateId).toBe("deploy");
   });
 });

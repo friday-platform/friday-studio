@@ -2,7 +2,9 @@
   "name": "@atlas/ui",
   "version": "0.0.1",
   "exports": {
-    ".": "./dist/index.js",
+    ".": "./src/lib/index.ts",
+    "./tokens.css": "./src/lib/tokens.css",
+    "./markdown.css": "./src/lib/markdown/markdown.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
   },

@@ -68,13 +68,11 @@ const agentsWithSchemas = bundledAgents
 describe("bundled agent schema engine compatibility", () => {
   test.each(agentsWithSchemas)("$id schemas survive sanitization without data loss", ({
     id,
-    inputSchema,
     outputSchema,
   }) => {
-    for (const [label, schema] of [
-      ["inputSchema", inputSchema],
-      ["outputSchema", outputSchema],
-    ] as const) {
+    // inputSchema is metadata for the playground UI — it bypasses the FSM engine
+    // entirely, so discriminatedUnion's oneOf is fine. Only check outputSchema.
+    for (const [label, schema] of [["outputSchema", outputSchema]] as const) {
       if (!schema) continue;
 
       const raw = z.toJSONSchema(schema) as Record<string, unknown>;

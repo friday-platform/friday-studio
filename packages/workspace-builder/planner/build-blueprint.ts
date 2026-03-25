@@ -66,6 +66,32 @@ export class PipelineError extends Error {
 // Options & Result
 // ---------------------------------------------------------------------------
 
+/**
+ * Progress event emitted at key milestones during blueprint generation.
+ * Each phase attaches the data that became available at that point.
+ */
+export type BlueprintProgressEvent =
+  | {
+      phase: "plan";
+      workspace: { name: string; purpose: string };
+      agents: Array<{ id: string; name: string; description: string; capabilities: string[] }>;
+      signals: Array<{ id: string; name: string }>;
+    }
+  | { phase: "classify"; agents: Array<{ id: string; name: string; bundledId?: string }> }
+  | { phase: "dag-start" }
+  | {
+      phase: "dag";
+      jobs: Array<{
+        id: string;
+        name: string;
+        steps: Array<{ id: string; agentId: string; description: string; depends_on: string[] }>;
+      }>;
+    }
+  | { phase: "schemas-start"; stepCount: number }
+  | { phase: "schemas" }
+  | { phase: "mappings-start" }
+  | { phase: "mappings" };
+
 /** Options for buildBlueprint(). */
 export type BuildBlueprintOpts = {
   /** "workspace" includes signal planning; "task" excludes it. */
@@ -79,6 +105,8 @@ export type BuildBlueprintOpts = {
     plan: Phase1Result;
     classified: { clarifications: AgentClarification[]; configRequirements: ConfigRequirement[] };
   };
+  /** Called at key sub-phase milestones for progressive UI feedback. */
+  onProgress?: (event: BlueprintProgressEvent) => void;
 };
 
 /** Result from buildBlueprint(). */
@@ -152,7 +180,7 @@ export async function buildBlueprint(
   prompt: string,
   opts: BuildBlueprintOpts,
 ): Promise<BlueprintResult> {
-  const { mode, logger, abortSignal, precomputed } = opts;
+  const { mode, logger, abortSignal, precomputed, onProgress } = opts;
 
   // -- plan ----------------------------------------------------------------
   const phase1 = precomputed
@@ -167,6 +195,18 @@ export async function buildBlueprint(
           agents: r.agents.length,
         }),
       });
+
+  onProgress?.({
+    phase: "plan",
+    workspace: phase1.workspace,
+    agents: phase1.agents.map((a) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      capabilities: a.capabilities,
+    })),
+    signals: phase1.signals.map((s) => ({ id: s.id, name: s.name })),
+  });
 
   // Reuse dynamic servers already fetched during planning (avoids redundant KV lookup)
   const dynamicServers = phase1.dynamicServers;
@@ -183,6 +223,11 @@ export async function buildBlueprint(
           configRequirements: r.configRequirements.length,
         }),
       });
+
+  onProgress?.({
+    phase: "classify",
+    agents: phase1.agents.map((a) => ({ id: a.id, name: a.name, bundledId: a.bundledId })),
+  });
 
   // -- credentials ---------------------------------------------------------
   let credentialBindings: CredentialBinding[] = [];
@@ -240,6 +285,8 @@ export async function buildBlueprint(
   }
 
   // -- dag -----------------------------------------------------------------
+  onProgress?.({ phase: "dag-start" });
+
   const rawJobs = await runStep(
     "dag",
     () => generateDAGSteps(prompt, phase1.signals, phase1.agents),
@@ -253,6 +300,20 @@ export async function buildBlueprint(
       }),
     },
   );
+
+  onProgress?.({
+    phase: "dag",
+    jobs: rawJobs.map((j) => ({
+      id: j.id,
+      name: j.name,
+      steps: j.steps.map((s) => ({
+        id: s.id,
+        agentId: s.agentId,
+        description: s.description,
+        depends_on: s.depends_on,
+      })),
+    })),
+  });
 
   // -- stamp execution types -----------------------------------------------
   const jobs = await runStep("stamp", () => stampExecutionTypes(rawJobs, phase1.agents), {
@@ -290,6 +351,9 @@ export async function buildBlueprint(
   );
 
   // -- per-job: schemas, completeness gate, contracts ----------------------
+  const totalSteps = jobs.reduce((n, j) => n + j.steps.length, 0);
+  onProgress?.({ phase: "schemas-start", stepCount: totalSteps });
+
   for (const job of jobs) {
     const jobSchemas = await runStep(
       `schemas/${job.id}`,
@@ -370,7 +434,11 @@ export async function buildBlueprint(
     ...(parsedResources.length > 0 ? { resources: parsedResources } : {}),
   };
 
+  onProgress?.({ phase: "schemas" });
+
   // -- mappings (per-job) --------------------------------------------------
+  onProgress?.({ phase: "mappings-start" });
+
   for (const job of jobs) {
     // Re-derive schemas from contracts — they were just built above
     const jobSchemas = new Map<string, ValidatedJSONSchema>();
@@ -390,6 +458,8 @@ export async function buildBlueprint(
     );
     job.prepareMappings = mappings;
   }
+
+  onProgress?.({ phase: "mappings" });
 
   return {
     blueprint,

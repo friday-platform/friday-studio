@@ -124,7 +124,12 @@
       const { namespace, skillName } = splitRef(parsed.name);
 
       if (!namespace) {
-        pendingSkill = { name: skillName, description: parsed.description ?? "", skillMdContent: skillMdText, files };
+        pendingSkill = {
+          name: skillName,
+          description: parsed.description ?? "",
+          skillMdContent: skillMdText,
+          files,
+        };
         needsNamespace = true;
         return;
       }
@@ -159,7 +164,12 @@
       const { namespace, skillName } = splitRef(parsed.name);
 
       if (!namespace) {
-        pendingSkill = { name: skillName, description: parsed.description ?? "", skillMdContent: text, files: null };
+        pendingSkill = {
+          name: skillName,
+          description: parsed.description ?? "",
+          skillMdContent: text,
+          files: null,
+        };
         needsNamespace = true;
         return;
       }
@@ -201,7 +211,12 @@
       const { namespace, skillName } = splitRef(parsed.name);
 
       if (!namespace) {
-        pendingSkill = { name: skillName, description: parsed.description ?? "", skillMdContent: skillMdText, files };
+        pendingSkill = {
+          name: skillName,
+          description: parsed.description ?? "",
+          skillMdContent: skillMdText,
+          files,
+        };
         needsNamespace = true;
         return;
       }
@@ -224,9 +239,19 @@
     try {
       const ns = namespaceInput.trim();
       if (pendingSkill.files) {
-        await publishWithArchive(ns, pendingSkill.name, pendingSkill.skillMdContent, pendingSkill.files);
+        await publishWithArchive(
+          ns,
+          pendingSkill.name,
+          pendingSkill.skillMdContent,
+          pendingSkill.files,
+        );
       } else {
-        await publishJsonSkill(ns, pendingSkill.name, pendingSkill.description, pendingSkill.skillMdContent);
+        await publishJsonSkill(
+          ns,
+          pendingSkill.name,
+          pendingSkill.description,
+          pendingSkill.skillMdContent,
+        );
       }
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to publish skill";
@@ -250,9 +275,8 @@
 
     // If description contains < or >, the server rejects it (XML injection guard).
     // Omit it so the server auto-generates one from instructions via LLM.
-    const safeDescription = description.includes("<") || description.includes(">")
-      ? undefined
-      : description || undefined;
+    const safeDescription =
+      description.includes("<") || description.includes(">") ? undefined : description || undefined;
 
     const res = await fetch(
       `/api/daemon/api/skills/@${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
@@ -265,7 +289,9 @@
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: `Publish failed: ${res.status}` }));
-      throw new Error(typeof body.error === "string" ? body.error : `Publish failed: ${res.status}`);
+      throw new Error(
+        typeof body.error === "string" ? body.error : `Publish failed: ${res.status}`,
+      );
     }
 
     await onPublishSuccess(namespace, name);
@@ -320,7 +346,9 @@
 
   function splitRef(ref: string): { namespace: string | null; skillName: string } {
     const match = ref.match(/^@([a-z0-9-]+)\/([a-z0-9-]+)$/);
-    return match ? { namespace: match[1], skillName: match[2] } : { namespace: null, skillName: ref };
+    return match
+      ? { namespace: match[1], skillName: match[2] }
+      : { namespace: null, skillName: ref };
   }
 
   function parseFrontmatter(content: string): {
@@ -469,14 +497,15 @@
     await readDir(dirEntry, "");
     return files;
   }
-
 </script>
 
 {#if needsNamespace}
   <div class="drop-zone" class:inline>
     <div class="drop-content">
       <p class="drop-label">Skill namespace</p>
-      <p class="drop-hint">Enter the namespace for <strong>{pendingSkill?.name}</strong></p>
+      <p class="drop-hint">
+        Enter the namespace for <strong>{pendingSkill?.name}</strong>
+      </p>
       <div class="namespace-form">
         <span class="namespace-prefix">@</span>
         <input
@@ -484,7 +513,9 @@
           type="text"
           bind:value={namespaceInput}
           placeholder="atlas"
-          onkeydown={(e) => { if (e.key === "Enter") submitNamespace(); }}
+          onkeydown={(e) => {
+            if (e.key === "Enter") submitNamespace();
+          }}
         />
         <span class="namespace-sep">/</span>
         <span class="namespace-name">{pendingSkill?.name}</span>
@@ -497,7 +528,15 @@
       {/if}
     </div>
     {#if onclose}
-      <button type="button" class="close-btn" onclick={() => { needsNamespace = false; pendingSkill = null; onclose?.(); }}>
+      <button
+        type="button"
+        class="close-btn"
+        onclick={() => {
+          needsNamespace = false;
+          pendingSkill = null;
+          onclose?.();
+        }}
+      >
         Cancel
       </button>
     {/if}
@@ -522,12 +561,7 @@
         <div class="browse-actions">
           <label class="browse-btn">
             Browse
-            <input
-              type="file"
-              webkitdirectory
-              hidden
-              onchange={handleFolderInput}
-            />
+            <input type="file" webkitdirectory hidden onchange={handleFolderInput} />
           </label>
         </div>
       {/if}

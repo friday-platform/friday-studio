@@ -42,9 +42,7 @@ function generateValueForProperty(prop: SchemaObject): unknown {
   const desc = typeof prop.description === "string" ? prop.description : undefined;
   switch (type) {
     case "string":
-      return desc
-        ? `<${(desc.split("(")[0] ?? desc).trim().toLowerCase()}>`
-        : "";
+      return desc ? `<${(desc.split("(")[0] ?? desc).trim().toLowerCase()}>` : "";
     case "number":
     case "integer":
       return 0;

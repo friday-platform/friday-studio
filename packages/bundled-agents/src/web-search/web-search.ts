@@ -178,6 +178,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
   id: "research",
   displayName: "Web Search",
   version: "2.0.0",
+  summary: "Search the web, cross-reference sources, and produce cited research summaries.",
   description:
     "Web research engine that executes multi-query searches, cross-references sources, and produces cited research artifacts. USE FOR: news/daily digests, company/person/product research, competitive intelligence, market analysis, fact-checking, or any question needing current web information.",
   constraints:

@@ -35,7 +35,9 @@
   });
 
   /** Extract schema properties for rendering as a table. */
-  function schemaFields(schema: object | null): Array<{ name: string; type: string; required: boolean; description?: string }> {
+  function schemaFields(
+    schema: object | null,
+  ): Array<{ name: string; type: string; required: boolean; description?: string }> {
     if (!schema) return [];
     const s = schema as Record<string, unknown>;
     const props = s.properties;
@@ -65,19 +67,16 @@
 </script>
 
 {#if signals.length > 0}
-  <CollapsibleSection
-    title="Signals"
-    {summaryText}
-    sectionKey="signals"
-    {workspaceId}
-  >
+  <CollapsibleSection title="Signals" {summaryText} sectionKey="signals" {workspaceId}>
     <div class="signals-list">
       {#each signals as signal (signal.name)}
         {@const fields = schemaFields(signal.schema)}
         <div class="signal-entry" class:signal-entry--highlighted={triggersHighlightedJob(signal)}>
           <div class="signal-header">
             <span class="signal-name">{signal.title ?? signal.name}</span>
-            <span class="provider-badge {providerBadgeClass(signal.provider)}">{providerLabel(signal.provider)}</span>
+            <span class="provider-badge {providerBadgeClass(signal.provider)}">
+              {providerLabel(signal.provider)}
+            </span>
             {#if signal.endpoint}
               <span class="endpoint">POST {signal.endpoint}</span>
             {:else if signal.schedule}

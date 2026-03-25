@@ -84,6 +84,8 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   id: "google-calendar",
   displayName: "Google Calendar",
   version: "1.0.0",
+  summary:
+    "Manage Google Calendar events — list, search, create, modify, and delete events with attendee and Meet support.",
   description:
     "Full Google Calendar management via google-calendar MCP. Lists calendars, searches/gets events, creates events with attendees and Google Meet, modifies and deletes events. USE FOR: calendar queries, event creation, scheduling, meeting management.",
   constraints:

@@ -108,6 +108,7 @@ function deriveRegistryEntry(agent: AtlasAgent) {
     id: metadata.id,
     name: metadata.displayName ?? metadata.id,
     description: metadata.description,
+    summary: metadata.summary,
     version: metadata.version,
     examples: metadata.expertise.examples,
     requiredConfig: toConfigFields(environmentConfig?.required),

@@ -221,10 +221,10 @@
       <Dialog.Root>
         {#snippet children()}
           <Dialog.Trigger>
-            <button class="config-detail config-link">
+            <span class="config-detail config-link">
               <span class="config-label">{capitalize(provider)}</span>
               {url}
-            </button>
+            </span>
           </Dialog.Trigger>
 
           <Dialog.Content size="auto">
@@ -384,12 +384,19 @@
     color: var(--color-text);
   }
 
-  .config-link {
+  /* Dialog.Trigger renders a <button> wrapper — reset its default styles */
+  .row :global(button:has(.config-link)) {
     background: none;
     border: none;
     cursor: pointer;
+    display: block;
     padding: 0;
     text-align: start;
+    width: 100%;
+  }
+
+  .config-link {
+    cursor: pointer;
   }
 
   .config-link:hover {

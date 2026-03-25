@@ -24,10 +24,7 @@ const handler: RequestHandler = async ({ params, request }) => {
 
   // SSE: pass through the readable stream without buffering
   if (res.headers.get("content-type")?.includes("text/event-stream")) {
-    return new Response(res.body, {
-      status: res.status,
-      headers: res.headers,
-    });
+    return new Response(res.body, { status: res.status, headers: res.headers });
   }
 
   // Strip content-encoding — fetch() already decompresses the body,
@@ -36,10 +33,7 @@ const handler: RequestHandler = async ({ params, request }) => {
   responseHeaders.delete("content-encoding");
   responseHeaders.delete("content-length");
 
-  return new Response(res.body, {
-    status: res.status,
-    headers: responseHeaders,
-  });
+  return new Response(res.body, { status: res.status, headers: responseHeaders });
 };
 
 export const GET = handler;

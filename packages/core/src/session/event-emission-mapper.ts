@@ -8,8 +8,13 @@
  * @module
  */
 
-import type { FSMActionExecutionEvent } from "@atlas/fsm-engine";
-import type { StepCompleteEvent, StepStartEvent, ToolCallSummary } from "./session-events.ts";
+import type { FSMActionExecutionEvent, FSMStateSkippedEvent } from "@atlas/fsm-engine";
+import type {
+  StepCompleteEvent,
+  StepSkippedEvent,
+  StepStartEvent,
+  ToolCallSummary,
+} from "./session-events.ts";
 import { SessionActionTypeSchema } from "./session-events.ts";
 
 // ---------------------------------------------------------------------------
@@ -99,6 +104,24 @@ export function mapActionToStepComplete(
     reasoning: agentResult?.reasoning,
     output: agentResult?.output,
     error: event.data.error,
+    timestamp: new Date(event.data.timestamp).toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// mapStateSkippedToStepSkipped
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps a skipped FSM state event to a `step:skipped` session event.
+ *
+ * @param event - FSM state skipped event emitted when `skipStates` causes a state to be bypassed
+ */
+export function mapStateSkippedToStepSkipped(event: FSMStateSkippedEvent): StepSkippedEvent {
+  return {
+    type: "step:skipped",
+    sessionId: event.data.sessionId,
+    stateId: event.data.stateId,
     timestamp: new Date(event.data.timestamp).toISOString(),
   };
 }

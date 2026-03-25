@@ -74,6 +74,9 @@ export function reduceSessionEvent(
     case "step:complete":
       return reduceStepComplete(view, event);
 
+    case "step:skipped":
+      return reduceStepSkipped(view, event);
+
     case "session:complete": {
       // Transition any remaining pending blocks to skipped
       const finalizedBlocks = view.agentBlocks.map((block) =>
@@ -135,6 +138,7 @@ function reduceStepStart(
       task: event.task,
       input: event.input,
       status: "running",
+      startedAt: event.timestamp,
     };
     const blocks = [...view.agentBlocks];
     blocks[pendingIdx] = updated;
@@ -154,6 +158,7 @@ function reduceStepStart(
         task: event.task,
         input: event.input,
         status: "running",
+        startedAt: event.timestamp,
         toolCalls: [],
         output: undefined,
       },
@@ -199,6 +204,24 @@ function reduceStepComplete(
   };
   const blocks = [...view.agentBlocks];
   blocks[idx] = updated;
+  return { ...view, agentBlocks: blocks };
+}
+
+function reduceStepSkipped(
+  view: SessionView,
+  event: SessionStreamEvent & { type: "step:skipped" },
+): SessionView {
+  const pendingIdx = view.agentBlocks.findIndex(
+    (b) => b.stateId === event.stateId && b.status === "pending",
+  );
+
+  if (pendingIdx === -1) return view;
+
+  const pending = view.agentBlocks[pendingIdx];
+  if (!pending) return view;
+
+  const blocks = [...view.agentBlocks];
+  blocks[pendingIdx] = { ...pending, status: "skipped" as const };
   return { ...view, agentBlocks: blocks };
 }
 

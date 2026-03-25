@@ -10,13 +10,21 @@
   @param {Record<string, { description: string; title?: string; schema?: Record<string, unknown> }>} signals - Workspace signals keyed by ID
 -->
 <script lang="ts">
-  import JobsCardRow from "$lib/components/jobs-card-row.svelte";
   import IntegrationsSidebar from "$lib/components/integrations-sidebar.svelte";
+  import JobsCardRow from "$lib/components/jobs-card-row.svelte";
 
   type Props = {
     workspaceId: string;
-    jobs: { id: string; title: string; description: string | null; triggers: { signal: string }[] }[];
-    signals: Record<string, { description: string; title?: string; schema?: Record<string, unknown> }>;
+    jobs: {
+      id: string;
+      title: string;
+      description: string | null;
+      triggers: { signal: string }[];
+    }[];
+    signals: Record<
+      string,
+      { description: string; title?: string; schema?: Record<string, unknown> }
+    >;
   };
 
   let { workspaceId, jobs, signals }: Props = $props();

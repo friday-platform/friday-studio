@@ -150,6 +150,8 @@ export const snowflakeAnalystAgent = createAgent<string, SnowflakeAnalystResult>
   id: "snowflake-analyst",
   displayName: "Snowflake Analyst",
   version: "2.0.0",
+  summary:
+    "Run read-only SQL queries directly on Snowflake tables. Discover schema, analyze trends and patterns.",
   description:
     "Analytical engine for a single Snowflake table. Executes SQL queries directly on Snowflake, " +
     "discovers schema, analyzes trends, anomalies, and patterns. No data is downloaded locally. " +
