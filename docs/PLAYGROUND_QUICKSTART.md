@@ -3,13 +3,13 @@
 Get your Friday distribution running locally with Docker Compose, load a space,
 and run your first agentic workflow.
 
-## What you're getting
+## Overview
 
 The Friday developer platform is a configuration-driven agentic orchestration
 runtime. Think of it like Kubernetes, but for agentic workloads. You define
 **spaces** composed of three building blocks:
 
-- **Signals** — how external events kick off your jobs (webhooks, cron, Slack,
+- **Signals** — how external events start your jobs (webhooks, cron, Slack,
   etc.)
 - **Agents** — built-in or custom agents that execute operations (Bitbucket,
   Jira, Claude Code, etc.)
@@ -28,32 +28,32 @@ it versionable, shareable, and repeatable.
   with `repository:read`, `repository:write`, and `pullrequest:write`
   permissions
 - A [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
-  (for the Jira bug fix example)
+  (for the Jira bug fix starter)
 - Optionally, a [GitHub personal access token](https://github.com/settings/tokens)
-  (for the GitHub PR review example)
+  (for the GitHub PR review starter)
 
 ## 1. Create your `.env` file
 
 Create a `.env` file with your API keys:
 
 ```bash
-# Required for all examples — powers the Claude Code agent
+# Required for all starters — powers the Claude Code agent
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Required for the Bitbucket examples
+# Required for the Bitbucket starters
 BITBUCKET_USERNAME=your-username
 BITBUCKET_TOKEN=your-app-password
 
-# Required for the Jira bug fix example
+# Required for the Jira bug fix starter
 JIRA_SITE=your-site.atlassian.net
 JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=your-api-token
 
-# Optional — only needed for the GitHub PR review example
+# Optional — only needed for the GitHub PR review starter
 GH_TOKEN=ghp_...
 ```
 
-Only set the keys for the examples you plan to run. `ANTHROPIC_API_KEY` is
+Only set the keys for the starters you plan to run. `ANTHROPIC_API_KEY` is
 always required.
 
 ## 2. Create `docker-compose.yml`
@@ -121,15 +121,15 @@ Wait for the startup banner:
 
 Open **http://localhost:5200** in your browser.
 
-## 4. Add an example space
+## 4. Add a starter space
 
-Your Friday distribution comes with four example spaces you can try right away.
+Your Friday distribution comes with four starter spaces you can try right away.
 Each one is a `workspace.yml` that defines a complete agentic workflow — agents,
 jobs, signals, and data contracts all in one file.
 
-### Available examples
+### Available starters
 
-| Example | What it does | Required `.env` keys |
+| Starter | What it does | Required `.env` keys |
 | ------- | ------------ | -------------------- |
 | [Bitbucket PR Code Review](../examples/pr-review-bitbucket/workspace.yml) | Clones a Bitbucket repo, reviews the PR diff with Claude Code, posts inline comments back on the PR | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN` |
 | [Jira Bug Fix](../examples/jira-bugfix-bitbucket/workspace.yml) | Reads a Jira bug ticket, clones the Bitbucket repo, implements the fix with Claude Code, opens a PR, and comments on the Jira ticket with the PR link | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
@@ -144,7 +144,7 @@ jobs, signals, and data contracts all in one file.
 
 ![Add space drop zone](images/add-space.png)
 
-3. The space loads and you're taken to its dashboard
+3. The space dashboard opens
 
 ![Space dashboard](images/space-dashboard.png)
 
@@ -162,8 +162,8 @@ curl -s -X POST http://localhost:8080/api/workspaces/create \
 
 ## 5. Publish skills
 
-The PR review examples use the `@tempest/pr-code-review` skill, which must be
-published before running those workspaces. Each example includes a `skill/`
+The PR review starters use the `@tempest/pr-code-review` skill, which must be
+published before running those workspaces. Each starter includes a `skill/`
 directory with the skill content.
 
 ### Publish via the UI
@@ -187,16 +187,16 @@ curl -X POST http://localhost:8080/api/skills/@tempest/pr-code-review/upload \
   -F "skillMd=$(cat pr-review/skill/SKILL.md)"
 ```
 
-The Jira examples don't use skills — skip this step if you're only running
+The Jira starters don't use skills — skip this step if you're only running
 those.
 
 ## 6. Trigger a job
 
-Once a space is loaded, kick off a job by sending a signal.
+Once a space is loaded, start a job by sending a signal.
 
 ### Trigger via the UI
 
-Click into your space, find the job you want to run, and click **Run**. The
+Navigate to your space, find the job you want to run, and click **Run**. The
 playground prompts you for the required input fields (e.g. a pull request URL
 or Jira issue key), then starts the pipeline.
 
@@ -264,14 +264,14 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
 After triggering a signal:
 
 1. Open the playground at **http://localhost:5200**
-2. Click into your space
+2. Navigate to your space
 3. You'll see the execution summary — each step of the workflow is called out
    with its status (succeeded, running, failed)
-4. Click a session to see real-time progress as each agent step executes
+4. Select a session to see real-time progress as each agent step executes
 
 ![Execution summary](images/execution-summary.png)
 
-For the Jira bug fix example, you'll see five steps: the Jira agent reads the
+For the Jira bug fix starter, you'll see five steps: the Jira agent reads the
 ticket, the Bitbucket agent clones the repo, Claude Code implements the fix,
 the Bitbucket agent creates a PR, and the Jira agent comments on the ticket with
 the PR link.
@@ -282,7 +282,7 @@ The platform includes a webhook tunnel that creates a public URL via
 Cloudflare, so GitHub or Bitbucket can send webhooks directly to your
 Friday instance — even when running locally.
 
-The tunnel starts automatically. Open any space in the playground — each HTTP
+The tunnel starts automatically. Navigate to any space in the playground — each HTTP
 signal shows the full webhook URL for your configured providers (GitHub,
 Bitbucket, Jira).
 
@@ -290,11 +290,11 @@ Bitbucket, Jira).
 
 ### Register the webhook
 
-1. Open your space in the playground
+1. Navigate to your space in the playground
 2. Find the signal you want to trigger (e.g. `review-pr`)
 3. Copy the webhook URL shown under the signal (e.g.
    `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
-5. In your repo or project settings, add a webhook:
+4. In your repo or project settings, add a webhook:
 
    **GitHub:**
    - **URL**: paste the webhook URL
