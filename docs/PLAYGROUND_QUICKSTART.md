@@ -77,6 +77,7 @@ Create a `docker-compose.yml` in the same directory as your `.env` file:
 services:
   platform:
     image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
+    platform: linux/amd64  # required on Apple Silicon Macs
     ports:
       - "8080:8080"  # atlasd daemon API
       - "3100:3100"  # link (credential/auth service)
@@ -359,7 +360,14 @@ docker compose down -v
 ## Troubleshooting
 
 **Container fails to start:** Check that Docker has at least 4 GB of memory
-allocated.
+allocated. Also make sure ports 8080, 3100, 5200, 7681, and 9090 are free — if
+another service is already bound to one of them, Docker will fail with an
+"address already in use" error.
+
+**"no matching manifest for linux/arm64":** The image is built for `amd64`. On
+Apple Silicon Macs, Docker Desktop runs it via Rosetta emulation. Make sure
+`platform: linux/amd64` is in your `docker-compose.yml` (included in the
+example above).
 
 **`ANTHROPIC_API_KEY` errors:** Verify your key is set in `.env` and the
 container was restarted after adding it (`docker compose down && docker compose up`).
