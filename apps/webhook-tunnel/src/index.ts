@@ -20,15 +20,14 @@ import type { Config } from "./config.ts";
 import { readConfig } from "./config.ts";
 import { listProviders } from "./providers.ts";
 import { createWebhookRoutes } from "./routes.ts";
-import { startTunnel, type TunnelResult } from "./tunnel.ts";
+import { TunnelManager } from "./tunnel.ts";
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 let server: Deno.HttpServer | null = null;
-let tunnel: TunnelResult | null = null;
-let tunnelUrl: string | null = null;
+let tunnelManager: TunnelManager | null = null;
 let isShuttingDown = false;
 
 // ---------------------------------------------------------------------------
@@ -41,24 +40,38 @@ export function createApp(config: Config) {
   // CORS for /status so the playground can fetch from browser
   app.use("/status", cors({ origin: "*" }));
 
-  // Health
-  app.get("/health", (c) => c.json({ status: "ok", service: "webhook-tunnel" }));
+  // Health — reflects actual tunnel liveness when tunnel is enabled
+  app.get("/health", (c) => {
+    const tunnelStatus = tunnelManager?.status;
+    const tunnelAlive = config.noTunnel || (tunnelStatus?.alive ?? false);
+
+    return c.json({
+      status: tunnelAlive ? "ok" : "degraded",
+      service: "webhook-tunnel",
+      tunnelAlive,
+    });
+  });
 
   // Tunnel status — used by the playground to construct webhook URLs
-  app.get("/status", (c) =>
-    c.json({
-      url: tunnelUrl,
+  app.get("/status", (c) => {
+    const status = tunnelManager?.status;
+
+    return c.json({
+      url: status?.url ?? null,
       secret: config.webhookSecret ?? null,
       providers: listProviders(),
       pattern: "/hook/{provider}/{workspaceId}/{signalId}",
-      active: tunnelUrl !== null,
-    }),
-  );
+      active: status?.alive ?? false,
+      tunnelAlive: status?.alive ?? false,
+      restartCount: status?.restartCount ?? 0,
+      lastProbeAt: status?.lastProbeAt ?? null,
+    });
+  });
 
   // Webhook routes
   app.route(
     "/",
-    createWebhookRoutes(config, () => tunnelUrl),
+    createWebhookRoutes(config, () => tunnelManager?.url ?? null),
   );
 
   return app;
@@ -82,9 +95,9 @@ async function shutdown(signal: string): Promise<void> {
   }, 25_000);
 
   try {
-    if (tunnel) {
-      tunnel.stop();
-      logger.info("Tunnel stopped");
+    if (tunnelManager) {
+      tunnelManager.stop();
+      logger.info("Tunnel manager stopped");
     }
 
     if (server) {
@@ -123,12 +136,15 @@ if (import.meta.main) {
     secret: config.webhookSecret ? "configured" : "none",
   });
 
-  // Start tunnel
+  // Start tunnel with auto-reconnect
   if (!config.noTunnel) {
     logger.info("Starting cloudflared tunnel...");
+
+    tunnelManager = new TunnelManager({ port: config.port, tunnelToken: config.tunnelToken });
+
     try {
-      tunnel = await startTunnel(config.port, config.tunnelToken);
-      tunnelUrl = tunnel.url;
+      await tunnelManager.start();
+      const tunnelUrl = tunnelManager.url;
 
       logger.info("Webhook tunnel ready", { publicUrl: tunnelUrl });
 
@@ -146,11 +162,13 @@ if (import.meta.main) {
       console.log(`    GitHub:     ${tunnelUrl}/hook/github/{workspaceId}/review-pr`);
       console.log(`    Bitbucket:  ${tunnelUrl}/hook/bitbucket/{workspaceId}/review-pr`);
       console.log(`    Raw:        ${tunnelUrl}/hook/raw/{workspaceId}/{signalId}`);
+      console.log("");
+      console.log("  Auto-reconnect: enabled (process monitor + health probe)");
       console.log("================================================================");
       console.log("");
     } catch (tunnelErr) {
       const msg = tunnelErr instanceof Error ? tunnelErr.message : String(tunnelErr);
-      logger.error("Failed to start tunnel", { error: msg });
+      logger.error("Failed to start tunnel after retries", { error: msg });
       logger.info("Server is still running on localhost", {
         localUrl: `http://localhost:${config.port}/hook/{provider}/{workspaceId}/{signalId}`,
       });
