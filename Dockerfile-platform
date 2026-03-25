@@ -158,6 +158,9 @@ COPY --chown=atlas:atlas --from=builder /app/packages /app/packages
 # Agent definitions
 COPY --chown=atlas:atlas --from=builder /app/.agents /app/.agents
 
+# Default webhook mappings (can be overridden via volume mount)
+COPY --chown=atlas:atlas apps/webhook-tunnel/webhook-mappings.yml /app/config/webhook-mappings.yml
+
 # node_modules — only needed for playground (vite, svelte) and pty-server (node-pty)
 COPY --chown=atlas:atlas --from=builder /app/node_modules /app/node_modules
 
@@ -194,6 +197,7 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_CLAUDE_PATH=/usr/local/bin/claude \
     ATLAS_SQLITE3_PATH=/usr/bin/sqlite3 \
     DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0 \
+    WEBHOOK_MAPPINGS_PATH=/app/config/webhook-mappings.yml \
     LINK_DEV_MODE=true \
     LINK_PORT=3100 \
     DEV_MODE=true \

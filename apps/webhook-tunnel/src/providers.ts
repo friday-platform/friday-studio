@@ -11,10 +11,12 @@ import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { logger } from "@atlas/logger";
 import { parse as parseYaml } from "@std/yaml";
 import type { Context } from "hono";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,30 +27,30 @@ export interface TransformResult {
   description: string;
 }
 
-interface EventMapping {
-  actions?: string[];
-  mapping: Record<string, string>;
-}
+const EventMappingSchema = z.object({
+  actions: z.array(z.string()).optional(),
+  mapping: z.record(z.string(), z.string()),
+});
 
-interface ProviderConfig {
-  /** HTTP header containing event type (GitHub, Bitbucket) */
-  event_header?: string;
-  /** Body field containing event type (Jira) — used when no event header */
-  event_field?: string;
-  signature_header: string;
-  events: Record<string, EventMapping>;
-}
+const ProviderConfigSchema = z.object({
+  event_header: z.string().optional(),
+  event_field: z.string().optional(),
+  signature_header: z.string(),
+  events: z.record(z.string(), EventMappingSchema),
+});
 
-interface MappingsConfig {
-  providers: Record<string, ProviderConfig>;
-}
+const MappingsConfigSchema = z.object({ providers: z.record(z.string(), ProviderConfigSchema) });
+
+type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
+type MappingsConfig = z.infer<typeof MappingsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Load config
 // ---------------------------------------------------------------------------
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MAPPINGS_PATH = join(__dirname, "..", "webhook-mappings.yml");
+const MAPPINGS_PATH =
+  process.env.WEBHOOK_MAPPINGS_PATH ?? join(__dirname, "..", "webhook-mappings.yml");
 
 let cachedConfig: MappingsConfig | undefined;
 
@@ -56,7 +58,7 @@ function loadMappings(): MappingsConfig {
   if (cachedConfig) return cachedConfig;
 
   const raw = readFileSync(MAPPINGS_PATH, "utf-8");
-  cachedConfig = parseYaml(raw) as MappingsConfig;
+  cachedConfig = MappingsConfigSchema.parse(parseYaml(raw));
   return cachedConfig;
 }
 

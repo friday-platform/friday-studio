@@ -92,6 +92,8 @@ services:
     volumes:
       - atlas-data:/data/atlas
       - link-data:/data/link
+      # Override default webhook mappings (optional — image ships with defaults for examples)
+      # - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
     restart: unless-stopped
     healthcheck:
       test:
@@ -344,6 +346,94 @@ The `{provider}` determines how the webhook payload is transformed:
 - `bitbucket` — extracts `pr_url` from Bitbucket PR events
 - `jira` — extracts `issue_key`, `project_key` from Jira issue events
 - `raw` — forwards the payload as-is (no transformation)
+
+### Webhook mappings
+
+The webhook tunnel uses a `webhook-mappings.yml` file to decide which events to
+accept and how to extract signal payload fields from incoming webhook bodies. The
+image ships with defaults that cover the starter spaces:
+
+```yaml
+providers:
+  github:
+    event_header: x-github-event
+    signature_header: x-hub-signature-256
+
+    events:
+      pull_request:
+        actions: [opened, reopened, synchronize]
+        mapping:
+          pr_url: "pull_request.html_url"
+
+      issues:
+        actions: [opened, labeled]
+        mapping:
+          issue_url: "issue.html_url"
+          issue_key: "issue.number"
+          title: "issue.title"
+          action: "action"
+
+      push:
+        mapping:
+          ref: "ref"
+          repo: "repository.full_name"
+          sha: "after"
+          pusher: "pusher.name"
+
+  bitbucket:
+    event_header: x-event-key
+    signature_header: x-hub-signature
+
+    events:
+      "pullrequest:created":
+        mapping:
+          pr_url: "pullrequest.links.html.href"
+
+      "pullrequest:updated":
+        mapping:
+          pr_url: "pullrequest.links.html.href"
+
+      "repo:push":
+        mapping:
+          repo: "repository.full_name"
+          branch: "push.changes[0].new.name"
+          sha: "push.changes[0].new.target.hash"
+
+  jira:
+    # Jira sends event type in the body (webhookEvent field), not a header
+    event_field: webhookEvent
+    signature_header: x-hub-signature
+
+    events:
+      "jira:issue_created":
+        mapping:
+          issue_key: "issue.key"
+          project_key: "issue.fields.project.key"
+          summary: "issue.fields.summary"
+          repo_url: "issue.fields.customfield_10000"
+
+      "jira:issue_updated":
+        mapping:
+          issue_key: "issue.key"
+          project_key: "issue.fields.project.key"
+          summary: "issue.fields.summary"
+          repo_url: "issue.fields.customfield_10000"
+```
+
+Each provider entry defines:
+- **`event_header`** or **`event_field`** — where to find the event type
+  (HTTP header for GitHub/Bitbucket, body field for Jira)
+- **`signature_header`** — header used for HMAC-SHA256 verification
+- **`events`** — map of event names to an optional `actions` filter and a
+  `mapping` of output field → dot-path into the webhook body
+
+To customize, save your own `webhook-mappings.yml` and uncomment the volume
+mount in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
+```
 
 ## Stopping the platform
 
