@@ -1,10 +1,19 @@
+import process from "node:process";
 import { logger } from "@atlas/logger";
 import { APICallError, generateText } from "ai";
 import { registry } from "./registry.ts";
 import { traceModel } from "./tracing.ts";
 
-// Default model for small/fast LLM tasks - routes through LiteLLM when configured
-const SMALL_LLM_MODEL = "groq:openai/gpt-oss-120b";
+// Groq is preferred for speed/cost, but falls back to Haiku when no Groq key is available
+const GROQ_MODEL = "groq:openai/gpt-oss-120b";
+const FALLBACK_MODEL = "anthropic:claude-haiku-4-5";
+
+function getSmallModel(): typeof GROQ_MODEL | typeof FALLBACK_MODEL {
+  if (process.env.LITELLM_API_KEY || process.env.GROQ_API_KEY) {
+    return GROQ_MODEL;
+  }
+  return FALLBACK_MODEL;
+}
 
 /**
  * Fast, small LLM for progress messages and summaries.
@@ -18,7 +27,7 @@ export async function smallLLM(params: {
 }): Promise<string> {
   try {
     const result = await generateText({
-      model: traceModel(registry.languageModel(SMALL_LLM_MODEL)),
+      model: traceModel(registry.languageModel(getSmallModel())),
       messages: [
         { role: "system", content: params.system },
         { role: "user", content: params.prompt },
