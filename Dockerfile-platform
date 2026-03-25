@@ -99,8 +99,45 @@ COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/loca
 
 WORKDIR /app
 
-# Copy full monorepo with deps from builder
-COPY --from=builder /app /app
+# Copy only what's needed at runtime — NOT the full monorepo.
+# Workspace config (Deno needs these to resolve imports)
+COPY --from=builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
+COPY --from=builder /app/types /app/types
+
+# Rewrite deno.json AND package.json workspace to only list members we
+# actually copy. The source uses "./apps/*" glob which fails when most
+# apps are absent. Deno reads both files for workspace resolution.
+RUN node -e " \
+  const ws = [ \
+    './apps/atlasd', './apps/atlas-cli', './apps/link', \
+    './apps/ledger', './apps/webhook-tunnel', \
+    './packages/*', \
+    './tools/agent-playground', './tools/pty-server' \
+  ]; \
+  for (const f of ['/app/deno.json', '/app/package.json']) { \
+    const c = JSON.parse(require('fs').readFileSync(f, 'utf8')); \
+    const key = c.workspace ? 'workspace' : 'workspaces'; \
+    c[key] = ws; \
+    require('fs').writeFileSync(f, JSON.stringify(c, null, 2) + '\n'); \
+  }"
+
+# Runtime apps (atlasd daemon, CLI, link, webhook-tunnel, ledger)
+COPY --from=builder /app/apps/atlasd /app/apps/atlasd
+COPY --from=builder /app/apps/atlas-cli /app/apps/atlas-cli
+COPY --from=builder /app/apps/link /app/apps/link
+COPY --from=builder /app/apps/ledger /app/apps/ledger
+COPY --from=builder /app/apps/webhook-tunnel /app/apps/webhook-tunnel
+
+# Runtime tools (playground, pty-server)
+COPY --from=builder /app/tools/agent-playground /app/tools/agent-playground
+COPY --from=builder /app/tools/pty-server /app/tools/pty-server
+
+# Shared packages and agent definitions
+COPY --from=builder /app/packages /app/packages
+COPY --from=builder /app/.agents /app/.agents
+
+# node_modules (runtime dependencies including node-pty prebuilds)
+COPY --from=builder /app/node_modules /app/node_modules
 
 # Copy Deno's dependency cache so modules aren't re-downloaded at startup
 COPY --from=builder /deno-dir /deno-dir

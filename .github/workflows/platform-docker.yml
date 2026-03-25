@@ -13,7 +13,7 @@ env:
 jobs:
   build-publish:
     name: Build and Publish Platform Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
 
     permissions:
@@ -43,7 +43,7 @@ jobs:
             --location="${{ env.GAR_LOCATION }}" \
             --repository="${{ env.REPOSITORY }}" \
             --package="${{ env.IMAGE }}" \
-            --format="value(tag)" 2>/dev/null || true)
+            --format="value(name)" 2>/dev/null || true)
 
           LATEST_PATCH=-1
           for tag in $TAGS; do
