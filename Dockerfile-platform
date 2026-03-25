@@ -26,7 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy dependency manifests first for layer caching
+# Copy dependency manifests first for layer caching — deno install only
+# reruns when manifests change, not when source code changes.
 COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
@@ -37,11 +38,11 @@ COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tool
 COPY tools/pty-server/deno.json tools/pty-server/package.json ./tools/pty-server/
 COPY packages/ ./packages/
 
-# Copy full source
-COPY . .
-
-# Install all dependencies
+# Install dependencies (cached unless manifests above change)
 RUN deno install
+
+# Copy full source (changes frequently but doesn't bust the install cache)
+COPY . .
 
 # Build @atlas/ui — the playground imports from dist/ which needs svelte-package
 WORKDIR /app/packages/ui
