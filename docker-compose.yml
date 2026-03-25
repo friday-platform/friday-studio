@@ -1,7 +1,7 @@
 # Atlas Platform — single-container docker compose
 #
 # Usage:
-#   docker compose up          # build + start
+#   docker compose up          # start
 #   docker compose up -d       # detached
 #   docker compose down        # stop + remove container
 #   docker compose logs -f     # tail logs
@@ -10,10 +10,8 @@
 
 services:
   platform:
-    build:
-      context: .
-      dockerfile: Dockerfile-platform
-    image: atlas-platform
+    image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
+    platform: linux/amd64
     ports:
       - "8080:8080"  # atlasd daemon API
       - "3100:3100"  # link (credential/auth service)

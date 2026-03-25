@@ -172,6 +172,16 @@ RUN chmod +x /app/run-platform.sh
 
 USER atlas
 
+# OCI image metadata
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="Friday Platform" \
+      org.opencontainers.image.description="Friday developer platform — agentic orchestration runtime" \
+      org.opencontainers.image.source="https://platform.hellofriday.ai/docs" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.vendor="Friday"
+
 # Environment defaults
 ENV DENO_NO_UPDATE_CHECK=1 \
     DENO_DIR=/deno-dir \
@@ -189,7 +199,7 @@ ENV DENO_NO_UPDATE_CHECK=1 \
 
 EXPOSE 8080 3100 5200 7681 9090
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start_period=60s --retries=3 \
     CMD curl -sf http://localhost:8080/health > /dev/null && \
         curl -sf http://localhost:3100/health > /dev/null && \
         curl -sf http://localhost:7681/health > /dev/null && \
