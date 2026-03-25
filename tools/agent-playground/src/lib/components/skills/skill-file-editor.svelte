@@ -44,7 +44,8 @@
   });
 
   $effect(() => {
-    ondirtychange?.(dirty);
+    const isDirty = dirty;
+    untrack(() => ondirtychange?.(isDirty));
   });
 
   function save() {

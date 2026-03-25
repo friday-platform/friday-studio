@@ -35,7 +35,7 @@
   let { workspaceId, jobId, jobTitle, signals, triggers }: Props = $props();
 
   let error = $state<string | null>(null);
-  let isRunning = $state(false);
+
   let selectedSignalId = $state("");
   let formData = $state<Record<string, unknown>>({});
 
@@ -102,36 +102,31 @@
     const signalId = activeSignalId;
     const payload = hasSchema ? { ...formData } : undefined;
 
-    isRunning = true;
     error = null;
 
-    try {
-      const client = getDaemonClient();
-      const res = await client.workspace[":workspaceId"].signals[":signalId"].$post({
+    // Fire-and-forget: dismiss modal immediately, navigate on success
+    open.set(false);
+    resetForm();
+
+    const client = getDaemonClient();
+    client.workspace[":workspaceId"].signals[":signalId"]
+      .$post({
         param: { workspaceId, signalId },
         json: { payload },
+      })
+      .then(async (res) => {
+        if (!res.ok) {
+          console.error("Trigger failed:", res.status);
+          return;
+        }
+        const data = await res.json();
+        if (data.sessionId) {
+          goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to trigger signal:", err);
       });
-
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => null);
-        const hasErr = typeof body === "object" && body !== null && "error" in body;
-        error = hasErr
-          ? String((body as Record<string, unknown>).error)
-          : `Trigger failed (${res.status})`;
-        return;
-      }
-
-      const data = await res.json();
-      isRunning = false;
-      open.set(false);
-      resetForm();
-      if (data.sessionId) {
-        goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to trigger signal";
-      isRunning = false;
-    }
   }
 </script>
 
@@ -245,8 +240,8 @@
           {/if}
 
           <div class="buttons">
-            <Dialog.Button type="submit" closeOnClick={false} disabled={isRunning}>
-              {isRunning ? "Running..." : "Run"}
+            <Dialog.Button type="submit" closeOnClick={false}>
+              Run
             </Dialog.Button>
             <Dialog.Cancel onclick={resetForm}>Cancel</Dialog.Cancel>
           </div>
