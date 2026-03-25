@@ -4,22 +4,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
+import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
+import { NoOpWebhookSecretRepository } from "../src/adapters/webhook-secret-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 import { CredentialSchema, CredentialSummarySchema } from "../src/types.ts";
 
-/** Schema for error responses - allows partial matching with assertObjectMatch */
 const ErrorResponse = z.looseObject({
   error: z.string(),
   message: z.string().optional(),
   issues: z.array(z.unknown()).optional(),
 });
 
-/**
- * Shared test provider fixtures grouped by capability.
- * Registered once at test setup, referenced by key in individual tests.
- */
 const testProviders = {
   // Basic providers - minimal schema, no health check
   basic: {
@@ -142,7 +139,13 @@ describe("Link HTTP routes", () => {
     tempDir = makeTempDir();
     storage = new FileSystemStorageAdapter(tempDir);
     const oauthService = new OAuthService(registry, storage);
-    app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+    app = await createApp(
+      storage,
+      oauthService,
+      new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
+    );
 
     // Register all test providers once at setup
     Object.values(testProviders).forEach((provider) => {

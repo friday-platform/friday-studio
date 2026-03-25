@@ -49,7 +49,7 @@
 
   const sortedProviders = $derived(
     [...providers]
-      .filter((p) => p.displayName)
+      .filter((p) => p.displayName && p.id !== "slack-app")
       .sort((a, b) => a.displayName.localeCompare(b.displayName)),
   );
 

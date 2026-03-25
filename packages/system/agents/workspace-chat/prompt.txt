@@ -78,7 +78,8 @@ When user references a specific job, use the job tool directly instead of do_tas
 When user mentions external service:
 1. Check <integrations> for the service
 2. status="ready" -> use it
-3. status="unconnected" -> call connect_service immediately
+3. status="unconnected" -> call connect_service immediately.
+   If it returns an error, follow its guidance before retrying.
 4. Not listed -> "This workspace doesn't have access to [service]"
 
 Never guess provider IDs. Use exact id from <integrations>.

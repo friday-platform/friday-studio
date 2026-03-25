@@ -23,13 +23,13 @@ import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
 import {
   convertToModelMessages,
   createUIMessageStream,
-  hasToolCall,
   smoothStream,
   stepCountIs,
   streamText,
 } from "ai";
 import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/link-context.ts";
+import { connectServiceSucceeded } from "../conversation/stop-conditions.ts";
 import { createConnectServiceTool } from "../conversation/tools/connect-service.ts";
 import { fetchUserIdentitySection } from "../conversation/user-identity.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
@@ -588,7 +588,7 @@ For external services, use do_task. For artifact data, use artifacts_get.
             ],
             tools: allTools,
             toolChoice: "auto",
-            stopWhen: [stepCountIs(40), hasToolCall("connect_service")],
+            stopWhen: [stepCountIs(40), connectServiceSucceeded()],
             maxOutputTokens: 20000,
             experimental_transform: smoothStream({ chunking: "word" }),
             maxRetries: 3,

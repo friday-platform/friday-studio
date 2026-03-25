@@ -317,6 +317,11 @@ async function resolveCredentialWithRefresh(
       const secret = secretResult.data;
       const refreshResult = await provider.refreshToken(secret);
 
+      // Token refresh only applies to app-install secrets with expiry (slack, github).
+      // slack-user tokens have no expires_at and don't support refresh.
+      if (secret.platform === "slack-user") {
+        return { credential, status: "ready" };
+      }
       // Use new refresh_token if provided (Slack token rotation)
       const updatedSecret: AppInstallCredentialSecret = {
         ...secret,

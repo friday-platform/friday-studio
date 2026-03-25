@@ -7,7 +7,11 @@
  * creating a circular dependency.
  */
 
-import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
+import {
+  HTTPProviderConfigSchema,
+  ScheduleProviderConfigSchema,
+  SlackProviderConfigSchema,
+} from "@atlas/config";
 import { z } from "zod";
 import type { ValidatedJSONSchema } from "./json-schema.ts";
 import { JSONSchemaSchema } from "./json-schema.ts";
@@ -81,11 +85,12 @@ export type ResourceDeclaration = z.infer<typeof ResourceDeclarationSchema>;
 // ---------------------------------------------------------------------------
 
 /** Signal types the planner can generate (fs-watch and system excluded). */
-const SignalTypeSchema = z.enum(["schedule", "http"]);
+const SignalTypeSchema = z.enum(["schedule", "http", "slack"]);
 
 export const SignalConfigSchema = z.discriminatedUnion("provider", [
   z.strictObject({ provider: z.literal("schedule"), config: ScheduleProviderConfigSchema }),
   z.strictObject({ provider: z.literal("http"), config: HTTPProviderConfigSchema }),
+  z.strictObject({ provider: z.literal("slack"), config: SlackProviderConfigSchema }),
 ]);
 export type SignalConfig = z.infer<typeof SignalConfigSchema>;
 
@@ -142,10 +147,7 @@ export const DAGStepSchema = z.strictObject({
 });
 export type DAGStep = z.infer<typeof DAGStepSchema>;
 
-/**
- * Inner schema for classified DAG steps (post stamp-execution-types).
- * Separated from the preprocess wrapper so `z.infer` resolves cleanly.
- */
+/** Inner schema — separated from preprocess wrapper so `z.infer` resolves cleanly. */
 const ClassifiedDAGStepInnerSchema = DAGStepSchema.extend({
   executionType: z
     .enum(["bundled", "llm"])
@@ -156,11 +158,7 @@ const ClassifiedDAGStepInnerSchema = DAGStepSchema.extend({
   tools: z.array(z.string()).optional().describe("Tool names available to this step"),
 });
 
-/**
- * Classified DAG step schema with v2 migration support.
- * Old v2 blueprints (pre-2026-02-20) have `agentId` but no `executionRef`.
- * The preprocess step backfills `executionRef` from `agentId` for those artifacts.
- */
+/** Backfills `executionRef` from `agentId` for pre-2026-02-20 blueprints. */
 // `as Record<string, unknown>` exception: z.preprocess receives `unknown` and
 // there's no Zod-native way to narrow inside the callback. The typeof/null/in
 // guards provide runtime safety; the inner schema validates immediately after.
@@ -268,11 +266,7 @@ export type JobWithDAG = z.infer<typeof JobWithDAGSchema>;
 
 /**
  * Workspace-level credential binding. Uses generic `targetId` for both MCP servers and agents.
- *
- * Note: `@atlas/core/artifacts/primitives` defines a discriminated union variant
- * with `serverId` (MCP) and `agentId` (agent) fields. Both schemas represent
- * the same concept at different pipeline stages — workspace configs use `targetId`,
- * the planner/enricher stage uses the discriminated fields.
+ * The planner stage (`@atlas/core/artifacts/primitives`) uses discriminated `serverId`/`agentId` instead.
  */
 export const CredentialBindingSchema = z.strictObject({
   targetType: z

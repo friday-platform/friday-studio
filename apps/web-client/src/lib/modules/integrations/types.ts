@@ -21,6 +21,8 @@ export interface Integration {
   credential?: { id: string; label: string; displayName?: string | null; createdAt: string };
   /** When unconnected and 2+ credentials exist for the provider, these are the candidates. */
   availableCredentials?: AvailableCredential[];
+  /** When set, the Connect button is disabled and this message is shown as hint text. */
+  disabledReason?: string;
 }
 
 /**
@@ -122,6 +124,36 @@ export async function loadWorkspaceIntegrations(workspaceId: string): Promise<In
       credential,
       availableCredentials,
     });
+  }
+
+  // slack-app is 1:1 with workspaces — always show Connect (install new bot),
+  // never a credential picker. Also requires slack-user as a prerequisite.
+  const slackAppIntegration = integrations.find((i) => i.provider === "slack-app");
+  if (slackAppIntegration) {
+    delete slackAppIntegration.availableCredentials;
+    const slackUserCreds = credentialsByProvider.get("slack-user");
+    const slackUserConnected = slackUserCreds !== undefined && slackUserCreds.length > 0;
+
+    if (!slackUserConnected) {
+      // Inject slack-user as a synthetic integration so it appears in the setup table
+      const slackUserHasEntry = integrations.some((i) => i.provider === "slack-user");
+      if (!slackUserHasEntry) {
+        const slackUserDetails = await parseResult(
+          client.link.v1.providers[":id"].$get({ param: { id: "slack-user" } }),
+        );
+        if (slackUserDetails.ok) {
+          integrations.unshift({
+            provider: "slack-user",
+            providerDetails: slackUserDetails.data,
+            connected: false,
+            paths: [],
+          });
+        }
+      }
+
+      // Disable slack-app Connect until slack-user is connected
+      slackAppIntegration.disabledReason = "Requires Slack organization connected";
+    }
   }
 
   return integrations;

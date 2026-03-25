@@ -1,31 +1,21 @@
-/**
- * App Install State - JWT-based encoding
- * Encodes app install flow state as signed JWT tokens (no PKCE - simpler than OAuth state)
- */
+/** JWT-based state encoding for app install OAuth flows (no PKCE). */
 
 import { sign, verify } from "hono/jwt";
 import { z } from "zod";
 import { STATE_JWT_SECRET } from "../oauth/jwt-secret.ts";
 
-/**
- * JWT payload for app install flow state
- * Simpler than OAuth state - no PKCE code verifier needed
- */
 const AppInstallStateSchema = z.object({
   k: z.literal("app_install"), // Kind discriminator
   p: z.string(), // providerId
   r: z.string().optional(), // redirectUri (post-install destination)
   u: z.string().optional(), // userId
+  c: z.string().optional(), // credentialId (for dynamic credential lookup)
   exp: z.number(), // expiration (10 minutes from creation)
 });
 
 export type AppInstallState = z.infer<typeof AppInstallStateSchema>;
 
-/**
- * Encode app install flow state as a signed JWT
- * @param payload Flow state (without k and exp - added automatically)
- * @returns Signed JWT token
- */
+/** Encode app install flow state as a signed JWT (10-minute expiry). */
 export async function encodeAppInstallState(
   payload: Omit<AppInstallState, "k" | "exp">,
 ): Promise<string> {
@@ -35,12 +25,7 @@ export async function encodeAppInstallState(
   );
 }
 
-/**
- * Decode and verify app install flow state JWT
- * @param state Signed JWT token
- * @returns Decoded flow state
- * @throws If signature invalid or token expired
- */
+/** Decode and verify app install flow state JWT. Throws if invalid or expired. */
 export async function decodeAppInstallState(state: string): Promise<AppInstallState> {
   const payload = await verify(state, STATE_JWT_SECRET, "HS256");
   return AppInstallStateSchema.parse(payload);

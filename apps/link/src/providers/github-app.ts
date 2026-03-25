@@ -108,7 +108,7 @@ export function createGitHubAppInstallProvider(): AppInstallProvider | undefined
     buildAuthorizationUrl(_callbackUrl, state) {
       const url = new URL(installationUrl);
       url.searchParams.set("state", state);
-      return url.toString();
+      return Promise.resolve(url.toString());
     },
 
     async completeInstallation(code, _callbackUrl, callbackParams) {

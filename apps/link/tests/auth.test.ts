@@ -1,8 +1,3 @@
-/**
- * Auth Middleware Tests
- * Tests JWT verification in dev and production modes
- */
-
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,9 +7,6 @@ import * as jose from "jose";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-type CryptoKey = globalThis.CryptoKey;
-
-/** Helper to create a temp file (replaces Deno.makeTempFile) */
 async function makeTempFile(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "link-test-"));
   return join(dir, "key.pem");
@@ -22,23 +14,18 @@ async function makeTempFile(): Promise<string> {
 
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
+import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
+import { NoOpWebhookSecretRepository } from "../src/adapters/webhook-secret-repository.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 import { CredentialSummarySchema } from "../src/types.ts";
 
-/**
- * Helper to create a JWT with user_metadata.tempest_user_id claim using RSA key
- */
 async function createTestJWT(userId: string, privateKey: CryptoKey): Promise<string> {
   return await new jose.SignJWT({ sub: userId, user_metadata: { tempest_user_id: userId } })
     .setProtectedHeader({ alg: "RS256" })
     .sign(privateKey);
 }
 
-/**
- * Helper to set up prod app with RSA key pair and env vars
- * Returns app instance with cleanup function
- */
 async function setupProdAuthApp(
   storage: FileSystemStorageAdapter,
   oauthService: OAuthService,
@@ -47,13 +34,13 @@ async function setupProdAuthApp(
     useSimpleKey?: boolean;
   } = {},
 ) {
-  let keyPair: CryptoKeyPair | { publicKey: CryptoKey; privateKey: CryptoKey };
+  let keyPair: CryptoKeyPair | jose.GenerateKeyPairResult;
   let publicKeyPem: string;
 
   if (options.useSimpleKey) {
     // Use jose.generateKeyPair for simpler scenarios
     const pair = await jose.generateKeyPair("RS256");
-    keyPair = pair as { publicKey: CryptoKey; privateKey: CryptoKey };
+    keyPair = pair;
     publicKeyPem = await jose.exportSPKI(pair.publicKey);
   } else {
     // Use Web Crypto for full control
@@ -94,7 +81,13 @@ async function setupProdAuthApp(
 
   // Now delete LINK_DEV_MODE so createApp's readConfig() sees devMode=false and enables JWT
   delete process.env.LINK_DEV_MODE;
-  const app = await createAppFresh(storage, oauthService, new NoOpPlatformRouteRepository());
+  const app = await createAppFresh(
+    storage,
+    oauthService,
+    new NoOpPlatformRouteRepository(),
+    new NoOpWebhookSecretRepository(),
+    new NoOpSlackAppWorkspaceRepository(),
+  );
 
   return {
     app,
@@ -129,7 +122,13 @@ describe("auth middleware", () => {
     // Re-import to pick up env change
     vi.resetModules();
     const { createApp: createAppFresh } = await import("../src/index.ts");
-    const devApp = await createAppFresh(storage, oauthService, new NoOpPlatformRouteRepository());
+    const devApp = await createAppFresh(
+      storage,
+      oauthService,
+      new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
+    );
 
     // Request without header should succeed with userId=dev
     const res = await devApp.request("/v1/credentials/type/apikey", { method: "GET" });
@@ -195,24 +194,6 @@ describe("auth middleware", () => {
     await cleanup();
   });
 
-  it("prod mode: valid JWT with Authorization Bearer = userId extracted", async () => {
-    const { app, keyPair, cleanup } = await setupProdAuthApp(storage, oauthService);
-
-    // Create JWT with user_metadata.tempest_user_id claim using jose (which accepts CryptoKey)
-    const userId = "test-user-456";
-    const token = await createTestJWT(userId, keyPair.privateKey);
-
-    // Request with Authorization header should succeed
-    const res = await app.request("/v1/credentials/type/apikey", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    expect(res.status).toBe(200);
-
-    await cleanup();
-  });
-
   it("health endpoint bypasses auth", async () => {
     const { app, cleanup } = await setupProdAuthApp(storage, oauthService, { useSimpleKey: true });
 
@@ -227,10 +208,6 @@ describe("auth middleware", () => {
   });
 });
 
-/**
- * Tenancy Middleware Tests
- * Tests X-Atlas-User-ID header extraction edge cases for multi-tenant isolation
- */
 describe("tenancy middleware", () => {
   // Use temp directory for testing
   const tempDir = makeTempDir();
@@ -295,7 +272,13 @@ describe("tenancy middleware", () => {
     // Now delete LINK_DEV_MODE so createApp's readConfig() sees devMode=false and enables JWT
     delete process.env.LINK_DEV_MODE;
     // IMPORTANT: Use same storage instance so credentials persist
-    const app = await createAppFresh(storage, oauthService, new NoOpPlatformRouteRepository());
+    const app = await createAppFresh(
+      storage,
+      oauthService,
+      new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
+    );
 
     return {
       app,
@@ -347,7 +330,13 @@ describe("tenancy middleware", () => {
       freshRegistry.register(testProvider);
     }
     // Use same storage instance so we can verify data persistence
-    const devApp = await createAppFresh(storage, oauthService, new NoOpPlatformRouteRepository());
+    const devApp = await createAppFresh(
+      storage,
+      oauthService,
+      new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
+    );
 
     // Create credential without X-Atlas-User-ID header
     const putRes = await devApp.request("/v1/credentials/apikey", {

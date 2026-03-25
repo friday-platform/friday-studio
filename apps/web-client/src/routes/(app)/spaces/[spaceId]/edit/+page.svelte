@@ -11,7 +11,9 @@
   import { DropdownMenu } from "$lib/components/dropdown-menu";
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
+  import Logo from "$lib/modules/integrations/logo-column.svelte";
   import { toast } from "$lib/components/notification/notification.svelte";
+  import { formatFullDate } from "$lib/utils/date";
   import { onMount } from "svelte";
   import IntegrationTable from "../(components)/integration-table.svelte";
   import type { PageData } from "./$types";
@@ -24,6 +26,24 @@
 
   const workspace = $derived(data.workspace);
   const integrations = $derived(data.integrations);
+
+  /** Slack-app integration shown in its own read-only section */
+  const slackAppIntegration = $derived(integrations.find((i) => i.provider === "slack-app"));
+
+  /** All other integrations go into the regular table */
+  const regularIntegrations = $derived(integrations.filter((i) => i.provider !== "slack-app"));
+
+  /** Extract the Slack App ID from workspace signal config for the settings link */
+  const slackAppId = $derived.by(() => {
+    const signals = workspace.config?.signals;
+    if (!signals) return undefined;
+    for (const signal of Object.values(signals)) {
+      if (signal.provider === "slack" && signal.config?.app_id) {
+        return String(signal.config.app_id);
+      }
+    }
+    return undefined;
+  });
 
   onMount(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -141,11 +161,46 @@
     </DropdownMenu.Root>
   </div>
 
-  {#if integrations.length > 0}
+  {#if regularIntegrations.length > 0}
     <div>
       <h2>Integrations</h2>
 
-      <IntegrationTable {integrations} workspaceId={workspace.id} />
+      <IntegrationTable integrations={regularIntegrations} workspaceId={workspace.id} />
+    </div>
+  {/if}
+
+  {#if slackAppIntegration}
+    <div>
+      <h2>Slack Bot</h2>
+
+      <div class="slack-app-info">
+        <Logo provider="slack-app" />
+        <div class="slack-app-details">
+          <div class="slack-app-header">
+            <span class="provider-name">{slackAppIntegration.credential?.displayName ?? "Slack App"}</span>
+            {#if slackAppIntegration.credential?.label}
+              <span class="slack-separator">•</span>
+              <span class="slack-label">{slackAppIntegration.credential.label}</span>
+            {/if}
+          </div>
+          {#if slackAppIntegration.credential?.createdAt}
+            <time datetime={slackAppIntegration.credential.createdAt}>
+              Connected {formatFullDate(slackAppIntegration.credential.createdAt)}
+            </time>
+          {/if}
+        </div>
+        {#if slackAppId}
+          <a
+            class="slack-settings-link"
+            href="https://api.slack.com/apps/{slackAppId}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <IconSmall.ExternalLink />
+            App Settings
+          </a>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -266,6 +321,70 @@
 
     & > :global(svg) {
       opacity: 0.5;
+    }
+  }
+
+  .slack-app-info {
+    align-items: center;
+    background-color: var(--accent-1);
+    border-radius: var(--radius-3);
+    display: flex;
+    gap: var(--size-3);
+    margin-block: var(--size-2) 0;
+    padding: var(--size-3);
+  }
+
+  .slack-app-details {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .slack-app-header {
+    align-items: center;
+    display: flex;
+    gap: var(--size-1);
+  }
+
+  .provider-name {
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-5);
+  }
+
+  .slack-separator {
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+  }
+
+  .slack-label {
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+  }
+
+  .slack-app-details time {
+    font-size: var(--font-size-2);
+    opacity: 0.6;
+  }
+
+  .slack-settings-link {
+    align-items: center;
+    background-color: var(--color-surface-1);
+    border-radius: var(--radius-3);
+    border: 1px solid var(--color-border-1);
+    color: var(--color-text);
+    display: flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1);
+    padding-block: var(--size-1-5);
+    padding-inline: var(--size-2-5);
+    text-decoration: none;
+    transition: background-color 150ms ease;
+
+    &:hover {
+      background-color: var(--color-surface-2);
     }
   }
 

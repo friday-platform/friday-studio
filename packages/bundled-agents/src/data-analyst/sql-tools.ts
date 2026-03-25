@@ -131,7 +131,7 @@ export function executeReadOnlyQuery(
       }
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", (err: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -141,7 +141,7 @@ export function executeReadOnlyQuery(
       resolve({ success: false, error, durationMs });
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);

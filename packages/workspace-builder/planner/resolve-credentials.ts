@@ -8,6 +8,7 @@ import {
   CredentialNotFoundError,
   type CredentialSummary,
   resolveCredentialsByProvider,
+  resolveUnwiredSlackApp,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { CredentialBinding, ProviderCredentialCandidates } from "@atlas/schemas/workspace";
 import type { ConfigRequirement } from "./classify-agents.ts";
@@ -20,7 +21,7 @@ export type UnresolvedCredential = {
   targetType: "mcp" | "agent";
   targetId: string;
   field: string;
-} & ({ reason: "not_found" } | { reason: "skipped" });
+} & ({ reason: "not_found" } | { reason: "skipped" } | { reason: "setup_required" });
 
 /** Options for credential resolution. */
 export type ResolveCredentialsOpts = {
@@ -42,6 +43,11 @@ export type ResolveCredentialsResult = {
  * plan approval UI can render a picker. If no default exists (ambiguous),
  * the first candidate is auto-selected into bindings instead of leaving it
  * unresolved — the user can override via the picker before approving.
+ *
+ * slack-app credentials are resolved via the unwired endpoint (checks the
+ * slack_app_workspace mapping table) — only credentials not yet wired to
+ * a workspace are available. If none exist, returns setup_required so the
+ * conversation can prompt the user to create a new Slack app.
  */
 export async function resolveCredentials(
   requirements: ConfigRequirement[],
@@ -54,6 +60,10 @@ export async function resolveCredentials(
 
   /** Cache API responses by provider to avoid duplicate HTTP calls. */
   const fetchCache = new Map<string, CredentialSummary[]>();
+
+  /** Cache unwired slack-app lookup to avoid duplicate calls across fields. */
+  let slackAppUnwiredChecked = false;
+  let slackAppUnwired: { credentialId: string; appId: string } | null = null;
 
   for (const req of requirements) {
     const targetType = req.integration.type === "mcp" ? ("mcp" as const) : ("agent" as const);
@@ -71,6 +81,36 @@ export async function resolveCredentials(
           field: field.key,
           reason: "skipped",
         });
+        continue;
+      }
+
+      // slack-app credentials use the unwired endpoint (backed by
+      // slack_app_workspace mapping table) instead of the summary endpoint.
+      if (field.provider === "slack-app") {
+        if (!slackAppUnwiredChecked) {
+          slackAppUnwired = await resolveUnwiredSlackApp();
+          slackAppUnwiredChecked = true;
+        }
+
+        if (slackAppUnwired) {
+          bindings.push({
+            targetType,
+            targetId,
+            field: field.key,
+            credentialId: slackAppUnwired.credentialId,
+            provider: field.provider,
+            key: field.secretKey ?? "access_token",
+            label: undefined,
+          });
+        } else {
+          unresolved.push({
+            provider: field.provider,
+            targetType,
+            targetId,
+            field: field.key,
+            reason: "setup_required",
+          });
+        }
         continue;
       }
 
@@ -102,7 +142,6 @@ export async function resolveCredentials(
             : (credentials.find((c) => c.isDefault) ?? credentials[0]);
 
         if (!selected) {
-          // Shouldn't happen (resolveCredentialsByProvider throws on empty), but guard
           unresolved.push({
             provider: field.provider,
             targetType,

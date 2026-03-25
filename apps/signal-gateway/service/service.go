@@ -14,7 +14,6 @@ import (
 	"github.com/tempestteam/atlas/pkg/server"
 )
 
-// service represents the Signal Gateway service.
 type service struct {
 	logger      *httplog.Logger
 	cfg         Config
@@ -26,7 +25,6 @@ type service struct {
 	cancel      context.CancelFunc
 }
 
-// New creates and returns a new Signal Gateway service instance.
 func New(cfg Config) *service {
 	logger := Logger(cfg)
 	logger.Debug("Creating Signal Gateway service")
@@ -43,27 +41,18 @@ func New(cfg Config) *service {
 	}
 }
 
-// GetLogger returns the service logger for external access (e.g., main.go).
+// GetLogger returns the logger for use by main.go.
 func (s *service) GetLogger() *httplog.Logger {
 	return s.logger
 }
 
-// Init initializes the service by setting up database and Slack connections.
 func (s *service) Init(ctx context.Context) error {
 	s.logger.Info("Initializing Signal Gateway service")
 
-	// Validate configuration
-	if err := s.cfg.Validate(); err != nil {
-		s.logger.Error("Invalid configuration", "error", err)
-		return err
-	}
-
-	// Initialize database
 	if err := s.initDatabase(ctx); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	// Initialize event router
 	queries := repo.New(s.db)
 	cacheTTL := time.Duration(s.cfg.RouteCacheTTLMinutes) * time.Minute
 	atlasTimeout := time.Duration(s.cfg.AtlasTimeoutSeconds) * time.Second
@@ -74,7 +63,6 @@ func (s *service) Init(ctx context.Context) error {
 		cacheTTL,
 		atlasTimeout,
 		s.cfg.AtlasURLTemplate,
-		s.cfg.SlackSigningSecret,
 	)
 
 	s.logger.Info("Signal Gateway service initialized successfully")
@@ -82,14 +70,12 @@ func (s *service) Init(ctx context.Context) error {
 	return nil
 }
 
-// initDatabase initializes the database connection pool.
 func (s *service) initDatabase(ctx context.Context) error {
 	pool, err := repo.NewPool(ctx, s.cfg.PostgresConnection)
 	if err != nil {
 		return fmt.Errorf("failed to create database pool: %w", err)
 	}
 
-	// Test connection
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
@@ -100,31 +86,25 @@ func (s *service) initDatabase(ctx context.Context) error {
 	return nil
 }
 
-// routes sets up all HTTP routes.
 func (s *service) routes(r *chi.Mux) *chi.Mux {
-	// Global middleware
 	r.Use(middleware.RealIP)
 	r.Use(httplog.RequestLogger(s.logger, []string{"/healthz", "/livez"}))
 
-	// Health endpoints
 	r.Get("/livez", handleLiveness)
 	r.With(DBCtxMiddleware(s.db)).Get("/healthz", handleHealth)
 
-	// Slack webhook endpoint
-	r.Post("/webhook/slack", handleSlackWebhook(s.eventRouter))
+	// Per-workspace Slack app webhook (URL-based routing, DB-backed signing secrets)
+	r.Post("/v1/webhooks/slack/{userID}/{appID}", handlePerAppSlackWebhook(s.eventRouter))
 
 	return r
 }
 
-// handleLiveness handles liveness probe requests by returning a simple 200 OK response.
-// Liveness checks only verify the process is responsive, not dependency health.
 func handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
 }
 
-// handleHealth handles readiness probe requests by verifying database connectivity.
-// Readiness checks verify the service is ready to receive traffic.
+// handleHealth verifies database connectivity for readiness probes.
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -150,8 +130,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-// Serve starts the HTTP server and returns the server config and an error channel.
-// TLS must be set up before calling Serve.
+// Serve starts the HTTP server. TLS must be configured before calling.
 func (s *service) Serve() (*server.Config, <-chan error) {
 	s.logger.Info("Starting Signal Gateway HTTP server", "port", s.cfg.Port)
 
@@ -169,17 +148,14 @@ func (s *service) Serve() (*server.Config, <-chan error) {
 	return srv, errChan
 }
 
-// Close gracefully shuts down the service and cleans up resources.
 func (s *service) Close() error {
 	s.logger.Info("Closing Signal Gateway service")
 
-	// Cancel service context to stop async operations
 	if s.cancel != nil {
 		s.cancel()
 	}
 
-	// Close database
-	// Note: pgxpool.Close() doesn't take a context, it closes immediately
+	// pgxpool.Close() doesn't take a context — closes immediately
 	if s.db != nil {
 		s.db.Close()
 		s.logger.Info("Database connection closed")

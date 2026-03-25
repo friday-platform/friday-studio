@@ -70,6 +70,7 @@ export function formatMessage(
       };
     }
     if (part.type === "tool-connect_service") {
+      if (part?.output?.error) return undefined;
       return {
         type: "connect_service",
         id: crypto.randomUUID(),

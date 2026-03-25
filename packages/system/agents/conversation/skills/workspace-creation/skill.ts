@@ -147,9 +147,10 @@ The error includes structured data for recovery:
 IMMEDIATELY call connect_service for each missing provider:
 1. Parse missingCredentials from the error response
 2. For each credential, call connect_service(provider)
-3. Wait for OAuth completion
-4. Retry fsm-workspace-creator with the SAME artifactId
-5. DO NOT re-plan - credentials won't appear via re-planning
+3. If connect_service returns an error, follow its guidance before retrying
+4. Wait for OAuth/install completion
+5. Retry fsm-workspace-creator with the SAME artifactId
+6. DO NOT re-plan - credentials won't appear via re-planning
 
 Example: If missingCredentials = [{provider: "google-calendar", service: "Google Calendar"}]
 → Call connect_service("google-calendar")

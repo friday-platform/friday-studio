@@ -1,12 +1,3 @@
-/**
- * In-memory test implementations for Link service storage.
- * Used by both service.test.ts and routes/app-install.test.ts.
- *
- * These are real implementations (Map-backed), not mock-framework artifacts.
- * They live alongside production adapters because they implement the same
- * interfaces with the same behavioral contracts.
- */
-
 import { AppInstallCredentialSecretSchema } from "../providers/types.ts";
 import type {
   Credential,
@@ -16,6 +7,8 @@ import type {
   StorageAdapter,
 } from "../types.ts";
 import { type PlatformRouteRepository, RouteOwnershipError } from "./platform-route-repository.ts";
+import type { SlackAppWorkspaceRepository } from "./slack-app-workspace-repository.ts";
+import type { WebhookSecretRepository } from "./webhook-secret-repository.ts";
 
 export class TestStorageAdapter implements StorageAdapter {
   private credentials = new Map<string, Credential>();
@@ -87,7 +80,11 @@ export class TestStorageAdapter implements StorageAdapter {
     for (const cred of this.credentials.values()) {
       if (cred.provider === provider) {
         const parsed = AppInstallCredentialSecretSchema.safeParse(cred.secret);
-        if (parsed.success && parsed.data.externalId === externalId) {
+        if (
+          parsed.success &&
+          "externalId" in parsed.data &&
+          parsed.data.externalId === externalId
+        ) {
           return Promise.resolve(cred);
         }
       }
@@ -99,8 +96,18 @@ export class TestStorageAdapter implements StorageAdapter {
   upsert(): Promise<SaveResult> {
     throw new Error("TestStorageAdapter.upsert() should not be called");
   }
-  updateMetadata(): Promise<Metadata> {
-    throw new Error("TestStorageAdapter.updateMetadata() should not be called");
+  updateMetadata(
+    id: string,
+    metadata: { displayName?: string },
+    _userId: string,
+  ): Promise<Metadata> {
+    const cred = this.credentials.get(id);
+    if (!cred) return Promise.reject(new Error("Credential not found"));
+    if (metadata.displayName !== undefined) {
+      cred.displayName = metadata.displayName;
+    }
+    cred.metadata.updatedAt = new Date().toISOString();
+    return Promise.resolve(cred.metadata);
   }
   setDefault(id: string, _userId: string): Promise<void> {
     const target = this.credentials.get(id);
@@ -165,5 +172,57 @@ export class TestPlatformRouteRepository implements PlatformRouteRepository {
   /** Test helper - seed a route */
   seedRoute(teamId: string, userId: string, platform = "slack"): void {
     this.routes.set(teamId, { userId, platform });
+  }
+}
+
+export class TestWebhookSecretRepository implements WebhookSecretRepository {
+  private secrets = new Map<string, { userId: string; signingSecret: string }>();
+
+  insert(appId: string, userId: string, signingSecret: string): Promise<void> {
+    // Mimic ON CONFLICT DO UPDATE — always upsert
+    this.secrets.set(appId, { userId, signingSecret });
+    return Promise.resolve();
+  }
+
+  delete(appId: string): Promise<void> {
+    this.secrets.delete(appId);
+    return Promise.resolve();
+  }
+
+  /** Test helper - get stored secret for assertions */
+  getSecret(appId: string): { userId: string; signingSecret: string } | undefined {
+    return this.secrets.get(appId);
+  }
+}
+
+export class TestSlackAppWorkspaceRepository implements SlackAppWorkspaceRepository {
+  private mappings = new Map<string, string>(); // credentialId → workspaceId
+
+  insert(credentialId: string, workspaceId: string): Promise<void> {
+    this.mappings.set(credentialId, workspaceId);
+    return Promise.resolve();
+  }
+
+  deleteByCredentialId(credentialId: string): Promise<void> {
+    this.mappings.delete(credentialId);
+    return Promise.resolve();
+  }
+
+  findByWorkspaceId(workspaceId: string): Promise<{ credentialId: string } | null> {
+    for (const [credentialId, wsId] of this.mappings) {
+      if (wsId === workspaceId) return Promise.resolve({ credentialId });
+    }
+    return Promise.resolve(null);
+  }
+
+  findByCredentialId(credentialId: string): Promise<{ workspaceId: string } | null> {
+    const wsId = this.mappings.get(credentialId);
+    if (!wsId) return Promise.resolve(null);
+    return Promise.resolve({ workspaceId: wsId });
+  }
+
+  /** Test helper - get workspace for a credential */
+  getWorkspace(credentialId: string): string | undefined {
+    return this.mappings.get(credentialId);
   }
 }

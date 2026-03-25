@@ -1,50 +1,51 @@
-import {
-  type CredentialSummary,
-  fetchLinkCredential,
-  resolveCredentialsByProvider,
-} from "@atlas/core/mcp-registry/credential-resolver";
+import process from "node:process";
+import { fetchLinkCredential } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger } from "@atlas/logger";
+import { z } from "zod";
+
+const SlackCredentialSecretSchema = z.object({ access_token: z.string() });
+
+const ByWorkspaceResponseSchema = z.object({ credential_id: z.string(), app_id: z.string() });
 
 const logger = createLogger({ component: "slack-credentials" });
 
-interface SlackCredentialSecret {
-  externalId: string;
-  access_token: string;
-  token_type: string;
-}
+/** Resolve the bot token for the Slack app wired to a workspace. */
+export async function getSlackBotToken(workspaceId: string): Promise<string | null> {
+  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${encodeURIComponent(workspaceId)}`;
 
-/**
- * Look up Slack bot token.
- *
- * Returns first slack-app credential found.
- * Multi-Slack-workspace per user not supported.
- *
- * @param teamId - For logging context (not used for matching)
- * @returns access_token if found, null if no credential exists
- * @throws Error if Link API fails (not CredentialNotFoundError)
- */
-export async function getSlackTokenByTeamId(teamId: string): Promise<string | null> {
-  let summaries: CredentialSummary[];
-  try {
-    summaries = await resolveCredentialsByProvider("slack");
-  } catch (error) {
-    if ((error as Error).name === "CredentialNotFoundError") {
-      logger.debug("slack_no_credentials", { teamId });
-      return null;
+  const headers: Record<string, string> = {};
+  if (process.env.LINK_DEV_MODE !== "true") {
+    const atlasKey = process.env.ATLAS_KEY;
+    if (atlasKey) {
+      headers.Authorization = `Bearer ${atlasKey}`;
     }
-    throw error;
   }
 
-  // First credential wins
-  const first = summaries.at(0);
-  if (!first) {
-    logger.debug("slack_no_credentials", { teamId });
+  const res = await fetch(url, { headers });
+
+  if (res.status === 404) {
+    logger.debug("slack_no_credential_for_workspace", { workspaceId });
     return null;
   }
 
-  const credential = await fetchLinkCredential(first.id, logger);
-  const secret = credential.secret as unknown as SlackCredentialSecret;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Failed to resolve slack-app for workspace '${workspaceId}': ${res.status} ${body}`,
+    );
+  }
 
-  logger.debug("slack_credential_found", { teamId, credentialId: first.id });
+  const { credential_id } = ByWorkspaceResponseSchema.parse(await res.json());
+
+  const credential = await fetchLinkCredential(credential_id, logger);
+  const secret = SlackCredentialSecretSchema.parse(credential.secret);
+
+  if (secret.access_token === "pending") {
+    logger.debug("slack_credential_pending", { workspaceId, credentialId: credential_id });
+    return null;
+  }
+
+  logger.debug("slack_credential_found", { workspaceId, credentialId: credential_id });
   return secret.access_token;
 }

@@ -171,7 +171,8 @@ When user mentions external service:
 
 2. Check <integrations>:
    - status="ready" → use it
-   - status="unconnected" → call connect_service immediately, don't ask
+   - status="unconnected" → call connect_service immediately, don't ask.
+     If it returns an error, follow its guidance before retrying.
    - Not listed → "I don't support [service] yet"
 
 Never guess provider IDs. Use exact id from <integrations>.

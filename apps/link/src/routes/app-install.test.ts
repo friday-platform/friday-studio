@@ -1,8 +1,3 @@
-/**
- * App Install Routes Integration Tests
- * Tests HTTP endpoints with real routes and mocked services
- */
-
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TestPlatformRouteRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
@@ -15,7 +10,6 @@ import { defineAppInstallProvider } from "../providers/types.ts";
 import { createAppInstallRoutes } from "./app-install.ts";
 import { createCallbackRoutes } from "./callback.ts";
 
-/** Response schemas for type-safe test assertions */
 const ErrorResponseSchema = z.object({
   error: z.string(),
   message: z.string().optional(),
@@ -66,7 +60,9 @@ describe("App Install Routes", () => {
     displayName: "GitHub",
     description: "GitHub App",
     buildAuthorizationUrl(callbackUrl, state) {
-      return `https://github.com/apps/test/installations/new?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`;
+      return Promise.resolve(
+        `https://github.com/apps/test/installations/new?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`,
+      );
     },
     completeInstallation(code, _callbackUrl, callbackParams) {
       const setupAction = callbackParams?.get("setup_action");
@@ -89,10 +85,13 @@ describe("App Install Routes", () => {
   const mockProvider = defineAppInstallProvider({
     id: "test-slack",
     platform: "slack",
+    usesRouteTable: false,
     displayName: "Test Slack",
     description: "Test provider",
     buildAuthorizationUrl(callbackUrl, state) {
-      return `https://slack.com/oauth/v2/authorize?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`;
+      return Promise.resolve(
+        `https://slack.com/oauth/v2/authorize?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`,
+      );
     },
     completeInstallation(code, _callbackUrl) {
       // Slack-like providers require authorization code
@@ -207,7 +206,7 @@ describe("App Install Routes", () => {
       displayName: "GitHub Reconnect",
       description: "GitHub with completeReinstallation",
       buildAuthorizationUrl(_callbackUrl, state) {
-        return `https://github.com/apps/test/installations/new?state=${state}`;
+        return Promise.resolve(`https://github.com/apps/test/installations/new?state=${state}`);
       },
       completeInstallation() {
         return Promise.reject(new Error("Should not be called"));

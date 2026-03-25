@@ -1,15 +1,7 @@
-/**
- * Signal configuration schemas with tagged unions
- */
-
 import { stringifyError } from "@atlas/utils";
 import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
-
-// ==============================================================================
-// BASE SIGNAL SCHEMA
-// ==============================================================================
 
 const BaseSignalConfigSchema = z.strictObject({
   description: z.string(),
@@ -20,18 +12,12 @@ const BaseSignalConfigSchema = z.strictObject({
   schema: SchemaObjectSchema.optional().describe("JSON Schema for signal payload validation"),
 });
 
-// ==============================================================================
-// PER-PROVIDER CONFIG SCHEMAS (canonical — import these for provider config shapes)
-// ==============================================================================
-
-/** HTTP provider config: webhook path + optional timeout. */
 export const HTTPProviderConfigSchema = z.strictObject({
   path: z.string().describe("HTTP path for the webhook (method is always POST)"),
   timeout: DurationSchema.optional().describe("Timeout for signal processing"),
 });
 export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
 
-/** Schedule provider config: cron expression + timezone. */
 export const ScheduleProviderConfigSchema = z.strictObject({
   schedule: z
     .string()
@@ -50,7 +36,6 @@ export const ScheduleProviderConfigSchema = z.strictObject({
 });
 export type ScheduleProviderConfig = z.infer<typeof ScheduleProviderConfigSchema>;
 
-/** File-watch provider config: path + recursive flag. */
 export const FSWatchProviderConfigSchema = z.strictObject({
   path: z.string().describe("Absolute or workspace-relative path to watch"),
   recursive: z
@@ -61,78 +46,54 @@ export const FSWatchProviderConfigSchema = z.strictObject({
 });
 export type FSWatchProviderConfig = z.infer<typeof FSWatchProviderConfigSchema>;
 
-// ==============================================================================
-// SIGNAL PROVIDER SCHEMAS (full signal config = base + provider + config)
-// ==============================================================================
+export const SlackProviderConfigSchema = z.strictObject({
+  app_id: z
+    .string()
+    .optional()
+    .describe("Slack app ID — populated by auto-wire after workspace creation"),
+});
+export type SlackProviderConfig = z.infer<typeof SlackProviderConfigSchema>;
 
-/**
- * HTTP Signal - webhook/API endpoint
- */
 export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("http"),
   config: HTTPProviderConfigSchema,
 });
 
-/**
- * Schedule Signal - cron-based triggers
- */
 export const ScheduleSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("schedule"),
   config: ScheduleProviderConfigSchema,
 });
 
-/**
- * System Signal - internal Atlas signals (system workspaces only)
- */
-const SystemSignalConfigSchema = BaseSignalConfigSchema.extend({
-  provider: z.literal("system"),
-  // No additional config required for system signals
-});
+const SystemSignalConfigSchema = BaseSignalConfigSchema.extend({ provider: z.literal("system") });
 
-/**
- * File Watch Signal - filesystem change triggers
- */
 export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("fs-watch"),
   config: FSWatchProviderConfigSchema,
 });
 
-// ==============================================================================
-// DISCRIMINATED UNION
-// ==============================================================================
+export const SlackSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("slack"),
+  config: SlackProviderConfigSchema,
+});
 
-/**
- * Signal configuration with tagged union on provider type
- * Note: CLI is not a provider type - all signals can be triggered via CLI
- */
 export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
   SystemSignalConfigSchema,
   FileWatchSignalConfigSchema,
+  SlackSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 
-/**
- * Loose schema for PATCH /signals/:signalId/config.
- * Accepts any string-keyed record — the merged result gets validated
- * against the full provider-specific config schema after merge.
- */
+/** Loose patch body — merged result is validated against the full provider schema. */
 export const SignalConfigPatchSchema = z.record(z.string(), z.unknown());
 
-// Type guards for signal types
 export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;
 export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
+export type SlackSignalConfig = z.infer<typeof SlackSignalConfigSchema>;
 
-// ==============================================================================
-// SIGNAL TRIGGER SCHEMAS
-// ==============================================================================
-
-/**
- * Schema for signal trigger requests from tools/API
- */
 export const SignalTriggerRequestSchema = z.strictObject({
   payload: z
     .record(z.string(), z.unknown())

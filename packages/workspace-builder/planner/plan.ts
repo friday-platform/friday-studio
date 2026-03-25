@@ -260,6 +260,9 @@ Each signal must have a signalType:
 - **http**: Webhook/API endpoints. Use for "webhook", "API endpoint", "receives events", "HTTP POST", or external event triggers.
   Examples: "GitHub push webhook", "Stripe payment webhook", "manual trigger endpoint"
 
+- **slack**: Slack events (mentions, DMs, channel messages). Use for any trigger that reacts to Slack messages or bot mentions.
+  Examples: "when someone mentions the bot", "Slack DM received", "message in #channel"
+
 ## Output format
 
 Generate structured plan with:
@@ -281,17 +284,13 @@ Generate structured plan with:
 - agents: purpose, approach, capabilities, configuration
 - resources: persistent state declarations (empty array if none needed)`;
 
-/**
- * Build the system prompt for the given planning mode.
- */
+/** Build the system prompt for the given planning mode. */
 export function getSystemPrompt(mode: PlanMode): string {
   const modeSection = mode === "workspace" ? WORKSPACE_PROMPT_SECTION : TASK_PROMPT_SECTION;
   return `${SYSTEM_PROMPT_BASE}\n${modeSection}`;
 }
 
-/**
- * Format the user message sent to the model for plan generation.
- */
+/** Format the user message sent to the model for plan generation. */
 export function formatUserMessage(prompt: string, mode: PlanMode): string {
   return mode === "workspace"
     ? `Create a workspace plan for these requirements:\n${prompt}\nOne agent per external service. Do not split operations on the same API into separate agents.`
@@ -340,9 +339,9 @@ const SignalSchema = z.object({
       "Short verb-noun sentence for UI. Start with verb. Examples: 'Triggers daily at 10am PST', 'Receives GitHub push events', 'Watches for file changes'",
     ),
   signalType: z
-    .enum(["schedule", "http"])
+    .enum(["schedule", "http", "slack"])
     .describe(
-      "Signal provider type. 'schedule' for cron/time-based triggers, 'http' for webhooks/API endpoints.",
+      "Signal provider type. 'schedule' for cron/time-based triggers, 'http' for webhooks/API endpoints, 'slack' for Slack events (mentions, DMs, messages).",
     ),
   description: z
     .string()
@@ -417,12 +416,7 @@ const ResourceSchema = z.object({
 // Dynamic capability IDs — built from bundled agents + MCP server registries
 // ---------------------------------------------------------------------------
 
-/**
- * Collect capability IDs from bundled agents, static MCP servers, and dynamic
- * MCP servers. Static IDs take precedence (deduped via Set).
- *
- * @returns Non-empty tuple suitable for `z.enum()` and dynamic server metadata for prompt rendering.
- */
+/** Collect capability IDs from bundled agents and MCP registries. Static IDs take precedence. */
 export async function getCapabilityIds(): Promise<{
   ids: [string, ...string[]];
   dynamicServers: MCPServerMetadata[];
@@ -454,9 +448,7 @@ export async function getCapabilityIds(): Promise<{
   return { ids: [first, ...rest], dynamicServers };
 }
 
-/**
- * Build the AgentSchema with capabilities constrained to known IDs.
- */
+/** Build the AgentSchema with capabilities constrained to known IDs. */
 function buildAgentSchema(capabilityIds: [string, ...string[]]) {
   return z.object({
     name: z
@@ -488,9 +480,7 @@ const resourcesField = z
       "Empty array if workspace has no mutable state needs.",
   );
 
-/**
- * Build plan schemas using dynamic capability IDs.
- */
+/** Build plan schemas using dynamic capability IDs. */
 function buildPlanSchemas(capabilityIds: [string, ...string[]]) {
   const agentSchema = buildAgentSchema(capabilityIds);
   return {
@@ -541,10 +531,7 @@ export interface Phase1Result {
 // Kebab-case ID generation with dedup suffixes
 // ---------------------------------------------------------------------------
 
-/**
- * Assign kebab-case IDs to an array of named items, appending numeric
- * suffixes when multiple items share the same base ID.
- */
+/** Assign kebab-case IDs, appending numeric suffixes on collision. */
 function assignKebabIds<T extends { name: string }>(items: T[]): Array<T & { id: string }> {
   return items.map((item, idx, arr) => {
     const baseId = toKebabCase(item.name);
@@ -562,15 +549,7 @@ function assignKebabIds<T extends { name: string }>(items: T[]): Array<T & { id:
 // Phase 1: generate signals + agents from a user prompt
 // ---------------------------------------------------------------------------
 
-/**
- * Generate a workspace plan (signals + agents) from a user prompt.
- * Standalone extraction of workspace-planner's Phase 1 logic.
- *
- * @param prompt - User requirements
- * @param options - Planning options
- * @param options.mode - "workspace" includes signal planning (default), "task" excludes it
- * @param options.abortSignal - Abort signal for cancellation
- */
+/** Generate a workspace plan (signals + agents) from a user prompt. */
 export async function generatePlan(
   prompt: string,
   options?: { mode?: PlanMode; abortSignal?: AbortSignal },

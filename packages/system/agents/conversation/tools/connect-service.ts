@@ -1,3 +1,4 @@
+import { client, parseResult } from "@atlas/client/v2";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -12,7 +13,22 @@ export function createConnectServiceTool(providers: string[]) {
     inputSchema: z.object({
       provider: z.enum(providers).describe("Provider ID from the available services list"),
     }),
-    execute: ({ provider }) => {
+    execute: async ({ provider }) => {
+      if (provider === "slack-app") {
+        const result = await parseResult(
+          client.link.v1.summary.$get({ query: { provider: "slack-user" } }),
+        );
+        if (!result.ok) {
+          return { error: "Unable to verify Slack Organization status. Please try again." };
+        }
+        if (result.data.credentials.length === 0) {
+          return {
+            error:
+              "Slack bot setup requires connecting your Slack Organization first. " +
+              "Please connect the Slack Organization integration, then try again.",
+          };
+        }
+      }
       return { provider };
     },
   });

@@ -87,6 +87,28 @@ function getLinkAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${atlasKey}` };
 }
 
+/**
+ * Check for an unwired slack-app credential via Link's mapping table.
+ * Returns the credential/app info if one exists, null otherwise.
+ */
+export async function resolveUnwiredSlackApp(): Promise<{
+  credentialId: string;
+  appId: string;
+} | null> {
+  const result = await parseResult(
+    client.link.internal.v1["slack-apps"].unwired.$get({}, { headers: getLinkAuthHeaders() }),
+  );
+
+  if (!result.ok) {
+    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
+      return null;
+    }
+    throw new Error(`Failed to check for unwired slack app: ${result.error}`);
+  }
+
+  return { credentialId: result.data.credential_id, appId: result.data.app_id };
+}
+
 export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
   const result = await parseResult(
     client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),

@@ -4,6 +4,7 @@ sql:
     queries: query.sql
     schema:
       - ../../../supabase/migrations/20251210000000_create_platform_route_table.sql
+      - ../../../supabase/migrations/20260324000000_create_slack_app_tables.sql
     gen:
       go:
         package: repo

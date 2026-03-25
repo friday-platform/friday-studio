@@ -1,6 +1,3 @@
-/**
- * App install error codes.
- */
 export type AppInstallErrorCode =
   | "PROVIDER_NOT_FOUND" // Provider ID not in registry
   | "INVALID_PROVIDER_TYPE" // Provider exists but not app_install
@@ -16,11 +13,10 @@ export type AppInstallErrorCode =
   | "REFRESH_ERROR" // Token refresh failed (network, API, etc.)
   | "INSTALLATION_OWNED" // Installation belongs to another user
   | "CREDENTIAL_NOT_FOUND" // Race condition
-  | "INVALID_CREDENTIAL"; // Missing expected fields
+  | "CREDENTIAL_INCOMPLETE" // Credential exists but OAuth flow not completed
+  | "INVALID_CREDENTIAL" // Missing expected fields
+  | "SLACK_API_ERROR"; // Slack returned non-ok or non-2xx
 
-/**
- * App install service error.
- */
 export class AppInstallError extends Error {
   constructor(
     public readonly code: AppInstallErrorCode,

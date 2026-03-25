@@ -15,6 +15,16 @@ import {
   type PlatformRouteRepository,
   PostgresPlatformRouteRepository,
 } from "./adapters/platform-route-repository.ts";
+import {
+  NoOpSlackAppWorkspaceRepository,
+  PostgresSlackAppWorkspaceRepository,
+  type SlackAppWorkspaceRepository,
+} from "./adapters/slack-app-workspace-repository.ts";
+import {
+  NoOpWebhookSecretRepository,
+  PostgresWebhookSecretRepository,
+  type WebhookSecretRepository,
+} from "./adapters/webhook-secret-repository.ts";
 import { AppInstallService } from "./app-install/service.ts";
 import { getAuthToken, runWithAuthToken } from "./auth-context.ts";
 import { config, readConfig } from "./config.ts";
@@ -23,55 +33,41 @@ import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import { registry } from "./providers/registry.ts";
+import { createSlackAppDynamicProvider } from "./providers/slack-app-dynamic.ts";
 import { createAppInstallRoutes } from "./routes/app-install.ts";
 import { createCallbackRoutes } from "./routes/callback.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
 import { createSummaryRoutes } from "./routes/summary.ts";
+import { createInternalSlackAppRoutes, createSlackAppRoutes } from "./slack-apps/routes.ts";
+import { SlackAppService } from "./slack-apps/service.ts";
 import type { StorageAdapter } from "./types.ts";
 
-/**
- * Create Link application with dependency-injected storage adapter and OAuth service.
- * Uses method chaining for proper type inference (critical for RPC).
- *
- * Reads config fresh on each call to support testing with different env vars.
- */
+/** Create Link application. Reads config fresh on each call to support testing. */
 export function createApp(
   storage: StorageAdapter,
   oauthService: OAuthService,
   platformRouteRepo: PlatformRouteRepository,
+  webhookSecretRepo: WebhookSecretRepository,
+  slackAppWorkspaceRepo: SlackAppWorkspaceRepository,
 ) {
-  // Read config fresh to support testing with different env vars
   const cfg = readConfig();
+  const callbackBase = process.env.LINK_CALLBACK_BASE || "http://localhost:3000";
 
-  // Callback base URL for OAuth redirects
-  const callbackBase = Deno.env.get("LINK_CALLBACK_BASE") || "http://localhost:3000";
-
-  /**
-   * Auth token middleware - captures JWT for forwarding to Cypher service.
-   * Stores token in AsyncLocalStorage so CypherHttpClient can access it.
-   */
   const authTokenMiddleware = factory.createMiddleware((c, next) => {
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
     return runWithAuthToken(token, () => next());
   });
 
-  /**
-   * Tenancy middleware - extracts userId from JWT payload.
-   * In dev mode, falls back to 'dev' user.
-   * In production, requires JWT with user_metadata.tempest_user_id.
-   */
   const tenancyMiddleware = factory.createMiddleware(async (c, next) => {
-    // In dev mode (no JWT verification), use fallback
     if (cfg.devMode) {
       c.set("userId", "dev");
       await next();
       return;
     }
 
-    // In prod, extract from verified JWT payload
     const payload = c.get("jwtPayload");
     const userId = payload?.user_metadata?.tempest_user_id;
     if (!userId) {
@@ -82,17 +78,6 @@ export function createApp(
     await next();
   });
 
-  /**
-   * External URL middleware - computes base URL for external-facing URLs.
-   * Respects X-Forwarded-* headers when behind a proxy, allowing Link to
-   * generate correct redirect URLs and Location headers without the proxy
-   * needing to rewrite them.
-   *
-   * Headers:
-   * - X-Forwarded-Host: The original host the client connected to
-   * - X-Forwarded-Proto: The original protocol (http/https)
-   * - X-Forwarded-Prefix: Path prefix to prepend (e.g., /api/link)
-   */
   const externalUrlMiddleware = factory.createMiddleware(async (c, next) => {
     const forwardedHost = c.req.header("X-Forwarded-Host");
     const forwardedProto = c.req.header("X-Forwarded-Proto") || "https";
@@ -106,9 +91,6 @@ export function createApp(
     await next();
   });
 
-  /**
-   * Access log middleware - logs all requests with method, path, status, and duration.
-   */
   const accessLogMiddleware = factory.createMiddleware(async (c, next) => {
     const start = Date.now();
     await next();
@@ -117,10 +99,8 @@ export function createApp(
     const method = c.req.method;
     const path = c.req.path;
 
-    // Skip health checks and metrics to reduce noise
     if (path === "/health" || path === "/metrics") return;
 
-    // Record metrics using route pattern (e.g., /v1/credentials/:id) for bounded cardinality
     recordRequest(method, routePath(c), status, duration);
 
     logger.info("request", {
@@ -135,19 +115,14 @@ export function createApp(
 
   const baseApp = factory
     .createApp()
-    // Access logging (first middleware to capture all requests)
     .use(accessLogMiddleware)
-    // Redirect trailing slashes to canonical paths
     .use(trimTrailingSlash())
-    // Health check
     .get("/health", (c) => c.json({ status: "ok", service: "link" }))
-    // Prometheus metrics
     .get("/metrics", (c) => {
       c.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
       return c.text(getMetrics());
     });
 
-  // Apply JWT verification in production mode
   if (!cfg.devMode) {
     if (!cfg.jwtPublicKeyFile) {
       throw new Error("LINK_JWT_PUBLIC_KEY_FILE required");
@@ -155,7 +130,6 @@ export function createApp(
     const publicKeyPem = readFileSync(cfg.jwtPublicKeyFile, "utf-8").trim();
     const jwtMiddleware = jwt({ alg: "RS256", secret: publicKeyPem });
 
-    // Log JWT failures (HTTPException.cause contains the actual error)
     baseApp.onError((err, c) => {
       if (err instanceof HTTPException && err.status === 401) {
         logger.error("JWT verification failed", {
@@ -172,7 +146,6 @@ export function createApp(
     baseApp.use("/internal/*", jwtMiddleware);
   }
 
-  // Apply auth token, tenancy, and external URL middleware to protected routes (after JWT verification)
   baseApp.use("/v1/*", authTokenMiddleware);
   baseApp.use("/v1/*", tenancyMiddleware);
   baseApp.use("/v1/*", externalUrlMiddleware);
@@ -180,7 +153,6 @@ export function createApp(
   baseApp.use("/internal/*", tenancyMiddleware);
   baseApp.use("/internal/*", externalUrlMiddleware);
 
-  // Create AppInstallService
   const appInstallService = new AppInstallService(
     registry,
     storage,
@@ -188,40 +160,32 @@ export function createApp(
     callbackBase,
   );
 
-  return (
-    baseApp
-      // Provider catalog routes
-      .route("/v1/providers", providersRouter)
-      // OAuth flow routes (authorize + refresh)
-      .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
-      // Unified callback routes (provider-namespaced for readability)
-      .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
-      // Public credential management API (no secrets in responses)
-      .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
-      // Summary endpoint - aggregated providers and credentials
-      .route("/v1/summary", createSummaryRoutes(storage))
-      // Internal runtime access API (returns secrets with proactive OAuth refresh)
-      .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
-      // App install routes (Slack, GitHub, etc.)
-      .route("/v1/app-install", createAppInstallRoutes(appInstallService))
-  );
+  if (!registry.has("slack-app")) {
+    registry.register(createSlackAppDynamicProvider(storage, webhookSecretRepo));
+  }
+
+  const slackAppService = new SlackAppService(storage, webhookSecretRepo, slackAppWorkspaceRepo);
+
+  return baseApp
+    .route("/v1/providers", providersRouter)
+    .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
+    .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
+    .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
+    .route("/v1/summary", createSummaryRoutes(storage))
+    .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
+    .route("/v1/app-install", createAppInstallRoutes(appInstallService))
+    .route("/v1/slack-apps", createSlackAppRoutes(slackAppService))
+    .route(
+      "/internal/v1/slack-apps",
+      createInternalSlackAppRoutes(slackAppService, cfg.gatewayBase),
+    );
 }
 
-/** Postgres connection pool - stored for graceful shutdown */
 let sql: ReturnType<typeof postgres> | null = null;
-
-/** HTTP server instance - stored for graceful shutdown */
 let server: Deno.HttpServer | null = null;
 
-/**
- * Create storage adapter based on configuration.
- * Uses CypherStorageAdapter if Cypher and Postgres are configured, otherwise DenoKV.
- *
- * Note: Postgres connection is created independently for platform_route even when
- * using DenoKV for credential storage (e.g., when Cypher auth isn't available).
- */
+/** Create storage adapter. Postgres is used for platform_route even without Cypher. */
 function createStorage(): StorageAdapter {
-  // Create Postgres connection if configured (needed for platform_route even without Cypher)
   if (config.postgresConnection) {
     sql = postgres(config.postgresConnection, config.postgresPool);
     logger.info("Postgres connection initialized", {
@@ -230,56 +194,44 @@ function createStorage(): StorageAdapter {
     });
   }
 
-  // Use Cypher + Postgres for credential storage if both are configured
   if (config.cypherServiceUrl && sql) {
     logger.info("Using CypherStorageAdapter", { cypherUrl: config.cypherServiceUrl });
 
-    const cypher = new CypherHttpClient(config.cypherServiceUrl, () => {
-      // Return the token from AsyncLocalStorage for the current request
-      return Promise.resolve(getAuthToken());
-    });
+    const cypher = new CypherHttpClient(config.cypherServiceUrl, () =>
+      Promise.resolve(getAuthToken()),
+    );
 
     return new CypherStorageAdapter(cypher, sql);
   }
 
-  // Fall back to filesystem storage for credential storage (platform_route still uses Postgres if available)
   logger.info("Using FileSystemStorageAdapter");
   return new FileSystemStorageAdapter();
 }
 
-/** Shutdown state to prevent multiple shutdown attempts */
 let isShuttingDown = false;
 
-/**
- * Graceful shutdown - stop server, close connections, exit.
- * Handles Kubernetes SIGTERM with proper cleanup.
- */
 async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
   logger.info("Received signal, shutting down gracefully", { signal });
 
-  // Timeout to prevent hanging - Kubernetes default terminationGracePeriodSeconds is 30s
   const shutdownTimeout = setTimeout(() => {
     logger.error("Shutdown timeout, forcing exit");
     process.exit(1);
   }, 25000);
 
   try {
-    // Stop accepting new requests
     if (server) {
       await server.shutdown();
       logger.info("HTTP server stopped");
     }
 
-    // Close database connections
     if (sql) {
       await sql.end({ timeout: 5 });
       logger.info("Postgres pool closed");
     }
 
-    // Flush pending Sentry events
     await flushSentry();
 
     clearTimeout(shutdownTimeout);
@@ -292,13 +244,9 @@ async function shutdown(signal: string): Promise<void> {
   }
 }
 
-// Default storage adapter
 const defaultStorage = createStorage();
-
-// Default OAuth service for production
 const defaultOAuthService = new OAuthService(registry, defaultStorage);
 
-// Create platform route repository (Postgres required in production)
 function createPlatformRouteRepo(): PlatformRouteRepository {
   if (sql) {
     return new PostgresPlatformRouteRepository(sql);
@@ -312,10 +260,40 @@ function createPlatformRouteRepo(): PlatformRouteRepository {
 
 const platformRouteRepo = createPlatformRouteRepo();
 
-// Export app instance for testing and RPC type inference
-export const app = createApp(defaultStorage, defaultOAuthService, platformRouteRepo);
+function createWebhookSecretRepo(): WebhookSecretRepository {
+  if (sql) {
+    return new PostgresWebhookSecretRepository(sql);
+  }
+  if (config.devMode) {
+    logger.warn("Using NoOpWebhookSecretRepository - webhook secrets will not persist");
+    return new NoOpWebhookSecretRepository();
+  }
+  throw new Error("POSTGRES_CONNECTION required in production for webhook secret storage");
+}
 
-// Export app type for RPC client (hc<LinkRoutes>())
+const webhookSecretRepo = createWebhookSecretRepo();
+
+function createSlackAppWorkspaceRepo(): SlackAppWorkspaceRepository {
+  if (sql) {
+    return new PostgresSlackAppWorkspaceRepository(sql);
+  }
+  if (config.devMode) {
+    logger.warn("Using NoOpSlackAppWorkspaceRepository - workspace mappings will not persist");
+    return new NoOpSlackAppWorkspaceRepository();
+  }
+  throw new Error("POSTGRES_CONNECTION required in production for slack app workspace storage");
+}
+
+const slackAppWorkspaceRepo = createSlackAppWorkspaceRepo();
+
+export const app = createApp(
+  defaultStorage,
+  defaultOAuthService,
+  platformRouteRepo,
+  webhookSecretRepo,
+  slackAppWorkspaceRepo,
+);
+
 export type LinkRoutes = typeof app;
 
 export type {
@@ -328,15 +306,12 @@ export {
   DynamicOAuthProviderInputSchema,
   DynamicProviderInputSchema,
 } from "./providers/types.ts";
-// Export types for external use
 export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts";
 
-// Only start server when run directly (not when imported for tests)
 if (import.meta.main) {
   initSentry();
   logger.info("Link service starting", { port: config.port });
 
-  // Register shutdown handlers
   Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));
   Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM"));
 

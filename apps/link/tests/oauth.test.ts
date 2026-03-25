@@ -1,8 +1,3 @@
-/**
- * OAuth Integration Tests
- * End-to-end tests for OAuth authorization flow
- */
-
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
@@ -10,10 +5,16 @@ import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
+import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
+import { NoOpWebhookSecretRepository } from "../src/adapters/webhook-secret-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
-import { defineOAuthProvider, type OAuthTokens } from "../src/providers/types.ts";
+import {
+  defineOAuthProvider,
+  type HealthResult,
+  type OAuthTokens,
+} from "../src/providers/types.ts";
 import { CredentialSchema, CredentialSummarySchema } from "../src/types.ts";
 import {
   completeOAuthFlow,
@@ -21,13 +22,11 @@ import {
   startMockOAuthServer,
 } from "./helpers/mock-oauth-server.ts";
 
-/** Schema for error responses - allows partial matching with assertObjectMatch */
 const ErrorResponse = z.looseObject({ error: z.string() });
 
 // Allow insecure HTTP for mock OAuth server in tests
 process.env.LINK_ALLOW_INSECURE_HTTP = "true";
 
-/** Mock identify function for static test providers */
 const mockIdentify = async (tokens: OAuthTokens): Promise<string> => {
   // In tests, just hash the access token for a stable identifier
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(tokens.access_token));
@@ -37,13 +36,10 @@ const mockIdentify = async (tokens: OAuthTokens): Promise<string> => {
     .substring(0, 16);
 };
 
-/**
- * Register a test OAuth provider
- */
 function registerTestOAuthProvider(
   id: string,
   serverUrl: string,
-  health?: (tokens: OAuthTokens) => Promise<import("../src/providers/types.ts").HealthResult>,
+  health?: (tokens: OAuthTokens) => Promise<HealthResult>,
   identify: (tokens: OAuthTokens) => Promise<string> = mockIdentify,
 ) {
   if (!registry.has(id)) {
@@ -64,7 +60,13 @@ describe("OAuth Integration", async () => {
   const tempDir = makeTempDir();
   const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
-  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+  const app = await createApp(
+    storage,
+    oauthService,
+    new NoOpPlatformRouteRepository(),
+    new NoOpWebhookSecretRepository(),
+    new NoOpSlackAppWorkspaceRepository(),
+  );
 
   let mockServer: MockOAuthServer | undefined;
 
@@ -560,7 +562,13 @@ describe("Static OAuth Integration", async () => {
   const tempDir = makeTempDir();
   const storage = new FileSystemStorageAdapter(tempDir);
   const oauthService = new OAuthService(registry, storage);
-  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+  const app = await createApp(
+    storage,
+    oauthService,
+    new NoOpPlatformRouteRepository(),
+    new NoOpWebhookSecretRepository(),
+    new NoOpSlackAppWorkspaceRepository(),
+  );
 
   let mockServer: MockOAuthServer | undefined;
 
@@ -608,8 +616,8 @@ describe("Static OAuth Integration", async () => {
     expect(authUrlObj.searchParams.get("code_challenge_method")).toEqual("S256");
 
     // Verify discovery was NOT called
-    expect(mockServer.discoveryCallCount).toEqual(0);
-    expect(mockServer.registrationCallCount).toEqual(0);
+    expect(mockServer.counters.discovery).toEqual(0);
+    expect(mockServer.counters.registration).toEqual(0);
   });
 
   it("initiateFlow - includes extraAuthParams in auth URL", async () => {

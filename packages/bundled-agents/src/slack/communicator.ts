@@ -62,12 +62,10 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
         name: "SLACK_MCP_XOXP_TOKEN",
         description: "Slack user token used by slack-mcp-server to access Slack APIs",
         validation: "^(xoxb|xoxc|xoxp|xoxd)-",
-        linkRef: { provider: "slack", key: "access_token" },
+        linkRef: { provider: "slack-app", key: "access_token" },
       },
     ],
   },
-  // Provide Slack MCP config here so callers (e.g., orchestrator) can merge and use it
-  // with slack-mcp-server using XOXP token via npx.
   mcp: {
     slack: {
       transport: {
@@ -78,7 +76,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       env: {
         SLACK_MCP_XOXP_TOKEN: {
           from: "link",
-          provider: "slack",
+          provider: "slack-app",
           key: "access_token",
         } satisfies LinkCredentialRef,
         SLACK_MCP_ADD_MESSAGE_TOOL: "true",
@@ -92,7 +90,6 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
-    // Collect all tool calls and results across execution phases
     let allToolCalls: ToolCall[] = [];
     let allToolResults: ToolResult[] = [];
     let artifactRefs: ArtifactRef[] | null = null;
@@ -247,7 +244,6 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
         data: { toolName: "Slack", content: `Executing: ${plan.intent}` },
       });
 
-      // If no tools are available, do not attempt execution; return a clear message.
       if (!tools || Object.keys(tools).length === 0) {
         return err("Cannot complete: Slack tools unavailable");
       }

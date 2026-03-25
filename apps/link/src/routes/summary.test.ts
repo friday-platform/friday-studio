@@ -4,21 +4,19 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-/** Helper to create a temp directory (replaces Deno.makeTempDir) */
 async function makeTempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "link-summary-test-"));
 }
 
 import { FileSystemStorageAdapter } from "../adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
+import { NoOpSlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
+import { NoOpWebhookSecretRepository } from "../adapters/webhook-secret-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { registry } from "../providers/registry.ts";
 import { CredentialSummarySchema } from "../types.ts";
 
-/**
- * Test providers for summary endpoint tests
- */
 const testProviders = {
   apikey1: {
     id: "test-summary-apikey-1",
@@ -38,12 +36,13 @@ const testProviders = {
   },
 };
 
-/**
- * Response schema for /v1/summary endpoint.
- */
 const SummaryResponseSchema = z.object({
   providers: z.array(
-    z.object({ id: z.string(), displayName: z.string(), type: z.enum(["apikey", "oauth"]) }),
+    z.object({
+      id: z.string(),
+      displayName: z.string(),
+      type: z.enum(["apikey", "oauth", "app_install"]),
+    }),
   ),
   credentials: z.array(
     z.object({
@@ -68,7 +67,13 @@ describe("GET /v1/summary endpoint", () => {
     tempDir = await makeTempDir();
     const storage = new FileSystemStorageAdapter(tempDir);
     const oauthService = new OAuthService(registry, storage);
-    app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
+    app = await createApp(
+      storage,
+      oauthService,
+      new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
+    );
 
     // Register test providers
     Object.values(testProviders).forEach((provider) => {
@@ -175,6 +180,8 @@ describe("GET /v1/summary endpoint", () => {
       emptyStorage,
       emptyOauthService,
       new NoOpPlatformRouteRepository(),
+      new NoOpWebhookSecretRepository(),
+      new NoOpSlackAppWorkspaceRepository(),
     );
 
     const res = await emptyApp.request("/v1/summary");

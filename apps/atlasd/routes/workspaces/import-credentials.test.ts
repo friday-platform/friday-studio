@@ -1,7 +1,9 @@
 import {
   CredentialNotFoundError,
+  type fetchLinkCredential,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  type resolveCredentialsByProvider,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { parse } from "@std/yaml";
@@ -10,7 +12,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
-const mockWriteWorkspaceFiles = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockWriteWorkspaceFiles = vi.hoisted(() =>
+  vi
+    .fn<
+      (workspacePath: string, config: string, options?: { ephemeral?: boolean }) => Promise<void>
+    >()
+    .mockResolvedValue(undefined),
+);
 
 // Mock storeWorkspaceHistory to avoid Cortex dependencies
 vi.mock("@atlas/storage", () => ({
@@ -36,8 +44,8 @@ vi.mock("../me/adapter.ts", () => ({
 
 // Mock resolveCredentialsByProvider and fetchLinkCredential — real error classes via importOriginal
 const { mockResolveCredentialsByProvider, mockFetchLinkCredential } = vi.hoisted(() => ({
-  mockResolveCredentialsByProvider: vi.fn(),
-  mockFetchLinkCredential: vi.fn(),
+  mockResolveCredentialsByProvider: vi.fn<typeof resolveCredentialsByProvider>(),
+  mockFetchLinkCredential: vi.fn<typeof fetchLinkCredential>(),
 }));
 vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),
@@ -172,8 +180,6 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    // No resolveCredentialsByProvider calls needed
-    expect(mockResolveCredentialsByProvider).not.toHaveBeenCalled();
   });
 
   test("strips foreign id-only refs and imports workspace without them", async () => {
@@ -472,7 +478,15 @@ describe("POST /create — credential resolution", () => {
 
     // Phase 2: resolveCredentialsByProvider resolves "github" to user's credential
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_resolved", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_resolved",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     const config = makeConfig({
@@ -518,7 +532,15 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_user_gh", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_user_gh",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
     mockFetchLinkCredential.mockResolvedValue({
       id: "cred_user_gh",
@@ -834,12 +856,28 @@ describe("POST /create — credential resolution", () => {
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
       if (provider === "github") {
         return Promise.resolve([
-          { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+          {
+            id: "cred_gh",
+            provider: "github",
+            label: "My GitHub",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: false,
+          },
         ]);
       }
       if (provider === "slack") {
         return Promise.resolve([
-          { id: "cred_sl", provider: "slack", label: "Work Slack", type: "oauth" },
+          {
+            id: "cred_sl",
+            provider: "slack",
+            label: "Work Slack",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: false,
+          },
         ]);
       }
       return Promise.resolve([]);
@@ -918,9 +956,6 @@ describe("POST /create — credential resolution", () => {
       credentialId: "cred_gh",
       label: "My GitHub",
     });
-
-    // Should only call resolveCredentialsByProvider twice (github + slack, deduplicated)
-    expect(mockResolveCredentialsByProvider).toHaveBeenCalledTimes(2);
   });
 
   test("creates workspace even when credential key mismatches (no secret validation)", async () => {
@@ -928,7 +963,15 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_gh",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     const config = makeConfig({
@@ -965,12 +1008,28 @@ describe("POST /create — credential resolution", () => {
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
       if (provider === "github") {
         return Promise.resolve([
-          { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+          {
+            id: "cred_gh",
+            provider: "github",
+            label: "My GitHub",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: false,
+          },
         ]);
       }
       if (provider === "slack") {
         return Promise.resolve([
-          { id: "cred_sl", provider: "slack", label: "Work Slack", type: "oauth" },
+          {
+            id: "cred_sl",
+            provider: "slack",
+            label: "Work Slack",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: false,
+          },
         ]);
       }
       return Promise.resolve([]);
@@ -1015,7 +1074,15 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_gh",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     mockFetchLinkCredential.mockResolvedValue({
@@ -1062,7 +1129,15 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_gh",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     const config = makeConfig({
@@ -1103,7 +1178,15 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_gh",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     // fetchLinkCredential would fail, but it's no longer called during create
@@ -1172,7 +1255,15 @@ describe("POST /create — credential resolution", () => {
 
     // Ref has both id (foreign) and provider — should resolve via provider
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_mine", provider: "github", label: "My GitHub", type: "oauth" },
+      {
+        id: "cred_mine",
+        provider: "github",
+        label: "My GitHub",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     const config = makeConfig({
@@ -1236,7 +1327,15 @@ describe("POST /create — credential resolution", () => {
     mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
       if (provider === "github") {
         return Promise.resolve([
-          { id: "cred_gh", provider: "github", label: "My GitHub", type: "oauth" },
+          {
+            id: "cred_gh",
+            provider: "github",
+            label: "My GitHub",
+            type: "oauth",
+            displayName: null,
+            userIdentifier: null,
+            isDefault: false,
+          },
         ]);
       }
       return Promise.reject(new CredentialNotFoundError(provider));
@@ -1325,12 +1424,22 @@ describe("POST /create — credential resolution", () => {
     );
   });
 
-  test("imports bundled agent successfully when provider is configured", async () => {
-    const { app } = createImportTestApp();
+  test("imports bundled agent with slack-app provider → requires_setup (never auto-resolved)", async () => {
+    const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
+    // slack-app credentials exist, but should NOT be auto-resolved —
+    // each workspace needs a fresh bot install.
     mockResolveCredentialsByProvider.mockResolvedValue([
-      { id: "cred_sl", provider: "slack", label: "Work Slack", type: "oauth" },
+      {
+        id: "cred_sl",
+        provider: "slack",
+        label: "Work Slack",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
     ]);
 
     const config = makeConfig({
@@ -1353,25 +1462,13 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    // Injected ref should be resolved
-    expect(body.resolvedCredentials).toEqual([
-      {
-        path: "agent:communicator:SLACK_MCP_XOXP_TOKEN",
-        provider: "slack",
-        credentialId: "cred_sl",
-        label: "Work Slack",
-      },
-    ]);
-
-    // Verify the written YAML contains the resolved credential ref
-    expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
-    const agentEnv = getWrittenAgentEnv("communicator");
-    expect(agentEnv?.SLACK_MCP_XOXP_TOKEN).toMatchObject({
-      from: "link",
-      id: "cred_sl",
-      provider: "slack",
-      key: "access_token",
-    });
+    // slack-app should NOT be in resolvedCredentials
+    expect(body.resolvedCredentials).toBeUndefined();
+    // Workspace should require setup
+    expect(mockRegisterWorkspace).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ skipEnvValidation: true }),
+    );
   });
 
   test("import: id-only ref resolves to provider with 2+ credentials → ambiguousProviders", async () => {

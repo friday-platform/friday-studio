@@ -305,7 +305,7 @@
         header: "",
         cell: (info) => {
           const integration = info.row.original;
-          if (integration.availableCredentials) {
+          if (integration.availableCredentials && integration.provider !== "slack-app") {
             const selectHandler = onCredentialSelect
               ? (credentialId: string) => onCredentialSelect(integration.provider, credentialId)
               : async (credentialId: string) => {
@@ -325,6 +325,7 @@
           return renderComponent(ConnectCell, {
             connected: integration.connected,
             onclick: () => handleConnect(integration),
+            disabledReason: integration.disabledReason,
           });
         },
         meta: { shrink: true },

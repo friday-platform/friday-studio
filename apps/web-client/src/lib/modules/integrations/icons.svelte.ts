@@ -54,7 +54,8 @@ const serviceIcons: Record<string, ServiceIconConfig> = {
     background: "#EAF5FF",
     backgroundDark: "#1E2F40",
   },
-  slack: { type: "component", src: SlackColor, background: "#EEE9EF", backgroundDark: "#3C173E" },
+  "slack-user": { type: "component", src: SlackColor, background: "#EEE9EF", backgroundDark: "#3C173E" },
+  "slack-app": { type: "component", src: SlackColor, background: "#EEE9EF", backgroundDark: "#3C173E" },
   notion: { type: "component", src: Notion, background: "#E7E7E8", backgroundDark: "#2E2F33" },
   linear: { type: "component", src: Linear, background: "#EDEFFA", backgroundDark: "#222538" },
   atlassian: {

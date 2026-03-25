@@ -77,13 +77,18 @@
         header: "Provider",
         cell: (info) => {
           const row = info.row.original;
+          const isSlackApp = row.provider === "slack-app";
+          const name = isSlackApp
+            ? (row.displayName ?? row.label)
+            : getProviderName(row.provider);
           return renderComponent(ProviderDetails, {
-            name: getProviderName(row.provider),
+            name,
             label: row.label,
-            displayName: row.displayName,
+            displayName: isSlackApp ? undefined : row.displayName,
             date: row.createdAt,
             credentialId: row.id,
             isDefault: row.isDefault,
+            provider: row.provider,
           });
         },
       }),

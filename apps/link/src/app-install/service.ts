@@ -1,9 +1,4 @@
-/**
- * AppInstallService
- * Main integration point for app installation OAuth flows (Slack, GitHub, Discord).
- *
- * @module app-install/service
- */
+/** App installation OAuth flows (Slack, GitHub). */
 
 import { logger } from "@atlas/logger";
 import {
@@ -23,10 +18,7 @@ import { AppInstallError } from "./errors.ts";
 /** Minimal registry interface - service only needs get() */
 type ProviderLookup = { get(id: string): Promise<ProviderDefinition | undefined> };
 
-/**
- * AppInstallService orchestrates app installation flows end-to-end.
- * Integrates authorization URL generation, token exchange, credential storage, and platform routing.
- */
+/** Orchestrates app installation flows: auth URL, token exchange, credential storage, routing. */
 export class AppInstallService {
   constructor(
     private registry: ProviderLookup,
@@ -36,91 +28,63 @@ export class AppInstallService {
     private log = logger,
   ) {}
 
-  /**
-   * Initiate an app install flow.
-   * Generates authorization URL and encodes state JWT for callback.
-   *
-   * @param providerId - Provider ID from registry
-   * @param redirectUri - Optional user redirect after successful install
-   * @param userId - User ID for multi-tenant credential storage
-   * @returns Authorization URL to redirect user to
-   * @throws {AppInstallError} If provider not found or not app_install type
-   *
-   * @example
-   * ```ts
-   * const { authorizationUrl } = await service.initiateInstall(
-   *   "slack",
-   *   "https://myapp.example.com/settings",
-   *   "user-123"
-   * );
-   * // redirect user to authorizationUrl
-   * ```
-   */
+  /** Generate authorization URL and encode state JWT for callback. */
   async initiateInstall(
     providerId: string,
     redirectUri?: string,
     userId?: string,
+    credentialId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const provider = await this.requireAppInstallProvider(providerId);
-    // Provider-namespaced callback URL for readability (e.g., /v1/callback/slack)
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
 
-    const state = await encodeAppInstallState({ p: providerId, r: redirectUri, u: userId });
+    const state = await encodeAppInstallState({
+      p: providerId,
+      r: redirectUri,
+      u: userId,
+      c: credentialId,
+    });
 
     this.log.info("app_install_initiated", {
       provider: providerId,
       platform: provider.platform,
       userId,
+      credentialId,
     });
 
-    return { authorizationUrl: provider.buildAuthorizationUrl(callbackUrl, state) };
+    return {
+      authorizationUrl: await provider.buildAuthorizationUrl(callbackUrl, state, { credentialId }),
+    };
   }
 
   /**
-   * Complete an app install flow.
-   * Exchanges authorization code for tokens, stores credential, and upserts platform route.
-   * Handles idempotent re-install (updates existing credential instead of creating new).
-   *
-   * For providers that support reinstallation (e.g., GitHub), this method automatically
-   * routes to the reinstall flow when no code is provided but installation_id is present.
-   *
-   * @param state - State parameter from OAuth callback
-   * @param code - Authorization code from OAuth callback (optional for reinstall flows)
-   * @param callbackParams - Additional callback parameters (e.g., installation_id)
-   * @returns Credential, optional redirect URI, and update flag
-   * @throws {AppInstallError} If state invalid/expired or installation fails
-   *
-   * @example
-   * ```ts
-   * const { credential, redirectUri, updated } = await service.completeInstall(state, code);
-   * if (updated) {
-   *   console.log(`Re-installed app into workspace`);
-   * }
-   * if (redirectUri) {
-   *   // redirect user back to their app
-   * }
-   * ```
+   * Exchange authorization code for tokens, store credential, upsert platform route.
+   * Routes to reinstall flow when no code but installation_id is present (GitHub).
    */
   async completeInstall(
     state: string,
     code: string | undefined,
     callbackParams?: URLSearchParams,
   ): Promise<{ credential: Credential; redirectUri?: string; updated: boolean }> {
-    // 1. Decode and verify JWT state
     const decoded = await this.decodeState(state);
-    const { p: providerId, r: redirectUri, u: userId } = decoded;
+    const { p: providerId, r: redirectUri, u: userId, c: credentialId } = decoded;
 
-    // 2. Get provider from registry
     const provider = await this.requireAppInstallProvider(providerId);
 
-    // 3. Get install result — either reinstall (no code) or normal OAuth exchange
     const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
     const uid = userId ?? "dev";
+
+    if (credentialId || userId) {
+      const params = callbackParams ?? new URLSearchParams();
+      if (credentialId) params.set("credential_id", credentialId);
+      if (userId) params.set("user_id", userId);
+      callbackParams = params;
+    }
+
     let result: AppInstallResult;
     if (!code) {
       const installationId = callbackParams?.get("installation_id") ?? "";
       if (provider.completeReinstallation && installationId) {
-        // Verify installation is unowned or owned by this user
         const claimable = await this.routeStorage.isClaimable(installationId, uid);
         if (!claimable) {
           throw new AppInstallError(
@@ -137,12 +101,7 @@ export class AppInstallService {
       result = await provider.completeInstallation(code, callbackUrl, callbackParams);
     }
 
-    // 4. Persist credential and route
-    const { credential, updated } = await this.persistInstallResult(
-      result,
-      userId,
-      provider.platform,
-    );
+    const { credential, updated } = await this.persistInstallResult(result, userId, provider);
 
     this.log.info("app_install_completed", {
       provider: providerId,
@@ -157,11 +116,7 @@ export class AppInstallService {
     return { credential, redirectUri, updated };
   }
 
-  /**
-   * Attempt server-side reconnection for installations the user already owns.
-   * Looks up owned routes (not app-level global list) and refreshes tokens.
-   * Returns null when provider doesn't support reconnection or user has no owned installations.
-   */
+  /** Reconnect owned installations server-side. Returns null if unsupported or no owned routes. */
   async reconnect(providerId: string, userId?: string): Promise<Credential[] | null> {
     const provider = await this.requireAppInstallProvider(providerId);
 
@@ -179,7 +134,7 @@ export class AppInstallService {
     for (const id of ownedInstallationIds) {
       try {
         const result = await provider.completeReinstallation(id);
-        const { credential } = await this.persistInstallResult(result, userId, provider.platform);
+        const { credential } = await this.persistInstallResult(result, userId, provider);
         credentials.push(credential);
 
         this.log.info("app_install_reconnected", {
@@ -224,17 +179,19 @@ export class AppInstallService {
   private async persistInstallResult(
     result: AppInstallResult,
     userId: string | undefined,
-    platform: string,
+    provider: AppInstallProvider,
   ): Promise<{ credential: Credential; updated: boolean }> {
     const uid = userId ?? "dev";
+    const useRouteTable = provider.usesRouteTable !== false;
 
-    // Check ownership before saving credential to avoid orphaned tokens
-    const claimable = await this.routeStorage.isClaimable(result.externalId, uid);
-    if (!claimable) {
-      throw new AppInstallError(
-        "INSTALLATION_OWNED",
-        `Route ${result.externalId} is owned by another user`,
-      );
+    if (useRouteTable) {
+      const claimable = await this.routeStorage.isClaimable(result.externalId, uid);
+      if (!claimable) {
+        throw new AppInstallError(
+          "INSTALLATION_OWNED",
+          `Route ${result.externalId} is owned by another user`,
+        );
+      }
     }
 
     const existingCredential = await this.credentialStorage.findByProviderAndExternalId(
@@ -255,13 +212,15 @@ export class AppInstallService {
       credentialId = id;
     }
 
-    try {
-      await this.routeStorage.upsert(result.externalId, uid, platform);
-    } catch (e) {
-      if (e instanceof RouteOwnershipError) {
-        throw new AppInstallError("INSTALLATION_OWNED", e.message);
+    if (useRouteTable) {
+      try {
+        await this.routeStorage.upsert(result.externalId, uid, provider.platform);
+      } catch (e) {
+        if (e instanceof RouteOwnershipError) {
+          throw new AppInstallError("INSTALLATION_OWNED", e.message);
+        }
+        throw e;
       }
-      throw e;
     }
 
     const credential = await this.credentialStorage.get(credentialId, uid);
@@ -272,22 +231,7 @@ export class AppInstallService {
     return { credential, updated };
   }
 
-  /**
-   * Reconcile route for existing credential.
-   * Idempotent recovery endpoint - re-creates route from credential data.
-   * Used when platform_route entry is missing but credential exists.
-   *
-   * @param providerId - Provider ID from registry
-   * @param credentialId - Credential ID to reconcile
-   * @param userId - User ID for multi-tenant credential storage
-   * @throws {AppInstallError} If credential not found or missing external ID
-   *
-   * @example
-   * ```ts
-   * await service.reconcileRoute("slack", "cred-123", "user-123");
-   * console.log("Route reconciled - incoming events will now route correctly");
-   * ```
-   */
+  /** Re-create platform route from existing credential (idempotent recovery). */
   async reconcileRoute(providerId: string, credentialId: string, userId: string): Promise<void> {
     const provider = await this.requireAppInstallProvider(providerId);
     const credential = await this.credentialStorage.get(credentialId, userId);
@@ -299,7 +243,6 @@ export class AppInstallService {
       );
     }
 
-    // Parse and validate credential secret
     const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
     if (!secretResult.success) {
       throw new AppInstallError(
@@ -308,15 +251,19 @@ export class AppInstallService {
       );
     }
     const secret = secretResult.data;
+    if (!("externalId" in secret)) {
+      throw new AppInstallError("INVALID_CREDENTIAL", "Credential secret missing externalId");
+    }
 
-    // Upsert route (team_id → user_id)
-    try {
-      await this.routeStorage.upsert(secret.externalId, userId, provider.platform);
-    } catch (e) {
-      if (e instanceof RouteOwnershipError) {
-        throw new AppInstallError("INSTALLATION_OWNED", e.message);
+    if (provider.usesRouteTable !== false) {
+      try {
+        await this.routeStorage.upsert(secret.externalId, userId, provider.platform);
+      } catch (e) {
+        if (e instanceof RouteOwnershipError) {
+          throw new AppInstallError("INSTALLATION_OWNED", e.message);
+        }
+        throw e;
       }
-      throw e;
     }
 
     this.log.info("app_install_route_reconciled", {
@@ -328,10 +275,7 @@ export class AppInstallService {
     });
   }
 
-  /**
-   * Uninstall app installation. Deletes route AND credential.
-   * @throws {AppInstallError} If credential not found or provider mismatch
-   */
+  /** Uninstall app: delete route then credential. */
   async uninstall(providerId: string, credentialId: string, userId: string): Promise<void> {
     const provider = await this.requireAppInstallProvider(providerId);
     const credential = await this.credentialStorage.get(credentialId, userId);
@@ -348,14 +292,17 @@ export class AppInstallService {
       );
     }
 
-    // Get team_id from credential secret
     const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
     if (!secretResult.success) {
       throw new AppInstallError("INVALID_CREDENTIAL", "Credential secret malformed");
     }
+    if (!("externalId" in secretResult.data)) {
+      throw new AppInstallError("INVALID_CREDENTIAL", "Credential secret missing externalId");
+    }
 
-    // Delete route first (stops events), then credential
-    await this.routeStorage.delete(secretResult.data.externalId, userId);
+    if (provider.usesRouteTable !== false) {
+      await this.routeStorage.delete(secretResult.data.externalId, userId);
+    }
     await this.credentialStorage.delete(credentialId, userId);
 
     this.log.info("app_install_uninstalled", {
@@ -367,10 +314,6 @@ export class AppInstallService {
     });
   }
 
-  /**
-   * Get app install provider from registry and validate type.
-   * @throws {AppInstallError} If provider not found or not app_install type
-   */
   private async requireAppInstallProvider(providerId: string): Promise<AppInstallProvider> {
     const provider = await this.registry.get(providerId);
     if (!provider) {

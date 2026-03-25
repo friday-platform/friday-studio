@@ -61,7 +61,7 @@
   </DropdownMenu.Trigger>
 
   <DropdownMenu.Content>
-    {#if !isDefault}
+    {#if !isDefault && provider !== "slack-app"}
       <DropdownMenu.Item onclick={handleSetDefault} disabled={isSettingDefault}>
         {isSettingDefault ? "Setting..." : "Set as default"}
       </DropdownMenu.Item>

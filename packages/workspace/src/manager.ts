@@ -1,10 +1,4 @@
-/**
- * WorkspaceManager: single source of truth for workspace lifecycle/state.
- *
- * - System workspaces are embedded at build time
- * - No virtual workspaces or atlas.yml special cases
- * - Separation of system vs user workspaces is explicit
- */
+/** Single source of truth for workspace lifecycle and state. */
 
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
@@ -27,13 +21,7 @@ import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 /** Called when a runtime needs to be destroyed (config changed, workspace deleted) */
 export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
 
-/**
- * Validates that all "auto" environment variables required by MCP servers are available.
- * Checks both system environment and workspace .env file.
- * Throws if any required env vars are missing.
- *
- * @internal Exported for testing
- */
+/** @internal Exported for testing. */
 export function validateMCPEnvironmentForWorkspace(
   config: MergedConfig,
   workspacePath: string,
@@ -41,7 +29,6 @@ export function validateMCPEnvironmentForWorkspace(
   const mcpServers = config.workspace.tools?.mcp?.servers;
   if (!mcpServers) return;
 
-  // Load workspace .env file if it exists
   const workspaceEnvPath = join(workspacePath, ".env");
   let workspaceEnv: Record<string, string> = {};
   if (existsSync(workspaceEnvPath)) {
@@ -53,7 +40,6 @@ export function validateMCPEnvironmentForWorkspace(
     }
   }
 
-  // Collect all missing "auto" env vars
   const missingVars: Array<{ serverId: string; varName: string }> = [];
 
   for (const [serverId, serverConfig] of Object.entries(mcpServers)) {
@@ -61,9 +47,7 @@ export function validateMCPEnvironmentForWorkspace(
 
     for (const [key, value] of Object.entries(serverConfig.env)) {
       if (value === "auto" || value === "from_environment") {
-        // Check system env (includes ~/.atlas/.env loaded by daemon)
         const systemValue = env[key];
-        // Check workspace .env
         const workspaceValue = workspaceEnv[key];
 
         if (!systemValue && !workspaceValue) {
@@ -151,10 +135,8 @@ export class WorkspaceManager {
       debounceMs: 1000,
     });
 
-    // System workspaces should never fail - if they do, it's a build/code issue
     await this.registerSystemWorkspaces();
 
-    // Watch existing non-system workspaces
     try {
       const existingNonSystem = (await this.list({ includeSystem: false })) || [];
       for (const workspace of existingNonSystem) {
@@ -207,13 +189,11 @@ export class WorkspaceManager {
   ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
     const absolutePath = await Deno.realPath(workspacePath);
 
-    // Check if already registered
     const existing = await this.registry.findWorkspaceByPath(absolutePath);
     if (existing) {
       return { workspace: existing, created: false };
     }
 
-    // Load and validate configuration using v2
     const adapter = new FilesystemConfigAdapter(absolutePath);
     const configLoader = new ConfigLoader(adapter, absolutePath);
 
@@ -233,7 +213,6 @@ export class WorkspaceManager {
       validateMCPEnvironmentForWorkspace(config, absolutePath);
     }
 
-    // Determine config filename and ephemeral status
     const persistentPath = join(absolutePath, "workspace.yml");
     const ephemeralPath = join(absolutePath, "eph_workspace.yml");
     const hasPersistent = existsSync(persistentPath);
@@ -271,7 +250,6 @@ export class WorkspaceManager {
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
-    // Register signals for persistent workspaces (including system workspaces)
     if (!entry.metadata?.ephemeral) {
       try {
         await this.registerWithRegistrars(entry.id, entry.path, config);
@@ -283,7 +261,6 @@ export class WorkspaceManager {
       }
     }
 
-    // Attach file watcher for non-system workspaces only
     if (this.fileWatcher && !entry.metadata?.system) {
       try {
         await this.fileWatcher.watchWorkspace(entry);
@@ -318,13 +295,11 @@ export class WorkspaceManager {
         },
       };
 
-      // Check if already registered
       const existing = await this.registry.getWorkspace(id);
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
       } else if (existing.name !== entry.name || !existing.metadata?.system) {
-        // Reconcile stale name or missing system flag from previous versions
         await this.registry.updateWorkspaceStatus(id, existing.status, {
           name: entry.name,
           metadata: {
@@ -336,7 +311,6 @@ export class WorkspaceManager {
         logger.info(`System workspace reconciled: ${existing.name} → ${entry.name}`);
       }
 
-      // Register with signal registrars (system workspaces can have signals!)
       try {
         const mergedConfig = await this.getWorkspaceConfig(id);
         if (mergedConfig) {
@@ -347,7 +321,6 @@ export class WorkspaceManager {
       }
     }
 
-    // Clean up orphaned system workspace entries from previous versions
     const allWorkspaces = await this.registry.listWorkspaces();
     for (const ws of allWorkspaces) {
       if (ws.metadata?.system && !systemIds.has(ws.id)) {
@@ -362,7 +335,6 @@ export class WorkspaceManager {
     const workspace = await this.registry.getWorkspace(workspaceId);
     if (!workspace) return null;
 
-    // Handle system workspaces
     if (workspace.metadata?.system && workspace.id in SYSTEM_WORKSPACES) {
       const config = SYSTEM_WORKSPACES[workspace.id];
       if (!config) {
@@ -372,7 +344,6 @@ export class WorkspaceManager {
       return { atlas: null, workspace: config };
     }
 
-    // Regular workspace - load from filesystem
     try {
       const adapter = new FilesystemConfigAdapter(workspace.path);
       const configLoader = new ConfigLoader(adapter, workspace.path);
@@ -402,11 +373,9 @@ export class WorkspaceManager {
       workspace = await this.registry.findWorkspaceByPath(normalizedPath);
     }
 
-    // If workspace found, check runtime status
     if (workspace) {
       const runtime = this.runtimes.get(workspace.id);
       if (runtime) {
-        // Runtime exists, workspace is running
         return { ...workspace, status: "running" };
       }
     }
@@ -425,7 +394,6 @@ export class WorkspaceManager {
       workspaces = workspaces.filter((w) => w.status === options.status);
     }
 
-    // By default, exclude system workspaces unless explicitly requested
     if (options?.includeSystem !== true) {
       workspaces = workspaces.filter((w) => !w.metadata?.system);
     }
@@ -449,31 +417,73 @@ export class WorkspaceManager {
       return;
     }
 
-    // Prevent deletion of system workspaces
     if (workspace.metadata?.system && !options?.force) {
       throw new Error(`Cannot delete system workspace '${id}'. Use force=true to override.`);
     }
 
-    // Unregister from signal registrars first
     await this.unregisterWithRegistrars(id);
-    // Stop runtime if active
+
+    try {
+      const config = await this.getWorkspaceConfig(id);
+      if (config) {
+        const linkUrl = env.LINK_SERVICE_URL ?? "http://localhost:3100";
+        const atlasKey = env.ATLAS_KEY;
+        const headers: Record<string, string> = atlasKey
+          ? { Authorization: `Bearer ${atlasKey}` }
+          : {};
+
+        const signals = config.workspace.signals ?? {};
+        for (const [signalName, signal] of Object.entries(signals)) {
+          if (signal.provider !== "slack") continue;
+          const appId = signal.config.app_id;
+          if (!appId) continue;
+          try {
+            const res = await fetch(`${linkUrl}/internal/v1/slack-apps/by-app-id/${appId}`, {
+              method: "DELETE",
+              headers,
+            });
+            if (!res.ok) {
+              logger.warn("Slack app deletion returned non-OK status", {
+                appId,
+                signalName,
+                workspaceId: id,
+                status: res.status,
+              });
+            } else {
+              logger.info("Slack app deleted during workspace cleanup", {
+                appId,
+                signalName,
+                workspaceId: id,
+              });
+            }
+          } catch (error) {
+            logger.warn("Failed to delete Slack app during workspace cleanup", {
+              appId,
+              signalName,
+              workspaceId: id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn("Pre-deletion Slack cleanup failed (best-effort)", { id, error });
+    }
+
     const runtime = this.runtimes.get(id);
     if (runtime) {
       await runtime.shutdown();
       this.runtimes.delete(id);
     }
 
-    // Remove from registry
     await this.registry.unregisterWorkspace(id);
 
-    // Ensure we stop file watching for this workspace (idempotent)
     try {
       this.fileWatcher?.unwatchWorkspace(id);
     } catch (error) {
       logger.debug("Error stopping watcher during workspace deletion", { id, error });
     }
 
-    // Optionally remove directory
     if (options?.removeDirectory && !workspace.path.startsWith("system://")) {
       try {
         await rm(workspace.path, { recursive: true });
@@ -491,7 +501,6 @@ export class WorkspaceManager {
     this.runtimes.set(workspaceId, runtime);
     logger.info("Runtime registered", { workspaceId });
 
-    // Update workspace status to running in registry
     try {
       await this.registry.updateWorkspaceStatus(workspaceId, "running");
       logger.info("Workspace status updated to running", { workspaceId });
@@ -505,7 +514,6 @@ export class WorkspaceManager {
     if (this.runtimes.delete(workspaceId)) {
       logger.info("Runtime unregistered", { workspaceId });
 
-      // Update workspace status to stopped in registry
       try {
         await this.registry.updateWorkspaceStatus(workspaceId, "stopped");
         logger.info("Workspace status updated to stopped", { workspaceId });
@@ -515,12 +523,10 @@ export class WorkspaceManager {
     }
   }
 
-  // Update last-seen timestamp in registry
   async updateWorkspaceLastSeen(workspaceId: string): Promise<void> {
     await this.registry.updateWorkspaceLastSeen(workspaceId);
   }
 
-  // Update status and optional partial entry fields in registry
   async updateWorkspaceStatus(
     workspaceId: string,
     status: WorkspaceStatus,
@@ -529,7 +535,6 @@ export class WorkspaceManager {
     await this.registry.updateWorkspaceStatus(workspaceId, status, updates);
   }
 
-  // Private helper methods
   private async generateUniqueId(): Promise<string> {
     const existingWorkspaces = await this.registry.listWorkspaces();
     const existingIds = new Set(existingWorkspaces.map((w) => w.id));
@@ -557,7 +562,7 @@ export class WorkspaceManager {
       }
     }
 
-    const discovered = [...new Set(workspaces)]; // Remove duplicates
+    const discovered = [...new Set(workspaces)];
     let imported = 0;
     let skipped = 0;
 
@@ -565,7 +570,6 @@ export class WorkspaceManager {
       const existing = await this.find({ path: workspacePath });
       if (!existing) {
         try {
-          // Ephemeral expiration pre-check and cleanup
           if (await this.cleanupExpiredEphemeralConfig(workspacePath)) {
             continue;
           }
@@ -641,19 +645,17 @@ export class WorkspaceManager {
     if (currentDepth > maxDepth) return;
 
     try {
-      // Check if this directory has workspace.yml or eph_workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
       const ephWorkspaceYmlPath = join(path, "eph_workspace.yml");
       if (existsSync(workspaceYmlPath)) {
         results.push(path);
-        return; // Don't scan subdirectories of a workspace
+        return;
       }
       if (existsSync(ephWorkspaceYmlPath)) {
         results.push(path);
-        return; // Treat as workspace root as well
+        return;
       }
 
-      // Skip common non-workspace directories
       const skipDirs = new Set([
         ".git",
         "node_modules",
@@ -663,7 +665,6 @@ export class WorkspaceManager {
         ".next",
         "target",
       ]);
-      // Scan subdirectories
       const entries = await readdir(path, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory() && !skipDirs.has(entry.name)) {
@@ -682,7 +683,6 @@ export class WorkspaceManager {
    * then closes the registry. Best-effort: logs errors and continues.
    */
   async close(): Promise<void> {
-    // Unregister all signals via registrars for all known workspaces
     try {
       const all = await this.list({ includeSystem: false });
       for (const ws of all) {
@@ -692,12 +692,10 @@ export class WorkspaceManager {
       logger.debug("Error unregistering workspace signals during manager close", { error });
     }
 
-    // Shutdown all active workspace runtimes before clearing the map
     const shutdownPromises = Array.from(this.runtimes.values()).map(async (runtime) => {
       try {
         await runtime.shutdown();
       } catch (error) {
-        // Log error but don't throw - continue with other cleanup
         logger.error("Error shutting down workspace runtime", { error });
       }
     });
@@ -705,7 +703,6 @@ export class WorkspaceManager {
     await Promise.all(shutdownPromises);
     this.runtimes.clear();
 
-    // Stop file watcher if present
     if (this.fileWatcher) {
       try {
         this.fileWatcher.stop();
@@ -715,7 +712,6 @@ export class WorkspaceManager {
       this.fileWatcher = null;
     }
 
-    // Gracefully shutdown signal registrars
     if (this.signalRegistrars.length > 0) {
       for (const registrar of this.signalRegistrars) {
         try {
@@ -727,7 +723,6 @@ export class WorkspaceManager {
       this.signalRegistrars = [];
     }
 
-    // Close registry last
     await this.registry.close();
   }
 
@@ -827,11 +822,9 @@ export class WorkspaceManager {
       return;
     }
 
-    // Rename branch: attempt to adopt newPath if valid; otherwise process deletion
     const { oldPath, newPath } = change;
     logger.debug("processing rename change", { workspaceId, oldPath, newPath });
 
-    // If no newPath or the newPath doesn't exist, treat as missing config
     if (!newPath || !existsSync(newPath)) {
       logger.debug("rename with missing or nonexistent newPath; handling as missing config", {
         workspaceId,
@@ -864,15 +857,12 @@ export class WorkspaceManager {
     }
 
     try {
-      // Validate the new config before adopting and keep it to pass to registrars
       const adapter = new FilesystemConfigAdapter(newWorkspaceDir);
       const loader = new ConfigLoader(adapter, newWorkspaceDir);
       const config = await loader.load();
 
-      // Stop runtime if active
       await this.stopRuntimeIfActive(workspaceId);
 
-      // Update registry status and paths atomically via updateWorkspaceStatus with partial updates
       const becameEphemeral = newPath.endsWith("eph_workspace.yml");
       const updatedMetadata = {
         ...workspace.metadata,
@@ -893,7 +883,6 @@ export class WorkspaceManager {
         newPath,
       });
 
-      // Rewire signals to the new path with validated config (skip for ephemeral)
       if (!becameEphemeral) {
         await this.restartSignalsForWorkspace(workspaceId, newWorkspaceDir, config);
       } else {
@@ -916,7 +905,6 @@ export class WorkspaceManager {
         await this.fileWatcher.watchWorkspace(updated);
       }
 
-      // Mark workspace inactive (ready state) after adoption
       await this.markWorkspaceInactive(workspaceId);
     } catch (error) {
       logger.error("Failed to adopt renamed workspace config; deleting entry", {
@@ -1047,10 +1035,8 @@ export class WorkspaceManager {
     const fromPath = join(workspace.path, fromName);
     const toPath = join(workspace.path, toName);
 
-    // Stop runtime before changing
     await this.stopRuntimeIfActive(id);
 
-    // Detach watcher before filesystem rename/registry updates
     try {
       this.fileWatcher?.unwatchWorkspace(id);
     } catch {
@@ -1058,15 +1044,12 @@ export class WorkspaceManager {
     }
 
     try {
-      // Rename config file if source exists; otherwise, if target exists, use it
       if (existsSync(fromPath)) {
         await Deno.rename(fromPath, toPath);
       } else if (!existsSync(toPath)) {
-        // If neither exists, throw
         throw new Error(`Neither ${fromName} nor ${toName} exists in ${workspace.path}`);
       }
 
-      // Update registry paths and metadata
       const newMetadata: Record<string, unknown> = { ...workspace.metadata };
       if (makePersistent) {
         newMetadata.ephemeral = false;
@@ -1091,7 +1074,6 @@ export class WorkspaceManager {
         await this.fileWatcher.watchWorkspace(updated);
       }
 
-      // Update signals according to persistence
       if (makePersistent) {
         const adapter = new FilesystemConfigAdapter(workspace.path);
         const loader = new ConfigLoader(adapter, workspace.path);
@@ -1107,12 +1089,10 @@ export class WorkspaceManager {
   }
 }
 
-// Singleton manager; lazily initialized
 let _workspaceManager: WorkspaceManager | null = null;
 
 export async function getWorkspaceManager(): Promise<WorkspaceManager> {
   if (!_workspaceManager) {
-    // Create default registry adapter
     const registry = await createRegistryStorage(StorageConfigs.defaultKV());
     _workspaceManager = new WorkspaceManager(registry);
   }

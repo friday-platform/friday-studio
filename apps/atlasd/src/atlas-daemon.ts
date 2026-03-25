@@ -72,6 +72,10 @@ import { createApp } from "./factory.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import {
+  createLinkSlackEventManager,
+  SlackSignalRegistrar,
+} from "./signal-registrars/slack-registrar.ts";
 import { StreamRegistry } from "./stream-registry.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -348,9 +352,15 @@ export class AtlasDaemon {
     // Create signal registrars and pass them to WorkspaceManager.initialize
     const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
+    const slackRegistrar = new SlackSignalRegistrar({
+      eventManager: createLinkSlackEventManager(),
+    });
 
-    // Build registrars array
-    const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
+    const signalRegistrars: WorkspaceSignalRegistrar[] = [
+      fsRegistrar,
+      cronRegistrar,
+      slackRegistrar,
+    ];
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);

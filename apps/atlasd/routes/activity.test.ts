@@ -319,7 +319,8 @@ describe("Activity API Routes", () => {
       const res = await app.request("/api/activity/stream");
       expect(res.status).toBe(200);
 
-      const reader = res.body!.getReader();
+      if (!res.body) throw new Error("expected response body");
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       const { value } = await reader.read();
       const text = decoder.decode(value);
@@ -337,7 +338,8 @@ describe("Activity API Routes", () => {
       });
 
       const res = await app.request("/api/activity/stream");
-      const reader = res.body!.getReader();
+      if (!res.body) throw new Error("expected response body");
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
 
       // Read initial event
@@ -358,7 +360,8 @@ describe("Activity API Routes", () => {
       vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(3);
 
       const res = await app.request("/api/activity/stream");
-      const reader = res.body!.getReader();
+      if (!res.body) throw new Error("expected response body");
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
 
       // Read initial event

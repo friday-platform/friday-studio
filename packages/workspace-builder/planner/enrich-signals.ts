@@ -8,7 +8,6 @@
 
 import { repairJson } from "@atlas/agent-sdk";
 import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
-import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import { registry, traceModel } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
@@ -17,10 +16,6 @@ import type { z } from "zod";
 import type { Signal, SignalConfig } from "../types.ts";
 
 const logger = createLogger({ component: "proto-signal-enrichment" });
-
-// ---------------------------------------------------------------------------
-// verifyCronSchedule (moved from tools.ts — only consumer is this module)
-// ---------------------------------------------------------------------------
 
 type VerifyCronResult = { valid: true; nextFireTimes: string[] } | { valid: false; error: string };
 
@@ -40,14 +35,6 @@ function verifyCronSchedule(expression: string, timezone?: string): VerifyCronRe
     return { valid: false, error: message };
   }
 }
-
-// ---------------------------------------------------------------------------
-// Per-type schemas — canonical definitions from @atlas/config
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// System prompts
-// ---------------------------------------------------------------------------
 
 const SCHEDULE_SYSTEM_PROMPT = `You extract cron schedule configuration from signal descriptions.
 
@@ -78,10 +65,6 @@ const HTTP_SYSTEM_PROMPT = `You extract webhook/API endpoint configuration from 
 1. Generate a descriptive path like "/webhook/github" or "/trigger/analyze"
 2. Include timeout if the description mentions processing duration
 3. Default timeout is omitted (system default applies)`;
-
-// ---------------------------------------------------------------------------
-// LLM enrichment config per signal type
-// ---------------------------------------------------------------------------
 
 const ENRICHMENT_CONFIG = {
   schedule: {
@@ -127,46 +110,6 @@ ${signal.displayLabel ? `Display label: ${signal.displayLabel}` : ""}`,
   return object;
 }
 
-// ---------------------------------------------------------------------------
-// Artifact-ref format injection (DEPRECATED)
-// ---------------------------------------------------------------------------
-
-/**
- * @deprecated Signals no longer carry artifact UUIDs. The data-analyst discovers
- * data through the resource catalog. This function is a no-op retained for
- * backwards compatibility with existing workspace YAMLs.
- *
- * @param schema - JSON Schema object (returned unchanged)
- * @returns The original schema unchanged
- */
-function injectArtifactRefFormat(schema: ValidatedJSONSchema): ValidatedJSONSchema {
-  if (schema.properties) {
-    const hasRefFields = Object.values(schema.properties).some((prop) => {
-      if (!prop || typeof prop !== "object") return false;
-      const desc = typeof prop.description === "string" ? prop.description.toLowerCase() : "";
-      return (
-        prop.format === "artifact-ref" ||
-        desc.includes("uploaded file") ||
-        desc.includes("artifact")
-      );
-    });
-
-    if (hasRefFields) {
-      logger.warn(
-        "format: artifact-ref is deprecated — signals should be pure triggers. " +
-          "Data discovery now uses the resource catalog.",
-        { schemaProperties: Object.keys(schema.properties) },
-      );
-    }
-  }
-
-  return schema;
-}
-
-// ---------------------------------------------------------------------------
-// enrichSignals — enrich all signals with concrete config
-// ---------------------------------------------------------------------------
-
 /**
  * Enrich signals with concrete provider configuration.
  * Schedule signals get cron expressions + timezones, validated via verifyCronSchedule.
@@ -201,6 +144,9 @@ export async function enrichSignals(
           config: await callEnrichmentLLM(signal, ENRICHMENT_CONFIG.http, options?.abortSignal),
         };
         break;
+      case "slack":
+        signalConfig = { provider: "slack", config: {} };
+        break;
     }
 
     if (signalConfig.provider === "schedule") {
@@ -227,7 +173,5 @@ export async function enrichSignals(
     enriched.push({ ...signal, signalConfig });
   }
 
-  return enriched.map((s) =>
-    s.payloadSchema ? { ...s, payloadSchema: injectArtifactRefFormat(s.payloadSchema) } : s,
-  );
+  return enriched;
 }

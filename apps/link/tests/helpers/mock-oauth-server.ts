@@ -16,6 +16,9 @@ export type MockAuthCode = { code: string; redirect_uri: string; access_token: s
 /** Refresh token data */
 export type MockRefreshToken = { access_token: string; refresh_token: string };
 
+/** Mutable counters shared between the request handler and the returned server object */
+export type MockOAuthCounters = { discovery: number; registration: number };
+
 /**
  * Mock OAuth server state
  */
@@ -30,9 +33,8 @@ export type MockOAuthServer = {
   authCodes: Map<string, MockAuthCode>;
   // Refresh tokens storage
   refreshTokens: Map<string, MockRefreshToken>;
-  // Track discovery calls
-  discoveryCallCount: number;
-  registrationCallCount: number;
+  // Track discovery calls (shared object so handler mutations are visible)
+  counters: MockOAuthCounters;
   // Config
   includeProtectedResource: boolean;
   includeOAuthMetadata: boolean;
@@ -57,8 +59,7 @@ export async function startMockOAuthServer(opts: {
   const clients = new Map<string, MockClient>();
   const authCodes = new Map<string, MockAuthCode>();
   const refreshTokens = new Map<string, MockRefreshToken>();
-  let discoveryCallCount = 0;
-  let registrationCallCount = 0;
+  const counters: MockOAuthCounters = { discovery: 0, registration: 0 };
 
   // Use port 0 to let OS assign an available port
   const port = 0;
@@ -98,7 +99,7 @@ export async function startMockOAuthServer(opts: {
 
       // OAuth AS Metadata (required)
       if (url.pathname === "/.well-known/oauth-authorization-server") {
-        discoveryCallCount++;
+        counters.discovery++;
         if (!config.includeOAuthMetadata) {
           return new Response("Not Found", { status: 404 });
         }
@@ -115,7 +116,7 @@ export async function startMockOAuthServer(opts: {
 
       // OIDC Discovery fallback
       if (url.pathname === "/.well-known/openid-configuration") {
-        discoveryCallCount++;
+        counters.discovery++;
         return Response.json({
           issuer,
           authorization_endpoint: `${issuer}/authorize`,
@@ -127,7 +128,7 @@ export async function startMockOAuthServer(opts: {
 
       // Dynamic Client Registration (RFC 7591)
       if (url.pathname === "/register" && req.method === "POST") {
-        registrationCallCount++;
+        counters.registration++;
         const RegistrationBodySchema = z.object({ redirect_uris: z.array(z.string()) });
         const body = RegistrationBodySchema.parse(await req.json());
         const client_id = crypto.randomUUID();
@@ -257,8 +258,7 @@ export async function startMockOAuthServer(opts: {
     clients,
     authCodes,
     refreshTokens,
-    discoveryCallCount,
-    registrationCallCount,
+    counters,
     includeProtectedResource: config.includeProtectedResource,
     includeOAuthMetadata: config.includeOAuthMetadata,
     includeUserinfo: config.includeUserinfo,

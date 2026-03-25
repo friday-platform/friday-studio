@@ -9,18 +9,22 @@ import (
 	"context"
 )
 
-const getUserIDByTeam = `-- name: GetUserIDByTeam :one
+const getWebhookSecret = `-- name: GetWebhookSecret :one
 
-SELECT user_id FROM public.platform_route
-WHERE team_id = $1
+SELECT signing_secret, user_id FROM public.slack_app_webhook
+WHERE app_id = $1
 `
+
+type GetWebhookSecretRow struct {
+	SigningSecret string
+	UserID        string
+}
 
 // Signal Gateway routing queries for Slack
 // Read-only access for event routing
-// Get user ID by Slack team ID
-func (q *Queries) GetUserIDByTeam(ctx context.Context, teamID string) (string, error) {
-	row := q.db.QueryRow(ctx, getUserIDByTeam, teamID)
-	var user_id string
-	err := row.Scan(&user_id)
-	return user_id, err
+func (q *Queries) GetWebhookSecret(ctx context.Context, appID string) (GetWebhookSecretRow, error) {
+	row := q.db.QueryRow(ctx, getWebhookSecret, appID)
+	var i GetWebhookSecretRow
+	err := row.Scan(&i.SigningSecret, &i.UserID)
+	return i, err
 }

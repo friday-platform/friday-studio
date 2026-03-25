@@ -27,7 +27,6 @@ import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
 import {
   createUIMessageStream,
-  hasToolCall,
   jsonSchema,
   type StopCondition,
   smoothStream,
@@ -48,7 +47,7 @@ import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { wrapToolsWithSessionContext } from "./session-context.ts";
 import { skills } from "./skills/index.ts";
-import { workspaceCreationComplete } from "./stop-conditions.ts";
+import { connectServiceSucceeded, workspaceCreationComplete } from "./stop-conditions.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { conversationTools } from "./tools/mod.ts";
@@ -888,7 +887,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               toolChoice: "auto",
               stopWhen: [
                 stepCountIs(40),
-                hasToolCall("connect_service"),
+                connectServiceSucceeded(),
                 workspacePlannerSucceeded(),
                 // @ts-expect-error StopCondition<AtlasTools> is contravariant - allTools has specific keys
                 // but AtlasTools is Record<string, AtlasTool>. Using StopCondition<any> like AI SDK's

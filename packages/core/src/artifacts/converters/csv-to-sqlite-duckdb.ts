@@ -44,7 +44,7 @@ function checkCommand(cmd: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { stdio: "pipe" });
     proc.on("error", () => resolve(false));
-    proc.on("close", (code) => resolve(code === 0));
+    proc.on("close", (code: number | null) => resolve(code === 0));
   });
 }
 
@@ -126,7 +126,7 @@ function convertWithDuckdb(
       }
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", (err: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -134,7 +134,7 @@ function convertWithDuckdb(
       reject(new Error(`Failed to spawn duckdb: ${err.message}`));
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -195,7 +195,7 @@ function convertWithSqlite3(
       }
     });
 
-    sqlite.on("error", (err) => {
+    sqlite.on("error", (err: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -203,7 +203,7 @@ function convertWithSqlite3(
       reject(new Error(`Failed to spawn sqlite3: ${err.message}`));
     });
 
-    sqlite.on("close", (code) => {
+    sqlite.on("close", (code: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);

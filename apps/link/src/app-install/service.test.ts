@@ -1,8 +1,3 @@
-/**
- * AppInstallService Unit Tests
- * Tests service logic with mocked dependencies
- */
-
 import { beforeEach, describe, expect, it } from "vitest";
 import { TestPlatformRouteRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
 import { ProviderRegistry } from "../providers/registry.ts";
@@ -19,10 +14,13 @@ describe("AppInstallService", () => {
   const mockProvider = defineAppInstallProvider({
     id: "test-slack",
     platform: "slack",
+    usesRouteTable: false,
     displayName: "Test Slack",
     description: "Test provider",
     buildAuthorizationUrl(callbackUrl, state) {
-      return `https://slack.com/oauth/v2/authorize?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`;
+      return Promise.resolve(
+        `https://slack.com/oauth/v2/authorize?state=${state}&redirect_uri=${encodeURIComponent(callbackUrl)}`,
+      );
     },
     completeInstallation(code, _callbackUrl) {
       if (!code) {
@@ -115,8 +113,7 @@ describe("AppInstallService", () => {
       const stored = await storage.get(result.credential.id, "dev");
       expect(stored?.provider).toEqual("test-slack");
 
-      // Verify route created
-      expect(routeStorage.getRoute("team-test-code-123")).toEqual("dev");
+      // Slack skips platform_route (uses per-app webhook routing)
     });
 
     it("updates existing credential on re-install", async () => {
@@ -183,11 +180,11 @@ describe("AppInstallService", () => {
         "user-123",
       );
 
-      // Reconcile route
+      // Reconcile route — no-op for slack (uses per-app webhook routing)
       await service.reconcileRoute("test-slack", id, "user-123");
 
-      // Verify route created
-      expect(routeStorage.getRoute("team-reconcile-123")).toEqual("user-123");
+      // Slack skips platform_route, so no route should exist
+      expect(routeStorage.getRoute("team-reconcile-123")).toBeUndefined();
     });
 
     it("throws CREDENTIAL_NOT_FOUND for missing credential", async () => {
@@ -265,7 +262,7 @@ describe("AppInstallService", () => {
       displayName: "Test GitHub Reconnect",
       description: "Test GitHub provider with completeReinstallation",
       buildAuthorizationUrl(_callbackUrl, state) {
-        return `https://github.com/apps/test/installations/new?state=${state}`;
+        return Promise.resolve(`https://github.com/apps/test/installations/new?state=${state}`);
       },
       completeInstallation() {
         return Promise.reject(new Error("Should not be called"));
@@ -341,7 +338,7 @@ describe("AppInstallService", () => {
         displayName: "Test GitHub Partial",
         description: "Fails on unknown installations",
         buildAuthorizationUrl(_callbackUrl, state) {
-          return `https://github.com/apps/test/installations/new?state=${state}`;
+          return Promise.resolve(`https://github.com/apps/test/installations/new?state=${state}`);
         },
         completeInstallation() {
           return Promise.reject(new Error("Should not be called"));
@@ -368,7 +365,7 @@ describe("AppInstallService", () => {
       displayName: "Test GitHub",
       description: "Test GitHub provider",
       buildAuthorizationUrl(_callbackUrl, state) {
-        return `https://github.com/apps/test/installations/new?state=${state}`;
+        return Promise.resolve(`https://github.com/apps/test/installations/new?state=${state}`);
       },
       completeInstallation() {
         return Promise.reject(new Error("Should not be called in reinstall flow"));
@@ -489,21 +486,6 @@ describe("AppInstallService", () => {
       expect(error).toBeInstanceOf(AppInstallError);
       expect((error as AppInstallError).code).toEqual("MISSING_CODE");
     });
-
-    it("rejects full OAuth flow when route is owned by another user", async () => {
-      // Route owned by user-a
-      routeStorage.seedRoute("team-takeover-code", "user-a", "slack");
-
-      // user-b goes through full OAuth flow with a valid code
-      const { authorizationUrl } = await service.initiateInstall("test-slack", undefined, "user-b");
-      const state = new URL(authorizationUrl).searchParams.get("state");
-      if (!state) throw new Error("state should be defined");
-
-      // persistInstallResult calls routeStorage.upsert which throws on ownership conflict
-      await expect(service.completeInstall(state, "takeover-code")).rejects.toMatchObject({
-        code: "INSTALLATION_OWNED",
-      });
-    });
   });
 
   describe("uninstall", () => {
@@ -513,13 +495,8 @@ describe("AppInstallService", () => {
       if (!state) throw new Error("state should be defined");
       const result = await service.completeInstall(state, "uninstall-team");
 
-      // Verify route exists
-      expect(routeStorage.getRoute("team-uninstall-team")).toEqual("dev");
-
       await service.uninstall("test-slack", result.credential.id, "dev");
 
-      // Route deleted
-      expect(routeStorage.getRoute("team-uninstall-team")).toBeUndefined();
       // Credential deleted
       const stored = await storage.get(result.credential.id, "dev");
       expect(stored).toBeNull();
@@ -535,10 +512,11 @@ describe("AppInstallService", () => {
         defineAppInstallProvider({
           id: "other-provider",
           platform: "slack",
+          usesRouteTable: false,
           displayName: "Other",
           description: "Other",
           buildAuthorizationUrl(_cb, state) {
-            return `https://example.com?state=${state}`;
+            return Promise.resolve(`https://example.com?state=${state}`);
           },
           completeInstallation() {
             return Promise.reject(new Error("unused"));

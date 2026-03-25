@@ -13,7 +13,6 @@
   import { schemaToSecretFields, SecretSchemaShape, type SecretField } from "./secret-fields";
   import MessageWrapper from "./wrapper.svelte";
 
-  /** Schema for OAuth callback message from popup window */
   const OAuthCallbackMessageSchema = z.object({
     type: z.literal("oauth-callback"),
     credentialId: z.string(),
@@ -23,6 +22,15 @@
   type Props = { provider: string; chat: Chat<AtlasUIMessage> };
 
   const { provider, chat }: Props = $props();
+
+  function openCenteredPopup(url: string): Window | null {
+    const width = 600;
+    const height = 700;
+    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+    const features = `width=${width},height=${height},left=${left},top=${top},popup=yes`;
+    return window.open(url, "oauth-popup", features);
+  }
 
   const icon = $derived(getServiceIcon(provider));
 
@@ -67,12 +75,7 @@
     fetchProvider();
   });
 
-  /**
-   * Handle OAuth callback message from popup window.
-   * Validates origin and message shape before processing.
-   */
   function handleOAuthMessage(event: MessageEvent) {
-    // Security: validate origin matches our app
     if (event.origin !== window.location.origin) {
       return;
     }
@@ -82,7 +85,6 @@
       return;
     }
 
-    // Only handle messages for our provider
     if (result.data.provider !== provider) {
       return;
     }
@@ -90,10 +92,7 @@
     completeOAuthFlow();
   }
 
-  /**
-   * Handle localStorage fallback for cross-origin popup scenarios.
-   * When popup navigates through external OAuth providers, window.opener can be null.
-   */
+  /** localStorage fallback — window.opener is null after cross-origin OAuth navigation. */
   function handleStorageEvent(event: StorageEvent) {
     if (event.key !== "oauth-callback" || !event.newValue) {
       return;
@@ -111,20 +110,15 @@
       return;
     }
 
-    // Only handle messages for our provider
     if (result.data.provider !== provider) {
       return;
     }
 
-    // Clean up localStorage
     localStorage.removeItem("oauth-callback");
 
     completeOAuthFlow();
   }
 
-  /**
-   * Complete the OAuth flow - send credential linked message to chat.
-   */
   function completeOAuthFlow() {
     removeMessageListener();
     trackEvent(GA4.CREDENTIAL_LINK_SUCCESS, { provider, type: providerDetails?.type });
@@ -141,14 +135,8 @@
     }
   }
 
-  /**
-   * Track whether we've added the message listener to avoid duplicates.
-   */
   let messageListenerActive = false;
 
-  /**
-   * Add message and storage listeners if not already active.
-   */
   function addMessageListener() {
     if (messageListenerActive) return;
     messageListenerActive = true;
@@ -156,9 +144,6 @@
     window.addEventListener("storage", handleStorageEvent);
   }
 
-  /**
-   * Remove message and storage listeners and reset tracking state.
-   */
   function removeMessageListener() {
     if (!messageListenerActive) return;
     messageListenerActive = false;
@@ -166,7 +151,6 @@
     window.removeEventListener("storage", handleStorageEvent);
   }
 
-  // Cleanup message listener on component destroy
   $effect(() => {
     return () => {
       removeMessageListener();
@@ -182,13 +166,7 @@
     const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, daemonUrl);
     url.searchParams.set("redirect_uri", callbackUrl.href);
 
-    const width = 600;
-    const height = 700;
-    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-    const features = `width=${width},height=${height},left=${left},top=${top},popup=yes`;
-
-    const popup = window.open(url.href, "oauth-popup", features);
+    const popup = openCenteredPopup(url.href);
 
     if (!popup || popup.closed) {
       popupBlocked = true;
@@ -198,9 +176,6 @@
     addMessageListener();
   }
 
-  /**
-   * Fallback: navigate in same tab when popup is blocked for OAuth.
-   */
   function startOAuthFallback() {
     trackEvent(GA4.OAUTH_FALLBACK_CLICK, { provider, type: "oauth" });
     const daemonUrl = getAtlasDaemonUrl();
@@ -209,10 +184,6 @@
     window.location.href = url.href;
   }
 
-  /**
-   * Start OAuth app installation flow in a popup window.
-   * Falls back to same-tab navigation if popup is blocked.
-   */
   function startAppInstall() {
     popupBlocked = false;
     trackEvent(GA4.CREDENTIAL_LINK_START, { provider, type: "app_install" });
@@ -222,28 +193,16 @@
     const url = new URL(`/api/link/v1/app-install/${provider}/authorize`, daemonUrl);
     url.searchParams.set("redirect_uri", callbackUrl.href);
 
-    // Open popup centered on screen
-    const width = 600;
-    const height = 700;
-    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-    const features = `width=${width},height=${height},left=${left},top=${top},popup=yes`;
-
-    const popup = window.open(url.href, "oauth-popup", features);
+    const popup = openCenteredPopup(url.href);
 
     if (!popup || popup.closed) {
-      // Popup was blocked - fall back to same-tab navigation
       popupBlocked = true;
       return;
     }
 
-    // Add message listener for callback (idempotent)
     addMessageListener();
   }
 
-  /**
-   * Fallback: navigate in same tab when popup is blocked.
-   */
   function startAppInstallFallback() {
     trackEvent(GA4.APP_INSTALL_FALLBACK_CLICK, { provider });
     const daemonUrl = getAtlasDaemonUrl();

@@ -42,6 +42,17 @@ describe("formatMessage - connect_service tool", () => {
 
     expect(result).toMatchObject({ type: "connect_service", provider: "linear" });
   });
+
+  it("suppresses card when tool output has error (missing prerequisite)", () => {
+    const message = createMessage("assistant");
+    const part = createToolPart("tool-connect_service", {
+      error: "Slack bot setup requires connecting your Slack Organization first.",
+    });
+
+    const result = formatMessage(message as AtlasUIMessage, part);
+
+    expect(result).toBeUndefined();
+  });
 });
 
 describe("formatMessage - display_artifact tool", () => {

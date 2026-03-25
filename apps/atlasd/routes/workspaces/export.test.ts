@@ -520,7 +520,7 @@ describe("GET /:workspaceId/export", () => {
     const agentRef = getExportedAgentRef(parsed, "communicator", "SLACK_MCP_XOXP_TOKEN");
 
     assert(agentRef, "expected communicator SLACK_MCP_XOXP_TOKEN in export");
-    expect(agentRef).toMatchObject({ from: "link", provider: "slack", key: "access_token" });
+    expect(agentRef).toMatchObject({ from: "link", provider: "slack-app", key: "access_token" });
     expect(agentRef).not.toHaveProperty("id");
   });
 

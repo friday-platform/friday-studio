@@ -37,37 +37,6 @@ signals:
         - "text"
         - "_discord"
 
-  slack:
-    provider: system
-    description: "Slack messages routed from Signal Gateway"
-    schema:
-      type: "object"
-      properties:
-        text:
-          type: "string"
-        callback_url:
-          type: "string"
-        _slack:
-          type: "object"
-          properties:
-            channel_id:
-              type: "string"
-            team_id:
-              type: "string"
-            channel_type:
-              type: "string"
-            thread_ts:
-              type: "string"
-            event_id:
-              type: "string"
-            user_id:
-              type: "string"
-            timestamp:
-              type: "string"
-      required:
-        - "text"
-        - "_slack"
-
   # Keep existing conversation-stream for web UI
   conversation-stream:
     description: "Handle conversation with streaming response"
@@ -140,7 +109,6 @@ jobs:
     triggers:
       - signal: "conversation-stream"  # Web UI
       - signal: "discord"              # Gateway → Discord
-      - signal: "slack"                # Gateway → Slack
     execution:
       strategy: "sequential"
       agents:

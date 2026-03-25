@@ -12,9 +12,10 @@
     date: string;
     credentialId: string;
     isDefault?: boolean;
+    provider?: string;
   };
 
-  let { name, label, displayName, date, credentialId, isDefault }: Props = $props();
+  let { name, label, displayName, date, credentialId, isDefault, provider }: Props = $props();
 
   const displayLabel = $derived(displayName ?? label);
   const currentName = $derived(displayName ?? label ?? "");
@@ -84,7 +85,7 @@
             <span class="account">{displayLabel}</span>
           </Dialog.Trigger>
         {/if}
-        {#if isDefault}
+        {#if isDefault && provider !== "slack-app"}
           <span class="default-badge">Default</span>
         {/if}
       </div>
