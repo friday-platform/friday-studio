@@ -5,9 +5,8 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { arch, env, platform } from "node:process";
+import { env } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
-import { logger } from "@atlas/logger";
 import { getVersionInfo, ReleaseChannel } from "@atlas/utils";
 import { z } from "zod";
 
@@ -293,72 +292,4 @@ export async function checkAndDisplayUpdate(): Promise<void> {
   }
 
   // Silently ignore errors to avoid disrupting CLI usage
-}
-
-interface UpdateInfo {
-  updateAvailable: boolean;
-  latestVersion?: string;
-  currentVersion: string;
-  downloadUrl?: string;
-}
-
-/**
- * Check for updates and return download URL for update command
- */
-export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
-  const versionInfo = getVersionInfo();
-  const currentVersion = versionInfo.version;
-
-  // Determine channel
-  if (!channel) {
-    channel = versionInfo.isNightly
-      ? ReleaseChannel.Nightly
-      : versionInfo.isDev
-        ? ReleaseChannel.Edge
-        : ReleaseChannel.Edge;
-  }
-
-  try {
-    const serverResponse = await fetchLatestVersion(channel);
-    if (!serverResponse) {
-      logger.error("No server response for update check", { channel });
-      return { updateAvailable: false, currentVersion };
-    }
-
-    const latestVersion = serverResponse.latest.version;
-
-    // For dev builds, always show update available to release channels
-    const hasUpdate = versionInfo.isDev ? true : isVersionOlder(currentVersion, latestVersion);
-
-    // Build download URL for current platform
-    const osPlatform =
-      platform === "darwin" ? "darwin" : platform === "linux" ? "linux" : "windows";
-    const osArch = arch === "x64" ? "amd64" : "arm64";
-    const platformKey = `${osPlatform}_${osArch}`;
-
-    const platformData = serverResponse.platforms?.[platformKey];
-    let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
-
-    // CRITICAL FIX: The version API is returning .sha256 URLs instead of binary URLs
-    // Remove .sha256 extension if present to get the actual binary URL
-    if (downloadUrl?.endsWith(".sha256")) {
-      downloadUrl = downloadUrl.replace(/\.sha256$/, "");
-    }
-
-    // CRITICAL FIX 2: The version API returns .zip URLs for macOS but we need .tar.gz
-    // Fix the extension based on platform
-    if ((osPlatform === "darwin" || osPlatform === "linux") && downloadUrl) {
-      // Replace .zip with .tar.gz for macOS/Linux
-      downloadUrl = downloadUrl.replace(/\.zip$/, ".tar.gz");
-    }
-
-    // Make URL absolute
-    if (downloadUrl && !downloadUrl.startsWith("http")) {
-      downloadUrl = `${getAtlasBaseUrl()}${downloadUrl}`;
-    }
-
-    return { updateAvailable: hasUpdate, currentVersion, latestVersion, downloadUrl };
-  } catch {
-    return { updateAvailable: false, currentVersion };
-  }
 }

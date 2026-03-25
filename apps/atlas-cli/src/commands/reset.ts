@@ -4,7 +4,6 @@ import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { ServiceManager } from "../services/service-manager.ts";
 import { confirmAction } from "../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
 
@@ -26,26 +25,10 @@ export const builder = {
 
 const PRESERVED_ENTRIES = new Set([".env", "bin"]);
 
-async function stopAtlasIfRunning(): Promise<"service" | "daemon" | null> {
-  const serviceManager = ServiceManager.getInstance();
-
-  if (await serviceManager.isInstalled()) {
-    const status = await serviceManager.getStatus();
-    if (status.running) {
-      infoOutput("Stopping Atlas service...");
-      try {
-        await serviceManager.stop(true);
-      } catch {
-        /* ignore - may already be stopping */
-      }
-      await sleep(2000);
-      return "service";
-    }
-  }
-
+async function stopAtlasIfRunning(): Promise<boolean> {
   const isRunning = await parseResult(client.health.index.$get());
   if (!isRunning.ok) {
-    return null;
+    return false;
   }
 
   infoOutput("Stopping Atlas daemon...");
@@ -55,7 +38,7 @@ async function stopAtlasIfRunning(): Promise<"service" | "daemon" | null> {
     /* ignore - may already be stopping */
   }
   await sleep(2000);
-  return "daemon";
+  return true;
 }
 
 export const handler = async (argv: ResetArgs): Promise<void> => {
@@ -71,7 +54,7 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
     process.exit(0);
   }
 
-  const stoppedMode = await stopAtlasIfRunning();
+  const wasStopped = await stopAtlasIfRunning();
 
   try {
     let didDelete = false;
@@ -90,8 +73,8 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
       infoOutput("Nothing to reset.");
     }
 
-    if (stoppedMode) {
-      warningOutput(`Run 'atlas ${stoppedMode} start' to restart the ${stoppedMode}.`);
+    if (wasStopped) {
+      warningOutput("Run 'atlas daemon start' to restart the daemon.");
     }
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {

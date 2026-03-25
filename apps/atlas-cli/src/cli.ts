@@ -29,7 +29,6 @@ const LEGACY_COMMANDS = new Set([
   "ps",
   "logs",
   "log",
-  "update",
   "reset",
   "daemon",
   "d",
@@ -42,8 +41,6 @@ const LEGACY_COMMANDS = new Set([
   "lib",
   "artifacts",
   "artifact",
-  "service",
-  "svc",
 ]);
 
 const argv = process.argv.slice(2);
