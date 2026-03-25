@@ -37,7 +37,7 @@
   let error = $state<string | null>(null);
   let loading = $state(false);
   let needsNamespace = $state(false);
-  let namespaceInput = $state("atlas");
+  let namespaceInput = $state("tempest");
   let pendingSkill = $state<PendingSkill | null>(null);
 
   function handleDragOver(e: DragEvent) {
@@ -513,7 +513,7 @@
           class="namespace-input"
           type="text"
           bind:value={namespaceInput}
-          placeholder="atlas"
+          placeholder="tempest"
           onkeydown={(e) => {
             if (e.key === "Enter") submitNamespace();
           }}
