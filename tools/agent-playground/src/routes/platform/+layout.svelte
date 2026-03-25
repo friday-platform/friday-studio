@@ -1,5 +1,5 @@
 <script lang="ts">
-  import DaemonGate from "$lib/components/daemon-gate.svelte";
+  import DaemonGate from "$lib/components/shared/daemon-gate.svelte";
 
   const { children } = $props();
 </script>

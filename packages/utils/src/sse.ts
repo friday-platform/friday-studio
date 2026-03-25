@@ -10,6 +10,8 @@
  * @module
  */
 
+import type { ZodType } from "zod";
+
 /** A single parsed SSE message with optional event name and data payload. */
 export interface SSEMessage {
   event?: string;
@@ -100,4 +102,38 @@ export function parseSSEMessage(raw: string): SSEMessage | null {
   if (!data) return null;
 
   return event ? { event, data } : { data };
+}
+
+/**
+ * Parses an SSE byte stream into JSON-parsed, optionally Zod-validated events.
+ *
+ * Builds on {@link parseSSEStream} by JSON-parsing each message's `data` field.
+ * When a `schema` is provided, events are validated and the yield type is
+ * inferred from the schema. Invalid JSON and Zod validation failures are
+ * silently skipped.
+ *
+ * @param body - A `ReadableStream<Uint8Array>` from a fetch response
+ * @param schema - Optional Zod schema to validate and type the parsed data
+ * @yields Events with JSON-parsed (and optionally validated) data
+ */
+export async function* parseSSEEvents<T = unknown>(
+  body: ReadableStream<Uint8Array>,
+  schema?: ZodType<T>,
+): AsyncGenerator<{ event?: string; data: T }> {
+  for await (const message of parseSSEStream(body)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(message.data);
+    } catch {
+      continue;
+    }
+
+    if (schema) {
+      const result = schema.safeParse(json);
+      if (!result.success) continue;
+      json = result.data;
+    }
+
+    yield message.event ? { event: message.event, data: json as T } : { data: json as T };
+  }
 }

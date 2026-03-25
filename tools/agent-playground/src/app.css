@@ -1,4 +1,4 @@
-@import "./lib/styles/markdown.css";
+@import "@atlas/ui/markdown.css";
 
 /* Reset (from web-client/src/reset.css) */
 

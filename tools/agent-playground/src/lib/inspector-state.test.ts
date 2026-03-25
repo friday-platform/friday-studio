@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("$lib/utils/session-event-stream", () => ({
+vi.mock("./utils/session-event-stream.ts", () => ({
   fetchSessionView: vi.fn(),
   sessionEventStream: vi.fn(),
+}));
+
+vi.mock("./daemon-client.ts", () => ({
+  getDaemonClient: vi.fn(),
 }));
 
 const { createInspectorState } = await import("./inspector-state.svelte.ts");

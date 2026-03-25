@@ -1,5 +1,6 @@
 import type {
   HealthRoutes,
+  JobsRoutes,
   SessionsRoutes,
   SkillsRoutes,
   WorkspaceChatRoutes,
@@ -35,6 +36,7 @@ function makeDaemonClient(customFetch: typeof globalThis.fetch) {
       }),
     sessions: hc<SessionsRoutes>(`${PROXY_BASE}/api/sessions`, { fetch: customFetch }),
     skills: hc<SkillsRoutes>(`${PROXY_BASE}/api/skills`, { fetch: customFetch }),
+    jobs: hc<JobsRoutes>(`${PROXY_BASE}/api/jobs`, { fetch: customFetch }),
   };
 }
 

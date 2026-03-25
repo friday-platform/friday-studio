@@ -16,6 +16,7 @@ import {
   type SessionStreamEvent,
   type SessionView,
 } from "@atlas/core/session/session-events";
+import { parseSSEStream } from "@atlas/utils/sse";
 
 /** Base delay for exponential backoff in milliseconds. */
 const BASE_DELAY_MS = 1000;
@@ -114,12 +115,6 @@ export async function fetchSessionView(sessionId: string): Promise<SessionView> 
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** SSE message with optional event name. */
-interface SSEMessage {
-  event?: string;
-  data: string;
-}
-
 async function* parseTypedSSEStream(
   body: ReadableStream<Uint8Array>,
 ): AsyncGenerator<SessionStreamEvent | EphemeralChunk> {
@@ -132,51 +127,6 @@ async function* parseTypedSSEStream(
       yield SessionStreamEventSchema.parse(json);
     }
   }
-}
-
-async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator<SSEMessage> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const raw = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        const message = parseSSEMessage(raw);
-        if (message) {
-          yield message;
-        }
-        boundary = buffer.indexOf("\n\n");
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function parseSSEMessage(raw: string): SSEMessage | null {
-  let data = "";
-  let event = "";
-
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("data:")) {
-      data += (data ? "\n" : "") + line.slice(5).trim();
-    } else if (line.startsWith("event:")) {
-      event = line.slice(6).trim();
-    }
-  }
-
-  if (!data) return null;
-  return event ? { event, data } : { data };
 }
 
 async function* fetchJsonFallback(

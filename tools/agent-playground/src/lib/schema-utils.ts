@@ -6,6 +6,27 @@
  * @module
  */
 
+import { z } from "zod";
+
+/** Zod shape for a single JSON Schema property definition. */
+export const JsonSchemaPropertyShape = z.object({
+  type: z.string().optional(),
+  description: z.string().optional(),
+  enum: z.array(z.unknown()).optional(),
+  default: z.unknown().optional(),
+  items: z.object({ type: z.string().optional() }).passthrough().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  required: z.array(z.string()).optional(),
+});
+
+/** Zod shape for a top-level JSON Schema object (type: "object" with properties). */
+export const JsonSchemaObjectShape = z.object({
+  type: z.literal("object").optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  required: z.array(z.string()).optional(),
+  description: z.string().optional(),
+});
+
 export interface SchemaRow {
   /** Dot-notated property name (e.g. "data.path" for nested) */
   name: string;
@@ -35,16 +56,19 @@ export function flattenSchema(
   requiredSet: Set<string>,
   depth: number,
 ): SchemaRow[] {
-  const props = schemaObj.properties;
-  if (!props || typeof props !== "object") return [];
+  const parsed = JsonSchemaObjectShape.safeParse(schemaObj);
+  if (!parsed.success || !parsed.data.properties) return [];
 
   const rows: SchemaRow[] = [];
-  const entries = Object.entries(props as Record<string, Record<string, unknown>>);
+  const entries = Object.entries(parsed.data.properties);
 
-  for (const [key, def] of entries) {
+  for (const [key, rawDef] of entries) {
+    const propResult = JsonSchemaPropertyShape.safeParse(rawDef);
+    const def = propResult.success ? propResult.data : undefined;
+
     const fullName = prefix ? `${prefix}.${key}` : key;
-    const rawType = typeof def?.type === "string" ? def.type : "unknown";
-    const description = typeof def?.description === "string" ? def.description : "";
+    const rawType = def?.type ?? "unknown";
+    const description = def?.description ?? "";
     const isRequired = requiredSet.has(key);
 
     if (rawType === "object" && def?.properties && depth < 1) {
@@ -52,15 +76,17 @@ export function flattenSchema(
       rows.push({ name: fullName, type: "object", description, required: isRequired, depth });
 
       // Recurse into nested properties
-      const nestedRequired = new Set<string>(
-        Array.isArray(def.required) ? (def.required as string[]) : [],
-      );
+      const nestedRequired = new Set<string>(def.required ?? []);
       rows.push(
-        ...flattenSchema(def as Record<string, unknown>, fullName, nestedRequired, depth + 1),
+        ...flattenSchema(
+          { properties: def.properties, required: def.required },
+          fullName,
+          nestedRequired,
+          depth + 1,
+        ),
       );
     } else if (rawType === "array") {
-      const items = def?.items as Record<string, unknown> | undefined;
-      const itemType = typeof items?.type === "string" ? items.type : "unknown";
+      const itemType = def?.items?.type ?? "unknown";
       rows.push({
         name: fullName,
         type: `${itemType}[]`,
@@ -82,9 +108,10 @@ export function flattenSchema(
  */
 export function schemaToRows(schema: object | null): SchemaRow[] {
   if (!schema) return [];
-  const s = schema as Record<string, unknown>;
-  if (!s.properties || typeof s.properties !== "object") return [];
 
-  const requiredSet = new Set<string>(Array.isArray(s.required) ? (s.required as string[]) : []);
-  return flattenSchema(s, "", requiredSet, 0);
+  const parsed = JsonSchemaObjectShape.safeParse(schema);
+  if (!parsed.success || !parsed.data.properties) return [];
+
+  const requiredSet = new Set<string>(parsed.data.required ?? []);
+  return flattenSchema({ ...parsed.data }, "", requiredSet, 0);
 }

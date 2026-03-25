@@ -687,6 +687,9 @@ export class WorkspaceRuntime {
         const sideChannel = new Map<string, AgentResultData>();
         this.agentResultSideChannel.set(sessionId, sideChannel);
         let stepCounter = 0;
+        /** Tracks the FSM state where a non-agent action (code/emit) failed, so we
+         *  can attribute the error to the correct planned step in the catch block. */
+        let failedActionStateId: string | undefined;
 
         logger.info("Processing signal via FSM", {
           sessionId: session.id,
@@ -798,6 +801,19 @@ export class WorkspaceRuntime {
                   }
                 }
 
+                // Track the state where a non-agent action failed — the catch
+                // block uses this to emit synthetic step events for the agent that
+                // was queued behind the failing code action.
+                if (
+                  event.type === "data-fsm-action-execution" &&
+                  !isAgentAction(event as FSMActionExecutionEvent)
+                ) {
+                  const actionEvent = event as FSMActionExecutionEvent;
+                  if (actionEvent.data.status === "failed") {
+                    failedActionStateId = actionEvent.data.state;
+                  }
+                }
+
                 // Session history v2: map skipped states to step:skipped events
                 if (sessionStream && event.type === "data-fsm-state-skipped") {
                   sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
@@ -845,6 +861,40 @@ export class WorkspaceRuntime {
               currentState: engine.state,
               jobName: job.name,
             });
+          }
+
+          // Emit synthetic step:start + step:complete(failed) for the agent action
+          // in the state that threw. Code actions run before agent actions in entry
+          // sequences — when a code action throws, the agent never starts and its
+          // block stays "pending", incorrectly swept to "skipped" by session:complete.
+          // This attributes the error to the correct step.
+          if (sessionStream && plannedSteps && failedActionStateId) {
+            const failedStep = plannedSteps.find((s) => s.stateId === failedActionStateId);
+            if (failedStep) {
+              const now = new Date().toISOString();
+              stepCounter++;
+              sessionStream.emit({
+                type: "step:start",
+                sessionId,
+                stepNumber: stepCounter,
+                agentName: failedStep.agentName,
+                stateId: failedStep.stateId,
+                actionType: failedStep.actionType,
+                task: failedStep.task,
+                timestamp: now,
+              });
+              sessionStream.emit({
+                type: "step:complete",
+                sessionId,
+                stepNumber: stepCounter,
+                status: "failed",
+                durationMs: 0,
+                toolCalls: [],
+                output: undefined,
+                error: session.error?.message,
+                timestamp: now,
+              });
+            }
           }
 
           // Emit error event so the client SSE stream receives it.

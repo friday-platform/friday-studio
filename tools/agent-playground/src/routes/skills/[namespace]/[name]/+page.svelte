@@ -6,23 +6,24 @@
 -->
 
 <script lang="ts">
-  import { Dialog, DropdownMenu, toast } from "@atlas/ui";
+  import { Dialog, DropdownMenu, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
-  import MarkdownContent from "$lib/components/markdown-content.svelte";
-  import SkillFileEditor from "$lib/components/skill-file-editor.svelte";
-  import SkillLoader from "$lib/components/skill-loader.svelte";
-  import { useDeleteSkill, useDisableSkill, usePublishSkill, useSkill } from "$lib/queries/skills";
+  import SkillFileEditor from "$lib/components/skills/skill-file-editor.svelte";
+  import SkillLoader from "$lib/components/skills/skill-loader.svelte";
+  import { skillQueries } from "$lib/queries";
+  import { useDeleteSkill, useDisableSkill, usePublishSkill } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
   import { writable } from "svelte/store";
 
   const namespace = $derived(page.params.namespace ?? "");
   const name = $derived(page.params.name ?? "");
 
-  const skillQuery = useSkill(
-    () => namespace,
-    () => name,
-  );
+  const skillQuery = createQuery(() => ({
+    ...skillQueries.detail(namespace, name),
+    enabled: namespace.length > 0 && name.length > 0,
+  }));
 
   const skill = $derived(skillQuery.data?.skill);
 
@@ -272,7 +273,9 @@
       </div>
     {:else}
       <div class="preview-content">
-        <MarkdownContent content={skill.instructions ?? ""} />
+        <MarkdownRendered>
+          {@html markdownToHTML(skill.instructions ?? "")}
+        </MarkdownRendered>
       </div>
     {/if}
   {/if}

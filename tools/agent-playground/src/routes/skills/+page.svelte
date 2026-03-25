@@ -6,7 +6,7 @@
 -->
 
 <script lang="ts">
-  import SkillLoader from "$lib/components/skill-loader.svelte";
+  import SkillLoader from "$lib/components/skills/skill-loader.svelte";
 </script>
 
 <div class="empty-state">

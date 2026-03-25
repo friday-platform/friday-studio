@@ -12,18 +12,15 @@
   import { deriveDataContracts, type DataContract } from "@atlas/config/data-contracts";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
   import { Icons } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import AgentIoSchemas from "$lib/components/agent-io-schemas.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
-  import {
-    useIntegrationsPreflight,
-    type IntegrationStatus,
-  } from "$lib/queries/integrations-preflight";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import AgentIoSchemas from "$lib/components/agents/agent-io-schemas.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
+  import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-  const configQuery = useWorkspaceConfig(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
 
   const workspaceAgents = $derived.by(() => {
     const data = configQuery.data;
@@ -92,7 +89,7 @@
   // Preflight health status
   // ---------------------------------------------------------------------------
 
-  const preflightQuery = useIntegrationsPreflight(() => workspaceId);
+  const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
 
   /** Provider -> status lookup from preflight data. */
   const providerStatus = $derived.by((): Map<string, IntegrationStatus> => {

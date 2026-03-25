@@ -1,16 +1,19 @@
 <script lang="ts">
   import { extractInitialStateIds, filterNoiseNodes } from "@atlas/config/pipeline-utils";
   import { deriveTopology } from "@atlas/config/topology";
+  import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import SessionProgressCard from "$lib/components/session-progress-card.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
-  import { useSessionsQuery } from "$lib/queries/sessions-query.svelte";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import SessionProgressCard from "$lib/components/session/session-progress-card.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
+  import { sessionQueries, workspaceQueries } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
-  const configQuery = useWorkspaceConfig(() => workspaceId);
-  const sessions = useSessionsQuery(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
+  const sessions = createQuery(() => ({
+    ...sessionQueries.list(workspaceId),
+    refetchInterval: 5_000,
+  }));
 
   /** Topology for session progress cards. */
   const topology = $derived.by(() => {

@@ -13,22 +13,24 @@
 -->
 
 <script lang="ts">
-  import type { WorkspaceConfig } from "@atlas/config";
-  import type { TopologyNode } from "@atlas/config";
-  import type { AgentBlock } from "@atlas/core/session/session-events";
+  import type { TopologyNode, WorkspaceConfig } from "@atlas/config";
   import { extractInitialStateIds, filterNoiseNodes } from "@atlas/config/pipeline-utils";
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
+  import type { AgentBlock } from "@atlas/core/session/session-events";
+  import { Button, Dialog, DropdownMenu, IconSmall } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import AgentInspectionPanel from "$lib/components/agent-inspection-panel.svelte";
-  import InspectorRecentSessions from "$lib/components/inspector-recent-sessions.svelte";
-  import InspectorRunCard from "$lib/components/inspector-run-card.svelte";
-  import InspectorSessionSidebar from "$lib/components/inspector-session-sidebar.svelte";
-  import InspectorWorkspacePicker from "$lib/components/inspector-workspace-picker.svelte";
-  import PipelineDiagram from "$lib/components/pipeline-diagram.svelte";
-  import WaterfallTimeline from "$lib/components/waterfall-timeline.svelte";
-  import WorkspaceJobSelector from "$lib/components/workspace-job-selector.svelte";
+  import AgentInspectionPanel from "$lib/components/inspector/agent-inspection-panel.svelte";
+  import InspectorRecentSessions from "$lib/components/inspector/inspector-recent-sessions.svelte";
+  import InspectorRunCard from "$lib/components/inspector/inspector-run-card.svelte";
+  import InspectorSessionSidebar from "$lib/components/inspector/inspector-session-sidebar.svelte";
+  import InspectorWorkspacePicker from "$lib/components/inspector/inspector-workspace-picker.svelte";
+  import WaterfallTimeline from "$lib/components/inspector/waterfall-timeline.svelte";
+  import SignalInputForm from "$lib/components/workspace/signal-input-form.svelte";
+  import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
+  import WorkspaceJobSelector from "$lib/components/workspace/workspace-job-selector.svelte";
+  import { DAEMON_BASE_URL } from "$lib/daemon-url";
   import { createInspectorState } from "$lib/inspector-state.svelte";
 
   /** URL is the source of truth for workspace, job, session, and selected step. */
@@ -71,6 +73,13 @@
       }
     }
     prevKey = key;
+  });
+
+  /** Fetch job config when workspace/job are known. */
+  $effect(() => {
+    if (workspaceId && jobId) {
+      inspector.fetchJobConfig(jobId, workspaceId);
+    }
   });
 
   /** Load session from URL param. */
@@ -166,8 +175,9 @@
     const job = config.jobs[jobId];
     if (!job) return { title: jobId ?? undefined };
     return {
-      title: ("title" in job && typeof job.title === "string") ? job.title : jobId ?? undefined,
-      description: ("description" in job && typeof job.description === "string") ? job.description : undefined,
+      title: "title" in job && typeof job.title === "string" ? job.title : (jobId ?? undefined),
+      description:
+        "description" in job && typeof job.description === "string" ? job.description : undefined,
     };
   });
 
@@ -225,6 +235,62 @@
     goto(url.toString(), { replaceState: true });
   }
 
+  // -- Rerun dialog state --
+
+  let rerunPayload = $state<Record<string, unknown>>({});
+
+  /** The first trigger signal for the current job. */
+  const primarySignal = $derived(jobSignals[0] ?? null);
+
+  /** Primary signal's schema narrowed to Record for SignalInputForm. */
+  const primarySchema = $derived.by((): Record<string, unknown> | null => {
+    const s = primarySignal?.schema;
+    if (!s || typeof s !== "object") return null;
+    return s as Record<string, unknown>;
+  });
+
+  /** Signal payload from the current session's first block input. */
+  const sessionPayload = $derived.by((): Record<string, unknown> => {
+    const blocks = inspector.sessionView?.agentBlocks;
+    if (!blocks || blocks.length === 0) return {};
+    return (blocks[0]?.input as Record<string, unknown>) ?? {};
+  });
+
+  /** Open the rerun dialog and pre-populate with current session's payload. */
+  function openRerunDialog(dialogOpen: { set: (v: boolean) => void }) {
+    rerunPayload = { ...sessionPayload };
+    dialogOpen.set(true);
+  }
+
+  function handleRerunSubmit(dialogOpen: { set: (v: boolean) => void }) {
+    if (!workspaceId || !primarySignal) return;
+    dialogOpen.set(false);
+    inspector.run(workspaceId, primarySignal.name, rerunPayload, [...inspector.disabledSteps]);
+  }
+
+  // -- Copy helpers --
+
+  function copyCliCommand() {
+    if (!workspaceId || !primarySignal) return;
+    const body = JSON.stringify(sessionPayload);
+    const escaped = body.replace(/'/g, "'\\''");
+    const cmd = `deno task atlas signal trigger ${primarySignal.name} --workspace ${workspaceId} --data '${escaped}'`;
+    navigator.clipboard.writeText(cmd);
+  }
+
+  function copyCurlCommand() {
+    if (!workspaceId || !primarySignal) return;
+    const body = JSON.stringify(sessionPayload);
+    const escaped = body.replace(/'/g, "'\\''");
+    const curl = [
+      "curl -X POST",
+      `-H 'Content-Type: application/json'`,
+      `-d '${escaped}'`,
+      `${DAEMON_BASE_URL}/api/workspaces/${workspaceId}/signals/${primarySignal.name}`,
+    ].join(" \\\n  ");
+    navigator.clipboard.writeText(curl);
+  }
+
   function handleSessionSelect(sessionId: string) {
     inspector.loadSession(sessionId);
     const url = new URL(page.url);
@@ -260,13 +326,53 @@
         <WorkspaceJobSelector onselection={handleSelection} />
       </div>
       <div class="toolbar-end">
-        <InspectorRecentSessions
-          {workspaceId}
-          jobName={jobId}
-          onselect={handleSessionSelect}
-        />
+        <InspectorRecentSessions {workspaceId} jobName={jobId} onselect={handleSessionSelect} />
         {#if hasSession}
-          <button class="new-run-btn" onclick={handleNewRun}>New run</button>
+          <Dialog.Root>
+            {#snippet children(open)}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger class="run-menu-trigger">
+                  <span>Run…</span>
+                  <IconSmall.CaretDown />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content>
+                  <DropdownMenu.Item onclick={handleNewRun}>New run</DropdownMenu.Item>
+                  <DropdownMenu.Item onclick={() => openRerunDialog(open)}>Rerun</DropdownMenu.Item>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onclick={copyCliCommand}>Copy CLI command</DropdownMenu.Item>
+                  <DropdownMenu.Item onclick={copyCurlCommand}>Copy as curl</DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+
+              <Dialog.Content size="large">
+                <Dialog.Close />
+                {#snippet header()}
+                  <Dialog.Title>Rerun {jobSpec.title ?? "Job"}</Dialog.Title>
+                {/snippet}
+                {#snippet footer()}
+                  <form
+                    class="rerun-form"
+                    onsubmit={(e) => {
+                      e.preventDefault();
+                      handleRerunSubmit(open);
+                    }}
+                  >
+                    {#if primarySchema}
+                      <SignalInputForm
+                        schema={primarySchema}
+                        values={rerunPayload}
+                        onChange={(v) => { rerunPayload = v; }}
+                      />
+                    {/if}
+                    <div class="rerun-actions">
+                      <Dialog.Button type="submit" closeOnClick={false}>Run</Dialog.Button>
+                      <Dialog.Cancel>Cancel</Dialog.Cancel>
+                    </div>
+                  </form>
+                {/snippet}
+              </Dialog.Content>
+            {/snippet}
+          </Dialog.Root>
         {/if}
       </div>
     </div>
@@ -277,7 +383,14 @@
     <div class="no-session">
       <div class="hero-dag">
         {#if topology}
-          <PipelineDiagram {topology} {selectedNodeId} onNodeClick={handleNodeClick} nodeStatusMap={nodeStatusMap} disabledSteps={inspector.disabledSteps} onToggleStep={inspector.toggleStep} />
+          <PipelineDiagram
+            {topology}
+            {selectedNodeId}
+            onNodeClick={handleNodeClick}
+            {nodeStatusMap}
+            disabledSteps={inspector.disabledSteps}
+            onToggleStep={inspector.toggleStep}
+          />
         {:else}
           <div class="zone-empty">
             <InspectorWorkspacePicker />
@@ -305,7 +418,6 @@
           <span class="zone-label error-text">{inspector.error}</span>
         </div>
       {/if}
-
     </div>
   {:else}
     <!-- Session-loaded mode: waterfall (hero) + right sidebar -->
@@ -329,6 +441,8 @@
           <div class="zone zone-inspection">
             <AgentInspectionPanel
               block={inspector.selectedBlock}
+              resolvedStepAgent={inspector.resolvedStepAgent}
+              {workspaceId}
               onclose={() => selectStep(null)}
             />
           </div>
@@ -336,10 +450,7 @@
       </div>
 
       {#if inspector.sessionView}
-        <InspectorSessionSidebar
-          sessionView={inspector.sessionView}
-          {jobSpec}
-        />
+        <InspectorSessionSidebar sessionView={inspector.sessionView} {jobSpec} />
       {/if}
     </div>
   {/if}
@@ -409,23 +520,36 @@
     gap: var(--size-2);
   }
 
-
-  .new-run-btn {
+  :global(.run-menu-trigger) {
+    align-items: center;
     background: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     color: var(--color-text);
-    cursor: pointer;
+    cursor: default;
+    display: inline-flex;
     font-family: inherit;
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
-    padding: var(--size-1) var(--size-3);
-    transition: border-color 150ms ease, background-color 150ms ease;
+    gap: var(--size-2);
+    padding: var(--size-1) var(--size-2);
   }
 
-  .new-run-btn:hover {
-    border-color: var(--color-border-2);
-    background: var(--color-surface-3, var(--color-surface-2));
+  .rerun-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4);
+    inline-size: 100%;
+    max-inline-size: var(--size-96);
+  }
+
+  .rerun-actions {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+    inline-size: 100%;
+    padding-block-start: var(--size-1);
   }
 
   /* ---- No-session mode ---- */
@@ -453,7 +577,6 @@
     padding: var(--size-4) var(--size-6) var(--size-10);
   }
 
-
   /* ---- Session-loaded mode ---- */
 
   .session-layout {
@@ -480,12 +603,12 @@
 
   .zone-inspection {
     flex: 0 0 auto;
+    align-items: stretch;
+    justify-content: flex-start;
     min-block-size: 0;
-    max-block-size: 50%;
     overflow: hidden;
     border-block-end: none;
   }
 
   /* ---- Reduced motion ---- */
-
 </style>

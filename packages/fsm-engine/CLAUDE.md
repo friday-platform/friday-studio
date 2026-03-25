@@ -16,3 +16,9 @@
   `buildContextPrompt` which adds datetime facts, Input, and skills — but not
   task framing. Any task-specific context must be embedded directly in
   `action.prompt`.
+- **Code/emit actions are invisible to session history.** Only agent and LLM
+  actions emit `step:start`/`step:complete` events (filtered by
+  `isAgentAction()` in runtime). If a code action throws before its paired
+  agent action, the runtime catch block synthesizes step events to attribute
+  the error — but this is a patch, not inherent. Keep this in mind when adding
+  new action types or changing entry action sequences.

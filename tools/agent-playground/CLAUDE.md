@@ -22,7 +22,6 @@ API routes live in `src/lib/server/router.ts`. Route groups:
 
 - `routes/agents.ts` — bundled agent metadata
 - `routes/execute.ts` — bundled agent execution (SSE)
-- `routes/custom.ts` — custom agent execution (SSE)
 - `routes/mcp.ts` — MCP server discovery and tool listing
 - `routes/workspace.ts` — workspace parse, execute (SSE), runs
 
@@ -36,7 +35,6 @@ Workspace pipeline logic in `src/lib/server/lib/workspace/`:
 
 ```
 /agents/bundled       — bundled agent selector + execution
-/agents/custom        — custom agent config + execution
 /workspaces           — workspace inspector (load YAML or generate)
 /workspaces/history   — past pipeline runs
 ```

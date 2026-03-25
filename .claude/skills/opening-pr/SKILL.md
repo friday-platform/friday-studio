@@ -3,7 +3,6 @@ name: opening-pr
 description: >
   Opens a pull request with a concise description of changes and rationale.
   Triggers on "open a PR", "create PR", "opening-pr", "land this".
-disable-model-invocation: true
 argument-hint: "[additional context for PR description]"
 ---
 

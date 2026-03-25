@@ -12,18 +12,18 @@
   import { yaml as yamlLang } from "@codemirror/lang-yaml";
   import { EditorState, StateEffect, StateField } from "@codemirror/state";
   import { Decoration, EditorView, keymap } from "@codemirror/view";
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { getDaemonClient } from "$lib/daemon-client.ts";
   import { atlasTheme } from "$lib/editor/atlas-theme";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import { workspaceQueries } from "$lib/queries";
   import { basicSetup } from "codemirror";
   import { onDestroy, untrack } from "svelte";
   import { isNode, parse, parseDocument, stringify } from "yaml";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-  const configQuery = useWorkspaceConfig(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const queryClient = useQueryClient();
   const client = getDaemonClient();
 
@@ -87,7 +87,7 @@
       }
 
       await queryClient.invalidateQueries({
-        queryKey: ["daemon", "workspace", workspaceId, "config"],
+        queryKey: workspaceQueries.config(workspaceId!).queryKey,
       });
       initialSnapshot = currentContent;
     } catch (err) {

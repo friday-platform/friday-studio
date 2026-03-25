@@ -174,6 +174,10 @@ go build                # Build
   `try_files` fallback, this returns `index.html` instead of JSON, crashing
   `JSON.parse`. The dev server masks this because it executes server load
   functions properly. An architecture test enforces this constraint.
+- Svelte scoped CSS: `:global(.class) svg` — the `svg` combinator is still
+  scope-hashed when the SVG is rendered by a child component. Icon components
+  embed their own dimensions, so external sizing rules become dead code after
+  swapping inline SVGs for component-based icons.
 
 ### SQLite (@db/sqlite)
 

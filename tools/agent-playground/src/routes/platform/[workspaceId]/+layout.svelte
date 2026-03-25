@@ -5,26 +5,29 @@
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Page } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import AgentEditorSidebar from "$lib/components/agent-editor-sidebar.svelte";
-  import AgentIndexSidebar from "$lib/components/agent-index-sidebar.svelte";
-  import JobIndexSidebar, { type JobEntry } from "$lib/components/job-index-sidebar.svelte";
-  import SidebarIdleView from "$lib/components/sidebar-idle-view.svelte";
-  import SignalSidebar from "$lib/components/signal-sidebar.svelte";
-  import SkillIndexSidebar from "$lib/components/skill-index-sidebar.svelte";
-  import WorkspaceAgentSidebar from "$lib/components/workspace-agent-sidebar.svelte";
+  import AgentEditorSidebar from "$lib/components/agents/agent-editor-sidebar.svelte";
+  import AgentIndexSidebar from "$lib/components/agents/agent-index-sidebar.svelte";
+  import WorkspaceAgentSidebar from "$lib/components/agents/workspace-agent-sidebar.svelte";
+  import SidebarIdleView from "$lib/components/shared/sidebar-idle-view.svelte";
+  import SkillIndexSidebar from "$lib/components/skills/skill-index-sidebar.svelte";
+  import JobIndexSidebar, {
+    type JobEntry,
+  } from "$lib/components/workspace/job-index-sidebar.svelte";
+  import SignalSidebar from "$lib/components/workspace/signal-sidebar.svelte";
   import {
-    useIntegrationsPreflight,
+    integrationQueries,
+    skillQueries,
+    workspaceQueries,
     type IntegrationStatus,
-  } from "$lib/queries/integrations-preflight";
-  import { useWorkspaceSkills } from "$lib/queries/skills";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  } from "$lib/queries";
 
   const { children } = $props();
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-  const configQuery = useWorkspaceConfig(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const config = $derived(configQuery.data?.config ?? null);
 
   /** Derive selected node from URL route params + topology lookup. */
@@ -75,7 +78,7 @@
   const isSkills = $derived(page.route.id === "/platform/[workspaceId]/skills");
 
   // --- Agent index sidebar data (TanStack Query deduplicates with agents page) ---
-  const preflightQuery = useIntegrationsPreflight(() => workspaceId);
+  const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
   const workspaceAgents = $derived(config ? deriveWorkspaceAgents(config) : []);
   const providerStatus = $derived.by((): Map<string, IntegrationStatus> => {
     const map = new Map<string, IntegrationStatus>();
@@ -101,7 +104,7 @@
   });
 
   // --- Skill index sidebar data ---
-  const skillsQuery = useWorkspaceSkills(() => workspaceId);
+  const skillsQuery = createQuery(() => skillQueries.workspaceSkills(workspaceId));
   const workspaceSkillCount = $derived(
     (skillsQuery.data?.globalRefs?.length ?? 0) + (skillsQuery.data?.inlineSkills?.length ?? 0),
   );

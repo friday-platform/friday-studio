@@ -12,11 +12,11 @@
   import { yaml as yamlLang } from "@codemirror/lang-yaml";
   import { EditorState } from "@codemirror/state";
   import { EditorView, keymap } from "@codemirror/view";
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { getDaemonClient } from "$lib/daemon-client.ts";
   import { atlasTheme } from "$lib/editor/atlas-theme";
-  import { useSkill } from "$lib/queries/skills";
+  import { skillQueries } from "$lib/queries";
   import { basicSetup } from "codemirror";
   import { onDestroy, untrack } from "svelte";
   import { parse, stringify } from "yaml";
@@ -24,10 +24,10 @@
   const namespace = $derived(page.params.namespace ?? "");
   const name = $derived(page.params.name ?? "");
 
-  const skillQuery = useSkill(
-    () => namespace,
-    () => name,
-  );
+  const skillQuery = createQuery(() => ({
+    ...skillQueries.detail(namespace, name),
+    enabled: namespace.length > 0 && name.length > 0,
+  }));
 
   const skill = $derived(skillQuery.data?.skill);
   const queryClient = useQueryClient();
@@ -132,8 +132,8 @@
         );
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["daemon", "skills", namespace, name] });
-      await queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
+      await queryClient.invalidateQueries({ queryKey: skillQueries.detail(namespace, name).queryKey });
+      await queryClient.invalidateQueries({ queryKey: skillQueries.all() });
       initialSnapshot = currentContent;
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);

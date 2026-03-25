@@ -7,8 +7,8 @@
 
 <script lang="ts">
   import { page } from "$app/state";
-  import SkillLoader from "$lib/components/skill-loader.svelte";
-  import SkillsTree from "$lib/components/skills-tree.svelte";
+  import SkillLoader from "$lib/components/skills/skill-loader.svelte";
+  import SkillsTree from "$lib/components/skills/skills-tree.svelte";
   import { getDirtyFiles } from "$lib/stores/skill-editor-state.svelte";
 
   const { children } = $props();

@@ -9,20 +9,20 @@
 
 <script lang="ts">
   import { DropdownMenu } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
+  import { skillQueries } from "$lib/queries";
   import {
     useAddWorkspaceSkill,
-    useCatalogSkills,
     useRemoveWorkspaceSkill,
-    useWorkspaceSkills,
     type CatalogSkill,
   } from "$lib/queries/skills";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-  const skillsQuery = useWorkspaceSkills(() => workspaceId);
-  const catalogQuery = useCatalogSkills();
+  const skillsQuery = createQuery(() => skillQueries.workspaceSkills(workspaceId));
+  const catalogQuery = createQuery(() => skillQueries.catalog());
   const removeMutation = useRemoveWorkspaceSkill(() => workspaceId);
   const addMutation = useAddWorkspaceSkill(() => workspaceId);
 

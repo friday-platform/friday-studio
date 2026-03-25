@@ -10,7 +10,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { AgentBlockCard, parseError, StepBlock } from "$lib/components/session";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { sessionEventStream } from "$lib/utils/session-event-stream";
   import { tick } from "svelte";
@@ -31,6 +31,14 @@
       initialValue: initialSessionView(),
     }),
   }));
+
+  /** Inspector deep-link for this session. */
+  const inspectorHref = $derived.by(() => {
+    const jobName = query.data?.jobName;
+    if (!jobName) return null;
+    const params = new URLSearchParams({ workspace: workspaceId, job: jobName, session: sessionId });
+    return `/inspector?${params}`;
+  });
 
   const isFinished = $derived(
     query.data?.status === "completed" || query.data?.status === "failed",
@@ -59,7 +67,12 @@
 
 <div class="session-detail">
   <div class="main">
-    <WorkspaceBreadcrumb {workspaceId} section="Runs" />
+    <div class="top-bar">
+      <WorkspaceBreadcrumb {workspaceId} section="Runs" />
+      {#if inspectorHref}
+        <Button size="small" variant="secondary" href={inspectorHref}>Open in Inspector</Button>
+      {/if}
+    </div>
 
     {#if query.isPending}
       <div class="loading">Loading run...</div>
@@ -244,6 +257,12 @@
     overflow: auto;
     padding: var(--size-8) var(--size-10);
     scrollbar-width: thin;
+  }
+
+  .top-bar {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
   }
 
   .session-header {

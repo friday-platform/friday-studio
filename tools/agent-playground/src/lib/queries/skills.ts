@@ -1,13 +1,18 @@
 /**
- * TanStack Query hooks for fetching workspace skills and individual skill details.
+ * Skill mutations, types, and derivation logic.
+ *
+ * Query hooks have been replaced by `skillQueries` factories in `skill-queries.ts`.
+ * Mutations remain here with invalidation keys referencing the factory.
  *
  * @module
  */
 import type { InlineSkillConfig, SkillEntry } from "@atlas/config";
 import { parseSkillRef } from "@atlas/config";
-import { createMutation, createQuery, useQueryClient } from "@tanstack/svelte-query";
+import { createMutation, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
+import { skillQueries } from "./skill-queries.ts";
+import { workspaceQueries } from "./workspace-queries.ts";
 
 // ==============================================================================
 // DERIVATION — extract skills from workspace config
@@ -68,59 +73,51 @@ function isInlineSkill(entry: SkillEntry): entry is InlineSkillConfig {
 }
 
 // ==============================================================================
-// SKILL DETAIL (JSON shape returned by GET /skills/:namespace/:name)
+// TYPES
 // ==============================================================================
 
-/** JSON-safe shape of a single skill returned from the daemon API (archive excluded). */
-const SkillDetailSchema = z.object({
-  id: z.string(),
-  skillId: z.string(),
-  namespace: z.string(),
-  name: z.string().nullable(),
-  version: z.number(),
-  title: z.string().nullable(),
-  description: z.string(),
-  descriptionManual: z.boolean(),
-  disabled: z.boolean(),
-  frontmatter: z.record(z.string(), z.unknown()),
-  instructions: z.string(),
-  createdBy: z.string(),
-  createdAt: z.string(),
-});
-
-const SkillDetailResponseSchema = z.object({ skill: SkillDetailSchema });
-
-
-// ==============================================================================
-// QUERY HOOKS
-// ==============================================================================
-
-/**
- * Derives the skill list from the workspace config query.
- * Separates global catalog refs from inline skill definitions.
- *
- * @param workspaceId - Reactive getter returning the workspace ID, or null
- */
-export function useWorkspaceSkills(workspaceId: () => string | null) {
-  const client = getDaemonClient();
-
-  return createQuery(() => {
-    const id = workspaceId();
-    return {
-      queryKey: ["daemon", "workspace", id, "skills"],
-      queryFn: async (): Promise<DerivedWorkspaceSkills> => {
-        if (!id) throw new Error("No workspace selected");
-        const res = await client.workspace[":workspaceId"].config.$get({
-          param: { workspaceId: id },
-        });
-        if (!res.ok) throw new Error(`Failed to fetch config: ${res.status}`);
-        const config = await res.json();
-        return deriveWorkspaceSkills(config.config.skills);
-      },
-      enabled: id !== null,
-    };
-  });
+/** Catalog skill summary (from GET /api/skills/) */
+export interface CatalogSkill {
+  id: string;
+  skillId: string;
+  namespace: string;
+  name: string | null;
+  title: string | null;
+  description: string;
+  disabled: boolean;
+  latestVersion: number;
+  createdAt: string;
 }
+
+/** Input for publishing a new skill version */
+export interface PublishSkillInput {
+  namespace: string;
+  name: string;
+  title?: string;
+  description?: string;
+  instructions: string;
+  descriptionManual?: boolean;
+}
+
+/** Input for toggling skill disabled state */
+export interface DisableSkillInput {
+  skillId: string;
+  disabled: boolean;
+}
+
+/** Input for updating a single file in a skill's archive */
+export interface UpdateSkillFileInput {
+  namespace: string;
+  name: string;
+  path: string;
+  content: string;
+}
+
+const UpdateSkillFileResponseSchema = z.object({ path: z.string(), version: z.number() });
+
+// ==============================================================================
+// MUTATION HOOKS
+// ==============================================================================
 
 /**
  * Mutation for removing a skill binding from the workspace config.
@@ -144,8 +141,10 @@ export function useRemoveWorkspaceSkill(workspaceId: () => string | null) {
     },
     onSuccess: () => {
       const id = workspaceId();
-      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "skills"] });
-      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "config"] });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: skillQueries.workspaceSkills(id).queryKey });
+        queryClient.invalidateQueries({ queryKey: workspaceQueries.config(id).queryKey });
+      }
     },
   }));
 }
@@ -172,113 +171,12 @@ export function useAddWorkspaceSkill(workspaceId: () => string | null) {
     },
     onSuccess: () => {
       const id = workspaceId();
-      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "skills"] });
-      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace", id, "config"] });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: skillQueries.workspaceSkills(id).queryKey });
+        queryClient.invalidateQueries({ queryKey: workspaceQueries.config(id).queryKey });
+      }
     },
   }));
-}
-
-/** Catalog skill summary (from GET /api/skills/) */
-export interface CatalogSkill {
-  id: string;
-  skillId: string;
-  namespace: string;
-  name: string | null;
-  title: string | null;
-  description: string;
-  disabled: boolean;
-  latestVersion: number;
-  createdAt: string;
-}
-
-/**
- * Fetches all skills from the global catalog.
- */
-export function useCatalogSkills() {
-  const client = getDaemonClient();
-
-  return createQuery(() => ({
-    queryKey: ["daemon", "skills", "catalog"],
-    queryFn: async (): Promise<CatalogSkill[]> => {
-      const res = await client.skills.index.$get({ query: { sort: "name", includeAll: "true" } });
-      if (!res.ok) throw new Error(`Failed to fetch catalog skills: ${res.status}`);
-      const data = await res.json();
-      return data.skills;
-    },
-  }));
-}
-
-/**
- * Fetches a single skill's full details from the catalog via the daemon proxy.
- *
- * @param namespace - Reactive getter returning the skill namespace
- * @param name - Reactive getter returning the skill name
- */
-export function useSkill(namespace: () => string, name: () => string) {
-  const client = getDaemonClient();
-
-  return createQuery(() => {
-    const ns = namespace();
-    const n = name();
-    return {
-      queryKey: ["daemon", "skills", ns, n],
-      queryFn: async () => {
-        const res = await client.skills[":namespace"][":name"].$get({
-          param: { namespace: `@${ns}`, name: n },
-          query: {},
-        });
-        if (!res.ok) throw new Error(`Failed to fetch skill: ${res.status}`);
-        return SkillDetailResponseSchema.parse(await res.json());
-      },
-      enabled: ns.length > 0 && n.length > 0,
-    };
-  });
-}
-
-/**
- * Fetches the list of archive files for a skill.
- *
- * @param namespace - Reactive getter returning the skill namespace
- * @param name - Reactive getter returning the skill name
- */
-export function useSkillFiles(namespace: () => string, name: () => string) {
-  const client = getDaemonClient();
-
-  return createQuery(() => {
-    const ns = namespace();
-    const n = name();
-    return {
-      queryKey: ["daemon", "skills", ns, n, "files"],
-      queryFn: async () => {
-        const res = await client.skills[":namespace"][":name"].files.$get({
-          param: { namespace: `@${ns}`, name: n },
-        });
-        if (!res.ok) throw new Error(`Failed to fetch skill files: ${res.status}`);
-        return res.json();
-      },
-      enabled: ns.length > 0 && n.length > 0,
-    };
-  });
-}
-
-// ==============================================================================
-// MUTATION HOOKS
-// ==============================================================================
-
-/** Input for publishing a new skill version */
-export interface PublishSkillInput {
-  namespace: string;
-  name: string;
-  title?: string;
-  description?: string;
-  instructions: string;
-  descriptionManual?: boolean;
-}
-
-/** Input for toggling skill disabled state */
-export interface DisableSkillInput {
-  skillId: string;
-  disabled: boolean;
 }
 
 /**
@@ -302,9 +200,9 @@ export function usePublishSkill() {
     },
     onSuccess: (_data: unknown, variables: PublishSkillInput) => {
       queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", variables.namespace, variables.name],
+        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
       });
-      queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
     },
   }));
 }
@@ -328,7 +226,7 @@ export function useDisableSkill() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
     },
   }));
 }
@@ -349,53 +247,9 @@ export function useDeleteSkill() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["daemon", "skills"] });
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
     },
   }));
-}
-
-interface SkillFileContent {
-  path: string;
-  content: string;
-}
-
-/**
- * Fetches a single file's content from a skill's archive.
- * Disabled when no path is selected (lazy fetch on click).
- *
- * @param namespace - Reactive getter returning the skill namespace
- * @param name - Reactive getter returning the skill name
- * @param path - Reactive getter returning the file path, or null when none selected
- */
-export function useSkillFileContent(
-  namespace: () => string,
-  name: () => string,
-  path: () => string | null,
-) {
-  return createQuery(() => {
-    const ns = namespace();
-    const n = name();
-    const p = path();
-    return {
-      queryKey: ["daemon", "skills", ns, n, "files", p],
-      queryFn: async (): Promise<SkillFileContent> => {
-        const res = await fetch(
-          `/api/daemon/api/skills/@${encodeURIComponent(ns)}/${encodeURIComponent(n)}/files/${p}`,
-        );
-        if (!res.ok) throw new Error(`Failed to fetch file content: ${res.status}`);
-        return res.json() as Promise<SkillFileContent>;
-      },
-      enabled: ns.length > 0 && n.length > 0 && p !== null,
-    };
-  });
-}
-
-/** Input for updating a single file in a skill's archive */
-export interface UpdateSkillFileInput {
-  namespace: string;
-  name: string;
-  path: string;
-  content: string;
 }
 
 /**
@@ -427,14 +281,14 @@ export function useUpdateSkillFile() {
             : `Failed to save file: ${res.status}`,
         );
       }
-      return res.json() as Promise<{ path: string; version: number }>;
+      return UpdateSkillFileResponseSchema.parse(await res.json());
     },
     onSuccess: (_data: unknown, variables: UpdateSkillFileInput) => {
       queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", variables.namespace, variables.name, "files"],
+        queryKey: skillQueries.files(variables.namespace, variables.name).queryKey,
       });
       queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", variables.namespace, variables.name],
+        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
       });
     },
   }));

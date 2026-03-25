@@ -4,8 +4,8 @@
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
   import "../app.css";
-  import Cheatsheet from "$lib/components/cheatsheet.svelte";
-  import Sidebar from "$lib/components/sidebar.svelte";
+  import Cheatsheet from "$lib/components/shared/cheatsheet.svelte";
+  import Sidebar from "$lib/components/shared/sidebar.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
 
   const { children } = $props();

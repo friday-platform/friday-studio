@@ -7,6 +7,9 @@
  * @module
  */
 
+import { z } from "zod";
+import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "./schema-utils.ts";
+
 export interface ContractField {
   /** Dot-notation path (e.g. "data.path" for nested) */
   field: string;
@@ -46,11 +49,10 @@ interface FlatField {
  * Resolve a JSON Schema property's type label.
  * Arrays become "itemType[]" to match existing schema-utils convention.
  */
-function resolveType(def: Record<string, unknown>): string {
-  const rawType = typeof def.type === "string" ? def.type : "unknown";
+function resolveType(def: z.infer<typeof JsonSchemaPropertyShape>): string {
+  const rawType = def.type ?? "unknown";
   if (rawType === "array") {
-    const items = def.items as Record<string, unknown> | undefined;
-    const itemType = typeof items?.type === "string" ? items.type : "unknown";
+    const itemType = def.items?.type ?? "unknown";
     return `${itemType}[]`;
   }
   return rawType;
@@ -66,22 +68,34 @@ function flatten(
   requiredSet: Set<string>,
   depth: number,
 ): FlatField[] {
-  const props = schema.properties;
-  if (!props || typeof props !== "object") return [];
+  const parsed = JsonSchemaObjectShape.safeParse(schema);
+  if (!parsed.success || !parsed.data.properties) return [];
 
   const fields: FlatField[] = [];
-  for (const [key, def] of Object.entries(props as Record<string, Record<string, unknown>>)) {
+  for (const [key, rawDef] of Object.entries(parsed.data.properties)) {
+    const propResult = JsonSchemaPropertyShape.safeParse(rawDef);
+    const def = propResult.success ? propResult.data : undefined;
+
     const fullName = prefix ? `${prefix}.${key}` : key;
     const isRequired = requiredSet.has(key);
-    const rawType = typeof def?.type === "string" ? def.type : "unknown";
+    const rawType = def?.type ?? "unknown";
 
     if (rawType === "object" && def?.properties && depth < 1) {
-      const nestedRequired = new Set<string>(
-        Array.isArray(def.required) ? (def.required as string[]) : [],
+      const nestedRequired = new Set<string>(def.required ?? []);
+      fields.push(
+        ...flatten(
+          { properties: def.properties, required: def.required },
+          fullName,
+          nestedRequired,
+          depth + 1,
+        ),
       );
-      fields.push(...flatten(def as Record<string, unknown>, fullName, nestedRequired, depth + 1));
     } else {
-      fields.push({ field: fullName, type: resolveType(def), required: isRequired });
+      fields.push({
+        field: fullName,
+        type: def ? resolveType(def) : "unknown",
+        required: isRequired,
+      });
     }
   }
   return fields;
@@ -90,11 +104,12 @@ function flatten(
 /**
  * Flatten a top-level JSON Schema into field entries.
  */
-function flattenTopLevel(schema: Record<string, unknown>): FlatField[] {
-  const requiredSet = new Set<string>(
-    Array.isArray(schema.required) ? (schema.required as string[]) : [],
-  );
-  return flatten(schema, "", requiredSet, 0);
+function flattenTopLevel(schema: object): FlatField[] {
+  const parsed = JsonSchemaObjectShape.safeParse(schema);
+  if (!parsed.success || !parsed.data.properties) return [];
+
+  const requiredSet = new Set<string>(parsed.data.required ?? []);
+  return flatten({ ...parsed.data }, "", requiredSet, 0);
 }
 
 /**
@@ -108,8 +123,8 @@ export function compareContracts(
   producerSchema: object | null,
   consumerSchema: object | null,
 ): ContractComparison {
-  const producer = producerSchema ? flattenTopLevel(producerSchema as Record<string, unknown>) : [];
-  const consumer = consumerSchema ? flattenTopLevel(consumerSchema as Record<string, unknown>) : [];
+  const producer = producerSchema ? flattenTopLevel(producerSchema) : [];
+  const consumer = consumerSchema ? flattenTopLevel(consumerSchema) : [];
 
   const producerMap = new Map<string, FlatField>();
   for (const f of producer) producerMap.set(f.field, f);
@@ -126,7 +141,7 @@ export function compareContracts(
 
     if (p && c) {
       // Field in both — check type match
-      const status = p.type === c.type ? "match" as const : "type_mismatch" as const;
+      const status = p.type === c.type ? ("match" as const) : ("type_mismatch" as const);
       fields.push({
         field,
         producerType: p.type,
@@ -163,9 +178,5 @@ export function compareContracts(
     mismatched: fields.filter((f) => f.status === "type_mismatch").length,
   };
 
-  return {
-    fields,
-    summary,
-    satisfied: summary.missing === 0 && summary.mismatched === 0,
-  };
+  return { fields, summary, satisfied: summary.missing === 0 && summary.mismatched === 0 };
 }

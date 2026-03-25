@@ -11,17 +11,16 @@
 -->
 
 <script lang="ts">
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import AgentCatalog from "$lib/components/agent-catalog.svelte";
-  import AgentWorkbench from "$lib/components/agent-workbench.svelte";
+  import AgentCatalog from "$lib/components/agents/agent-catalog.svelte";
+  import AgentWorkbench from "$lib/components/agents/agent-workbench.svelte";
   import { listenForOAuthCallback, startAppInstallFlow, startOAuthFlow } from "$lib/oauth-popup.ts";
-  import { invalidateAgentPreflight, useAgentPreflight } from "$lib/queries/agent-preflight.ts";
-  import { useAgentsList } from "$lib/queries/agents-list.ts";
+  import { agentQueries, invalidateAgentPreflight } from "$lib/queries";
 
   const queryClient = useQueryClient();
-  const agentsQuery = useAgentsList();
+  const agentsQuery = createQuery(() => agentQueries.list());
   const agents = $derived(agentsQuery.data ?? []);
 
   /** Resolve selected agent from URL param. */
@@ -31,7 +30,7 @@
 
   /** Reactive agent ID for the preflight hook. */
   const selectedAgentId = $derived(selectedAgent?.id ?? null);
-  const preflightQuery = useAgentPreflight(() => selectedAgentId);
+  const preflightQuery = createQuery(() => agentQueries.preflight(selectedAgentId));
   const credentials = $derived(preflightQuery.data?.credentials ?? []);
 
   /** Set up OAuth callback listener. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseSSEMessage, parseSSEStream } from "./sse.ts";
+import { z } from "zod";
+import { parseSSEEvents, parseSSEMessage, parseSSEStream } from "./sse.ts";
 
 describe("parseSSEMessage", () => {
   it("parses a data-only message", () => {
@@ -166,5 +167,90 @@ describe("parseSSEStream", () => {
       messages.push(msg);
     }
     expect(messages).toEqual([{ data: "one" }, { data: "two" }, { data: "three" }]);
+  });
+});
+
+describe("parseSSEEvents", () => {
+  function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+  }
+
+  it("yields JSON-parsed data without schema", async () => {
+    const stream = makeStream(['data: {"id":1}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ data: { id: 1 } }]);
+  });
+
+  it("preserves event field", async () => {
+    const stream = makeStream(['event: ephemeral\ndata: {"chunk":1}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ event: "ephemeral", data: { chunk: 1 } }]);
+  });
+
+  it("silently skips invalid JSON", async () => {
+    const stream = makeStream(['data: [DONE]\n\ndata: {"ok":true}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ data: { ok: true } }]);
+  });
+
+  it("yields multiple valid events and skips invalid ones", async () => {
+    const stream = makeStream(['data: {"a":1}\n\ndata: not-json\n\ndata: {"b":2}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ data: { a: 1 } }, { data: { b: 2 } }]);
+  });
+
+  it("validates with Zod schema and yields typed data", async () => {
+    const schema = z.object({ id: z.number(), name: z.string() });
+    const stream = makeStream(['data: {"id":1,"name":"test"}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream, schema)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ data: { id: 1, name: "test" } }]);
+  });
+
+  it("silently skips Zod validation failures", async () => {
+    const schema = z.object({ id: z.number() });
+    const stream = makeStream(['data: {"id":"not-a-number"}\n\n']);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream, schema)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([]);
+  });
+
+  it("yields valid and skips invalid when using schema", async () => {
+    const schema = z.object({ type: z.string(), value: z.number() });
+    const stream = makeStream([
+      'data: {"type":"a","value":1}\n\n',
+      'data: {"type":"b","value":"wrong"}\n\n',
+      "data: not-json\n\n",
+      'data: {"type":"c","value":3}\n\n',
+    ]);
+    const events = [];
+    for await (const ev of parseSSEEvents(stream, schema)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ data: { type: "a", value: 1 } }, { data: { type: "c", value: 3 } }]);
   });
 });

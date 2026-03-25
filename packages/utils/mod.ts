@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export { ReleaseChannel } from "./src/release-channel.ts";
 export type { SSEMessage } from "./src/sse.ts";
-export { parseSSEMessage, parseSSEStream } from "./src/sse.ts";
+export { parseSSEEvents, parseSSEMessage, parseSSEStream } from "./src/sse.ts";
 export { getAtlasVersion, getVersionInfo } from "./src/version.ts";
 
 const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });

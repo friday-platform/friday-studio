@@ -154,6 +154,12 @@
   --color-warning: hsl(38 92% 50%);
   --color-info: hsl(217 91% 60%);
 
+  /* Accent palette — syntax highlighting tier */
+  --yellow-3: hsl(33 100% 35%);
+  --green-3: hsl(99 78% 25%);
+  --blue-3: hsl(212 97% 27%);
+  --purple-3: hsl(271 100% 26%);
+
   /* Surfaces */
   --color-surface-1: hsl(240 100% 100% / 1);
   --color-surface-2: hsl(240 12% 95% / 1);
@@ -190,6 +196,12 @@
     --color-success: hsl(142 71% 55%);
     --color-warning: hsl(38 92% 55%);
     --color-info: hsl(217 91% 65%);
+
+    /* Accent palette — syntax highlighting tier */
+    --yellow-3: hsl(42 100% 78%);
+    --green-3: hsl(100 79% 78%);
+    --blue-3: hsl(212 96% 78%);
+    --purple-3: hsl(271 100% 82%);
 
     --shadow-canvas: 0 0 0 1px hsl(0 0 100 / 0.04);
     --shadow-1:

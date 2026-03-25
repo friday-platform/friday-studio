@@ -19,32 +19,22 @@
   import { IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import AgentsCard from "$lib/components/agents-card.svelte";
-  import JobsIntegrationsCard from "$lib/components/jobs-integrations-card.svelte";
-  import SessionProgressCard from "$lib/components/session-progress-card.svelte";
-  import SignalsCard from "$lib/components/signals-card.svelte";
-  import { getDaemonClient } from "$lib/daemon-client";
-  import { useSessionsQuery } from "$lib/queries/sessions-query.svelte";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import AgentsCard from "$lib/components/agents/agents-card.svelte";
+  import SessionProgressCard from "$lib/components/session/session-progress-card.svelte";
+  import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
+  import SignalsCard from "$lib/components/workspace/signals-card.svelte";
+  import { sessionQueries, workspaceQueries } from "$lib/queries";
   import { stringify } from "yaml";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-  const configQuery = useWorkspaceConfig(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const config = $derived(configQuery.data?.config ?? null);
 
   // ---------------------------------------------------------------------------
   // Workspace color (shared cache with sidebar)
   // ---------------------------------------------------------------------------
 
-  const daemonClient = getDaemonClient();
-  const workspacesQuery = createQuery(() => ({
-    queryKey: ["workspaces"],
-    queryFn: async () => {
-      const res = await daemonClient.workspace.index.$get();
-      if (!res.ok) throw new Error(`Failed to fetch workspaces: ${res.status}`);
-      return res.json();
-    },
-  }));
+  const workspacesQuery = createQuery(() => workspaceQueries.list());
 
   const COLORS: Record<string, string> = {
     yellow: "var(--yellow-2, #facc15)",
@@ -161,7 +151,10 @@
     return filterNoiseNodes(raw, initialIds);
   });
 
-  const sessionsQuery = useSessionsQuery(() => workspaceId);
+  const sessionsQuery = createQuery(() => ({
+    ...sessionQueries.list(workspaceId),
+    refetchInterval: 5_000,
+  }));
 
   /** Latest session — rendered as full progress card. */
   const latestSession = $derived((sessionsQuery.data ?? [])[0] ?? null);

@@ -8,23 +8,23 @@
 -->
 
 <script lang="ts">
-  import { toast } from "@atlas/ui";
+  import { MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate } from "$app/navigation";
   import { page } from "$app/state";
-  import MarkdownContent from "$lib/components/markdown-content.svelte";
-  import SkillFileEditor from "$lib/components/skill-file-editor.svelte";
-  import { useSkillFileContent, useUpdateSkillFile } from "$lib/queries/skills";
+  import SkillFileEditor from "$lib/components/skills/skill-file-editor.svelte";
+  import { skillQueries } from "$lib/queries";
+  import { useUpdateSkillFile } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
 
   const namespace = $derived(page.params.namespace ?? "");
   const name = $derived(page.params.name ?? "");
   const path = $derived(page.params.path ?? "");
 
-  const fileContentQuery = useSkillFileContent(
-    () => namespace,
-    () => name,
-    () => path || null,
-  );
+  const fileContentQuery = createQuery(() => ({
+    ...skillQueries.fileContent(namespace, name, path),
+    enabled: namespace.length > 0 && name.length > 0 && path.length > 0,
+  }));
 
   const fileContent = $derived(fileContentQuery.data?.content ?? null);
 
@@ -142,7 +142,9 @@
         </div>
       {:else}
         <div class="preview-content">
-          <MarkdownContent content={fileContent} />
+          <MarkdownRendered>
+            {@html markdownToHTML(fileContent)}
+          </MarkdownRendered>
         </div>
       {/if}
     {/if}

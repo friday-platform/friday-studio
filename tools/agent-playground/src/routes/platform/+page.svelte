@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
-  import WorkspaceLoader from "$lib/components/workspace-loader.svelte";
-  import { useWorkspaces } from "$lib/queries/workspaces-list";
+  import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
+  import { workspaceQueries } from "$lib/queries";
 
-  const workspacesQuery = useWorkspaces();
+  const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const visibleWorkspaces = $derived(workspacesQuery.data ?? []);
 
   $effect(() => {

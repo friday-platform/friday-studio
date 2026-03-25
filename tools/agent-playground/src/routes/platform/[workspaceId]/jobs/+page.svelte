@@ -19,22 +19,20 @@
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
   import { DropdownMenu } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import PipelineDiagram from "$lib/components/pipeline-diagram.svelte";
-  import RunJobDialog from "$lib/components/run-job-dialog.svelte";
-  import SchemaBlock from "$lib/components/schema-block.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace-breadcrumb.svelte";
+  import SchemaBlock from "$lib/components/shared/schema-block.svelte";
+  import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
+  import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { DAEMON_BASE_URL } from "$lib/daemon-url";
-  import {
-    useIntegrationsPreflight,
-    type IntegrationStatus,
-  } from "$lib/queries/integrations-preflight";
-  import { useWorkspaceConfig } from "$lib/queries/workspace-config";
+  import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
+  import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
-  const configQuery = useWorkspaceConfig(() => workspaceId);
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
 
   const topology = $derived.by(() => {
     const data = configQuery.data;
@@ -111,7 +109,7 @@
   }
 
   // --- Agent health data ---
-  const preflightQuery = useIntegrationsPreflight(() => workspaceId);
+  const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
   const workspaceAgents = $derived.by(() => {
     const data = configQuery.data;
     if (!data) return [];
@@ -182,16 +180,19 @@
     schema: object | null,
   ): Array<{ name: string; type: string; required: boolean; description?: string }> {
     if (!schema) return [];
-    const s = schema as Record<string, unknown>;
-    const props = s.properties;
-    if (!props || typeof props !== "object") return [];
-    const requiredSet = new Set(Array.isArray(s.required) ? (s.required as string[]) : []);
-    return Object.entries(props as Record<string, Record<string, unknown>>).map(([name, def]) => ({
-      name,
-      type: typeof def?.type === "string" ? def.type : "unknown",
-      required: requiredSet.has(name),
-      ...(typeof def?.description === "string" ? { description: def.description } : {}),
-    }));
+    const parsed = JsonSchemaObjectShape.safeParse(schema);
+    if (!parsed.success || !parsed.data.properties) return [];
+    const requiredSet = new Set<string>(parsed.data.required ?? []);
+    return Object.entries(parsed.data.properties).map(([name, rawDef]) => {
+      const prop = JsonSchemaPropertyShape.safeParse(rawDef);
+      const def = prop.success ? prop.data : undefined;
+      return {
+        name,
+        type: def?.type ?? "unknown",
+        required: requiredSet.has(name),
+        ...(def?.description ? { description: def.description } : {}),
+      };
+    });
   }
 
   function providerLabel(provider: string): string {
@@ -220,12 +221,13 @@
   /** Build a placeholder JSON body from a signal's schema properties. */
   function buildBodyFromSchema(schema: Record<string, unknown> | undefined): string {
     if (!schema) return "{}";
-    const props = schema.properties;
-    if (typeof props !== "object" || props === null) return "{}";
+    const parsed = JsonSchemaObjectShape.safeParse(schema);
+    if (!parsed.success || !parsed.data.properties) return "{}";
 
     const entries: Record<string, unknown> = {};
-    for (const [key, def] of Object.entries(props as Record<string, Record<string, unknown>>)) {
-      const t = typeof def === "object" && def !== null ? def.type : undefined;
+    for (const [key, rawDef] of Object.entries(parsed.data.properties)) {
+      const prop = JsonSchemaPropertyShape.safeParse(rawDef);
+      const t = prop.success ? prop.data.type : undefined;
       if (t === "number" || t === "integer") entries[key] = 0;
       else if (t === "boolean") entries[key] = false;
       else if (t === "array") entries[key] = [];
@@ -315,8 +317,7 @@
 
                   <DropdownMenu.Content>
                     <DropdownMenu.Item
-                      onclick={() =>
-                        goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
+                      onclick={() => goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
                     >
                       Open in Job Inspector
                     </DropdownMenu.Item>
@@ -515,7 +516,6 @@
     flex-shrink: 0;
     gap: var(--size-1);
   }
-
 
   .card-actions :global(.overflow-trigger) {
     border-radius: var(--radius-2);
