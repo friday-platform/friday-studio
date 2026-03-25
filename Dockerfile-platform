@@ -14,7 +14,7 @@
 #   9090  webhook-tunnel
 
 # ============================================================================
-# Stage 1: Install dependencies
+# Stage 1: Build — compile binaries & install deps
 # ============================================================================
 FROM denoland/deno:debian-2.7.4 AS builder
 
@@ -54,19 +54,35 @@ RUN npx svelte-kit sync
 # Ensure pty-server spawn-helper is executable (node-pty prebuild)
 RUN chmod +x /app/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true
 
-# Compile atlas CLI to a standalone binary
 WORKDIR /app
+
+# ── Compile standalone binaries ──────────────────────────────────────────────
+
+# Atlas daemon CLI
 RUN deno compile -q --no-check --allow-all \
     --unstable-worker-options --unstable-kv --unstable-raw-imports \
-    --output /app/atlas-bin \
+    --output /app/bin/atlas \
     apps/atlas-cli/src/cli.ts
 
-WORKDIR /app
+# Link service
+RUN deno compile -q --no-check --allow-all \
+    --unstable-kv \
+    --output /app/bin/link \
+    apps/link/src/index.ts
+
+# Webhook tunnel
+RUN deno compile -q --no-check --allow-all \
+    --output /app/bin/webhook-tunnel \
+    apps/webhook-tunnel/src/index.ts
 
 # ============================================================================
-# Stage 2: Runtime — all three services in one container
+# Stage 2: Runtime — all services in one container
 # ============================================================================
 FROM denoland/deno:debian-2.7.4
+
+# Create non-root user FIRST so COPY --chown works without duplicating layers
+RUN groupadd -g 10001 atlas && \
+    useradd -u 10001 -g atlas -d /home/atlas -s /bin/sh -m atlas
 
 # Install Node.js, npm, git, GitHub CLI, and bash for the entrypoint
 # git is needed by the bb agent (Bitbucket clone) and gh agent
@@ -92,25 +108,34 @@ RUN apt-get update && \
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
-# DuckDB is optional — only available for linux/amd64 builds.
-# On arm64 (Apple Silicon), the data-analyst agent's CSV import falls back
-# to a JS-based path. This is fine for dev/demo usage.
-# COPY --from=ghcr.io/tempestteam/duckdb:1.4.4 /usr/local/bin/duckdb /usr/local/bin/duckdb
+# Symlink system libsqlite3 to a stable path so @db/sqlite uses it (Debian
+# puts it under /usr/lib/<arch>/, which varies by platform)
+RUN ln -sf "$(find /usr/lib -name 'libsqlite3.so.0' -print -quit)" /usr/lib/libsqlite3.so.0
+
+# Create data directories owned by atlas
+RUN mkdir -p /data/atlas /data/link /tmp/.npm && \
+    chown -R 10001:10001 /data /tmp/.npm /home/atlas
+
+# ── Install compiled binaries (no layer duplication) ─────────────────────────
+COPY --from=builder /app/bin/atlas /usr/local/bin/atlas
+COPY --from=builder /app/bin/link /usr/local/bin/link
+COPY --from=builder /app/bin/webhook-tunnel /usr/local/bin/webhook-tunnel
 
 WORKDIR /app
 
-# Copy only what's needed at runtime — NOT the full monorepo.
-# Workspace config (Deno needs these to resolve imports)
-COPY --from=builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
-COPY --from=builder /app/types /app/types
+# ── Copy runtime source for services that can't be compiled ──────────────────
+# agent-playground: Vite dev server needs source + node_modules
+# pty-server: node-pty native addon can't be bundled by deno compile
+
+# Workspace config (Deno needs these to resolve imports for playground/pty)
+COPY --chown=atlas:atlas --from=builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
+COPY --chown=atlas:atlas --from=builder /app/types /app/types
 
 # Rewrite deno.json AND package.json workspace to only list members we
 # actually copy. The source uses "./apps/*" glob which fails when most
 # apps are absent. Deno reads both files for workspace resolution.
 RUN node -e " \
   const ws = [ \
-    './apps/atlasd', './apps/atlas-cli', './apps/link', \
-    './apps/ledger', './apps/webhook-tunnel', \
     './packages/*', \
     './tools/agent-playground', './tools/pty-server' \
   ]; \
@@ -119,46 +144,30 @@ RUN node -e " \
     const key = c.workspace ? 'workspace' : 'workspaces'; \
     c[key] = ws; \
     require('fs').writeFileSync(f, JSON.stringify(c, null, 2) + '\n'); \
-  }"
+  }" && chown atlas:atlas /app/deno.json /app/package.json /app/deno.lock
 
-# Runtime apps (atlasd daemon, CLI, link, webhook-tunnel, ledger)
-COPY --from=builder /app/apps/atlasd /app/apps/atlasd
-COPY --from=builder /app/apps/atlas-cli /app/apps/atlas-cli
-COPY --from=builder /app/apps/link /app/apps/link
-COPY --from=builder /app/apps/ledger /app/apps/ledger
-COPY --from=builder /app/apps/webhook-tunnel /app/apps/webhook-tunnel
+# Runtime tools (playground needs source + svelte-kit, pty needs node-pty)
+COPY --chown=atlas:atlas --from=builder /app/tools/agent-playground /app/tools/agent-playground
+COPY --chown=atlas:atlas --from=builder /app/tools/pty-server /app/tools/pty-server
 
-# Runtime tools (playground, pty-server)
-COPY --from=builder /app/tools/agent-playground /app/tools/agent-playground
-COPY --from=builder /app/tools/pty-server /app/tools/pty-server
+# Shared packages (playground imports @atlas/ui etc.)
+COPY --chown=atlas:atlas --from=builder /app/packages /app/packages
 
-# Shared packages and agent definitions
-COPY --from=builder /app/packages /app/packages
-COPY --from=builder /app/.agents /app/.agents
+# Agent definitions
+COPY --chown=atlas:atlas --from=builder /app/.agents /app/.agents
 
-# node_modules (runtime dependencies including node-pty prebuilds)
-COPY --from=builder /app/node_modules /app/node_modules
+# node_modules — only needed for playground (vite, svelte) and pty-server (node-pty)
+COPY --chown=atlas:atlas --from=builder /app/node_modules /app/node_modules
 
-# Copy Deno's dependency cache so modules aren't re-downloaded at startup
-COPY --from=builder /deno-dir /deno-dir
-
-# Symlink system libsqlite3 to a stable path so @db/sqlite uses it (Debian
-# puts it under /usr/lib/<arch>/, which varies by platform)
-RUN ln -sf "$(find /usr/lib -name 'libsqlite3.so.0' -print -quit)" /usr/lib/libsqlite3.so.0
-
-# Create non-root user (claude-code refuses --dangerously-skip-permissions as root)
-RUN groupadd -g 10001 atlas && \
-    useradd -u 10001 -g atlas -d /home/atlas -s /bin/sh -m atlas
-
-# Create data directories
-RUN mkdir -p /data/atlas /data/link /tmp/.npm && \
-    chown -R 10001:10001 /data /deno-dir /app /tmp/.npm /home/atlas
-
-# Install compiled atlas CLI binary
-COPY --from=builder /app/atlas-bin /usr/local/bin/atlas
+# Deno cache — only what playground and pty-server need at runtime.
+# The compiled binaries (atlas, link, webhook-tunnel) are self-contained.
+COPY --chown=atlas:atlas --from=builder /deno-dir /deno-dir
+# Fix /deno-dir top-level dir ownership (base image creates it as deno:deno,
+# COPY --chown only sets ownership on copied contents, not the existing dir)
+RUN chown atlas:atlas /deno-dir
 
 # Copy entrypoint
-COPY docker/run-platform.sh /app/run-platform.sh
+COPY --chown=atlas:atlas docker/run-platform.sh /app/run-platform.sh
 RUN chmod +x /app/run-platform.sh
 
 USER atlas

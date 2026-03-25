@@ -77,17 +77,12 @@ wait_for_service() {
 # ── Start backend services first ─────────────────────────────────────────────
 
 echo "[platform] Starting atlasd on :8080..."
-deno run -q --allow-all \
-    --unstable-worker-options --unstable-kv --unstable-raw-imports \
-    apps/atlas-cli/src/cli.ts daemon start \
-    --hostname 0.0.0.0 --port 8080 &
+atlas daemon start --hostname 0.0.0.0 --port 8080 &
 ATLASD_PID=$!
 
 echo "[platform] Starting link on :3100..."
-cd /app/apps/link
-deno run --allow-all --unstable-kv src/index.ts &
+link &
 LINK_PID=$!
-cd /app
 
 # Wait for backends before starting the playground — the playground proxies
 # to atlasd on load, so starting it early produces 500s in the browser.
@@ -99,18 +94,17 @@ wait_for_service "link"   "http://localhost:3100/health"
 
 echo "[platform] Starting agent-playground on :5200..."
 cd /app/tools/agent-playground
-deno run -A npm:vite dev --host 0.0.0.0 --port 5200 &
+deno run -A --no-lock npm:vite dev --host 0.0.0.0 --port 5200 &
 PLAYGROUND_PID=$!
 cd /app
 
 echo "[platform] Starting pty-server on :7681..."
-cd /app/tools/pty-server && deno run -A server.ts &
+cd /app/tools/pty-server && deno run -A --no-lock server.ts &
 PTY_PID=$!
 cd /app
 
 echo "[platform] Starting webhook-tunnel on :9090..."
-ATLASD_URL=http://localhost:8080 deno run --allow-all \
-    /app/apps/webhook-tunnel/src/index.ts &
+ATLASD_URL=http://localhost:8080 webhook-tunnel &
 TUNNEL_PID=$!
 
 wait_for_service "agent-playground" "http://localhost:5200"

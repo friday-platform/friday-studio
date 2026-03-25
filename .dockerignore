@@ -81,3 +81,24 @@ Cargo.toml
 
 # Lint and format configs (keep main ones)
 lint-staged.config.js
+
+# Go source and configs (not used in Deno builds)
+go.mod
+go.sum
+pkg/
+.golangci.yml
+
+# Infrastructure and deployment configs
+infra/
+supabase/
+analytics/
+
+# Editor and CI configs not needed in image
+.claude/
+.github/
+.husky/
+.zed/
+.editorconfig
+
+# Source code for reference only (not runtime)
+opensrc/
