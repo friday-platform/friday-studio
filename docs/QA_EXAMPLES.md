@@ -9,7 +9,7 @@ resolution.
 ### 1. Start the platform
 - [ ] Run `docker compose up --build -d`
 - [ ] Wait for the startup banner in `docker compose logs`
-- [ ] Open **http://localhost:5200** — playground loads with sidebar visible
+- [ ] Open **http://localhost:5200** — Studio loads with sidebar visible
 
 ### 2. Configure credentials
 - [ ] Create a `.env` file with valid credentials:
@@ -137,31 +137,115 @@ For each workspace:
 
 ## Test 5: Webhook Integration
 
-For each workspace, test that external webhooks trigger pipelines:
+Test that external webhooks trigger pipelines automatically.
 
-### Setup
-- [ ] Open the workspace in the playground
-- [ ] Find the **Signals** section — each signal shows the webhook URL
-      (e.g. `https://...trycloudflare.com/hook/bitbucket/<id>/review-pr`)
+### 5a. Find the webhook URL and secret
 
-### Configure webhook
-- [ ] **GitHub:** Repo Settings → Webhooks → Add webhook
-  - URL: the tunnel webhook URL
-  - Content type: `application/json`
-  - Secret: from the playground
-  - Events: Pull requests
-- [ ] **Bitbucket:** Repo Settings → Webhooks → Add webhook
-  - URL: the tunnel webhook URL
-  - Secret: from the playground
-  - Events: Pull Request — Created
-- [ ] **Jira:** Project Settings → Webhooks → Add webhook
-  - URL: the tunnel webhook URL
-  - Secret: from the playground
-  - Events: Issue updated
+1. Open the Studio at **http://localhost:5200**
+2. Click into your space in the sidebar
+3. Look at the **Signals** section — each signal shows:
+   - The full webhook URL (e.g. `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
+   - The webhook secret (click to reveal/copy)
 
-### Trigger
-- [ ] Perform the real action (open a PR, update a ticket)
-- [ ] Verify the pipeline starts automatically in the playground
+The URL format is:
+
+```
+https://{tunnel-domain}/hook/{provider}/{workspaceId}/{signalId}
+```
+
+Where `{provider}` is `github`, `bitbucket`, `jira`, or `raw`.
+
+### 5b. Configure Bitbucket webhook
+
+1. Go to your repo settings:
+   **https://bitbucket.org/insanelygreatteam/google_workspace_mcp/admin/webhooks**
+2. Click **Add webhook**
+3. Fill in:
+   - **Title:** `Friday`
+   - **URL:** paste the webhook URL from the Studio
+     (use the `bitbucket` provider URL, e.g.
+     `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
+   - **Secret:** paste the secret from the Studio
+   - **Triggers:** select **Pull Request → Created**
+     (optionally also **Updated** for re-reviews on push)
+4. Click **Save**
+
+- [ ] Webhook created and shows as active in Bitbucket settings
+
+**Test it:**
+- [ ] Open a new pull request in the repo (or use an existing one:
+      [PR #40](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/40),
+      [PR #41](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/41),
+      [PR #42](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/42))
+- [ ] Verify the pipeline starts automatically in the Studio
+- [ ] Verify review comments appear on the pull request
+
+### 5c. Configure GitHub webhook
+
+1. Go to your repo settings:
+   **https://github.com/{owner}/{repo}/settings/hooks**
+2. Click **Add webhook**
+3. Fill in:
+   - **Payload URL:** paste the webhook URL from the Studio
+     (use the `github` provider URL, e.g.
+     `https://...trycloudflare.com/hook/github/<workspace-id>/review-pr`)
+   - **Content type:** select **`application/json`**
+     (required — the default `application/x-www-form-urlencoded` will not work)
+   - **Secret:** paste the secret from the Studio
+   - **Which events:** select **Let me select individual events** →
+     check **Pull requests**
+4. Click **Add webhook**
+
+- [ ] Webhook created and shows green checkmark after first ping
+
+**Test it:**
+- [ ] Open a new pull request in the repo
+- [ ] Verify the pipeline starts automatically in the Studio
+- [ ] Verify review comments appear on the pull request
+
+### 5d. Configure Jira webhook
+
+1. Go to Jira webhook settings:
+   **https://insanelygreatteam.atlassian.net/plugins/servlet/webhooks**
+2. Click **Create a WebHook**
+3. Fill in:
+   - **Name:** `Friday`
+   - **URL:** paste the webhook URL from the Studio
+     (use the `jira` provider URL, e.g.
+     `https://...trycloudflare.com/hook/jira/<workspace-id>/fix-bug`)
+   - **Secret:** paste the secret from the Studio
+     (Jira signs payloads with HMAC via the `X-Hub-Signature` header)
+   - **Events:** check **Issue → updated**
+     (triggers when labels like `ai-fix` are added)
+4. Click **Save**
+
+- [ ] Webhook created and shows as active in Jira settings
+
+**Test it:**
+Use one of the pre-created test tickets:
+- [DEV-8](https://insanelygreatteam.atlassian.net/browse/DEV-8) — calendar cache bug (High)
+- [DEV-9](https://insanelygreatteam.atlassian.net/browse/DEV-9) — filename truncation (Medium)
+- [DEV-10](https://insanelygreatteam.atlassian.net/browse/DEV-10) — email validation (Medium)
+
+All three have the `ai-fix` and `bug` labels and are in "To Do" status.
+
+- [ ] Update a ticket (e.g. change priority or add a comment) to fire the webhook
+- [ ] Verify the pipeline starts automatically in the Studio
+- [ ] Verify the fix branch and pull request are created in Bitbucket
+- [ ] Verify the Jira ticket is updated with the pull request link
+
+### 5e. Verify webhook delivery
+
+If a webhook doesn't trigger a pipeline:
+
+**Bitbucket:** Go to repo **Settings → Webhooks** → click the webhook →
+**View requests** to see delivery history and response codes.
+
+**GitHub:** Go to repo **Settings → Webhooks** → click the webhook →
+**Recent Deliveries** tab to inspect payloads and responses.
+
+**Jira:** Webhook delivery logs are not available in the UI. Check the
+Friday platform logs: `docker compose logs -f | grep webhook`
 
 ---
 
