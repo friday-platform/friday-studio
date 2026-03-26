@@ -692,6 +692,30 @@ describe("bbAgent handler — operations", () => {
     }
   });
 
+  test("pr-files handles null old/new fields for added/deleted files", async () => {
+    mockFetch.mockResolvedValueOnce(
+      textResponse(
+        JSON.stringify({
+          values: [
+            { new: { path: "src/added.ts" }, old: null, status: "added" },
+            { new: null, old: { path: "src/removed.ts" }, status: "removed" },
+          ],
+        }),
+      ),
+    );
+
+    const result = await bbAgent.execute(
+      jsonPrompt({ operation: "pr-files", pr_url: PR_URL }),
+      makeContext(BB_ENV),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.data.files).toEqual(["src/added.ts", "src/removed.ts"]);
+      expect(result.data.data.count).toBe(2);
+    }
+  });
+
   test("pr-review posts general comment", async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ id: 42 }));
 

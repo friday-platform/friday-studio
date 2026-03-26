@@ -218,8 +218,8 @@ const BbPaginatedCommentsSchema = z.object({
 
 /** Zod schema for Bitbucket diffstat API responses. */
 const BbDiffstatEntrySchema = z.object({
-  new: z.object({ path: z.string().optional() }).optional(),
-  old: z.object({ path: z.string().optional() }).optional(),
+  new: z.object({ path: z.string().optional() }).nullish(),
+  old: z.object({ path: z.string().optional() }).nullish(),
   status: z.string().optional(),
 });
 
