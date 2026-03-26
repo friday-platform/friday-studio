@@ -1,161 +1,109 @@
-# PR Code Review Pipeline
+# PR Code Review
 
-Automated pull request code review using Atlas. Accepts a GitHub PR URL, clones
+Automated pull request code review using [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit). Accepts a GitHub pull request URL, clones
 the repository, performs a thorough code review with Claude Code, and posts
-structured review comments back on the PR via the `gh` CLI.
+structured inline comments back on the pull request.
 
 ## Pipeline
 
 ```
 Signal: review-pr { pr_url }
          |
-    step_clone_repo        Claude Code clones repo, checks out PR, reads conventions
+    step_clone_repo        GitHub agent clones repo, checks out pull request branch, reads conventions
          |
-    step_review_pr         Claude Code clones repo, reads full diff + files, reviews against 6 criteria
+    step_review_pr         Claude Code reads full diff + changed files, reviews against 6 criteria
          |
-    step_post_review       Claude Code clones repo, formats review, posts via gh pr review
+    step_post_review       GitHub agent formats findings as inline comments, posts review
          |
       completed
 ```
 
-Each step runs as an isolated Claude Code agent. Steps 2 and 3 re-clone the
-repository because agents don't share a filesystem.
+Each step runs as an isolated agent. The review step re-clones the repository
+because agents don't share a filesystem.
 
-## Quick Start
+## Quick start
 
 ### 1. Set up credentials
 
-Agent env vars resolve in order: **`~/.atlas/.env`** → **repo-root `.env`** →
-**Link credentials**.
+Add your API keys to the `.env` file next to your `docker-compose.yml`:
 
 ```bash
-# Ensure gh CLI is authenticated (needs repo scope)
-gh auth status
-
-# Add both keys to ~/.atlas/.env (loaded by daemon on startup)
-echo "GH_TOKEN=$(gh auth token)" >> ~/.atlas/.env
-echo "ANTHROPIC_API_KEY=sk-ant-..." >> ~/.atlas/.env
-
-# Verify
-grep -E 'GH_TOKEN|ANTHROPIC_API_KEY' ~/.atlas/.env
+ANTHROPIC_API_KEY=sk-ant-...
+GH_TOKEN=ghp_...
 ```
 
-Alternatively, if you're running Link (`deno task dev` or `dev:demo`) and have
-connected your Anthropic and GitHub accounts there, both keys resolve
-automatically via Link and you can skip the `.env` setup.
+The `GH_TOKEN` needs `repo` scope for private repos, or just public repo access
+for public ones.
 
-### 2. Start the daemon
+### 2. Start FAST
 
 ```bash
-deno task dev:demo
+docker compose up
 ```
 
-Wait until you see the daemon is listening on port 8080.
+Wait for the startup banner, then open the Studio at **http://localhost:5200**.
 
-### 3. Register the workspace
+### 3. Publish the skill
 
-**CLI:**
+The pull request review space uses the `@tempest/pr-code-review` skill. Publish it before
+loading the space.
+
+**Via the Studio:** Click **Skills** in the sidebar, then drag the `skill/`
+folder onto the drop zone.
+
+**Via the API:**
 
 ```bash
-deno task atlas workspace add examples/pr-review --json
+tar czf /tmp/pr-code-review.tar.gz -C pr-review/skill .
+curl -X POST http://localhost:8080/api/skills/@tempest/pr-code-review/upload \
+  -F "archive=@/tmp/pr-code-review.tar.gz" \
+  -F "skillMd=$(cat pr-review/skill/SKILL.md)"
 ```
 
-**curl:**
+### 4. Load the space
+
+**Via the Studio:** Click **Add Space** in the sidebar and drop `workspace.yml`
+onto the drop zone.
+
+**Via the API:**
 
 ```bash
-curl -s -X POST http://localhost:8080/api/workspaces/add \
-  -H "Content-Type: application/json" \
-  -d '{"path":"'"$(pwd)/examples/pr-review"'"}'
+CONFIG=$(python3 -c "import yaml,json; print(json.dumps(yaml.safe_load(open('pr-review/workspace.yml'))))")
+curl -s -X POST http://localhost:8080/api/workspaces/create \
+  -H 'Content-Type: application/json' \
+  -d "{\"config\":$CONFIG,\"workspaceName\":\"PR Review\"}"
 ```
 
-Note the workspace `id` in the response (e.g., `juicy_falafel`). You'll use it
-in the next step.
+Note the `id` in the response — you'll use it to trigger jobs.
 
-### 4. Trigger a review
+### 5. Trigger a review
 
-Replace `<WORKSPACE_ID>` with the ID from step 3, and the PR URL with your
-target PR.
+**Via the Studio:** Navigate to the space, click **Run** on the PR Review job,
+and enter the pull request URL.
 
-**CLI (streaming):**
-
-```bash
-deno task atlas signal trigger review-pr \
-  --workspace <WORKSPACE_ID> \
-  --stream \
-  --data '{"pr_url":"https://github.com/owner/repo/pull/123"}'
-```
-
-**curl (streaming):**
+**Via the API:**
 
 ```bash
-curl -N -X POST http://localhost:8080/api/workspaces/<WORKSPACE_ID>/signals/review-pr \
-  -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
+curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-pr \
+  -H 'Content-Type: application/json' \
   -d '{"payload":{"pr_url":"https://github.com/owner/repo/pull/123"}}'
 ```
 
-You'll see SSE events stream in real time as each step starts and completes:
-
-```
-data: {"type":"data-fsm-action-execution","data":{"actionType":"code","actionId":"prepare_clone","status":"completed",...}}
-data: {"type":"data-fsm-action-execution","data":{"actionType":"agent","actionId":"claude-code","state":"step_clone_repo","status":"started",...}}
-data: {"type":"data-tool-progress","data":{"toolName":"Claude Code","content":"Reading CLAUDE.md"}}
-...
-data: {"type":"data-fsm-state-transition","data":{"fromState":"step_clone_repo","toState":"step_review_pr",...}}
-...
-data: {"type":"job-complete","data":{"success":true,"status":"completed"}}
-data: [DONE]
-```
-
-**Without streaming** (blocks until done, returns final result):
+**With SSE streaming:**
 
 ```bash
-# CLI
-deno task atlas signal trigger review-pr \
-  --workspace <WORKSPACE_ID> \
-  --data '{"pr_url":"https://github.com/owner/repo/pull/123"}'
-
-# curl
-curl -X POST http://localhost:8080/api/workspaces/<WORKSPACE_ID>/signals/review-pr \
-  -H "Content-Type: application/json" \
+curl -N -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-pr \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
   -d '{"payload":{"pr_url":"https://github.com/owner/repo/pull/123"}}'
 ```
 
-### 5. Monitor progress (alternative)
+### 6. Watch it run
 
-If you prefer polling instead of SSE:
+Open the space in the Studio to see real-time progress — each step shows its
+status, the agent running, and data flowing between steps.
 
-```bash
-# List sessions for the workspace
-deno task atlas session list --workspace <WORKSPACE_ID>
-
-# Get session details (use the session ID from above)
-deno task atlas session get <SESSION_ID>
-# or: curl -s http://localhost:8080/api/sessions/<SESSION_ID> | python3 -m json.tool
-
-# Tail daemon logs
-deno task atlas logs --since 5m --human
-```
-
-### 6. View the review output from logs
-
-```bash
-deno task atlas logs --since 15m | grep "Agent execution result" | python3 -c "
-import sys, json
-for i, line in enumerate(sys.stdin):
-    d = json.loads(line.strip())
-    result = json.loads(d['context']['result'])
-    data = result.get('data', {})
-    if isinstance(data, str): data = json.loads(data)
-    response = data.get('response', '')
-    if response:
-        print(f'=== Step {i+1} Output ===')
-        print(response)
-        print()
-"
-```
-
-## How It Works
+## How it works
 
 ### Architecture
 
@@ -172,14 +120,14 @@ HTTP signal { pr_url: "https://github.com/owner/repo/pull/123" }
 prepare_clone(context, event)
   - Parses event.data.pr_url -> owner, repo, pr_number, clone_url
   - Persists via context.setResult('pr-details', {...})
-  - Returns { task, config } for the Claude Code agent
+  - Returns { task, config } for the GitHub agent
   |
   v
-Claude Code (step_clone_repo)
-  - Clones repo, checks out PR branch
+GitHub agent (step_clone_repo)
+  - Clones repo, checks out pull request branch
   - Reads README, CLAUDE.md, CONTRIBUTING.md, CODEOWNERS, linter configs
-  - Fetches PR metadata via gh pr view
-  - Outputs PR metadata + conventions to clone-output
+  - Fetches pull request metadata via gh pr view
+  - Outputs pull request metadata + conventions to clone-output
   |
   v
 prepare_review(context, event)
@@ -188,7 +136,7 @@ prepare_review(context, event)
   |
   v
 Claude Code (step_review_pr)
-  - Clones repo + checks out PR branch (agents are isolated)
+  - Clones repo + checks out pull request branch (agents are isolated)
   - Reads full diff via gh pr diff
   - Reads FULL content of every changed file for context
   - Analyzes against: correctness, security, performance,
@@ -201,9 +149,8 @@ prepare_post_review(context, event)
   - Passes owner, repo, pr_number, clone_url, and review text to the agent
   |
   v
-Claude Code (step_post_review)
-  - Clones repo for gh CLI context
-  - Formats findings as markdown
+GitHub agent (step_post_review)
+  - Formats findings as inline review comments
   - Posts via: gh pr review <number> --repo owner/repo --comment --body-file review.md
   - Verifies the posted review
 ```
@@ -239,35 +186,39 @@ FINDINGS:
 
 | Issue | Fix |
 |---|---|
-| Signal returns 400 "expected string, received undefined" | Wrap data in `"payload"` for curl: `{"payload":{"pr_url":"..."}}`. CLI `--data` wraps automatically. |
-| "Please connect your github account" | `GH_TOKEN` not in daemon env. Add to `~/.atlas/.env` and restart daemon |
-| `gh` CLI returns 404 / auth error in agent | Token expired — run `echo "GH_TOKEN=$(gh auth token)" >> ~/.atlas/.env`, restart daemon |
-| Worker "No such file or directory" | Daemon running from stale worktree. `kill -9 $(lsof -ti :8080)` and restart |
-| Workspace add fails with config validation | HTTP signals require `config.path` — already set in workspace.yml |
-| SSE stream shows no events | curl: ensure `-N` flag and `Accept: text/event-stream` header. CLI: use `--stream` flag. |
-| Review agent says "clone directory not found" | Expected — agents are isolated. The review agent clones independently |
+| Signal returns 400 "expected string, received undefined" | Wrap data in `"payload"` for curl: `{"payload":{"pr_url":"..."}}` |
+| "Please connect your github account" | `GH_TOKEN` not in `.env`. Add it and restart: `docker compose restart` |
+| `gh` CLI returns 404 / auth error in agent | Token expired or wrong scope. Update `GH_TOKEN` in `.env` and restart |
+| SSE stream shows no events | Ensure `-N` flag and `Accept: text/event-stream` header in curl |
+| Review agent says "clone directory not found" | Expected — agents are isolated and clone independently |
 
-## Re-registering after workspace.yml edits
+## Re-loading after workspace.yml edits
 
-**CLI:**
+**Via the Studio:** Delete the space and re-add it with the updated
+`workspace.yml`.
 
-```bash
-deno task atlas workspace remove <WORKSPACE_ID> --yes
-deno task atlas workspace add examples/pr-review --json
-```
-
-**curl:**
+**Via the API:**
 
 ```bash
-curl -s -X DELETE http://localhost:8080/api/workspaces/<WORKSPACE_ID>
-curl -s -X POST http://localhost:8080/api/workspaces/add \
-  -H "Content-Type: application/json" \
-  -d '{"path":"'"$(pwd)/examples/pr-review"'"}'
+curl -s -X DELETE http://localhost:8080/api/workspaces/<workspace-id>
+
+CONFIG=$(python3 -c "import yaml,json; print(json.dumps(yaml.safe_load(open('pr-review/workspace.yml'))))")
+curl -s -X POST http://localhost:8080/api/workspaces/create \
+  -H 'Content-Type: application/json' \
+  -d "{\"config\":$CONFIG,\"workspaceName\":\"PR Review\"}"
 ```
 
 ## Timing
 
-Expect ~8-10 minutes for a full review of a medium-sized PR (~40 files):
+Expect ~8-10 minutes for a full review of a medium-sized pull request (~40 files):
 - Step 1 (clone + conventions): ~2 min
 - Step 2 (review): ~2-3 min
 - Step 3 (format + post): ~2-3 min
+
+## Learn more
+
+- [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker
+- [Agents](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in and custom agents
+- [Jobs](https://platform.hellofriday.ai/docs/core-concepts/jobs) — how workflows orchestrate agents step by step
+- [Skills](https://platform.hellofriday.ai/docs/core-concepts/skills) — structured instruction sets for consistent agent output
+- [Studio](https://platform.hellofriday.ai/docs/tools/studio) — manage spaces, watch executions, test agents
