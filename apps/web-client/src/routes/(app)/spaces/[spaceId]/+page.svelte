@@ -3,6 +3,12 @@
   import { client, parseResult } from "@atlas/client/v2";
   import type { Color } from "@atlas/utils";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import {
+    createColumnHelper,
+    createTable,
+    getCoreRowModel,
+    renderComponent,
+  } from "@tanstack/svelte-table";
   import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "$lib/components/button.svelte";
@@ -11,10 +17,17 @@
   import { Icons } from "$lib/components/icons";
   import { IconSmall } from "$lib/components/icons/small";
   import { Page } from "$lib/components/page";
+  import { Table } from "$lib/components/table";
+  import ActivityColumn from "$lib/modules/activity/activity-column.svelte";
+  import UnreadDotColumn from "$lib/modules/activity/unread-dot-column.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
+  import {
+    getWorkspaceUnreadCount,
+    listWorkspaceActivity,
+    markActivity,
+    type ActivityWithReadStatus,
+  } from "$lib/queries/activity";
   import { listWorkspaceJobs } from "$lib/queries/jobs";
-  import { listWorkspaceSessions } from "$lib/queries/sessions";
-  import { formatChatDate } from "$lib/utils/date";
   import NewChat from "./(components)/new-chat.svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
   import Setup from "./(components)/setup.svelte";
@@ -29,21 +42,89 @@
 
   const workspace = $derived(data.workspace);
 
-  const sessionsQuery = createQuery(() => ({
-    queryKey: ["sessions", workspace.id],
-    queryFn: () => listWorkspaceSessions(workspace.id),
-    initialData: data.sessions,
-    refetchInterval: 10_000,
-  }));
-  const recentSessions = $derived((sessionsQuery.data ?? []).slice(0, 3));
   const recentArtifacts = $derived(data.artifacts.slice(0, 5));
   const resources = $derived(data.resources);
+
+  const connectedAccounts = $derived(
+    data.integrations
+      .filter((i) => i.connected && i.credential)
+      .map((i) => ({
+        provider: i.provider,
+        displayName: i.provider
+          .split("-")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" "),
+        label: i.credential?.displayName ?? i.credential?.label,
+      })),
+  );
 
   const jobsQuery = createQuery(() => ({
     queryKey: ["jobs", workspace.id],
     queryFn: () => listWorkspaceJobs(workspace.id),
     refetchInterval: 10_000,
   }));
+
+  const activityQuery = createQuery(() => ({
+    queryKey: ["workspace-activity", workspace.id],
+    queryFn: () => listWorkspaceActivity(workspace.id, { limit: 6 }),
+    refetchInterval: 10_000,
+  }));
+
+  const unreadQuery = createQuery(() => ({
+    queryKey: ["workspace-unread", workspace.id],
+    queryFn: () => getWorkspaceUnreadCount(workspace.id),
+    refetchInterval: 10_000,
+  }));
+
+  const activities = $derived(activityQuery.data?.activities ?? []);
+  const unreadCount = $derived(unreadQuery.data ?? 0);
+
+  const columnHelper = createColumnHelper<ActivityWithReadStatus>();
+
+  const table = createTable({
+    get data() {
+      return activities;
+    },
+    columns: [
+      columnHelper.display({
+        id: "activity",
+        cell: (info) =>
+          renderComponent(ActivityColumn, {
+            title: info.row.original.title,
+            workspaceName: undefined,
+            workspaceColor: workspace.metadata?.color,
+            createdAt: info.row.original.createdAt,
+          }),
+        meta: { minWidth: "0" },
+      }),
+      columnHelper.display({
+        id: "unread",
+        cell: (info) =>
+          renderComponent(UnreadDotColumn, {
+            readStatus: info.row.original.readStatus,
+            type: info.row.original.type,
+            createdAt: info.row.original.createdAt,
+          }),
+        meta: { shrink: true, align: "center" },
+      }),
+    ],
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id,
+  });
+
+  function getRowPath(item: ActivityWithReadStatus): string | undefined {
+    if (item.type === "session") {
+      return resolve("/sessions/[sessionId]", { sessionId: item.referenceId });
+    }
+    if (item.type === "resource") {
+      return resolve("/library/[artifactId]", { artifactId: item.referenceId });
+    }
+    return undefined;
+  }
+
+  function handleRowClick(item: ActivityWithReadStatus) {
+    markActivity({ activityIds: [item.id], status: "dismissed" });
+  }
 
   $effect(() => {
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
@@ -75,6 +156,18 @@
 {:else}
   <Page.Root>
     <Page.Content>
+      {#snippet badge()}
+        {#if unreadCount > 0}
+          <a
+            class="updates-badge"
+            href={resolve("/spaces/[spaceId]/activity", { spaceId: workspace.id })}
+          >
+            {unreadCount}
+            {unreadCount === 1 ? "update" : "updates"}
+          </a>
+        {/if}
+      {/snippet}
+
       {#snippet header()}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
@@ -112,6 +205,7 @@
 
       {#if jobsQuery.data?.length}
         <section class="jobs">
+          <h2 class="section-heading">Jobs</h2>
           <div class="jobs-grid">
             {#each jobsQuery.data as job (job.id)}
               {@const jobConfig = getJobConfig(job.id)}
@@ -173,6 +267,28 @@
       {:else if jobsQuery.isError}
         <p class="jobs-error">Failed to load jobs.</p>
       {/if}
+
+      <section class="activity-section">
+        <div class="activity-header">
+          <h2>Activity</h2>
+          <a href={resolve("/spaces/[spaceId]/activity", { spaceId: workspace.id })}>View all</a>
+        </div>
+
+        {#if !activityQuery.isLoading && activities.length === 0}
+          <p class="activity-empty">No activity yet</p>
+        {:else if activities.length > 0}
+          <div class="activity-table">
+            <Table.Root
+              {table}
+              hideHeader
+              rowSize="large"
+              rowPath={(item) => getRowPath(item)}
+              onRowClick={(item) => handleRowClick(item)}
+              padded
+            />
+          </div>
+        {/if}
+      </section>
     </Page.Content>
 
     <Page.Sidebar>
@@ -218,43 +334,53 @@
               </li>
             {/each}
           </ul>
+        {:else}
+          <a
+            class="sidebar-link"
+            href="https://docs.hellofriday.ai/core-concepts/resources"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Learn more about Resources
+          </a>
         {/if}
       </div>
 
       <div class="section">
-        <h2>Recent Activity</h2>
+        <h2>Accounts</h2>
 
-        {#if recentSessions.length > 0}
-          <div class="sessions">
-            <ul>
-              {#each recentSessions as session (session.sessionId)}
-                {@const displayName = session.jobName || session.task || session.sessionId}
-                {@const isRunning = session.status === "active"}
-                {@const isFailed = session.status === "failed"}
-
-                <li>
-                  <a href={resolve("/sessions/[sessionId]", { sessionId: session.sessionId })}>
-                    <span class="session-name">
-                      {displayName}
-                      {#if isRunning}
-                        <span class="running-tag">
-                          <IconSmall.Progress />
-                          Running
-                        </span>
-                      {:else if isFailed}
-                        <span class="failed-tag">
-                          <IconSmall.Close />
-                          Failed
-                        </span>
-                      {/if}
-                    </span>
-
-                    <time>{formatChatDate(session.startedAt)}</time>
-                  </a>
-                </li>
-              {/each}
-            </ul>
-          </div>
+        {#if connectedAccounts.length > 0}
+          <ul class="accounts-list">
+            {#each connectedAccounts as account (account.provider)}
+              {@const icon = getServiceIcon(account.provider)}
+              <li class="account-item">
+                {#if icon}
+                  <span class="account-icon">
+                    {#if icon.type === "component"}
+                      <icon.src />
+                    {:else}
+                      <img src={icon.src} alt="" />
+                    {/if}
+                  </span>
+                {/if}
+                <div class="account-info">
+                  <span>{account.displayName}</span>
+                  {#if account.label}
+                    <span class="account-label">{account.label}</span>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <a
+            class="sidebar-link"
+            href="https://docs.hellofriday.ai/capabilities-and-integrations/overview"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Learn about Accounts and Integrations
+          </a>
         {/if}
       </div>
     </Page.Sidebar>
@@ -424,85 +550,104 @@
     }
   }
 
-  .sessions {
+  .updates-badge {
+    align-items: center;
+    background-color: var(--accent-1);
+    block-size: var(--size-5-5);
+    border-radius: var(--radius-3);
+    color: var(--accent-3);
+    display: flex;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    inline-size: max-content;
+    padding-inline: var(--size-2-5);
+  }
+
+  .activity-table {
+    margin-inline: calc(-1 * var(--size-2));
+  }
+
+  .section-heading {
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-6);
+  }
+
+  .activity-header {
+    align-items: baseline;
+    display: flex;
+    justify-content: space-between;
+    margin-block-end: var(--size-3);
+
+    h2 {
+      font-size: var(--font-size-7);
+      font-weight: var(--font-weight-6);
+    }
+
     a {
-      block-size: var(--size-16);
-      border-block-end: var(--size-px) solid var(--accent-1);
-      display: flex;
-      flex-direction: column;
-      gap: var(--size-0-5);
-      justify-content: center;
-      position: relative;
-      z-index: 1;
-
-      .session-name {
-        align-items: center;
-        display: flex;
-        font-size: var(--font-size-3);
-        font-weight: var(--font-weight-5);
-        gap: var(--size-1);
-      }
-
-      time {
-        font-size: var(--font-size-2);
-        opacity: 0.6;
-      }
-
-      &:before {
-        background-color: var(--accent-1);
-        border-radius: var(--radius-4);
-        content: "";
-        inset-block: 0;
-        inset-inline: calc(-1 * var(--size-3));
-        opacity: 0;
-        position: absolute;
-        transition:
-          opacity 200ms ease,
-          visibility 200ms ease;
-        visibility: hidden;
-        z-index: -1;
-      }
-
-      &:hover:before {
-        opacity: 1;
-        visibility: visible;
-      }
-    }
-
-    .running-tag,
-    .failed-tag {
-      align-items: center;
-      border-radius: var(--radius-2-5);
-      display: inline-flex;
-      font-size: var(--font-size-1);
+      color: var(--color-blue);
+      font-size: var(--font-size-2);
       font-weight: var(--font-weight-5);
-      gap: var(--size-0-5);
-      padding-block: var(--size-0-5);
-      padding-inline: var(--size-1) var(--size-1-5);
-      white-space: nowrap;
-    }
-
-    .running-tag {
-      background: color-mix(in srgb, var(--color-yellow) 10%, transparent);
-      color: var(--color-yellow-2);
-
-      & :global(svg) {
-        animation: spin 1.2s linear infinite;
-      }
-    }
-
-    .failed-tag {
-      background: color-mix(in srgb, var(--color-red) 7%, transparent);
-      color: var(--color-red);
     }
   }
 
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
+  .activity-empty {
+    font-size: var(--font-size-3);
+    opacity: 0.6;
+  }
+
+  .sidebar-link {
+    color: var(--color-text);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-4-5);
+    line-height: var(--font-lineheight-1);
+    opacity: 0.6;
+    text-decoration: underline;
+    transition: opacity 150ms ease;
+
+    &:hover {
+      opacity: 1;
     }
-    to {
-      transform: rotate(360deg);
+  }
+
+  .accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: var(--size-2) 0 0;
+    padding: 0;
+  }
+
+  .account-item {
+    align-items: start;
+    display: flex;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-2);
+  }
+
+  .account-icon {
+    block-size: var(--size-4);
+    display: flex;
+    flex-shrink: 0;
+    inline-size: var(--size-4);
+    margin-block-start: var(--size-px);
+
+    :global(img) {
+      block-size: 100%;
+      inline-size: 100%;
+      object-fit: contain;
     }
+  }
+
+  .account-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .account-label {
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-4-5);
+    opacity: 0.6;
   }
 </style>

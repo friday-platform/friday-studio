@@ -6,6 +6,7 @@
     children: Snippet;
     prepend?: Snippet;
     header?: Snippet;
+    badge?: Snippet;
     description?: Snippet;
     padded?: boolean;
     scrollable?: boolean;
@@ -15,6 +16,7 @@
     children,
     prepend,
     header,
+    badge,
     description,
     padded = true,
     scrollable = true,
@@ -27,8 +29,13 @@
     {@render prepend()}
   {/if}
   <div class="content" class:padded>
-    {#if header || description}
+    {#if header || description || badge}
       <header>
+        {#if badge}
+          <div class="badge">
+            {@render badge()}
+          </div>
+        {/if}
         {#if header}
           <div class="title">
             {@render header()}
@@ -72,6 +79,10 @@
     .scrollable & {
       overflow: visible;
     }
+  }
+
+  .badge:not(:empty) {
+    margin-block-end: var(--size-3);
   }
 
   .title {

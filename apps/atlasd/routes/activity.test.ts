@@ -193,6 +193,21 @@ describe("Activity API Routes", () => {
       expect(body.count).toBe(5);
     });
 
+    it("passes workspaceId query param to adapter", async () => {
+      vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(3);
+
+      const res = await app.request("/api/activity/unread-count?workspaceId=ws-2");
+      expect(res.status).toBe(200);
+      const body = UnreadCountResponseSchema.parse(await res.json());
+      expect(body.count).toBe(3);
+      expect(mockAdapter.getUnreadCount).toHaveBeenCalledWith("test-tempest-id", "ws-2");
+    });
+
+    it("calls adapter without workspaceId when omitted", async () => {
+      await app.request("/api/activity/unread-count");
+      expect(mockAdapter.getUnreadCount).toHaveBeenCalledWith("test-tempest-id", undefined);
+    });
+
     it("returns 401 without auth", async () => {
       const savedKey = process.env.ATLAS_KEY;
       delete process.env.ATLAS_KEY;
@@ -254,6 +269,27 @@ describe("Activity API Routes", () => {
       expect(mockAdapter.markViewedBefore).toHaveBeenCalledWith(
         "test-tempest-id",
         "2026-03-12T00:00:00Z",
+        undefined,
+      );
+    });
+
+    it("passes workspaceId to markViewedBefore when provided", async () => {
+      const res = await app.request("/api/activity/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          before: "2026-03-12T00:00:00Z",
+          status: "viewed",
+          workspaceId: "ws-2",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      SuccessResponseSchema.parse(await res.json());
+      expect(mockAdapter.markViewedBefore).toHaveBeenCalledWith(
+        "test-tempest-id",
+        "2026-03-12T00:00:00Z",
+        "ws-2",
       );
     });
 

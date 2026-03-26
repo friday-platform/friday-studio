@@ -52,8 +52,11 @@ export function createActivityLedgerClient(baseUrl?: string): ActivityStorageAda
       return await res.json();
     },
 
-    async getUnreadCount(_userId: string): Promise<number> {
-      const res = await client.v1.activity["unread-count"].$get();
+    async getUnreadCount(_userId: string, workspaceId?: string): Promise<number> {
+      const query: Record<string, string> = {};
+      if (workspaceId) query.workspaceId = workspaceId;
+
+      const res = await client.v1.activity["unread-count"].$get({ query });
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`Ledger activity getUnreadCount failed (${res.status}): ${body}`);
@@ -74,9 +77,9 @@ export function createActivityLedgerClient(baseUrl?: string): ActivityStorageAda
       }
     },
 
-    async markViewedBefore(_userId: string, before: string): Promise<void> {
+    async markViewedBefore(_userId: string, before: string, workspaceId?: string): Promise<void> {
       const res = await client.v1.activity.mark.$post({
-        json: { before, status: "viewed" as const },
+        json: { before, status: "viewed" as const, workspaceId },
       });
       if (!res.ok) {
         const body = await res.text();

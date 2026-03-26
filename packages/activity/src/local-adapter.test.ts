@@ -152,6 +152,21 @@ describe("LocalActivityAdapter", () => {
       const count = await adapter.getUnreadCount("user-1");
       expect(count).toBe(0);
     });
+
+    it("scopes to workspace when workspaceId is provided", async () => {
+      await adapter.create(makeInput({ workspaceId: "ws-1", referenceId: "a1" }));
+      await adapter.create(makeInput({ workspaceId: "ws-2", referenceId: "a2" }));
+
+      expect(await adapter.getUnreadCount("user-1", "ws-1")).toBe(1);
+      expect(await adapter.getUnreadCount("user-1", "ws-2")).toBe(1);
+    });
+
+    it("returns global count when workspaceId is omitted", async () => {
+      await adapter.create(makeInput({ workspaceId: "ws-1", referenceId: "a1" }));
+      await adapter.create(makeInput({ workspaceId: "ws-2", referenceId: "a2" }));
+
+      expect(await adapter.getUnreadCount("user-1")).toBe(2);
+    });
   });
 
   describe("updateReadStatus", () => {
@@ -218,6 +233,32 @@ describe("LocalActivityAdapter", () => {
 
       const { activities } = await adapter.list("user-1");
       expect(activities[0]?.readStatus).toBe("dismissed");
+    });
+
+    it("scopes to workspace when workspaceId is provided", async () => {
+      await adapter.create(makeInput({ workspaceId: "ws-1", referenceId: "a1" }));
+      await adapter.create(makeInput({ workspaceId: "ws-2", referenceId: "a2" }));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const cutoff = new Date().toISOString();
+
+      await adapter.markViewedBefore("user-1", cutoff, "ws-1");
+
+      const { activities } = await adapter.list("user-1");
+      const ws1Item = activities.find((i) => i.referenceId === "a1");
+      const ws2Item = activities.find((i) => i.referenceId === "a2");
+      expect(ws1Item?.readStatus).toBe("viewed");
+      expect(ws2Item?.readStatus).toBeNull();
+    });
+
+    it("marks all workspaces when workspaceId is omitted", async () => {
+      await adapter.create(makeInput({ workspaceId: "ws-1", referenceId: "a1" }));
+      await adapter.create(makeInput({ workspaceId: "ws-2", referenceId: "a2" }));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const cutoff = new Date().toISOString();
+
+      await adapter.markViewedBefore("user-1", cutoff);
+
+      expect(await adapter.getUnreadCount("user-1")).toBe(0);
     });
   });
 

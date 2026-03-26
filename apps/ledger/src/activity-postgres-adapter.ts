@@ -145,7 +145,7 @@ export class ActivityPostgresAdapter implements ActivityStorageAdapter {
     });
   }
 
-  getUnreadCount(userId: string): Promise<number> {
+  getUnreadCount(userId: string, workspaceId?: string): Promise<number> {
     return withUserContext(this.sql, this.userId, async (tx) => {
       const [result] = await tx<{ count: string }[]>`
         SELECT COUNT(*) as count
@@ -154,10 +154,11 @@ export class ActivityPostgresAdapter implements ActivityStorageAdapter {
           SELECT 1 FROM public.activity_read_status ars
           WHERE ars.activity_id = a.id AND ars.user_id = ${userId}
         )
+        ${workspaceId ? tx`AND a.workspace_id = ${workspaceId}` : tx``}
       `;
 
       const count = Number(result?.count ?? 0);
-      logger.debug("Unread count queried", { userId, count });
+      logger.debug("Unread count queried", { userId, workspaceId, count });
       return count;
     });
   }
@@ -181,19 +182,20 @@ export class ActivityPostgresAdapter implements ActivityStorageAdapter {
     });
   }
 
-  async markViewedBefore(userId: string, before: string): Promise<void> {
+  async markViewedBefore(userId: string, before: string, workspaceId?: string): Promise<void> {
     await withUserContext(this.sql, this.userId, async (tx) => {
       await tx`
         INSERT INTO public.activity_read_status (user_id, activity_id, status)
         SELECT ${userId}, a.id, 'viewed'
         FROM public.activities a
         WHERE a.created_at < ${before}
+          ${workspaceId ? tx`AND a.workspace_id = ${workspaceId}` : tx``}
           AND NOT EXISTS (
             SELECT 1 FROM public.activity_read_status ars
             WHERE ars.activity_id = a.id AND ars.user_id = ${userId}
           )
       `;
-      logger.debug("Marked activities viewed before timestamp", { userId, before });
+      logger.debug("Marked activities viewed before timestamp", { userId, before, workspaceId });
     });
   }
 }

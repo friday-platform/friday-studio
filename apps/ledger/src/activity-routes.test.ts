@@ -129,6 +129,21 @@ describe("GET /v1/activity/unread-count", () => {
     const body = UnreadCountSchema.parse(await res.json());
     expect(body.count).toBe(7);
   });
+
+  test("passes workspaceId query param to adapter", async () => {
+    vi.mocked(mockAdapter.getUnreadCount).mockResolvedValue(3);
+
+    const res = await app.request("/v1/activity/unread-count?workspaceId=ws-2");
+    expect(res.status).toBe(200);
+    const body = UnreadCountSchema.parse(await res.json());
+    expect(body.count).toBe(3);
+    expect(mockAdapter.getUnreadCount).toHaveBeenCalledWith("dev", "ws-2");
+  });
+
+  test("calls adapter without workspaceId when omitted", async () => {
+    await app.request("/v1/activity/unread-count");
+    expect(mockAdapter.getUnreadCount).toHaveBeenCalledWith("dev", undefined);
+  });
 });
 
 describe("POST /v1/activity/mark", () => {
@@ -153,7 +168,31 @@ describe("POST /v1/activity/mark", () => {
 
     expect(res.status).toBe(200);
     SuccessSchema.parse(await res.json());
-    expect(mockAdapter.markViewedBefore).toHaveBeenCalledWith("dev", "2026-03-12T00:00:00Z");
+    expect(mockAdapter.markViewedBefore).toHaveBeenCalledWith(
+      "dev",
+      "2026-03-12T00:00:00Z",
+      undefined,
+    );
+  });
+
+  test("passes workspaceId to markViewedBefore when provided", async () => {
+    const res = await app.request("/v1/activity/mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        before: "2026-03-12T00:00:00Z",
+        status: "viewed",
+        workspaceId: "ws-2",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    SuccessSchema.parse(await res.json());
+    expect(mockAdapter.markViewedBefore).toHaveBeenCalledWith(
+      "dev",
+      "2026-03-12T00:00:00Z",
+      "ws-2",
+    );
   });
 
   test("returns 400 for invalid body", async () => {

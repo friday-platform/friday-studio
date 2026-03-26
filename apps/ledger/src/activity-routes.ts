@@ -17,9 +17,12 @@ const MarkByIdsSchema = z.object({
 const MarkByTimestampSchema = z.object({
   before: z.string().datetime(),
   status: z.literal("viewed"),
+  workspaceId: z.string().min(1).optional(),
 });
 
 const MarkBodySchema = z.union([MarkByIdsSchema, MarkByTimestampSchema]);
+
+const UnreadCountQuerySchema = z.object({ workspaceId: z.string().min(1).optional() });
 
 const ReferenceIdParamSchema = z.object({ referenceId: z.string().min(1) });
 
@@ -37,10 +40,11 @@ export function createActivityRoutes() {
       return c.json({ activities: parsed, hasMore: result.hasMore });
     })
 
-    .get("/unread-count", async (c) => {
+    .get("/unread-count", zValidator("query", UnreadCountQuerySchema), async (c) => {
       const adapter = c.get("activityAdapter");
       const userId = c.get("userId");
-      const count = await adapter.getUnreadCount(userId);
+      const { workspaceId } = c.req.valid("query");
+      const count = await adapter.getUnreadCount(userId, workspaceId);
       return c.json({ count });
     })
 
@@ -52,7 +56,7 @@ export function createActivityRoutes() {
       if ("activityIds" in body) {
         await adapter.updateReadStatus(userId, body.activityIds, body.status);
       } else {
-        await adapter.markViewedBefore(userId, body.before);
+        await adapter.markViewedBefore(userId, body.before, body.workspaceId);
       }
 
       return c.json({ success: true });

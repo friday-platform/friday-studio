@@ -26,6 +26,8 @@ async function requireUser(): Promise<{ ok: true; userId: string } | { ok: false
 
 const ListQuerySchema = ActivityListFilterSchema;
 
+const UnreadCountQuerySchema = z.object({ workspaceId: z.string().min(1).optional() });
+
 const MarkByIdsSchema = z.object({
   activityIds: z.array(z.string().min(1)).min(1),
   status: ReadStatusValueSchema,
@@ -34,6 +36,7 @@ const MarkByIdsSchema = z.object({
 const MarkByTimestampSchema = z.object({
   before: z.string().datetime(),
   status: z.literal("viewed"),
+  workspaceId: z.string().min(1).optional(),
 });
 
 const MarkBodySchema = z.union([MarkByIdsSchema, MarkByTimestampSchema]);
@@ -68,12 +71,13 @@ export const activityRoutes = daemonFactory
     return c.json({ activities: parsed, hasMore: result.hasMore });
   })
   // ─── UNREAD COUNT ─────────────────────────────────────────────────────────
-  .get("/unread-count", async (c) => {
+  .get("/unread-count", zValidator("query", UnreadCountQuerySchema), async (c) => {
     const auth = await requireUser();
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const adapter = getAdapter(c);
-    const count = await adapter.getUnreadCount(auth.userId);
+    const { workspaceId } = c.req.valid("query");
+    const count = await adapter.getUnreadCount(auth.userId, workspaceId);
     return c.json({ count });
   })
   // ─── MARK READ STATUS ────────────────────────────────────────────────────
@@ -87,7 +91,7 @@ export const activityRoutes = daemonFactory
     if ("activityIds" in body) {
       await adapter.updateReadStatus(auth.userId, body.activityIds, body.status);
     } else {
-      await adapter.markViewedBefore(auth.userId, body.before);
+      await adapter.markViewedBefore(auth.userId, body.before, body.workspaceId);
     }
 
     return c.json({ success: true });

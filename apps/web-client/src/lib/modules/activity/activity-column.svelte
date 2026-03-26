@@ -16,7 +16,9 @@
 </script>
 
 <div class="component">
-  <Dot color={workspaceColor} />
+  {#if workspaceName}
+    <Dot color={workspaceColor} />
+  {/if}
 
   <div class="content">
     <p class="title">{displayTitle}</p>

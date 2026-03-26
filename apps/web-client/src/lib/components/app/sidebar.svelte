@@ -165,6 +165,14 @@
                         Conversations
                       </a>
                     </li>
+                    <li>
+                      <a
+                        href={ctx.routes.spaces.item(space.id, "activity")}
+                        class:active={getActivePage(["activity"])}
+                      >
+                        Activity
+                      </a>
+                    </li>
                   </ul>
                 {/if}
               </li>

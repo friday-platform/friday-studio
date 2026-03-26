@@ -209,22 +209,29 @@ export class LocalActivityAdapter implements ActivityStorageAdapter {
     return { activities: items.map((row) => rowToActivityWithReadStatus(row)), hasMore };
   }
 
-  async getUnreadCount(userId: string): Promise<number> {
+  async getUnreadCount(userId: string, workspaceId?: string): Promise<number> {
     const db = await this.getDb();
 
-    const result = db
-      .prepare(`
-        SELECT COUNT(*) as count
-        FROM activities a
-        WHERE NOT EXISTS (
-          SELECT 1 FROM activity_read_status ars
-          WHERE ars.activity_id = a.id AND ars.user_id = ?
-        )
-      `)
-      .get(userId);
+    const sql = workspaceId
+      ? `SELECT COUNT(*) as count
+         FROM activities a
+         WHERE a.workspace_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM activity_read_status ars
+             WHERE ars.activity_id = a.id AND ars.user_id = ?
+           )`
+      : `SELECT COUNT(*) as count
+         FROM activities a
+         WHERE NOT EXISTS (
+           SELECT 1 FROM activity_read_status ars
+           WHERE ars.activity_id = a.id AND ars.user_id = ?
+         )`;
+
+    const params = workspaceId ? [workspaceId, userId] : [userId];
+    const result = db.prepare(sql).get(...params);
 
     const parsed = countRowSchema.parse(result);
-    logger.debug("Unread count queried", { userId, count: parsed.count });
+    logger.debug("Unread count queried", { userId, workspaceId, count: parsed.count });
     return parsed.count;
   }
 
@@ -256,20 +263,31 @@ export class LocalActivityAdapter implements ActivityStorageAdapter {
     }
   }
 
-  async markViewedBefore(userId: string, before: string): Promise<void> {
+  async markViewedBefore(userId: string, before: string, workspaceId?: string): Promise<void> {
     const db = await this.getDb();
 
-    db.prepare(`
-      INSERT INTO activity_read_status (user_id, activity_id, status)
-      SELECT ?, a.id, 'viewed'
-      FROM activities a
-      WHERE a.created_at < ?
-        AND NOT EXISTS (
-          SELECT 1 FROM activity_read_status ars
-          WHERE ars.activity_id = a.id AND ars.user_id = ?
-        )
-    `).run(userId, before, userId);
-    logger.debug("Marked activities viewed before timestamp", { userId, before });
+    const sql = workspaceId
+      ? `INSERT INTO activity_read_status (user_id, activity_id, status)
+         SELECT ?, a.id, 'viewed'
+         FROM activities a
+         WHERE a.created_at < ?
+           AND a.workspace_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM activity_read_status ars
+             WHERE ars.activity_id = a.id AND ars.user_id = ?
+           )`
+      : `INSERT INTO activity_read_status (user_id, activity_id, status)
+         SELECT ?, a.id, 'viewed'
+         FROM activities a
+         WHERE a.created_at < ?
+           AND NOT EXISTS (
+             SELECT 1 FROM activity_read_status ars
+             WHERE ars.activity_id = a.id AND ars.user_id = ?
+           )`;
+
+    const params = workspaceId ? [userId, before, workspaceId, userId] : [userId, before, userId];
+    db.prepare(sql).run(...params);
+    logger.debug("Marked activities viewed before timestamp", { userId, before, workspaceId });
   }
 }
 
