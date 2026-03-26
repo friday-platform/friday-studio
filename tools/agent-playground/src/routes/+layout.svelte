@@ -7,6 +7,7 @@
   import Cheatsheet from "$lib/components/shared/cheatsheet.svelte";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
+  import favicon from "$lib/assets/favicon.png";
 
   const { children } = $props();
 
@@ -36,7 +37,8 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <svelte:head>
-  <title>Friday DevTools</title>
+  <title>Friday Studio</title>
+  <link rel="icon" href={favicon} sizes="32x32" />
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
