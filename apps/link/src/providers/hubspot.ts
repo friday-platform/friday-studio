@@ -71,6 +71,9 @@ export function createHubSpotProvider(): OAuthProvider | undefined {
     identify: async (tokens) => {
       const client = new Client({ accessToken: tokens.access_token });
       const info = await client.oauth.accessTokensApi.get(tokens.access_token);
+      if (info.user) {
+        return info.user;
+      }
       if (info.userId == null) {
         throw new Error("HubSpot token info missing userId");
       }

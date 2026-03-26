@@ -12,13 +12,13 @@ const ToolResultContentSchema = z.array(
 );
 
 /**
- * Extract Sentry User ID from whoami tool response text.
+ * Extract email from whoami tool response text.
  * The whoami tool returns: "You are authenticated as Name (email).\n\nYour Sentry User ID is 12345."
  */
-function extractUserIdFromWhoami(text: string): string {
-  const match = text.match(/Your Sentry User ID is (\d+)/);
+function extractEmailFromWhoami(text: string): string {
+  const match = text.match(/You are authenticated as .+? \(([^)]+)\)/);
   if (!match?.[1]) {
-    throw new Error(`Could not extract user ID from whoami response: ${text}`);
+    throw new Error(`Could not extract email from whoami response: ${text}`);
   }
   return match[1];
 }
@@ -58,7 +58,7 @@ export const sentryProvider = defineOAuthProvider({
       if (!textContent?.text) {
         throw new Error("whoami returned no text content");
       }
-      return extractUserIdFromWhoami(textContent.text);
+      return extractEmailFromWhoami(textContent.text);
     } finally {
       await mcpClient.close();
     }

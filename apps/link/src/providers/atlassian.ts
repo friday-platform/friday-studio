@@ -62,7 +62,7 @@ export const atlassianProvider = defineOAuthProvider({
         throw new Error("atlassianUserInfo returned no text content");
       }
       const userInfo = AtlassianUserInfoSchema.parse(JSON.parse(textContent.text));
-      return userInfo.account_id;
+      return userInfo.email ?? userInfo.account_id;
     } finally {
       await mcpClient.close();
     }
