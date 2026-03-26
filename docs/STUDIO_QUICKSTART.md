@@ -1,19 +1,18 @@
-# Friday Developer Platform — Quickstart
+# Friday Agent Studio & Toolkit — Quickstart
 
-Get your Friday distribution running locally with Docker Compose, load a space,
-and run your first agentic workflow.
+Get [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit) running locally with Docker Compose,
+load a space, and run your first agentic workflow.
 
 ## Overview
 
-The Friday developer platform is a configuration-driven agentic orchestration
-runtime. Think of it like Kubernetes, but for agentic workloads. You define
-**spaces** composed of three building blocks:
+[FAST](https://platform.hellofriday.ai/docs/) is a configuration-driven agentic orchestration runtime. You define
+[**spaces**](https://platform.hellofriday.ai/docs/core-concepts/spaces) composed of three building blocks:
 
-- **Signals** — how external events start your jobs (webhooks, cron, Slack,
+- [**Signals**](https://platform.hellofriday.ai/docs/core-concepts/signals) — how external events start your jobs (webhooks, cron, Slack,
   etc.)
-- **Agents** — built-in or custom agents that execute operations (Bitbucket,
+- [**Agents**](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in or custom agents that execute operations (Bitbucket,
   Jira, Claude Code, etc.)
-- **Jobs** — workflows composed of agents, tools, skills, and data contracts
+- [**Jobs**](https://platform.hellofriday.ai/docs/core-concepts/jobs) — workflows composed of agents, tools, skills, and data contracts
   that run step by step
 
 Everything is driven by a single `workspace.yml` configuration file. That makes
@@ -80,9 +79,9 @@ services:
     pull_policy: always   # always pull latest; set to "never" for local builds
     platform: linux/amd64  # required on Apple Silicon Macs
     ports:
-      - "8080:8080"  # atlasd daemon API
+      - "8080:8080"  # Friday daemon API
       - "3100:3100"  # link (credential/auth service)
-      - "5200:5200"  # agent-studio (web UI)
+      - "5200:5200"  # Friday Studio (web UI)
       - "7681:7681"  # pty-server (WebSocket PTY)
       - "9090:9090"  # webhook-tunnel
     env_file:
@@ -117,8 +116,8 @@ volumes:
 ```
 
 > **Using a local build instead of the registry image:** Build with
-> `docker build -f Dockerfile-platform -t atlas-platform:local .`, then change
-> the `image:` line to `atlas-platform:local` and set `pull_policy: never`.
+> `docker build -f Dockerfile-platform -t friday-platform:local .`, then change
+> the `image:` line to `friday-platform:local` and set `pull_policy: never`.
 
 ## 4. Start the platform
 
@@ -144,7 +143,7 @@ Open **http://localhost:5200** in your browser.
 
 ## 5. Add a starter space
 
-Your Friday distribution comes with four starter spaces you can try right away.
+FAST comes with four starter spaces you can try right away.
 Each one is a `workspace.yml` that defines a complete agentic workflow — agents,
 jobs, signals, and data contracts all in one file.
 
