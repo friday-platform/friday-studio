@@ -230,6 +230,22 @@ Read package.json → "Reading package.json"
   });
 }
 
+/**
+ * Build the system prompt append string.
+ * When workspace skills are available, instructs the model to load them via the
+ * SDK's native Skill tool. This preserves lazy loading (reference files, activity
+ * matching) while ensuring the model actually triggers it.
+ */
+function buildSystemAppend(skills?: Array<{ name: string }>): string {
+  const base =
+    "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.";
+
+  if (!skills || skills.length === 0) return base;
+
+  const names = skills.map((s) => `"${s.name}"`).join(", ");
+  return `${base}\n\nIMPORTANT: Before starting work, load the following workspace skills using the Skill tool: ${names}. These skills define your behavior for this task.`;
+}
+
 export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Record<string, unknown>>(
   {
     id: "claude-code",
@@ -405,8 +421,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
             systemPrompt: {
               type: "preset",
               preset: "claude_code",
-              append:
-                "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.",
+              append: buildSystemAppend(skills),
             },
             // Hooks fire on tool use and subagent lifecycle — each callback updates activity
             // tracker, which resets the stall detection timer (keepalive). Hook messages also
