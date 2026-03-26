@@ -101,7 +101,8 @@ RUN groupadd -g 10001 atlas && \
 COPY docker/package.json /tmp/docker-deps/package.json
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      nodejs npm bash curl jq git sqlite3 libsqlite3-0 ca-certificates gnupg && \
+      nodejs npm bash curl jq git sqlite3 libsqlite3-0 ca-certificates gnupg \
+      bubblewrap socat && \
     # GitHub CLI — add official apt repository
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null && \
