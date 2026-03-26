@@ -76,6 +76,28 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/fix-bug
 A human reviews the pull request before merging — because ultimately, a person is
 responsible for what gets shipped.
 
+## Connect a Jira webhook (optional)
+
+Instead of triggering manually, you can have Jira send webhooks when issues are
+created or updated.
+
+1. Open the space in the Studio and find the **Signals** section — copy the
+   webhook URL and secret for the `fix-bug` signal
+2. Go to **https://insanelygreatteam.atlassian.net/plugins/servlet/webhooks**
+3. Click **Create a WebHook**
+4. Fill in:
+   - **Name:** `Friday`
+   - **URL:** the webhook URL from the Studio
+     (e.g. `https://...trycloudflare.com/hook/jira/<workspace-id>/fix-bug`)
+   - **Secret:** the secret from the Studio
+     (Jira signs payloads with HMAC via the `X-Hub-Signature` header)
+   - **Events:** check **Issue → created** and/or **Issue → updated**
+5. Click **Save**
+
+Now when a Jira bug ticket is created or updated, the pipeline triggers
+automatically — reads the ticket, clones the repo, implements the fix, and opens
+a pull request.
+
 ## Learn more
 
 - [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker

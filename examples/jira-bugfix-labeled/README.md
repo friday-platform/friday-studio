@@ -82,6 +82,29 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/process
 This makes the labeled variant ideal for cron-triggered automation — point it at
 a project and let it continuously process the backlog.
 
+## Connect a Jira webhook (optional)
+
+Instead of triggering manually, you can have Jira fire the pipeline whenever a
+ticket is labeled `ai-fix`.
+
+1. Open the space in the Studio and find the **Signals** section — copy the
+   webhook URL and secret for the `process-labeled-bugs` signal
+2. Go to **https://insanelygreatteam.atlassian.net/plugins/servlet/webhooks**
+3. Click **Create a WebHook**
+4. Fill in:
+   - **Name:** `Friday — labeled bugs`
+   - **URL:** the webhook URL from the Studio
+     (e.g. `https://...trycloudflare.com/hook/jira/<workspace-id>/process-labeled-bugs`)
+   - **Secret:** the secret from the Studio
+     (Jira signs payloads with HMAC via the `X-Hub-Signature` header)
+   - **Events:** check **Issue → updated**
+     (triggers when the `ai-fix` label is added)
+5. Click **Save**
+
+Now adding the `ai-fix` label to a Jira ticket triggers the pipeline — it
+searches for the highest-priority ticket, claims it, implements the fix, opens a
+pull request, and transitions the ticket to Done.
+
 ## Learn more
 
 - [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker

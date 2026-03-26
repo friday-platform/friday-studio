@@ -98,7 +98,26 @@ curl -N -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/revi
   -d '{"payload":{"pr_url":"https://github.com/owner/repo/pull/123"}}'
 ```
 
-### 6. Watch it run
+### 6. Connect a GitHub webhook (optional)
+
+Instead of triggering manually, you can have GitHub send webhooks automatically
+when pull requests are opened.
+
+1. Open the space in the Studio and find the **Signals** section — copy the
+   webhook URL and secret for the `review-pr` signal
+2. Go to your GitHub repo **Settings → Webhooks → Add webhook**
+3. Fill in:
+   - **Payload URL:** the webhook URL from the Studio
+     (e.g. `https://...trycloudflare.com/hook/github/<workspace-id>/review-pr`)
+   - **Content type:** select **`application/json`** (required)
+   - **Secret:** the secret from the Studio
+   - **Events:** select **Let me select individual events** → check
+     **Pull requests**
+4. Click **Add webhook**
+
+Now opening a pull request in that repo will automatically trigger a review.
+
+### 7. Watch it run
 
 Open the space in the Studio to see real-time progress — each step shows its
 status, the agent running, and data flowing between steps.

@@ -57,6 +57,26 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
 
 5. Open the Studio at **http://localhost:5200** to watch the execution.
 
+## Connect a Bitbucket webhook (optional)
+
+Instead of triggering manually, you can have Bitbucket send webhooks
+automatically when pull requests are created.
+
+1. Open the space in the Studio and find the **Signals** section — copy the
+   webhook URL and secret for the `review-pr` signal
+2. Go to your Bitbucket repo **Settings → Webhooks → Add webhook**
+   (e.g. `https://bitbucket.org/insanelygreatteam/google_workspace_mcp/admin/webhooks`)
+3. Fill in:
+   - **Title:** `Friday`
+   - **URL:** the webhook URL from the Studio
+     (e.g. `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
+   - **Secret:** the secret from the Studio
+   - **Triggers:** select **Pull Request → Created**
+     (optionally also **Updated** for re-reviews on push)
+4. Click **Save**
+
+Now creating a pull request in that repo will automatically trigger a review.
+
 ## Review criteria
 
 | Category | What it catches |
