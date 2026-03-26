@@ -82,7 +82,7 @@ services:
     ports:
       - "8080:8080"  # atlasd daemon API
       - "3100:3100"  # link (credential/auth service)
-      - "5200:5200"  # agent-playground (web UI)
+      - "5200:5200"  # agent-studio (web UI)
       - "7681:7681"  # pty-server (WebSocket PTY)
       - "9090:9090"  # webhook-tunnel
     env_file:
@@ -132,7 +132,7 @@ Wait for the startup banner:
 ================================================================
   Friday Platform is ready!
 
-  Friday Playground:   http://localhost:5200
+  Friday Studio:       http://localhost:5200
   Daemon API:          http://localhost:8080
   Webhook Tunnel:      http://localhost:9090
   Link Service:        http://localhost:3100
@@ -218,7 +218,7 @@ Once a space is loaded, start a job by sending a signal.
 ### Trigger via the UI
 
 Navigate to your space, find the job you want to run, and click **Run**. The
-playground prompts you for the required input fields (e.g. a pull request URL
+studio prompts you for the required input fields (e.g. a pull request URL
 or Jira issue key), then starts the pipeline.
 
 ![Trigger job dialog](images/trigger-job.png)
@@ -284,7 +284,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
 
 After triggering a signal:
 
-1. Open the playground at **http://localhost:5200**
+1. Open the studio at **http://localhost:5200**
 2. Navigate to your space
 3. You'll see the execution summary — each step of the workflow is called out
    with its status (succeeded, running, failed)
@@ -303,7 +303,7 @@ The platform includes a webhook tunnel that creates a public URL via
 Cloudflare, so GitHub or Bitbucket can send webhooks directly to your
 Friday instance — even when running locally.
 
-The tunnel starts automatically. Navigate to any space in the playground — each HTTP
+The tunnel starts automatically. Navigate to any space in the studio — each HTTP
 signal shows the full webhook URL for your configured providers (GitHub,
 Bitbucket, Jira).
 
@@ -311,7 +311,7 @@ Bitbucket, Jira).
 
 ### Register the webhook
 
-1. Navigate to your space in the playground
+1. Navigate to your space in the studio
 2. Find the signal you want to trigger (e.g. `review-pr`)
 3. Copy the webhook URL shown under the signal (e.g.
    `https://...trycloudflare.com/hook/bitbucket/<workspace-id>/review-pr`)
