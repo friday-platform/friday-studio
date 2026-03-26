@@ -4,6 +4,38 @@ import { parser, Table } from "@lezer/markdown";
 // Configure parser with GFM extensions
 const markdownParser = parser.configure([Table]);
 
+/**
+ * Escape HTML special characters to prevent XSS when interpolating
+ * user-controlled text into HTML strings.
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:/i;
+const SAFE_PROTOCOL_RE = /^(?:https?|mailto):/i;
+
+/**
+ * Validate a link href against a safe protocol allowlist.
+ * Blocks javascript:, data:, vbscript:, and other dangerous protocols.
+ */
+export function sanitizeHref(href: string): string {
+  const trimmed = href.trim();
+  if (PROTOCOL_RE.test(trimmed)) {
+    if (SAFE_PROTOCOL_RE.test(trimmed)) {
+      return trimmed;
+    }
+    return "#";
+  }
+  // No protocol — relative URL, fragment, etc.
+  return trimmed;
+}
+
 // Node structure for rendering
 interface ASTNode {
   type: string;
@@ -90,7 +122,7 @@ export function cleanMarkdownSyntax(node: ASTNode): string {
  */
 export function extractLinkData(content: string): { text: string; href: string } {
   const match = content.match(/\[([^\]]+)\]\(([^)]+)\)/);
-  return { text: match?.[1] ?? content, href: match?.[2] ?? "#" };
+  return { text: match?.[1] ?? content, href: sanitizeHref(match?.[2] ?? "#") };
 }
 
 /**
@@ -106,28 +138,28 @@ function reconstructParagraphContent(node: ASTNode): string {
     // Add any text before this child
     if (child.from > lastEnd) {
       const textBetween = originalContent.slice(lastEnd - node.from, child.from - node.from);
-      result += textBetween;
+      result += escapeHtml(textBetween);
     }
 
     // Process the child element
     if (child.type === "StrongEmphasis") {
       // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 2, child.to - node.from - 2);
-      result += `<strong>${innerText}</strong>`;
+      result += `<strong>${escapeHtml(innerText)}</strong>`;
     } else if (child.type === "Emphasis") {
       // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 1, child.to - node.from - 1);
-      result += `<em>${innerText}</em>`;
+      result += `<em>${escapeHtml(innerText)}</em>`;
     } else if (child.type === "Strikethrough") {
       // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 2, child.to - node.from - 2);
-      result += `<del>${innerText}</del>`;
+      result += `<del>${escapeHtml(innerText)}</del>`;
     } else if (child.type === "Link") {
       const linkData = extractLinkData(child.content);
-      result += `<a href="${linkData.href}" target="_blank">${linkData.text}</a>`;
+      result += `<a href="${escapeHtml(linkData.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkData.text)}</a>`;
     } else if (child.type === "InlineCode") {
       const innerText = child.content.slice(1, -1); // Remove backticks
-      result += `<code>${innerText}</code>`;
+      result += `<code>${escapeHtml(innerText)}</code>`;
     } else {
       // For other types, use the regular astToHTML
       result += astToHTML(child, "Paragraph");
@@ -139,7 +171,7 @@ function reconstructParagraphContent(node: ASTNode): string {
   // Add any remaining text after the last child
   if (lastEnd < node.to) {
     const textAfter = originalContent.slice(lastEnd - node.from);
-    result += textAfter;
+    result += escapeHtml(textAfter);
   }
 
   return result;
@@ -155,7 +187,7 @@ function renderTableCells(row: ASTNode, tag: "th" | "td"): string {
       const content =
         cell.children.length > 0
           ? cell.children.map((child) => astToHTML(child, "TableCell")).join("")
-          : cell.content;
+          : escapeHtml(cell.content);
       return `<${tag}>${content}</${tag}>`;
     })
     .join("");
@@ -199,13 +231,13 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
         if (node.children.length > 0) {
           return reconstructParagraphContent(node);
         }
-        return node.content;
+        return escapeHtml(node.content);
       }
       // Regular paragraphs
       if (node.children.length > 0) {
         return `<p>${reconstructParagraphContent(node)}</p>`;
       }
-      return `<p>${node.content}</p>`;
+      return `<p>${escapeHtml(node.content)}</p>`;
 
     case "BulletList":
       return `<ul>${renderChildren()}</ul>`;
@@ -225,25 +257,25 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
     case "StrongEmphasis":
       // These are handled in reconstructParagraphContent when inside paragraphs
       // This is a fallback for standalone usage
-      return `<strong>${cleanMarkdownSyntax(node)}</strong>`;
+      return `<strong>${escapeHtml(cleanMarkdownSyntax(node))}</strong>`;
 
     case "Emphasis":
       // These are handled in reconstructParagraphContent when inside paragraphs
       // This is a fallback for standalone usage
-      return `<em>${cleanMarkdownSyntax(node)}</em>`;
+      return `<em>${escapeHtml(cleanMarkdownSyntax(node))}</em>`;
 
     case "Strikethrough":
       // These are handled in reconstructParagraphContent when inside paragraphs
       // This is a fallback for standalone usage
-      return `<del>${cleanMarkdownSyntax(node)}</del>`;
+      return `<del>${escapeHtml(cleanMarkdownSyntax(node))}</del>`;
 
     case "Link": {
       const linkData = extractLinkData(node.content);
-      return `<a href="${linkData.href}">${linkData.text}</a>`;
+      return `<a href="${escapeHtml(linkData.href)}" rel="noopener noreferrer">${escapeHtml(linkData.text)}</a>`;
     }
 
     case "InlineCode":
-      return `<code>${cleanMarkdownSyntax(node)}</code>`;
+      return `<code>${escapeHtml(cleanMarkdownSyntax(node))}</code>`;
 
     case "CodeBlock":
     case "FencedCode":
@@ -252,10 +284,10 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
         // Look for CodeText child
         const codeText = node.children.find((child) => child.type === "CodeText");
         if (codeText) {
-          return `<pre><code>${codeText.content}</code></pre>`;
+          return `<pre><code>${escapeHtml(codeText.content)}</code></pre>`;
         }
       }
-      return `<pre><code>${cleanMarkdownSyntax(node)}</code></pre>`;
+      return `<pre><code>${escapeHtml(cleanMarkdownSyntax(node))}</code></pre>`;
 
     // Convert headers to bold paragraphs
     case "ATXHeading1":
@@ -267,7 +299,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
           return `<h1>${headerText}</h1>`;
         }
       }
-      return `<h1>${cleanMarkdownSyntax(node)}</h1>`;
+      return `<h1>${escapeHtml(cleanMarkdownSyntax(node))}</h1>`;
     case "ATXHeading2":
       // Headers have their text in children, skipping the HeaderMark
       if (node.children.length > 0) {
@@ -277,7 +309,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
           return `<h2>${headerText}</h2>`;
         }
       }
-      return `<h2>${cleanMarkdownSyntax(node)}</h2>`;
+      return `<h2>${escapeHtml(cleanMarkdownSyntax(node))}</h2>`;
     case "ATXHeading3":
       // Headers have their text in children, skipping the HeaderMark
       if (node.children.length > 0) {
@@ -287,7 +319,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
           return `<h3>${headerText}</h3>`;
         }
       }
-      return `<h3>${cleanMarkdownSyntax(node)}</h3>`;
+      return `<h3>${escapeHtml(cleanMarkdownSyntax(node))}</h3>`;
     case "ATXHeading4":
       // Headers have their text in children, skipping the HeaderMark
       if (node.children.length > 0) {
@@ -297,7 +329,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
           return `<h4>${headerText}</h4>`;
         }
       }
-      return `<h4>${cleanMarkdownSyntax(node)}</h4>`;
+      return `<h4>${escapeHtml(cleanMarkdownSyntax(node))}</h4>`;
     case "ATXHeading5":
     case "ATXHeading6":
       // Headers have their text in children, skipping the HeaderMark
@@ -308,7 +340,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
           return `<p><strong>${headerText}</strong></p>`;
         }
       }
-      return `<p><strong>${cleanMarkdownSyntax(node)}</strong></p>`;
+      return `<p><strong>${escapeHtml(cleanMarkdownSyntax(node))}</strong></p>`;
 
     case "Table": {
       const headerNode = node.children.find((c) => c.type === "TableHeader");
@@ -330,7 +362,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
 
     case "BlockQuote":
       return `<blockquote>${
-        node.children.length > 0 ? renderChildren() : node.content
+        node.children.length > 0 ? renderChildren() : escapeHtml(node.content)
       }</blockquote>`;
 
     case "HorizontalRule":
@@ -342,7 +374,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       if (node.children.length > 0) {
         return renderChildren(parentType);
       }
-      return node.content;
+      return escapeHtml(node.content);
   }
 }
 

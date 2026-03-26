@@ -1,12 +1,21 @@
 <script lang="ts">
+  import { browser } from "$app/environment";
   import { markdownToHTML } from "$lib/utils/markdown";
+  import DOMPurify from "dompurify";
   import type { RequestEntry } from "./types";
   import MessageWrapper from "./wrapper.svelte";
 
   const { message }: { message: RequestEntry } = $props();
 
-  // Convert markdown to HTML
-  const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");
+  // Convert markdown to HTML — escapeHtml runs in both contexts;
+  // DOMPurify is the client-only safety net (requires DOM APIs)
+  const htmlContent = $derived(
+    message.content
+      ? browser
+        ? DOMPurify.sanitize(markdownToHTML(message.content))
+        : markdownToHTML(message.content)
+      : "",
+  );
 </script>
 
 <MessageWrapper>

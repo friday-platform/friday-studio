@@ -126,6 +126,7 @@
     "npm:concurrently@*": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.5.0": "5.5.0",
+    "npm:dompurify@^3.3.3": "3.3.3",
     "npm:dotenv@17.3.1": "17.3.1",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.1.0",
     "npm:eslint-plugin-svelte@^3.15.2": "3.16.0_eslint@10.1.0_svelte@5.55.0__acorn@8.16.0_postcss@8.5.8",
@@ -5013,6 +5014,12 @@
         "dequal"
       ]
     },
+    "dompurify@3.3.3": {
+      "integrity": "sha512-Oj6pzI2+RqBfFG+qOaOLbFXLQ90ARpcGG6UePL82bJLtdsa6CYJD7nmiU8MW9nQNOtCHV3lZ/Bzq1X0QYbBZCA==",
+      "optionalDependencies": [
+        "@types/trusted-types"
+      ]
+    },
     "dotenv@16.6.1": {
       "integrity": "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="
     },
@@ -8818,6 +8825,7 @@
             "npm:@types/markdown-it@^14.1.2",
             "npm:@types/papaparse@^5.5.2",
             "npm:ai@^5.0.157",
+            "npm:dompurify@^3.3.3",
             "npm:eslint@^10.1.0",
             "npm:markdown-it@^14.1.1",
             "npm:papaparse@^5.5.3",

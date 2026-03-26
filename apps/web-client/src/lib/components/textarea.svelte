@@ -29,7 +29,8 @@
 
   function updateDimensions(_value?: string | null | undefined) {
     if (!textarea || !text) return;
-    text.innerHTML = `${textarea.value} <br />`;
+    text.textContent = textarea.value + " ";
+    text.appendChild(document.createElement("br"));
     const bounds = text.getBoundingClientRect();
     textarea.style.height = `${bounds.height}px`;
 

