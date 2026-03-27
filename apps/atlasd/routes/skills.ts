@@ -4,12 +4,14 @@ import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config"
 import { smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import {
+  extractArchiveContents,
   extractSkillArchive,
   listArchiveFiles,
   packSkillArchive,
   parseSkillMd,
   readArchiveFile,
   SkillStorage,
+  validateSkillReferences,
 } from "@atlas/skills";
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
 import { zValidator } from "@hono/zod-validator";
@@ -256,6 +258,31 @@ export const skillsRoutes = daemonFactory
         }
       }
 
+      // Validate references against the text files that will actually be
+      // extracted to the sandbox — not the full archive (which includes binaries
+      // that won't be available at runtime).
+      if (input.instructions) {
+        const existing = await SkillStorage.get(namespace, name);
+        if (existing.ok && existing.data?.archive) {
+          const extractedFiles = await extractArchiveContents(
+            new Uint8Array(existing.data.archive),
+          );
+          const deadLinks = validateSkillReferences(
+            input.instructions,
+            Object.keys(extractedFiles),
+          );
+          if (deadLinks.length > 0) {
+            return c.json(
+              {
+                error: `Skill instructions reference files not found in archive: ${deadLinks.join(", ")}`,
+                deadLinks,
+              },
+              400,
+            );
+          }
+        }
+      }
+
       const result = await SkillStorage.publish(namespace, name, auth.userId, input);
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.json(
@@ -322,6 +349,20 @@ export const skillsRoutes = daemonFactory
     if (!instructions) {
       return c.json(
         { error: "instructions is required (via form field or SKILL.md skillMd field)" },
+        400,
+      );
+    }
+
+    // Validate against text files that will actually be extracted to the sandbox
+    // (not the full archive — binaries won't be available at runtime)
+    const extractedFiles = await extractArchiveContents(archiveBytes);
+    const deadLinks = validateSkillReferences(instructions, Object.keys(extractedFiles));
+    if (deadLinks.length > 0) {
+      return c.json(
+        {
+          error: `Skill instructions reference files not found in archive: ${deadLinks.join(", ")}`,
+          deadLinks,
+        },
         400,
       );
     }

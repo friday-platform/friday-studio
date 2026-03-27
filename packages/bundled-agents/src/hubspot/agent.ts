@@ -147,6 +147,7 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
     "Read-only for quotes. " +
     "Batch operations limited to 10 records per call.",
   outputSchema: HubSpotOutputSchema,
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "Search for contacts at Acme Corp",

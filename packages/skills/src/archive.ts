@@ -1,9 +1,10 @@
 import { Buffer } from "node:buffer";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import MarkdownIt from "markdown-it";
 import { create, extract, list } from "tar";
 
 const logger = createLogger({ name: "skill-archive" });
@@ -111,8 +112,89 @@ export async function readArchiveFile(
 }
 
 /**
- * Replaces all occurrences of `$SKILL_DIR` in instructions with the actual path.
+ * Extracts all text files from a gzipped tarball into memory.
+ * Returns a Record keyed by relative path (e.g. "references/review-criteria.md").
+ *
+ * Uses a single extraction pass (vs `readArchiveFile` which creates a temp dir per file).
+ * Skips directories, macOS resource forks (`._*`), and the `__archive.tar.gz` temp file.
+ */
+export async function extractArchiveContents(archive: Uint8Array): Promise<Record<string, string>> {
+  const dir = await extractSkillArchive(Buffer.from(archive), "atlas-ctx-skill-");
+  try {
+    return await readAllFiles(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch((e) =>
+      logger.debug("archive contents cleanup failed", { error: stringifyError(e) }),
+    );
+  }
+}
+
+/** Recursively read all text files from a directory into a Record keyed by relative path.
+ *  Detects binary files by checking for null bytes — text files never contain them. */
+async function readAllFiles(dir: string, base?: string): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    const relPath = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      Object.assign(result, await readAllFiles(fullPath, relPath));
+    } else if (entry.isFile() && !entry.name.startsWith("._")) {
+      const buf = await readFile(fullPath);
+      if (buf.includes(0)) {
+        logger.debug("Skipping binary file in skill archive", { path: relPath });
+      } else {
+        result[relPath] = buf.toString("utf-8");
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * @deprecated New skills should use relative paths per agentskills.io spec.
+ * Legacy compat: replaces `$SKILL_DIR` in instructions with the actual path.
  */
 export function injectSkillDir(instructions: string, skillDir: string): string {
   return instructions.replaceAll("$SKILL_DIR", skillDir);
+}
+
+/**
+ * Validate that file references in skill instructions resolve to files
+ * that exist in the archive. Returns dead links (referenced but missing).
+ *
+ * Uses markdown-it to parse the instructions into an AST, then walks
+ * all link tokens to extract local file targets. No regex.
+ */
+export function validateSkillReferences(instructions: string, archiveFiles: string[]): string[] {
+  const available = new Set(archiveFiles);
+  const normalized = instructions.replaceAll("$SKILL_DIR/", "");
+
+  const md = new MarkdownIt();
+  const tokens = md.parse(normalized, {});
+  const deadLinks = new Set<string>();
+
+  function checkHref(href: string | null): void {
+    if (!href || href.startsWith("#") || href.includes(":")) return;
+    const bare = href.split("#")[0]?.replace(/^\.\//, "");
+    if (bare && !available.has(bare)) {
+      deadLinks.add(bare);
+    }
+  }
+
+  function walk(tokenList: ReturnType<typeof md.parse>): void {
+    for (const token of tokenList) {
+      if (token.type === "link_open") {
+        checkHref(token.attrGet("href"));
+      } else if (token.type === "image") {
+        checkHref(token.attrGet("src"));
+      }
+      if (token.children) {
+        walk(token.children);
+      }
+    }
+  }
+
+  walk(tokens);
+  return [...deadLinks];
 }

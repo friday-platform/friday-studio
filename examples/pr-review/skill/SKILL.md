@@ -52,11 +52,10 @@ For each finding, reference the exact file path and line number(s).
 
 | Activity | Load |
 |----------|------|
-| Reviewing code changes | [$SKILL_DIR/references/review-criteria.md] |
-| Reviewing Go (.go) files | [$SKILL_DIR/references/golang-review.md] |
-| Reviewing TypeScript (.ts, .tsx) files | [$SKILL_DIR/references/typescript-review.md] |
-| Formatting review output | [$SKILL_DIR/references/output-format.md] |
-| Posting review to GitHub | [$SKILL_DIR/references/gh-cli-patterns.md] |
+| Reviewing Go (.go) files | [references/golang-review.md](references/golang-review.md) |
+| Reviewing TypeScript (.ts, .tsx) files | [references/typescript-review.md](references/typescript-review.md) |
+| Formatting review output | [references/output-format.md](references/output-format.md) |
+| Posting review to GitHub | [references/gh-cli-patterns.md](references/gh-cli-patterns.md) |
 
 ## Key Principles
 

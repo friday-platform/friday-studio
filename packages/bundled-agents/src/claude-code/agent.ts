@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 import { type HookCallback, query } from "@anthropic-ai/claude-agent-sdk";
@@ -358,16 +358,37 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
       // Written AFTER cloneRepo so repo's own .claude/skills/ are preserved alongside.
       if (skills && skills.length > 0) {
         for (const skill of skills) {
-          const skillDir = join(sandbox.workDir, ".claude", "skills", skill.name);
-          await mkdir(skillDir, { recursive: true });
+          const skillDirPath = join(sandbox.workDir, ".claude", "skills", skill.name);
+          await mkdir(skillDirPath, { recursive: true });
+
+          // Write archive reference files alongside SKILL.md
+          if (skill.referenceFiles) {
+            for (const [relPath, content] of Object.entries(skill.referenceFiles)) {
+              const filePath = resolve(skillDirPath, relPath);
+              if (!filePath.startsWith(`${skillDirPath}/`)) continue;
+              await mkdir(dirname(filePath), { recursive: true });
+              await writeFile(filePath, content);
+            }
+          }
+
+          // Legacy compat: strip $SKILL_DIR/ from old skills that used the
+          // placeholder. New skills use relative paths per agentskills.io spec.
+          const resolvedInstructions = skill.instructions.replaceAll("$SKILL_DIR/", "");
+          // Quote description in YAML frontmatter to prevent injection via
+          // newlines or YAML metacharacters ({, [, :, #) in skill descriptions.
+          const safeDescription = JSON.stringify(skill.description);
+          // Frontmatter: agentskills.io spec (name, description) + Claude Code
+          // extension (user-invocable: false — hides from / menu since these
+          // are workspace-loaded skills, not user-invoked commands).
           await writeFile(
-            join(skillDir, "SKILL.md"),
-            `---\nname: ${skill.name}\ndescription: ${skill.description}\nuser-invocable: false\n---\n\n${skill.instructions}`,
+            join(skillDirPath, "SKILL.md"),
+            `---\nname: ${skill.name}\ndescription: ${safeDescription}\nuser-invocable: false\n---\n\n${resolvedInstructions}`,
           );
         }
         logger.info("Wrote workspace skills to sandbox", {
           count: skills.length,
           names: skills.map((s) => s.name),
+          withArchive: skills.filter((s) => s.referenceFiles).length,
         });
       }
 

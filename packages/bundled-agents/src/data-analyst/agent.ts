@@ -273,6 +273,7 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
   constraints:
     "READ-ONLY. Cannot INSERT, UPDATE, or DELETE. Cannot write to workspace resource tables. Operates on uploaded database artifacts only. For CRUD on workspace resource tables, use no capability — resource_read and resource_write are built-in.",
   outputSchema: DataAnalystOutputSchema,
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "Analyze Q4 revenue trends from this sales data",

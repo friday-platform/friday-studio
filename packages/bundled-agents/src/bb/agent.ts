@@ -640,6 +640,7 @@ export const bbAgent = createAgent<string, BbOutput>({
     "Bitbucket Cloud (REST API v2). Bitbucket Server/Data Center use different APIs and are",
     "not supported.",
   ].join(" "),
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "<examples>",

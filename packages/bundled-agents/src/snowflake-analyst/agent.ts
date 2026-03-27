@@ -161,6 +161,7 @@ export const snowflakeAnalystAgent = createAgent<string, SnowflakeAnalystResult>
     "Cannot modify data (INSERT/UPDATE/DELETE blocked). " +
     "All queries execute server-side on Snowflake.",
   outputSchema: SnowflakeAnalystOutputSchema,
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "Analyze the DAILY_FLASH table for advertising trends",

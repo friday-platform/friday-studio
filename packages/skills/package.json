@@ -12,6 +12,7 @@
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^5.0.157",
     "nanoid": "^5.1.6",
+    "markdown-it": "^14.1.1",
     "tar": "^7.5.12",
     "ulid": "^3.0.2",
     "vitest": "^4.1.0",

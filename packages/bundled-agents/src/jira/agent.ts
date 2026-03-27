@@ -301,6 +301,7 @@ export const jiraAgent = createAgent<string, JiraOutput>({
     "site hostname, e.g. acme.atlassian.net). Only supports Jira Cloud (REST API v3). Jira",
     "Server and Data Center use different API versions and authentication and are not supported.",
   ].join(" "),
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "<examples>",

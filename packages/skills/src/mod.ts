@@ -1,9 +1,11 @@
 // Archive
 export {
+  extractArchiveContents,
   extractSkillArchive,
   listArchiveFiles,
   packSkillArchive,
   readArchiveFile,
+  validateSkillReferences,
 } from "./archive.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";

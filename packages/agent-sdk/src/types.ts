@@ -272,6 +272,8 @@ export interface AgentSkill {
   name: string;
   description: string;
   instructions: string;
+  /** Files extracted from the skill archive, keyed by relative path (e.g. "references/review-criteria.md") */
+  referenceFiles?: Record<string, string>;
 }
 
 /** Built by AtlasAgentsMCPServer before agent.execute() */

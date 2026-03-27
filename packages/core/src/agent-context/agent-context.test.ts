@@ -8,11 +8,11 @@
  * 4. Skills NOT injected when agent.useWorkspaceSkills is false (default)
  */
 
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { SkillStorage } from "@atlas/skills";
+import { packSkillArchive, SkillStorage } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
@@ -27,11 +27,12 @@ vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
 }));
 
-// Mock logger
+// Mock logger — warn is a vi.fn() so tests can assert on warning calls
+const mockWarn = vi.fn();
 const mockLogger = {
   debug: () => {},
   info: () => {},
-  warn: () => {},
+  warn: mockWarn,
   error: () => {},
   trace: () => {},
   fatal: () => {},
@@ -70,6 +71,7 @@ describe("buildAgentContext skill injection", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockWarn.mockClear();
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
 
@@ -502,6 +504,111 @@ describe("buildAgentContext skill injection", () => {
     expect(context.skills).toBeDefined();
     expect(context.skills).toHaveLength(1);
     expect(context.skills?.[0]?.instructions).toBe("Version 2 instructions");
+  });
+
+  it("resolves global skill with archive into referenceFiles", async () => {
+    const workspaceId = "ws-archive-skills";
+
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            config: {
+              name: "test-workspace",
+              tools: { mcp: { servers: {} } },
+              skills: [{ name: "@atlas/archive-skill" }],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    // Create a temp directory with reference files, then pack into archive
+    const archiveDir = join(tmpdir(), `skill-archive-test-${Date.now()}`);
+    const refsDir = join(archiveDir, "references");
+    mkdirSync(refsDir, { recursive: true });
+    writeFileSync(join(refsDir, "review-criteria.md"), "# Review Criteria\nCheck for bugs.");
+    writeFileSync(join(refsDir, "output-format.md"), "# Output Format\nUse JSON.");
+    const archive = await packSkillArchive(archiveDir);
+    rmSync(archiveDir, { recursive: true, force: true });
+
+    await tempAdapter.publish("atlas", "archive-skill", "user-1", {
+      description: "Skill with archive",
+      instructions: "Load [criteria](references/review-criteria.md) for review.",
+      archive: new Uint8Array(archive),
+    });
+
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
+    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+
+    const { context } = await buildAgentContext(
+      createTestAgent({ useWorkspaceSkills: true }),
+      createTestSessionData(workspaceId),
+      "Review this PR",
+    );
+
+    expect(context.skills).toBeDefined();
+    expect(context.skills).toHaveLength(1);
+
+    const skill = context.skills?.[0];
+    expect(skill?.name).toBe("archive-skill");
+    // Instructions are passed through as-is (relative paths, no transformation)
+    expect(skill?.instructions).toContain("references/review-criteria.md");
+    // Reference files should be extracted from archive
+    expect(skill?.referenceFiles).toBeDefined();
+    expect(skill?.referenceFiles?.["references/review-criteria.md"]).toContain("Review Criteria");
+    expect(skill?.referenceFiles?.["references/output-format.md"]).toContain("Output Format");
+  });
+
+  it("handles archive extraction failure gracefully", async () => {
+    const workspaceId = "ws-bad-archive";
+
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            config: {
+              name: "test-workspace",
+              tools: { mcp: { servers: {} } },
+              skills: [{ name: "@atlas/bad-archive-skill" }],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    // Publish skill with invalid archive (not a valid tar.gz)
+    await tempAdapter.publish("atlas", "bad-archive-skill", "user-1", {
+      description: "Skill with bad archive",
+      instructions: "Some instructions",
+      archive: new Uint8Array([1, 2, 3, 4]),
+    });
+
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
+    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+
+    const { context } = await buildAgentContext(
+      createTestAgent({ useWorkspaceSkills: true }),
+      createTestSessionData(workspaceId),
+      "Test prompt",
+    );
+
+    // Skill should still be included but without referenceFiles
+    expect(context.skills).toBeDefined();
+    expect(context.skills).toHaveLength(1);
+    expect(context.skills?.[0]?.name).toBe("bad-archive-skill");
+    expect(context.skills?.[0]?.instructions).toBe("Some instructions");
+    expect(context.skills?.[0]?.referenceFiles).toBeUndefined();
+
+    // Should have logged a warning about the extraction failure
+    expect(mockWarn).toHaveBeenCalledWith(
+      "Failed to extract skill archive",
+      expect.objectContaining({ skill: "@atlas/bad-archive-skill" }),
+    );
   });
 });
 

@@ -17,7 +17,13 @@ import {
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
+import {
+  createLoadSkillTool,
+  extractArchiveContents,
+  formatAvailableSkills,
+  SkillStorage,
+  validateSkillReferences,
+} from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
@@ -138,15 +144,46 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
                 });
                 return null;
               }
+              const skill = result.data;
+
+              // Extract archive reference files into memory so agents can
+              // write them alongside SKILL.md in their sandbox.
+              let referenceFiles: Record<string, string> | undefined;
+              if (skill.archive) {
+                try {
+                  referenceFiles = await extractArchiveContents(new Uint8Array(skill.archive));
+                  agentLogger.info("Extracted skill archive", {
+                    skill: ref.name,
+                    fileCount: Object.keys(referenceFiles).length,
+                  });
+                } catch (e) {
+                  agentLogger.warn("Failed to extract skill archive", {
+                    skill: ref.name,
+                    error: stringifyError(e),
+                  });
+                }
+              }
+
+              // Validate that all file references in instructions point to
+              // files that exist in the archive. Dead links = broken skill.
+              const archiveFileList = referenceFiles ? Object.keys(referenceFiles) : [];
+              const deadLinks = validateSkillReferences(skill.instructions, archiveFileList);
+              if (deadLinks.length > 0) {
+                agentLogger.warn("Skill has dead file references", { skill: ref.name, deadLinks });
+              }
+
               agentLogger.info("Resolved global skill", {
                 skill: ref.name,
-                version: result.data.version,
+                version: skill.version,
+                hasArchive: !!skill.archive,
+                deadLinks: deadLinks.length,
               });
               return {
                 // Use short name (not @namespace/name) for sandbox path compatibility
-                name: result.data.name ?? name,
-                description: result.data.description,
-                instructions: result.data.instructions,
+                name: skill.name ?? name,
+                description: skill.description,
+                instructions: skill.instructions,
+                referenceFiles,
               };
             }),
           );

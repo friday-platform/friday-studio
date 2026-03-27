@@ -9113,6 +9113,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:ai@^5.0.157",
+            "npm:markdown-it@^14.1.1",
             "npm:nanoid@^5.1.6",
             "npm:tar@^7.5.12",
             "npm:ulid@^3.0.2",

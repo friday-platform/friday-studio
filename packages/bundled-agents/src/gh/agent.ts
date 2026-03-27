@@ -369,6 +369,7 @@ export const ghAgent = createAgent<string, GhOutput>({
     "token, created at https://github.com/settings/tokens). Only supports GitHub Cloud",
     "repositories. GitHub Enterprise Server uses different API endpoints and is not supported.",
   ].join(" "),
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "<examples>",

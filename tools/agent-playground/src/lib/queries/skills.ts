@@ -195,7 +195,10 @@ export function usePublishSkill() {
         param: { namespace: `@${namespace}`, name },
         json: body,
       });
-      if (!res.ok) throw new Error(`Failed to publish skill: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `Failed to publish skill: ${res.status}` }));
+        throw new Error(typeof body.error === "string" ? body.error : `Failed to publish skill: ${res.status}`);
+      }
       return res.json();
     },
     onSuccess: (_data: unknown, variables: PublishSkillInput) => {

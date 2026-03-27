@@ -60,6 +60,7 @@
         instructions: content,
         title: skill.title ?? undefined,
         description: skill.description ?? undefined,
+        descriptionManual: true,
       },
       {
         onSuccess: () => {
@@ -67,8 +68,8 @@
           editorDirty = false;
           goto(page.url.pathname);
         },
-        onError: () => {
-          toast({ title: "Failed to save SKILL.md", error: true });
+        onError: (err: Error) => {
+          toast({ title: "Failed to save SKILL.md", description: err.message, error: true });
         },
       },
     );

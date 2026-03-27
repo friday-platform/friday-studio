@@ -3,7 +3,13 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterEach, describe, expect, it } from "vitest";
-import { extractSkillArchive, injectSkillDir, packSkillArchive } from "../src/archive.ts";
+import {
+  extractArchiveContents,
+  extractSkillArchive,
+  injectSkillDir,
+  packSkillArchive,
+  validateSkillReferences,
+} from "../src/archive.ts";
 
 describe("packSkillArchive", () => {
   let tempDirs: string[] = [];
@@ -139,5 +145,165 @@ describe("injectSkillDir", () => {
 
   it("handles empty instructions", () => {
     expect(injectSkillDir("", "/tmp/dir")).toBe("");
+  });
+});
+
+describe("extractArchiveContents", () => {
+  let tempDirs: string[] = [];
+
+  function createTempDir(prefix?: string): string {
+    const dir = makeTempDir({ prefix: prefix ?? "archive-test-" });
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs) {
+      await rm(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
+  });
+
+  it("extracts all files into a Record keyed by relative path", async () => {
+    const dir = createTempDir();
+    await mkdir(join(dir, "references"), { recursive: true });
+    await writeFile(join(dir, "references", "guide.md"), "# Guide");
+    await writeFile(join(dir, "references", "format.md"), "# Format");
+
+    const archive = await packSkillArchive(dir);
+    const contents = await extractArchiveContents(new Uint8Array(archive));
+
+    expect(contents["references/guide.md"]).toBe("# Guide");
+    expect(contents["references/format.md"]).toBe("# Format");
+  });
+
+  it("skips macOS resource fork files", async () => {
+    const dir = createTempDir();
+    await writeFile(join(dir, "real.md"), "content");
+    await writeFile(join(dir, "._real.md"), "resource fork junk");
+
+    const archive = await packSkillArchive(dir);
+    const contents = await extractArchiveContents(new Uint8Array(archive));
+
+    expect(contents["real.md"]).toBe("content");
+    expect(contents["._real.md"]).toBeUndefined();
+  });
+
+  it("skips binary files that fail UTF-8 decoding", async () => {
+    const dir = createTempDir();
+    await mkdir(join(dir, "references"), { recursive: true });
+    await mkdir(join(dir, "assets"), { recursive: true });
+    await writeFile(join(dir, "references", "guide.md"), "# Guide");
+    // Write binary data (PNG magic bytes) that is not valid UTF-8
+    await writeFile(
+      join(dir, "assets", "diagram.png"),
+      Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52,
+      ]),
+    );
+
+    const archive = await packSkillArchive(dir);
+    const contents = await extractArchiveContents(new Uint8Array(archive));
+
+    expect(contents["references/guide.md"]).toBe("# Guide");
+    expect(contents["assets/diagram.png"]).toBeUndefined();
+  });
+});
+
+describe("validateSkillReferences", () => {
+  it("returns empty array when all links resolve", () => {
+    const instructions = `
+# My Skill
+
+See [the guide](references/guide.md) for details.
+Also check [format](references/format.md).
+`;
+    const archiveFiles = ["references/guide.md", "references/format.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("detects dead links for missing files", () => {
+    const instructions = `
+# My Skill
+
+See [the guide](references/guide.md) for details.
+Also check [missing](references/does-not-exist.md).
+`;
+    const archiveFiles = ["references/guide.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual(["references/does-not-exist.md"]);
+  });
+
+  it("ignores all protocol schemes, anchors, and special URIs", () => {
+    const instructions = `
+See [docs](https://example.com/docs) and [section](#intro).
+Email [us](mailto:help@example.com).
+Data [img](data:image/png;base64,abc123).
+FTP [file](ftp://server/file.txt).
+Also [local file](references/real.md).
+`;
+    const archiveFiles = ["references/real.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("strips $SKILL_DIR/ prefix before checking", () => {
+    const instructions = `
+Load [$SKILL_DIR/references/criteria.md](references/criteria.md) for review criteria.
+`;
+    const archiveFiles = ["references/criteria.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("strips fragment anchors from file links before checking", () => {
+    const instructions = `See [section](references/guide.md#usage) for details.`;
+    const archiveFiles = ["references/guide.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("strips ./ prefix from relative links before checking", () => {
+    const instructions = `See [guide](./references/guide.md) for details.`;
+    const archiveFiles = ["references/guide.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("returns empty array when instructions have no links", () => {
+    const instructions = "Just do the review. No links here.";
+    const deadLinks = validateSkillReferences(instructions, []);
+    expect(deadLinks).toEqual([]);
+  });
+
+  it("deduplicates repeated dead links", () => {
+    const instructions = `
+See [guide](references/missing.md) and [also guide](references/missing.md).
+`;
+    const deadLinks = validateSkillReferences(instructions, []);
+    expect(deadLinks).toEqual(["references/missing.md"]);
+  });
+
+  it("handles links inside markdown tables", () => {
+    const instructions = `
+| Activity | Reference |
+|----------|-----------|
+| Review code | [criteria](references/review-criteria.md) |
+| Format output | [format](references/output-format.md) |
+`;
+    const archiveFiles = ["references/review-criteria.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual(["references/output-format.md"]);
+  });
+
+  it("detects dead image references", () => {
+    const instructions = `
+See ![diagram](references/diagram.png) and [guide](references/guide.md).
+`;
+    const archiveFiles = ["references/guide.md"];
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    expect(deadLinks).toEqual(["references/diagram.png"]);
   });
 });

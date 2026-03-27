@@ -199,6 +199,8 @@ async function resolveGlobalSkill(
       );
       extractedDirs.set(cacheKey, skillDir);
     }
+    // Legacy compat: replace $SKILL_DIR with actual path for old skills.
+    // New skills use relative paths and don't need this.
     instructions = injectSkillDir(instructions, skillDir);
   }
 

@@ -57,6 +57,7 @@ export const transcriptionAgent = createAgent<string, TranscriptionResult>({
   version: "1.0.0",
   summary: "Transcribe audio files (voice memos, recordings, podcasts) to text using Whisper.",
   description: "Transcribes audio files (voice memos, recordings, podcasts) to text using Whisper",
+  useWorkspaceSkills: true,
   expertise: {
     examples: [
       "Transcribe this audio file",
