@@ -118,6 +118,7 @@
     "npm:@vitest/coverage-v8@4.1.0": "4.1.0_vitest@4.1.1__@opentelemetry+api@1.9.0__@types+node@25.5.0__vite@7.3.1___@types+node@25.5.0___yaml@2.8.3___picomatch@4.0.3__yaml@2.8.3_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.3__picomatch@4.0.3_yaml@2.8.3",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.8.11": "0.8.11",
+    "npm:ai@^5.0.150": "5.0.157_zod@4.3.6",
     "npm:ai@^5.0.156": "5.0.157_zod@4.3.6",
     "npm:ai@^5.0.157": "5.0.157_zod@4.3.6",
     "npm:ai@^5.0.93": "5.0.157_zod@4.3.6",
@@ -9193,6 +9194,7 @@
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
+            "npm:ai@^5.0.150",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]

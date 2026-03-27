@@ -59,6 +59,13 @@ export type { CompileBlueprintResult } from "./compile-blueprint.ts";
 export { compileBlueprint } from "./compile-blueprint.ts";
 
 // ---------------------------------------------------------------------------
+// Revision scope guard (pure: original × revised → violations)
+// ---------------------------------------------------------------------------
+
+export type { RevisionScopeResult } from "./validate-revision-scope.ts";
+export { validateRevisionScope } from "./validate-revision-scope.ts";
+
+// ---------------------------------------------------------------------------
 // FSMBuilder fluent API
 // ---------------------------------------------------------------------------
 

@@ -29,6 +29,7 @@
   } from "$lib/queries/activity";
   import { listWorkspaceJobs } from "$lib/queries/jobs";
   import NewChat from "./(components)/new-chat.svelte";
+  import PendingRevision from "./(components)/pending-revision.svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
   import Setup from "./(components)/setup.svelte";
   import ShareActions from "./(components)/share-actions.svelte";
@@ -383,6 +384,13 @@
           </a>
         {/if}
       </div>
+
+      {#if workspace.metadata?.pendingRevision}
+        <PendingRevision
+          workspaceId={workspace.id}
+          pendingRevision={workspace.metadata.pendingRevision}
+        />
+      {/if}
     </Page.Sidebar>
   </Page.Root>
 {/if}

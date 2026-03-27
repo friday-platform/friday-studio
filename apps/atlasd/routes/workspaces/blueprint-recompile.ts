@@ -1,8 +1,8 @@
 /**
- * Shared helper for compiling a blueprint and writing the resulting workspace.yml.
+ * Shared helpers for compiling a blueprint and writing the resulting workspace.yml.
  *
- * Extracted from the recompile endpoint so that blueprint-aware mutation handlers
- * can reuse the compile → write → reload cycle after mutating the blueprint.
+ * Extracted from the recompile/approve endpoints so that blueprint-aware handlers
+ * can reuse the compile → write → reload cycle.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -36,15 +36,16 @@ export interface RecompileError {
 /**
  * Load the blueprint artifact for a workspace.
  *
- * Resolves the artifact ID from workspace metadata, loads and parses the blueprint.
- * Returns the parsed blueprint and artifact metadata.
+ * Resolves the artifact ID from workspace metadata (or explicit params),
+ * loads and parses the blueprint. Returns the parsed blueprint and artifact metadata.
  */
 export async function loadWorkspaceBlueprint(
   workspace: WorkspaceEntry,
+  opts?: { artifactId?: string; revision?: number },
 ): Promise<
   { ok: true; blueprint: WorkspaceBlueprint; artifactId: string; revision: number } | RecompileError
 > {
-  const artifactId = workspace.metadata?.blueprintArtifactId;
+  const artifactId = opts?.artifactId ?? workspace.metadata?.blueprintArtifactId;
   if (!artifactId) {
     return {
       ok: false,
@@ -53,7 +54,7 @@ export async function loadWorkspaceBlueprint(
     };
   }
 
-  const artifactResult = await ArtifactStorage.get({ id: artifactId });
+  const artifactResult = await ArtifactStorage.get({ id: artifactId, revision: opts?.revision });
   if (!artifactResult.ok) {
     return { ok: false, error: `Failed to load artifact: ${artifactResult.error}`, status: 500 };
   }
@@ -89,16 +90,88 @@ export async function loadWorkspaceBlueprint(
 }
 
 /**
+ * Compile a blueprint and apply it to a workspace.
+ *
+ * Core cycle: compile → history → write YAML → update metadata → destroy runtime.
+ * Does NOT save to artifact storage — use saveAndRecompileBlueprint() for mutation flows
+ * that need to persist a new artifact revision.
+ *
+ * When `preCompiled` is provided, skips compilation (used by saveAndRecompileBlueprint
+ * to avoid double-compiling and ensure artifact/YAML consistency).
+ */
+export async function applyBlueprint(
+  workspace: WorkspaceEntry,
+  blueprint: WorkspaceBlueprint,
+  artifactId: string,
+  revision: number,
+  ctx: AppContext,
+  opts?: { extraMetadata?: Record<string, unknown>; preCompiled?: { yaml: string } },
+): Promise<RecompileResult | RecompileError> {
+  let yaml: string;
+
+  if (opts?.preCompiled) {
+    yaml = opts.preCompiled.yaml;
+  } else {
+    // Load dynamic MCP servers (non-fatal)
+    let dynamicServers: MCPServerMetadata[] | undefined;
+    try {
+      const mcpAdapter = await getMCPRegistryAdapter();
+      dynamicServers = await mcpAdapter.list();
+    } catch (error) {
+      logger.warn("Failed to load dynamic MCP servers — compiling without them", {
+        workspaceId: workspace.id,
+        error,
+      });
+    }
+
+    const compiled = compileBlueprint(blueprint, dynamicServers);
+    if (!compiled.ok) {
+      return { ok: false, error: `Compilation failed: ${compiled.error}`, status: 422 };
+    }
+    yaml = compiled.yaml;
+  }
+
+  // Store history before overwriting
+  const manager = ctx.getWorkspaceManager();
+  const currentConfig = await manager.getWorkspaceConfig(workspace.id);
+  if (currentConfig) {
+    await storeWorkspaceHistory(workspace, currentConfig.workspace, "full-update", {
+      throwOnError: true,
+    });
+  }
+
+  // Write workspace.yml
+  const ymlPath = join(workspace.path, "workspace.yml");
+  await writeFile(ymlPath, yaml, "utf-8");
+
+  // Update workspace metadata
+  const newMetadata = {
+    ...workspace.metadata,
+    blueprintArtifactId: artifactId,
+    blueprintRevision: revision,
+    ...opts?.extraMetadata,
+  };
+  await manager.updateWorkspaceStatus(workspace.id, workspace.status, { metadata: newMetadata });
+
+  // Destroy runtime if active — forces reload on next request
+  const runtime = ctx.getWorkspaceRuntime(workspace.id);
+  if (runtime) {
+    await ctx.destroyWorkspaceRuntime(workspace.id);
+  }
+
+  logger.info("Blueprint compiled and applied", {
+    workspaceId: workspace.id,
+    artifactId,
+    revision,
+  });
+
+  return { ok: true, revision, runtimeReloaded: !!runtime };
+}
+
+/**
  * Save a mutated blueprint back to artifact storage, recompile, and write workspace.yml.
  *
- * This is the full cycle:
- * 1. Load dynamic MCP servers
- * 2. Compile blueprint → YAML (validate before persisting)
- * 3. Save compiled blueprint to artifact storage
- * 4. Store workspace history
- * 5. Write workspace.yml
- * 6. Update workspace metadata with new revision
- * 7. Destroy runtime (hot reload)
+ * Full mutation cycle: compile (validate first) → save artifact → apply to workspace.
  */
 export async function saveAndRecompileBlueprint(
   workspace: WorkspaceEntry,
@@ -107,22 +180,24 @@ export async function saveAndRecompileBlueprint(
   ctx: AppContext,
   revisionMessage: string,
 ): Promise<RecompileResult | RecompileError> {
-  // 1. Load dynamic MCP servers (non-fatal)
+  // Compile first to validate before persisting — broken blueprints shouldn't be saved
   let dynamicServers: MCPServerMetadata[] | undefined;
   try {
     const mcpAdapter = await getMCPRegistryAdapter();
     dynamicServers = await mcpAdapter.list();
-  } catch {
-    // Non-fatal — compile without dynamic servers
+  } catch (error) {
+    logger.warn("Failed to load dynamic MCP servers — compiling without them", {
+      workspaceId: workspace.id,
+      error,
+    });
   }
 
-  // 2. Compile blueprint → YAML (before saving, so broken blueprints aren't persisted)
   const compiled = compileBlueprint(blueprint, dynamicServers);
   if (!compiled.ok) {
     return { ok: false, error: `Compilation failed: ${compiled.error}`, status: 422 };
   }
 
-  // 3. Save compiled blueprint to artifact storage
+  // Save to artifact storage
   const updateResult = await ArtifactStorage.update({
     id: artifactId,
     data: { type: "workspace-plan", version: 2, data: blueprint },
@@ -134,48 +209,14 @@ export async function saveAndRecompileBlueprint(
   }
   const newRevision = updateResult.data?.revision ?? 0;
 
-  // 4. Store history before overwriting
-  const manager = ctx.getWorkspaceManager();
-  const currentConfig = await manager.getWorkspaceConfig(workspace.id);
-  if (currentConfig) {
-    await storeWorkspaceHistory(workspace, currentConfig.workspace, "full-update", {
-      throwOnError: true,
-    });
-  }
-
-  // 5. Write workspace.yml
-  const ymlPath = join(workspace.path, "workspace.yml");
-  await writeFile(ymlPath, compiled.yaml, "utf-8");
-
-  // 6. Update workspace metadata
-  const newMetadata = {
-    ...workspace.metadata,
-    blueprintArtifactId: artifactId,
-    blueprintRevision: newRevision,
-  };
-  await manager.updateWorkspaceStatus(workspace.id, workspace.status, { metadata: newMetadata });
-
-  // 7. Destroy runtime if active — forces reload on next request
-  const runtime = ctx.getWorkspaceRuntime(workspace.id);
-  if (runtime) {
-    await ctx.destroyWorkspaceRuntime(workspace.id);
-  }
-
-  logger.info("Blueprint mutated and recompiled", {
-    workspaceId: workspace.id,
-    artifactId,
-    revision: newRevision,
-    revisionMessage,
+  // Pass pre-compiled YAML to avoid double-compiling
+  return applyBlueprint(workspace, blueprint, artifactId, newRevision, ctx, {
+    preCompiled: { yaml: compiled.yaml },
   });
-
-  return { ok: true, revision: newRevision, runtimeReloaded: !!runtime };
 }
 
 /**
  * Map a blueprint mutation error to an HTTP response.
- *
- * Preserves error detail (entity IDs, validation messages) instead of
- * collapsing everything to a generic message.
  */
 function mapBlueprintMutationError(c: Context<AppVariables>, error: MutationError): Response {
   switch (error.type) {
@@ -209,26 +250,16 @@ function mapBlueprintMutationError(c: Context<AppVariables>, error: MutationErro
 }
 
 /**
- * Result of withBlueprintMutation.
- *
- * - `legacy`: workspace has no blueprint — caller should use legacy mutation path
- * - `blueprint`: mutation was handled via blueprint — response is ready to return
- */
-export type BlueprintMutationResult =
-  | { mode: "legacy" }
-  | { mode: "blueprint"; response: Response };
-
-/**
  * Shared flow for blueprint-aware mutation handlers.
  *
  * Encapsulates: workspace lookup → system check → load blueprint → apply mutation →
  * recompile. Returns a discriminated result so callers decide what to do for
  * non-blueprint workspaces.
- *
- * When the workspace has a blueprint, all errors are surfaced — no silent
- * fallback to legacy. If the mutation returns `not_supported`, it means the
- * input can't be represented in the blueprint schema and is rejected with 422.
  */
+export type BlueprintMutationResult =
+  | { mode: "legacy" }
+  | { mode: "blueprint"; response: Response };
+
 export async function withBlueprintMutation(
   c: Context<AppVariables>,
   opts: {
@@ -276,8 +307,7 @@ export async function withBlueprintMutation(
 
   const mutationResult = opts.mutate(loaded.blueprint);
   if (!mutationResult.ok) {
-    const error = mutationResult.error;
-    return { mode: "blueprint", response: mapBlueprintMutationError(c, error) };
+    return { mode: "blueprint", response: mapBlueprintMutationError(c, mutationResult.error) };
   }
 
   const recompileResult = await saveAndRecompileBlueprint(

@@ -76,6 +76,11 @@ import type {
   SessionSummary,
 } from "../../../apps/atlasd/src/types/core.ts";
 import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
+import {
+  type ImproverAgentInput,
+  type ImproverAgentResult,
+  runImprovementLoop,
+} from "./improvement-loop.ts";
 
 /**
  * Classify an error to determine session status.
@@ -194,6 +199,12 @@ interface WorkspaceRuntimeOptions {
   }) => void | Promise<void>;
   /** Ledger storage adapter for versioned workspace resources (auto-publish) */
   resourceStorage?: ResourceStorageAdapter;
+  /** Blueprint artifact ID — when set, enables the self-improvement loop on failures */
+  blueprintArtifactId?: string;
+  /** Callback to invoke the workspace-improver agent (injected by daemon) */
+  invokeImprover?: (input: ImproverAgentInput) => Promise<ImproverAgentResult>;
+  /** Snapshot: whether a pending revision exists at runtime creation time */
+  hasPendingRevision?: boolean;
   /** Activity storage adapter for creating activity feed items */
   activityStorage?: ActivityStorageAdapter;
 }
@@ -249,6 +260,7 @@ export class WorkspaceRuntime {
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
+  private improvementLoopFired = false;
   private createdByUserId?: string;
 
   // Shared resources
@@ -1081,6 +1093,20 @@ export class WorkspaceRuntime {
       this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
     }
 
+    // Fire improvement loop for failed sessions (async, non-blocking)
+    if (
+      sessionResult.status === WorkspaceSessionStatus.FAILED &&
+      this.options.blueprintArtifactId
+    ) {
+      this.fireImprovementLoop(sessionResult, job).catch((error) => {
+        logger.error("Improvement loop fire-and-forget error", {
+          sessionId: sessionResult.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    // Call onSessionFinished callback and cleanup
     await this.handleSessionCompletion(sessionResult);
 
     return activeSession.session;
@@ -1566,6 +1592,49 @@ export class WorkspaceRuntime {
     return this.orchestrator;
   }
 
+  /**
+   * Fire the self-improvement loop for a failed session.
+   * Loads session timeline and delegates to the improvement pipeline.
+   */
+  private async fireImprovementLoop(sessionResult: SessionResult, job: FSMJob): Promise<void> {
+    const blueprintArtifactId = this.options.blueprintArtifactId;
+    const invokeImprover = this.options.invokeImprover;
+    if (!blueprintArtifactId || !invokeImprover) return;
+
+    // Circuit breaker: skip if already fired or a pending revision existed at startup
+    if (this.improvementLoopFired || this.options.hasPendingRevision) {
+      logger.debug("Skipping improvement loop — already fired or pending revision exists", {
+        workspaceId: this.workspace.id,
+        sessionId: sessionResult.id,
+      });
+      return;
+    }
+    this.improvementLoopFired = true;
+
+    // Load session timeline for transcript analysis
+    const timelineResult = await SessionHistoryStorage.loadSessionTimeline(sessionResult.id);
+    if (!timelineResult.ok || !timelineResult.data) {
+      logger.warn("Could not load session timeline for improvement loop", {
+        sessionId: sessionResult.id,
+        error: timelineResult.ok ? "no timeline" : timelineResult.error,
+      });
+      return;
+    }
+
+    await runImprovementLoop({
+      workspaceId: this.workspace.id,
+      sessionId: sessionResult.id,
+      jobName: job.name,
+      errorMessage: sessionResult.error?.message ?? "Unknown error",
+      blueprintArtifactId,
+      timeline: timelineResult.data,
+      invokeImprover,
+    });
+  }
+
+  /**
+   * Get the provider type for a signal (http, schedule, slack, etc.)
+   */
   getSignalProvider(signalId: string): string | undefined {
     const signals = this.config?.workspace?.signals || {};
     return signals[signalId]?.provider;

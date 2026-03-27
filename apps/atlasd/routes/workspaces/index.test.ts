@@ -466,6 +466,35 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
 });
 
 // =============================================================================
+// Pending revision endpoints
+// =============================================================================
+
+describe("GET /workspaces/:workspaceId/pending-revision", () => {
+  test("returns null when no pending revision", async () => {
+    const { app } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/pending-revision");
+    // Workspace not found (mock returns null)
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /workspaces/:workspaceId/pending-revision/approve", () => {
+  test("returns 404 when workspace not found", async () => {
+    const { app } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/pending-revision/approve", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /workspaces/:workspaceId/pending-revision/reject", () => {
+  test("returns 404 when workspace not found", async () => {
+    const { app } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/pending-revision/reject", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+});
+
+// =============================================================================
 // injectBundledAgentRefs
 // =============================================================================
 

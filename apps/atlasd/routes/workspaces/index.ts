@@ -27,13 +27,10 @@ import {
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "@atlas/core/mcp-registry/credential-resolver";
-import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { createLogger, logger } from "@atlas/logger";
-import { FilesystemWorkspaceCreationAdapter, storeWorkspaceHistory } from "@atlas/storage";
+import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { compileBlueprint, WorkspaceBlueprintSchema } from "@atlas/workspace-builder";
 import { zValidator } from "@hono/zod-validator";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
@@ -45,6 +42,7 @@ import {
   tryAutoWireSlackApp,
 } from "../../src/services/slack-auto-wire.ts";
 import { getCurrentUser } from "../me/adapter.ts";
+import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import { resourceRoutes } from "./resources.ts";
 import {
   addWorkspaceBatchSchema,
@@ -915,6 +913,15 @@ const workspacesRoutes = daemonFactory
         description: z.string().optional(),
         blueprintArtifactId: z.string().optional(),
         blueprintRevision: z.number().optional(),
+        pendingRevision: z
+          .object({
+            artifactId: z.string(),
+            revision: z.number(),
+            summary: z.string(),
+            triageReasoning: z.string(),
+            createdAt: z.iso.datetime(),
+          })
+          .optional(),
       }),
     ),
     async (c) => {
@@ -1015,6 +1022,131 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
+  // Get pending revision proposal
+  .get(
+    "/:workspaceId/pending-revision",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        const pending = workspace.metadata?.pendingRevision;
+        if (!pending) {
+          return c.json({ pendingRevision: null });
+        }
+
+        // Load the proposed artifact revision for diff context
+        const artifactResult = await ArtifactStorage.get({
+          id: pending.artifactId,
+          revision: pending.revision,
+        });
+
+        return c.json({
+          pendingRevision: pending,
+          artifact: artifactResult.ok ? artifactResult.data : null,
+        });
+      } catch (error) {
+        return c.json({ error: `Failed to load pending revision: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Approve pending revision — recompile with proposed artifact/revision
+  .post(
+    "/:workspaceId/pending-revision/approve",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        const pending = workspace.metadata?.pendingRevision;
+        if (!pending) {
+          return c.json({ error: "No pending revision to approve" }, 404);
+        }
+
+        const loaded = await loadWorkspaceBlueprint(workspace, {
+          artifactId: pending.artifactId,
+          revision: pending.revision,
+        });
+        if (!loaded.ok) {
+          return c.json({ error: loaded.error }, loaded.status);
+        }
+
+        const result = await applyBlueprint(
+          workspace,
+          loaded.blueprint,
+          loaded.artifactId,
+          loaded.revision,
+          ctx,
+          { extraMetadata: { pendingRevision: undefined } },
+        );
+        if (!result.ok) {
+          return c.json({ error: result.error }, result.status);
+        }
+
+        logger.info("Pending revision approved and applied", {
+          workspaceId,
+          artifactId: pending.artifactId,
+          revision: pending.revision,
+        });
+
+        return c.json({
+          ok: true,
+          workspaceId,
+          artifactId: pending.artifactId,
+          revision: pending.revision,
+        });
+      } catch (error) {
+        logger.error("Failed to approve pending revision", { workspaceId, error });
+        return c.json({ error: `Approve failed: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Reject pending revision — clear from metadata without applying
+  .post(
+    "/:workspaceId/pending-revision/reject",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        if (!workspace.metadata?.pendingRevision) {
+          return c.json({ error: "No pending revision to reject" }, 404);
+        }
+
+        const newMetadata = { ...workspace.metadata, pendingRevision: undefined };
+        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
+          metadata: newMetadata,
+        });
+
+        logger.info("Pending revision rejected", { workspaceId });
+
+        return c.json({ ok: true, workspaceId });
+      } catch (error) {
+        return c.json({ error: `Reject failed: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
   // Recompile workspace.yml from blueprint artifact
   .post(
     "/:workspaceId/recompile",
@@ -1048,91 +1180,31 @@ const workspacesRoutes = daemonFactory
           );
         }
 
-        // Load blueprint artifact (specific revision or latest)
-        const artifactResult = await ArtifactStorage.get({
-          id: artifactId,
+        const loaded = await loadWorkspaceBlueprint(workspace, {
+          artifactId,
           revision: body.revision,
         });
-        if (!artifactResult.ok) {
-          return c.json({ error: `Failed to load artifact: ${artifactResult.error}` }, 500);
-        }
-        const artifact = artifactResult.data;
-        if (!artifact) {
-          return c.json({ error: `Artifact not found: ${artifactId}` }, 404);
-        }
-        if (artifact.type !== "workspace-plan") {
-          return c.json({ error: `Artifact is not a workspace plan (got: ${artifact.type})` }, 400);
-        }
-        if (artifact.data.version !== 2) {
-          return c.json(
-            {
-              error: `Unsupported blueprint version: ${artifact.data.version}. Only v2 is supported.`,
-            },
-            400,
-          );
+        if (!loaded.ok) {
+          return c.json({ error: loaded.error }, loaded.status);
         }
 
-        const blueprintParse = WorkspaceBlueprintSchema.safeParse(artifact.data.data);
-        if (!blueprintParse.success) {
-          return c.json({ error: `Invalid blueprint data: ${blueprintParse.error.message}` }, 400);
+        const result = await applyBlueprint(
+          workspace,
+          loaded.blueprint,
+          loaded.artifactId,
+          loaded.revision,
+          ctx,
+        );
+        if (!result.ok) {
+          return c.json({ error: result.error }, result.status);
         }
-        const blueprint = blueprintParse.data;
-
-        // Load dynamic MCP servers (agents may reference KV-registered servers)
-        let dynamicServers: MCPServerMetadata[] | undefined;
-        try {
-          const mcpAdapter = await getMCPRegistryAdapter();
-          dynamicServers = await mcpAdapter.list();
-        } catch {
-          // Non-fatal — compile without dynamic servers
-        }
-
-        // Compile blueprint → YAML
-        const compiled = compileBlueprint(blueprint, dynamicServers);
-        if (!compiled.ok) {
-          return c.json({ error: `Compilation failed: ${compiled.error}` }, 422);
-        }
-
-        // Store history before overwriting
-        const currentConfig = await manager.getWorkspaceConfig(workspace.id);
-        if (currentConfig) {
-          await storeWorkspaceHistory(workspace, currentConfig.workspace, "full-update", {
-            throwOnError: true,
-          });
-        }
-
-        // Write workspace.yml
-        const ymlPath = join(workspace.path, "workspace.yml");
-        await writeFile(ymlPath, compiled.yaml, "utf-8");
-
-        // Update blueprint tracking metadata
-        const newMetadata = {
-          ...workspace.metadata,
-          blueprintArtifactId: artifactId,
-          blueprintRevision: artifact.revision,
-        };
-        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
-          metadata: newMetadata,
-        });
-
-        // Destroy runtime if active — file watcher handles lazy reload
-        const runtime = ctx.getWorkspaceRuntime(workspace.id);
-        if (runtime) {
-          await ctx.destroyWorkspaceRuntime(workspace.id);
-        }
-
-        logger.info("Workspace recompiled from blueprint", {
-          workspaceId,
-          artifactId,
-          revision: artifact.revision,
-        });
 
         return c.json({
           ok: true,
           workspaceId,
-          artifactId,
-          revision: artifact.revision,
-          runtimeReloaded: !!runtime,
+          artifactId: loaded.artifactId,
+          revision: loaded.revision,
+          runtimeReloaded: result.runtimeReloaded,
         });
       } catch (error) {
         logger.error("Failed to recompile workspace", { workspaceId, error });

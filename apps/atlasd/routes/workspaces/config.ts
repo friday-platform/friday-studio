@@ -72,7 +72,6 @@ function requireParam(c: Context<AppVariables>, name: string): string {
  * including signals and agents. These routes operate on the raw
  * config (workspace.yml), not runtime state.
  *
- * @see docs/plans/2026-01-23-workspace-partial-updates-design.md
  */
 
 /**
@@ -283,7 +282,6 @@ async function handleListCredentials(c: Context<AppVariables>) {
   }
 }
 
-const configLogger = createLogger({ component: "config-mutations" });
 const credentialLogger = createLogger({ component: "config-credentials" });
 
 /**
@@ -390,55 +388,63 @@ async function handleUpdateCredential(
       );
     }
 
-    // Try blueprint path
+    // Blueprint path — when a blueprint exists, all mutations go through it.
+    // Failures are surfaced, never silently falling back to direct workspace.yml mutation.
     if (workspace.metadata?.blueprintArtifactId) {
       const parsed = parseCredentialPath(path);
-      if (parsed) {
-        const loaded = await loadWorkspaceBlueprint(workspace);
-        if (loaded.ok) {
-          const mutationResult = updateBlueprintCredential(
-            loaded.blueprint,
-            parsed.type,
-            parsed.entityId,
-            parsed.envVar,
-            newCredentialId,
-            newCredential.provider,
-          );
-
-          if (mutationResult.ok) {
-            const recompileResult = await saveAndRecompileBlueprint(
-              workspace,
-              mutationResult.value,
-              loaded.artifactId,
-              ctx,
-              `Update credential: ${path}`,
-            );
-
-            if (!recompileResult.ok) {
-              return c.json(
-                { success: false, error: "internal", message: recompileResult.error },
-                recompileResult.status,
-              );
-            }
-
-            return c.json({ ok: true });
-          }
-
-          // Binding not found in blueprint — fall through to direct mutation
-          configLogger.warn(
-            "Blueprint credential binding not found, falling back to direct mutation",
-            { workspaceId, path, error: mutationResult.error },
-          );
-        } else {
-          configLogger.warn("Blueprint load failed, falling back to direct mutation", {
-            workspaceId,
-            error: loaded.error,
-          });
-        }
+      if (!parsed) {
+        return c.json(
+          {
+            success: false,
+            error: "bad_request",
+            message: `Cannot parse credential path: ${path}`,
+          },
+          400,
+        );
       }
+
+      const loaded = await loadWorkspaceBlueprint(workspace);
+      if (!loaded.ok) {
+        return c.json({ success: false, error: "internal", message: loaded.error }, loaded.status);
+      }
+
+      const mutationResult = updateBlueprintCredential(
+        loaded.blueprint,
+        parsed.type,
+        parsed.entityId,
+        parsed.envVar,
+        newCredentialId,
+        newCredential.provider,
+      );
+      if (!mutationResult.ok) {
+        return c.json(
+          {
+            success: false,
+            error: "not_found",
+            message: `Credential binding not found in blueprint: ${path}`,
+          },
+          404,
+        );
+      }
+
+      const recompileResult = await saveAndRecompileBlueprint(
+        workspace,
+        mutationResult.value,
+        loaded.artifactId,
+        ctx,
+        `Update credential: ${path}`,
+      );
+      if (!recompileResult.ok) {
+        return c.json(
+          { success: false, error: "internal", message: recompileResult.error },
+          recompileResult.status,
+        );
+      }
+
+      return c.json({ ok: true });
     }
 
-    // No blueprint or blueprint path failed — direct workspace.yml mutation
+    // No blueprint — direct workspace.yml mutation
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
     const result = await applyMutation(workspace.path, mutationFn, {
@@ -644,6 +650,21 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         );
       }
 
+      // Block direct mutations on blueprint workspaces — the blueprint is the
+      // source of truth and direct workspace.yml changes get overwritten on recompile.
+      if (workspace.metadata?.blueprintArtifactId) {
+        return c.json(
+          {
+            success: false,
+            error: "not_supported",
+            message:
+              "This workspace uses a blueprint — direct config mutations are not supported. " +
+              "Use the blueprint mutation path instead.",
+          },
+          422,
+        );
+      }
+
       // Extract route params
       const params = handlerConfig.extractParams(c);
 
@@ -685,13 +706,12 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         return mapMutationError(c, result.error, conflictMessage);
       }
 
-      // 6. Destroy runtime if active so it reloads config on next request.
-      // INTENTIONAL HOT-RELOAD: see step 9 comment in handleConfigMutation above.
+      // Destroy runtime if active so it reloads config on next request.
       if (ctx.getWorkspaceRuntime(workspace.id)) {
         await ctx.destroyWorkspaceRuntime(workspace.id);
       }
 
-      // 7. Return success
+      // Return success
       return c.json({ ok: true }, handlerConfig.successStatus);
     } catch (error) {
       return c.json(
