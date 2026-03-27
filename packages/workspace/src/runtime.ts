@@ -748,19 +748,26 @@ export class WorkspaceRuntime {
           this.workspace.id === "friday-conversation" ||
           job.name === "handle-chat";
         if (this.options.activityStorage && !isConversation) {
-          try {
-            const title = `${kebabToSentenceCase(job.name)} is running`;
-            await this.options.activityStorage.create({
-              type: "session",
-              source: "agent",
-              referenceId: sessionId,
+          if (!this.createdByUserId) {
+            logger.warn("Skipping activity creation: workspace has no createdByUserId", {
               workspaceId: this.workspace.id,
-              jobId: job.name,
-              userId: null,
-              title,
+              sessionId,
             });
-          } catch (err) {
-            logger.warn("Failed to create running activity", { sessionId, error: String(err) });
+          } else {
+            try {
+              const title = `${kebabToSentenceCase(job.name)} is running`;
+              await this.options.activityStorage.create({
+                type: "session",
+                source: "agent",
+                referenceId: sessionId,
+                workspaceId: this.workspace.id,
+                jobId: job.name,
+                userId: this.createdByUserId,
+                title,
+              });
+            } catch (err) {
+              logger.warn("Failed to create running activity", { sessionId, error: String(err) });
+            }
           }
         }
 
@@ -931,6 +938,7 @@ export class WorkspaceRuntime {
             try {
               await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
                 jobId: job.name,
+                userId: this.createdByUserId,
                 activityStorage: this.options.activityStorage,
               });
             } catch (publishError) {
@@ -1016,6 +1024,7 @@ export class WorkspaceRuntime {
             // Replace "running" activity with final activity for terminal sessions
             if (
               this.options.activityStorage &&
+              this.createdByUserId &&
               !isConversation &&
               (view.status === "completed" || view.status === "failed")
             ) {
@@ -1042,7 +1051,7 @@ export class WorkspaceRuntime {
                   referenceId: sessionId,
                   workspaceId: this.workspace.id,
                   jobId: job.name,
-                  userId: null,
+                  userId: this.createdByUserId,
                   title,
                 });
               } catch (err) {

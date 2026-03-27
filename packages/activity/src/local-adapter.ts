@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS activities (
   reference_id TEXT NOT NULL,
   workspace_id TEXT NOT NULL,
   job_id TEXT,
-  user_id TEXT,
+  user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   created_at TEXT NOT NULL
 );

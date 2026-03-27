@@ -17,7 +17,7 @@ export const ActivitySchema = z.object({
   referenceId: z.string(),
   workspaceId: z.string(),
   jobId: z.string().nullable(),
-  userId: z.string().nullable(),
+  userId: z.string(),
   title: z.string(),
   createdAt: z.string(),
 });
@@ -49,7 +49,7 @@ export const CreateActivityInputSchema = z.object({
   referenceId: z.string(),
   workspaceId: z.string(),
   jobId: z.string().nullable(),
-  userId: z.string().nullable(),
+  userId: z.string(),
   title: z.string(),
 });
 
@@ -91,7 +91,7 @@ const ActivityDbRowSchema = z.object({
   reference_id: z.string(),
   workspace_id: z.string(),
   job_id: z.string().nullable(),
-  user_id: z.string().nullable(),
+  user_id: z.string(),
   title: z.string(),
   created_at: z.string(),
 });

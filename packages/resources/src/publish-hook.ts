@@ -5,6 +5,7 @@ import { logger } from "@atlas/logger";
 
 export interface PublishDirtyDraftsContext {
   jobId?: string;
+  userId?: string;
   activityStorage?: ActivityStorageAdapter;
 }
 
@@ -25,7 +26,7 @@ export async function publishDirtyDrafts(
     }
 
     // Create activity items for each published resource
-    if (context?.activityStorage && published.length > 0) {
+    if (context?.activityStorage && context.userId && published.length > 0) {
       // Look up resource metadata for human-readable names and types
       let metadataBySlug: Map<string, { name: string; type: string }> = new Map();
       try {
@@ -52,7 +53,7 @@ export async function publishDirtyDrafts(
             referenceId: resource.resourceId,
             workspaceId,
             jobId: context.jobId ?? null,
-            userId: null,
+            userId: context.userId,
             title,
           });
         } catch (err) {

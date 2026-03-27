@@ -22,7 +22,7 @@ interface ActivityRow {
   reference_id: string;
   workspace_id: string;
   job_id: string | null;
-  user_id: string | null;
+  user_id: string;
   title: string;
   created_at: string;
 }
@@ -77,7 +77,7 @@ export class ActivityPostgresAdapter implements ActivityStorageAdapter {
         INSERT INTO public.activities
           (type, source, reference_id, workspace_id, job_id, user_id, title)
         VALUES
-          (${input.type}, ${input.source}, ${input.referenceId}, ${input.workspaceId}, ${input.jobId}, ${input.userId}, ${input.title})
+          (${input.type}, ${input.source}, ${input.referenceId}, ${input.workspaceId}, ${input.jobId}, ${this.userId}, ${input.title})
         RETURNING id, type, source, reference_id, workspace_id, job_id, user_id, title, created_at
       `;
 
@@ -86,10 +86,10 @@ export class ActivityPostgresAdapter implements ActivityStorageAdapter {
       }
 
       // Auto-insert viewed status for user-initiated activities
-      if (input.source === "user" && input.userId) {
+      if (input.source === "user") {
         await tx`
           INSERT INTO public.activity_read_status (user_id, activity_id, status)
-          VALUES (${input.userId}, ${row.id}, 'viewed')
+          VALUES (${this.userId}, ${row.id}, 'viewed')
         `;
       }
 

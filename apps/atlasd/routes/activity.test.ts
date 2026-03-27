@@ -103,7 +103,7 @@ const sampleActivity: ActivityWithReadStatus = {
   referenceId: "session-123",
   workspaceId: "ws-1",
   jobId: "job-1",
-  userId: null,
+  userId: "user-1",
   title: "Completed deployment task",
   createdAt: "2026-03-12T10:00:00.000Z",
   readStatus: null,

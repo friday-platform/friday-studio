@@ -34,7 +34,7 @@ describe("LocalActivityAdapter", () => {
       referenceId: "ref-1",
       workspaceId: "ws-1",
       jobId: null,
-      userId: null,
+      userId: "user-1",
       title: "Test activity",
       ...overrides,
     });
