@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 // Set up isolated test environment BEFORE importing routes
@@ -26,10 +26,6 @@ process.env.ATLAS_KEY = createTestJwt({
 
 process.env.USER_IDENTITY_ADAPTER = "local";
 
-// Mock smallLLM for auto-description tests
-const mockSmallLLM = vi.hoisted(() => vi.fn());
-vi.mock("@atlas/llm", () => ({ smallLLM: mockSmallLLM }));
-
 const { skillsRoutes } = await import("./skills.ts");
 
 // Response schemas
@@ -40,7 +36,6 @@ const SkillResponseSchema = z.object({
     namespace: z.string(),
     name: z.string().nullable(),
     version: z.number(),
-    title: z.string().nullable(),
     description: z.string(),
     descriptionManual: z.boolean(),
     disabled: z.boolean(),
@@ -68,7 +63,6 @@ const SkillsListSchema = z.object({
       skillId: z.string(),
       namespace: z.string(),
       name: z.string().nullable(),
-      title: z.string().nullable(),
       description: z.string(),
       disabled: z.boolean(),
       latestVersion: z.number(),
@@ -83,12 +77,6 @@ const VersionsListSchema = z.object({
 });
 
 const ErrorSchema = z.object({ error: z.string() });
-
-beforeEach(() => {
-  mockSmallLLM.mockReset();
-  // Default: return a generated description
-  mockSmallLLM.mockResolvedValue("Auto-generated description");
-});
 
 afterAll(() => {
   rmSync(testDir, { recursive: true, force: true });
@@ -322,38 +310,6 @@ describe("Skills API Routes - Global Catalog", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TITLE FIELD
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe("title field", () => {
-    it("defaults to null when not provided", async () => {
-      // code-review was published without title
-      const response = await skillsRoutes.request("/@atlas/code-review");
-      expect(response.status).toBe(200);
-
-      const body = SkillResponseSchema.parse(await response.json());
-      expect(body.skill.title).toBeNull();
-    });
-
-    it("stores and returns title when provided", async () => {
-      await skillsRoutes.request("/@atlas/titled-skill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "My Titled Skill",
-          description: "Has a title",
-          instructions: "Do titled things.",
-        }),
-      });
-
-      const response = await skillsRoutes.request("/@atlas/titled-skill");
-      expect(response.status).toBe(200);
-
-      const body = SkillResponseSchema.parse(await response.json());
-      expect(body.skill.title).toBe("My Titled Skill");
-    });
-  });
-
   // ═══════════════════════════════════════════════════════════════════════════
   // ARCHIVE EXPORT
   // ═══════════════════════════════════════════════════════════════════════════
@@ -566,82 +522,6 @@ describe("Skills API Routes - Global Catalog", () => {
       // Old name should no longer resolve
       const oldNameRes = await skillsRoutes.request("/@friday/old-name");
       expect(oldNameRes.status).toBe(404);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AUTO-DESCRIPTION GENERATION
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe("auto-description generation", () => {
-    it("generates description when descriptionManual is false", async () => {
-      mockSmallLLM.mockResolvedValue("LLM-generated description");
-
-      const response = await skillsRoutes.request("/@friday/auto-desc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instructions: "Help users write better code.",
-          descriptionManual: false,
-        }),
-      });
-
-      expect(response.status).toBe(201);
-      expect(mockSmallLLM).toHaveBeenCalledOnce();
-
-      // Verify the generated description was persisted
-      const getRes = await skillsRoutes.request("/@friday/auto-desc");
-      const body = SkillResponseSchema.parse(await getRes.json());
-      expect(body.skill.description).toBe("LLM-generated description");
-    });
-
-    it("generates description when descriptionManual is omitted", async () => {
-      mockSmallLLM.mockResolvedValue("Default auto description");
-
-      const response = await skillsRoutes.request("/@friday/auto-desc-omit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions: "Analyze data trends." }),
-      });
-
-      expect(response.status).toBe(201);
-      expect(mockSmallLLM).toHaveBeenCalledOnce();
-
-      const getRes = await skillsRoutes.request("/@friday/auto-desc-omit");
-      const body = SkillResponseSchema.parse(await getRes.json());
-      expect(body.skill.description).toBe("Default auto description");
-    });
-
-    it("skips generation when descriptionManual is true", async () => {
-      const response = await skillsRoutes.request("/@friday/manual-desc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: "My manual description",
-          instructions: "Do stuff.",
-          descriptionManual: true,
-        }),
-      });
-
-      expect(response.status).toBe(201);
-      expect(mockSmallLLM).not.toHaveBeenCalled();
-
-      const getRes = await skillsRoutes.request("/@friday/manual-desc");
-      const body = SkillResponseSchema.parse(await getRes.json());
-      expect(body.skill.description).toBe("My manual description");
-    });
-
-    it("proceeds without description when LLM fails", async () => {
-      mockSmallLLM.mockRejectedValue(new Error("LLM unavailable"));
-
-      const response = await skillsRoutes.request("/@friday/llm-fail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions: "Some instructions.", descriptionManual: false }),
-      });
-
-      expect(response.status).toBe(201);
-      expect(mockSmallLLM).toHaveBeenCalledOnce();
     });
   });
 });

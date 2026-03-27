@@ -24,7 +24,6 @@ export interface CortexSkillMetadata {
   namespace: string;
   name: string;
   version: number;
-  title: string | null;
   description: string;
   frontmatter: string; // JSON-encoded
   created_by: string;
@@ -71,7 +70,6 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
         namespace,
         name: "",
         version: 1,
-        title: null,
         description: "",
         frontmatter: "{}",
         created_by: createdBy,
@@ -117,7 +115,6 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
         namespace,
         name,
         version,
-        title: input.title ?? null,
         description: input.description ?? "",
         frontmatter: JSON.stringify(input.frontmatter ?? {}),
         created_by: createdBy,
@@ -138,7 +135,6 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
           namespace,
           name,
           version,
-          title: input.title ?? null,
           description: input.description ?? "",
           frontmatter: "{}",
           created_by: createdBy,
@@ -260,7 +256,6 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
         skillId: o.metadata.skill_id,
         namespace: o.metadata.namespace,
         name: o.metadata.name,
-        title: o.metadata.title ?? null,
         description: o.metadata.description,
         disabled: o.metadata.disabled === true,
         latestVersion: o.metadata.version,
@@ -469,7 +464,6 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
       namespace: m.namespace,
       name: m.name,
       version: m.version,
-      title: m.title ?? null,
       description: m.description,
       descriptionManual: m.description_manual === true,
       disabled: m.disabled === true,

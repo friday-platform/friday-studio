@@ -109,9 +109,9 @@ function getRouteConfig() {
     },
     skills: {
       list: resolve("/skills", {}),
-      item: (skillId: string, namespace?: string, name?: string) =>
-        namespace && name
-          ? resolve("/skills/[skillId]/[[namespace]]/[[name]]", { skillId, namespace, name })
+      item: (skillId: string, name?: string) =>
+        name
+          ? resolve("/skills/[skillId]/[[name]]", { skillId, name })
           : resolve("/skills/[skillId]", { skillId }),
     },
     chat: { item: (chatId: string) => resolve("/chat/[chatId]", { chatId }) },

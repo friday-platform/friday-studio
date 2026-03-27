@@ -49,7 +49,6 @@ export const createSkillTool = tool({
     const draft = parseResult_.data;
 
     const publishResult = await SkillStorage.publish(draft.namespace, draft.name, createdBy, {
-      title: draft.title,
       description: draft.description,
       instructions: draft.instructions,
     });

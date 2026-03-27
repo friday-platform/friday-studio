@@ -478,7 +478,6 @@ describe("buildAgentContext skill injection", () => {
           namespace: "atlas",
           name: "pinned-skill",
           version: 2,
-          title: null,
           description: "Pinned version",
           descriptionManual: false,
           disabled: false,

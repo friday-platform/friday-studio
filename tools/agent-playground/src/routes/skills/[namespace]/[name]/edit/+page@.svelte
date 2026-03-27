@@ -48,7 +48,6 @@
   function reconstructSkillMd(
     frontmatter: Record<string, unknown>,
     instructions: string,
-    skillTitle: string | null,
     skillDescription: string,
     skillNamespace: string,
     skillName: string,
@@ -56,10 +55,9 @@
     const fm: Record<string, unknown> = {};
     fm.name = `${skillNamespace}/${skillName}`;
     fm.description = skillDescription;
-    if (skillTitle) fm.title = skillTitle;
 
     for (const [key, value] of Object.entries(frontmatter)) {
-      if (key === "name" || key === "description" || key === "title") continue;
+      if (key === "name" || key === "description") continue;
       fm[key] = value;
     }
 
@@ -106,16 +104,14 @@
     try {
       const { frontmatter, instructions } = parseSkillMdClient(currentContent);
 
-      const title = typeof frontmatter.title === "string" ? frontmatter.title : undefined;
       const description =
         typeof frontmatter.description === "string" ? frontmatter.description : skill.description;
 
-      const { name: _n, description: _d, title: _t, ...remainingFrontmatter } = frontmatter;
+      const { name: _n, description: _d, ...remainingFrontmatter } = frontmatter;
 
       const res = await client.skills[":namespace"][":name"].$post({
         param: { namespace: `@${namespace}`, name },
         json: {
-          title,
           description,
           instructions,
           frontmatter: remainingFrontmatter,
@@ -149,7 +145,6 @@
       const md = reconstructSkillMd(
         skill.frontmatter ?? {},
         skill.instructions ?? "",
-        skill.title ?? null,
         skill.description ?? "",
         namespace,
         name,

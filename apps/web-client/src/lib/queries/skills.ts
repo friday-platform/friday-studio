@@ -37,10 +37,8 @@ export async function deleteSkill(skillId: string) {
 }
 
 export async function publishSkill(
-  namespace: string,
   name: string,
   input: {
-    title?: string;
     description?: string;
     instructions: string;
     skillId?: string;
@@ -49,7 +47,7 @@ export async function publishSkill(
 ) {
   const res = await parseResult(
     client.skills[":namespace"][":name"].$post({
-      param: { namespace: `@${namespace}`, name },
+      param: { namespace: "@friday", name },
       json: input,
     }),
   );

@@ -1,5 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { generateSlug, retrySlugCollision, SlugCollisionError } from "./slug.ts";
+import { enforceKebabCase, generateSlug, retrySlugCollision, SlugCollisionError } from "./slug.ts";
+
+describe("enforceKebabCase", () => {
+  it("lowercases uppercase characters", () => {
+    expect(enforceKebabCase("MySkill")).toBe("myskill");
+  });
+
+  it("replaces spaces with hyphens", () => {
+    expect(enforceKebabCase("my skill")).toBe("my-skill");
+  });
+
+  it("strips special characters and replaces with hyphens", () => {
+    expect(enforceKebabCase("my@skill!name")).toBe("my-skill-name");
+  });
+
+  it("collapses consecutive hyphens", () => {
+    expect(enforceKebabCase("my---skill")).toBe("my-skill");
+  });
+
+  it("preserves trailing hyphens for live input", () => {
+    expect(enforceKebabCase("my-skill-")).toBe("my-skill-");
+  });
+
+  it("preserves leading hyphens", () => {
+    expect(enforceKebabCase("-my-skill")).toBe("-my-skill");
+  });
+
+  it("allows digits", () => {
+    expect(enforceKebabCase("skill-v2")).toBe("skill-v2");
+  });
+
+  it("handles empty string", () => {
+    expect(enforceKebabCase("")).toBe("");
+  });
+
+  it("replaces multiple consecutive special chars with single hyphen", () => {
+    expect(enforceKebabCase("hello   world")).toBe("hello-world");
+  });
+});
 
 describe("generateSlug", () => {
   it("strips extension and converts spaces/parens to hyphens", () => {

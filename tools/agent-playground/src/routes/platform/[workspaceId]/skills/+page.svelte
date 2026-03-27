@@ -60,8 +60,7 @@
       if (!q) return true;
       return (
         ref.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        (s.title ?? "").toLowerCase().includes(q)
+        s.description.toLowerCase().includes(q)
       );
     });
   });

@@ -167,15 +167,14 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
     try {
       db.prepare(`
-        INSERT INTO skills (id, skill_id, namespace, name, version, title, description, description_manual, disabled, frontmatter, instructions, archive, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO skills (id, skill_id, namespace, name, version, description, description_manual, disabled, frontmatter, instructions, archive, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         skillId,
         namespace,
         null, // name is null for draft skills
         1,
-        null,
         "",
         0,
         0,
@@ -231,15 +230,14 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       }
 
       db.prepare(`
-        INSERT INTO skills (id, skill_id, namespace, name, version, title, description, description_manual, disabled, frontmatter, instructions, archive, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO skills (id, skill_id, namespace, name, version, description, description_manual, disabled, frontmatter, instructions, archive, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         skillId,
         namespace,
         name,
         version,
-        input.title ?? null,
         input.description ?? "",
         input.descriptionManual ? 1 : 0,
         0,
@@ -298,7 +296,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
     // Build a query that returns one row per skill_id with the latest version info
     let sql = `
-      SELECT s.id, s.skill_id, s.namespace, s.name, s.title, s.description, s.disabled, s.version as latestVersion, s.created_at
+      SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
       FROM skills s
       INNER JOIN (
         SELECT skill_id, MAX(version) as max_version
@@ -337,7 +335,6 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       skill_id: string;
       namespace: string;
       name: string | null;
-      title: string | null;
       description: string;
       disabled: number;
       latestVersion: number;
@@ -350,7 +347,6 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
         skillId: r.skill_id,
         namespace: r.namespace,
         name: r.name,
-        title: r.title,
         description: r.description,
         disabled: r.disabled !== 0,
         latestVersion: r.latestVersion,
@@ -410,7 +406,6 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       namespace: r.namespace,
       name: r.name,
       version: r.version,
-      title: r.title,
       description: r.description,
       descriptionManual: r.description_manual !== 0,
       disabled: r.disabled !== 0,

@@ -58,7 +58,6 @@
         namespace,
         name,
         instructions: content,
-        title: skill.title ?? undefined,
         description: skill.description ?? undefined,
         descriptionManual: true,
       },

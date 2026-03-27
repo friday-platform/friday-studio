@@ -130,7 +130,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-        title: null,
+
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,
@@ -169,7 +169,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-        title: null,
+
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,
@@ -208,7 +208,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-        title: null,
+
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,

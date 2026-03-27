@@ -9,7 +9,6 @@ export { SkillNameSchema };
 
 /** Input for publishing a new version of a skill (namespace/name come from method params) */
 export const PublishSkillInputSchema = z.object({
-  title: z.string().min(1).optional(),
   description: z.string().max(1024).refine(noXmlTags, { message: noXmlTagsMessage }).optional(),
   instructions: z.string(),
   frontmatter: z.record(z.string(), z.unknown()).optional(),
@@ -30,7 +29,6 @@ export const SkillSchema = z.object({
   namespace: NamespaceSchema,
   name: SkillNameSchema.nullable(),
   version: z.number().int().positive(),
-  title: z.string().nullable(),
   description: z.string(),
   descriptionManual: z.boolean(),
   disabled: z.boolean(),
@@ -55,7 +53,6 @@ export const SkillSummarySchema = z.object({
   skillId: z.string(),
   namespace: NamespaceSchema,
   name: SkillNameSchema.nullable(),
-  title: z.string().nullable(),
   description: z.string(),
   disabled: z.boolean(),
   latestVersion: z.number().int().positive(),
@@ -88,7 +85,6 @@ export const SkillDbRowSchema = z.object({
   namespace: NamespaceSchema,
   name: SkillNameSchema.nullable(),
   version: z.number().int().positive(),
-  title: z.string().nullable(),
   description: z.string(),
   description_manual: z.number(),
   disabled: z.number(),

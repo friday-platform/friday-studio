@@ -1,9 +1,12 @@
-export function toSlug(title: string): string {
-  return title
+/**
+ * Sanitizes skill name input to match SkillNameSchema: lowercase alphanumeric
+ * with single hyphens. Preserves trailing hyphens so users can type "my-" mid-word.
+ */
+export function enforceKebabCase(value: string): string {
+  return value
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 64);
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-");
 }
 
 /**

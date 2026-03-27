@@ -1,8 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config";
-import { smallLLM } from "@atlas/llm";
-import { logger } from "@atlas/logger";
 import {
   extractArchiveContents,
   extractSkillArchive,
@@ -194,7 +192,6 @@ export const skillsRoutes = daemonFactory
       const newArchive = await packSkillArchive(extractDir);
 
       const publishResult = await SkillStorage.publish(namespace, name, auth.userId, {
-        title: result.data.title ?? undefined,
         description: result.data.description,
         instructions: result.data.instructions,
         frontmatter: result.data.frontmatter,
@@ -240,23 +237,6 @@ export const skillsRoutes = daemonFactory
 
       const { namespace, name } = c.req.valid("param");
       const input = c.req.valid("json");
-
-      // Auto-generate description when not manually set
-      if (!input.descriptionManual && !input.instructions) {
-        input.description = "";
-      } else if (!input.descriptionManual && input.instructions) {
-        try {
-          const generated = await smallLLM({
-            system:
-              'Write a skill description under 1024 characters. Start with what it does (verb-led), then add "Use when..." with specific keywords that help agents match tasks to this skill. Never say "this skill" — that\'s assumed. Output only the description, nothing else.',
-            prompt: input.instructions,
-            maxOutputTokens: 250,
-          });
-          input.description = generated.trim();
-        } catch {
-          logger.warn("Auto-description generation failed, proceeding without");
-        }
-      }
 
       // Validate references against the text files that will actually be
       // extracted to the sandbox — not the full archive (which includes binaries

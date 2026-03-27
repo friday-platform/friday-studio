@@ -48,7 +48,7 @@
         header: "Skill",
         cell: (info) =>
           renderComponent(SkillColumn, {
-            name: info.row.original.title ?? info.row.original.name ?? "Untitled skill",
+            name: info.row.original.name ?? "Untitled skill",
             description: info.row.original.description,
             muted: !info.row.original.name,
           }),
@@ -71,7 +71,7 @@
 
   function skillPath(item: Skill): string {
     if (item.name) {
-      return appCtx.routes.skills.item(item.skillId, item.namespace, item.name);
+      return appCtx.routes.skills.item(item.skillId, item.name);
     }
     return appCtx.routes.skills.item(item.skillId);
   }

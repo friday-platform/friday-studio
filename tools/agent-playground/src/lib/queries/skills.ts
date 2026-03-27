@@ -82,7 +82,6 @@ export interface CatalogSkill {
   skillId: string;
   namespace: string;
   name: string | null;
-  title: string | null;
   description: string;
   disabled: boolean;
   latestVersion: number;
@@ -93,7 +92,6 @@ export interface CatalogSkill {
 export interface PublishSkillInput {
   namespace: string;
   name: string;
-  title?: string;
   description?: string;
   instructions: string;
   descriptionManual?: boolean;

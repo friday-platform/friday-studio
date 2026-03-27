@@ -219,51 +219,7 @@ describe("LocalSkillAdapter", () => {
     });
   });
 
-  describe("title", () => {
-    it("round-trips through get and getById", async () => {
-      const pub = await adapter.publish("atlas", "my-skill", "user-1", {
-        title: "My Skill",
-        description: "Has a title",
-        instructions: ".",
-      });
-      expect(pub.ok).toBe(true);
-      if (!pub.ok) return;
-
-      const byName = await adapter.get("atlas", "my-skill");
-      expect(byName.ok).toBe(true);
-      if (!byName.ok) return;
-      expect(byName.data?.title).toBe("My Skill");
-
-      const byId = await adapter.getById(pub.data.id);
-      expect(byId.ok).toBe(true);
-      if (!byId.ok) return;
-      expect(byId.data?.title).toBe("My Skill");
-    });
-
-    it("defaults to null when omitted", async () => {
-      await adapter.publish("atlas", "no-title", "user-1", {
-        description: "No title",
-        instructions: ".",
-      });
-      const result = await adapter.get("atlas", "no-title");
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.data?.title).toBeNull();
-    });
-
-    it("appears in list summaries", async () => {
-      await adapter.publish("atlas", "listed-title", "user-1", {
-        title: "Listed Title",
-        description: "Check listing",
-        instructions: ".",
-      });
-      const result = await adapter.list();
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      const skill = result.data.find((s) => s.name === "listed-title");
-      expect(skill?.title).toBe("Listed Title");
-    });
-
+  describe("list summaries", () => {
     it("includes id in list summaries", async () => {
       await adapter.publish("atlas", "listed-id", "user-1", {
         description: "Check id",

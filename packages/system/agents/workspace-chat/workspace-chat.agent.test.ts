@@ -143,7 +143,6 @@ describe("buildSkillsSection", () => {
       skillId: "skill-1",
       namespace: "ns",
       name: "test-skill",
-      title: "Test Skill",
       description: "A test skill",
       disabled: false,
       latestVersion: 1,
