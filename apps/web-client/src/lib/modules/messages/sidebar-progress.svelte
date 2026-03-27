@@ -61,7 +61,7 @@
 <Page.SidebarSection title="Progress">
   <ul>
     {#if progressItems.length > 0}
-      {#each progressItems as label (label)}
+      {#each progressItems as label, i (i)}
         <li class="progress-item">
           <span class="status-icon completed">
             <Icons.StyledCheckmark />

@@ -48,6 +48,7 @@ export function buildWorkspaceYaml(
     signals: buildSignals(phase1.signals),
     agents: buildAgents(phase1.agents, bindings),
     jobs: buildJobs(phase3, fsmByJobId),
+    ...(phase3.resources && phase3.resources.length > 0 && { resources: phase3.resources }),
   };
 
   return stringify(config as Record<string, unknown>, { lineWidth: -1 });
