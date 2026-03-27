@@ -6,10 +6,12 @@
 -->
 
 <script lang="ts">
+  import { Button, Dialog, IconSmall, Tooltip } from "@atlas/ui";
   import { page } from "$app/state";
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
   import SkillsTree from "$lib/components/skills/skills-tree.svelte";
   import { getDirtyFiles } from "$lib/stores/skill-editor-state.svelte";
+  import { writable } from "svelte/store";
 
   const { children } = $props();
 
@@ -18,34 +20,21 @@
   );
 
   const dirtyFiles = $derived(getDirtyFiles());
-
-  let showUploader = $state(false);
+  const addDialogOpen = writable(false);
 </script>
 
 <div class="skills-layout">
   <aside class="skills-sidebar">
     <div class="sidebar-header">
       <h1 class="sidebar-title">Skills</h1>
-      <button
-        class="add-btn"
-        onclick={() => {
-          showUploader = !showUploader;
-        }}
-      >
-        {showUploader ? "Cancel" : "+ Add"}
-      </button>
-    </div>
-
-    {#if showUploader}
-      <div class="sidebar-uploader">
-        <SkillLoader
-          inline
-          onclose={() => {
-            showUploader = false;
-          }}
-        />
+      <div class="header-actions">
+        <Tooltip label="Add Skill" openDelay={150}>
+          <Button variant="secondary" size="icon" aria-label="Add skill" onclick={() => addDialogOpen.set(true)}>
+            <IconSmall.Plus />
+          </Button>
+        </Tooltip>
       </div>
-    {/if}
+    </div>
 
     <SkillsTree {dirtyFiles} />
   </aside>
@@ -54,6 +43,27 @@
     {@render children?.()}
   </div>
 </div>
+
+<Dialog.Root open={addDialogOpen}>
+  {#snippet children()}
+    <Dialog.Content>
+      <Dialog.Close />
+
+      {#snippet header()}
+        <Dialog.Title>Add skill</Dialog.Title>
+        <Dialog.Description>
+          Package your expertise into a skill agents can load on demand.
+        </Dialog.Description>
+      {/snippet}
+
+      <SkillLoader inline onclose={() => addDialogOpen.set(false)} />
+
+      {#snippet footer()}
+        <Dialog.Cancel>Cancel</Dialog.Cancel>
+      {/snippet}
+    </Dialog.Content>
+  {/snippet}
+</Dialog.Root>
 
 <style>
   .skills-layout {
@@ -84,24 +94,9 @@
     font-weight: var(--font-weight-6);
   }
 
-  .add-btn {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease;
-  }
-
-  .add-btn:hover {
-    background-color: var(--color-highlight-1);
-  }
-
-  .sidebar-uploader {
-    border-block-end: 1px solid var(--color-border-1);
-    padding-block-end: var(--size-4);
+  .header-actions {
+    display: flex;
+    gap: var(--size-1);
   }
 
   .skills-content {

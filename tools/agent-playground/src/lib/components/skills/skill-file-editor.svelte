@@ -111,8 +111,6 @@
 
 <style>
   .editor-container {
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
     flex: 1;
     overflow: hidden;
   }

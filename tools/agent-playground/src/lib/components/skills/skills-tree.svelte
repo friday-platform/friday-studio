@@ -1,19 +1,21 @@
 <!--
   Collapsible tree of catalog skills with file children.
 
-  Lists all skills from the catalog. Clicking a skill expands it to reveal
-  SKILL.md and reference files grouped by directory. Active file and expansion
-  state are driven by URL route params.
+  Lists all skills from the catalog grouped by namespace. Clicking a skill
+  expands it to reveal Details (SKILL.md) and References sub-items.
+  Active file and expansion state are driven by URL route params.
 
   @component
   @prop dirtyFiles - Set of file paths with unsaved changes (shows dot indicator)
 -->
 
 <script lang="ts">
+  import { Collapsible, IconSmall, StatusBadge, Tree } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { skillQueries } from "$lib/queries";
+  import { writable } from "svelte/store";
 
   interface Props {
     dirtyFiles?: Set<string>;
@@ -30,84 +32,75 @@
   const activePath = $derived(page.params.path ?? "");
   const hasActiveSkill = $derived(activeNamespace.length > 0 && activeName.length > 0);
 
+  // Group skills by namespace for separator headers
+  interface NamespaceGroup {
+    namespace: string;
+    skills: typeof skills;
+  }
+
+  const grouped = $derived.by((): NamespaceGroup[] => {
+    const map = new Map<string, typeof skills>();
+    for (const skill of skills) {
+      const ns = skill.namespace;
+      const existing = map.get(ns);
+      if (existing) {
+        existing.push(skill);
+      } else {
+        map.set(ns, [skill]);
+      }
+    }
+    return [...map.entries()].map(([namespace, nsSkills]) => ({ namespace, skills: nsSkills }));
+  });
+
   // Fetch files for the expanded skill
   const filesQuery = createQuery(() => ({
     ...skillQueries.files(activeNamespace, activeName),
-    enabled: activeNamespace.length > 0 && activeName.length > 0,
+    enabled: hasActiveSkill,
   }));
   const files = $derived(filesQuery.data?.files ?? []);
 
-  // Group files by top-level directory
-  interface DirGroup {
-    dir: string;
-    files: string[];
-  }
+  // Reference files (everything except SKILL.md)
+  const referenceFiles = $derived(
+    files.filter((f: string) => f !== "SKILL.md" && !f.endsWith("/")).sort(),
+  );
 
-  const fileTree = $derived.by((): DirGroup[] => {
-    if (files.length === 0) return [];
+  // Sync tree expanded state with URL
+  const expanded = writable<string[]>([]);
 
-    const groups = new Map<string, string[]>();
-    for (const path of files) {
-      if (path === "SKILL.md") continue;
-      const slashIdx = path.indexOf("/");
-      const dir = slashIdx >= 0 ? path.slice(0, slashIdx) : "";
-      const existing = groups.get(dir);
-      if (existing) {
-        existing.push(path);
-      } else {
-        groups.set(dir, [path]);
-      }
+  $effect(() => {
+    const ids: string[] = [];
+    if (hasActiveSkill) {
+      ids.push(`skill:${activeNamespace}/${activeName}`);
     }
-
-    return [...groups.entries()].map(([dir, dirFiles]) => ({ dir, files: dirFiles.sort() }));
+    expanded.set(ids);
   });
 
-  // Collapsed directories within the file tree
-  let collapsedDirs: Set<string> = $state(new Set());
-
-  function toggleDir(dir: string) {
-    const next = new Set(collapsedDirs);
-    if (next.has(dir)) {
-      next.delete(dir);
-    } else {
-      next.add(dir);
-    }
-    collapsedDirs = next;
-  }
-
-  function isExpanded(ns: string, name: string): boolean {
-    return activeNamespace === ns && activeName === name;
-  }
-
-  function isActiveFile(path: string): boolean {
-    return activePath === path;
-  }
-
-  function isSkillMdActive(): boolean {
-    return hasActiveSkill && activePath === "";
-  }
-
-  function fileName(path: string): string {
-    const slashIdx = path.lastIndexOf("/");
-    return slashIdx >= 0 ? path.slice(slashIdx + 1) : path;
+  function skillId(ns: string, name: string): string {
+    return `skill:${ns}/${name}`;
   }
 
   function handleSkillClick(ns: string, name: string) {
-    if (isExpanded(ns, name)) {
-      // Collapse: navigate back to skill list
-      goto("/skills");
-    } else {
-      // Expand: navigate to skill detail (selects SKILL.md)
-      goto(`/skills/${ns}/${name}`);
+    if (activeNamespace === ns && activeName === name) {
+      return;
     }
+    goto(`/skills/${ns}/${name}`);
+  }
+
+  // Track refs expansion separately — the URL-driven $effect clobbers
+  // Melt's internal expanded state, so we manage refs toggle manually.
+  let refsExpanded = $state(false);
+
+  function handleDetailsClick(ns: string, name: string) {
+    goto(`/skills/${ns}/${name}`);
   }
 
   function handleFileClick(ns: string, name: string, path: string) {
     goto(`/skills/${ns}/${name}/${path}`);
   }
 
-  function handleSkillMdClick(ns: string, name: string) {
-    goto(`/skills/${ns}/${name}`);
+  function fileName(path: string): string {
+    const slashIdx = path.lastIndexOf("/");
+    return slashIdx >= 0 ? path.slice(slashIdx + 1) : path;
   }
 </script>
 
@@ -119,67 +112,95 @@
   {:else if skills.length === 0}
     <p class="tree-status">No skills published</p>
   {:else}
-    {#each skills as skill (skill.skillId)}
-      {@const ns = skill.namespace}
-      {@const name = skill.name ?? ""}
-      {@const expanded = isExpanded(ns, name)}
-      <div class="skill-node">
-        <button class="skill-trigger" class:expanded onclick={() => handleSkillClick(ns, name)}>
-          <span class="caret" class:caret-expanded={expanded}>&#9662;</span>
-          <span class="skill-label">@{ns}/{name}</span>
-          {#if skill.disabled}
-            <span class="disabled-tag">OFF</span>
-          {/if}
-        </button>
+    <Tree.Root forceVisible {expanded}>
+      {#each grouped as group (group.namespace)}
+        <Collapsible.Root defaultOpen={true}>
+          <Collapsible.Trigger>
+            {#snippet children(_open)}
+              <span class="namespace-header">
+                @{group.namespace} <IconSmall.CaretDown />
+              </span>
+            {/snippet}
+          </Collapsible.Trigger>
+          <Collapsible.Content>
 
-        {#if expanded}
-          <div class="skill-children">
-            <!-- SKILL.md entry -->
+        {#each group.skills as skill (skill.skillId)}
+          {@const ns = skill.namespace}
+          {@const name = skill.name ?? ""}
+          {@const isExpanded = activeNamespace === ns && activeName === name}
+
+          <Tree.Item id={skillId(ns, name)} hasChildren>
             <button
-              class="file-entry"
-              class:file-active={isSkillMdActive()}
-              onclick={() => handleSkillMdClick(ns, name)}
+              class="skill-trigger"
+              class:expanded={isExpanded}
+              onclick={() => handleSkillClick(ns, name)}
             >
-              <span class="file-name">SKILL.md</span>
-              {#if dirtyFiles.has("SKILL.md")}
-                <span class="dirty-dot"></span>
+              <span class="skill-label">{name}</span>
+              {#if skill.disabled}
+                <StatusBadge status="skipped" label="Disabled" />
               {/if}
             </button>
 
-            <!-- Reference files grouped by directory -->
-            {#if filesQuery.isLoading}
-              <span class="tree-status tree-status-inline">Loading files...</span>
-            {:else}
-              {#each fileTree as group}
-                {#if group.dir}
-                  <button class="dir-trigger" onclick={() => toggleDir(group.dir)}>
-                    <span class="caret" class:caret-expanded={!collapsedDirs.has(group.dir)}>
-                      &#9662;
-                    </span>
-                    {group.dir}
-                  </button>
-                {/if}
-                {#if !group.dir || !collapsedDirs.has(group.dir)}
-                  {#each group.files as path}
+            {#if isExpanded}
+              <Tree.Group id={skillId(ns, name)}>
+                <div class="children-container">
+                  <!-- Details (SKILL.md) -->
+                  <Tree.Item id={`details:${ns}/${name}`}>
                     <button
-                      class="file-entry"
-                      class:file-nested={!!group.dir}
-                      class:file-active={isActiveFile(path)}
-                      onclick={() => handleFileClick(ns, name, path)}
+                      class="child-entry"
+                      class:child-active={hasActiveSkill && activePath === ""}
+                      onclick={() => handleDetailsClick(ns, name)}
                     >
-                      <span class="file-name">{fileName(path)}</span>
-                      {#if dirtyFiles.has(path)}
+                      <span class="child-label">SKILL.md</span>
+                      {#if dirtyFiles.has("SKILL.md")}
                         <span class="dirty-dot"></span>
                       {/if}
                     </button>
-                  {/each}
-                {/if}
-              {/each}
+                  </Tree.Item>
+
+                  <!-- References folder -->
+                  {#if filesQuery.isLoading}
+                    <span class="tree-status tree-status-inline">Loading files...</span>
+                  {:else if referenceFiles.length > 0}
+                    <Tree.Item id={`refs:${ns}/${name}`}>
+                      <button
+                        class="child-entry"
+                        onclick={() => { refsExpanded = !refsExpanded; }}
+                      >
+                        <span class="child-icon"><IconSmall.Folder /></span>
+                        <span class="child-label">References</span>
+                      </button>
+
+                      {#if refsExpanded}
+                        <div class="children-container">
+                          {#each referenceFiles as path (path)}
+                            <Tree.Item id={`file:${ns}/${name}/${path}`}>
+                              <button
+                                class="child-entry"
+                                class:child-active={activePath === path}
+                                onclick={() => handleFileClick(ns, name, path)}
+                              >
+                                <span class="child-label">{fileName(path)}</span>
+                                {#if dirtyFiles.has(path)}
+                                  <span class="dirty-dot"></span>
+                                {/if}
+                              </button>
+                            </Tree.Item>
+                          {/each}
+                        </div>
+                      {/if}
+                    </Tree.Item>
+                  {/if}
+                </div>
+              </Tree.Group>
             {/if}
-          </div>
-        {/if}
-      </div>
-    {/each}
+          </Tree.Item>
+        {/each}
+
+          </Collapsible.Content>
+        </Collapsible.Root>
+      {/each}
+    </Tree.Root>
   {/if}
 </div>
 
@@ -188,6 +209,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-0-5);
+  }
+
+  /* Reset list markers from Tree's <ul>/<li> elements */
+  .skills-tree :global(ul),
+  .skills-tree :global(li) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 
   .tree-status {
@@ -200,12 +229,28 @@
     padding-inline-start: var(--size-5);
   }
 
-  /* --- Skill node ---------------------------------------------------------- */
+  /* --- Namespace header ------------------------------------------------------ */
 
-  .skill-node {
+  .namespace-header {
+    block-size: var(--size-4);
     display: flex;
-    flex-direction: column;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    margin-block-end: var(--size-1);
+    opacity: 0.6;
+    padding-inline: var(--size-2);
+
+    :global(svg) {
+      transform: rotate(-90deg);
+      transition: transform 150ms ease;
+    }
   }
+
+  :global([data-melt-collapsible-trigger][data-state="open"]) .namespace-header :global(svg) {
+    transform: rotate(0deg);
+  }
+
+  /* --- Skill trigger --------------------------------------------------------- */
 
   .skill-trigger {
     align-items: center;
@@ -218,6 +263,7 @@
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
     gap: var(--size-1);
+    inline-size: 100%;
     opacity: 0.8;
     padding: var(--size-1) var(--size-2);
     text-align: start;
@@ -240,58 +286,56 @@
     white-space: nowrap;
   }
 
-  .disabled-tag {
-    color: var(--color-error);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.05em;
-    opacity: 0.7;
-  }
 
-  /* --- Caret -------------------------------------------------------------- */
 
-  .caret {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    display: inline-block;
-    flex-shrink: 0;
-    font-size: 10px;
-    transform: rotate(-90deg);
-    transition: transform 150ms ease;
-  }
+  /* --- Children container with tree lines ------------------------------------ */
 
-  .caret-expanded {
-    transform: rotate(0deg);
-  }
-
-  /* --- Children (files) ---------------------------------------------------- */
-
-  .skill-children {
+  .children-container {
     display: flex;
     flex-direction: column;
-    padding-inline-start: var(--size-3);
+    margin-inline-start: var(--size-3-5);
   }
 
-  .dir-trigger {
-    align-items: center;
-    background: none;
-    border: none;
-    color: var(--color-text);
-    cursor: pointer;
-    display: flex;
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    gap: var(--size-1);
-    opacity: 0.6;
-    padding: var(--size-1) var(--size-2);
-    text-align: start;
+  /* Each <li> owns its connector — ::before draws the rounded L-branch,
+     ::after draws the vertical continuation to the next sibling. */
+  .children-container > :global(li) {
+    padding-inline-start: var(--size-2-5);
+    position: relative;
   }
 
-  .dir-trigger:hover {
-    opacity: 0.9;
+  /* Rounded L-branch — vertical down to branch point, curves into horizontal */
+  .children-container > :global(li)::before {
+    block-size: 14px;
+    border-block-end: 1px solid var(--color-border-1);
+    border-end-start-radius: 6px;
+    border-inline-start: 1px solid var(--color-border-1);
+    content: "";
+    inline-size: var(--size-2-5);
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    position: absolute;
   }
 
-  .file-entry {
+  /* Vertical continuation — 1px background bar that overlaps the curve zone
+     to keep the trunk continuous while the branch curves off. */
+  .children-container > :global(li)::after {
+    background-color: var(--color-border-1);
+    block-size: calc(100% - 8px);
+    content: "";
+    inline-size: 1px;
+    inset-block-start: 8px;
+    inset-inline-start: 0;
+    position: absolute;
+  }
+
+  /* Last item: no vertical continuation */
+  .children-container > :global(li:last-child)::after {
+    display: none;
+  }
+
+  /* --- Child entries (Details, References, files) ---------------------------- */
+
+  .child-entry {
     align-items: center;
     background: none;
     border: none;
@@ -300,36 +344,40 @@
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-2);
-    gap: var(--size-2);
+    gap: var(--size-1-5);
+    inline-size: 100%;
     opacity: 0.6;
     padding: var(--size-1) var(--size-2);
     text-align: start;
     transition: background-color 100ms ease;
   }
 
-  .file-entry:hover {
+  .child-entry:not(.child-active):hover {
     background-color: color-mix(in srgb, var(--color-surface-2), transparent 50%);
     opacity: 0.9;
   }
 
-  .file-nested {
-    padding-inline-start: var(--size-5);
-  }
-
-  .file-active {
+  .child-active {
     background-color: var(--color-surface-2);
-    font-weight: var(--font-weight-5);
     opacity: 0.9;
   }
 
-  .file-name {
+  .child-icon {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .child-label {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* --- Dirty indicator ----------------------------------------------------- */
+
+  /* --- Dirty indicator ------------------------------------------------------- */
 
   .dirty-dot {
     background-color: var(--color-warning);

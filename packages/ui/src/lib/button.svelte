@@ -9,7 +9,7 @@
     append?: Snippet;
     isDropdown?: boolean;
     variant?: "primary" | "secondary";
-    size?: "regular" | "small";
+    size?: "regular" | "small" | "icon";
     type?: "button" | "reset" | "submit";
     cursor?: "default" | "hand";
     href?: string;
@@ -112,6 +112,13 @@
 
     &.size-small {
       font-size: var(--font-size-2);
+    }
+
+    &.size-icon {
+      block-size: var(--size-6);
+      inline-size: var(--size-6);
+      min-inline-size: unset;
+      padding-inline: 0;
     }
 
     &.variant-primary.size-small {

@@ -1,5 +1,20 @@
 @import "@atlas/ui/markdown.css";
 
+/* Accent colors for markdown — maps blue family to accent variables */
+:root {
+  --accent-1: hsl(216 20% 95%);
+  --accent-2: hsl(212 97% 49%);
+  --accent-3: hsl(212 97% 27%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent-1: hsl(210 9% 9%);
+    --accent-2: hsl(212 97% 49%);
+    --accent-3: hsl(212 96% 78%);
+  }
+}
+
 /* Reset (from web-client/src/reset.css) */
 
 a,

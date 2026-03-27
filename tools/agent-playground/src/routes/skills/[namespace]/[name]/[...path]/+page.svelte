@@ -8,9 +8,9 @@
 -->
 
 <script lang="ts">
-  import { MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import { Button, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
-  import { beforeNavigate } from "$app/navigation";
+  import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import SkillFileEditor from "$lib/components/skills/skill-file-editor.svelte";
   import { skillQueries } from "$lib/queries";
@@ -29,15 +29,15 @@
   const fileContent = $derived(fileContentQuery.data?.content ?? null);
 
   // ---------------------------------------------------------------------------
-  // Edit mode
+  // Edit mode (URL-driven via ?edit query param)
   // ---------------------------------------------------------------------------
 
-  let editing = $state(false);
+  const editing = $derived(page.url.searchParams.has("edit"));
   let editorDirty = $state(false);
   let editorContent = $state("");
 
   function startEditing() {
-    editing = true;
+    goto("?edit");
   }
 
   const updateFileMut = useUpdateSkillFile();
@@ -49,8 +49,8 @@
       {
         onSuccess: () => {
           markClean(path);
-          editing = false;
           editorDirty = false;
+          goto(page.url.pathname);
         },
         onError: () => {
           toast({ title: "Failed to save file", error: true });
@@ -61,8 +61,8 @@
 
   function handleCancel() {
     markClean(path);
-    editing = false;
     editorDirty = false;
+    goto(page.url.pathname);
   }
 
   function handleDirtyChange(dirty: boolean) {
@@ -83,7 +83,6 @@
         return;
       }
       markClean(path);
-      editing = false;
       editorDirty = false;
     }
   });
@@ -96,33 +95,21 @@
 <svelte:window onbeforeunload={handleBeforeUnload} />
 
 <div class="file-detail">
-  <header class="detail-header">
-    <div class="header-left">
-      <h2 class="file-name">{path}</h2>
-    </div>
+  <div class="page-actions">
     {#if editing}
-      <div class="edit-actions">
-        <button
-          class="save-btn"
-          class:has-changes={editorDirty}
-          onclick={() => handleSave(editorContent)}
-          disabled={!editorDirty || updateFileMut.isPending}
-        >
-          {#if updateFileMut.isPending}
-            Saving...
-          {:else if editorDirty}
-            Save
-          {:else}
-            Saved
-          {/if}
-        </button>
-        <button class="cancel-btn" onclick={handleCancel}>Cancel</button>
-        <span class="edit-hint">Cmd+S / Esc</span>
-      </div>
+      <Button size="small" variant="secondary" onclick={handleCancel}>Cancel</Button>
+      <Button
+        size="small"
+        variant={editorDirty ? "primary" : "secondary"}
+        onclick={() => handleSave(editorContent)}
+        disabled={!editorDirty || updateFileMut.isPending}
+      >
+        {updateFileMut.isPending ? "Saving…" : "Save"}
+      </Button>
     {:else}
-      <button class="edit-btn" onclick={startEditing} disabled={fileContent === null}>Edit</button>
+      <Button size="small" variant="secondary" onclick={startEditing} disabled={fileContent === null}>Edit</Button>
     {/if}
-  </header>
+  </div>
 
   <div class="content-pane">
     {#if fileContentQuery.isLoading}
@@ -158,101 +145,13 @@
     flex-direction: column;
   }
 
-  .detail-header {
+  .page-actions {
     align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
     display: flex;
     flex-shrink: 0;
-    justify-content: space-between;
-    padding: var(--size-4) var(--size-6);
-  }
-
-  .header-left {
-    align-items: center;
-    display: flex;
-    gap: var(--size-3);
-  }
-
-  .file-name {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-  }
-
-  .edit-btn {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease;
-  }
-
-  .edit-btn:hover:not(:disabled) {
-    background-color: var(--color-highlight-1);
-  }
-
-  .edit-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.4;
-  }
-
-  .edit-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-1);
-  }
-
-  .edit-actions {
-    align-items: center;
-    display: flex;
     gap: var(--size-2);
-  }
-
-  .save-btn {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    cursor: default;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition:
-      background-color 100ms ease,
-      border-color 100ms ease,
-      color 100ms ease;
-  }
-
-  .save-btn.has-changes {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-on-accent, #fff);
-    cursor: pointer;
-  }
-
-  .save-btn.has-changes:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .save-btn:disabled {
-    opacity: 0.5;
-  }
-
-  .cancel-btn {
-    background: none;
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease;
-  }
-
-  .cancel-btn:hover {
-    background-color: var(--color-surface-2);
+    justify-content: flex-end;
+    padding: var(--size-3) var(--size-6);
   }
 
   .content-pane {
@@ -267,13 +166,13 @@
     flex: 1;
     flex-direction: column;
     overflow: hidden;
-    padding: var(--size-4) var(--size-6);
+    padding: var(--size-4) 0;
   }
 
   .preview-content {
     flex: 1;
     overflow-y: auto;
-    padding: var(--size-6) var(--size-8);
+    padding: var(--size-2) var(--size-8) var(--size-6);
     scrollbar-width: thin;
   }
 

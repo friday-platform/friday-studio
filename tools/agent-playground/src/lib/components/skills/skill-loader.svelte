@@ -543,12 +543,11 @@
     {/if}
   </div>
 {:else}
-  <div
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <label
     class="drop-zone"
     class:drag-over={dragOver}
     class:inline
-    role="button"
-    tabindex="0"
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
@@ -557,14 +556,7 @@
       {#if loading}
         <p class="drop-label">Publishing skill...</p>
       {:else}
-        <p class="drop-label">Drop SKILL.md or skill folder here</p>
-        <p class="drop-hint">or</p>
-        <div class="browse-actions">
-          <label class="browse-btn">
-            Browse
-            <input type="file" webkitdirectory hidden onchange={handleFolderInput} />
-          </label>
-        </div>
+        <p class="drop-label">Drop a skill folder here, or click to browse</p>
       {/if}
 
       {#if error}
@@ -572,17 +564,20 @@
       {/if}
     </div>
 
+    <input type="file" webkitdirectory hidden onchange={handleFolderInput} />
+
     {#if !inline && onclose}
-      <button type="button" class="close-btn" onclick={onclose}>Close</button>
+      <button type="button" class="close-btn" onclick={(e) => { e.preventDefault(); onclose?.(); }}>Close</button>
     {/if}
-  </div>
+  </label>
 {/if}
 
 <style>
   .drop-zone {
     align-items: center;
-    border: 2px dashed var(--color-border-2);
+    border: 1px dashed var(--color-border-2);
     border-radius: var(--radius-3);
+    cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
@@ -593,15 +588,19 @@
       border-color 200ms ease,
       background-color 200ms ease;
 
+    &:hover {
+      border-color: color-mix(in srgb, var(--color-text), transparent 50%);
+    }
+
     &.drag-over {
       background-color: color-mix(in srgb, var(--color-highlight-1), transparent 50%);
       border-color: var(--color-text);
     }
 
     &.inline {
-      border: none;
-      flex: 1;
+      border-style: dashed;
       min-block-size: 0;
+      padding: var(--size-8) var(--size-10);
     }
   }
 
@@ -613,18 +612,8 @@
   }
 
   .drop-label {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-5);
-  }
-
-  .drop-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-2);
-  }
-
-  .browse-actions {
-    display: flex;
-    gap: var(--size-3);
   }
 
   .browse-btn {

@@ -61,6 +61,7 @@ export default {
     const DENO_LINT_EXCLUDED = [
       "/apps/friday-website/src/",
       "/apps/atlas-auth-ui/src/",
+      "/packages/ui/src/",
       "/tools/agent-playground/src/",
     ];
     const filtered = files.filter(

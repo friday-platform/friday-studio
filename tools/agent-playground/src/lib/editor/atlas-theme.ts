@@ -53,7 +53,11 @@ const atlasEditorTheme = EditorView.theme(
 
     ".cm-gutters": { backgroundColor: "var(--color-surface-1)", color: muted, border: "none" },
 
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 3px 0 18px" },
+
     ".cm-activeLineGutter": { backgroundColor: "var(--color-highlight-1)" },
+
+    '.cm-foldGutter .cm-gutterElement span[title="Fold line"]': { position: "relative", top: "-3px" },
 
     ".cm-foldPlaceholder": { backgroundColor: "transparent", border: "none", color: dimmed },
 

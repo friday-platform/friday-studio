@@ -6,7 +6,15 @@
 -->
 
 <script lang="ts">
-  import { Dialog, DropdownMenu, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import {
+    Button,
+    Dialog,
+    DropdownMenu,
+    Icons,
+    MarkdownRendered,
+    markdownToHTML,
+    toast,
+  } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -28,15 +36,15 @@
   const skill = $derived(skillQuery.data?.skill);
 
   // ---------------------------------------------------------------------------
-  // Edit mode
+  // Edit mode (URL-driven via ?edit query param)
   // ---------------------------------------------------------------------------
 
-  let editing = $state(false);
+  const editing = $derived(page.url.searchParams.has("edit"));
   let editorDirty = $state(false);
   let editorContent = $state("");
 
   function startEditing() {
-    editing = true;
+    goto("?edit");
   }
 
   const publishMut = usePublishSkill();
@@ -54,8 +62,8 @@
       {
         onSuccess: () => {
           markClean("SKILL.md");
-          editing = false;
           editorDirty = false;
+          goto(page.url.pathname);
         },
         onError: () => {
           toast({ title: "Failed to save SKILL.md", error: true });
@@ -66,8 +74,8 @@
 
   function handleCancel() {
     markClean("SKILL.md");
-    editing = false;
     editorDirty = false;
+    goto(page.url.pathname);
   }
 
   function handleDirtyChange(dirty: boolean) {
@@ -88,7 +96,6 @@
         return;
       }
       markClean("SKILL.md");
-      editing = false;
       editorDirty = false;
     }
   });
@@ -144,8 +151,8 @@
 
     if (using.length > 0) {
       toast({
-        title: "Cannot delete skill",
-        description: `Referenced by: ${using.join(", ")}`,
+        title: "Skill is in use",
+        description: `Remove it from ${using.join(", ")} first, then try again.`,
         error: true,
       });
       return;
@@ -188,49 +195,24 @@
       <span class="error-hint">Could not fetch @{namespace}/{name}</span>
     </div>
   {:else if skill}
-    <header class="detail-header">
-      <div class="header-left">
-        <h2 class="file-name">SKILL.md</h2>
-        {#if skill.disabled}
-          <span class="disabled-badge">DISABLED</span>
-        {/if}
-      </div>
-      <div class="header-actions">
-        {#if editing}
-          <div class="edit-actions">
-            <button
-              class="save-btn"
-              class:has-changes={editorDirty}
-              onclick={() => handleSave(editorContent)}
-              disabled={!editorDirty || publishMut.isPending}
-            >
-              {#if publishMut.isPending}
-                Saving...
-              {:else if editorDirty}
-                Save
-              {:else}
-                Saved
-              {/if}
-            </button>
-            <button class="cancel-btn" onclick={handleCancel}>Cancel</button>
-            <span class="edit-hint">Cmd+S / Esc</span>
-          </div>
-        {:else}
-          <button class="edit-btn" onclick={startEditing}>Edit</button>
-        {/if}
+    <div class="page-actions">
+      {#if editing}
+        <Button size="small" variant="secondary" onclick={handleCancel}>Cancel</Button>
+        <Button
+          size="small"
+          variant={editorDirty ? "primary" : "secondary"}
+          onclick={() => handleSave(editorContent)}
+          disabled={!editorDirty || publishMut.isPending}
+        >
+          {publishMut.isPending ? "Saving…" : "Save"}
+        </Button>
+      {:else}
+        <Button size="small" variant="secondary" onclick={startEditing}>Edit</Button>
+
         <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
           {#snippet children()}
-            <DropdownMenu.Trigger class="action-trigger">
-              Actions
-              <svg
-                class="caret"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M4 6l4 4 4-4" />
-              </svg>
+            <DropdownMenu.Trigger class="more-trigger" aria-label="More options">
+              <Icons.TripleDots />
             </DropdownMenu.Trigger>
 
             <DropdownMenu.Content>
@@ -243,23 +225,22 @@
                     ? "Enable"
                     : "Disable"}
               </DropdownMenu.Item>
-              <DropdownMenu.Item onclick={() => goto(`/skills/${namespace}/${name}/edit`)}>
-                Edit YAML
-              </DropdownMenu.Item>
               <DropdownMenu.Item onclick={() => uploadDialogOpen.set(true)}>
-                Upload new version
+                Replace
               </DropdownMenu.Item>
+              <DropdownMenu.Separator />
               <DropdownMenu.Item class="delete-item" onclick={handleDeleteClick}>
-                {deleteChecking ? "Checking..." : "Delete"}
+                {deleteChecking ? "Checking..." : "Remove skill"}
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           {/snippet}
         </DropdownMenu.Root>
+
         {#if disableMut.isError}
           <span class="action-error">Failed to update</span>
         {/if}
-      </div>
-    </header>
+      {/if}
+    </div>
 
     {#if editing}
       <div class="editor-pane">
@@ -310,12 +291,9 @@
       <Dialog.Close />
 
       {#snippet header()}
-        <Dialog.Title>Upload new version</Dialog.Title>
+        <Dialog.Title>Update skill</Dialog.Title>
         <Dialog.Description>
-          Upload a SKILL.md file or folder to publish a new version of <strong>
-            @{namespace}/{name}
-          </strong>
-          .
+          Replace <strong>@{namespace}/{name}</strong> with a new version.
         </Dialog.Description>
       {/snippet}
 
@@ -360,141 +338,39 @@
     opacity: 0.6;
   }
 
-  /* --- Header -------------------------------------------------------------- */
+  /* --- Page Actions -------------------------------------------------------- */
 
-  .detail-header {
+  .page-actions {
     align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
     display: flex;
     flex-shrink: 0;
-    justify-content: space-between;
-    padding: var(--size-4) var(--size-6);
-  }
-
-  .header-left {
-    align-items: center;
-    display: flex;
-    gap: var(--size-3);
-  }
-
-  .file-name {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-  }
-
-  .disabled-badge {
-    background-color: color-mix(in srgb, var(--color-warning), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-warning);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-6);
-    letter-spacing: 0.05em;
-    padding: var(--size-0-5) var(--size-2);
-  }
-
-  .header-actions {
-    align-items: center;
-    display: flex;
-    gap: var(--size-3);
-  }
-
-  .edit-btn {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease;
-  }
-
-  .edit-btn:hover {
-    background-color: var(--color-highlight-1);
-  }
-
-  .edit-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-1);
-  }
-
-  .edit-actions {
-    align-items: center;
-    display: flex;
     gap: var(--size-2);
+    justify-content: flex-end;
+    padding: var(--size-3) var(--size-6);
   }
 
-  .save-btn {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    cursor: default;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition:
-      background-color 100ms ease,
-      border-color 100ms ease,
-      color 100ms ease;
-  }
-
-  .save-btn.has-changes {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-on-accent, #fff);
-    cursor: pointer;
-  }
-
-  .save-btn.has-changes:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .save-btn:disabled {
-    opacity: 0.5;
-  }
-
-  .cancel-btn {
-    background: none;
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 100ms ease;
-  }
-
-  .cancel-btn:hover {
-    background-color: var(--color-surface-2);
-  }
-
-  :global(.action-trigger) {
+  :global(.more-trigger) {
     align-items: center;
-    background: none;
+    background-color: var(--color-surface-2);
+    block-size: var(--size-6);
     border: none;
-    color: var(--color-text);
-    cursor: pointer;
-    display: flex;
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    gap: var(--size-1);
-    opacity: 0.6;
-    padding: 0;
+    border-radius: var(--radius-2-5);
+    color: var(--text-1);
+    cursor: default;
+    display: inline-flex;
+    inline-size: var(--size-6);
+    justify-content: center;
+    transition: all 150ms ease;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
-  :global(.action-trigger:hover) {
-    opacity: 0.9;
+  :global(.more-trigger:hover) {
+    background-color: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
   }
 
   :global(.delete-item) {
     color: var(--color-error) !important;
-  }
-
-  .caret {
-    block-size: 14px;
-    inline-size: 14px;
   }
 
   .action-error {
@@ -509,13 +385,13 @@
     flex: 1;
     flex-direction: column;
     overflow: hidden;
-    padding: var(--size-4) var(--size-6);
+    padding: var(--size-4) 0;
   }
 
   .preview-content {
     flex: 1;
     overflow-y: auto;
-    padding: var(--size-6) var(--size-8);
+    padding: var(--size-2) var(--size-8) var(--size-6);
     scrollbar-width: thin;
   }
 </style>
