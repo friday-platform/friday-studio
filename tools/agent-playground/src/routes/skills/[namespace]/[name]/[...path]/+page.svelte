@@ -8,7 +8,9 @@
 -->
 
 <script lang="ts">
+  import { browser } from "$app/environment";
   import { Button, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import DOMPurify from "dompurify";
   import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -130,7 +132,7 @@
       {:else}
         <div class="preview-content">
           <MarkdownRendered>
-            {@html markdownToHTML(fileContent)}
+            {@html browser ? DOMPurify.sanitize(markdownToHTML(fileContent)) : markdownToHTML(fileContent)}
           </MarkdownRendered>
         </div>
       {/if}

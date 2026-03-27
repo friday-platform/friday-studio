@@ -9233,6 +9233,7 @@
             "npm:@types/deno@2.5.0",
             "npm:ai@^5.0.156",
             "npm:codemirror@^6.0.2",
+            "npm:dompurify@^3.3.3",
             "npm:eslint@^10.1.0",
             "npm:hono@4.12.8",
             "npm:prettier@^3.8.1",

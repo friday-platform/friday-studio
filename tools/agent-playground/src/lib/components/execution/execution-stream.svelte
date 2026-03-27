@@ -3,7 +3,9 @@
    * Streams SSE events from the execute endpoint and renders them in real-time.
    * Parses `event:` / `data:` lines from a ReadableStream response.
    */
+  import { browser } from "$app/environment";
   import { MarkdownRendered, markdownToHTML } from "@atlas/ui";
+  import DOMPurify from "dompurify";
   import JsonTree from "$lib/components/shared/json-tree.svelte";
   import type { LogEntry, TraceEntry } from "$lib/server/lib/sse.ts";
   import type { SSEEvent } from "$lib/sse-types.ts";
@@ -293,7 +295,7 @@
           {:else if typeof item.event.data === "string"}
             <div class="result-body">
               <MarkdownRendered>
-                {@html markdownToHTML(item.event.data)}
+                {@html browser ? DOMPurify.sanitize(markdownToHTML(item.event.data)) : markdownToHTML(item.event.data)}
               </MarkdownRendered>
             </div>
           {:else}
