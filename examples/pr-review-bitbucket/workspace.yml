@@ -56,7 +56,7 @@ agents:
       reviews.
     prompt: Execute Bitbucket Cloud operation.
     env:
-      BITBUCKET_USERNAME: from_environment
+      BITBUCKET_EMAIL: from_environment
       BITBUCKET_TOKEN: from_environment
 
   claude-code:

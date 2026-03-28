@@ -40,7 +40,7 @@ Create a `.env` file with your API keys:
 ANTHROPIC_API_KEY=sk-ant-...
 
 # Required for the Bitbucket starters
-BITBUCKET_USERNAME=your-username
+BITBUCKET_EMAIL=your-atlassian-email
 BITBUCKET_TOKEN=your-app-password
 
 # Required for the Jira bug fix starter
@@ -151,9 +151,9 @@ jobs, signals, and data contracts all in one file.
 
 | Starter | What it does | Required `.env` keys |
 | ------- | ------------ | -------------------- |
-| [Bitbucket PR Code Review](../examples/pr-review-bitbucket/workspace.yml) | Clones a Bitbucket repo, reviews the PR diff with Claude Code, posts inline comments back on the PR | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN` |
-| [Jira Bug Fix](../examples/jira-bugfix-bitbucket/workspace.yml) | Reads a Jira bug ticket, clones the Bitbucket repo, implements the fix with Claude Code, opens a PR, and comments on the Jira ticket with the PR link | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
-| [Jira Labeled Bug Fix](../examples/jira-bugfix-labeled/workspace.yml) | Searches a Jira project for tickets labeled `ai-fix`, picks the highest-priority one, claims it, implements the fix, creates a PR, and transitions the ticket to Done | `ANTHROPIC_API_KEY`, `BITBUCKET_USERNAME`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
+| [Bitbucket PR Code Review](../examples/pr-review-bitbucket/workspace.yml) | Clones a Bitbucket repo, reviews the PR diff with Claude Code, posts inline comments back on the PR | `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, `BITBUCKET_TOKEN` |
+| [Jira Bug Fix](../examples/jira-bugfix-bitbucket/workspace.yml) | Reads a Jira bug ticket, clones the Bitbucket repo, implements the fix with Claude Code, opens a PR, and comments on the Jira ticket with the PR link | `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
+| [Jira Labeled Bug Fix](../examples/jira-bugfix-labeled/workspace.yml) | Searches a Jira project for tickets labeled `ai-fix`, picks the highest-priority one, claims it, implements the fix, creates a PR, and transitions the ticket to Done | `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, `BITBUCKET_TOKEN`, `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
 | [GitHub PR Code Review](../examples/pr-review/workspace.yml) | Same as the Bitbucket review, but for GitHub PRs | `ANTHROPIC_API_KEY`, `GH_TOKEN` |
 
 ### Load via the UI

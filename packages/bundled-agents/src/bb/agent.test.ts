@@ -69,7 +69,7 @@ function makeContext(env: Record<string, string>) {
   };
 }
 
-const BB_ENV = { BITBUCKET_USERNAME: "testuser@bb.org", BITBUCKET_TOKEN: "test-token-abc" };
+const BB_ENV = { BITBUCKET_EMAIL: "testuser@bb.org", BITBUCKET_TOKEN: "test-token-abc" };
 const PR_URL = "https://bitbucket.org/ws/repo/pull-requests/1";
 
 function jsonPrompt(obj: Record<string, unknown>): string {
@@ -535,19 +535,19 @@ describe("buildFailedFindingsSummary (shared)", () => {
 // bbAgent handler — error paths
 // ---------------------------------------------------------------------------
 describe("bbAgent handler — error paths", () => {
-  test("returns error when BITBUCKET_USERNAME is missing", async () => {
+  test("returns error when BITBUCKET_EMAIL is missing", async () => {
     const result = await bbAgent.execute(
       jsonPrompt({ operation: "pr-view", pr_url: PR_URL }),
       makeContext({ BITBUCKET_TOKEN: "tok" }),
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.reason).toContain("BITBUCKET_USERNAME");
+    if (!result.ok) expect(result.error.reason).toContain("BITBUCKET_EMAIL");
   });
 
   test("returns error when BITBUCKET_TOKEN is missing", async () => {
     const result = await bbAgent.execute(
       jsonPrompt({ operation: "pr-view", pr_url: PR_URL }),
-      makeContext({ BITBUCKET_USERNAME: "user" }),
+      makeContext({ BITBUCKET_EMAIL: "user" }),
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.reason).toContain("BITBUCKET_TOKEN");
@@ -571,7 +571,7 @@ describe("bbAgent handler — error paths", () => {
 
     const result = await bbAgent.execute(
       jsonPrompt({ operation: "pr-diff", pr_url: PR_URL }),
-      makeContext({ BITBUCKET_USERNAME: username, BITBUCKET_TOKEN: token }),
+      makeContext({ BITBUCKET_EMAIL: username, BITBUCKET_TOKEN: token }),
     );
 
     expect(result.ok).toBe(false);
@@ -1331,9 +1331,9 @@ describe("bbAgent metadata", () => {
 
   test("has linkRef for both env vars", () => {
     const required = bbAgent.environmentConfig?.required ?? [];
-    const usernameEnv = required.find((r) => r.name === "BITBUCKET_USERNAME");
+    const emailEnv = required.find((r) => r.name === "BITBUCKET_EMAIL");
     const tokenEnv = required.find((r) => r.name === "BITBUCKET_TOKEN");
-    expect(usernameEnv?.linkRef).toEqual({ provider: "bitbucket", key: "username" });
+    expect(emailEnv?.linkRef).toEqual({ provider: "bitbucket", key: "email" });
     expect(tokenEnv?.linkRef).toEqual({ provider: "bitbucket", key: "app_password" });
   });
 });

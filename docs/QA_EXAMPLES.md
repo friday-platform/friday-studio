@@ -15,7 +15,7 @@ resolution.
 - [ ] Create a `.env` file with valid credentials:
   - `ANTHROPIC_API_KEY` — required for all examples
   - `GH_TOKEN` — GitHub PAT (for GitHub PR review)
-  - `BITBUCKET_USERNAME` — Bitbucket email (for Bitbucket examples)
+  - `BITBUCKET_EMAIL` — Atlassian account email (for Bitbucket examples)
   - `BITBUCKET_TOKEN` — Bitbucket app password
   - `JIRA_SITE` — Atlassian hostname (e.g. `acme.atlassian.net`)
   - `JIRA_EMAIL` — Jira account email

@@ -50,7 +50,7 @@ agents:
       Runs Bitbucket Cloud API calls — clone repos, push branches, create PRs.
     prompt: Execute Bitbucket Cloud operation.
     env:
-      BITBUCKET_USERNAME: from_environment
+      BITBUCKET_EMAIL: from_environment
       BITBUCKET_TOKEN: from_environment
 
   claude-code:

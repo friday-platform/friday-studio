@@ -36,7 +36,7 @@ without error.
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
-BITBUCKET_USERNAME=your-username
+BITBUCKET_EMAIL=your-atlassian-email
 BITBUCKET_TOKEN=your-app-password
 JIRA_SITE=your-site.atlassian.net
 JIRA_EMAIL=you@example.com

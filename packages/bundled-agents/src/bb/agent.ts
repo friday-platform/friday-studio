@@ -628,14 +628,14 @@ export const bbAgent = createAgent<string, BbOutput>({
     "- Invalid PR URL: Agent throws if hostname is not bitbucket.org or path is malformed.",
     "- Repository not found: Bitbucket API returns 404, agent returns error with reason.",
     "- PR not found: Bitbucket API returns 404, agent returns error with PR number.",
-    "- Auth failure (401/403): Agent returns error. Check BITBUCKET_USERNAME and BITBUCKET_TOKEN.",
+    "- Auth failure (401/403): Agent returns error. Check BITBUCKET_EMAIL and BITBUCKET_TOKEN.",
     "- Clone failure: Git clone errors are caught, temp directory cleaned up, error returned.",
     "- Inline review outside diff range: Comment is included in the summary instead of inline.",
     "- All errors redact credentials (username, token, base64) from the message.",
     "</error_handling>",
   ].join("\n"),
   constraints: [
-    "Requires two environment variables: BITBUCKET_USERNAME (account email) and BITBUCKET_TOKEN",
+    "Requires two environment variables: BITBUCKET_EMAIL (Atlassian account email) and BITBUCKET_TOKEN",
     "(app password from https://bitbucket.org/account/settings/app-passwords/). Only supports",
     "Bitbucket Cloud (REST API v2). Bitbucket Server/Data Center use different APIs and are",
     "not supported.",
@@ -685,9 +685,9 @@ export const bbAgent = createAgent<string, BbOutput>({
   environment: {
     required: [
       {
-        name: "BITBUCKET_USERNAME",
-        description: "Bitbucket username (email)",
-        linkRef: { provider: "bitbucket", key: "username" },
+        name: "BITBUCKET_EMAIL",
+        description: "Atlassian account email for Bitbucket Cloud API auth",
+        linkRef: { provider: "bitbucket", key: "email" },
       },
       {
         name: "BITBUCKET_TOKEN",
@@ -700,10 +700,10 @@ export const bbAgent = createAgent<string, BbOutput>({
   handler: async (prompt, context) => {
     const { env, logger } = context;
 
-    const username = env.BITBUCKET_USERNAME ?? process.env.BITBUCKET_USERNAME;
+    const username = env.BITBUCKET_EMAIL ?? process.env.BITBUCKET_EMAIL;
     const token = env.BITBUCKET_TOKEN ?? process.env.BITBUCKET_TOKEN;
     if (!username || !token) {
-      return err("BITBUCKET_USERNAME and BITBUCKET_TOKEN environment variables must be set");
+      return err("BITBUCKET_EMAIL and BITBUCKET_TOKEN environment variables must be set");
     }
 
     let config: OperationConfig;
