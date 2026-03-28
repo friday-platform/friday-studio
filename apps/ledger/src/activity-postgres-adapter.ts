@@ -24,7 +24,7 @@ interface ActivityRow {
   job_id: string | null;
   user_id: string;
   title: string;
-  created_at: string;
+  created_at: Date;
 }
 
 /** Raw row from list query with LEFT JOIN on read status. */
@@ -42,7 +42,7 @@ function toActivity(row: ActivityRow): Activity {
     jobId: row.job_id,
     userId: row.user_id,
     title: row.title,
-    createdAt: row.created_at,
+    createdAt: row.created_at.toISOString(),
   };
 }
 
@@ -56,7 +56,7 @@ function toActivityWithReadStatus(row: ActivityWithReadStatusRow): ActivityWithR
     jobId: row.job_id,
     userId: row.user_id,
     title: row.title,
-    createdAt: row.created_at,
+    createdAt: row.created_at.toISOString(),
     readStatus: row.read_status ? ReadStatusValueSchema.parse(row.read_status) : null,
   };
 }
