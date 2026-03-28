@@ -49,7 +49,7 @@
     "npm:@eslint/compat@^2.0.3": "2.0.3_eslint@10.1.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.1.0",
     "npm:@faker-js/faker@^10.3.0": "10.3.0",
-    "npm:@hono/mcp@~0.2.4": "0.2.4_@modelcontextprotocol+sdk@1.27.1__zod@4.3.6__hono@4.12.8__ajv@8.18.0__express@5.2.1_hono@4.12.8_hono-rate-limiter@0.4.2__hono@4.12.8_zod@4.3.6",
+    "npm:@hono/mcp@~0.2.4": "0.2.4_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6_hono@4.12.8_zod@4.3.6",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.8",
     "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.12.8_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.8_zod@4.3.6",
@@ -75,8 +75,8 @@
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@libpdf/core@~0.3.4": "0.3.4",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.55.0__acorn@8.16.0",
-    "npm:@modelcontextprotocol/sdk@^1.27.0": "1.27.1_zod@4.3.6_hono@4.12.8_ajv@8.18.0_express@5.2.1",
-    "npm:@modelcontextprotocol/sdk@^1.27.1": "1.27.1_zod@4.3.6_hono@4.12.8_ajv@8.18.0_express@5.2.1",
+    "npm:@modelcontextprotocol/sdk@^1.27.0": "1.28.0_zod@4.3.6",
+    "npm:@modelcontextprotocol/sdk@^1.28.0": "1.28.0_zod@4.3.6",
     "npm:@octokit/auth-app@^7.2.0": "7.2.2",
     "npm:@octokit/auth-app@^8.2.0": "8.2.0",
     "npm:@octokit/auth-oauth-app@^8.1.3": "8.1.4",
@@ -1760,7 +1760,7 @@
         "uuid@8.3.2"
       ]
     },
-    "@hono/mcp@0.2.4_@modelcontextprotocol+sdk@1.27.1__zod@4.3.6__hono@4.12.8__ajv@8.18.0__express@5.2.1_hono@4.12.8_hono-rate-limiter@0.4.2__hono@4.12.8_zod@4.3.6": {
+    "@hono/mcp@0.2.4_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6_hono@4.12.8_zod@4.3.6": {
       "integrity": "sha512-BKH1qNTbrdqVeGHB32zIDNgTKdWUvlNoojM86oiKwwWtD+FQoNJbx2f3NnPvwua0+ujJed8IuEfgRKCNZ+2RNw==",
       "dependencies": [
         "@modelcontextprotocol/sdk",
@@ -2182,8 +2182,8 @@
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
-    "@modelcontextprotocol/sdk@1.27.1_zod@4.3.6_hono@4.12.8_ajv@8.18.0_express@5.2.1": {
-      "integrity": "sha512-sr6GbP+4edBwFndLbM60gf07z0FQ79gaExpnsjMGePXqFcSSb7t6iscpjk9DhFhwd+mTEQrzNafGP8/iGGFYaA==",
+    "@modelcontextprotocol/sdk@1.28.0_zod@4.3.6": {
+      "integrity": "sha512-gmloF+i+flI8ouQK7MWW4mOwuMh4RePBuPFAEPC6+pdqyWOUMDOixb6qZ69owLJpz6XmyllCouc4t8YWO+E2Nw==",
       "dependencies": [
         "@hono/node-server",
         "ajv@8.18.0",
@@ -8775,7 +8775,7 @@
             "npm:@hono/zod-validator@0.7.6",
             "npm:@hubspot/api-client@^13.5.0",
             "npm:@jsr/std__async@1.0.15",
-            "npm:@modelcontextprotocol/sdk@^1.27.1",
+            "npm:@modelcontextprotocol/sdk@^1.28.0",
             "npm:@octokit/auth-app@^8.2.0",
             "npm:@octokit/auth-oauth-app@^9.0.3",
             "npm:@octokit/request@^10.0.8",
