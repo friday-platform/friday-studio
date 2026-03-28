@@ -4,7 +4,7 @@
 # Global build args — available to all stages when re-declared after each FROM.
 ARG PUBLIC_ANALYTICS_ENABLED=true
 
-FROM node:25.8.1-alpine3.23 AS builder
+FROM node:25.8.2-alpine3.23 AS builder
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm && pnpm install --frozen-lockfile
@@ -15,12 +15,12 @@ ENV PUBLIC_ANALYTICS_ENABLED=$PUBLIC_ANALYTICS_ENABLED
 ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 RUN pnpm build
 
-FROM node:25.8.1-alpine3.23 AS deps
+FROM node:25.8.2-alpine3.23 AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm && pnpm install --frozen-lockfile --prod
 
-FROM node:25.8.1-alpine3.23
+FROM node:25.8.2-alpine3.23
 ARG PUBLIC_ANALYTICS_ENABLED
 RUN addgroup -g 266 -S friday && adduser -u 266 -S -G friday -h /home/friday friday
 COPY --from=builder /app/build /app/build
