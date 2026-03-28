@@ -5,5 +5,5 @@
   "type": "module",
   "main": "server.ts",
   "dependencies": { "node-pty": "^1.0.0", "ws": "^8.18.0" },
-  "devDependencies": { "@types/ws": "^8.18.0" }
+  "devDependencies": { "@types/ws": "^8.18.1" }
 }
