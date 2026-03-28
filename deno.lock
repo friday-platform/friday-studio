@@ -207,7 +207,7 @@
     "npm:vite@^7.3.1": "7.3.1_@types+node@25.5.0_yaml@2.8.3_picomatch@4.0.3",
     "npm:vitest@^4.1.0": "4.1.2_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.3__picomatch@4.0.3",
     "npm:vitest@^4.1.2": "4.1.2_@opentelemetry+api@1.9.0_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__yaml@2.8.3__picomatch@4.0.3",
-    "npm:ws@^8.18.0": "8.20.0",
+    "npm:ws@^8.20.0": "8.20.0",
     "npm:xstate@^5.28.0": "5.28.0",
     "npm:yaml@^2.8.2": "2.8.3",
     "npm:yargs@18": "18.0.0",
@@ -9227,7 +9227,7 @@
           "dependencies": [
             "npm:@types/ws@^8.18.1",
             "npm:node-pty@1",
-            "npm:ws@^8.18.0"
+            "npm:ws@^8.20.0"
           ]
         }
       }
