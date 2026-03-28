@@ -264,7 +264,7 @@ watchfiles==1.1.1
     # via fastmcp
 websockets==16.0
     # via fastmcp
-workspace-mcp==1.14.3
+workspace-mcp==1.16.0
     # via -r requirements.in
 zipp==3.23.0
     # via importlib-metadata

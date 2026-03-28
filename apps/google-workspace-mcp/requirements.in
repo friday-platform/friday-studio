@@ -1,4 +1,4 @@
-workspace-mcp==1.14.3
+workspace-mcp==1.16.0
 # workspace-mcp 1.14.3 requires fastmcp>=3.0.2. Previous pin (fastmcp<3) was
 # due to Context.get_state() becoming async in fastmcp 3.0, but workspace-mcp
 # 1.14.x has been updated for fastmcp 3 compatibility.
