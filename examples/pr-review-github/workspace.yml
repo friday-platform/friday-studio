@@ -1,6 +1,6 @@
 version: '1.0'
 workspace:
-  name: PR Review
+  name: PR Review (GitHub)
   description: >-
     Reviews pull requests and posts inline comments on GitHub. Supports initial
     reviews and follow-up rounds where it responds to author feedback.

@@ -14,12 +14,12 @@ structured data.
     {
       "severity": "CRITICAL",
       "category": "correctness",
-      "file": "src/payments/webhook.ts",
+      "file": "src/payments/webhook.py",
       "line": 87,
       "start_line": 85,
       "title": "Unhandled Stripe signature verification failure",
-      "description": "The constructEvent call can throw StripeSignatureVerificationError, but the catch block only handles generic Error.",
-      "suggestion": "try {\n  event = stripe.webhooks.constructEvent(body, sig, secret);\n} catch (err) {\n  if (err instanceof Stripe.errors.StripeSignatureVerificationError) {\n    return c.json({ error: \"Invalid signature\" }, 400);\n  }\n  throw err;\n}"
+      "description": "The construct_event call can raise stripe.error.SignatureVerificationError, but the except block only catches generic Exception.",
+      "suggestion": "try:\n    event = stripe.Webhook.construct_event(payload, sig_header, secret)\nexcept stripe.error.SignatureVerificationError:\n    return JsonResponse({\"error\": \"Invalid signature\"}, status=400)\nexcept Exception:\n    raise"
     }
   ]
 }
@@ -46,7 +46,7 @@ structured data.
 | `start_line` | No | Start line for multi-line findings. Omit for single-line. |
 | `title` | Yes | One-line title of the finding |
 | `description` | Yes | Explanation of the issue and its impact |
-| `suggestion` | No | Replacement code for the line range. Raw code, no markdown fences. GitHub renders an "Apply suggestion" button. |
+| `suggestion` | No | Replacement code for the line range. Raw code, no markdown fences. |
 
 ## Severity Labels
 
@@ -72,7 +72,8 @@ the code is correct and clean.
 - Every finding MUST have a `file` and `line` that correspond to actual lines
   in the diff.
 - `suggestion` must be syntactically complete code that replaces the entire
-  `start_line..line` range. Do NOT wrap in markdown fences.
+  `start_line..line` range. Do NOT wrap in markdown fences. Bitbucket renders
+  this as a suggestion the author can apply directly.
 - Do not repeat the same finding for multiple locations; consolidate with
   references in the description: "Also applies to `file:line`."
 - Order findings by severity: CRITICAL first, NITPICK last.
@@ -87,7 +88,7 @@ the code is correct and clean.
 ```json
 {
   "verdict": "APPROVE",
-  "summary": "This PR adds input validation to the user registration endpoint using Zod schemas. The implementation is clean, covers edge cases well, and includes comprehensive test coverage.",
+  "summary": "This PR adds input validation to the user registration endpoint using Pydantic models. The implementation is clean, covers edge cases well, and includes comprehensive test coverage.",
   "findings": []
 }
 ```
@@ -102,30 +103,30 @@ the code is correct and clean.
     {
       "severity": "CRITICAL",
       "category": "correctness",
-      "file": "src/payments/webhook.ts",
+      "file": "src/payments/webhook.py",
       "line": 90,
       "start_line": 87,
       "title": "Unhandled Stripe webhook signature verification failure",
-      "description": "The constructEvent call can throw StripeSignatureVerificationError, but the catch block only handles generic Error. A malformed signature will crash the process instead of returning 400.",
-      "suggestion": "try {\n  event = stripe.webhooks.constructEvent(body, sig, secret);\n} catch (err) {\n  if (err instanceof Stripe.errors.StripeSignatureVerificationError) {\n    return c.json({ error: \"Invalid signature\" }, 400);\n  }\n  throw err;\n}"
+      "description": "The construct_event call can raise stripe.error.SignatureVerificationError, but the except block only catches generic Exception. A malformed signature will return 500 instead of 400.",
+      "suggestion": "try:\n    event = stripe.Webhook.construct_event(payload, sig_header, secret)\nexcept stripe.error.SignatureVerificationError:\n    return JsonResponse({\"error\": \"Invalid signature\"}, status=400)\nexcept Exception:\n    raise"
     },
     {
       "severity": "WARNING",
       "category": "performance",
-      "file": "src/payments/client.ts",
+      "file": "src/payments/client.py",
       "line": 23,
-      "title": "API key read from process.env on every call",
-      "description": "process.env.STRIPE_SECRET_KEY is read on every invocation of createClient(). This works but is wasteful — environment variables don't change at runtime.",
-      "suggestion": "const STRIPE_KEY = process.env.STRIPE_SECRET_KEY;\n\nexport function createClient() {\n  return new Stripe(STRIPE_KEY, { apiVersion: \"2024-01-01\" });\n}"
+      "title": "API key read from os.environ on every call",
+      "description": "os.environ[\"STRIPE_SECRET_KEY\"] is read on every invocation of create_client(). This works but is wasteful — environment variables don't change at runtime.",
+      "suggestion": "STRIPE_KEY = os.environ[\"STRIPE_SECRET_KEY\"]\n\ndef create_client() -> stripe.StripeClient:\n    return stripe.StripeClient(STRIPE_KEY)"
     },
     {
       "severity": "SUGGESTION",
       "category": "style",
-      "file": "src/payments/webhook.ts",
+      "file": "src/payments/webhook.py",
       "line": 130,
       "start_line": 112,
-      "title": "Extract event type handler into a map",
-      "description": "The switch statement over event.type has 8 cases and will grow. A handler map would be easier to maintain and test individually."
+      "title": "Extract event type handler into a dispatch dict",
+      "description": "The if/elif chain over event.type has 8 branches and will grow. A handler dict would be easier to maintain and test individually."
     }
   ]
 }

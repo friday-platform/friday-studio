@@ -120,20 +120,30 @@ jobs:
                 input contains the PR metadata, changed file list, clone_path,
                 and base_branch.
 
+                IMPORTANT: Before starting the review, load the
+                pr-code-review skill and follow its guidelines
+                throughout the review. The skill contains detailed review
+                criteria, language-specific checks, and output formatting
+                rules that you must apply.
+
                 Follow these steps:
 
-                1. Run `git diff <base_branch>...HEAD` in the clone_path to get
+                1. Load the pr-code-review skill.
+
+                2. Run `git diff <base_branch>...HEAD` in the clone_path to get
                    the full diff.
 
-                2. For every changed file, read the FULL file content (not just
+                3. For every changed file, read the FULL file content (not just
                    the diff hunks) so you understand the surrounding context,
                    imports, type definitions, and how each change fits into the
                    broader module.
 
-                3. Review against these criteria: correctness, security,
-                   performance, error handling, testing, and style.
+                4. Review against the criteria from the pr-code-review skill:
+                   correctness, security, performance, error handling, testing,
+                   and style. Apply the language-specific review criteria for
+                   any languages present in the diff.
 
-                4. Use the `complete` tool to output your review as structured
+                5. Use the `complete` tool to output your review as structured
                    JSON with this shape:
 
                    {
@@ -506,12 +516,20 @@ jobs:
                 (with author replies), clone_path, base_branch, and
                 changed_files.
 
+                IMPORTANT: Before starting the review, load the
+                pr-code-review skill and follow its guidelines
+                throughout the review. The skill contains detailed review
+                criteria, language-specific checks, and output formatting
+                rules that you must apply.
+
                 Follow these steps:
 
-                1. Run `git diff <base_branch>...HEAD` in the clone_path to
+                1. Load the pr-code-review skill.
+
+                2. Run `git diff <base_branch>...HEAD` in the clone_path to
                    see the current diff.
 
-                2. For each thread in thread_data:
+                3. For each thread in thread_data:
                    a. If the thread has NO replies and the code is unchanged
                       — skip it.
                    b. If the thread has replies:
@@ -527,11 +545,13 @@ jobs:
                       check if the change addresses the finding, reply
                       accordingly.
 
-                3. Review the full diff for any NEW issues not covered by
-                   existing threads. Apply the same criteria: correctness,
-                   security, performance, error handling, testing, style.
+                4. Review the full diff for any NEW issues not covered by
+                   existing threads. Apply the criteria from the
+                   pr-code-review skill: correctness, security, performance,
+                   error handling, testing, style. Apply the language-specific
+                   review criteria for any languages present in the diff.
 
-                4. Use the `complete` tool to output your follow-up as
+                5. Use the `complete` tool to output your follow-up as
                    structured JSON:
 
                    {

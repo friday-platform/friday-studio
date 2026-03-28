@@ -26,7 +26,7 @@ changes.
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
-BITBUCKET_EMAIL=your-atlassian-email
+BITBUCKET_EMAIL=your-email
 BITBUCKET_TOKEN=your-app-password
 ```
 

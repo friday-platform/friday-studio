@@ -52,10 +52,9 @@ For each finding, reference the exact file path and line number(s).
 
 | Activity | Load |
 |----------|------|
-| Reviewing Go (.go) files | [references/golang-review.md](references/golang-review.md) |
-| Reviewing TypeScript (.ts, .tsx) files | [references/typescript-review.md](references/typescript-review.md) |
-| Formatting review output | [references/output-format.md](references/output-format.md) |
-| Posting review to GitHub | [references/gh-cli-patterns.md](references/gh-cli-patterns.md) |
+| Reviewing Go (.go) files | [golang-review](references/golang-review.md) |
+| Reviewing TypeScript (.ts, .tsx) files | [typescript-review](references/typescript-review.md) |
+| Formatting review output | [output-format](references/output-format.md) |
 
 ## Key Principles
 

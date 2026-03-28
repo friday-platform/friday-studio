@@ -2,7 +2,7 @@
 name: pr-code-review
 description: >-
   Performs thorough pull request code reviews covering correctness, security,
-  performance, error handling, testing, and style. Use when reviewing a GitHub
+  performance, error handling, testing, and style. Use when reviewing a Bitbucket
   pull request. Produces structured findings with file/line references and
   actionable suggestions.
 user-invocable: false
@@ -20,7 +20,7 @@ a thorough, structured review that helps the author ship better code.
 Before reviewing any code, understand WHY the changes were made:
 
 1. Read the PR title, description, and linked issues to understand the goal
-2. Review the commit history (`git log --oneline base..HEAD`) to see how the
+2. Review the commit history (`git log --oneline <base_branch>..HEAD`) to see how the
    work evolved — later commits often fix issues from earlier ones
 3. Identify the type of change: feature, bug fix, refactor, config, dependency
 
@@ -30,10 +30,10 @@ This context prevents false positives — flagging intentional behavior as bugs.
 
 Classify changed files by review priority:
 
-1. Run `gh pr diff <pr_number>` to get the full diff
+1. Run `git diff <base_branch>...HEAD` to get the full diff
 2. **Skip** files that don't need review:
-   - Lock files (`package-lock.json`, `deno.lock`, `yarn.lock`, `pnpm-lock.yaml`)
-   - Generated code (protobuf output, OpenAPI clients, `.gen.ts`)
+   - Lock files (`poetry.lock`, `Pipfile.lock`, `requirements.txt` if auto-generated)
+   - Generated code (protobuf output, OpenAPI clients, `_pb2.py`, `_pb2_grpc.py`)
    - Vendored dependencies
    - Binary assets (images, fonts, compiled output)
 3. Classify remaining files:
@@ -41,7 +41,7 @@ Classify changed files by review priority:
    - **Medium impact** — Supporting logic, internal utilities, configuration
    - **Low impact** — Tests, docs, formatting, renames
 4. Read the FULL content of every high/medium impact file (not just diff hunks)
-   to understand surrounding context, imports, and type definitions
+   to understand surrounding context, imports, and class/function signatures
 
 ### Stage 3: Deep Review
 
@@ -52,10 +52,8 @@ For each finding, reference the exact file path and line number(s).
 
 | Activity | Load |
 |----------|------|
-| Reviewing Go (.go) files | [references/golang-review.md](references/golang-review.md) |
-| Reviewing TypeScript (.ts, .tsx) files | [references/typescript-review.md](references/typescript-review.md) |
-| Formatting review output | [references/output-format.md](references/output-format.md) |
-| Posting review to GitHub | [references/gh-cli-patterns.md](references/gh-cli-patterns.md) |
+| Reviewing Python (.py) files | [python-review](references/python-review.md) |
+| Formatting review output | [output-format](references/output-format.md) |
 
 ## Key Principles
 
