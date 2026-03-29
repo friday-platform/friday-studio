@@ -26,7 +26,7 @@
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
-  import { DAEMON_BASE_URL } from "$lib/daemon-url";
+  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
@@ -254,7 +254,7 @@
           "curl -X POST",
           `-H 'Content-Type: application/json'`,
           `-d '${escaped}'`,
-          `${DAEMON_BASE_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
+          `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
         ].join(" \\\n  ");
         navigator.clipboard.writeText(curl);
       }
@@ -264,7 +264,7 @@
       const signal = trigger ? workspaceSignals[trigger.signal] : undefined;
       const body = buildBodyFromSchema(signal?.schema);
       const escaped = body.replace(/'/g, "'\\''");
-      const cmd = `deno task atlas signal trigger ${signalName} --workspace ${workspaceId} --data '${escaped}'`;
+      const cmd = `docker compose exec platform atlas signal trigger ${signalName} --workspace ${workspaceId} --data '${escaped}'`;
       navigator.clipboard.writeText(cmd);
     }
   }

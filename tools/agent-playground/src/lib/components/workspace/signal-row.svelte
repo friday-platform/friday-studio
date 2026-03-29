@@ -14,7 +14,7 @@
 <script lang="ts">
   import { Dialog, DropdownMenu, Icons } from "@atlas/ui";
   import { goto } from "$app/navigation";
-  import { DAEMON_BASE_URL } from "$lib/daemon-url";
+  import { EXTERNAL_DAEMON_URL, EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
 
   type Signal = {
     id: string;
@@ -137,7 +137,7 @@
     return null;
   });
 
-  const TUNNEL_URL = "http://localhost:9090";
+  const TUNNEL_URL = EXTERNAL_TUNNEL_URL;
 
   /** Cached tunnel status — fetched once on first use. */
   let cachedTunnelUrl = $state<string | null>(null);
@@ -173,7 +173,7 @@
   });
 
   function copySignalUrl() {
-    const url = `${DAEMON_BASE_URL}/api/workspaces/${workspaceId}/signals/${signal.id}`;
+    const url = `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${signal.id}`;
     copyToClipboard(url);
   }
 

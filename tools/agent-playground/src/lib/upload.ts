@@ -17,7 +17,6 @@ import {
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { z } from "zod";
-import { DAEMON_BASE_URL } from "./daemon-url.ts";
 
 export type UploadStatus = "uploading" | "converting" | "ready" | "error";
 
@@ -141,7 +140,7 @@ export function uploadFile(
       abortSignal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
-    xhr.open("POST", `${DAEMON_BASE_URL}/api/artifacts/upload`);
+    xhr.open("POST", "/api/daemon/api/artifacts/upload");
     xhr.send(formData);
   });
 }

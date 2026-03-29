@@ -12,7 +12,7 @@
   import { DropdownMenu } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
-  import { DAEMON_BASE_URL } from "$lib/daemon-url";
+  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   type Job = {
@@ -69,7 +69,7 @@
           "curl -X POST",
           `-H 'Content-Type: application/json'`,
           `-d '${escaped}'`,
-          `${DAEMON_BASE_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
+          `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
         ].join(" \\\n  ");
         navigator.clipboard.writeText(curl);
       }
@@ -79,7 +79,7 @@
       const signal = trigger ? signals[trigger.signal] : undefined;
       const body = buildBodyFromSchema(signal?.schema);
       const escaped = body.replace(/'/g, "'\\''");
-      const cmd = `deno task atlas signal trigger ${signalName} --workspace ${workspaceId} --data '${escaped}'`;
+      const cmd = `docker compose exec platform atlas signal trigger ${signalName} --workspace ${workspaceId} --data '${escaped}'`;
       navigator.clipboard.writeText(cmd);
     }
   }

@@ -4,14 +4,14 @@
 #   docker build -f Dockerfile-platform -t atlas-platform .
 #
 # Run:
-#   docker run --env-file .env -p 8080:8080 -p 3100:3100 -p 5200:5200 -p 7681:7681 -p 9090:9090 atlas-platform
+#   docker run --env-file .env -p 18080:8080 -p 13100:3100 -p 15200:5200 -p 17681:7681 -p 19090:9090 atlas-platform
 #
 # Ports:
-#   8080  atlasd (daemon API)
-#   3100  link (credential/auth service)
-#   5200  agent-playground (web UI)
-#   7681  pty-server (WebSocket PTY for CLI cheatsheet terminal)
-#   9090  webhook-tunnel
+#   18080  atlasd (daemon API) - mapped to container port 8080
+#   13100  link (credential/auth service) - mapped to container port 3100
+#   15200  agent-playground (web UI) - mapped to container port 5200
+#   17681  pty-server (WebSocket PTY for CLI cheatsheet terminal) - mapped to container port 7681
+#   19090  webhook-tunnel - mapped to container port 9090
 
 # ============================================================================
 # Stage 1: Build — compile binaries & install deps

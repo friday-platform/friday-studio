@@ -22,7 +22,6 @@ const SkillDetailSchema = z.object({
   namespace: z.string(),
   name: z.string().nullable(),
   version: z.number(),
-  title: z.string().nullable(),
   description: z.string(),
   descriptionManual: z.boolean(),
   disabled: z.boolean(),

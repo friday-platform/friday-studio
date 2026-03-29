@@ -4,16 +4,21 @@ services:
     pull_policy: always    # always pull latest; set to "never" for local builds
     platform: linux/amd64  # required on Apple Silicon Macs
     ports:
-      - "8080:8080"  # Friday daemon API
-      - "3100:3100"  # Link (credential/auth service)
-      - "5200:5200"  # Friday Studio (web UI)
-      - "7681:7681"  # PTY server (WebSocket terminal)
-      - "9090:9090"  # Webhook tunnel
+      - "${FRIDAY_DAEMON_PORT:-18080}:8080"  # Friday daemon API
+      - "${FRIDAY_LINK_PORT:-13100}:3100"    # Link (credential/auth service)
+      - "${FRIDAY_STUDIO_PORT:-15200}:5200"  # Friday Studio (web UI)
+      - "${FRIDAY_PTY_PORT:-17681}:7681"     # PTY server (WebSocket terminal)
+      - "${FRIDAY_TUNNEL_PORT:-19090}:9090"  # Webhook tunnel
     env_file:
       - path: .env
         required: false
     environment:
       ATLAS_LOG_LEVEL: ${ATLAS_LOG_LEVEL:-info}
+      FRIDAY_DAEMON_PORT: ${FRIDAY_DAEMON_PORT:-18080}
+      FRIDAY_LINK_PORT: ${FRIDAY_LINK_PORT:-13100}
+      FRIDAY_STUDIO_PORT: ${FRIDAY_STUDIO_PORT:-15200}
+      FRIDAY_PTY_PORT: ${FRIDAY_PTY_PORT:-17681}
+      FRIDAY_TUNNEL_PORT: ${FRIDAY_TUNNEL_PORT:-19090}
     volumes:
       - atlas-data:/data/atlas
       - link-data:/data/link

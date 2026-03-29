@@ -30,7 +30,7 @@
   import SignalInputForm from "$lib/components/workspace/signal-input-form.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import WorkspaceJobSelector from "$lib/components/workspace/workspace-job-selector.svelte";
-  import { DAEMON_BASE_URL } from "$lib/daemon-url";
+  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
   import { createInspectorState } from "$lib/inspector-state.svelte";
 
   /** URL is the source of truth for workspace, job, session, and selected step. */
@@ -274,7 +274,7 @@
     if (!workspaceId || !primarySignal) return;
     const body = JSON.stringify(sessionPayload);
     const escaped = body.replace(/'/g, "'\\''");
-    const cmd = `deno task atlas signal trigger ${primarySignal.name} --workspace ${workspaceId} --data '${escaped}'`;
+    const cmd = `docker compose exec platform atlas signal trigger ${primarySignal.name} --workspace ${workspaceId} --data '${escaped}'`;
     navigator.clipboard.writeText(cmd);
   }
 
@@ -286,7 +286,7 @@
       "curl -X POST",
       `-H 'Content-Type: application/json'`,
       `-d '${escaped}'`,
-      `${DAEMON_BASE_URL}/api/workspaces/${workspaceId}/signals/${primarySignal.name}`,
+      `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${primarySignal.name}`,
     ].join(" \\\n  ");
     navigator.clipboard.writeText(curl);
   }

@@ -93,8 +93,10 @@ wait_for_service "link"   "http://localhost:3100/health"
 # ── Start playground after backends are healthy ──────────────────────────────
 
 echo "[platform] Starting agent-playground on :5200..."
+export VITE_EXTERNAL_DAEMON_URL="http://localhost:${FRIDAY_DAEMON_PORT:-18080}"
+export VITE_EXTERNAL_TUNNEL_URL="http://localhost:${FRIDAY_TUNNEL_PORT:-19090}"
 cd /app/tools/agent-playground
-deno run -A --no-lock npm:vite dev --host 0.0.0.0 --port 5200 &
+deno run -A --no-lock npm:vite dev --host 0.0.0.0 --port 5200 --logLevel warn &
 PLAYGROUND_PID=$!
 cd /app
 
@@ -115,11 +117,11 @@ echo ""
 echo "================================================================"
 echo "  Friday Platform is ready!"
 echo ""
-echo "  Friday Studio:       http://localhost:5200"
-echo "  Daemon API:          http://localhost:8080"
-echo "  Webhook Tunnel:      http://localhost:9090"
-echo "  Link Service:        http://localhost:3100"
-echo "  PTY Server:          http://localhost:7681"
+echo "  Friday Studio:       http://localhost:${FRIDAY_STUDIO_PORT:-15200}"
+echo "  Daemon API:          http://localhost:${FRIDAY_DAEMON_PORT:-18080}"
+echo "  PTY Server:          http://localhost:${FRIDAY_PTY_PORT:-17681}"
+echo "  Webhook Tunnel:      http://localhost:${FRIDAY_TUNNEL_PORT:-19090}"
+echo "  Link Service:        http://localhost:${FRIDAY_LINK_PORT:-13100}"
 echo "================================================================"
 echo ""
 
