@@ -14,6 +14,7 @@ import type {
 } from "@atlas/agent-sdk";
 import { type AgentSessionData, AgentSessionDataSchema } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { AtlasTelemetry } from "@atlas/logger/telemetry";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import z from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
@@ -141,6 +142,12 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             .catch(() => undefined)
             .parse(request._meta?.requestId);
 
+          const traceparent = z
+            .string()
+            .optional()
+            .catch(() => undefined)
+            .parse(request._meta?.traceparent);
+
           this.#logger.debug("MCP tool handler called for agent", {
             args: JSON.stringify(args),
             agentId,
@@ -189,6 +196,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             requestId,
             outputSchema,
             agentConfig,
+            traceparent,
           );
 
           this.#logger.debug("Agent execution result", {
@@ -330,6 +338,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     requestId?: string,
     outputSchema?: Record<string, unknown>,
     config?: Record<string, unknown>,
+    traceparent?: string,
   ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
@@ -343,13 +352,22 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
     const startTime = Date.now();
 
-    const payload = await this.executionManager.executeAgent(
-      agentId,
-      prompt,
-      sessionData,
-      requestId,
-      outputSchema,
-      config,
+    // Restore OTEL trace context from orchestrator so downstream spans
+    // (llm.stream, llm.generate) nest under the parent agent.execute span.
+    const payload = await AtlasTelemetry.withSpanFromContext(
+      "agent.server.execute",
+      traceparent ?? null,
+      () => {
+        return this.executionManager.executeAgent(
+          agentId,
+          prompt,
+          sessionData,
+          requestId,
+          outputSchema,
+          config,
+        );
+      },
+      { "agent.id": agentId, "agent.session.id": sessionData.sessionId ?? "" },
     );
 
     return {

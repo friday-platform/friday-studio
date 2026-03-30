@@ -12,6 +12,7 @@ import {
   type AtlasUIMessageChunk,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { AtlasTelemetry } from "@atlas/logger/telemetry";
 import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -316,10 +317,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         config: context.config,
       };
 
+      // Propagate OTEL trace context across MCP boundary so agent-side
+      // spans (llm.stream, llm.generate) nest under agent.execute.
+      const traceHeaders = await AtlasTelemetry.createTraceHeaders();
+
       let toolResult: unknown;
       try {
         toolResult = await mcpSetup.client.callTool(
-          { name: agentId, arguments: toolCallArgs, _meta: { requestId } },
+          {
+            name: agentId,
+            arguments: toolCallArgs,
+            _meta: { requestId, traceparent: traceHeaders.traceparent },
+          },
           undefined,
           { timeout: 1_200_000 },
         );

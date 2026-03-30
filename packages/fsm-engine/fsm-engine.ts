@@ -44,6 +44,7 @@ import {
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
+import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { type CoreMessage, type ImagePart, type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
@@ -617,6 +618,21 @@ export class FSMEngine {
   }
 
   private async processSingleSignal(sig: SignalWithContext): Promise<void> {
+    await withOtelSpan(
+      "fsm.signal",
+      {
+        "fsm.state": this._currentState,
+        "fsm.signal.type": sig.type,
+        "fsm.job.name": this._definition.id,
+      },
+      (otelSpan) => this.processSingleSignalInner(sig, otelSpan),
+    );
+  }
+
+  private async processSingleSignalInner(
+    sig: SignalWithContext,
+    otelSpan: OtelSpan | null,
+  ): Promise<void> {
     logger.debug("Processing signal", {
       signalType: sig.type,
       currentState: this._currentState,
@@ -758,6 +774,8 @@ export class FSMEngine {
       resolvedTarget = singleTransition.target;
     }
 
+    if (otelSpan) otelSpan.setAttribute("fsm.state.target", resolvedTarget);
+
     // Transactional execution:
     // Create pending state copies. Only commit if everything succeeds.
     const pendingDocuments = new Map<string, Document>();
@@ -773,55 +791,69 @@ export class FSMEngine {
     let pendingState = this._currentState;
 
     try {
-      // Execute transition actions
-      if (selectedTransition.actions && selectedTransition.actions.length > 0) {
-        await this.executeActions(
-          selectedTransition.actions,
-          sig,
-          pendingDocuments,
-          pendingEvents,
-          pendingSignals,
-          pendingState,
-          pendingResults,
-        );
-      }
-
-      // Transition to new state (using resolved target that accounts for skip chain)
       const previousState = pendingState;
-      pendingState = resolvedTarget;
 
-      logger.debug(`FSM transitioned: ${previousState} -> ${pendingState}`, { event: sig.type });
-
-      // Initialize documents for new state if they don't exist
-      const newStateDefinition = this._definition.states[pendingState];
-      if (newStateDefinition?.documents) {
-        for (const doc of newStateDefinition.documents) {
-          if (!pendingDocuments.has(doc.id)) {
-            this.validateDocumentData(doc.type, doc.data, doc.id);
-            pendingDocuments.set(doc.id, doc);
+      await withOtelSpan(
+        "fsm.transition",
+        {
+          "fsm.state.from": pendingState,
+          "fsm.state.to": resolvedTarget,
+          "fsm.signal.type": sig.type,
+          "fsm.job.name": this._definition.id,
+        },
+        async () => {
+          // Execute transition actions
+          if (selectedTransition.actions && selectedTransition.actions.length > 0) {
+            await this.executeActions(
+              selectedTransition.actions,
+              sig,
+              pendingDocuments,
+              pendingEvents,
+              pendingSignals,
+              pendingState,
+              pendingResults,
+            );
           }
-        }
-      }
 
-      // Execute entry actions for new state
-      if (newStateDefinition?.entry) {
-        logger.debug("Executing entry actions for state", {
-          state: pendingState,
-          actionCount: newStateDefinition.entry.length,
-        });
+          // Transition to new state (using resolved target that accounts for skip chain)
+          pendingState = resolvedTarget;
 
-        await this.executeActions(
-          newStateDefinition.entry,
-          sig,
-          pendingDocuments,
-          pendingEvents,
-          pendingSignals,
-          pendingState,
-          pendingResults,
-        );
+          logger.debug(`FSM transitioned: ${previousState} -> ${pendingState}`, {
+            event: sig.type,
+          });
 
-        logger.debug("Entry actions completed for state", { state: pendingState });
-      }
+          // Initialize documents for new state if they don't exist
+          const newStateDefinition = this._definition.states[pendingState];
+          if (newStateDefinition?.documents) {
+            for (const doc of newStateDefinition.documents) {
+              if (!pendingDocuments.has(doc.id)) {
+                this.validateDocumentData(doc.type, doc.data, doc.id);
+                pendingDocuments.set(doc.id, doc);
+              }
+            }
+          }
+
+          // Execute entry actions for new state
+          if (newStateDefinition?.entry) {
+            logger.debug("Executing entry actions for state", {
+              state: pendingState,
+              actionCount: newStateDefinition.entry.length,
+            });
+
+            await this.executeActions(
+              newStateDefinition.entry,
+              sig,
+              pendingDocuments,
+              pendingEvents,
+              pendingSignals,
+              pendingState,
+              pendingResults,
+            );
+
+            logger.debug("Entry actions completed for state", { state: pendingState });
+          }
+        },
+      );
 
       // COMMIT PHASE
       // 1. Commit documents
@@ -1009,581 +1041,610 @@ export class FSMEngine {
     let codeActionResult: PrepareResult | undefined;
     let llmResultData: FSMActionExecutionEvent["data"]["llmResult"];
 
-    try {
-      switch (action.type) {
-        case "code": {
-          const actionCode = this._actionFunctions.get(action.function);
-          if (!actionCode) {
-            throw new Error(`Action function "${action.function}" not found`);
-          }
+    // Build OTEL attributes based on action type
+    const otelAttrs: Record<string, string | number | boolean> = {
+      "fsm.action.type": action.type,
+      "fsm.state": currentState,
+      "fsm.job.name": this._definition.id,
+    };
+    const actionId = this.getActionId(action);
+    if (actionId) otelAttrs["fsm.action.id"] = actionId;
+    if (action.type === "llm") otelAttrs["fsm.action.model"] = action.model;
 
-          logger.debug("Executing code action", {
-            function: action.function,
-            state: currentState,
-            signalType: sig.type,
-          });
+    const executeInSpan = async (span: OtelSpan | null) => {
+      try {
+        switch (action.type) {
+          case "code": {
+            const actionCode = this._actionFunctions.get(action.function);
+            if (!actionCode) {
+              throw new Error(`Action function "${action.function}" not found`);
+            }
 
-          try {
-            const returnValue = await this._actionExecutor.execute(
-              actionCode,
-              action.function,
-              context,
-              sig,
-            );
-            codeActionResult = parsePrepareResult(returnValue);
-            logger.debug("Code action completed", {
+            logger.debug("Executing code action", {
               function: action.function,
               state: currentState,
-              hasReturnValue: returnValue != null,
-            });
-          } catch (error) {
-            throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
-          }
-          break;
-        }
-
-        case "emit": {
-          events.push({ event: action.event, data: action.data });
-          logger.debug("Event emitted", { event: action.event, data: action.data });
-
-          // If we have an emit function in context, call it to trigger transitions
-          if (context.emit && action.event) {
-            await context.emit({ type: action.event, data: action.data });
-          }
-          break;
-        }
-
-        case "llm": {
-          if (!this.options.llmProvider) {
-            throw new Error("LLM action requires llmProvider in FSMEngineOptions");
-          }
-
-          logger.debug("Executing LLM action", {
-            model: action.model,
-            state: currentState,
-            hasTools: !!action.tools,
-            toolCount: action.tools?.length ?? 0,
-            outputTo: action.outputTo,
-          });
-
-          let skills: SkillSummary[] = [];
-          const skillsResult = await SkillStorage.list();
-          if (!skillsResult.ok) {
-            logger.error("Failed to fetch skills", { error: skillsResult.error });
-          }
-          skills = skillsResult.ok ? skillsResult.data : [];
-          logger.debug("Skills query result", {
-            ok: skillsResult.ok,
-            skillCount: skills.length,
-            skillNames: skills.map((s) => s.name),
-          });
-
-          const buildResult = action.tools
-            ? await this.buildTools(action.tools, context)
-            : { tools: {}, dispose: async () => {} };
-          const baseTools = buildResult.tools;
-
-          let cleanupSkills: (() => Promise<void>) | undefined;
-          if (skills.length > 0) {
-            // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
-            const { tool: loadSkill, cleanup } = createLoadSkillTool();
-            baseTools.load_skill = loadSkill as Tool;
-            cleanupSkills = cleanup;
-          }
-
-          // Inject Ledger resource tools when workspace has a resource adapter
-          const workspaceId = sig._context?.workspaceId;
-          if (workspaceId && this.options.resourceAdapter) {
-            baseTools.resource_read = createResourceReadTool(
-              this.options.resourceAdapter,
-              workspaceId,
-            ) as Tool;
-            baseTools.resource_write = createResourceWriteTool(
-              this.options.resourceAdapter,
-              workspaceId,
-            ) as Tool;
-            baseTools.resource_save = createResourceSaveTool(
-              this.options.resourceAdapter,
-              workspaceId,
-            ) as Tool;
-            baseTools.resource_link_ref = createResourceLinkRefTool(
-              this.options.resourceAdapter,
-              workspaceId,
-            ) as Tool;
-          }
-
-          try {
-            // Inject failStep tool for explicit failure signaling
-            const failStepTool = tool({
-              description:
-                "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
-              inputSchema: FailInputSchema,
-              execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
+              signalType: sig.type,
             });
 
-            const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
+            try {
+              const returnValue = await this._actionExecutor.execute(
+                actionCode,
+                action.function,
+                context,
+                sig,
+              );
+              codeActionResult = parsePrepareResult(returnValue);
+              logger.debug("Code action completed", {
+                function: action.function,
+                state: currentState,
+                hasReturnValue: returnValue != null,
+              });
+            } catch (error) {
+              throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
+            }
+            break;
+          }
 
-            // Check if outputTo document type has a structured schema (properties defined)
-            // If so, inject a `complete` tool to capture structured output
-            let capturedCompleteOutput: Record<string, unknown> | undefined;
-            let completeToolInjected = false;
+          case "emit": {
+            events.push({ event: action.event, data: action.data });
+            logger.debug("Event emitted", { event: action.event, data: action.data });
 
-            if (action.outputTo) {
-              // Determine document type name for schema lookup:
-              // 1. action.outputType takes precedence (explicit mapping)
-              // 2. Fall back to document.type if document exists
-              const outputDoc = documents.get(action.outputTo);
-              const docTypeName = action.outputType ?? outputDoc?.type;
+            // If we have an emit function in context, call it to trigger transitions
+            if (context.emit && action.event) {
+              await context.emit({ type: action.event, data: action.data });
+            }
+            break;
+          }
 
-              if (docTypeName) {
-                const jsonSchema = this._definition.documentTypes?.[docTypeName];
-
-                // Only inject complete tool if schema has properties defined (not just catch-all)
-                if (hasDefinedSchema(jsonSchema)) {
-                  const compiledSchema = this._compiledSchemas.get(docTypeName);
-                  if (compiledSchema) {
-                    completeToolInjected = true;
-
-                    // Create tool object directly (same pattern as buildTools at line 1118)
-                    // This avoids type inference issues with the tool() helper
-                    tools.complete = {
-                      description:
-                        "Call this to complete the task and store results. You MUST call this when finished.",
-                      inputSchema: compiledSchema,
-                      execute: () => ({ success: true }),
-                    };
-
-                    logger.debug("Injected complete tool for structured output", {
-                      docType: docTypeName,
-                      outputTo: action.outputTo,
-                    });
-                  }
-                }
-              }
+          case "llm": {
+            if (!this.options.llmProvider) {
+              throw new Error("LLM action requires llmProvider in FSMEngineOptions");
             }
 
-            // Build prompt with curated input from prepare function, skills, and image resolution
-            let { prompt: contextPrompt, images } = await this.buildContextPrompt(
-              action.prompt,
-              prepareResult,
-              skills,
-            );
-
-            // Append workspace resource context so LLM knows what resources are available
-            if (workspaceId && this.options.resourceAdapter) {
-              try {
-                const metadata = await this.options.resourceAdapter.listResources(workspaceId);
-                if (metadata.length > 0) {
-                  const catalogEntries = await toCatalogEntries(
-                    metadata,
-                    this.options.resourceAdapter,
-                    workspaceId,
-                  );
-                  const entries = this.options.artifactStorage
-                    ? await enrichCatalogEntries(catalogEntries, this.options.artifactStorage)
-                    : catalogEntries.filter((e) => e.type !== "artifact_ref");
-                  const guidance = buildResourceGuidance(entries);
-                  if (guidance) {
-                    contextPrompt += `\n\n${guidance}`;
-                  }
-                  const hasDocuments = entries.some((e) => e.type === "document");
-                  if (hasDocuments) {
-                    const skillText = await this.options.resourceAdapter.getSkill();
-                    contextPrompt += `\n\n${skillText}`;
-                  }
-                }
-              } catch (err) {
-                logger.warn("Failed to build resource guidance", {
-                  workspaceId,
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              }
-            }
-
-            if (completeToolInjected) {
-              contextPrompt +=
-                "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
-                "If you cannot complete this task, call the failStep tool with a reason.";
-            } else {
-              contextPrompt +=
-                "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
-            }
-
-            // Build agentId for the LLM action
-            const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
-
-            // When images are present, assemble a messages array with mixed content.
-            // Otherwise, use the prompt-only path for backward compatibility.
-            const messages: CoreMessage[] | undefined =
-              images.length > 0
-                ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
-                : undefined;
-
-            let result = await this.options.llmProvider.call({
-              agentId: llmAgentId,
+            logger.debug("Executing LLM action", {
               model: action.model,
-              prompt: contextPrompt,
-              messages,
-              tools,
-              toolChoice: "auto", // Let LLM decide when to stop calling tools
-              stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-              onStreamEvent: sig._context?.onStreamEvent,
+              state: currentState,
+              hasTools: !!action.tools,
+              toolCount: action.tools?.length ?? 0,
+              outputTo: action.outputTo,
             });
 
-            // Check for adapter-level errors (network, API, etc.)
-            if (!result.ok) {
-              throw new Error(`LLM call failed: ${result.error.reason}`);
+            let skills: SkillSummary[] = [];
+            const skillsResult = await SkillStorage.list();
+            if (!skillsResult.ok) {
+              logger.error("Failed to fetch skills", { error: skillsResult.error });
+            }
+            skills = skillsResult.ok ? skillsResult.data : [];
+            logger.debug("Skills query result", {
+              ok: skillsResult.ok,
+              skillCount: skills.length,
+              skillNames: skills.map((s) => s.name),
+            });
+
+            const buildResult = action.tools
+              ? await this.buildTools(action.tools, context)
+              : { tools: {}, dispose: async () => {} };
+            const baseTools = buildResult.tools;
+
+            let cleanupSkills: (() => Promise<void>) | undefined;
+            if (skills.length > 0) {
+              // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
+              const { tool: loadSkill, cleanup } = createLoadSkillTool();
+              baseTools.load_skill = loadSkill as Tool;
+              cleanupSkills = cleanup;
             }
 
-            // Emit tool events for UI visibility (skip when streaming — events already emitted in real-time)
-            if (!sig._context?.onStreamEvent) {
-              this.emitToolEvents(result, action, sig, currentState);
+            // Inject Ledger resource tools when workspace has a resource adapter
+            const workspaceId = sig._context?.workspaceId;
+            if (workspaceId && this.options.resourceAdapter) {
+              baseTools.resource_read = createResourceReadTool(
+                this.options.resourceAdapter,
+                workspaceId,
+              ) as Tool;
+              baseTools.resource_write = createResourceWriteTool(
+                this.options.resourceAdapter,
+                workspaceId,
+              ) as Tool;
+              baseTools.resource_save = createResourceSaveTool(
+                this.options.resourceAdapter,
+                workspaceId,
+              ) as Tool;
+              baseTools.resource_link_ref = createResourceLinkRefTool(
+                this.options.resourceAdapter,
+                workspaceId,
+              ) as Tool;
             }
 
-            // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
-            const failArgs = findFailStepToolArgs(result);
-            if (failArgs) {
-              throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
-            }
+            try {
+              // Inject failStep tool for explicit failure signaling
+              const failStepTool = tool({
+                description:
+                  "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
+                inputSchema: FailInputSchema,
+                execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
+              });
 
-            // Check if LLM called complete tool - capture the structured output.
-            // The adapter already extracts complete args into result.data, but we
-            // also check toolCalls for backward compatibility with mock providers.
-            if (completeToolInjected) {
-              capturedCompleteOutput = findCompleteToolArgs(result);
-            }
+              const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
 
-            // Validate output if validator provided
-            if (this.options.validateOutput) {
-              const trace = buildLLMActionTrace(result, action.model, contextPrompt);
+              // Check if outputTo document type has a structured schema (properties defined)
+              // If so, inject a `complete` tool to capture structured output
+              let capturedCompleteOutput: Record<string, unknown> | undefined;
+              let completeToolInjected = false;
 
-              const validation = await this.options.validateOutput(trace);
-              // Note: If validator throws, error propagates and aborts the action (fail-closed)
+              if (action.outputTo) {
+                // Determine document type name for schema lookup:
+                // 1. action.outputType takes precedence (explicit mapping)
+                // 2. Fall back to document.type if document exists
+                const outputDoc = documents.get(action.outputTo);
+                const docTypeName = action.outputType ?? outputDoc?.type;
 
-              if (!validation.valid) {
-                logger.warn("LLM action failed validation, retrying with feedback", {
-                  state: currentState,
-                  model: action.model,
-                  feedback: validation.feedback,
-                });
+                if (docTypeName) {
+                  const jsonSchema = this._definition.documentTypes?.[docTypeName];
 
-                // Include previous tool results so the retry LLM can see data
-                // it already fetched and fix its reasoning without re-calling tools.
-                const previousToolContext = formatToolResultsForRetry(trace);
+                  // Only inject complete tool if schema has properties defined (not just catch-all)
+                  if (hasDefinedSchema(jsonSchema)) {
+                    const compiledSchema = this._compiledSchemas.get(docTypeName);
+                    if (compiledSchema) {
+                      completeToolInjected = true;
 
-                const retryPrompt =
-                  `${contextPrompt}\n\n` +
-                  (previousToolContext
-                    ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
-                    : "") +
-                  `<validation-feedback>\n${
-                    validation.feedback ?? "Output failed validation."
-                  }\n</validation-feedback>\n` +
-                  (previousToolContext
-                    ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
-                    : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
+                      // Create tool object directly (same pattern as buildTools at line 1118)
+                      // This avoids type inference issues with the tool() helper
+                      tools.complete = {
+                        description:
+                          "Call this to complete the task and store results. You MUST call this when finished.",
+                        inputSchema: compiledSchema,
+                        execute: () => ({ success: true }),
+                      };
 
-                // Rebuild messages with retry prompt, preserving image parts from the original call
-                const retryMessages: CoreMessage[] | undefined =
-                  images.length > 0
-                    ? [{ role: "user", content: [{ type: "text", text: retryPrompt }, ...images] }]
-                    : undefined;
-
-                result = await this.options.llmProvider.call({
-                  agentId: llmAgentId,
-                  model: action.model,
-                  prompt: retryPrompt,
-                  messages: retryMessages,
-                  tools,
-                  toolChoice: "auto", // Let LLM decide when to stop calling tools
-                  stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-                  onStreamEvent: sig._context?.onStreamEvent,
-                });
-
-                // Check for adapter-level errors on retry
-                if (!result.ok) {
-                  throw new Error(`LLM call failed on retry: ${result.error.reason}`);
+                      logger.debug("Injected complete tool for structured output", {
+                        docType: docTypeName,
+                        outputTo: action.outputTo,
+                      });
+                    }
+                  }
                 }
+              }
 
-                // Emit tool events for UI visibility (retry — skip when streaming)
-                if (!sig._context?.onStreamEvent) {
-                  this.emitToolEvents(result, action, sig, currentState);
+              // Build prompt with curated input from prepare function, skills, and image resolution
+              let { prompt: contextPrompt, images } = await this.buildContextPrompt(
+                action.prompt,
+                prepareResult,
+                skills,
+              );
+
+              // Append workspace resource context so LLM knows what resources are available
+              if (workspaceId && this.options.resourceAdapter) {
+                try {
+                  const metadata = await this.options.resourceAdapter.listResources(workspaceId);
+                  if (metadata.length > 0) {
+                    const catalogEntries = await toCatalogEntries(
+                      metadata,
+                      this.options.resourceAdapter,
+                      workspaceId,
+                    );
+                    const entries = this.options.artifactStorage
+                      ? await enrichCatalogEntries(catalogEntries, this.options.artifactStorage)
+                      : catalogEntries.filter((e) => e.type !== "artifact_ref");
+                    const guidance = buildResourceGuidance(entries);
+                    if (guidance) {
+                      contextPrompt += `\n\n${guidance}`;
+                    }
+                    const hasDocuments = entries.some((e) => e.type === "document");
+                    if (hasDocuments) {
+                      const skillText = await this.options.resourceAdapter.getSkill();
+                      contextPrompt += `\n\n${skillText}`;
+                    }
+                  }
+                } catch (err) {
+                  logger.warn("Failed to build resource guidance", {
+                    workspaceId,
+                    error: err instanceof Error ? err.message : String(err),
+                  });
                 }
+              }
 
-                // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
-                const retryFailArgs = findFailStepToolArgs(result);
-                if (retryFailArgs) {
-                  throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
-                }
+              if (completeToolInjected) {
+                contextPrompt +=
+                  "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
+                  "If you cannot complete this task, call the failStep tool with a reason.";
+              } else {
+                contextPrompt +=
+                  "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
+              }
 
-                // Check if LLM called complete tool on retry
-                if (completeToolInjected) {
-                  capturedCompleteOutput = findCompleteToolArgs(result);
-                }
+              // Build agentId for the LLM action
+              const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
 
-                const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
+              // When images are present, assemble a messages array with mixed content.
+              // Otherwise, use the prompt-only path for backward compatibility.
+              const messages: CoreMessage[] | undefined =
+                images.length > 0
+                  ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
+                  : undefined;
 
-                // Merge original call's tool results into the retry trace so the
-                // validator can see all fetched data, even if the retry LLM didn't
-                // re-issue the same tool calls.
-                if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
-                  retryTrace.toolResults = trace.toolResults;
-                  retryTrace.toolCalls = trace.toolCalls;
-                }
+              let result = await this.options.llmProvider.call({
+                agentId: llmAgentId,
+                model: action.model,
+                prompt: contextPrompt,
+                messages,
+                tools,
+                toolChoice: "auto", // Let LLM decide when to stop calling tools
+                stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+                onStreamEvent: sig._context?.onStreamEvent,
+              });
 
-                const retryValidation = await this.options.validateOutput(retryTrace);
+              // Check for adapter-level errors (network, API, etc.)
+              if (!result.ok) {
+                throw new Error(`LLM call failed: ${result.error.reason}`);
+              }
 
-                if (!retryValidation.valid) {
-                  logger.error("LLM action failed validation after retry", {
+              // Emit tool events for UI visibility (skip when streaming — events already emitted in real-time)
+              if (!sig._context?.onStreamEvent) {
+                this.emitToolEvents(result, action, sig, currentState);
+              }
+
+              // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
+              const failArgs = findFailStepToolArgs(result);
+              if (failArgs) {
+                throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
+              }
+
+              // Check if LLM called complete tool - capture the structured output.
+              // The adapter already extracts complete args into result.data, but we
+              // also check toolCalls for backward compatibility with mock providers.
+              if (completeToolInjected) {
+                capturedCompleteOutput = findCompleteToolArgs(result);
+              }
+
+              // Validate output if validator provided
+              if (this.options.validateOutput) {
+                const trace = buildLLMActionTrace(result, action.model, contextPrompt);
+
+                const validation = await this.options.validateOutput(trace);
+                // Note: If validator throws, error propagates and aborts the action (fail-closed)
+
+                if (!validation.valid) {
+                  logger.warn("LLM action failed validation, retrying with feedback", {
                     state: currentState,
                     model: action.model,
-                    feedback: retryValidation.feedback,
+                    feedback: validation.feedback,
                   });
-                  throw new Error(
-                    `LLM action failed validation after retry: ${
-                      retryValidation.feedback ?? "no feedback"
-                    }`,
-                  );
+
+                  // Include previous tool results so the retry LLM can see data
+                  // it already fetched and fix its reasoning without re-calling tools.
+                  const previousToolContext = formatToolResultsForRetry(trace);
+
+                  const retryPrompt =
+                    `${contextPrompt}\n\n` +
+                    (previousToolContext
+                      ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
+                      : "") +
+                    `<validation-feedback>\n${
+                      validation.feedback ?? "Output failed validation."
+                    }\n</validation-feedback>\n` +
+                    (previousToolContext
+                      ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
+                      : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
+
+                  // Rebuild messages with retry prompt, preserving image parts from the original call
+                  const retryMessages: CoreMessage[] | undefined =
+                    images.length > 0
+                      ? [
+                          {
+                            role: "user",
+                            content: [{ type: "text", text: retryPrompt }, ...images],
+                          },
+                        ]
+                      : undefined;
+
+                  result = await this.options.llmProvider.call({
+                    agentId: llmAgentId,
+                    model: action.model,
+                    prompt: retryPrompt,
+                    messages: retryMessages,
+                    tools,
+                    toolChoice: "auto", // Let LLM decide when to stop calling tools
+                    stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
+                    onStreamEvent: sig._context?.onStreamEvent,
+                  });
+
+                  // Check for adapter-level errors on retry
+                  if (!result.ok) {
+                    throw new Error(`LLM call failed on retry: ${result.error.reason}`);
+                  }
+
+                  // Emit tool events for UI visibility (retry — skip when streaming)
+                  if (!sig._context?.onStreamEvent) {
+                    this.emitToolEvents(result, action, sig, currentState);
+                  }
+
+                  // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
+                  const retryFailArgs = findFailStepToolArgs(result);
+                  if (retryFailArgs) {
+                    throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
+                  }
+
+                  // Check if LLM called complete tool on retry
+                  if (completeToolInjected) {
+                    capturedCompleteOutput = findCompleteToolArgs(result);
+                  }
+
+                  const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
+
+                  // Merge original call's tool results into the retry trace so the
+                  // validator can see all fetched data, even if the retry LLM didn't
+                  // re-issue the same tool calls.
+                  if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
+                    retryTrace.toolResults = trace.toolResults;
+                    retryTrace.toolCalls = trace.toolCalls;
+                  }
+
+                  const retryValidation = await this.options.validateOutput(retryTrace);
+
+                  if (!retryValidation.valid) {
+                    logger.error("LLM action failed validation after retry", {
+                      state: currentState,
+                      model: action.model,
+                      feedback: retryValidation.feedback,
+                    });
+                    throw new Error(
+                      `LLM action failed validation after retry: ${
+                        retryValidation.feedback ?? "no feedback"
+                      }`,
+                    );
+                  }
+
+                  logger.info("LLM action passed validation on retry", {
+                    state: currentState,
+                    model: action.model,
+                  });
+                }
+              }
+
+              if (action.outputTo) {
+                const outputDoc = documents.get(action.outputTo);
+                const newDocType = action.outputType ?? "LLMResult";
+                // Use captured complete output if available, otherwise fall back to result.data
+                // result.data is { response: string } for text output, or structured for complete tool
+                const dataToStore = capturedCompleteOutput ?? result.data;
+
+                if (capturedCompleteOutput) {
+                  logger.debug("Storing structured output from complete tool", {
+                    outputTo: action.outputTo,
+                    hasData: Object.keys(capturedCompleteOutput).length > 0,
+                  });
                 }
 
-                logger.info("LLM action passed validation on retry", {
-                  state: currentState,
-                  model: action.model,
-                });
+                // Dual-write: results accumulator (replace semantics)
+                // LLMs sometimes stringify nested JSON fields (e.g. arrays as
+                // JSON strings). Parse them so downstream .map() calls don't crash.
+                if (results && dataToStore) {
+                  const sanitized = unstringifyNestedJson(dataToStore);
+                  const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
+                  if (parsed.success) {
+                    results.set(action.outputTo, parsed.data);
+                  }
+                }
+
+                // Dual-write: documents (backward compat)
+                if (outputDoc) {
+                  outputDoc.data = { ...outputDoc.data, ...dataToStore };
+                } else {
+                  documents.set(action.outputTo, {
+                    id: action.outputTo,
+                    type: newDocType,
+                    data: dataToStore,
+                  });
+                }
+              }
+
+              // Capture LLM result for session history side-channel
+              if (result.ok) {
+                const resultsByCallId = new Map(
+                  result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+                );
+                const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+                  toolName: tc.toolName,
+                  args: tc.input,
+                  ...(resultsByCallId.has(tc.toolCallId) && {
+                    result: resultsByCallId.get(tc.toolCallId),
+                  }),
+                }));
+                // Structured output = args from the "complete" tool call (the actual
+                // result the agent declared). Falls back to result.data (LLM text)
+                // when no complete tool call exists. Mirrors workspace-runtime logic.
+                const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
+                llmResultData = {
+                  toolCalls,
+                  reasoning: result.reasoning,
+                  output: completeCall?.args ?? result.data,
+                };
+              }
+
+              // Add tool call names to OTEL span for trace visibility
+              if (span && llmResultData?.toolCalls?.length) {
+                const toolNames = llmResultData.toolCalls
+                  .map((tc) => tc.toolName)
+                  .filter((n) => n !== "complete" && n !== "failStep");
+                if (toolNames.length) {
+                  span.setAttribute("fsm.tools.called", toolNames.join(", "));
+                }
+              }
+
+              logger.debug("LLM action completed", {
+                model: action.model,
+                outputTo: action.outputTo,
+              });
+            } finally {
+              await buildResult.dispose();
+              cleanupSkills?.();
+
+              // Publish dirty drafts after LLM actions that have resource tools.
+              // Agent actions are covered by runtime.ts:executeAgent(), but LLM
+              // actions execute entirely within the FSM engine and need their own
+              // publish hook to avoid orphaning drafts until session teardown.
+              if (workspaceId && this.options.resourceAdapter) {
+                await publishDirtyDrafts(this.options.resourceAdapter, workspaceId);
               }
             }
+            break;
+          }
 
-            if (action.outputTo) {
-              const outputDoc = documents.get(action.outputTo);
-              const newDocType = action.outputType ?? "LLMResult";
-              // Use captured complete output if available, otherwise fall back to result.data
-              // result.data is { response: string } for text output, or structured for complete tool
-              const dataToStore = capturedCompleteOutput ?? result.data;
+          case "agent": {
+            if (!this.options.agentExecutor) {
+              throw new Error(
+                `Agent action requires agentExecutor in FSMEngineOptions. ` +
+                  `Pass agentExecutor callback that integrates with your agent system. ` +
+                  `Agent: ${action.agentId}`,
+              );
+            }
 
-              if (capturedCompleteOutput) {
-                logger.debug("Storing structured output from complete tool", {
-                  outputTo: action.outputTo,
-                  hasData: Object.keys(capturedCompleteOutput).length > 0,
-                });
+            logger.debug("Executing agent action", {
+              agentId: action.agentId,
+              state: currentState,
+              outputTo: action.outputTo,
+            });
+
+            // Build context for agent execution
+            const agentContext: Context = {
+              documents: Array.from(documents.values()),
+              state: currentState,
+              results: Object.fromEntries(resultsMap),
+              ...(prepareResult ? { input: prepareResult } : {}),
+              emit: context.emit,
+              updateDoc: this.makeUpdateDocFn(documents),
+              createDoc: this.makeCreateDocFn(documents, currentState),
+              deleteDoc: this.makeDeleteDocFn(documents, currentState),
+            };
+
+            // Resolve output schema from documentTypes — same fallback logic as LLM actions:
+            // 1. action.outputType takes precedence (explicit mapping)
+            // 2. Fall back to existing document's type if document exists
+            const outputDoc = action.outputTo ? documents.get(action.outputTo) : undefined;
+            const agentDocTypeName = action.outputType ?? outputDoc?.type;
+            const agentOutputSchema = agentDocTypeName
+              ? z
+                  .record(z.string(), z.unknown())
+                  .optional()
+                  .parse(this._definition.documentTypes?.[agentDocTypeName])
+              : undefined;
+
+            // Execute agent via callback, passing full action object for prompt access
+            // Agent returns AgentResult envelope directly
+            const result = await this.options.agentExecutor(
+              action,
+              agentContext,
+              sig,
+              agentOutputSchema ? { outputSchema: agentOutputSchema } : undefined,
+            );
+
+            // Check envelope's ok discriminant for error
+            if (!result.ok) {
+              throw new Error(result.error.reason);
+            }
+
+            // Store result if outputTo specified
+            // result.data is the structured output from the agent
+            if (action.outputTo && result.data) {
+              const parsed = z.record(z.string(), z.unknown()).safeParse(result.data);
+              const baseData = parsed.success ? parsed.data : { value: result.data };
+
+              // Validate against schema when outputType is declared
+              if (action.outputType) {
+                const schema = this._compiledSchemas.get(action.outputType);
+                if (schema) {
+                  const validation = schema.safeParse(baseData);
+                  if (!validation.success) {
+                    const issues = validation.error.issues
+                      .map((i) => `${i.path.join(".")}: ${i.message}`)
+                      .join(", ");
+                    throw new Error(
+                      `Agent '${action.agentId}' output does not match ${action.outputType} schema: ${issues}`,
+                    );
+                  }
+                }
               }
 
+              // Include artifactRefs after validation (execution metadata, not contract fields)
+              const data =
+                result.artifactRefs && result.artifactRefs.length > 0
+                  ? { ...baseData, artifactRefs: result.artifactRefs }
+                  : baseData;
+
               // Dual-write: results accumulator (replace semantics)
-              // LLMs sometimes stringify nested JSON fields (e.g. arrays as
-              // JSON strings). Parse them so downstream .map() calls don't crash.
-              if (results && dataToStore) {
-                const sanitized = unstringifyNestedJson(dataToStore);
-                const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
-                if (parsed.success) {
-                  results.set(action.outputTo, parsed.data);
-                }
+              if (results) {
+                results.set(action.outputTo, data);
               }
 
               // Dual-write: documents (backward compat)
-              if (outputDoc) {
-                outputDoc.data = { ...outputDoc.data, ...dataToStore };
+              const existingDoc = documents.get(action.outputTo);
+              if (existingDoc) {
+                existingDoc.data = { ...existingDoc.data, ...data };
               } else {
-                documents.set(action.outputTo, {
-                  id: action.outputTo,
-                  type: newDocType,
-                  data: dataToStore,
-                });
+                documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
               }
             }
 
-            // Capture LLM result for session history side-channel
-            if (result.ok) {
-              const resultsByCallId = new Map(
-                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
-              );
-              const toolCalls = (result.toolCalls ?? []).map((tc) => ({
-                toolName: tc.toolName,
-                args: tc.input,
-                ...(resultsByCallId.has(tc.toolCallId) && {
-                  result: resultsByCallId.get(tc.toolCallId),
-                }),
-              }));
-              // Structured output = args from the "complete" tool call (the actual
-              // result the agent declared). Falls back to result.data (LLM text)
-              // when no complete tool call exists. Mirrors workspace-runtime logic.
-              const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-              llmResultData = {
-                toolCalls,
-                reasoning: result.reasoning,
-                output: completeCall?.args ?? result.data,
-              };
-            }
-
-            logger.debug("LLM action completed", {
-              model: action.model,
+            logger.debug("Agent action completed", {
+              agentId: action.agentId,
               outputTo: action.outputTo,
+              durationMs: result.durationMs,
             });
-          } finally {
-            await buildResult.dispose();
-            cleanupSkills?.();
-
-            // Publish dirty drafts after LLM actions that have resource tools.
-            // Agent actions are covered by runtime.ts:executeAgent(), but LLM
-            // actions execute entirely within the FSM engine and need their own
-            // publish hook to avoid orphaning drafts until session teardown.
-            if (workspaceId && this.options.resourceAdapter) {
-              await publishDirtyDrafts(this.options.resourceAdapter, workspaceId);
-            }
+            break;
           }
-          break;
+
+          default: {
+            logger.error("Unknown action type", { action });
+            throw new Error(`Unknown action type`);
+          }
         }
 
-        case "agent": {
-          if (!this.options.agentExecutor) {
-            throw new Error(
-              `Agent action requires agentExecutor in FSMEngineOptions. ` +
-                `Pass agentExecutor callback that integrates with your agent system. ` +
-                `Agent: ${action.agentId}`,
-            );
-          }
-
-          logger.debug("Executing agent action", {
-            agentId: action.agentId,
-            state: currentState,
-            outputTo: action.outputTo,
+        // Emit action completed event
+        if (sig._context?.onEvent) {
+          sig._context.onEvent({
+            type: "data-fsm-action-execution",
+            data: {
+              sessionId: sig._context.sessionId,
+              workspaceId: sig._context.workspaceId,
+              jobName: this._definition.id,
+              actionType: action.type,
+              actionId: this.getActionId(action),
+              state: currentState,
+              status: "completed",
+              durationMs: Date.now() - actionStartTime,
+              timestamp: Date.now(),
+              inputSnapshot,
+              llmResult: llmResultData,
+            },
           });
-
-          // Build context for agent execution
-          const agentContext: Context = {
-            documents: Array.from(documents.values()),
-            state: currentState,
-            results: Object.fromEntries(resultsMap),
-            ...(prepareResult ? { input: prepareResult } : {}),
-            emit: context.emit,
-            updateDoc: this.makeUpdateDocFn(documents),
-            createDoc: this.makeCreateDocFn(documents, currentState),
-            deleteDoc: this.makeDeleteDocFn(documents, currentState),
-          };
-
-          // Resolve output schema from documentTypes — same fallback logic as LLM actions:
-          // 1. action.outputType takes precedence (explicit mapping)
-          // 2. Fall back to existing document's type if document exists
-          const outputDoc = action.outputTo ? documents.get(action.outputTo) : undefined;
-          const agentDocTypeName = action.outputType ?? outputDoc?.type;
-          const agentOutputSchema = agentDocTypeName
-            ? z
-                .record(z.string(), z.unknown())
-                .optional()
-                .parse(this._definition.documentTypes?.[agentDocTypeName])
-            : undefined;
-
-          // Execute agent via callback, passing full action object for prompt access
-          // Agent returns AgentResult envelope directly
-          const result = await this.options.agentExecutor(
-            action,
-            agentContext,
-            sig,
-            agentOutputSchema ? { outputSchema: agentOutputSchema } : undefined,
-          );
-
-          // Check envelope's ok discriminant for error
-          if (!result.ok) {
-            throw new Error(result.error.reason);
-          }
-
-          // Store result if outputTo specified
-          // result.data is the structured output from the agent
-          if (action.outputTo && result.data) {
-            const parsed = z.record(z.string(), z.unknown()).safeParse(result.data);
-            const baseData = parsed.success ? parsed.data : { value: result.data };
-
-            // Validate against schema when outputType is declared
-            if (action.outputType) {
-              const schema = this._compiledSchemas.get(action.outputType);
-              if (schema) {
-                const validation = schema.safeParse(baseData);
-                if (!validation.success) {
-                  const issues = validation.error.issues
-                    .map((i) => `${i.path.join(".")}: ${i.message}`)
-                    .join(", ");
-                  throw new Error(
-                    `Agent '${action.agentId}' output does not match ${action.outputType} schema: ${issues}`,
-                  );
-                }
-              }
-            }
-
-            // Include artifactRefs after validation (execution metadata, not contract fields)
-            const data =
-              result.artifactRefs && result.artifactRefs.length > 0
-                ? { ...baseData, artifactRefs: result.artifactRefs }
-                : baseData;
-
-            // Dual-write: results accumulator (replace semantics)
-            if (results) {
-              results.set(action.outputTo, data);
-            }
-
-            // Dual-write: documents (backward compat)
-            const existingDoc = documents.get(action.outputTo);
-            if (existingDoc) {
-              existingDoc.data = { ...existingDoc.data, ...data };
-            } else {
-              documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
-            }
-          }
-
-          logger.debug("Agent action completed", {
-            agentId: action.agentId,
-            outputTo: action.outputTo,
-            durationMs: result.durationMs,
+        }
+      } catch (error) {
+        // Emit action failed event before rethrowing
+        if (sig._context?.onEvent) {
+          sig._context.onEvent({
+            type: "data-fsm-action-execution",
+            data: {
+              sessionId: sig._context.sessionId,
+              workspaceId: sig._context.workspaceId,
+              jobName: this._definition.id,
+              actionType: action.type,
+              actionId: this.getActionId(action),
+              state: currentState,
+              status: "failed",
+              durationMs: Date.now() - actionStartTime,
+              error: stringifyError(error),
+              timestamp: Date.now(),
+              inputSnapshot,
+            },
           });
-          break;
         }
-
-        default: {
-          logger.error("Unknown action type", { action });
-          throw new Error(`Unknown action type`);
-        }
+        throw error;
       }
 
-      // Emit action completed event
-      if (sig._context?.onEvent) {
-        sig._context.onEvent({
-          type: "data-fsm-action-execution",
-          data: {
-            sessionId: sig._context.sessionId,
-            workspaceId: sig._context.workspaceId,
-            jobName: this._definition.id,
-            actionType: action.type,
-            actionId: this.getActionId(action),
-            state: currentState,
-            status: "completed",
-            durationMs: Date.now() - actionStartTime,
-            timestamp: Date.now(),
-            inputSnapshot,
-            llmResult: llmResultData,
-          },
-        });
-      }
-    } catch (error) {
-      // Emit action failed event before rethrowing
-      if (sig._context?.onEvent) {
-        sig._context.onEvent({
-          type: "data-fsm-action-execution",
-          data: {
-            sessionId: sig._context.sessionId,
-            workspaceId: sig._context.workspaceId,
-            jobName: this._definition.id,
-            actionType: action.type,
-            actionId: this.getActionId(action),
-            state: currentState,
-            status: "failed",
-            durationMs: Date.now() - actionStartTime,
-            error: stringifyError(error),
-            timestamp: Date.now(),
-            inputSnapshot,
-          },
-        });
-      }
-      throw error;
-    }
+      return codeActionResult;
+    }; // end executeInSpan
 
-    return codeActionResult;
+    return await withOtelSpan("fsm.action", otelAttrs, executeInSpan);
   }
 
   /**

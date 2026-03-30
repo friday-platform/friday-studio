@@ -40,6 +40,6 @@ deno compile \
   --include=examples \
   --include=packages \
   --output "$OUTPUT" \
-  ./apps/atlas-cli/src/cli.ts
+  ./apps/atlas-cli/src/otel-bootstrap.ts
 
 echo "✅ Compilation complete: ${OUTPUT}"

@@ -72,7 +72,7 @@ RUN mv packages/ui /tmp/_ui && mv node_modules/@atlas/ui /tmp/_atlas_ui 2>/dev/n
     --unstable-broadcast-channel \
     --unstable-worker-options --unstable-kv --unstable-raw-imports \
     --output /app/bin/atlas \
-    apps/atlas-cli/src/cli.ts && \
+    apps/atlas-cli/src/otel-bootstrap.ts && \
     mv /tmp/_ui packages/ui && mv /tmp/_atlas_ui node_modules/@atlas/ui 2>/dev/null; true
 
 # Link service

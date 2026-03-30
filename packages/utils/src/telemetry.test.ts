@@ -13,6 +13,8 @@ const mockSpan = {
 // Lightweight probe span returned during resolveTracer's isRecording() check
 const probeSpan = { isRecording: () => true, end: vi.fn() };
 
+const mockContext = { _brand: "mock-context" };
+
 const mockTracer = {
   startActiveSpan: vi.fn(
     (
@@ -27,6 +29,7 @@ const mockTracer = {
 };
 
 vi.mock("@opentelemetry/api", () => ({
+  context: { active: () => mockContext },
   trace: {
     getTracer: () => mockTracer,
     getTracerProvider: () => ({ constructor: { name: "MockProvider" } }),
@@ -135,9 +138,11 @@ describe("startOtelSpan", () => {
     const span = await startOtelSpan("test.span", { "test.attr": "value" });
 
     expect(span).toBe(mockSpan);
-    expect(mockTracer.startSpan).toHaveBeenCalledWith("test.span", {
-      attributes: { "test.attr": "value" },
-    });
+    expect(mockTracer.startSpan).toHaveBeenCalledWith(
+      "test.span",
+      { attributes: { "test.attr": "value" } },
+      mockContext,
+    );
   });
 
   it("returns null when OTEL is disabled", async () => {

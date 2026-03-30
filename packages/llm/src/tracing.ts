@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LanguageModelV2, LanguageModelV2StreamPart } from "@ai-sdk/provider";
-import { type Span, startOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
+import { type Span, withManualOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { wrapLanguageModel } from "ai";
 
 /** Record error and end a manually-managed span. */
@@ -120,115 +120,116 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
         );
       },
 
+      // deno-lint-ignore require-await
       wrapStream: async ({ doStream, params, model }) => {
-        // Manual span lifecycle: span must outlive stream setup and cover
-        // the full stream consumption. withOtelSpan can't be used here
-        // because it calls span.end() when the callback returns, which is
-        // before the stream is consumed.
-        const span = await startOtelSpan("llm.stream", {
-          "llm.model": model.modelId,
-          "llm.provider": model.provider,
-          "llm.operation": "stream",
-        });
+        // withManualOtelSpan activates the span in context (so it nests
+        // under the parent fsm.action/agent.execute span) but does NOT
+        // auto-end it — the transform stream handles span.end().
+        return withManualOtelSpan(
+          "llm.stream",
+          { "llm.model": model.modelId, "llm.provider": model.provider, "llm.operation": "stream" },
+          async (span) => {
+            const store = traceStorage.getStore();
+            const t0 = performance.now();
 
-        const store = traceStorage.getStore();
-        const t0 = performance.now();
+            let result: Awaited<ReturnType<typeof doStream>>;
+            try {
+              result = await doStream();
+            } catch (err) {
+              endSpanWithError(span, err);
+              throw err;
+            }
 
-        let result: Awaited<ReturnType<typeof doStream>>;
-        try {
-          result = await doStream();
-        } catch (err) {
-          endSpanWithError(span, err);
-          throw err;
-        }
+            let text = "";
+            let spanEnded = false;
+            const toolCallOrder: string[] = [];
+            const toolCallsById = new Map<string, { name: string; inputJson: string }>();
 
-        let text = "";
-        let spanEnded = false;
-        const toolCallOrder: string[] = [];
-        const toolCallsById = new Map<string, { name: string; inputJson: string }>();
-
-        // Extracted to a variable so TypeScript skips excess-property checking.
-        // The cancel() callback is part of the WHATWG Streams spec and works at
-        // runtime in Deno, but some TS lib versions used by svelte-check omit
-        // it from the Transformer interface definition.
-        const transformer = {
-          transform(
-            chunk: LanguageModelV2StreamPart,
-            controller: TransformStreamDefaultController<LanguageModelV2StreamPart>,
-          ) {
-            if (store) {
-              switch (chunk.type) {
-                case "text-delta":
-                  text += chunk.delta;
-                  break;
-                case "tool-input-start":
-                  toolCallOrder.push(chunk.id);
-                  toolCallsById.set(chunk.id, { name: chunk.toolName, inputJson: "" });
-                  break;
-                case "tool-input-delta": {
-                  const tc = toolCallsById.get(chunk.id);
-                  if (tc) tc.inputJson += chunk.delta;
-                  break;
+            // Extracted to a variable so TypeScript skips excess-property checking.
+            // The cancel() callback is part of the WHATWG Streams spec and works at
+            // runtime in Deno, but some TS lib versions used by svelte-check omit
+            // it from the Transformer interface definition.
+            const transformer = {
+              transform(
+                chunk: LanguageModelV2StreamPart,
+                controller: TransformStreamDefaultController<LanguageModelV2StreamPart>,
+              ) {
+                if (store) {
+                  switch (chunk.type) {
+                    case "text-delta":
+                      text += chunk.delta;
+                      break;
+                    case "tool-input-start":
+                      toolCallOrder.push(chunk.id);
+                      toolCallsById.set(chunk.id, { name: chunk.toolName, inputJson: "" });
+                      break;
+                    case "tool-input-delta": {
+                      const tc = toolCallsById.get(chunk.id);
+                      if (tc) tc.inputJson += chunk.delta;
+                      break;
+                    }
+                  }
                 }
-              }
-            }
 
-            if (chunk.type === "finish") {
-              const latencyMs = performance.now() - t0;
-              if (span && !spanEnded) {
-                span.setAttributes({
-                  "llm.input_tokens": chunk.usage.inputTokens ?? 0,
-                  "llm.output_tokens": chunk.usage.outputTokens ?? 0,
-                  "llm.generation_latency_ms": latencyMs,
-                });
-                span.end();
-                spanEnded = true;
-              }
-              if (store) {
-                const startMs = t0 - store.scopeStartTime;
-                store.traces.push({
-                  type: "stream",
-                  modelId: model.modelId,
-                  input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
-                  output: {
-                    text,
-                    toolCalls: toolCallOrder.map((id) => {
-                      const tc = toolCallsById.get(id);
-                      return {
-                        name: tc?.name ?? "unknown",
-                        input: tc?.inputJson ? tryParseJson(tc.inputJson) : {},
-                      };
-                    }),
-                  },
-                  usage: {
-                    inputTokens: chunk.usage.inputTokens ?? 0,
-                    outputTokens: chunk.usage.outputTokens ?? 0,
-                    totalTokens: chunk.usage.totalTokens ?? 0,
-                  },
-                  startMs,
-                  endMs: startMs + latencyMs,
-                });
-              }
-            }
+                if (chunk.type === "finish") {
+                  const latencyMs = performance.now() - t0;
+                  if (span && !spanEnded) {
+                    span.setAttributes({
+                      "llm.input_tokens": chunk.usage.inputTokens ?? 0,
+                      "llm.output_tokens": chunk.usage.outputTokens ?? 0,
+                      "llm.generation_latency_ms": latencyMs,
+                    });
+                    span.end();
+                    spanEnded = true;
+                  }
+                  if (store) {
+                    const startMs = t0 - store.scopeStartTime;
+                    store.traces.push({
+                      type: "stream",
+                      modelId: model.modelId,
+                      input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
+                      output: {
+                        text,
+                        toolCalls: toolCallOrder.map((id) => {
+                          const tc = toolCallsById.get(id);
+                          return {
+                            name: tc?.name ?? "unknown",
+                            input: tc?.inputJson ? tryParseJson(tc.inputJson) : {},
+                          };
+                        }),
+                      },
+                      usage: {
+                        inputTokens: chunk.usage.inputTokens ?? 0,
+                        outputTokens: chunk.usage.outputTokens ?? 0,
+                        totalTokens: chunk.usage.totalTokens ?? 0,
+                      },
+                      startMs,
+                      endMs: startMs + latencyMs,
+                    });
+                  }
+                }
 
-            controller.enqueue(chunk);
+                controller.enqueue(chunk);
+              },
+              flush() {
+                if (!spanEnded) span?.end();
+              },
+              cancel(reason?: unknown) {
+                if (!spanEnded) {
+                  if (reason) endSpanWithError(span, reason);
+                  else span?.end();
+                  spanEnded = true;
+                }
+              },
+            };
+            const transform = new TransformStream<
+              LanguageModelV2StreamPart,
+              LanguageModelV2StreamPart
+            >(transformer);
+
+            return { ...result, stream: result.stream.pipeThrough(transform) };
           },
-          flush() {
-            if (!spanEnded) span?.end();
-          },
-          cancel(reason?: unknown) {
-            if (!spanEnded) {
-              if (reason) endSpanWithError(span, reason);
-              else span?.end();
-              spanEnded = true;
-            }
-          },
-        };
-        const transform = new TransformStream<LanguageModelV2StreamPart, LanguageModelV2StreamPart>(
-          transformer,
         );
-
-        return { ...result, stream: result.stream.pipeThrough(transform) };
       },
     },
   });
