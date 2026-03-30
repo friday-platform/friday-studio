@@ -94,7 +94,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.With(DBCtxMiddleware(s.db)).Get("/healthz", handleHealth)
 
 	// Per-workspace Slack app webhook (URL-based routing, DB-backed signing secrets)
-	r.Post("/v1/webhooks/slack/{userID}/{appID}", handlePerAppSlackWebhook(s.eventRouter))
+	r.Post("/webhook/slack/{userID}/{appID}", handlePerAppSlackWebhook(s.eventRouter))
 
 	return r
 }

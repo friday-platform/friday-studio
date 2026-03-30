@@ -174,7 +174,7 @@ export class SlackAppService {
       if (!gatewayBase) {
         throw new AppInstallError("SLACK_API_ERROR", "GATEWAY_BASE not configured");
       }
-      webhookUrl = `${gatewayBase}/v1/webhooks/slack/${userId}/${secret.externalId}`;
+      webhookUrl = `${gatewayBase}/webhook/slack/${userId}/${secret.externalId}`;
     }
 
     const updatedManifest = withEventSubscriptions(currentManifest, webhookUrl ?? null);

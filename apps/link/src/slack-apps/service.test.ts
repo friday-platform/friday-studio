@@ -102,7 +102,7 @@ describe("SlackAppService", () => {
 
       expect(result).toEqual({
         status: "enabled",
-        webhookUrl: "https://gateway.example.com/v1/webhooks/slack/user-1/A012ABCD0A0",
+        webhookUrl: "https://gateway.example.com/webhook/slack/user-1/A012ABCD0A0",
       });
 
       const updateCall = vi.mocked(fetch).mock.calls[1];
@@ -112,7 +112,7 @@ describe("SlackAppService", () => {
         manifest: { settings: { event_subscriptions: unknown } };
       };
       expect(body.manifest.settings.event_subscriptions).toMatchObject({
-        request_url: "https://gateway.example.com/v1/webhooks/slack/user-1/A012ABCD0A0",
+        request_url: "https://gateway.example.com/webhook/slack/user-1/A012ABCD0A0",
         bot_events: ["message.im", "app_mention"],
       });
     });

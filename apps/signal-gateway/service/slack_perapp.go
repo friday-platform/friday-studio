@@ -25,7 +25,7 @@ type SlackMessageEvent struct {
 }
 
 // handlePerAppSlackWebhook handles webhooks for per-workspace Slack apps.
-// Route: POST /v1/webhooks/slack/{userID}/{appID}
+// Route: POST /webhook/slack/{userID}/{appID}
 //
 // Looks up the signing secret from the slack_app_webhook table (LRU-cached)
 // using the app_id from the URL path. This works for all event types including
