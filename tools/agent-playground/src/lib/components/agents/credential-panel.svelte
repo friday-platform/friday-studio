@@ -199,7 +199,7 @@
   }
 
   .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -267,14 +267,14 @@
   }
 
   .status-label.muted {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
   }
 
   .manual-toggle {
     align-items: center;
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-1);
@@ -290,7 +290,7 @@
     align-items: center;
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-2);
@@ -337,7 +337,7 @@
   }
 
   .input:focus {
-    border-color: color-mix(in srgb, var(--color-text), transparent 50%);
+    border-color: color-mix(in srgb, var(--color-text), transparent 25%);
     outline: none;
   }
 </style>

@@ -13,6 +13,7 @@
   import type { AgentBlock } from "@atlas/core/session/session-events";
   import type { ResolvedStepAgent } from "$lib/inspector-state.svelte";
   import { Icons, StatusBadge } from "@atlas/ui";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import JsonTree from "$lib/components/shared/json-tree.svelte";
   import { quintOut } from "svelte/easing";
   import { slide } from "svelte/transition";
@@ -177,7 +178,7 @@
                       class="agent-link"
                       href="/platform/{workspaceId}/agents"
                     >{resolvedStepAgent.agentId}</a>
-                    <span class="agent-type-badge">{resolvedStepAgent.agentType.toUpperCase()}</span>
+                    <InlineBadge variant={resolvedStepAgent.agentType === "llm" ? "info" : "success"}>{resolvedStepAgent.agentType.toUpperCase()}</InlineBadge>
                     <a
                       class="edit-config-btn"
                       href="/platform/{workspaceId}/edit?path=agents.{resolvedStepAgent.agentId}"
@@ -368,7 +369,7 @@
   }
 
   .skipped-message {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
   }
@@ -398,7 +399,7 @@
     block-size: 100%;
     border: var(--size-px) solid transparent;
     border-radius: var(--radius-2-5);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: default;
     display: flex;
     font-family: inherit;
@@ -436,7 +437,7 @@
   .close-btn {
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     font-size: var(--font-size-4);
     line-height: 1;
@@ -457,7 +458,7 @@
   }
 
   .empty-tab {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
   }
@@ -507,17 +508,6 @@
     text-decoration: underline;
   }
 
-  .agent-type-badge {
-    background: color-mix(in srgb, var(--color-text), transparent 90%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-6);
-    letter-spacing: 0.03em;
-    padding: var(--size-px) var(--size-1);
-  }
-
   .edit-config-btn {
     align-items: center;
     color: color-mix(in srgb, var(--color-text), transparent 45%);
@@ -534,7 +524,7 @@
   }
 
   .agent-description {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
   }
 
@@ -547,7 +537,7 @@
   /* Step prompt */
 
   .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
   }
@@ -688,7 +678,7 @@
   }
 
   .tool-duration {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-mono);
     font-size: var(--font-size-0);
     margin-inline-start: auto;
@@ -703,7 +693,7 @@
   }
 
   .tool-section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
   }

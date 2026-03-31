@@ -106,7 +106,7 @@
   }
 
   .caret {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
   }
 

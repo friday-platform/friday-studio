@@ -403,7 +403,7 @@
   }
 
   .workspace-description {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: var(--font-lineheight-3);
     margin: 0;
@@ -457,14 +457,14 @@
   }
 
   .card-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-size: var(--font-size-1);
     margin: 0;
   }
 
   .view-all-row {
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-1);
     text-align: center;
@@ -597,14 +597,14 @@
 
   .compact-duration {
     margin-inline-start: auto;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
 
   .compact-time {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-size: var(--font-size-1);
   }
@@ -631,7 +631,7 @@
   }
 
   .hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2) !important;
     font-weight: var(--font-weight-4) !important;
   }

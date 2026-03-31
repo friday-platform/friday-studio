@@ -19,6 +19,7 @@
 
 <script lang="ts">
   import type { SignalDetail } from "@atlas/config/signal-details";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import RecentSessions from "$lib/components/session/recent-sessions.svelte";
 
   type Props = { jobs: JobEntry[]; signalDetails: SignalDetail[]; workspaceId: string };
@@ -35,6 +36,14 @@
     const detail = signalDetails.find((s) => s.name === signalName);
     if (!detail) return null;
     return detail.provider.toUpperCase();
+  }
+
+  function triggerVariant(job: JobEntry): "info" | "warning" | "accent" {
+    const signalName = job.triggers[0]?.signal;
+    const detail = signalDetails.find((s) => s.name === signalName);
+    if (detail?.provider === "http") return "info";
+    if (detail?.provider === "schedule") return "warning";
+    return "accent";
   }
 </script>
 
@@ -59,7 +68,7 @@
         <a class="entry" href="#job-{job.id}">
           <span class="job-name">{job.title}</span>
           {#if badge}
-            <span class="trigger-badge">{badge}</span>
+            <InlineBadge variant={triggerVariant(job)}>{badge}</InlineBadge>
           {/if}
         </a>
       {/each}
@@ -153,17 +162,5 @@
     text-decoration: underline;
   }
 
-  .trigger-badge {
-    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: 9px;
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    margin-inline-start: auto;
-    padding: 2px var(--size-1);
-    text-transform: uppercase;
-  }
+
 </style>

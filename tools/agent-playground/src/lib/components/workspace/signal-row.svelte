@@ -13,6 +13,7 @@
 
 <script lang="ts">
   import { Dialog, DropdownMenu, Icons } from "@atlas/ui";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { goto } from "$app/navigation";
   import { EXTERNAL_DAEMON_URL, EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
 
@@ -192,7 +193,7 @@
 <div class="row">
   <div class="row-header">
     <span class="signal-name">{signal.name}</span>
-    <span class="type-badge">{signal.type}</span>
+    <InlineBadge variant="info">{signal.type}</InlineBadge>
 
     <div class="row-actions">
       <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
@@ -343,20 +344,8 @@
     white-space: nowrap;
   }
 
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-info);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
   .config-detail {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     overflow: hidden;
@@ -365,14 +354,14 @@
   }
 
   .config-label {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-family: var(--font-family);
     font-size: var(--font-size-1);
     margin-inline-end: var(--size-1);
   }
 
   .triggered-jobs {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -387,7 +376,7 @@
   .row-actions :global(.menu-trigger) {
     align-items: center;
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     justify-content: center;
     opacity: 0;
@@ -479,7 +468,7 @@
     align-items: center;
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     display: flex;
     inset-block-start: 50%;
@@ -509,7 +498,7 @@
   }
 
   .webhook-no-secret {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     margin: 0;
   }

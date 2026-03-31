@@ -11,6 +11,7 @@
 <script lang="ts">
   import type { WorkspaceAgent } from "@atlas/config/workspace-agents";
   import type { IntegrationStatus } from "$lib/queries";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
 
   type Props = { agents: WorkspaceAgent[]; providerStatus: Map<string, IntegrationStatus> };
 
@@ -118,7 +119,7 @@
           {#if agent.agent}
             <span class="agent-impl">{agent.agent}</span>
           {/if}
-          <span class="type-badge" class:custom={agent.type === "llm"}>{typeBadge(agent)}</span>
+          <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>{typeBadge(agent)}</InlineBadge>
         </a>
       {/each}
     </div>
@@ -241,27 +242,9 @@
   }
 
   .agent-impl {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-00);
   }
 
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-success), transparent 90%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: 9px;
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    margin-inline-start: auto;
-    padding: 2px var(--size-1);
-    text-transform: uppercase;
-  }
-
-  .type-badge.custom {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    color: var(--color-info);
-  }
 </style>

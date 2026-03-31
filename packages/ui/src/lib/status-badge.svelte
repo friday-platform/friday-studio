@@ -65,28 +65,30 @@
   }
 
   .status-badge--completed {
-    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-1));
-    color: var(--color-success);
+    background-color: var(--color-success);
+    color: var(--color-surface-1);
   }
 
   .status-badge--failed {
-    background: color-mix(in srgb, var(--color-error) 12%, var(--color-surface-1));
-    color: var(--color-error);
+    background-color: var(--color-error);
+    color: var(--color-surface-1);
   }
 
   .status-badge--active {
-    background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface-1));
-    color: var(--color-warning);
+    background-color: var(--color-warning);
+    color: var(--color-surface-1);
   }
 
   .status-badge--skipped {
-    background: color-mix(in srgb, var(--color-text) 6%, var(--color-surface-1));
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    background-color: var(--color-text);
+    color: var(--color-surface-1);
+    opacity: 0.4;
   }
 
   .status-badge--pending {
-    background: color-mix(in srgb, var(--color-text) 4%, var(--color-surface-1));
-    color: color-mix(in srgb, var(--color-text), transparent 56%);
+    background-color: var(--color-text);
+    color: var(--color-surface-1);
+    opacity: 0.3;
   }
 
   .status-badge-icon {

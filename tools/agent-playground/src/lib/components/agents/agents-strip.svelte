@@ -13,6 +13,7 @@
 
 <script lang="ts">
   import type { WorkspaceAgent } from "@atlas/config/workspace-agents";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
 
   type Props = {
     agents: WorkspaceAgent[];
@@ -65,7 +66,7 @@
               ></span>
             {/if}
           </span>
-          <span class="card-badge">{typeBadge(agent)}</span>
+          <InlineBadge variant="success">{typeBadge(agent)}</InlineBadge>
         </div>
         {#if agent.description}
           <span class="card-description">{agent.description}</span>
@@ -143,23 +144,10 @@
     vertical-align: middle;
   }
 
-  .card-badge {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
   .card-description {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-1);
     overflow: hidden;

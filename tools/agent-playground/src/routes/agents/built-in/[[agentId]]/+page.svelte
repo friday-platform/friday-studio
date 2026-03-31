@@ -79,7 +79,7 @@
 <style>
   .loading {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-3);
     block-size: 100%;

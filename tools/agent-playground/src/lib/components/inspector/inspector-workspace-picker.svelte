@@ -87,7 +87,7 @@
 
   .picker-subtitle {
     font-size: var(--font-size-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     margin: 0;
     line-height: var(--font-lineheight-3);
   }
@@ -174,7 +174,7 @@
   }
 
   .status-text {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-family: var(--font-mono);
   }

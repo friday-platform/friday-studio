@@ -249,7 +249,7 @@
   }
 
   .search-input::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
   }
 
   .search-input:focus {
@@ -261,7 +261,7 @@
     background-color: color-mix(in srgb, var(--color-surface-2), transparent 30%);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
@@ -270,7 +270,7 @@
   }
 
   .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
   }
 
@@ -281,7 +281,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-3);
     justify-content: center;

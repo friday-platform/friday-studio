@@ -167,7 +167,7 @@
   }
 
   .selector-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
     white-space: nowrap;
@@ -200,7 +200,7 @@
   }
 
   .loading-indicator {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
     font-style: italic;
   }

@@ -22,6 +22,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import SchemaBlock from "$lib/components/shared/schema-block.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
@@ -385,7 +386,7 @@
                       ></span>
                     {/if}
                     <span class="agent-name">{agent.name}</span>
-                    <span class="agent-type-badge">{typeBadge(agent)}</span>
+                    <InlineBadge variant="success">{typeBadge(agent)}</InlineBadge>
                   </a>
                 {/each}
               </div>
@@ -401,7 +402,7 @@
                   <div class="signal-entry">
                     <div class="signal-header">
                       <span class="signal-name">{signal.title ?? signal.name}</span>
-                      <span class="provider-badge">{providerLabel(signal.provider)}</span>
+                      <InlineBadge variant="info">{providerLabel(signal.provider)}</InlineBadge>
                       {#if signal.endpoint}
                         <span class="signal-config">POST {signal.endpoint}</span>
                       {:else if signal.schedule}
@@ -456,7 +457,7 @@
   }
 
   .page-subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: 1.5;
     max-inline-size: 50ch;
@@ -464,7 +465,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
@@ -524,7 +525,7 @@
   .overflow-btn {
     align-items: center;
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-3);
     justify-content: center;
@@ -629,19 +630,6 @@
     white-space: nowrap;
   }
 
-  .agent-type-badge {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
   /* ---- Signals section ---- */
 
   .signals-section {
@@ -653,7 +641,7 @@
   }
 
   .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     margin: 0;
@@ -687,20 +675,8 @@
     font-weight: var(--font-weight-5);
   }
 
-  .provider-badge {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-info);
-    font-family: var(--font-family-monospace);
-    font-size: 9px;
-    font-weight: var(--font-weight-6);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
   .signal-config {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
@@ -726,7 +702,7 @@
   }
 
   .field-type {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
   }
@@ -738,7 +714,7 @@
   }
 
   .field-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
     font-style: italic;
     overflow: hidden;

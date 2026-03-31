@@ -116,7 +116,7 @@
 
 <style>
   .detail-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-size: var(--font-size-1);
     inline-size: 100px;
@@ -143,7 +143,7 @@
   }
 
   .stat-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
     letter-spacing: var(--font-letterspacing-2);
     text-transform: uppercase;
@@ -182,7 +182,7 @@
   }
 
   .trace-duration {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
   }
 
@@ -232,7 +232,7 @@
   }
 
   .trace-step {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
     font-weight: var(--font-weight-5);

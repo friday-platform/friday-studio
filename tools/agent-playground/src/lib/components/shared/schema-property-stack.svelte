@@ -70,7 +70,7 @@
   }
 
   .prop-type {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
@@ -82,7 +82,7 @@
   }
 
   .prop-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-2);
     margin: 0;

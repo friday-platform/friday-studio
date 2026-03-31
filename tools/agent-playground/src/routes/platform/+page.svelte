@@ -41,13 +41,13 @@
   }
 
   .onboarding-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     margin-block-end: var(--size-4);
   }
 
   .loading-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
   }
 </style>

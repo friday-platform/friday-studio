@@ -437,7 +437,7 @@
   }
 
   .workspace-description {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: var(--font-lineheight-3);
     margin: 0;
@@ -451,7 +451,7 @@
   }
 
   .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: var(--font-letterspacing-2);
@@ -492,7 +492,7 @@
   .job-description {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-2);
     line-clamp: 2;
@@ -524,7 +524,7 @@
   }
 
   .hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2) !important;
     font-weight: var(--font-weight-4) !important;
   }

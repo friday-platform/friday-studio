@@ -220,7 +220,7 @@
   }
 
   .tree-status {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     padding: var(--size-2) var(--size-2);
   }
@@ -364,7 +364,7 @@
 
   .child-icon {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-shrink: 0;
   }

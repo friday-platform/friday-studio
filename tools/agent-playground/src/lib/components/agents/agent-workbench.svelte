@@ -31,6 +31,7 @@
   import { loadRuns, saveRuns } from "$lib/run-history.ts";
   import type { RunRecord } from "$lib/run-history.ts";
   import { SSEEventSchema, type SSEEvent } from "$lib/sse-types.ts";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import type { ExecutionStatus } from "$lib/types/execution-status.ts";
 
   type Props = {
@@ -317,7 +318,7 @@
         <span class="health-dot" class:healthy class:unhealthy={!healthy}></span>
         <h1 class="agent-name">{agent.displayName}</h1>
         <span class="version">{agent.version}</span>
-        <span class="type-badge">BUILT-IN</span>
+        <InlineBadge variant="success">BUILT-IN</InlineBadge>
       </div>
     </header>
 
@@ -458,7 +459,7 @@
   .back-link {
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     font-size: var(--font-size-2);
     padding: 0;
@@ -482,21 +483,9 @@
   }
 
   .version {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-2);
-  }
-
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-text), transparent 90%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-2);
-    padding-block: var(--size-0-5);
-    padding-inline: var(--size-1-5);
   }
 
   .health-dot {
@@ -544,7 +533,7 @@
   }
 
   .agent-constraints {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     font-style: italic;
     line-height: var(--font-lineheight-3);
@@ -566,7 +555,7 @@
   }
 
   .examples-heading {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -628,7 +617,7 @@
   }
 
   .shortcut-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }

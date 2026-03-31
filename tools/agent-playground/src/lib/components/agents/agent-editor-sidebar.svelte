@@ -205,7 +205,7 @@
   }
 
   .section-title {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -261,7 +261,7 @@
   }
 
   .save-status {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
   }
 
@@ -298,13 +298,13 @@
   }
 
   .field-type {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
 
   .field-description {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-basis: 100%;
     font-size: var(--font-size-1);
     line-height: 1.4;

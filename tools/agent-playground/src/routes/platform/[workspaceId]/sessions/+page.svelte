@@ -86,7 +86,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);

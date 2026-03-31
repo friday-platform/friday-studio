@@ -57,7 +57,7 @@
   }
 
   .gate-message {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
   }
 

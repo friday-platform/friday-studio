@@ -229,7 +229,7 @@
 
     &.drag-over {
       background-color: var(--color-surface-2);
-      border-color: color-mix(in srgb, var(--color-text), transparent 40%);
+      border-color: color-mix(in srgb, var(--color-text), transparent 25%);
     }
   }
 
@@ -242,7 +242,7 @@
   }
 
   .dropzone-text {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
   }
@@ -319,7 +319,7 @@
 
   .spinner {
     animation: spin 1s linear infinite;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex: none;
   }

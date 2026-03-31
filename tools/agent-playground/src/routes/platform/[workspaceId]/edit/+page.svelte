@@ -303,7 +303,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex: 1;
     font-size: var(--font-size-3);

@@ -18,6 +18,7 @@
   import type { Topology, TopologyNode } from "@atlas/config";
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
   import { DropdownMenu, Icons } from "@atlas/ui";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
 
   type Props = {
     topology: Topology;
@@ -78,12 +79,12 @@
     return "Manual";
   }
 
-  /** Signal type badge CSS modifier. */
-  function signalBadgeClass(node: TopologyNode): string {
+  /** Signal type badge variant for InlineBadge. */
+  function signalVariant(node: TopologyNode): "info" | "warning" | "accent" {
     const provider = node.metadata.provider;
-    if (provider === "http") return "badge--http";
-    if (provider === "cron") return "badge--cron";
-    return "badge--manual";
+    if (provider === "http") return "info";
+    if (provider === "cron") return "warning";
+    return "accent";
   }
 
   /** Humanized step name from state ID. */
@@ -174,7 +175,7 @@
           class:card--selected={selectedNodeId === node.id}
           onclick={() => onNodeClick?.(node)}
         >
-          <span class="badge {signalBadgeClass(node)}">{signalBadge(node)}</span>
+          <InlineBadge variant={signalVariant(node)}>{signalBadge(node)}</InlineBadge>
           <span class="card-label">{node.metadata.title ?? node.label}</span>
         </button>
       {:else if node.type === "agent-step"}
@@ -276,7 +277,7 @@
 
   .card {
     background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
+    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
     border-radius: var(--radius-2);
     display: flex;
     flex-direction: column;
@@ -302,33 +303,6 @@
 
   .card--step {
     padding-inline-end: var(--size-11);
-  }
-
-  /* ---- Signal badge ---- */
-
-  .badge {
-    border-radius: var(--radius-1);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-6);
-    letter-spacing: var(--font-letterspacing-2);
-    padding: var(--size-0-5) var(--size-1-5);
-    text-transform: uppercase;
-  }
-
-  .badge--http {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    color: var(--color-info);
-  }
-
-  .badge--cron {
-    background-color: color-mix(in srgb, var(--color-warning), transparent 85%);
-    color: var(--color-warning);
-  }
-
-  .badge--manual {
-    background-color: color-mix(in srgb, var(--color-accent), transparent 85%);
-    color: var(--color-accent);
   }
 
   /* ---- Card labels ---- */
@@ -362,7 +336,7 @@
   /* ---- Agent name (second line) ---- */
 
   .agent-name {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     overflow: hidden;
@@ -382,7 +356,7 @@
   .pill {
     align-items: center;
     background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
+    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
     border-radius: var(--radius-pill, 9999px);
     color: var(--color-text);
     cursor: pointer;
@@ -401,7 +375,7 @@
   }
 
   .pill:hover {
-    border-color: var(--color-border-2);
+    border-color: var(--color-text);
   }
 
   .pill--selected {
@@ -486,7 +460,7 @@
   }
 
   .notice-body {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     max-inline-size: 360px;
   }
@@ -497,7 +471,7 @@
   }
 
   .unsupported-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
   }

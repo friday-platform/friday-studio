@@ -129,7 +129,7 @@
     background: none;
     border: none;
     border-block-end: 2px solid transparent;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);

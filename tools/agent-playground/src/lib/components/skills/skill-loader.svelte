@@ -589,7 +589,7 @@
       background-color 200ms ease;
 
     &:hover {
-      border-color: color-mix(in srgb, var(--color-text), transparent 50%);
+      border-color: color-mix(in srgb, var(--color-text), transparent 25%);
     }
 
     &.drag-over {
@@ -612,7 +612,7 @@
   }
 
   .drop-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
   }
 
@@ -649,7 +649,7 @@
   .close-btn {
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     font-size: var(--font-size-2);
 

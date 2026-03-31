@@ -131,7 +131,7 @@
   }
 
   .explainer-text {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-3);
     margin: 0;
@@ -144,7 +144,7 @@
   }
 
   .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -159,7 +159,7 @@
   }
 
   .sidebar-constraints {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
     line-height: var(--font-lineheight-3);
@@ -182,7 +182,7 @@
   }
 
   .toggle-icon {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: inline-flex;
     transition: transform 150ms ease;
   }

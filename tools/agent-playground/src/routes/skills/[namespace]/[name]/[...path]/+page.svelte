@@ -179,7 +179,7 @@
   }
 
   .status-text {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     padding: var(--size-6) var(--size-8);
   }

@@ -14,6 +14,7 @@
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries } from "$lib/queries";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import {
     useAddWorkspaceSkill,
     useRemoveWorkspaceSkill,
@@ -133,7 +134,7 @@
           <div class="row-main">
             <span class="skill-dot"></span>
             <span class="skill-name">{ref.namespace}/{ref.name}</span>
-            <span class="type-badge catalog">CATALOG</span>
+            <InlineBadge variant="success">CATALOG</InlineBadge>
             {#if ref.version !== undefined}
               <span class="version-badge">v{ref.version}</span>
             {/if}
@@ -167,7 +168,7 @@
           <div class="row-main">
             <span class="skill-dot inline"></span>
             <span class="skill-name">{skill.name}</span>
-            <span class="type-badge inline">INLINE</span>
+            <InlineBadge variant="info">INLINE</InlineBadge>
             <div class="row-actions">
               <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
                 {#snippet children()}
@@ -254,7 +255,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
@@ -356,29 +357,8 @@
     white-space: nowrap;
   }
 
-  .type-badge {
-    border-radius: var(--radius-1);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
-  .type-badge.catalog {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    color: var(--color-success);
-  }
-
-  .type-badge.inline {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    color: var(--color-info);
-  }
-
   .version-badge {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
@@ -386,7 +366,7 @@
   .row-description {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-1);
     line-height: 1.4;
@@ -411,7 +391,7 @@
   .overflow-btn {
     align-items: center;
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-3);
     justify-content: center;
@@ -519,7 +499,7 @@
   }
 
   .picker-empty {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     padding: var(--size-4) 0;
     text-align: center;
@@ -560,7 +540,7 @@
   .picker-item-desc {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-1);
     line-height: 1.4;

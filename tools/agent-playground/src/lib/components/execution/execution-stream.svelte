@@ -336,7 +336,7 @@
 <style>
   .cancelled {
     border-block-start: 1px solid var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
     margin-block-start: var(--size-3);
@@ -368,7 +368,7 @@
   }
 
   .empty {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     padding-block: var(--size-8);
     text-align: center;
@@ -430,7 +430,7 @@
   .result-action {
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     font-size: var(--font-size-0);
     padding: 0;
@@ -450,7 +450,7 @@
     align-items: center;
     background-color: var(--color-surface-2);
     border-block-end: 1px solid var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
@@ -488,7 +488,7 @@
   }
 
   .tool-call-caret {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: inline-block;
     flex-shrink: 0;
     font-size: 10px;
@@ -578,7 +578,7 @@
   }
 
   .tool-call-section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -597,7 +597,7 @@
   }
 
   .tool-call-waiting {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
   }

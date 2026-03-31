@@ -22,6 +22,7 @@
   import type { Client } from "$lib/client.ts";
   import { agentQueries } from "$lib/queries";
   import type { InferResponseType } from "hono/client";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import AgentIoSchemas from "./agent-io-schemas.svelte";
 
   type AgentsEndpoint = Client["api"]["agents"]["$get"];
@@ -82,7 +83,7 @@
 
     <span class="agent-name">{agent.displayName}</span>
 
-    <code class="type-badge">BUILT-IN</code>
+    <InlineBadge variant="success">BUILT-IN</InlineBadge>
 
     {#if agent.description}
       <span class="description-truncated">{agent.description}</span>
@@ -229,20 +230,8 @@
     white-space: nowrap;
   }
 
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 20%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    letter-spacing: var(--font-letterspacing-2);
-    padding-block: var(--size-0-5);
-    padding-inline: var(--size-1-5);
-  }
-
   .description-truncated {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex: 1;
     font-size: var(--font-size-2);
     min-inline-size: 0;
@@ -252,7 +241,7 @@
   }
 
   .version {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
@@ -289,7 +278,7 @@
   }
 
   .spec-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
@@ -302,7 +291,7 @@
   }
 
   .spec-constraints {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     font-style: italic;
     line-height: var(--font-lineheight-3);
@@ -369,12 +358,12 @@
   }
 
   .config-optional-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
   }
 
   .config-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
   }
 </style>

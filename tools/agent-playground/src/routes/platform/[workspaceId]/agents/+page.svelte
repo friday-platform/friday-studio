@@ -17,6 +17,7 @@
   import { page } from "$app/state";
   import AgentIoSchemas from "$lib/components/agents/agent-io-schemas.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -228,7 +229,7 @@
               ></span>
             {/if}
             <h2 class="agent-name">{agent.name}</h2>
-            <span class="type-badge" class:custom={agent.type === "llm"}>{typeBadge(agent)}</span>
+            <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>{typeBadge(agent)}</InlineBadge>
             <button
               class="edit-yaml-btn"
               title="Edit configuration"
@@ -251,7 +252,7 @@
           {#if agent.tools && agent.tools.length > 0}
             <div class="tool-pills">
               {#each agent.tools as tool (tool)}
-                <span class="tool-pill">{tool}</span>
+                <InlineBadge variant="info">{tool}</InlineBadge>
               {/each}
             </div>
           {/if}
@@ -373,7 +374,7 @@
   }
 
   .page-subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: 1.5;
     max-inline-size: 50ch;
@@ -381,7 +382,7 @@
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
@@ -444,24 +445,6 @@
     font-weight: var(--font-weight-6);
   }
 
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
-  .type-badge.custom {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    color: var(--color-info);
-  }
-
   .edit-yaml-btn {
     align-items: center;
     background: none;
@@ -488,7 +471,7 @@
   }
 
   .config-strip {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
@@ -497,15 +480,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-1);
-  }
-
-  .tool-pill {
-    background-color: var(--color-surface-2);
-    border-radius: var(--radius-1);
-    color: var(--color-text);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    padding: var(--size-0-5) var(--size-2);
   }
 
   .detail-tier-inner {
@@ -523,7 +497,7 @@
   }
 
   .detail-label {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
   }
@@ -559,7 +533,7 @@
   }
 
   .config-key {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-weight: var(--font-weight-5);
     padding: var(--size-1-5) var(--size-3) var(--size-1-5) 0;
     vertical-align: top;
@@ -601,7 +575,7 @@
   }
 
   .env-source {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     padding: var(--size-1-5) var(--size-2);
     vertical-align: baseline;
@@ -633,7 +607,7 @@
   }
 
   .used-in-empty {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
     font-style: italic;
   }
@@ -667,7 +641,7 @@
   }
 
   .used-in-job {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
   }
 

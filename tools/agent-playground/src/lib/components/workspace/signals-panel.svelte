@@ -12,6 +12,7 @@
 <script lang="ts">
   import type { SignalDetail } from "@atlas/config/signal-details";
   import CollapsibleSection from "$lib/components/shared/collapsible-section.svelte";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   type Props = {
@@ -57,10 +58,10 @@
     });
   }
 
-  function providerBadgeClass(provider: string): string {
-    if (provider === "http") return "badge--http";
-    if (provider === "schedule") return "badge--cron";
-    return "badge--manual";
+  function providerVariant(provider: string): "info" | "warning" | "accent" {
+    if (provider === "http") return "info";
+    if (provider === "schedule") return "warning";
+    return "accent";
   }
 
   function providerLabel(provider: string): string {
@@ -78,9 +79,9 @@
         <div class="signal-entry" class:signal-entry--highlighted={triggersHighlightedJob(signal)}>
           <div class="signal-header">
             <span class="signal-name">{signal.title ?? signal.name}</span>
-            <span class="provider-badge {providerBadgeClass(signal.provider)}">
+            <InlineBadge variant={providerVariant(signal.provider)}>
               {providerLabel(signal.provider)}
-            </span>
+            </InlineBadge>
             {#if signal.endpoint}
               <span class="endpoint">POST {signal.endpoint}</span>
             {:else if signal.schedule}
@@ -153,33 +154,8 @@
     font-weight: var(--font-weight-5);
   }
 
-  .provider-badge {
-    border-radius: var(--radius-1);
-    font-family: var(--font-family-monospace);
-    font-size: 9px;
-    font-weight: var(--font-weight-6);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
-
-  .badge--http {
-    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
-    color: var(--color-info);
-  }
-
-  .badge--cron {
-    background-color: color-mix(in srgb, var(--color-warning), transparent 85%);
-    color: var(--color-warning);
-  }
-
-  .badge--manual {
-    background-color: color-mix(in srgb, var(--color-accent), transparent 85%);
-    color: var(--color-accent);
-  }
-
   .endpoint {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }
@@ -207,7 +183,7 @@
   }
 
   .field-type {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
   }
@@ -219,7 +195,7 @@
   }
 
   .field-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
     font-style: italic;
     overflow: hidden;
@@ -236,7 +212,7 @@
   }
 
   .triggers-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
   }
 

@@ -254,7 +254,7 @@
   .task-text {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-2);
     line-height: var(--font-lineheight-3);
@@ -277,9 +277,9 @@
   }
 
   .signal-tag {
-    border: 1px solid var(--color-border-2);
+    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: var(--color-text);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
@@ -312,25 +312,22 @@
 
   .step-pill {
     align-items: center;
-    border: 1px solid var(--color-border-1);
+    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
     border-radius: var(--radius-round);
+    color: var(--color-text);
     display: flex;
     gap: var(--size-1-5);
     padding: var(--size-1-5) var(--size-3) var(--size-1-5) var(--size-2);
   }
 
   .step-pill--completed {
-    border-color: var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-
     .step-icon {
       color: var(--color-success);
     }
   }
 
   .step-pill--active {
-    border-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-border-1));
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    border-color: color-mix(in srgb, var(--color-warning), transparent 25%);
 
     .step-icon {
       color: var(--color-warning);
@@ -338,18 +335,14 @@
   }
 
   .step-pill--failed {
-    border-color: var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-
     .step-icon {
       color: var(--color-error);
     }
   }
 
   .step-pill--pending {
-    border-color: var(--color-border-2);
-    color: color-mix(in srgb, var(--color-text), transparent 65%);
-    opacity: 0.45;
+    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
   }
 
   .step-icon {
@@ -394,7 +387,7 @@
   }
 
   .footer-meta {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-1);
     gap: var(--size-1-5);

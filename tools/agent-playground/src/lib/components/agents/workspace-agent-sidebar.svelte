@@ -12,6 +12,7 @@
 <script lang="ts">
   import type { AgentStepRef } from "@atlas/config/agent-job-usage";
   import type { WorkspaceAgent } from "@atlas/config/workspace-agents";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
 
   type Props = {
     agent: WorkspaceAgent;
@@ -43,8 +44,10 @@
 <div class="workspace-agent-sidebar">
   <div class="section">
     <h3 class="section-title">Workspace Agent</h3>
-    <p class="agent-name">{agent.name}</p>
-    <span class="type-badge">{agent.agent ?? agent.type}</span>
+    <p class="agent-name">
+      {agent.name}
+      <InlineBadge variant="success">{agent.agent ?? agent.type}</InlineBadge>
+    </p>
   </div>
 
   {#if agent.description}
@@ -119,7 +122,7 @@
   }
 
   .section-title {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.05em;
@@ -127,23 +130,13 @@
   }
 
   .agent-name {
+    align-items: center;
     color: var(--color-text);
+    display: flex;
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
+    gap: var(--size-2);
     word-break: break-all;
-  }
-
-  .type-badge {
-    align-self: flex-start;
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
   }
 
   .field-label {
@@ -194,7 +187,7 @@
   /* ---- Used In section ---- */
 
   .empty-message {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-style: italic;
   }
@@ -232,7 +225,7 @@
   }
 
   .usage-job-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);

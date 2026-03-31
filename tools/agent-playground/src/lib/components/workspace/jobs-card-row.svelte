@@ -164,7 +164,7 @@
   }
 
   .job-description {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-3);
     margin: 0;
@@ -187,7 +187,7 @@
   .overflow-btn {
     align-items: center;
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-3);
     justify-content: center;

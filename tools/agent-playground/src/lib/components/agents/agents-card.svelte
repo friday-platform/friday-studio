@@ -16,6 +16,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { integrationQueries, type IntegrationStatus } from "$lib/queries";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
 
   type Props = { agents: WorkspaceAgent[]; workspaceId: string };
 
@@ -137,7 +138,7 @@
           {/if}
 
           <span class="agent-name">{agent.name}</span>
-          <span class="type-badge">{typeBadge(agent)}</span>
+          <InlineBadge variant="success">{typeBadge(agent)}</InlineBadge>
 
           {#if config}
             <span class="config-strip">{config}</span>
@@ -146,7 +147,7 @@
           {#if tools.length > 0}
             <span class="tool-pills">
               {#each tools as tool (tool)}
-                <span class="tool-pill">{tool}</span>
+                <InlineBadge variant="info">{tool}</InlineBadge>
               {/each}
             </span>
           {/if}
@@ -204,7 +205,8 @@
   .card-header {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--s
+    ize-1);
   }
 
   .card-title {
@@ -214,7 +216,7 @@
   }
 
   .card-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-size: var(--font-size-1);
     margin: 0;
   }
@@ -251,7 +253,7 @@
   .agent-description {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-2);
@@ -261,7 +263,7 @@
   }
 
   .health-label {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-size: var(--font-size-0);
     margin-inline-start: auto;
     white-space: nowrap;
@@ -279,7 +281,7 @@
     align-items: center;
     block-size: var(--size-6);
     border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-shrink: 0;
     inline-size: var(--size-6);
@@ -328,21 +330,9 @@
     white-space: nowrap;
   }
 
-  .type-badge {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-radius: var(--radius-1);
-    color: var(--color-success);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-1);
-    text-transform: uppercase;
-  }
 
   .config-strip {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 1;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
@@ -359,14 +349,4 @@
     gap: var(--size-1);
   }
 
-  .tool-pill {
-    background-color: color-mix(in srgb, var(--color-info), transparent 88%);
-    border-radius: var(--radius-1);
-    color: var(--color-info);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-0-5) var(--size-1);
-    white-space: nowrap;
-  }
 </style>

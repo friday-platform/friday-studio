@@ -188,7 +188,7 @@
   }
 
   .workspace-id {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
   }
 
@@ -216,12 +216,12 @@
     }
 
     dd {
-      color: color-mix(in srgb, var(--color-text), transparent 40%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       font-size: var(--font-size-2);
     }
 
     dd a {
-      color: color-mix(in srgb, var(--color-text), transparent 40%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       text-decoration: underline;
       text-decoration-color: color-mix(in srgb, currentColor, transparent 70%);
       text-underline-offset: var(--size-0-5);

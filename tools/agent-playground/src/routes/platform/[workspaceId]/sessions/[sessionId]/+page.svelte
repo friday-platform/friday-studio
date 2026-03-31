@@ -283,14 +283,14 @@
   }
 
   .session-subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: var(--font-lineheight-3);
     max-inline-size: 60ch;
   }
 
   .session-meta {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     font-size: var(--font-size-2);
     gap: var(--size-1-5);
@@ -331,7 +331,7 @@
   }
 
   .loading {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-4);
     padding-block-start: var(--size-8);
   }
@@ -345,7 +345,7 @@
     text-align: center;
 
     p {
-      color: color-mix(in srgb, var(--color-text), transparent 50%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       font-size: var(--font-size-4);
     }
   }
@@ -381,7 +381,7 @@
   }
 
   .workspace-id {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
   }
 
@@ -403,12 +403,12 @@
     }
 
     dd {
-      color: color-mix(in srgb, var(--color-text), transparent 40%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       font-size: var(--font-size-2);
     }
 
     dd a {
-      color: color-mix(in srgb, var(--color-text), transparent 40%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       text-decoration: underline;
       text-decoration-color: color-mix(in srgb, currentColor, transparent 70%);
       text-underline-offset: var(--size-0-5);

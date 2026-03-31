@@ -179,7 +179,7 @@
   }
 
   .session-detail {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex: 1;
     font-size: var(--font-size-1);
     min-inline-size: 0;
@@ -189,7 +189,7 @@
   }
 
   .session-duration {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-1);

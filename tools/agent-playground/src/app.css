@@ -5,6 +5,15 @@
   --accent-1: hsl(216 20% 95%);
   --accent-2: hsl(212 97% 49%);
   --accent-3: hsl(212 97% 27%);
+
+  /* Extended syntax highlighting palette (not in @atlas/ui tokens) */
+  --brown-3: hsl(35 49% 21%);
+  --red-3: hsl(24 96% 33%);
+  --green-3: hsl(99 78% 20%);
+
+  /* Editor text opacity variants — based on --color-text for each mode */
+  --editor-muted: hsl(230 32% 14% / 0.5);
+  --editor-dimmed: hsl(230 32% 14% / 0.7);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -12,6 +21,13 @@
     --accent-1: hsl(210 9% 9%);
     --accent-2: hsl(212 97% 49%);
     --accent-3: hsl(212 96% 78%);
+
+    --brown-3: hsl(34 49% 61%);
+    --red-3: hsl(24 96% 78%);
+    --green-3: hsl(100 79% 78%);
+
+    --editor-muted: hsl(40 12% 95% / 0.4);
+    --editor-dimmed: hsl(40 12% 95% / 0.55);
   }
 }
 

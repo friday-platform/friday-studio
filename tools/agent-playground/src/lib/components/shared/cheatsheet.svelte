@@ -2,6 +2,8 @@
   import { browser } from "$app/environment";
   import { page } from "$app/state";
   import { categories, isRelevant, relevanceScore } from "$lib/cheatsheet-commands";
+  import { Button } from "@atlas/ui";
+  import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import type { Restty as ResttyType } from "restty";
 
   interface Props {
@@ -308,9 +310,9 @@
         <h2>CLI Cheatsheet</h2>
         <div class="header-right">
           {#if ptyAvailable}
-            <span class="exec-badge available">Terminal</span>
+            <InlineBadge variant="success">Terminal</InlineBadge>
           {:else}
-            <span class="exec-badge unavailable">Copy only</span>
+            <InlineBadge>Copy only</InlineBadge>
           {/if}
           <kbd>Esc</kbd>
         </div>
@@ -374,27 +376,28 @@
                     <span class="command-desc">{cmd.description}</span>
                   </div>
                   <div class="command-actions">
-                    <button
-                      class="action-btn"
-                      onclick={(e) => {
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onclick={(e: MouseEvent) => {
                         e.stopPropagation();
                         copyCommand(cmd.command);
                       }}
                       title="Copy to clipboard"
                     >
                       Copy
-                    </button>
+                    </Button>
                     {#if ptyAvailable && !cmd.copyOnly}
-                      <button
-                        class="action-btn run-btn"
-                        onclick={(e) => {
+                      <Button
+                        size="small"
+                        onclick={(e: MouseEvent) => {
                           e.stopPropagation();
                           dropToTerminal(cmd.command);
                         }}
                         title="Drop to terminal"
                       >
                         Run
-                      </button>
+                      </Button>
                     {/if}
                   </div>
                 </div>
@@ -506,7 +509,7 @@
 
   .toggle-label {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
     display: flex;
     flex-shrink: 0;
@@ -516,7 +519,7 @@
   }
 
   .context-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
 
     code {
@@ -525,25 +528,6 @@
       font-size: var(--font-size-1);
       padding: var(--size-0-5) var(--size-1);
     }
-  }
-
-  .exec-badge {
-    border-radius: var(--radius-1);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-1);
-    padding: var(--size-0-5) var(--size-2);
-    text-transform: uppercase;
-  }
-
-  .exec-badge.available {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    color: var(--color-success);
-  }
-
-  .exec-badge.unavailable {
-    background-color: color-mix(in srgb, var(--color-text), transparent 90%);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
   }
 
   kbd {
@@ -565,7 +549,7 @@
   }
 
   .empty-state {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     padding: var(--size-8);
     text-align: center;
@@ -577,7 +561,7 @@
     gap: var(--size-2);
 
     h3 {
-      color: color-mix(in srgb, var(--color-text), transparent 40%);
+      color: color-mix(in srgb, var(--color-text), transparent 25%);
       font-size: var(--font-size-1);
       font-weight: var(--font-weight-5);
       letter-spacing: var(--font-letterspacing-2);
@@ -627,7 +611,7 @@
   }
 
   .command-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
   }
 
@@ -635,38 +619,6 @@
     display: flex;
     flex-shrink: 0;
     gap: var(--size-1);
-  }
-
-  .action-btn {
-    all: unset;
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-0-5) var(--size-2);
-    transition: background-color 100ms ease;
-
-    &:hover {
-      background-color: var(--color-highlight-1);
-    }
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.5;
-    }
-  }
-
-  .run-btn {
-    background-color: color-mix(in srgb, var(--color-success), transparent 85%);
-    border-color: color-mix(in srgb, var(--color-success), transparent 70%);
-    color: var(--color-success);
-
-    &:hover {
-      background-color: color-mix(in srgb, var(--color-success), transparent 75%);
-    }
   }
 
   /* Terminal panel — restty mounts here */
@@ -706,7 +658,7 @@
   .cheatsheet-footer {
     align-items: center;
     border-block-start: 1px solid var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: flex;
     flex-shrink: 0;
     font-size: var(--font-size-1);

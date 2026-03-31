@@ -66,7 +66,7 @@
   }
 
   .section-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-size: var(--font-size-1);
     margin: 0;
   }

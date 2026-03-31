@@ -185,7 +185,7 @@
   }
 
   .empty-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-mono);
     font-size: var(--font-size-1);
   }
@@ -216,7 +216,7 @@
   }
 
   .header-text {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
   }
@@ -303,7 +303,7 @@
   }
 
   .agent-id {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
     font-size: calc(var(--font-size-0) - 1px);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -351,7 +351,7 @@
 
   .bar--skipped {
     background: none;
-    border: 1px dashed color-mix(in srgb, var(--color-text), transparent 55%);
+    border: 1px dashed color-mix(in srgb, var(--color-text), transparent 10%);
   }
 
   @keyframes pulse {
@@ -389,7 +389,7 @@
   }
 
   .duration-label--skipped {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-style: italic;
   }
 

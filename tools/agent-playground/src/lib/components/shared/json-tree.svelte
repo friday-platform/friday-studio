@@ -156,7 +156,7 @@
   }
 
   .caret {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: inline-block;
     flex-shrink: 0;
     font-size: 10px;
@@ -169,13 +169,13 @@
   }
 
   .bracket {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-2);
   }
 
   .preview {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-2);
   }
@@ -204,7 +204,7 @@
   }
 
   .colon {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
   }
 
   /* Leaf value colors — subtle tints, not a Christmas tree */

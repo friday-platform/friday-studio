@@ -477,7 +477,7 @@
   }
 
   .zone-label {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-1);
     font-family: var(--font-mono);
     user-select: none;

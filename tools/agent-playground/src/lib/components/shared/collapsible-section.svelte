@@ -84,7 +84,7 @@
   }
 
   .disclosure {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-size: var(--font-size-1);
     inline-size: 1em;
@@ -100,7 +100,7 @@
   }
 
   .section-summary {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-0);
     margin-inline-start: auto;
