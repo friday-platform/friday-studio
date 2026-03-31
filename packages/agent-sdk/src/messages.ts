@@ -154,8 +154,17 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
   if (messages.length === 0) {
     return [];
   }
+
+  // AI SDK v6 rejects messages with empty parts arrays. Filter them out
+  // rather than failing — tool-call-only responses can produce assistant
+  // messages with parts: [] before text content arrives.
+  const hasEmptyParts = z.object({ parts: z.array(z.unknown()).max(0) });
+  const nonEmpty = messages.filter((m) => !hasEmptyParts.safeParse(m).success);
+  if (nonEmpty.length === 0) {
+    return [];
+  }
   return await validateUIMessages({
-    messages,
+    messages: nonEmpty,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
   });

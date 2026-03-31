@@ -584,7 +584,7 @@ For external services, use do_task. For artifact data, use artifacts_get.
             messages: [
               { role: ROLE_SYSTEM, content: systemPrompt },
               { role: ROLE_SYSTEM, content: datetimeMessage },
-              ...convertToModelMessages(messages),
+              ...(await convertToModelMessages(messages)),
             ],
             tools: allTools,
             toolChoice: "auto",

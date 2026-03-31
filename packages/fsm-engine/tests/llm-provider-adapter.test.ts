@@ -1,5 +1,5 @@
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import type { CoreMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { jsonSchema, tool } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,7 +16,7 @@ vi.mock("@atlas/llm", () => ({
 
 const { AtlasLLMProviderAdapter } = await import("../llm-provider-adapter.ts");
 
-/** Minimal LanguageModelV2 mock — avoids ai/test's msw peer dependency */
+/** Minimal LanguageModelV3 mock — avoids ai/test's msw peer dependency */
 function createMockModel(chunks?: StreamPart[]) {
   type CallRecord = { prompt: Array<{ role: string; content: unknown[] }> };
   const doStreamCalls: CallRecord[] = [];
@@ -34,7 +34,7 @@ function createMockModel(chunks?: StreamPart[]) {
   const parts = chunks ?? defaultChunks;
   return {
     model: {
-      specificationVersion: "v2",
+      specificationVersion: "v3",
       provider: "mock-provider",
       modelId: "mock-model",
       supportedUrls: {},
@@ -93,7 +93,7 @@ describe("AtlasLLMProviderAdapter", () => {
   it("uses messages with image parts when present", async () => {
     const adapter = new AtlasLLMProviderAdapter("default-model");
 
-    const messages: CoreMessage[] = [
+    const messages: ModelMessage[] = [
       {
         role: "user",
         content: [
@@ -167,7 +167,7 @@ describe("AtlasLLMProviderAdapter", () => {
 
     let callCount = 0;
     const mockModel = {
-      specificationVersion: "v2",
+      specificationVersion: "v3",
       provider: "mock-provider",
       modelId: "mock-model",
       supportedUrls: {},

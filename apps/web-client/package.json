@@ -18,7 +18,7 @@
     "vitest": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/svelte": "^3.0.156",
+    "@ai-sdk/svelte": "^4.0.141",
     "@atlas/analytics": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
@@ -36,7 +36,7 @@
     "@types/deno": "2.5.0",
     "@types/markdown-it": "^14.1.2",
     "@types/papaparse": "^5.5.2",
-    "ai": "^5.0.157",
+    "ai": "^6.0.141",
     "dompurify": "^3.3.3",
     "markdown-it": "^14.1.1",
     "papaparse": "^5.5.3",

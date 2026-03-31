@@ -156,7 +156,7 @@ describe("repairToolCall", () => {
       system: undefined,
       messages: [],
       tools: {},
-      inputSchema: () => ({}),
+      inputSchema: () => Promise.resolve({}),
       toolCall,
       error: new InvalidToolInputError({
         toolName: "search",
@@ -187,7 +187,7 @@ describe("repairToolCall", () => {
       system: undefined,
       messages: [],
       tools: {},
-      inputSchema: () => ({}),
+      inputSchema: () => Promise.resolve({}),
       toolCall,
       error: new NoSuchToolError({ toolName: "unknown_tool" }),
     });
@@ -208,7 +208,7 @@ describe("repairToolCall", () => {
       system: undefined,
       messages: [],
       tools: {},
-      inputSchema: () => ({}),
+      inputSchema: () => Promise.resolve({}),
       toolCall,
       error: new InvalidToolInputError({
         toolName: "search",

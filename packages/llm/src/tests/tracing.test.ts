@@ -1,18 +1,19 @@
 import type {
-  LanguageModelV2,
-  LanguageModelV2CallOptions,
-  LanguageModelV2StreamPart,
+  LanguageModelV3,
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+  LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 import { describe, expect, it } from "vitest";
 import { enterTraceScope, type TraceEntry, traceModel } from "../tracing.ts";
 
-const MINIMAL_OPTS: Pick<LanguageModelV2CallOptions, "prompt"> = {
+const MINIMAL_OPTS: Pick<LanguageModelV3CallOptions, "prompt"> = {
   prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
 };
 
 function opts(
-  prompt: LanguageModelV2CallOptions["prompt"],
-): Pick<LanguageModelV2CallOptions, "prompt"> {
+  prompt: LanguageModelV3CallOptions["prompt"],
+): Pick<LanguageModelV3CallOptions, "prompt"> {
   return { prompt };
 }
 
@@ -23,31 +24,42 @@ function first<T>(arr: T[]): T {
   return item;
 }
 
-function createMockModel(overrides?: { modelId?: string }): LanguageModelV2 {
+function createMockModel(overrides?: { modelId?: string }): LanguageModelV3 {
   const modelId = overrides?.modelId ?? "test-provider:test-model";
   return {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "test-provider",
     modelId,
     supportedUrls: {},
     // deno-lint-ignore require-await
-    doGenerate: async () => ({
-      content: [
-        { type: "text" as const, text: "Hello world" },
+    doGenerate: async () => {
+      const content: LanguageModelV3Content[] = [
+        { type: "text", text: "Hello world" },
         {
-          type: "tool-call" as const,
+          type: "tool-call",
           toolCallId: "call-1",
           toolName: "get_weather",
           input: '{"city":"Tokyo"}',
         },
-      ],
-      finishReason: "stop" as const,
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-      warnings: [],
-    }),
+      ];
+      return {
+        content,
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: {
+          inputTokens: {
+            total: 100,
+            noCache: undefined,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: { total: 50, text: undefined, reasoning: undefined },
+        },
+        warnings: [],
+      };
+    },
     // deno-lint-ignore require-await
     doStream: async () => ({
-      stream: new ReadableStream<LanguageModelV2StreamPart>({
+      stream: new ReadableStream<LanguageModelV3StreamPart>({
         start(controller) {
           controller.enqueue({ type: "stream-start", warnings: [] });
           controller.enqueue({ type: "text-start", id: "t1" });
@@ -60,8 +72,16 @@ function createMockModel(overrides?: { modelId?: string }): LanguageModelV2 {
           controller.enqueue({ type: "tool-input-end", id: "tc1" });
           controller.enqueue({
             type: "finish",
-            usage: { inputTokens: 80, outputTokens: 40, totalTokens: 120 },
-            finishReason: "stop",
+            usage: {
+              inputTokens: {
+                total: 80,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 40, text: undefined, reasoning: undefined },
+            },
+            finishReason: { unified: "stop" as const, raw: undefined },
           });
           controller.close();
         },
@@ -71,7 +91,7 @@ function createMockModel(overrides?: { modelId?: string }): LanguageModelV2 {
 }
 
 /** Consume a ReadableStream to completion */
-async function drainStream(stream: ReadableStream<LanguageModelV2StreamPart>): Promise<void> {
+async function drainStream(stream: ReadableStream<LanguageModelV3StreamPart>): Promise<void> {
   const reader = stream.getReader();
   while (!(await reader.read()).done) {
     // consume
@@ -117,7 +137,7 @@ describe("tracing", () => {
       ]);
       expect(trace.output.text).toBe("Hello world");
       expect(trace.output.toolCalls).toEqual([{ name: "get_weather", input: { city: "Tokyo" } }]);
-      expect(trace.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+      expect(trace.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
       expect(trace.startMs).toBeGreaterThanOrEqual(0);
       expect(trace.endMs).toBeGreaterThanOrEqual(trace.startMs);
     });
@@ -140,7 +160,7 @@ describe("tracing", () => {
       expect(trace.modelId).toBe("groq:llama-3");
       expect(trace.output.text).toBe("Hello world");
       expect(trace.output.toolCalls).toEqual([{ name: "get_weather", input: { city: "Tokyo" } }]);
-      expect(trace.usage).toEqual({ inputTokens: 80, outputTokens: 40, totalTokens: 120 });
+      expect(trace.usage).toEqual({ inputTokens: 80, outputTokens: 40 });
       expect(trace.startMs).toBeGreaterThanOrEqual(0);
       expect(trace.endMs).toBeGreaterThanOrEqual(trace.startMs);
     });
@@ -195,7 +215,7 @@ describe("tracing", () => {
     it("correlates deltas by id, not position", async () => {
       const traces: TraceEntry[] = [];
       const model = traceModel({
-        specificationVersion: "v2",
+        specificationVersion: "v3",
         provider: "test-provider",
         modelId: "test-provider:test-model",
         supportedUrls: {},
@@ -205,7 +225,7 @@ describe("tracing", () => {
         },
         // deno-lint-ignore require-await
         doStream: async () => ({
-          stream: new ReadableStream<LanguageModelV2StreamPart>({
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
             start(controller) {
               controller.enqueue({ type: "stream-start", warnings: [] });
               // Two tool calls with interleaved chunks
@@ -219,8 +239,16 @@ describe("tracing", () => {
               controller.enqueue({ type: "tool-input-end", id: "tc2" });
               controller.enqueue({
                 type: "finish",
-                usage: { inputTokens: 50, outputTokens: 30, totalTokens: 80 },
-                finishReason: "stop",
+                usage: {
+                  inputTokens: {
+                    total: 50,
+                    noCache: undefined,
+                    cacheRead: undefined,
+                    cacheWrite: undefined,
+                  },
+                  outputTokens: { total: 30, text: undefined, reasoning: undefined },
+                },
+                finishReason: { unified: "stop" as const, raw: undefined },
               });
               controller.close();
             },
@@ -246,25 +274,36 @@ describe("tracing", () => {
     it("generate still returns result and captures trace with raw input", async () => {
       const traces: TraceEntry[] = [];
       const model = traceModel({
-        specificationVersion: "v2",
+        specificationVersion: "v3",
         provider: "test-provider",
         modelId: "test-provider:test-model",
         supportedUrls: {},
         // deno-lint-ignore require-await
-        doGenerate: async () => ({
-          content: [
-            { type: "text" as const, text: "result" },
+        doGenerate: async () => {
+          const content: LanguageModelV3Content[] = [
+            { type: "text", text: "result" },
             {
-              type: "tool-call" as const,
+              type: "tool-call",
               toolCallId: "call-1",
               toolName: "broken_tool",
               input: "not valid json {{{",
             },
-          ],
-          finishReason: "stop" as const,
-          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
-          warnings: [],
-        }),
+          ];
+          return {
+            content,
+            finishReason: { unified: "stop" as const, raw: undefined },
+            usage: {
+              inputTokens: {
+                total: 10,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 5, text: undefined, reasoning: undefined },
+            },
+            warnings: [],
+          };
+        },
         // deno-lint-ignore require-await
         doStream: async () => {
           throw new Error("not used");
@@ -286,7 +325,7 @@ describe("tracing", () => {
     it("stream still completes and captures trace with raw input", async () => {
       const traces: TraceEntry[] = [];
       const model = traceModel({
-        specificationVersion: "v2",
+        specificationVersion: "v3",
         provider: "test-provider",
         modelId: "test-provider:test-model",
         supportedUrls: {},
@@ -296,7 +335,7 @@ describe("tracing", () => {
         },
         // deno-lint-ignore require-await
         doStream: async () => ({
-          stream: new ReadableStream<LanguageModelV2StreamPart>({
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
             start(controller) {
               controller.enqueue({ type: "stream-start", warnings: [] });
               controller.enqueue({ type: "tool-input-start", id: "tc1", toolName: "broken_tool" });
@@ -308,8 +347,16 @@ describe("tracing", () => {
               controller.enqueue({ type: "tool-input-end", id: "tc1" });
               controller.enqueue({
                 type: "finish",
-                usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
-                finishReason: "stop",
+                usage: {
+                  inputTokens: {
+                    total: 10,
+                    noCache: undefined,
+                    cacheRead: undefined,
+                    cacheWrite: undefined,
+                  },
+                  outputTokens: { total: 5, text: undefined, reasoning: undefined },
+                },
+                finishReason: { unified: "stop" as const, raw: undefined },
               });
               controller.close();
             },
@@ -333,7 +380,7 @@ describe("tracing", () => {
     it("propagates doGenerate error and records no trace", async () => {
       const traces: TraceEntry[] = [];
       const model = traceModel({
-        specificationVersion: "v2",
+        specificationVersion: "v3",
         provider: "test-provider",
         modelId: "test-provider:test-model",
         supportedUrls: {},

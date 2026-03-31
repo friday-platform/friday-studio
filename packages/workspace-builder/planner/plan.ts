@@ -465,7 +465,8 @@ function buildAgentSchema(capabilityIds: [string, ...string[]]) {
         "IDs from the Capabilities section. Use empty array when built-in capabilities are sufficient.",
       ),
     configuration: z
-      .record(z.string(), z.unknown())
+      .object({})
+      .catchall(z.unknown())
       .optional()
       .describe(
         "ONLY user-specific values that must not be lost. Examples: {channel: '#sneaker-drops', email: 'alerts@company.com', targets: ['Nike.com', 'Adidas.com']}. DO NOT include URLs with paths, field names, intervals (already in signal), or implementation details.",
@@ -575,6 +576,7 @@ export async function generatePlan(
       schema: schemas.task,
       experimental_repairText: repairJson,
       maxRetries: 3,
+      providerOptions: { anthropic: { structuredOutputMode: "jsonTool" } },
       messages: [
         {
           role: "system",
@@ -607,6 +609,7 @@ export async function generatePlan(
     schema: schemas.workspace,
     experimental_repairText: repairJson,
     maxRetries: 3,
+    providerOptions: { anthropic: { structuredOutputMode: "jsonTool" } },
     messages: [
       {
         role: "system",

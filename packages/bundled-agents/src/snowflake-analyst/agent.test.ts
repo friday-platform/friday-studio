@@ -65,7 +65,7 @@ import {
 
 const DEFAULT_QUESTION = "Analyze this table for trends, anomalies, patterns, and key insights.";
 
-/** Minimal ToolCallOptions for test execute() calls. */
+/** Minimal ToolExecutionOptions for test execute() calls. */
 const toolCtx = { toolCallId: "test-call", messages: [] as never[] };
 
 const mockLogger: AgentContext["logger"] = {

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "@ai-sdk/provider": "^2.0.1",
+    "@ai-sdk/provider": "^3.0.8",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/client": "workspace:*",
@@ -16,7 +16,7 @@
     "@atlas/workspace-builder": "workspace:*",
     "@faker-js/faker": "^10.3.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "ai": "^5.0.157",
+    "ai": "^6.0.141",
     "dotenv": "17.3.1",
     "gunshi": "^0.29.3",
     "papaparse": "^5.5.3",

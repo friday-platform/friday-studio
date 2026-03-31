@@ -45,7 +45,7 @@ import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
-import { type CoreMessage, type ImagePart, type Tool, tool } from "ai";
+import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
 import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
@@ -1257,7 +1257,7 @@ export class FSMEngine {
 
               // When images are present, assemble a messages array with mixed content.
               // Otherwise, use the prompt-only path for backward compatibility.
-              const messages: CoreMessage[] | undefined =
+              const messages: ModelMessage[] | undefined =
                 images.length > 0
                   ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
                   : undefined;
@@ -1327,7 +1327,7 @@ export class FSMEngine {
                       : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
 
                   // Rebuild messages with retry prompt, preserving image parts from the original call
-                  const retryMessages: CoreMessage[] | undefined =
+                  const retryMessages: ModelMessage[] | undefined =
                     images.length > 0
                       ? [
                           {

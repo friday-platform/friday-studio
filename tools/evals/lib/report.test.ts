@@ -31,7 +31,7 @@ describe("buildReport", () => {
                 modelId: "claude",
                 input: [],
                 output: { text: "", toolCalls: [] },
-                usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+                usage: { inputTokens: 100, outputTokens: 50 },
                 startMs: 0,
                 endMs: 100,
               },

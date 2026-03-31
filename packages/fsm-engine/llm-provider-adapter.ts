@@ -12,7 +12,7 @@ import { createErrorCause, getErrorDisplayMessage, isAPIErrorCause } from "@atla
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import type { CoreMessage, StopCondition, Tool } from "ai";
+import type { ModelMessage, StopCondition, Tool } from "ai";
 import { hasToolCall, stepCountIs, streamText } from "ai";
 import type { FSMLLMOutput, LLMProvider } from "./types.ts";
 
@@ -32,7 +32,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     agentId: string;
     model: string;
     prompt: string;
-    messages?: Array<CoreMessage>;
+    messages?: Array<ModelMessage>;
     tools?: Record<string, Tool>;
     toolChoice?: "auto" | "required" | "none";
     stopOnToolCall?: string[];

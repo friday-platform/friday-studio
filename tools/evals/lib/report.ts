@@ -51,7 +51,10 @@ export function buildReport(grouped: Map<string, EvalResult[]>): Report {
       scores[s.name] = s.value;
     }
 
-    const tokens = latest.traces.reduce((sum, t) => sum + t.usage.totalTokens, 0);
+    const tokens = latest.traces.reduce(
+      (sum, t) => sum + t.usage.inputTokens + t.usage.outputTokens,
+      0,
+    );
     const passed = !latest.metadata.error;
 
     rows.push({ evalName: latest.evalName, passed, scores, tokens });

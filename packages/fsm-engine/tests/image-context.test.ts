@@ -12,7 +12,7 @@
  */
 
 import type { Artifact, ArtifactStorageAdapter } from "@atlas/core/artifacts";
-import type { CoreMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
@@ -105,7 +105,7 @@ function makeMockStorage(overrides: {
 
 interface CapturedCall {
   prompt: string;
-  messages: CoreMessage[] | undefined;
+  messages: ModelMessage[] | undefined;
 }
 
 async function setupEngine(opts: {

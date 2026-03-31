@@ -68,7 +68,7 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
 
       emitter.result(result);
 
-      const totalTokens = traces.reduce((sum, t) => sum + t.usage.totalTokens, 0);
+      const totalTokens = traces.reduce((sum, t) => sum + t.usage.inputTokens + t.usage.outputTokens, 0);
       emitter.done({
         durationMs,
         totalTokens: totalTokens || undefined,

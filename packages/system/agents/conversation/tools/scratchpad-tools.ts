@@ -6,7 +6,6 @@ import { tool } from "ai";
 import { z } from "zod";
 
 export const takeNoteTool = tool({
-  name: "take_note",
   description:
     "Store a note for later. Use when you need to remember intermediate results, track clarifications, or save observations during reasoning.",
   inputSchema: z.object({

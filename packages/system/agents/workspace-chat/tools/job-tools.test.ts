@@ -188,7 +188,7 @@ describe("createJobTools", () => {
 // Execute callback tests
 // ---------------------------------------------------------------------------
 
-/** Stub options satisfying ToolCallOptions for direct execute calls in tests. */
+/** Stub options satisfying ToolExecutionOptions for direct execute calls in tests. */
 const TOOL_CALL_OPTS = { toolCallId: "test-call", messages: [] as never[] };
 
 describe("createJobTools execute", () => {

@@ -1,14 +1,15 @@
 /**
  * Reusable test utilities for eval test files.
  *
- * - `createMockModel()` — configurable LanguageModelV2 mock with call recording,
- *   modeled after AI SDK's MockLanguageModelV2 (inlined to avoid msw transitive dep).
+ * - `createMockModel()` — configurable LanguageModelV3 mock with call recording,
+ *   modeled after AI SDK's MockLanguageModel (inlined to avoid msw transitive dep).
  */
 
 import type {
-  LanguageModelV2,
-  LanguageModelV2CallOptions,
-  LanguageModelV2StreamPart,
+  LanguageModelV3,
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+  LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 
 /** Converts an array of values into a ReadableStream that enqueues them synchronously. */
@@ -32,22 +33,22 @@ export interface MockModelOptions {
 }
 
 /**
- * A LanguageModelV2 mock that records calls for assertion.
+ * A LanguageModelV3 mock that records calls for assertion.
  *
- * Mirrors the AI SDK's `MockLanguageModelV2` API (call recording via
+ * Mirrors the AI SDK's `MockLanguageModel` API (call recording via
  * `doGenerateCalls` / `doStreamCalls`) without pulling in `ai/test`,
  * which drags `msw` through `@ai-sdk/provider-utils/test` — a dep
  * that doesn't resolve under Deno.
  */
-export interface MockModel extends LanguageModelV2 {
+export interface MockModel extends LanguageModelV3 {
   /** Arguments passed to each doGenerate invocation, in order. */
-  doGenerateCalls: LanguageModelV2CallOptions[];
+  doGenerateCalls: LanguageModelV3CallOptions[];
   /** Arguments passed to each doStream invocation, in order. */
-  doStreamCalls: LanguageModelV2CallOptions[];
+  doStreamCalls: LanguageModelV3CallOptions[];
 }
 
 /**
- * Creates a LanguageModelV2 mock with eval-specific defaults and call recording.
+ * Creates a LanguageModelV3 mock with eval-specific defaults and call recording.
  *
  * @param options - Override default text, toolCalls, or modelId
  */
@@ -56,7 +57,7 @@ export function createMockModel(options?: MockModelOptions): MockModel {
   const text = options?.text ?? "mock response";
   const toolCalls = options?.toolCalls ?? [];
 
-  const content: Awaited<ReturnType<LanguageModelV2["doGenerate"]>>["content"] = [
+  const content: LanguageModelV3Content[] = [
     { type: "text" as const, text },
     ...toolCalls.map((tc, i) => ({
       type: "tool-call" as const,
@@ -66,7 +67,7 @@ export function createMockModel(options?: MockModelOptions): MockModel {
     })),
   ];
 
-  const buildStreamChunks = (): LanguageModelV2StreamPart[] => [
+  const buildStreamChunks = (): LanguageModelV3StreamPart[] => [
     { type: "stream-start", warnings: [] },
     { type: "text-start", id: "t1" },
     { type: "text-delta", id: "t1", delta: text },
@@ -78,16 +79,24 @@ export function createMockModel(options?: MockModelOptions): MockModel {
     ]),
     {
       type: "finish" as const,
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-      finishReason: "stop" as const,
+      usage: {
+        inputTokens: {
+          total: 100,
+          noCache: undefined,
+          cacheRead: undefined,
+          cacheWrite: undefined,
+        },
+        outputTokens: { total: 50, text: undefined, reasoning: undefined },
+      },
+      finishReason: { unified: "stop" as const, raw: undefined },
     },
   ];
 
-  const doGenerateCalls: LanguageModelV2CallOptions[] = [];
-  const doStreamCalls: LanguageModelV2CallOptions[] = [];
+  const doGenerateCalls: LanguageModelV3CallOptions[] = [];
+  const doStreamCalls: LanguageModelV3CallOptions[] = [];
 
   return {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: modelId.split(":")[0] ?? "mock",
     modelId,
     supportedUrls: {},
@@ -95,18 +104,26 @@ export function createMockModel(options?: MockModelOptions): MockModel {
     doStreamCalls,
 
     // deno-lint-ignore require-await
-    doGenerate: async (options: LanguageModelV2CallOptions) => {
+    doGenerate: async (options: LanguageModelV3CallOptions) => {
       doGenerateCalls.push(options);
       return {
         content,
-        finishReason: "stop" as const,
-        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: {
+          inputTokens: {
+            total: 100,
+            noCache: undefined,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: { total: 50, text: undefined, reasoning: undefined },
+        },
         warnings: [],
       };
     },
 
     // deno-lint-ignore require-await
-    doStream: async (options: LanguageModelV2CallOptions) => {
+    doStream: async (options: LanguageModelV3CallOptions) => {
       doStreamCalls.push(options);
       return { stream: arrayToStream(buildStreamChunks()) };
     },

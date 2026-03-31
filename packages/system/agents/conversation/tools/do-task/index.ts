@@ -348,7 +348,6 @@ export function createDoTaskTool(
   };
 
   return tool({
-    name: "do_task",
     description: `Execute a task end-to-end, including compound multi-step tasks. A planner internally orchestrates agents across services — never decompose a task into multiple do_task calls. One user goal = one do_task call, always.`,
     inputSchema: jsonSchema<{ intent: string }>({
       type: "object",

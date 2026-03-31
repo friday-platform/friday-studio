@@ -1,7 +1,7 @@
 import process from "node:process";
 import type { OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { ProviderV2 } from "@ai-sdk/provider";
+import type { ProviderV3 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
 import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
@@ -17,10 +17,11 @@ import { createOpenAIWithOptions } from "./openai.ts";
  *
  * This wrapper ensures we use provider.chat(modelId) which uses the Chat Completions API.
  */
-function createChatCompletionsProvider(baseProvider: OpenAIProvider): ProviderV2 {
+function createChatCompletionsProvider(baseProvider: OpenAIProvider): ProviderV3 {
   return {
+    specificationVersion: "v3" as const,
     languageModel: (modelId: string) => baseProvider.chat(modelId),
-    textEmbeddingModel: (modelId: string) => baseProvider.textEmbeddingModel(modelId),
+    embeddingModel: (modelId: string) => baseProvider.textEmbeddingModel(modelId),
     imageModel: (modelId: string) => baseProvider.imageModel(modelId),
   };
 }
@@ -92,11 +93,9 @@ export const registry = {
     if (!_registry) _registry = createRegistry();
     return _registry.languageModel(...args);
   },
-  textEmbeddingModel: (
-    ...args: Parameters<ReturnType<typeof createRegistry>["textEmbeddingModel"]>
-  ) => {
+  embeddingModel: (...args: Parameters<ReturnType<typeof createRegistry>["embeddingModel"]>) => {
     if (!_registry) _registry = createRegistry();
-    return _registry.textEmbeddingModel(...args);
+    return _registry.embeddingModel(...args);
   },
   transcriptionModel: (
     ...args: Parameters<ReturnType<typeof createRegistry>["transcriptionModel"]>

@@ -9,7 +9,7 @@
     "./shared-schemas": "./src/shared-schemas.ts"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^2.0.1",
+    "@ai-sdk/provider": "^3.0.8",
     "@anthropic-ai/claude-agent-sdk": "^0.2.79",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
@@ -21,7 +21,7 @@
     "@hubspot/api-client": "^13.4.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
-    "ai": "^5.0.157",
+    "ai": "^6.0.141",
     "jira.js": "^5.3.1",
     "parallel-web": "0.3.2",
     "vitest": "^4.1.0",

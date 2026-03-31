@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { LanguageModelV2, LanguageModelV2StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV3, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { type Span, withManualOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { wrapLanguageModel } from "ai";
 
@@ -25,7 +25,7 @@ export interface TraceEntry {
   /** Model output — normalized to same shape for both generate and stream */
   output: { text: string; toolCalls: Array<{ name: string; input: unknown }> };
   /** Token usage */
-  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  usage: { inputTokens: number; outputTokens: number };
   /** Timing relative to trace scope start */
   startMs: number;
   endMs: number;
@@ -56,14 +56,15 @@ export function enterTraceScope<T>(traces: TraceEntry[], fn: () => Promise<T>): 
 }
 
 /**
- * Wraps a LanguageModelV2 with trace-capturing middleware.
+ * Wraps a LanguageModelV3 with trace-capturing middleware.
  * When called inside an enterTraceScope, captures input/output/usage/timing/modelId.
  * When called outside a scope, passes through with zero overhead beyond the middleware check.
  */
-export function traceModel(model: LanguageModelV2): LanguageModelV2 {
+export function traceModel(model: LanguageModelV3): LanguageModelV3 {
   return wrapLanguageModel({
     model,
     middleware: {
+      specificationVersion: "v3" as const,
       // deno-lint-ignore require-await
       wrapGenerate: async ({ doGenerate, params, model }) => {
         return withOtelSpan(
@@ -79,10 +80,13 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
             const result = await doGenerate();
             const latencyMs = performance.now() - t0;
 
+            const inTok = result.usage.inputTokens.total ?? 0;
+            const outTok = result.usage.outputTokens.total ?? 0;
+
             if (span) {
               span.setAttributes({
-                "llm.input_tokens": result.usage.inputTokens ?? 0,
-                "llm.output_tokens": result.usage.outputTokens ?? 0,
+                "llm.input_tokens": inTok,
+                "llm.output_tokens": outTok,
                 "llm.generation_latency_ms": latencyMs,
               });
             }
@@ -105,11 +109,7 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
                 modelId: model.modelId,
                 input: params.prompt.map((m) => ({ role: m.role, content: m.content })),
                 output: { text, toolCalls },
-                usage: {
-                  inputTokens: result.usage.inputTokens ?? 0,
-                  outputTokens: result.usage.outputTokens ?? 0,
-                  totalTokens: result.usage.totalTokens ?? 0,
-                },
+                usage: { inputTokens: inTok, outputTokens: outTok },
                 startMs,
                 endMs: startMs + latencyMs,
               });
@@ -151,8 +151,8 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
             // it from the Transformer interface definition.
             const transformer = {
               transform(
-                chunk: LanguageModelV2StreamPart,
-                controller: TransformStreamDefaultController<LanguageModelV2StreamPart>,
+                chunk: LanguageModelV3StreamPart,
+                controller: TransformStreamDefaultController<LanguageModelV3StreamPart>,
               ) {
                 if (store) {
                   switch (chunk.type) {
@@ -173,10 +173,12 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
 
                 if (chunk.type === "finish") {
                   const latencyMs = performance.now() - t0;
+                  const finishInTok = chunk.usage.inputTokens.total ?? 0;
+                  const finishOutTok = chunk.usage.outputTokens.total ?? 0;
                   if (span && !spanEnded) {
                     span.setAttributes({
-                      "llm.input_tokens": chunk.usage.inputTokens ?? 0,
-                      "llm.output_tokens": chunk.usage.outputTokens ?? 0,
+                      "llm.input_tokens": finishInTok,
+                      "llm.output_tokens": finishOutTok,
                       "llm.generation_latency_ms": latencyMs,
                     });
                     span.end();
@@ -198,11 +200,7 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
                           };
                         }),
                       },
-                      usage: {
-                        inputTokens: chunk.usage.inputTokens ?? 0,
-                        outputTokens: chunk.usage.outputTokens ?? 0,
-                        totalTokens: chunk.usage.totalTokens ?? 0,
-                      },
+                      usage: { inputTokens: finishInTok, outputTokens: finishOutTok },
                       startMs,
                       endMs: startMs + latencyMs,
                     });
@@ -223,8 +221,8 @@ export function traceModel(model: LanguageModelV2): LanguageModelV2 {
               },
             };
             const transform = new TransformStream<
-              LanguageModelV2StreamPart,
-              LanguageModelV2StreamPart
+              LanguageModelV3StreamPart,
+              LanguageModelV3StreamPart
             >(transformer);
 
             return { ...result, stream: result.stream.pipeThrough(transform) };

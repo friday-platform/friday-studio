@@ -7,6 +7,7 @@ import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@at
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
 
+import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/node.ts";
 
 // Re-export DocumentScope for convenience
@@ -288,8 +289,8 @@ export interface LLMProvider {
     model: string;
     prompt: string;
     /** Structured messages with mixed content types (e.g., text + images). When present, used instead of prompt. */
-    messages?: Array<import("ai").CoreMessage>;
-    tools?: Record<string, import("ai").Tool>;
+    messages?: Array<ModelMessage>;
+    tools?: Record<string, Tool>;
     toolChoice?: "auto" | "required" | "none";
     /** Tool names that should trigger early stop when called successfully */
     stopOnToolCall?: string[];

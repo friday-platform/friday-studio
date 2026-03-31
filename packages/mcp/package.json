@@ -5,12 +5,12 @@
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
   "dependencies": {
-    "@ai-sdk/mcp": "^0.0.15",
+    "@ai-sdk/mcp": "^1.0.30",
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@modelcontextprotocol/sdk": "^1.27.0",
-    "ai": "^5.0.157"
+    "ai": "^6.0.141"
   },
   "devDependencies": { "vitest": "^4.1.0", "zod": "^4.3.5" }
 }

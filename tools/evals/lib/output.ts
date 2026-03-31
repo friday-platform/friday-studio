@@ -27,7 +27,7 @@ const TraceEntrySchema = z.object({
     text: z.string(),
     toolCalls: z.array(z.object({ name: z.string(), input: z.unknown() })),
   }),
-  usage: z.object({ inputTokens: z.number(), outputTokens: z.number(), totalTokens: z.number() }),
+  usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }),
   startMs: z.number(),
   endMs: z.number(),
 });

@@ -288,7 +288,7 @@ export async function processMessageHistory(
   expandedMessages = expandArtifactAttachedParts(expandedMessages);
 
   // 2. Convert to ModelMessages first (to enable pruning)
-  let modelMessages = convertToModelMessages(expandedMessages);
+  let modelMessages = await convertToModelMessages(expandedMessages);
 
   // 3. Fix tool-call parts with missing input (AI SDK bug workaround)
   // When a tool call fails Zod validation, AI SDK stores input in rawInput

@@ -35,7 +35,7 @@
     "@tanstack/query-core": "^5.85.1",
     "@tanstack/svelte-query": "^6.1.0",
     "@types/deno": "2.5.0",
-    "ai": "^5.0.156",
+    "ai": "^6.0.141",
     "codemirror": "^6.0.2",
     "hono": "4.12.8",
     "restty": "~0.1.34",

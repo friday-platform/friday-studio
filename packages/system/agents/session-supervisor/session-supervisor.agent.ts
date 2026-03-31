@@ -2,7 +2,7 @@ import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import type { CoreSystemMessage, CoreUserMessage } from "ai";
+import type { SystemModelMessage, UserModelMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import {
@@ -121,7 +121,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
         }
       }
 
-      const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+      const messages: Array<SystemModelMessage | UserModelMessage> = [
         {
           role: "system",
           content: SUPERVISOR_SYSTEM_PROMPT,

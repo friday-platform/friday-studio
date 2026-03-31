@@ -83,7 +83,7 @@ const mockLogger: Logger = {
   child: vi.fn(),
 };
 
-/** Minimal ToolCallOptions for test execute() calls. */
+/** Minimal ToolExecutionOptions for test execute() calls. */
 const toolCtx = { toolCallId: "test-call", messages: [] as never[] };
 
 // ---------------------------------------------------------------------------

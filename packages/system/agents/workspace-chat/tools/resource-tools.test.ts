@@ -7,7 +7,7 @@ import { createResourceChatTools } from "./resource-tools.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Stub ToolCallOptions for direct execute calls. */
+/** Stub ToolExecutionOptions for direct execute calls. */
 const TOOL_CALL_OPTS = { toolCallId: "test-call", messages: [] as never[] };
 
 /** Extract a tool from AtlasTools with a runtime guard (avoids TS2722 on undefined). */

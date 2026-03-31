@@ -15,7 +15,7 @@ import type { AgentResult, ToolResult } from "@atlas/agent-sdk";
 import { repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import type { CoreMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "./supervision-levels.ts";
@@ -293,7 +293,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
   });
 
   try {
-    const messages: CoreMessage[] = [
+    const messages: ModelMessage[] = [
       {
         role: "system",
         content: buildValidationPrompt(),

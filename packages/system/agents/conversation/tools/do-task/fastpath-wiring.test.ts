@@ -166,7 +166,7 @@ function makeExecResult(overrides: Partial<{ success: boolean; results: unknown[
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Stub options satisfying ToolCallOptions for direct execute calls in tests. */
+/** Stub options satisfying ToolExecutionOptions for direct execute calls in tests. */
 const stubCallOptions = { toolCallId: "test-call", messages: [] };
 
 /**
@@ -174,7 +174,7 @@ const stubCallOptions = { toolCallId: "test-call", messages: [] };
  *
  * Wraps the raw tool.execute to:
  * 1. Assert execute is defined (AI SDK marks it optional)
- * 2. Pass stub ToolCallOptions (2nd arg required by AI SDK v5)
+ * 2. Pass stub ToolExecutionOptions (2nd arg required by AI SDK)
  * 3. Narrow return type from DoTaskResult | AsyncIterable to DoTaskResult
  */
 function getExecute(abortSignal?: AbortSignal) {
