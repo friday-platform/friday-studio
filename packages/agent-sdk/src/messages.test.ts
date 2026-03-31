@@ -150,24 +150,22 @@ describe("validateAtlasUIMessages", () => {
     }
   });
 
-  it("rejects invalid session-start (missing fields)", async () => {
+  it("accepts session-start with only sessionId", async () => {
     const messages = [
       {
         id: "1",
         role: "assistant",
-        parts: [
-          {
-            type: "data-session-start",
-            data: {
-              sessionId: "sess-123",
-              // Missing signalId and workspaceId
-            },
-          },
-        ],
+        parts: [{ type: "data-session-start", data: { sessionId: "sess-123" } }],
       },
     ];
 
-    await expect(async () => await validateAtlasUIMessages(messages)).rejects.toThrow();
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    const dataPart = validated[0]?.parts[0];
+    expect(dataPart?.type).toEqual("data-session-start");
+    if (dataPart?.type === "data-session-start") {
+      expect(dataPart.data.sessionId).toEqual("sess-123");
+    }
   });
 
   it("rejects invalid metadata", async () => {

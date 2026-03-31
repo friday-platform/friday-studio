@@ -419,6 +419,17 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               finishReason: finalFinishReason,
             });
           } else {
+            // Inject data-session-start so the session ID persists in chat history.
+            // The AI SDK's createUIMessageStream only accumulates LLM output (text,
+            // tool calls, reasoning) — it doesn't include data events we push into the
+            // SSE stream via onStreamEvent. Without this, the session ID is available
+            // during live streaming but lost on page reload.
+            if (session.sessionId) {
+              lastMessage.parts.unshift({
+                type: "data-session-start",
+                data: { sessionId: session.sessionId },
+              });
+            }
             const appendResult = await parseResult(
               client.chat[":chatId"].message.$post({
                 param: { chatId: session.streamId },

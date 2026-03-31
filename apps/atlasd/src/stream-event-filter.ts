@@ -18,7 +18,7 @@ const INTERNAL_EVENT_PREFIXES = ["data-fsm-", "data-session-"];
  */
 export function isClientSafeEvent(chunk: { type: string }): boolean {
   for (const prefix of INTERNAL_EVENT_PREFIXES) {
-    if (chunk.type.startsWith(prefix)) return false;
+    if (chunk.type.startsWith(prefix) && chunk.type !== "data-session-start") return false;
   }
   return true;
 }

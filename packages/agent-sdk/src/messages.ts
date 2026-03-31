@@ -19,11 +19,7 @@ import type { AtlasTools } from "./types.ts";
  * Used for runtime validation of data parts in UI messages.
  */
 export const AtlasDataEventSchemas = {
-  "session-start": z.object({
-    sessionId: z.string(),
-    signalId: z.string(),
-    workspaceId: z.string(),
-  }),
+  "session-start": z.object({ sessionId: z.string() }),
   "session-finish": z.object({
     sessionId: z.string(),
     workspaceId: z.string(),

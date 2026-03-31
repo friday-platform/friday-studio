@@ -10,6 +10,7 @@ export type { HealthRoutes } from "./routes/health.ts";
 export type { JobsRoutes } from "./routes/jobs.ts";
 export type { MCPRegistryRoutes } from "./routes/mcp-registry.ts";
 export type { MeRoutes, UserIdentity } from "./routes/me/index.ts";
+export type { ReportRoutes } from "./routes/report.ts";
 export type { SessionsRoutes } from "./routes/sessions/index.ts";
 export type { ShareRoutes } from "./routes/share.ts";
 export type { SkillsRoutes } from "./routes/skills.ts";
