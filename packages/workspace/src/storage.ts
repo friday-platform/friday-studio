@@ -6,9 +6,9 @@
  * storage → workspace → storage cycle.
  */
 
-import { cwd, env } from "node:process";
 import { LibraryStorageAdapter, type LibraryStorageConfig } from "@atlas/storage";
 import { createKVStorage, type KVStorageConfig } from "@atlas/storage/kv";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
 export { createKVStorage } from "@atlas/storage/kv";
@@ -42,10 +42,9 @@ export async function createLibraryStorage(
 
 /** Common storage configurations */
 export const StorageConfigs = {
-  /** Default Deno KV storage in ~/.atlas/ */
+  /** Default Deno KV storage in $ATLAS_HOME/ (respects ATLAS_HOME env var) */
   defaultKV(): KVStorageConfig {
-    const homeDir = env.HOME || env.USERPROFILE || cwd();
-    return { type: "deno-kv", connection: `${homeDir}/.atlas/storage.db` };
+    return { type: "deno-kv", connection: `${getAtlasHome()}/storage.db` };
   },
 
   /** In-memory storage for testing */

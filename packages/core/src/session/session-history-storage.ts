@@ -10,17 +10,17 @@
  * @module
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { CortexSessionHistoryAdapter } from "./cortex-session-history-adapter.ts";
 import { LocalSessionHistoryAdapter } from "./local-session-history-adapter.ts";
 import type { SessionHistoryAdapter } from "./session-history-adapter.ts";
 
 const logger = createLogger({ component: "session-history-storage" });
 
-const DEFAULT_LOCAL_DIR = join(homedir(), ".atlas", "sessions-v2");
+const DEFAULT_LOCAL_DIR = join(getAtlasHome(), "sessions-v2");
 
 function createAdapter(): SessionHistoryAdapter {
   const cortexUrl = process.env.CORTEX_URL;
