@@ -16,7 +16,10 @@ export const UserIdentitySchema = z.object({
     .string()
     .nullable()
     .meta({ description: "Preferred display name, may differ from full_name" }),
-  profile_photo: z.url().nullable().meta({ description: "Profile photo URL, null if not set" }),
+  profile_photo: z
+    .string()
+    .nullable()
+    .meta({ description: "Profile photo URL or relative path, null if not set" }),
   usage: z
     .number()
     .min(0)

@@ -65,13 +65,32 @@
       <div class="user">
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
-            <span class="user-name">
-              {ctx.user.display_name ?? ctx.user.full_name ?? ctx.user.email}
+            <span class="user-trigger">
+              {#if ctx.user.profile_photo}
+                <img class="user-photo" src={ctx.user.profile_photo} alt="" />
+              {:else}
+                <span class="user-photo-placeholder">
+                  {(ctx.user.display_name ?? ctx.user.full_name ?? ctx.user.email)
+                    .charAt(0)
+                    .toUpperCase()}
+                </span>
+              {/if}
 
-              <IconSmall.CaretDown />
+              <span class="user-name">
+                {ctx.user.display_name ?? ctx.user.full_name ?? ctx.user.email}
+
+                <IconSmall.CaretDown />
+              </span>
             </span>
           </DropdownMenu.Trigger>
           <DropdownMenu.Content>
+            <DropdownMenu.Item
+              href={ctx.routes.profile}
+              onclick={() => trackEvent(GA4.NAV_CLICK, { section: "profile" })}
+            >
+              Profile Details
+            </DropdownMenu.Item>
+
             <DropdownMenu.Item
               href={ctx.routes.settings}
               data-sveltekit-reload
@@ -394,6 +413,36 @@
   .user {
     padding-inline: var(--size-2-5);
     margin-block: var(--size-1) 0;
+
+    .user-trigger {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      padding: 0 7px;
+    }
+
+    .user-photo {
+      block-size: 24px;
+      inline-size: 24px;
+      aspect-ratio: 1 / 1;
+      border-radius: 24px;
+      object-fit: cover;
+      flex: none;
+    }
+
+    .user-photo-placeholder {
+      align-items: center;
+      background-color: color-mix(in srgb, var(--color-text), transparent 80%);
+      block-size: 24px;
+      border-radius: 24px;
+      color: var(--color-text);
+      display: flex;
+      flex: none;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-6);
+      inline-size: 24px;
+      justify-content: center;
+    }
 
     .user-name {
       align-items: center;

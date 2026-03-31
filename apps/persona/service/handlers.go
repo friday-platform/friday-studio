@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/httplog/v2"
@@ -113,6 +116,111 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		DisplayName:  nullIfEmpty(user.DisplayName),
 		ProfilePhoto: nullIfEmpty(user.ProfilePhoto),
 		Usage:        usage,
+	}
+
+	writeJSON(w, resp, http.StatusOK)
+}
+
+// updateMeRequest uses *string to distinguish between:
+//   - field absent (nil)    -> SQL NULL via pgtype.Text{Valid: false} -> COALESCE keeps current
+//   - field present ("")    -> SQL ""   via pgtype.Text{Valid: true}  -> clears the field
+//   - field present ("val") -> SQL "val" via pgtype.Text{Valid: true} -> sets the field
+type updateMeRequest struct {
+	FullName     *string `json:"full_name"`
+	DisplayName  *string `json:"display_name"`
+	ProfilePhoto *string `json:"profile_photo"`
+}
+
+// readOnlyFields that must not appear in PATCH /api/me requests.
+var readOnlyFields = []string{"id", "email", "created_at", "updated_at"}
+
+func handleUpdateMe(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	log := httplog.LogEntry(ctx)
+
+	userID, err := jwt.MustGetUserID(ctx)
+	if err != nil {
+		log.Warn("handleUpdateMe: no user ID in context", "error", err)
+		writeJSONError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Decode into raw map first to reject read-only fields.
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeJSONError(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	for _, field := range readOnlyFields {
+		if _, ok := raw[field]; ok {
+			writeJSONError(w, field+" cannot be modified", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Parse the known fields.
+	var req updateMeRequest
+	// Re-marshal raw to decode into struct (already validated no read-only fields).
+	b, err := json.Marshal(raw)
+	if err != nil {
+		writeJSONError(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(b, &req); err != nil {
+		writeJSONError(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate full_name: must be non-empty if provided.
+	if req.FullName != nil && strings.TrimSpace(*req.FullName) == "" {
+		writeJSONError(w, "full_name must be non-empty", http.StatusBadRequest)
+		return
+	}
+
+	// Validate profile_photo: must be a valid HTTP(S) URL or empty string (to clear).
+	if req.ProfilePhoto != nil && *req.ProfilePhoto != "" {
+		u, err := url.ParseRequestURI(*req.ProfilePhoto)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			writeJSONError(w, "profile_photo must be an HTTP(S) URL or empty string", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Build nullable params: nil -> SQL NULL (keep), non-nil -> SQL value (set/clear).
+	params := repo.UpdateUserParams{ID: userID}
+	if req.FullName != nil {
+		params.FullName = pgtype.Text{String: *req.FullName, Valid: true}
+	}
+	if req.DisplayName != nil {
+		params.DisplayName = pgtype.Text{String: *req.DisplayName, Valid: true}
+	}
+	if req.ProfilePhoto != nil {
+		params.ProfilePhoto = pgtype.Text{String: *req.ProfilePhoto, Valid: true}
+	}
+
+	user, err := withUserContextRead(ctx, userID, func(q *repo.Queries) (repo.UpdateUserRow, error) {
+		return q.UpdateUser(ctx, params)
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			log.Warn("handleUpdateMe: user not found", "userID", userID)
+			writeJSONError(w, "user not found", http.StatusNotFound)
+			return
+		}
+		log.Error("handleUpdateMe: database error", "error", err, "userID", userID)
+		writeJSONError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	resp := MeResponse{
+		ID:           user.ID,
+		FullName:     user.FullName,
+		Email:        user.Email,
+		CreatedAt:    user.CreatedAt.Time.Format("2006-01-02T15:04:05.000000Z07:00"),
+		UpdatedAt:    user.UpdatedAt.Time.Format("2006-01-02T15:04:05.000000Z07:00"),
+		DisplayName:  nullIfEmpty(user.DisplayName),
+		ProfilePhoto: nullIfEmpty(user.ProfilePhoto),
 	}
 
 	writeJSON(w, resp, http.StatusOK)

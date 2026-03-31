@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/tempestteam/atlas/apps/persona/repo"
@@ -143,6 +144,109 @@ func TestRLSUserAccess(t *testing.T) {
 		// Should fail because request.user_id is not set
 		if err == nil {
 			t.Error("Query without user context should not return data")
+		}
+	})
+}
+
+// TestRLSUserUpdate tests that RLS policies enforce user isolation for UPDATE
+// operations on the public.user table.
+//
+// Run with:
+//
+//	POSTGRES_CONNECTION="postgresql://postgres:postgres@localhost:54322/postgres" go test -v -run TestRLSUserUpdate
+func TestRLSUserUpdate(t *testing.T) {
+	connStr := os.Getenv("POSTGRES_CONNECTION")
+	if connStr == "" {
+		t.Skip("Skipping integration test: POSTGRES_CONNECTION not set")
+	}
+
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	userA := "test-persona-update-a"
+	userB := "test-persona-update-b"
+
+	// Setup: Create test users
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("Failed to acquire connection: %v", err)
+	}
+	_, err = conn.Exec(ctx, `
+		INSERT INTO public."user" (id, full_name, email, display_name, profile_photo)
+		VALUES ($1, 'Update User A', 'updatepersonaa@test.com', 'updatea', '')
+		ON CONFLICT (id) DO UPDATE SET full_name = 'Update User A', display_name = 'updatea', profile_photo = ''
+	`, userA)
+	if err != nil {
+		conn.Release()
+		t.Fatalf("Failed to create test user A: %v", err)
+	}
+	_, err = conn.Exec(ctx, `
+		INSERT INTO public."user" (id, full_name, email, display_name, profile_photo)
+		VALUES ($1, 'Update User B', 'updatepersonab@test.com', 'updateb', '')
+		ON CONFLICT (id) DO UPDATE SET full_name = 'Update User B', display_name = 'updateb', profile_photo = ''
+	`, userB)
+	if err != nil {
+		conn.Release()
+		t.Fatalf("Failed to create test user B: %v", err)
+	}
+	conn.Release()
+
+	defer func() {
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			return
+		}
+		defer conn.Release()
+		_, _ = conn.Exec(ctx, `DELETE FROM public."user" WHERE id IN ($1, $2)`, userA, userB)
+	}()
+
+	// Test: User A can update their own profile
+	t.Run("UserACanUpdateOwnProfile", func(t *testing.T) {
+		updated, err := withUserContextReadPool(ctx, pool, userA, func(q *repo.Queries) (repo.UpdateUserRow, error) {
+			return q.UpdateUser(ctx, repo.UpdateUserParams{
+				ID:       userA,
+				FullName: pgtype.Text{String: "Updated Name A", Valid: true},
+			})
+		})
+		if err != nil {
+			t.Fatalf("User A should be able to update their profile: %v", err)
+		}
+		if updated.FullName != "Updated Name A" {
+			t.Errorf("FullName = %q, want %q", updated.FullName, "Updated Name A")
+		}
+		// display_name should be preserved (COALESCE with NULL keeps current)
+		if updated.DisplayName != "updatea" {
+			t.Errorf("DisplayName = %q, want %q (should be preserved)", updated.DisplayName, "updatea")
+		}
+	})
+
+	// Test: User B cannot update User A's profile (RLS blocks)
+	t.Run("UserBCannotUpdateUserAProfile", func(t *testing.T) {
+		_, err := withUserContextReadPool(ctx, pool, userB, func(q *repo.Queries) (repo.UpdateUserRow, error) {
+			return q.UpdateUser(ctx, repo.UpdateUserParams{
+				ID:       userA, // User B tries to update User A
+				FullName: pgtype.Text{String: "Hacked Name", Valid: true},
+			})
+		})
+		// RLS should block this — UPDATE WHERE matches 0 rows, RETURNING gives no rows
+		if err == nil {
+			t.Error("User B should not be able to update User A's profile")
+		}
+
+		// Verify User A's name was NOT changed
+		user, err := withUserContextReadPool(ctx, pool, userA, func(q *repo.Queries) (repo.GetUserByIDRow, error) {
+			return q.GetUserByID(ctx, userA)
+		})
+		if err != nil {
+			t.Fatalf("Failed to read User A: %v", err)
+		}
+		if user.FullName == "Hacked Name" {
+			t.Error("User A's name was changed by User B — RLS policy is not enforced")
 		}
 	})
 }

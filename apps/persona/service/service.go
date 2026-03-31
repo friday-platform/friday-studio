@@ -99,6 +99,7 @@ func (s *Service) Router() *chi.Mux {
 			r.Use(pgxdb.WithPool(s.litellmPool, litellmDBContextKey))
 		}
 		r.Get("/me", handleMe)
+		r.Patch("/me", handleUpdateMe)
 	})
 
 	return r

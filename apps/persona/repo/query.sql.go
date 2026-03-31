@@ -51,3 +51,53 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, e
 	)
 	return i, err
 }
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE "user"
+SET
+    full_name = COALESCE($2, full_name),
+    display_name = COALESCE($3, display_name),
+    profile_photo = COALESCE($4, profile_photo),
+    updated_at = now()
+WHERE id = $1
+RETURNING id, full_name, email, created_at, updated_at, display_name, profile_photo, name
+`
+
+type UpdateUserParams struct {
+	ID           string
+	FullName     pgtype.Text
+	DisplayName  pgtype.Text
+	ProfilePhoto pgtype.Text
+}
+
+type UpdateUserRow struct {
+	ID           string
+	FullName     string
+	Email        string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	DisplayName  string
+	ProfilePhoto string
+	Name         pgtype.Text
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
+	row := q.db.QueryRow(ctx, updateUser,
+		arg.ID,
+		arg.FullName,
+		arg.DisplayName,
+		arg.ProfilePhoto,
+	)
+	var i UpdateUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.FullName,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.ProfilePhoto,
+		&i.Name,
+	)
+	return i, err
+}

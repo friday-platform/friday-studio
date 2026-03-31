@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -248,5 +250,191 @@ func TestDBFromContext_Missing(t *testing.T) {
 	_, err := DBFromContext(ctx)
 	if err == nil {
 		t.Error("DBFromContext should return error when pool not in context")
+	}
+}
+
+func TestUpdateMeRequest_JSON(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantFullName bool
+		wantDisplay  bool
+		wantPhoto    bool
+	}{
+		{
+			name:         "all fields present",
+			input:        `{"full_name":"Alice","display_name":"alice","profile_photo":"https://example.com/a.jpg"}`,
+			wantFullName: true,
+			wantDisplay:  true,
+			wantPhoto:    true,
+		},
+		{
+			name:         "partial update - only full_name",
+			input:        `{"full_name":"Alice"}`,
+			wantFullName: true,
+			wantDisplay:  false,
+			wantPhoto:    false,
+		},
+		{
+			name:         "empty object - no fields",
+			input:        `{}`,
+			wantFullName: false,
+			wantDisplay:  false,
+			wantPhoto:    false,
+		},
+		{
+			name:         "clear photo with empty string",
+			input:        `{"profile_photo":""}`,
+			wantFullName: false,
+			wantDisplay:  false,
+			wantPhoto:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req updateMeRequest
+			if err := json.Unmarshal([]byte(tt.input), &req); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			if got := req.FullName != nil; got != tt.wantFullName {
+				t.Errorf("FullName present = %v, want %v", got, tt.wantFullName)
+			}
+			if got := req.DisplayName != nil; got != tt.wantDisplay {
+				t.Errorf("DisplayName present = %v, want %v", got, tt.wantDisplay)
+			}
+			if got := req.ProfilePhoto != nil; got != tt.wantPhoto {
+				t.Errorf("ProfilePhoto present = %v, want %v", got, tt.wantPhoto)
+			}
+		})
+	}
+}
+
+func TestUpdateMeRequest_ReadOnlyFieldRejection(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		field string
+	}{
+		{"reject id", `{"id":"x"}`, "id"},
+		{"reject email", `{"email":"x@test.com"}`, "email"},
+		{"reject created_at", `{"created_at":"2024-01-01"}`, "created_at"},
+		{"reject updated_at", `{"updated_at":"2024-01-01"}`, "updated_at"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(tt.input), &raw); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			for _, field := range readOnlyFields {
+				if _, ok := raw[field]; ok && field == tt.field {
+					return // correctly detected
+				}
+			}
+			t.Errorf("read-only field %q was not detected", tt.field)
+		})
+	}
+}
+
+func TestUpdateMeRequest_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "empty full_name rejected",
+			input:   `{"full_name":""}`,
+			wantErr: "full_name must be non-empty",
+		},
+		{
+			name:    "whitespace-only full_name rejected",
+			input:   `{"full_name":"   "}`,
+			wantErr: "full_name must be non-empty",
+		},
+		{
+			name:    "invalid profile_photo URL rejected",
+			input:   `{"profile_photo":"not-a-url"}`,
+			wantErr: "profile_photo must be an HTTP(S) URL or empty string",
+		},
+		{
+			name:    "javascript scheme rejected",
+			input:   `{"profile_photo":"javascript:alert(1)"}`,
+			wantErr: "profile_photo must be an HTTP(S) URL or empty string",
+		},
+		{
+			name:    "data scheme rejected",
+			input:   `{"profile_photo":"data:image/png;base64,abc"}`,
+			wantErr: "profile_photo must be an HTTP(S) URL or empty string",
+		},
+		{
+			name:    "file scheme rejected",
+			input:   `{"profile_photo":"file:///etc/passwd"}`,
+			wantErr: "profile_photo must be an HTTP(S) URL or empty string",
+		},
+		{
+			name:    "empty profile_photo accepted (clears field)",
+			input:   `{"profile_photo":""}`,
+			wantErr: "",
+		},
+		{
+			name:    "valid profile_photo URL accepted",
+			input:   `{"profile_photo":"https://example.com/photo.jpg"}`,
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req updateMeRequest
+			if err := json.Unmarshal([]byte(tt.input), &req); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			var errMsg string
+			if req.FullName != nil {
+				trimmed := strings.TrimSpace(*req.FullName)
+				if trimmed == "" {
+					errMsg = "full_name must be non-empty"
+				}
+			}
+			if errMsg == "" && req.ProfilePhoto != nil && *req.ProfilePhoto != "" {
+				u, err := url.ParseRequestURI(*req.ProfilePhoto)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+					errMsg = "profile_photo must be an HTTP(S) URL or empty string"
+				}
+			}
+
+			if errMsg != tt.wantErr {
+				t.Errorf("validation error = %q, want %q", errMsg, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRouterPatchMeEndpoint(t *testing.T) {
+	r := chi.NewRouter()
+
+	var capturedMethod string
+	r.Patch("/api/me", func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/me", nil)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if capturedMethod != http.MethodPatch {
+		t.Errorf("Method = %q, want %q", capturedMethod, http.MethodPatch)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

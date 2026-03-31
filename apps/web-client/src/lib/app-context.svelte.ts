@@ -122,6 +122,7 @@ function getRouteConfig() {
           : resolve("/spaces/[spaceId]", { spaceId }),
     },
     settings: resolve("/settings", {}),
+    profile: resolve("/profile", {}),
   } as const;
 }
 
