@@ -10,8 +10,11 @@ import {
   resolveCredentialsByProvider,
   resolveUnwiredSlackApp,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { createLogger } from "@atlas/logger";
 import type { CredentialBinding, ProviderCredentialCandidates } from "@atlas/schemas/workspace";
 import type { ConfigRequirement } from "./classify-agents.ts";
+
+const logger = createLogger({ component: "resolve-credentials" });
 
 export type { CredentialBinding, ProviderCredentialCandidates };
 
@@ -88,7 +91,12 @@ export async function resolveCredentials(
       // slack_app_workspace mapping table) instead of the summary endpoint.
       if (field.provider === "slack-app") {
         if (!slackAppUnwiredChecked) {
-          slackAppUnwired = await resolveUnwiredSlackApp();
+          try {
+            slackAppUnwired = await resolveUnwiredSlackApp();
+          } catch (error) {
+            logger.warn("resolveUnwiredSlackApp failed — degrading to setup_required", { error });
+            slackAppUnwired = null;
+          }
           slackAppUnwiredChecked = true;
         }
 
