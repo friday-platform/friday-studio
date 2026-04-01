@@ -34,11 +34,11 @@ export async function embedBatch(
 ): Promise<number[][]> {
   const model = getModel(env);
 
-  // Fireworks API limit: 256 items per request.
-  // The @ai-sdk/fireworks provider doesn't declare maxEmbeddingsPerCall,
-  // so embedMany sends everything in one API call and hits the 256 limit.
-  // We chunk to 256 per call and run MAX_PARALLEL_CALLS concurrently.
-  const BATCH_SIZE = 256;
+  // Fireworks accepts up to 256 items per request, but the total token
+  // count across all items also has a limit. With texts up to 2000 chars
+  // (~500 tokens each), 256 items = ~128K tokens — well over the batch
+  // token budget. Use 64 items per batch (~32K tokens) to stay safe.
+  const BATCH_SIZE = 64;
   const batches: string[][] = [];
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     batches.push(texts.slice(i, i + BATCH_SIZE));

@@ -293,7 +293,11 @@ async function embedDocuments(
 
   if (rows.length === 0) return 0;
 
-  const texts = rows.map((r) => `${r.title}\n${r.content.slice(0, 500)}`);
+  // nomic-embed-text-v1.5 supports 8192 tokens (~32K chars), but Fireworks
+  // has request-body limits when batching 256 items. Cap each text so the
+  // total payload stays well within API limits.
+  const MAX_EMBED_CHARS = 2000;
+  const texts = rows.map((r) => `${r.title}\n${r.content}`.slice(0, MAX_EMBED_CHARS));
   const embeddings = await embedBatch(texts, onProgress);
 
   db.exec("BEGIN TRANSACTION");
