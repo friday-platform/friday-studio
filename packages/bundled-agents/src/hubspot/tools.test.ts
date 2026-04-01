@@ -3,13 +3,16 @@ import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/
 import { describe, expect, it, vi } from "vitest";
 import {
   createCreateCrmObjectsTool,
+  createGetConversationThreadsTool,
   createGetCrmObjectsTool,
   createGetCrmObjectTool,
   createGetPipelinesTool,
   createGetPropertiesTool,
+  createGetThreadMessagesTool,
   createManageAssociationsTool,
   createSearchCrmObjectsTool,
   createSearchOwnersTool,
+  createSendThreadCommentTool,
   createUpdateCrmObjectsTool,
   createUpsertCrmObjectsTool,
 } from "./tools.ts";
@@ -1253,5 +1256,390 @@ describe("createManageAssociationsTool", () => {
     );
 
     expect(result).toMatchObject({ status: "error", action: "link", error: "API error: 400" });
+  });
+});
+
+// -- Get Conversation Threads --
+
+import threadsFixture from "./fixtures/threads-list.json" with { type: "json" };
+
+describe("createGetConversationThreadsTool", () => {
+  function createMockFetch(body: unknown, status = 200) {
+    return vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status,
+          statusText: status === 200 ? "OK" : "Bad Request",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+  }
+
+  it("constructs correct URL with query params and always includes association=TICKET", async () => {
+    const mockFetch = createMockFetch(threadsFixture);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const execute = getExecute(createGetConversationThreadsTool("test-token"));
+    await execute({ status: "OPEN", inboxId: "1543478871", limit: 20 }, TOOL_CONTEXT);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    expect(url.origin + url.pathname).toBe(
+      "https://api.hubapi.com/conversations/v3/conversations/threads",
+    );
+    expect(url.searchParams.get("association")).toBe("TICKET");
+    expect(url.searchParams.get("status")).toBe("OPEN");
+    expect(url.searchParams.get("inboxId")).toBe("1543478871");
+    expect(url.searchParams.get("limit")).toBe("20");
+
+    const headers = mockFetch.mock.calls[0]![1]?.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer test-token");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("maps API envelope to tool response shape", async () => {
+    vi.stubGlobal("fetch", createMockFetch(threadsFixture));
+
+    const execute = getExecute(createGetConversationThreadsTool("test-token"));
+    const result = await execute({ limit: 20 }, TOOL_CONTEXT);
+
+    expect(result).toEqual({
+      threads: [
+        {
+          id: "11304164082",
+          status: "OPEN",
+          createdAt: "2026-03-27T17:53:39Z",
+          closedAt: undefined,
+          inboxId: "1543478871",
+          assignedTo: undefined,
+          associatedContactId: "441473942215",
+          associatedTicketId: "304819620563",
+          latestMessageTimestamp: "2026-03-27T17:53:39Z",
+          spam: false,
+        },
+        {
+          id: "11304183528",
+          status: "OPEN",
+          createdAt: "2026-03-27T17:59:11Z",
+          closedAt: undefined,
+          inboxId: "1543478871",
+          assignedTo: undefined,
+          associatedContactId: "462631283404",
+          associatedTicketId: "304775208692",
+          latestMessageTimestamp: "2026-03-27T18:11:55.536Z",
+          spam: false,
+        },
+        {
+          id: "11306536687",
+          status: "OPEN",
+          createdAt: "2026-03-27T21:18:05Z",
+          closedAt: undefined,
+          inboxId: "1543478871",
+          assignedTo: undefined,
+          associatedContactId: "462631283404",
+          associatedTicketId: "304762850035",
+          latestMessageTimestamp: "2026-03-31T15:37:16.351Z",
+          spam: false,
+        },
+        {
+          id: "11321724611",
+          status: "OPEN",
+          createdAt: "2026-03-30T08:01:44Z",
+          closedAt: undefined,
+          inboxId: "1543478871",
+          assignedTo: undefined,
+          associatedContactId: "463427994352",
+          associatedTicketId: undefined,
+          latestMessageTimestamp: "2026-03-30T08:01:44Z",
+          spam: true,
+        },
+      ],
+      nextCursor: "MTEzMjE3MjQ2MTE%3D",
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("passes pagination after cursor through to query params", async () => {
+    const mockFetch = createMockFetch({ results: [], paging: undefined });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const execute = getExecute(createGetConversationThreadsTool("test-token"));
+    await execute({ after: "cursor-abc", limit: 10 }, TOOL_CONTEXT);
+
+    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    expect(url.searchParams.get("after")).toBe("cursor-abc");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("returns { error } on non-200 response", async () => {
+    const mockFetch = vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: "Unauthorized" }), {
+          status: 401,
+          statusText: "Unauthorized",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", mockFetch);
+
+    const execute = getExecute(createGetConversationThreadsTool("bad-token"));
+    const result = await execute({ limit: 20 }, TOOL_CONTEXT);
+
+    expect(result).toEqual({ error: "HubSpot API error: 401 Unauthorized" });
+
+    vi.unstubAllGlobals();
+  });
+});
+
+// -- Get Thread Messages --
+
+import messagesFixture from "./fixtures/thread-messages.json" with { type: "json" };
+
+describe("createGetThreadMessagesTool", () => {
+  function createMockFetch(body: unknown, status = 200) {
+    return vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status,
+          statusText: status === 200 ? "OK" : "Bad Request",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+  }
+
+  function createMockOwnerClient(
+    owners: Array<{ userId: number; firstName: string; lastName: string }> = [],
+  ) {
+    const getPage = vi.fn<() => Promise<unknown>>().mockResolvedValue({ results: owners });
+    const client = { crm: { owners: { ownersApi: { getPage } } } } as unknown as Client;
+    return { client, getPage };
+  }
+
+  it("constructs correct URL with threadId path param", async () => {
+    const mockFetch = createMockFetch(messagesFixture);
+    vi.stubGlobal("fetch", mockFetch);
+    const { client } = createMockOwnerClient();
+
+    const execute = getExecute(createGetThreadMessagesTool("test-token", client));
+    await execute({ threadId: "11306536687", limit: 50, includeRichText: false }, TOOL_CONTEXT);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    expect(url.origin + url.pathname).toBe(
+      "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
+    );
+    expect(url.searchParams.get("limit")).toBe("50");
+
+    const headers = mockFetch.mock.calls[0]![1]?.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer test-token");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves A-prefixed actor IDs to owner names via SDK client", async () => {
+    vi.stubGlobal("fetch", createMockFetch(messagesFixture));
+    const { client, getPage } = createMockOwnerClient([
+      { userId: 163365429, firstName: "Eric", lastName: "Skram" },
+      { userId: 88914248, firstName: "Yena", lastName: "Oh" },
+    ]);
+
+    const execute = getExecute(createGetThreadMessagesTool("test-token", client));
+    const result = await execute(
+      { threadId: "11306536687", limit: 50, includeRichText: false },
+      TOOL_CONTEXT,
+    );
+
+    expect(getPage).toHaveBeenCalledOnce();
+
+    const messages = (result as { messages: Array<{ senderName?: string; createdBy: string }> })
+      .messages;
+    // COMMENT by A-163365429 → "Eric Skram"
+    expect(messages[0]!.senderName).toBe("Eric Skram");
+    // COMMENT by A-88914248 → "Yena Oh"
+    expect(messages[1]!.senderName).toBe("Yena Oh");
+    // THREAD_STATUS_CHANGE by S-hubspot → no resolution (not A-prefix)
+    expect(messages[2]!.senderName).toBeUndefined();
+    // MESSAGE by V-462631283404 → no resolution (not A-prefix)
+    expect(messages[3]!.senderName).toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("degrades gracefully when owner lookup fails", async () => {
+    vi.stubGlobal("fetch", createMockFetch(messagesFixture));
+    const getPage = vi.fn<() => Promise<unknown>>().mockRejectedValue(new Error("Owner API down"));
+    const client = { crm: { owners: { ownersApi: { getPage } } } } as unknown as Client;
+
+    const execute = getExecute(createGetThreadMessagesTool("test-token", client));
+    const result = await execute(
+      { threadId: "11306536687", limit: 50, includeRichText: false },
+      TOOL_CONTEXT,
+    );
+
+    // Should still return messages, just without resolved names
+    const messages = (result as { messages: Array<{ createdBy: string; senderName?: string }> })
+      .messages;
+    expect(messages).toHaveLength(4);
+    expect(messages[0]!.createdBy).toBe("A-163365429");
+    expect(messages[0]!.senderName).toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("omits richText by default and includes when includeRichText is true", async () => {
+    const { client } = createMockOwnerClient();
+
+    // Default: no richText
+    vi.stubGlobal("fetch", createMockFetch(messagesFixture));
+    const execute = getExecute(createGetThreadMessagesTool("test-token", client));
+    const resultDefault = await execute(
+      { threadId: "11306536687", limit: 50, includeRichText: false },
+      TOOL_CONTEXT,
+    );
+    const messagesDefault = (resultDefault as { messages: Array<{ richText?: string }> }).messages;
+    for (const msg of messagesDefault) {
+      expect(msg.richText).toBeUndefined();
+    }
+    vi.unstubAllGlobals();
+
+    // With includeRichText: true
+    vi.stubGlobal("fetch", createMockFetch(messagesFixture));
+    const executeRich = getExecute(createGetThreadMessagesTool("test-token", client));
+    const resultRich = await executeRich(
+      { threadId: "11306536687", limit: 50, includeRichText: true },
+      TOOL_CONTEXT,
+    );
+    const messagesRich = (resultRich as { messages: Array<{ richText?: string; text?: string }> })
+      .messages;
+    // COMMENT messages have richText in fixture
+    expect(messagesRich[0]!.richText).toContain("Just adding test comment!");
+    // THREAD_STATUS_CHANGE has no richText — should stay undefined
+    expect(messagesRich[2]!.richText).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns { error } on non-200 response", async () => {
+    const mockFetch = vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: "Forbidden" }), {
+          status: 403,
+          statusText: "Forbidden",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", mockFetch);
+    const { client } = createMockOwnerClient();
+
+    const execute = getExecute(createGetThreadMessagesTool("test-token", client));
+    const result = await execute(
+      { threadId: "11306536687", limit: 50, includeRichText: false },
+      TOOL_CONTEXT,
+    );
+
+    expect(result).toEqual({ error: "HubSpot API error: 403 Forbidden" });
+
+    vi.unstubAllGlobals();
+  });
+});
+
+// -- Send Thread Comment --
+
+import createCommentFixture from "./fixtures/create-comment.json" with { type: "json" };
+
+describe("createSendThreadCommentTool", () => {
+  function createMockFetch(body: unknown, status = 200) {
+    return vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status,
+          statusText: status === 200 ? "OK" : "Bad Request",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+  }
+
+  it("POSTs correct body with type COMMENT hardcoded", async () => {
+    const mockFetch = createMockFetch(createCommentFixture);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const execute = getExecute(createSendThreadCommentTool("test-token"));
+    await execute(
+      { threadId: "11306536687", text: "Fixture capture — test comment from CLI" },
+      TOOL_CONTEXT,
+    );
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    expect(url.origin + url.pathname).toBe(
+      "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
+    );
+
+    const init = mockFetch.mock.calls[0]![1];
+    expect(init?.method).toBe("POST");
+    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    expect(body.type).toBe("COMMENT");
+    expect(body.text).toBe("Fixture capture — test comment from CLI");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("includes senderActorId when provided, omits when not", async () => {
+    // With senderActorId
+    const mockFetch1 = createMockFetch(createCommentFixture);
+    vi.stubGlobal("fetch", mockFetch1);
+
+    const execute1 = getExecute(createSendThreadCommentTool("test-token"));
+    await execute1(
+      { threadId: "11306536687", text: "test", senderActorId: "A-163365429" },
+      TOOL_CONTEXT,
+    );
+
+    const body1 = JSON.parse(mockFetch1.mock.calls[0]![1]?.body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(body1.senderActorId).toBe("A-163365429");
+    vi.unstubAllGlobals();
+
+    // Without senderActorId
+    const mockFetch2 = createMockFetch(createCommentFixture);
+    vi.stubGlobal("fetch", mockFetch2);
+
+    const execute2 = getExecute(createSendThreadCommentTool("test-token"));
+    await execute2({ threadId: "11306536687", text: "test" }, TOOL_CONTEXT);
+
+    const body2 = JSON.parse(mockFetch2.mock.calls[0]![1]?.body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(body2).not.toHaveProperty("senderActorId");
+    vi.unstubAllGlobals();
+  });
+
+  it("returns normalized { id, threadId, createdAt, text }", async () => {
+    vi.stubGlobal("fetch", createMockFetch(createCommentFixture));
+
+    const execute = getExecute(createSendThreadCommentTool("test-token"));
+    const result = await execute(
+      { threadId: "11306536687", text: "Fixture capture — test comment from CLI" },
+      TOOL_CONTEXT,
+    );
+
+    expect(result).toEqual({
+      id: "c87bc7e6-d84f-455d-86cd-b271573760cd",
+      threadId: "11306536687",
+      createdAt: "2026-03-31T15:37:16.351Z",
+      text: "Fixture capture — test comment from CLI",
+    });
+
+    vi.unstubAllGlobals();
   });
 });

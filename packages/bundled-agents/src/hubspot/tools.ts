@@ -232,7 +232,137 @@ const ManageAssociationsInput = z.object({
   after: z.string().optional().describe("Pagination cursor (list action only)"),
 });
 
+// -- Conversations API Schemas (module-private) --
+
+const ThreadSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  createdAt: z.string(),
+  closedAt: z.string().optional(),
+  inboxId: z.string(),
+  assignedTo: z.string().optional(),
+  associatedContactId: z.string().optional(),
+  latestMessageTimestamp: z.string().optional(),
+  spam: z.boolean(),
+  threadAssociations: z.object({ associatedTicketId: z.string().optional() }).optional(),
+});
+
+const ThreadsListResponseSchema = z.object({
+  results: z.array(ThreadSchema),
+  paging: z.object({ next: z.object({ after: z.string() }).optional() }).optional(),
+});
+
+const MessageBase = z.object({
+  id: z.string(),
+  conversationsThreadId: z.string(),
+  createdAt: z.string(),
+  createdBy: z.string(),
+  type: z.string(),
+  senders: z
+    .array(
+      z.object({
+        actorId: z.string(),
+        name: z.string().optional(),
+        senderField: z.string().optional(),
+        deliveryIdentifier: z.object({ type: z.string(), value: z.string() }).optional(),
+      }),
+    )
+    .optional(),
+  text: z.string().optional(),
+  richText: z.string().optional(),
+});
+
+const MessageSchema = z.union([
+  MessageBase.extend({
+    type: z.literal("MESSAGE"),
+    direction: z.enum(["INCOMING", "OUTGOING"]),
+    subject: z.string().optional(),
+    truncationStatus: z.string().optional(),
+    status: z.object({ statusType: z.string() }).optional(),
+  }),
+  MessageBase.extend({ type: z.literal("COMMENT") }),
+  MessageBase.extend({ type: z.literal("THREAD_STATUS_CHANGE"), newStatus: z.string() }),
+  MessageBase.extend({
+    type: z.literal("WELCOME_MESSAGE"),
+    direction: z.enum(["INCOMING", "OUTGOING"]),
+  }),
+]);
+
+const MessagesListResponseSchema = z.object({
+  results: z.array(MessageSchema),
+  paging: z.object({ next: z.object({ after: z.string() }).optional() }).optional(),
+});
+
+const GetThreadMessagesInput = z.object({
+  threadId: z.string().describe("Conversation thread ID (from get_conversation_threads)"),
+  limit: z.number().int().min(1).max(500).default(50).describe("Number of messages per page"),
+  after: z
+    .string()
+    .optional()
+    .describe("Opaque pagination cursor from a previous response's nextCursor"),
+  includeRichText: z
+    .boolean()
+    .default(false)
+    .describe("When true, includes HTML richText alongside plain text"),
+});
+
+const SendThreadCommentInput = z.object({
+  threadId: z.string().describe("Conversation thread ID to comment on"),
+  text: z.string().describe("Plain text body of the internal comment"),
+  richText: z.string().optional().describe("HTML body; if omitted, text is used"),
+  senderActorId: z
+    .string()
+    .optional()
+    .describe(
+      "Agent actor ID (A-{userId}) to attribute the comment to. " +
+        "If omitted, attributed to the authenticated identity (Service Key user or OAuth app)",
+    ),
+});
+
+const CreateCommentResponseSchema = z.object({
+  id: z.string(),
+  conversationsThreadId: z.string(),
+  createdAt: z.string(),
+  text: z.string(),
+});
+
+const GetConversationThreadsInput = z.object({
+  status: z.enum(["OPEN", "CLOSED"]).optional().describe("Filter by thread status"),
+  inboxId: z.string().optional().describe("Filter by inbox ID"),
+  associatedContactId: z.string().optional().describe("Filter by associated contact ID"),
+  limit: z.number().int().min(1).max(100).default(20).describe("Number of threads per page"),
+  after: z
+    .string()
+    .optional()
+    .describe("Opaque pagination cursor from a previous response's nextCursor"),
+});
+
 // -- Helpers (module-private) --
+
+/**
+ * Sends an authenticated request to the HubSpot Conversations v3 API,
+ * parses the response with the provided Zod schema.
+ */
+async function hubspotFetch<T>(
+  accessToken: string,
+  path: string,
+  responseSchema: z.ZodType<T>,
+  options?: { method?: string; body?: unknown },
+): Promise<T> {
+  const url = `https://api.hubapi.com${path}`;
+  const response = await fetch(url, {
+    method: options?.method ?? "GET",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: options?.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HubSpot API error: ${response.status} ${response.statusText}`);
+  }
+
+  const json: unknown = await response.json();
+  return responseSchema.parse(json);
+}
 
 /**
  * Normalizes the SDK batch response union.
@@ -708,6 +838,162 @@ export function createManageAssociationsTool(client: Client) {
           toObjectType,
           error: stringifyError(error),
         };
+      }
+    },
+  });
+}
+
+// -- Conversations Tool Factories --
+
+/**
+ * Creates the get_conversation_threads tool that lists HubSpot Help Desk
+ * conversation threads with optional filtering by status, inbox, or contact.
+ * Always requests ticket associations.
+ */
+export function createGetConversationThreadsTool(accessToken: string) {
+  return tool({
+    description:
+      "List HubSpot Help Desk conversation threads. " +
+      "Optionally filter by status (OPEN/CLOSED), inbox ID, or associated contact ID. " +
+      "Always returns ticket associations. " +
+      "Pass nextCursor from the response as 'after' to paginate.",
+    inputSchema: GetConversationThreadsInput,
+    execute: async (input) => {
+      try {
+        const params = new URLSearchParams();
+        params.set("association", "TICKET");
+        params.set("limit", String(input.limit));
+        if (input.status) params.set("status", input.status);
+        if (input.inboxId) params.set("inboxId", input.inboxId);
+        if (input.associatedContactId) params.set("associatedContactId", input.associatedContactId);
+        if (input.after) params.set("after", input.after);
+
+        const data = await hubspotFetch(
+          accessToken,
+          `/conversations/v3/conversations/threads?${params.toString()}`,
+          ThreadsListResponseSchema,
+        );
+
+        return {
+          threads: data.results.map((t) => ({
+            id: t.id,
+            status: t.status,
+            createdAt: t.createdAt,
+            closedAt: t.closedAt,
+            inboxId: t.inboxId,
+            assignedTo: t.assignedTo,
+            associatedContactId: t.associatedContactId,
+            associatedTicketId: t.threadAssociations?.associatedTicketId,
+            latestMessageTimestamp: t.latestMessageTimestamp,
+            spam: t.spam,
+          })),
+          nextCursor: data.paging?.next?.after,
+        };
+      } catch (error) {
+        return { error: stringifyError(error) };
+      }
+    },
+  });
+}
+
+/**
+ * Creates the get_thread_messages tool that reads all messages in a
+ * HubSpot conversation thread with type discrimination and resolved actor names.
+ */
+export function createGetThreadMessagesTool(accessToken: string, client: Client) {
+  return tool({
+    description:
+      "Read all messages in a HubSpot conversation thread. " +
+      "Returns messages with type (MESSAGE, COMMENT, THREAD_STATUS_CHANGE, WELCOME_MESSAGE). " +
+      "Resolves agent actor IDs (A-prefix) to human-readable names. " +
+      "Pass nextCursor from the response as 'after' to paginate.",
+    inputSchema: GetThreadMessagesInput,
+    execute: async (input) => {
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", String(input.limit));
+        if (input.after) params.set("after", input.after);
+
+        const data = await hubspotFetch(
+          accessToken,
+          `/conversations/v3/conversations/threads/${input.threadId}/messages?${params.toString()}`,
+          MessagesListResponseSchema,
+        );
+
+        // Resolve A-prefixed actor IDs to owner names
+        const actorMap = new Map<string, string>();
+        try {
+          const OwnerPageSchema = z.object({
+            results: z.array(
+              z.object({ userId: z.number(), firstName: z.string(), lastName: z.string() }),
+            ),
+          });
+          const { results } = OwnerPageSchema.parse(await client.crm.owners.ownersApi.getPage());
+          for (const owner of results) {
+            actorMap.set(`A-${owner.userId}`, `${owner.firstName} ${owner.lastName}`);
+          }
+        } catch {
+          // Graceful degradation — return raw actor IDs
+        }
+
+        return {
+          messages: data.results.map((msg) => ({
+            id: msg.id,
+            type: msg.type,
+            createdAt: msg.createdAt,
+            createdBy: msg.createdBy,
+            senderName: actorMap.get(msg.createdBy),
+            text: msg.text,
+            richText: input.includeRichText ? msg.richText : undefined,
+            truncationStatus: "truncationStatus" in msg ? msg.truncationStatus : undefined,
+            direction: "direction" in msg ? msg.direction : undefined,
+            senders: msg.senders?.map((s) => ({
+              actorId: s.actorId,
+              name: actorMap.get(s.actorId) ?? s.name,
+            })),
+            ...(msg.type === "THREAD_STATUS_CHANGE" ? { newStatus: msg.newStatus } : {}),
+          })),
+          nextCursor: data.paging?.next?.after,
+        };
+      } catch (error) {
+        return { error: stringifyError(error) };
+      }
+    },
+  });
+}
+
+/**
+ * Creates the send_thread_comment tool that posts an internal comment
+ * to a HubSpot conversation thread. Comments are never sent to the customer.
+ */
+export function createSendThreadCommentTool(accessToken: string) {
+  return tool({
+    description:
+      "Post an internal comment/note to a HubSpot conversation thread. " +
+      "Comments are internal-only and never sent to the customer. " +
+      "Optionally attribute the comment to a specific agent via senderActorId (A-{userId}).",
+    inputSchema: SendThreadCommentInput,
+    execute: async (input) => {
+      try {
+        const body: Record<string, unknown> = { type: "COMMENT", text: input.text };
+        if (input.richText) body.richText = input.richText;
+        if (input.senderActorId) body.senderActorId = input.senderActorId;
+
+        const data = await hubspotFetch(
+          accessToken,
+          `/conversations/v3/conversations/threads/${input.threadId}/messages`,
+          CreateCommentResponseSchema,
+          { method: "POST", body },
+        );
+
+        return {
+          id: data.id,
+          threadId: data.conversationsThreadId,
+          createdAt: data.createdAt,
+          text: data.text,
+        };
+      } catch (error) {
+        return { error: stringifyError(error) };
       }
     },
   });

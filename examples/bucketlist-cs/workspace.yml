@@ -1,0 +1,531 @@
+version: '1.0'
+workspace:
+  name: Bucketlist CS Knowledge Agent
+  description: >-
+    Hybrid RAG agent for Bucketlist customer support. Indexes tickets, KB
+    articles, and Confluence docs into a unified corpus. Answers CS queries
+    with citations.
+
+skills:
+  - name: "@tempest/cs-response-guidelines"
+
+signals:
+  reindex:
+    provider: http
+    title: Reindex Corpus
+    description: >-
+      Rebuild the knowledge corpus from all data sources in the data directory.
+      Processes CSV files (tickets, KB exports), PDFs (Confluence), and text
+      files. Auto-detects column structure.
+    config:
+      path: /webhooks/reindex
+    schema:
+      type: object
+      properties:
+        data_dir:
+          type: string
+          title: Data directory
+          description: >-
+            Path to directory containing CSV/PDF/TXT source files.
+            Falls back to KNOWLEDGE_DATA_DIR env var if not provided.
+      required: []
+
+  query:
+    provider: http
+    title: Query Knowledge Base
+    description: >-
+      Ask a question against the indexed knowledge corpus. Returns an answer
+      with source citations.
+    config:
+      path: /webhooks/query
+    schema:
+      type: object
+      properties:
+        question:
+          type: string
+          title: Question
+          description: The question to answer from the knowledge base.
+      required:
+        - question
+
+  answer-ticket:
+    provider: http
+    title: Answer HubSpot Ticket
+    description: >-
+      Read a HubSpot support ticket and its conversation history, query the
+      knowledge base for an answer, and post the result as an internal comment
+      on the ticket.
+    config:
+      path: /webhooks/answer-ticket
+    schema:
+      type: object
+      properties:
+        ticket_url:
+          type: string
+          title: HubSpot Ticket URL
+          description: >-
+            Full HubSpot ticket URL
+            (e.g., https://app.hubspot.com/contacts/12345/ticket/67890)
+      required:
+        - ticket_url
+
+agents:
+  knowledge:
+    type: atlas
+    agent: knowledge-hybrid
+    description: >-
+      Hybrid RAG retrieval agent. Searches a pre-built corpus using BM25 +
+      vector similarity + LLM reranker, then synthesizes a structured
+      support briefing with citations.
+    prompt: Answer the support question using the knowledge corpus.
+    env:
+      KNOWLEDGE_CORPUS_PATH: from_environment
+      FIREWORKS_API_KEY: from_environment
+      ANTHROPIC_API_KEY: from_environment
+      GROQ_API_KEY: from_environment
+
+  hubspot:
+    type: atlas
+    agent: hubspot
+    description: >-
+      Reads and writes HubSpot CRM records and Help Desk conversations —
+      tickets, conversation threads, and internal comments.
+    prompt: Execute HubSpot operation.
+    env:
+      HUBSPOT_ACCESS_TOKEN: from_environment
+
+jobs:
+  reindex-knowledge-base:
+    title: Reindex Knowledge Corpus
+    description: >-
+      Scans the data directory for all CSV, PDF, and TXT files. Auto-detects
+      column structure for each CSV. Builds a unified SQLite corpus with FTS5
+      index and vector embeddings.
+    triggers:
+      - signal: reindex
+    fsm:
+      id: reindex-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            reindex:
+              target: step_build_corpus
+
+        step_build_corpus:
+          entry:
+            - type: code
+              function: prepare_build
+            - type: agent
+              agentId: knowledge
+              outputTo: build-output
+              outputType: build-result
+              prompt: Build the knowledge corpus from the provided data directory.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_build_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+
+        prepare_build:
+          type: action
+          code: |
+            export default function prepare_build(context, event) {
+              const dataDir = event.data?.data_dir;
+              context.setResult('build-config', { data_dir: dataDir });
+              return {
+                task: 'Build corpus from ' + dataDir,
+                config: { data_dir: dataDir },
+              };
+            }
+
+        guard_build_done:
+          type: guard
+          code: |
+            export default function guard_build_done(context, event) {
+              return context.results['build-output'] !== undefined;
+            }
+
+      documentTypes:
+        build-result:
+          type: object
+          properties:
+            response:
+              type: string
+            sources:
+              type: array
+          required:
+            - response
+
+      tools: {}
+
+  query-knowledge-base:
+    title: Query Knowledge Base
+    description: >-
+      Answer a support question using the indexed knowledge corpus. Uses hybrid
+      RAG: BM25 keyword search + vector semantic search + Groq reranker +
+      Sonnet synthesis.
+    triggers:
+      - signal: query
+    fsm:
+      id: query-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            query:
+              target: step_answer
+
+        step_answer:
+          entry:
+            - type: code
+              function: prepare_query
+            - type: agent
+              agentId: knowledge
+              outputTo: answer-output
+              outputType: answer-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_answer_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+
+        prepare_query:
+          type: action
+          code: |
+            export default function prepare_query(context, event) {
+              const question = event.data?.question;
+              if (!question || typeof question !== 'string') {
+                throw new Error('Missing required input: question');
+              }
+              return {
+                task: question,
+                config: { question: question },
+              };
+            }
+
+        guard_answer_done:
+          type: guard
+          code: |
+            export default function guard_answer_done(context, event) {
+              return context.results['answer-output'] !== undefined;
+            }
+
+      documentTypes:
+        answer-result:
+          type: object
+          properties:
+            response:
+              type: string
+              description: Answer with inline source citations
+            sources:
+              type: array
+              items:
+                type: object
+                properties:
+                  sectionTitle: { type: string }
+                  chapter: { type: string }
+                  lineStart: { type: number }
+                  lineEnd: { type: number }
+                  sourceFile: { type: string }
+          required:
+            - response
+            - sources
+
+      tools: {}
+
+  answer-hubspot-ticket:
+    title: Answer HubSpot Ticket
+    description: >-
+      Reads a HubSpot support ticket and its conversation history, queries the
+      knowledge base for an answer, and posts the result as an internal comment
+      on the ticket thread.
+    triggers:
+      - signal: answer-ticket
+    fsm:
+      id: answer-ticket-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            answer-ticket:
+              target: step_read_ticket
+
+        step_read_ticket:
+          entry:
+            - type: code
+              function: prepare_read_ticket
+            - type: agent
+              agentId: hubspot
+              outputTo: ticket-output
+              outputType: ticket-result
+              prompt: >-
+                Read the HubSpot ticket and its full conversation history.
+
+                1. Use get_crm_object to fetch the ticket by ID. Include
+                   properties: subject, content, hs_pipeline_stage,
+                   hs_ticket_priority, createdate.
+
+                2. Use get_conversation_threads filtered to this ticket to find
+                   all associated threads.
+
+                3. For each thread, use get_thread_messages to read the full
+                   message history including sender names.
+
+                4. Return a structured summary: the ticket subject, description,
+                   priority, and the full conversation transcript.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_answer
+              guards:
+                - guard_ticket_done
+
+        step_answer:
+          entry:
+            - type: code
+              function: prepare_answer
+            - type: agent
+              agentId: knowledge
+              outputTo: answer-output
+              outputType: answer-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_comment
+              guards:
+                - guard_answer_done
+
+        step_comment:
+          entry:
+            - type: code
+              function: prepare_comment
+            - type: agent
+              agentId: hubspot
+              outputTo: comment-output
+              outputType: comment-result
+              prompt: Post the knowledge base answer as a thread comment.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_comment_done
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+
+        prepare_read_ticket:
+          type: action
+          code: |
+            export default function prepare_read_ticket(context, event) {
+              const ticketUrl = event.data?.ticket_url;
+              if (!ticketUrl || typeof ticketUrl !== 'string') {
+                throw new Error('Missing required input: ticket_url');
+              }
+
+              // Extract ticket ID from URL: .../ticket/<id>
+              const ticketMatch = ticketUrl.match(/\/ticket\/(\d+)/);
+              if (!ticketMatch) {
+                throw new Error('Could not parse ticket ID from URL: ' + ticketUrl);
+              }
+              const ticketId = ticketMatch[1];
+
+              // Extract thread ID from URL if present: .../thread/<id>
+              const threadMatch = ticketUrl.match(/\/thread\/(\d+)/);
+              const threadId = threadMatch ? threadMatch[1] : '';
+
+              context.setResult('pipeline-input', {
+                ticket_url: ticketUrl,
+                ticket_id: ticketId,
+                thread_id: threadId,
+              });
+
+              return {
+                task: 'Read HubSpot ticket ' + ticketId + ' and its conversation history',
+                config: { ticket_id: ticketId, thread_id: threadId },
+              };
+            }
+
+        guard_ticket_done:
+          type: guard
+          code: |
+            export default function guard_ticket_done(context, event) {
+              return context.results['ticket-output'] !== undefined;
+            }
+
+        prepare_answer:
+          type: action
+          code: |
+            export default function prepare_answer(context, event) {
+              const ticket = context.results['ticket-output'];
+              if (!ticket) {
+                throw new Error('Ticket output not found — read step must complete first');
+              }
+
+              // The hubspot agent returns { response: "markdown summary" }
+              var summary = ticket.response || '';
+
+              var question = 'Customer support ticket context:\n\n' + summary;
+              question += '\n\nProvide a comprehensive answer to help resolve this support ticket.';
+
+              return {
+                task: question,
+                config: { question: question },
+              };
+            }
+
+        guard_answer_done:
+          type: guard
+          code: |
+            export default function guard_answer_done(context, event) {
+              return context.results['answer-output'] !== undefined;
+            }
+
+        prepare_comment:
+          type: action
+          code: |
+            export default function prepare_comment(context, event) {
+              const answer = context.results['answer-output'];
+              const input = context.results['pipeline-input'];
+
+              if (!answer) {
+                throw new Error('Answer output not found — query step must complete first');
+              }
+
+              var threadId = input?.thread_id || '';
+              var ticketId = input?.ticket_id || '';
+
+              context.createDoc({
+                id: 'hubspot-operation',
+                type: 'hubspot-operation',
+                data: {
+                  operation: 'send-thread-comment',
+                  threadId: threadId,
+                  text: answer.response,
+                },
+              });
+
+              return {
+                task: 'Post KB answer as comment on thread ' + threadId,
+                config: {
+                  thread_id: threadId,
+                  ticket_id: ticketId,
+                },
+              };
+            }
+
+        guard_comment_done:
+          type: guard
+          code: |
+            export default function guard_comment_done(context, event) {
+              return context.results['comment-output'] !== undefined;
+            }
+
+      documentTypes:
+        ticket-result:
+          type: object
+          properties:
+            response:
+              type: string
+              description: Structured summary of the ticket and conversation history
+          required:
+            - response
+
+        answer-result:
+          type: object
+          properties:
+            response:
+              type: string
+              description: Answer with inline source citations
+            sources:
+              type: array
+              items:
+                type: object
+                properties:
+                  sectionTitle: { type: string }
+                  chapter: { type: string }
+                  lineStart: { type: number }
+                  lineEnd: { type: number }
+                  sourceFile: { type: string }
+          required:
+            - response
+            - sources
+
+        hubspot-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            threadId:
+              type: string
+            text:
+              type: string
+            richText:
+              type: string
+            senderActorId:
+              type: string
+          required:
+            - operation
+            - threadId
+            - text
+
+        comment-result:
+          type: object
+          properties:
+            response:
+              type: string
+              description: Confirmation of the posted comment
+            operation:
+              type: string
+              description: Operation name when deterministic path was used
+            success:
+              type: boolean
+              description: Whether the deterministic operation succeeded
+            data:
+              type: object
+              description: Structured payload from deterministic operations
+          required:
+            - response
+
+      tools: {}

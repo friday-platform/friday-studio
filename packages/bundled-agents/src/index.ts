@@ -9,6 +9,8 @@ import { GhOutputSchema, ghAgent } from "./gh/agent.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
 import { JiraOutputSchema, jiraAgent } from "./jira/agent.ts";
+import { knowledgeHybridAgent } from "./knowledge/agent.ts";
+import { KnowledgeOutputSchema } from "./knowledge/shared.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import {
   SnowflakeAnalystOutputSchema,
@@ -21,13 +23,13 @@ import { TranscriptionOutputSchema, transcriptionAgent } from "./transcription/a
 import { type DiscoveredAudio, discoverAudioFiles } from "./transcription/discovery.ts";
 import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
 
+export type { KnowledgeResult } from "./knowledge/shared.ts";
 export {
   type BundledAgentConfigField,
   type BundledAgentRegistryEntry,
   bundledAgents,
   bundledAgentsRegistry,
 } from "./registry.ts";
-
 export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
 export {
   BbOutputSchema,
@@ -50,6 +52,8 @@ export {
   hubspotAgent,
   JiraOutputSchema,
   jiraAgent,
+  KnowledgeOutputSchema,
+  knowledgeHybridAgent,
   ResearchOutputSchema,
   SlackOutputSchema,
   SnowflakeAnalystOutputSchema,

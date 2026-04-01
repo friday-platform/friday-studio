@@ -1,0 +1,67 @@
+{
+  "results": [
+    {
+      "id": "11304164082",
+      "createdAt": "2026-03-27T17:53:39Z",
+      "status": "OPEN",
+      "originalChannelId": "1002",
+      "originalChannelAccountId": "2967538192",
+      "latestMessageTimestamp": "2026-03-27T17:53:39Z",
+      "latestMessageReceivedTimestamp": "2026-03-27T17:53:39Z",
+      "spam": false,
+      "inboxId": "1543478871",
+      "associatedContactId": "441473942215",
+      "archived": false,
+      "threadAssociations": { "associatedTicketId": "304819620563" }
+    },
+    {
+      "id": "11304183528",
+      "createdAt": "2026-03-27T17:59:11Z",
+      "status": "OPEN",
+      "originalChannelId": "1002",
+      "originalChannelAccountId": "2967538192",
+      "latestMessageTimestamp": "2026-03-27T18:11:55.536Z",
+      "latestMessageSentTimestamp": "2026-03-27T18:11:55.536Z",
+      "latestMessageReceivedTimestamp": "2026-03-27T17:59:11Z",
+      "spam": false,
+      "inboxId": "1543478871",
+      "associatedContactId": "462631283404",
+      "archived": false,
+      "threadAssociations": { "associatedTicketId": "304775208692" }
+    },
+    {
+      "id": "11306536687",
+      "createdAt": "2026-03-27T21:18:05Z",
+      "status": "OPEN",
+      "originalChannelId": "1002",
+      "originalChannelAccountId": "2967538192",
+      "latestMessageTimestamp": "2026-03-31T15:37:16.351Z",
+      "latestMessageSentTimestamp": "2026-03-31T15:37:16.351Z",
+      "latestMessageReceivedTimestamp": "2026-03-27T21:18:05Z",
+      "spam": false,
+      "inboxId": "1543478871",
+      "associatedContactId": "462631283404",
+      "archived": false,
+      "threadAssociations": { "associatedTicketId": "304762850035" }
+    },
+    {
+      "id": "11321724611",
+      "createdAt": "2026-03-30T08:01:44Z",
+      "status": "OPEN",
+      "originalChannelId": "1002",
+      "originalChannelAccountId": "2967538192",
+      "latestMessageTimestamp": "2026-03-30T08:01:44Z",
+      "latestMessageReceivedTimestamp": "2026-03-30T08:01:44Z",
+      "spam": true,
+      "inboxId": "1543478871",
+      "associatedContactId": "463427994352",
+      "archived": false
+    }
+  ],
+  "paging": {
+    "next": {
+      "after": "MTEzMjE3MjQ2MTE%3D",
+      "link": "https://api.hubapi.com/conversations/conversations/v3/threads?limit=5&association=TICKET&after=MTEzMjE3MjQ2MTE%3D"
+    }
+  }
+}

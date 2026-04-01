@@ -1,0 +1,14 @@
+{
+  "id": "c87bc7e6-d84f-455d-86cd-b271573760cd",
+  "conversationsThreadId": "11306536687",
+  "createdAt": "2026-03-31T15:37:16.351Z",
+  "createdBy": "I-35412221",
+  "client": { "clientType": "INTEGRATION", "integrationAppId": 35412221 },
+  "senders": [{ "actorId": "I-35412221" }],
+  "recipients": [],
+  "archived": false,
+  "text": "Fixture capture — test comment from CLI",
+  "richText": "Fixture capture &mdash; test comment from CLI",
+  "attachments": [],
+  "type": "COMMENT"
+}

@@ -6,24 +6,62 @@ import { stringifyError } from "@atlas/utils";
 import { Client, DEFAULT_LIMITER_OPTIONS } from "@hubspot/api-client";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
+import { parseOperationConfig } from "../shared/operation-parser.ts";
 import {
   createCreateCrmObjectsTool,
+  createGetConversationThreadsTool,
   createGetCrmObjectsTool,
   createGetCrmObjectTool,
   createGetPipelinesTool,
   createGetPropertiesTool,
+  createGetThreadMessagesTool,
   createManageAssociationsTool,
   createSearchCrmObjectsTool,
   createSearchOwnersTool,
+  createSendThreadCommentTool,
   createUpdateCrmObjectsTool,
   createUpsertCrmObjectsTool,
 } from "./tools.ts";
 
+/**
+ * Schema for the deterministic send-thread-comment operation.
+ * Maps directly to the existing send_thread_comment tool input.
+ */
+const SendThreadCommentOpSchema = z.object({
+  operation: z.literal("send-thread-comment"),
+  threadId: z.string(),
+  text: z.string(),
+  richText: z.string().optional(),
+  senderActorId: z.string().optional(),
+});
+
+/**
+ * Discriminated union of all deterministic HubSpot operations.
+ * New operations are added as additional variants.
+ */
+const HubSpotOperationSchema = z.discriminatedUnion("operation", [SendThreadCommentOpSchema]);
+
+/**
+ * Output schema for the HubSpot agent.
+ *
+ * LLM path returns only `{ response }`.
+ * Deterministic path returns all four fields: response, operation, success, data.
+ * Flat object with optional fields — no anyOf/oneOf at root level.
+ */
 export const HubSpotOutputSchema = z.object({
   response: z.string().describe("CRM operation result text"),
+  operation: z.string().optional().describe("Operation name when deterministic path was used"),
+  success: z.boolean().optional().describe("Whether the deterministic operation succeeded"),
+  data: z
+    .object({})
+    .catchall(z.unknown())
+    .optional()
+    .describe("Structured payload from deterministic operations"),
 });
 
 type HubSpotOutput = z.infer<typeof HubSpotOutputSchema>;
+
+type HubSpotOperation = z.infer<typeof HubSpotOperationSchema>;
 
 const MAX_STEPS = 20;
 
@@ -91,6 +129,26 @@ To assign a record owner, set the 'hubspot_owner_id' property to an owner ID fro
 - The association API is directional: to find contacts on a deal, list from deals to contacts (fromObjectType='deals', toObjectType='contacts').
 </associations>
 
+<conversations>
+Conversation threads are separate from CRM tickets. A ticket is a CRM record;
+a thread is a chain of messages/comments in the Help Desk inbox. Tickets may
+have one or more associated threads.
+
+To read the actual conversation on a ticket, use get_conversation_threads to
+list threads, find the one(s) with a matching associatedTicketId in the response,
+then get_thread_messages on each matching thread.
+
+Message types in threads:
+- MESSAGE (direction: INCOMING or OUTGOING) — customer/agent emails and chats
+- COMMENT — internal notes, never visible to the customer
+- THREAD_STATUS_CHANGE — automated status transitions (e.g. opened, closed)
+- WELCOME_MESSAGE — automated system messages
+
+send_thread_comment posts an internal-only note. It does NOT message the
+customer. If the user asks to reply to or message a customer, explain that
+outbound messaging is not available and suggest they reply directly in HubSpot.
+</conversations>
+
 <examples>
 <example>
 User: "Log a meeting note on contact 501"
@@ -116,6 +174,18 @@ Response: "Jane Doe (contact 501) has 2 deals:
 - Deal 9001: Support Contract — Proposal — $12,000 — Closes 2025-08-01
 Total: 2 deals, $62,000 pipeline value."
 </example>
+<example>
+User: "Show me the full conversation on ticket 5501"
+Steps:
+1. get_conversation_threads → scan results for associatedTicketId="5501"
+   → [{ id: "7890123", status: "OPEN", associatedTicketId: "5501" }]
+2. get_thread_messages with threadId="7890123"
+Response: "Ticket 5501 has 1 conversation thread (7890123, OPEN):
+- 2025-06-10 09:15 [INCOMING] Jane Customer: 'Having trouble logging in...'
+- 2025-06-10 10:30 [OUTGOING] Bob Agent: 'Hi Jane, try resetting...'
+- 2025-06-10 10:31 [COMMENT] Bob Agent: (internal) 'Likely SSO config issue'
+- 2025-06-10 11:00 [INCOMING] Jane Customer: 'That worked, thanks!'"
+</example>
 </examples>
 
 <rules>
@@ -123,6 +193,7 @@ Total: 2 deals, $62,000 pipeline value."
 - Confirm bulk operations with the user before proceeding.
 - Start searches broad, narrow if too many results. If a search returns 0 results, try broadening the query or using different filters before reporting no matches.
 - Format results clearly: show record IDs, key properties, and totals.
+- get_thread_messages requires a conversation threadId (from get_conversation_threads), not a ticket ID.
 </rules>`;
 
 /**
@@ -178,6 +249,54 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
       return err("HUBSPOT_ACCESS_TOKEN environment variable is required");
     }
 
+    // Deterministic path: extract JSON operation doc from prompt (handles
+    // code fences, embedded JSON, and raw JSON — same parser as gh/bb agents).
+    // If found and valid → dispatch directly. If not found → LLM fallthrough.
+    let config: HubSpotOperation | undefined;
+    try {
+      config = parseOperationConfig(prompt, HubSpotOperationSchema);
+      logger.info("Deterministic path: operation parsed", { operation: config.operation });
+    } catch (parseErr) {
+      logger.info("Deterministic path: no operation found, using LLM", {
+        reason: parseErr instanceof Error ? parseErr.message : String(parseErr),
+        promptPrefix: prompt.slice(0, 200),
+      });
+    }
+
+    if (config) {
+      switch (config.operation) {
+        case "send-thread-comment": {
+          const toolDef = createSendThreadCommentTool(accessToken);
+          if (!toolDef.execute) {
+            return err("send-thread-comment tool has no execute function");
+          }
+          const result = await toolDef.execute(
+            {
+              threadId: config.threadId,
+              text: config.text,
+              richText: config.richText,
+              senderActorId: config.senderActorId,
+            },
+            { toolCallId: "deterministic", messages: [], abortSignal },
+          );
+
+          if ("error" in result) {
+            return err(`send-thread-comment failed: ${result.error}`);
+          }
+
+          return ok({
+            response: `Comment posted to thread ${config.threadId}`,
+            operation: "send-thread-comment",
+            success: true,
+            data: result,
+          });
+        }
+        default:
+          return err(`Unknown operation: ${config.operation}`);
+      }
+    }
+
+    // Freeform prompt — fall through to LLM path
     const client = new Client({
       accessToken,
       numberOfApiCallRetries: 3,
@@ -195,6 +314,9 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
       update_crm_objects: createUpdateCrmObjectsTool(client),
       upsert_crm_objects: createUpsertCrmObjectsTool(client),
       manage_associations: createManageAssociationsTool(client),
+      get_conversation_threads: createGetConversationThreadsTool(accessToken),
+      get_thread_messages: createGetThreadMessagesTool(accessToken, client),
+      send_thread_comment: createSendThreadCommentTool(accessToken),
     };
 
     try {

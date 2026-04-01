@@ -11,6 +11,7 @@ import { ghAgent } from "./gh/agent.ts";
 import { googleCalendarAgent } from "./google/calendar.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
 import { jiraAgent } from "./jira/agent.ts";
+import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { snowflakeAnalystAgent } from "./snowflake-analyst/agent.ts";
 import { summaryAgent } from "./summary.ts";
@@ -40,6 +41,7 @@ export const bundledAgents: AtlasAgent[] = [
   tableAgent,
   transcriptionAgent,
   hubspotAgent,
+  knowledgeHybridAgent,
 ];
 
 /**
