@@ -49,7 +49,9 @@ function splitFrontmatter(content: string): { raw: string; body: string } | null
 export function parseSkillMd(
   content: string,
 ): Result<{ frontmatter: SkillFrontmatter; instructions: string }, string> {
-  const split = splitFrontmatter(content);
+  // Normalize CRLF → LF (FormData multipart encoding converts \n to \r\n)
+  const normalized = content.replace(/\r\n/g, "\n");
+  const split = splitFrontmatter(normalized);
 
   if (!split) {
     return success({ frontmatter: {} as SkillFrontmatter, instructions: content.trim() });

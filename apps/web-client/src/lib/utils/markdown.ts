@@ -382,7 +382,8 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
  * Main function to convert markdown to HTML
  */
 export function markdownToHTML(markdown: string): string {
-  const ast = parseMarkdownToAST(markdown);
+  // Normalize CRLF → LF (@lezer/markdown Table extension doesn't handle \r\n)
+  const ast = parseMarkdownToAST(markdown.replace(/\r\n/g, "\n"));
 
   return astToHTML(ast);
 }

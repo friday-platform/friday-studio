@@ -37,6 +37,12 @@
 
   const skill = $derived(skillQuery.data?.skill);
 
+  /** Rebase relative hrefs so they resolve under the skill's own path segment. */
+  function rebaseRelativeLinks(html: string): string {
+    const base = `/skills/${namespace}/${name}/`;
+    return html.replace(/href="(?!https?:\/\/|#|\/|mailto:)/g, `href="${base}`);
+  }
+
   // ---------------------------------------------------------------------------
   // Edit mode (URL-driven via ?edit query param)
   // ---------------------------------------------------------------------------
@@ -257,7 +263,7 @@
     {:else}
       <div class="preview-content">
         <MarkdownRendered>
-          {@html browser ? DOMPurify.sanitize(markdownToHTML(skill.instructions ?? "")) : markdownToHTML(skill.instructions ?? "")}
+          {@html browser ? DOMPurify.sanitize(rebaseRelativeLinks(markdownToHTML(skill.instructions ?? ""))) : markdownToHTML(skill.instructions ?? "")}
         </MarkdownRendered>
       </div>
     {/if}

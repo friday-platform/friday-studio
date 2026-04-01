@@ -5,6 +5,7 @@ import { registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { Client, DEFAULT_LIMITER_OPTIONS } from "@hubspot/api-client";
 import { generateText, stepCountIs } from "ai";
+import MarkdownIt from "markdown-it";
 import { z } from "zod";
 import { parseOperationConfig } from "../shared/operation-parser.ts";
 import {
@@ -270,11 +271,17 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           if (!toolDef.execute) {
             return err("send-thread-comment tool has no execute function");
           }
+
+          // Convert markdown text to HTML for HubSpot's richText field.
+          // Plain text stays in `text` as fallback; richText renders in the inbox.
+          const md = new MarkdownIt();
+          const richText = config.richText ?? md.render(config.text);
+
           const result = await toolDef.execute(
             {
               threadId: config.threadId,
               text: config.text,
-              richText: config.richText,
+              richText,
               senderActorId: config.senderActorId,
             },
             { toolCallId: "deterministic", messages: [], abortSignal },
