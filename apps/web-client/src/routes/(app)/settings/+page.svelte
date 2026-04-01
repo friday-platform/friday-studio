@@ -15,6 +15,7 @@
   import { getClientContext } from "$lib/modules/client/context.svelte";
   import Logo from "$lib/modules/integrations/logo-column.svelte";
   import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
+  import { stripSlackAppId } from "$lib/modules/integrations/utils";
   import { onMount } from "svelte";
   import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
   import CredentialActionsCell from "./(components)/credential-actions-cell.svelte";
@@ -78,7 +79,8 @@
         cell: (info) => {
           const row = info.row.original;
           const isSlackApp = row.provider === "slack-app";
-          const name = isSlackApp ? (row.displayName ?? row.label) : getProviderName(row.provider);
+          const rawName = isSlackApp ? (row.displayName ?? row.label) : getProviderName(row.provider);
+          const name = isSlackApp && rawName ? stripSlackAppId(rawName) : rawName;
           return renderComponent(ProviderDetails, {
             name,
             label: row.label,
@@ -95,10 +97,12 @@
         header: "",
         cell: (info) => {
           const row = info.row.original;
+          const isSlack = row.provider === "slack-app";
+          const actionLabel = row.displayName ?? row.label;
           return renderComponent(CredentialActionsCell, {
             credentialId: row.id,
             provider: row.provider,
-            displayName: row.displayName ?? row.label,
+            displayName: isSlack && actionLabel ? stripSlackAppId(actionLabel) : actionLabel,
             isDefault: row.isDefault,
             onRemove: removeCredential,
           });

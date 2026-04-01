@@ -26,7 +26,11 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
+import { UserConfigurationError } from "../errors/user-configuration-error.ts";
+import {
+  hasUnusableCredentialCause,
+  resolveSlackAppByWorkspace,
+} from "../mcp-registry/credential-resolver.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
@@ -314,6 +318,11 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
+  // slack-app credentials are wired per-workspace (not a user-level default).
+  // Resolve the workspace's wired bot credential and inject its ID so the
+  // downstream env resolver fetches the correct credential by ID.
+  await injectSlackAppCredentialId(allServerConfigs, workspaceId);
+
   const skillEntries = workspaceConfig.skills ?? [];
 
   const { tools, dispose } = await createMCPTools(allServerConfigs, logger, { signal });
@@ -349,4 +358,35 @@ function mergeServerConfigs(
   }
 
   return merged;
+}
+
+/**
+ * Find a provider-only slack-app credential ref in MCP server envs and
+ * replace it with the credential ID wired to this workspace.
+ */
+async function injectSlackAppCredentialId(
+  configs: Record<string, MCPServerConfig>,
+  workspaceId: string,
+): Promise<void> {
+  const ref = findSlackAppProviderRef(configs);
+  if (!ref) return;
+
+  const wired = await resolveSlackAppByWorkspace(workspaceId);
+  if (!wired) {
+    throw UserConfigurationError.missingConfiguration("slack", workspaceId, ["slack-app"], []);
+  }
+  ref.env[ref.key] = { ...ref.value, id: wired.credentialId };
+}
+
+/** Locate the first slack-app provider-only ref across all MCP server envs. */
+function findSlackAppProviderRef(configs: Record<string, MCPServerConfig>) {
+  for (const config of Object.values(configs)) {
+    if (!config.env) continue;
+    for (const [key, value] of Object.entries(config.env)) {
+      if (typeof value === "object" && value.provider === "slack-app" && !value.id) {
+        return { env: config.env, key, value };
+      }
+    }
+  }
+  return null;
 }

@@ -5,6 +5,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { Page } from "$lib/components/page";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
+  import { stripSlackAppId } from "$lib/modules/integrations/utils";
 
   interface Props {
     messages: AtlasUIMessage[];
@@ -52,10 +53,13 @@
 
     return linkedProviders.map((provider) => {
       const cred = creds.find((c) => c.provider === provider);
+      const rawLabel = cred?.displayName ?? cred?.label;
       return {
         provider,
         displayName: formatProviderName(provider),
-        label: cred?.displayName ?? cred?.label,
+        label: rawLabel && provider === "slack-app"
+          ? stripSlackAppId(rawLabel)
+          : rawLabel,
       };
     });
   });

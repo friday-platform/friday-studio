@@ -74,7 +74,7 @@ describe("slack-app dynamic provider", () => {
       expect(result.credential).toMatchObject({
         type: "oauth",
         provider: "slack-app",
-        label: "Test Workspace",
+        label: "Test Workspace (A012ABCD0A0)",
         secret: {
           platform: "slack",
           externalId: "A012ABCD0A0",
@@ -232,7 +232,9 @@ describe("slack-app dynamic provider", () => {
 
       // Verify incomplete credential was saved with placeholder label
       const creds = await storage.list("oauth", userId);
-      const slackApp = creds.find((c) => c.provider === "slack-app" && c.label === "Slack Bot");
+      const slackApp = creds.find(
+        (c) => c.provider === "slack-app" && c.label === "Slack Bot (A_NEW_APP)",
+      );
       expect(slackApp).toBeDefined();
     });
 

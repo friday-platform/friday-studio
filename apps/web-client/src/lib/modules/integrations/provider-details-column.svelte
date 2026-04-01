@@ -4,6 +4,7 @@
   import { invalidateAll } from "$app/navigation";
   import { Dialog } from "$lib/components/dialog";
   import { formatFullDate } from "$lib/utils/date";
+  import { stripSlackAppId } from "$lib/modules/integrations/utils";
 
   type Props = {
     name: string;
@@ -17,7 +18,9 @@
 
   let { name, label, displayName, date, credentialId, isDefault, provider }: Props = $props();
 
-  const displayLabel = $derived(displayName ?? label);
+  const isSlackApp = $derived(provider === "slack-app");
+  const rawLabel = $derived(displayName ?? label);
+  const displayLabel = $derived(rawLabel && isSlackApp ? stripSlackAppId(rawLabel) : rawLabel);
   const currentName = $derived(displayName ?? label ?? "");
 
   let inputValue = $state("");
@@ -81,9 +84,13 @@
         <span class="provider">{name}</span>
         {#if displayLabel}
           <span>•</span>
-          <Dialog.Trigger>
+          {#if isSlackApp}
             <span class="account">{displayLabel}</span>
-          </Dialog.Trigger>
+          {:else}
+            <Dialog.Trigger>
+              <span class="account">{displayLabel}</span>
+            </Dialog.Trigger>
+          {/if}
         {/if}
         {#if isDefault && provider !== "slack-app"}
           <span class="default-badge">Default</span>

@@ -63,7 +63,9 @@ export function createEnvironmentContext(logger: Logger) {
         // Try to resolve from Link if linkRef is provided and value is missing
         if (!value && reqVar.linkRef) {
           try {
-            const credentials = await resolveCredentialsByProvider(reqVar.linkRef.provider);
+            const credentials = await resolveCredentialsByProvider(reqVar.linkRef.provider, {
+              workspaceId,
+            });
             const firstCredential = credentials.at(0);
             if (firstCredential) {
               const credential = await fetchLinkCredential(firstCredential.id, logger);

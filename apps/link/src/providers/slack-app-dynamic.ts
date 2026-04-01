@@ -172,7 +172,7 @@ export function createSlackAppDynamicProvider(
         {
           type: "oauth",
           provider: "slack-app",
-          label: "Slack Bot",
+          label: `Slack Bot (${parsed.app_id})`,
           secret: {
             platform: "slack" as const,
             externalId: parsed.app_id,
@@ -278,7 +278,7 @@ export function createSlackAppDynamicProvider(
         credential: {
           type: "oauth" as const,
           provider: "slack-app",
-          label: parsed.team.name,
+          label: `${parsed.team.name} (${secret.externalId})`,
           secret: {
             platform: "slack" as const,
             externalId: secret.externalId,

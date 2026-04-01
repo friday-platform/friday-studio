@@ -408,7 +408,9 @@ export function createDoTaskTool(
           // Resolve credentials if needed
           let credentialBindings: CredentialBinding[] = [];
           if (classifyResult.configRequirements.length > 0) {
-            const credResult = await resolveCredentials(classifyResult.configRequirements);
+            const credResult = await resolveCredentials(classifyResult.configRequirements, {
+              workspaceId: session.workspaceId,
+            });
 
             // Bail on unresolved credentials
             if (credResult.unresolved.length > 0) {
@@ -590,6 +592,7 @@ export function createDoTaskTool(
             mode: "task",
             logger,
             abortSignal,
+            workspaceId: session.workspaceId,
             precomputed: {
               plan: planResult,
               classified: {

@@ -107,6 +107,8 @@ export type BuildBlueprintOpts = {
   };
   /** Called at key sub-phase milestones for progressive UI feedback. */
   onProgress?: (event: BlueprintProgressEvent) => void;
+  /** Workspace ID — passed to credential resolution for workspace-scoped providers (e.g. slack-app). */
+  workspaceId?: string;
 };
 
 /** Result from buildBlueprint(). */
@@ -235,16 +237,20 @@ export async function buildBlueprint(
   let credentialCandidates: ProviderCredentialCandidates[] = [];
 
   if (configRequirements.length > 0) {
-    const credResult = await runStep("credentials", () => resolveCredentials(configRequirements), {
-      logger,
-      abortSignal,
-      inputs: { configRequirements: configRequirements.length },
-      logOutputs: (r) => ({
-        resolved: r.bindings.length,
-        unresolved: r.unresolved.length,
-        candidates: r.candidates.length,
-      }),
-    });
+    const credResult = await runStep(
+      "credentials",
+      () => resolveCredentials(configRequirements, { workspaceId: opts.workspaceId }),
+      {
+        logger,
+        abortSignal,
+        inputs: { configRequirements: configRequirements.length },
+        logOutputs: (r) => ({
+          resolved: r.bindings.length,
+          unresolved: r.unresolved.length,
+          candidates: r.candidates.length,
+        }),
+      },
+    );
     credentialBindings = credResult.bindings;
     unresolvedCredentials = credResult.unresolved;
     credentialCandidates = credResult.candidates;

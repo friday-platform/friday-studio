@@ -7,10 +7,6 @@ const mockResolveByProvider = vi.hoisted(() =>
   vi.fn<(provider: string) => Promise<CredentialSummary[]>>(),
 );
 
-const mockResolveUnwiredSlackApp = vi.hoisted(() =>
-  vi.fn<() => Promise<{ credentialId: string; appId: string } | null>>(),
-);
-
 const MockCredentialNotFoundError = vi.hoisted(
   () =>
     class CredentialNotFoundError extends Error {
@@ -23,7 +19,6 @@ const MockCredentialNotFoundError = vi.hoisted(
 
 vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
   resolveCredentialsByProvider: mockResolveByProvider,
-  resolveUnwiredSlackApp: mockResolveUnwiredSlackApp,
   CredentialNotFoundError: MockCredentialNotFoundError,
 }));
 
@@ -52,7 +47,6 @@ function makeReq(
 describe("resolveCredentials", () => {
   afterEach(() => {
     mockResolveByProvider.mockReset();
-    mockResolveUnwiredSlackApp.mockReset();
   });
 
   it("returns all link fields as unresolved when skipLink is true", async () => {
@@ -570,11 +564,18 @@ describe("resolveCredentials", () => {
   // slack-app: uses unwired endpoint instead of label-based filtering
   // ---------------------------------------------------------------------------
 
-  it("resolves slack-app credential via unwired endpoint when unwired app exists", async () => {
-    mockResolveUnwiredSlackApp.mockResolvedValueOnce({
-      credentialId: "cred_slack_app_1",
-      appId: "A12345",
-    });
+  it("resolves slack-app credential via resolveCredentialsByProvider", async () => {
+    mockResolveByProvider.mockResolvedValueOnce([
+      {
+        id: "cred_slack_app_1",
+        provider: "slack-app",
+        label: "",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
+    ]);
 
     const requirements = [
       makeReq({
@@ -594,23 +595,21 @@ describe("resolveCredentials", () => {
     const result = await resolveCredentials(requirements);
 
     expect(result.bindings).toEqual([
-      {
+      expect.objectContaining({
         targetType: "agent",
         targetId: "slack-bot",
         field: "SLACK_APP_TOKEN",
         credentialId: "cred_slack_app_1",
         provider: "slack-app",
         key: "access_token",
-        label: undefined,
-      },
+      }),
     ]);
     expect(result.unresolved).toEqual([]);
-    // Should NOT call the summary endpoint for slack-app
-    expect(mockResolveByProvider).not.toHaveBeenCalled();
+    expect(mockResolveByProvider).toHaveBeenCalledWith("slack-app", { workspaceId: undefined });
   });
 
-  it("returns setup_required when no unwired slack-app exists", async () => {
-    mockResolveUnwiredSlackApp.mockResolvedValueOnce(null);
+  it("returns setup_required when no slack-app credential exists", async () => {
+    mockResolveByProvider.mockRejectedValueOnce(new MockCredentialNotFoundError("slack-app"));
 
     const requirements = [
       makeReq({
@@ -639,14 +638,20 @@ describe("resolveCredentials", () => {
         reason: "setup_required",
       },
     ]);
-    expect(mockResolveByProvider).not.toHaveBeenCalled();
   });
 
-  it("caches unwired slack-app lookup across multiple fields", async () => {
-    mockResolveUnwiredSlackApp.mockResolvedValueOnce({
-      credentialId: "cred_slack_app_1",
-      appId: "A12345",
-    });
+  it("caches slack-app lookup across multiple fields", async () => {
+    mockResolveByProvider.mockResolvedValueOnce([
+      {
+        id: "cred_slack_app_1",
+        provider: "slack-app",
+        label: "",
+        type: "oauth",
+        displayName: null,
+        userIdentifier: null,
+        isDefault: false,
+      },
+    ]);
 
     const requirements = [
       makeReq({
@@ -678,7 +683,7 @@ describe("resolveCredentials", () => {
     const result = await resolveCredentials(requirements);
 
     expect(result.bindings).toHaveLength(2);
-    // Only called once despite two fields needing slack-app
-    expect(mockResolveUnwiredSlackApp).toHaveBeenCalledTimes(1);
+    // Only called once despite two fields needing slack-app (cached by fetchCache)
+    expect(mockResolveByProvider).toHaveBeenCalledTimes(1);
   });
 });
