@@ -58,10 +58,11 @@
   </article>
   <Dialog.Root>
     {#snippet children(open)}
-      <Dialog.Trigger>
-        <button class="report-issue">Report issue</button>
-      </Dialog.Trigger>
-
+      <div class="report-issue__trigger">
+        <Dialog.Trigger>
+          <button class="report-issue">Report issue</button>
+        </Dialog.Trigger>
+      </div>
       <Dialog.Content>
         <Dialog.Close />
 
@@ -90,16 +91,16 @@
 </MessageWrapper>
 
 <style>
-  :global([data-melt-dialog-trigger]) {
+  .report-issue__trigger {
     position: absolute;
     inset-block-start: 100%;
     opacity: 0;
     transition: opacity 200ms;
   }
 
-  article:hover ~ :global([data-melt-dialog-trigger]),
-  :global([data-melt-dialog-trigger]:hover),
-  :global([data-melt-dialog-trigger]:focus-within) {
+  article:hover ~ .report-issue__trigger,
+  .report-issue__trigger:hover,
+  .report-issue__trigger:focus-within {
     opacity: 1;
   }
 

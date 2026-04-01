@@ -1,7 +1,15 @@
+import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { getCurrentUser, getCurrentUserId, updateCurrentUser } from "./adapter.ts";
 import { deletePhoto, getPhoto, savePhoto, validatePhoto } from "./photo-storage.ts";
+
+/** Derive the external-facing origin, respecting reverse-proxy headers. */
+function getExternalOrigin(c: Context): string {
+  const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
+  const host = c.req.header("x-forwarded-host") ?? new URL(c.req.url).host;
+  return `${proto}://${host}`;
+}
 
 const UpdateMeSchema = z.object({
   full_name: z.string().min(1).optional(),
@@ -34,7 +42,7 @@ const meRoutes = daemonFactory
     const user = result.data;
     // Resolve relative profile_photo paths to absolute daemon URLs
     if (user.profile_photo?.startsWith("/")) {
-      user.profile_photo = `${new URL(c.req.url).origin}${user.profile_photo}`;
+      user.profile_photo = `${getExternalOrigin(c)}${user.profile_photo}`;
     }
 
     return c.json({ user });
@@ -102,8 +110,7 @@ const meRoutes = daemonFactory
       // Set profile_photo to the full serving URL with a cache-busting param.
       // The ?v= changes on each upload so the browser fetches the new image,
       // while the serving endpoint can cache immutably.
-      const origin = new URL(c.req.url).origin;
-      fields.profile_photo = `${origin}/api/me/photo?v=${Date.now()}`;
+      fields.profile_photo = `${getExternalOrigin(c)}/api/me/photo?v=${Date.now()}`;
     }
 
     // Handle explicit photo removal (profile_photo: null in fields)
@@ -131,7 +138,7 @@ const meRoutes = daemonFactory
 
     const updated = result.data;
     if (updated.profile_photo?.startsWith("/")) {
-      updated.profile_photo = `${new URL(c.req.url).origin}${updated.profile_photo}`;
+      updated.profile_photo = `${getExternalOrigin(c)}${updated.profile_photo}`;
     }
 
     return c.json({ user: updated });
