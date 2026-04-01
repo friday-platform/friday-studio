@@ -303,8 +303,10 @@ jobs:
                 3. For each thread, use get_thread_messages to read the full
                    message history including sender names.
 
-                4. Return a structured summary: the ticket subject, description,
-                   priority, and the full conversation transcript.
+                4. IMPORTANT: Begin your response with the ticket subject on
+                   a line by itself, prefixed with "TICKET_SUBJECT: ". Then
+                   provide the full structured summary including description,
+                   priority, and the complete conversation transcript.
             - type: emit
               event: ADVANCE
           'on':
@@ -406,12 +408,55 @@ jobs:
               // The hubspot agent returns { response: "markdown summary" }
               var summary = ticket.response || '';
 
-              var question = 'Customer support ticket context:\n\n' + summary;
-              question += '\n\nProvide a comprehensive answer to help resolve this support ticket.';
+              // Extract a focused search query from the ticket summary.
+              // Try structured marker first, then common markdown patterns.
+              var question = '';
+
+              // Strategy 1: TICKET_SUBJECT marker (prompt instructs agent to include this)
+              var tsMarker = 'TICKET_SUBJECT: ';
+              var tsIdx = summary.indexOf(tsMarker);
+              if (tsIdx !== -1) {
+                var tsAfter = summary.slice(tsIdx + tsMarker.length);
+                var tsEol = tsAfter.indexOf('\n');
+                question = (tsEol !== -1 ? tsAfter.slice(0, tsEol) : tsAfter).trim();
+              }
+
+              // Strategy 2: "Subject:" in markdown (e.g., "- **Subject:** ...")
+              if (!question) {
+                var sjIdx = summary.indexOf('Subject:');
+                if (sjIdx !== -1) {
+                  var sjAfter = summary.slice(sjIdx + 'Subject:'.length);
+                  var sjEol = sjAfter.indexOf('\n');
+                  var sjRaw = (sjEol !== -1 ? sjAfter.slice(0, sjEol) : sjAfter).trim();
+                  while (sjRaw.startsWith('*')) sjRaw = sjRaw.slice(1);
+                  while (sjRaw.endsWith('*')) sjRaw = sjRaw.slice(0, -1);
+                  question = sjRaw.trim();
+                }
+              }
+
+              // Strategy 3: First quoted customer message (> "...")
+              if (!question) {
+                var qIdx = summary.indexOf('> "');
+                if (qIdx !== -1) {
+                  var qAfter = summary.slice(qIdx + 3);
+                  var qEnd = qAfter.indexOf('"');
+                  if (qEnd !== -1) question = qAfter.slice(0, qEnd).trim();
+                }
+              }
+
+              // Strip any markdown bold markers from the extracted question
+              while (question.startsWith('*')) question = question.slice(1);
+              while (question.endsWith('*')) question = question.slice(0, -1);
+              question = question.trim();
+
+              if (!question) question = 'support ticket question';
 
               return {
-                task: question,
-                config: { question: question },
+                task: 'Customer support ticket context:\n\n' + summary + '\n\nProvide a comprehensive answer to help resolve this support ticket.',
+                config: {
+                  question: question,
+                  context: 'Customer support ticket context:\n\n' + summary,
+                },
               };
             }
 

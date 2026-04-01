@@ -203,6 +203,11 @@ export function buildHybridPrompt(
 
   const guidelinesBlock = guidelines ?? DEFAULT_GUIDELINES;
 
+  const noKbWarning =
+    kbResults.length === 0
+      ? `\nWARNING: Zero KB articles in search results. Under "Knowledge Base Sources" you MUST write "No relevant KB articles found in the search results." and nothing else. Do NOT fabricate, guess, or recall KB article URLs — any URL not present in the documents below is hallucinated.`
+      : "";
+
   return `<role>
 You are a Tier 1 Customer Support assistant. You help support agents quickly understand incoming tickets by finding relevant KB articles and preparing accurate, grounded responses.
 </role>
@@ -211,7 +216,7 @@ You are a Tier 1 Customer Support assistant. You help support agents quickly und
 <search_metadata>
 Search found ${totalMatches} matches (${totalBm25} keyword, ${totalVec} semantic).
 After hybrid fusion and reranking, ${results.length} results are provided.
-Of these: ${kbResults.length} KB articles, ${ticketResults.length} past tickets.
+Of these: ${kbResults.length} KB articles, ${ticketResults.length} past tickets.${noKbWarning}
 </search_metadata>
 
 ${resultXml}

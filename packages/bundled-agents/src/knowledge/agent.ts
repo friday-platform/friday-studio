@@ -149,9 +149,18 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
 
     // Extract the actual search query from config (FSM passes it via prepare_query).
     // The raw `prompt` includes FSM context metadata (timestamps, signal data) which
-    // pollutes BM25 search — use config.question for retrieval, prompt for LLM synthesis.
+    // pollutes BM25 search — use config.question for retrieval, config.context (if
+    // provided) + question for LLM synthesis.
     const searchQuery =
       typeof config?.question === "string" && config.question.length > 0 ? config.question : prompt;
+
+    // Optional context (e.g., full ticket conversation) to include in LLM synthesis
+    // without polluting the search query.
+    const synthesisContext =
+      typeof config?.context === "string" && config.context.length > 0 ? config.context : undefined;
+    const synthesisQuery = synthesisContext
+      ? `${synthesisContext}\n\nQuestion: ${searchQuery}`
+      : searchQuery;
 
     // Phase 1: Open corpus (query mode)
     stream?.emit({
@@ -283,7 +292,7 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
             content: systemPrompt,
             providerOptions: getDefaultProviderOpts("anthropic"),
           },
-          { role: "user", content: searchQuery },
+          { role: "user", content: synthesisQuery },
         ],
         temperature: 0,
         maxRetries: 2,
