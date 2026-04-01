@@ -4,6 +4,7 @@
   import BasicTable from "$lib/components/primitives/basic-table.svelte";
   import Document from "$lib/components/primitives/document.svelte";
   import File from "$lib/components/primitives/file.svelte";
+  import ImageArtifact from "$lib/components/primitives/image-artifact.svelte";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import Schedule from "$lib/components/primitives/schedule.svelte";
   import WebSearch from "$lib/components/primitives/web-search.svelte";
@@ -86,6 +87,8 @@
         <Document name="Table">
           <BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
         </Document>
+      {:else if artifact.type === "file" && artifact.data.mimeType?.startsWith("image/")}
+        <ImageArtifact data={artifact.data} {artifactId} />
       {:else if artifact.type === "file"}
         <File data={artifact.data} {contents} {artifactId} />
       {/if}

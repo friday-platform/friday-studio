@@ -31,8 +31,16 @@
     return paths[paths.length - 1];
   });
 
+  const isImage = $derived(
+    artifact?.type === "file" && (artifact.data.mimeType?.startsWith("image/") ?? false),
+  );
+
+  const imageUrl = $derived(
+    isImage ? `${getAtlasDaemonUrl()}/api/artifacts/${data.artifactId}/content` : undefined,
+  );
+
   const parsedContent = $derived.by((): ParsedContent | undefined => {
-    if (!fileContents || artifact?.type !== "file") return undefined;
+    if (!fileContents || artifact?.type !== "file" || isImage) return undefined;
     return parseFileContents(fileContents, artifact.data.mimeType);
   });
 
@@ -83,11 +91,14 @@
 
   // Download handler for file artifacts
   async function handleFileDownload() {
-    if (!fileContents) return;
     trackEvent(GA4.ARTIFACT_DOWNLOAD, { artifact_id: data.artifactId, file_name: fileName });
 
     if (artifact?.type === "file") {
-      downloadFile(fileName, fileContents, artifact.data.mimeType);
+      if (isImage && imageUrl) {
+        downloadFromUrl(imageUrl, fileName);
+      } else if (fileContents) {
+        downloadFile(fileName, fileContents, artifact.data.mimeType);
+      }
     }
   }
 
@@ -176,7 +187,11 @@
         <p>Loading preview...</p>
       {/if}
     {:else if artifact.type === "file"}
-      {#if parsedContent}
+      {#if isImage && imageUrl}
+        <div class="image-content">
+          <img src={imageUrl} alt={fileName} class="library-image" />
+        </div>
+      {:else if parsedContent}
         <div class="file-content">
           {#if parsedContent.type === "markdown"}
             <div class="markdown">
@@ -213,6 +228,18 @@
 
   .markdown {
     max-inline-size: var(--size-prose);
+  }
+
+  .image-content {
+    display: flex;
+    justify-content: center;
+  }
+
+  .library-image {
+    max-inline-size: 100%;
+    max-block-size: 80vh;
+    object-fit: contain;
+    border-radius: var(--radius-4);
   }
 
   .code {

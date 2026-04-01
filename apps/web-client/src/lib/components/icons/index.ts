@@ -10,6 +10,7 @@ import DeleteSpace from "./delete-space.svelte";
 import DotFilled from "./dot-filled.svelte";
 import DotOpen from "./dot-open.svelte";
 import DoubleArrow from "./double-arrow.svelte";
+import Download from "./download.svelte";
 import EyeClosed from "./eye-closed.svelte";
 import Eye from "./eye.svelte";
 import Folder from "./folder.svelte";
@@ -48,6 +49,7 @@ export const Icons = {
   Dashboard,
   DeleteSpace,
   DoubleArrow,
+  Download,
   DotFilled,
   DotOpen,
   Eye,

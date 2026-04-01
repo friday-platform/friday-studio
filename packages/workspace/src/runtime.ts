@@ -1204,14 +1204,10 @@ export class WorkspaceRuntime {
     // Merge workspace agent config with prepare function's config.
     // Prepare config (from FSM `return { task, config }`) takes precedence
     // so workspace.yml prepare functions can pass data like workDir to agents.
-    const prepareConfig =
-      fsmContext.input && typeof fsmContext.input === "object" && "config" in fsmContext.input
-        ? fsmContext.input.config
-        : undefined;
-    const mergedConfig =
-      prepareConfig && typeof prepareConfig === "object"
-        ? { ...agentCustomConfig, ...(prepareConfig as Record<string, unknown>) }
-        : agentCustomConfig;
+    const prepareConfig = fsmContext.input?.config;
+    const mergedConfig = prepareConfig
+      ? { ...agentCustomConfig, ...prepareConfig }
+      : agentCustomConfig;
 
     // Execute agent via orchestrator - returns AgentResult directly
     const result = await withOtelSpan(

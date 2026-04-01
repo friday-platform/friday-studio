@@ -8,6 +8,8 @@ import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-tr
 import { GhOutputSchema, ghAgent } from "./gh/agent.ts";
 import { GoogleCalendarOutputSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
+import { ImageGenerationOutputSchema, imageGenerationAgent } from "./image-generation/agent.ts";
+import { type DiscoveredImages, discoverImageFiles } from "./image-generation/discovery.ts";
 import { JiraOutputSchema, jiraAgent } from "./jira/agent.ts";
 import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { KnowledgeOutputSchema } from "./knowledge/shared.ts";
@@ -30,7 +32,14 @@ export {
   bundledAgents,
   bundledAgentsRegistry,
 } from "./registry.ts";
-export type { DataAnalystResult, DiscoveredAudio, QueryExecution, SnowflakeAnalystResult };
+
+export type {
+  DataAnalystResult,
+  DiscoveredAudio,
+  DiscoveredImages,
+  QueryExecution,
+  SnowflakeAnalystResult,
+};
 export {
   BbOutputSchema,
   bbAgent,
@@ -40,6 +49,7 @@ export {
   csvFilterSamplerAgent,
   dataAnalystAgent,
   discoverAudioFiles,
+  discoverImageFiles,
   EmailOutputSchema,
   emailAgent,
   FathomOutputSchema,
@@ -50,6 +60,8 @@ export {
   googleCalendarAgent,
   HubSpotOutputSchema,
   hubspotAgent,
+  ImageGenerationOutputSchema,
+  imageGenerationAgent,
   JiraOutputSchema,
   jiraAgent,
   KnowledgeOutputSchema,

@@ -8,7 +8,7 @@
   import BasicTable from "$lib/components/primitives/basic-table.svelte";
   import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
   import { parseFileContents, type ParsedContent } from "$lib/modules/artifacts/file-utils";
-  import { copyToClipboard, downloadFile } from "$lib/utils/files.svelte";
+  import { copyToClipboard, downloadFile, downloadFromUrl } from "$lib/utils/files.svelte";
 
   type Props = { data: FileData; contents?: string; artifactId?: string };
 
@@ -39,8 +39,12 @@
 
   const fileContents = $derived(contents);
 
-  function handleDownload(content: string) {
-    downloadFile(fileName, content, data.mimeType);
+  function handleDownload() {
+    if (isImage && imageUrl) {
+      downloadFromUrl(imageUrl, fileName);
+    } else if (fileContents) {
+      downloadFile(fileName, fileContents, data.mimeType);
+    }
   }
 </script>
 
@@ -53,13 +57,7 @@
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content>
-          <DropdownMenu.Item
-            onclick={() => {
-              if (!fileContents) return;
-
-              handleDownload(fileContents);
-            }}
-          >
+          <DropdownMenu.Item onclick={handleDownload}>
             Download File
           </DropdownMenu.Item>
           <DropdownMenu.Separator />
@@ -216,7 +214,7 @@
 
     .image-preview {
       display: block;
-      max-inline-size: 100%;
+      max-inline-size: min(100%, 400px);
       object-fit: contain;
     }
 

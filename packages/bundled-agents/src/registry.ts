@@ -10,6 +10,7 @@ import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
 import { googleCalendarAgent } from "./google/calendar.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
+import { imageGenerationAgent } from "./image-generation/agent.ts";
 import { jiraAgent } from "./jira/agent.ts";
 import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
@@ -41,6 +42,7 @@ export const bundledAgents: AtlasAgent[] = [
   tableAgent,
   transcriptionAgent,
   hubspotAgent,
+  imageGenerationAgent,
   knowledgeHybridAgent,
 ];
 

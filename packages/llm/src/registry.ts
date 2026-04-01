@@ -2,6 +2,7 @@ import process from "node:process";
 import type { OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { ProviderV3 } from "@ai-sdk/provider";
+
 import { createProviderRegistry } from "ai";
 import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
@@ -30,7 +31,8 @@ function createChatCompletionsProvider(baseProvider: OpenAIProvider): ProviderV3
  * Creates provider registry based on environment.
  * If LITELLM_API_KEY is set, routes requests through LiteLLM proxy.
  * - Anthropic: Uses native /v1/messages passthrough
- * - Google & OpenAI: Uses OpenAI-compatible /chat/completions endpoint
+ * - Google: Uses native Google SDK format (generateContent) for language, embedding, AND image
+ * - OpenAI: Uses OpenAI-compatible /chat/completions endpoint
  * - Groq: Uses native SDK to preserve provider-specific options
  * Otherwise, uses direct provider connections.
  */
@@ -50,15 +52,27 @@ function createRegistry() {
     // Groq: Use native SDK to preserve provider-specific options (e.g., reasoningFormat)
     const groqViaLitellm = createGroqWithOptions({ apiKey: litellmKey, baseURL: litellmBaseURL });
 
-    // Google & OpenAI: Force Chat Completions API via createChatCompletionsProvider.
+    // OpenAI: Force Chat Completions API via createChatCompletionsProvider.
     // The default @ai-sdk/openai uses Responses API, which LiteLLM doesn't properly
     // support for non-OpenAI models (returns null for text fields in tool calls).
     const litellmOpenAI = createOpenAI({ apiKey: litellmKey, baseURL: litellmBaseURL });
     const litellmChatProvider = createChatCompletionsProvider(litellmOpenAI);
 
+    // Google: Native SDK format for all model types (language, embedding, image).
+    // LiteLLM proxies Google-native :generateContent requests directly.
+    // For Gemini image models, the @ai-sdk/google provider's imageModel() internally
+    // delegates to languageModel.doGenerate() with responseModalities: ['IMAGE'],
+    // which hits :generateContent — the same proven passthrough as language models.
+    // This avoids the OpenAI /images/generations endpoint entirely, sidestepping
+    // the response_format incompatibility between the AI SDK and LiteLLM.
+    const googleViaLitellm = createGoogleWithOptions({
+      apiKey: litellmKey,
+      baseURL: litellmBaseURL,
+    });
+
     return createProviderRegistry({
       anthropic: anthropicViaLitellm,
-      google: litellmChatProvider,
+      google: googleViaLitellm,
       groq: groqViaLitellm,
       openai: litellmChatProvider,
     });
@@ -96,6 +110,10 @@ export const registry = {
   embeddingModel: (...args: Parameters<ReturnType<typeof createRegistry>["embeddingModel"]>) => {
     if (!_registry) _registry = createRegistry();
     return _registry.embeddingModel(...args);
+  },
+  imageModel: (...args: Parameters<ReturnType<typeof createRegistry>["imageModel"]>) => {
+    if (!_registry) _registry = createRegistry();
+    return _registry.imageModel(...args);
   },
   transcriptionModel: (
     ...args: Parameters<ReturnType<typeof createRegistry>["transcriptionModel"]>

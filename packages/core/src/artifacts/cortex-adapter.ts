@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import process from "node:process";
@@ -568,6 +568,11 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         source: input.source,
       };
 
+      // 4. Clean up local file — binary is now in Cortex, local copy is dead weight
+      if (input.data.type === "file" || input.data.type === "database") {
+        unlink(input.data.data.path).catch(() => {});
+      }
+
       return success(artifact);
     } catch (error) {
       logger.error("Failed to create artifact", { error: stringifyError(error) });
@@ -750,6 +755,11 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         createdAt: newMetadata.created_at,
         revisionMessage: newMetadata.revision_message,
       };
+
+      // Clean up local file — binary is now in Cortex, local copy is dead weight
+      if (input.data.type === "file" || input.data.type === "database") {
+        unlink(input.data.data.path).catch(() => {});
+      }
 
       return success(artifact);
     } catch (error) {

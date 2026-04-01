@@ -29,7 +29,9 @@ export function registerArtifactsGetByChatTool(server: McpServer, ctx: ToolConte
       const response = await parseResult(
         client.artifactsStorage.index.$get({
           // toString() workaround: Daemon coerces to number but narrows type to string|string[]
-          query: { chatId: streamId, limit: limit.toString() },
+          // includeData: false — agents only need metadata (id, type, title, summary),
+          // not internal file paths which leak server-side filesystem details
+          query: { chatId: streamId, limit: limit.toString(), includeData: "false" },
         }),
       );
 

@@ -7,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createErrorResponse, createSuccessResponse } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse, stripArtifactFilePaths } from "../utils.ts";
 
 /**
  * Wraps raw artifact data with the required {type, version, data} envelope.
@@ -93,7 +93,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
         return createErrorResponse("Failed to update artifact", stringifyError(response.error));
       }
       const { artifact } = response.data;
-      return createSuccessResponse({ ...artifact });
+      return createSuccessResponse({ ...stripArtifactFilePaths(artifact) });
     },
   );
 }

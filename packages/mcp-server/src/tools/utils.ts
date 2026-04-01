@@ -1,11 +1,24 @@
 /** Shared utilities for MCP tools */
 
+import type { Artifact } from "@atlas/core/artifacts";
 import type { Logger } from "@atlas/logger";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
   CallToolResult,
   LoggingMessageNotification,
 } from "@modelcontextprotocol/sdk/types.js";
+
+/**
+ * Strip internal file paths from artifact data before returning to agents.
+ * Agents should reference artifacts by ID, not server-side filesystem paths.
+ * Leaking paths breaks image-edit discovery (UUID in path ≠ artifact ID)
+ * and exposes internal filesystem structure.
+ */
+export function stripArtifactFilePaths(artifact: Artifact) {
+  if (artifact.data.type !== "file") return artifact;
+  const { path: _, ...fileData } = artifact.data.data;
+  return { ...artifact, data: { ...artifact.data, data: fileData } };
+}
 
 /** Create successful MCP response */
 export function createSuccessResponse(data: unknown): CallToolResult {
