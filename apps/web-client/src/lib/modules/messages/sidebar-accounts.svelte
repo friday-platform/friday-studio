@@ -57,9 +57,7 @@
       return {
         provider,
         displayName: formatProviderName(provider),
-        label: rawLabel && provider === "slack-app"
-          ? stripSlackAppId(rawLabel)
-          : rawLabel,
+        label: rawLabel && provider === "slack-app" ? stripSlackAppId(rawLabel) : rawLabel,
       };
     });
   });

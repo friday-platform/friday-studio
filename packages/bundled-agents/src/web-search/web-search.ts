@@ -1,12 +1,36 @@
+import { randomUUID } from "node:crypto";
 import process from "node:process";
-import { createAgent, createFailTool, err, ok, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import {
+  createAgent,
+  createFailTool,
+  err,
+  ok,
+  repairJson,
+  repairToolCall,
+  type StreamEmitter,
+} from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM, temporalGroundingMessage, traceModel } from "@atlas/llm";
-import { generateObject, generateText, tool } from "ai";
+import { generateObject, tool } from "ai";
 import { Parallel } from "parallel-web";
 import { z } from "zod";
 import { executeSearch, resolveDefaultRecencyDays } from "./search-tool.ts";
 import { type QueryAnalysis, QueryAnalysisSchema, type SearchResult } from "./types.ts";
+
+/** Emit a paired tool-input/tool-output event around an async operation. */
+async function emitToolCall<T>(
+  stream: StreamEmitter | undefined,
+  toolName: string,
+  input: unknown,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const toolCallId = randomUUID();
+  stream?.emit({ type: "tool-input-available", toolCallId, toolName, input });
+  const result = await fn();
+  stream?.emit({ type: "tool-output-available", toolCallId, output: result });
+  return result;
+}
 
 export const ResearchOutputSchema = z.object({
   response: z.string().describe("Research summary narrative"),
@@ -228,36 +252,39 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     const state: { value: AnalysisState } = { value: { status: "pending" } };
 
     try {
-      const response = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-        maxRetries: 3,
-        messages: [
-          { role: "system", content: QUERY_ANALYSIS_PROMPT },
-          temporalGroundingMessage(),
-          { role: "user", content: prompt },
-        ],
-        tools: {
-          analyzeQuery: tool({
-            description: "Produce the query analysis for the search",
-            inputSchema: QueryAnalysisSchema,
-            execute: (analysis) => {
-              state.value = { status: "success", analysis };
-              return { ok: true };
-            },
-          }),
-          failQuery: createFailTool({
-            onFail: ({ reason }) => {
-              state.value = { status: "failed", reason };
-            },
-            description:
-              "Signal that the query cannot be researched due to missing information or being impossible to search for",
-          }),
+      const response = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          maxRetries: 3,
+          messages: [
+            { role: "system", content: QUERY_ANALYSIS_PROMPT },
+            temporalGroundingMessage(),
+            { role: "user", content: prompt },
+          ],
+          tools: {
+            analyzeQuery: tool({
+              description: "Produce the query analysis for the search",
+              inputSchema: QueryAnalysisSchema,
+              execute: (analysis) => {
+                state.value = { status: "success", analysis };
+                return { ok: true };
+              },
+            }),
+            failQuery: createFailTool({
+              onFail: ({ reason }) => {
+                state.value = { status: "failed", reason };
+              },
+              description:
+                "Signal that the query cannot be researched due to missing information or being impossible to search for",
+            }),
+          },
+          toolChoice: "required",
+          experimental_repairToolCall: repairToolCall,
+          temperature: 0.3,
+          maxOutputTokens: 2000,
+          abortSignal,
         },
-        toolChoice: "required",
-        experimental_repairToolCall: repairToolCall,
-        temperature: 0.3,
-        maxOutputTokens: 2000,
-        abortSignal,
+        stream,
       });
 
       // Log response for debugging - runtime has invalid/error fields not in TS type
@@ -315,7 +342,12 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       data: { toolName: "Web Search", content: progressMessage },
     });
 
-    const searchResult = await executeSearch(parallelClient, prompt, analysis, logger);
+    const searchResult = await emitToolCall(
+      stream,
+      "executeSearch",
+      { queries: analysis.searchQueries, complexity: analysis.complexity },
+      () => executeSearch(parallelClient, prompt, analysis, logger),
+    );
 
     if (searchResult.results.length === 0) {
       logger.warn("No search results returned");
@@ -327,7 +359,12 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       response: webResponse,
       sources,
       summary,
-    } = await generateResponse(prompt, searchResult, abortSignal);
+    } = await emitToolCall(
+      stream,
+      "generateReport",
+      { sourceCount: searchResult.results.length },
+      () => generateResponse(prompt, searchResult, abortSignal),
+    );
 
     const response = await parseResult(
       client.artifactsStorage.index.$post({

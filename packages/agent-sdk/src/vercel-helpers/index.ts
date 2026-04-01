@@ -7,6 +7,8 @@
 
 export { repairJson, unstringifyNestedJson } from "./json-repair.ts";
 export { pipeUIMessageStream } from "./stream-mapper.ts";
+export type { ResolvedStreamResult } from "./stream-text-with-events.ts";
+export { streamTextWithEvents } from "./stream-text-with-events.ts";
 export {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,

@@ -19,6 +19,8 @@ vi.mock("@atlas/llm", () => ({
 
 vi.mock("@atlas/agent-sdk/vercel-helpers", () => ({
   collectToolUsageFromSteps: vi.fn(() => ({ assembledToolCalls: [], assembledToolResults: [] })),
+  streamTextWithEvents: ({ params }: { params: Record<string, unknown> }) =>
+    mockGenerateText(params),
 }));
 
 // Import after mocks are set up

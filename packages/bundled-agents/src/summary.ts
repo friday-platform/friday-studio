@@ -2,10 +2,11 @@ import { createAgent, err, type OutlineRef, ok, repairToolCall } from "@atlas/ag
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
+  streamTextWithEvents,
 } from "@atlas/agent-sdk/vercel-helpers";
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import { z } from "zod";
 
 /**
@@ -82,19 +83,26 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
         data: { toolName: "Atlas", content: `Summarizing` },
       });
 
-      const result = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-        abortSignal,
-        maxRetries: 3,
-        messages: [
-          { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
-          { role: "user", content: prompt },
-        ],
-        tools,
-        maxOutputTokens: 2000,
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
-        stopWhen: stepCountIs(10),
-        experimental_repairToolCall: repairToolCall,
+      const result = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          abortSignal,
+          maxRetries: 3,
+          messages: [
+            {
+              role: "system",
+              content: system,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: "user", content: prompt },
+          ],
+          tools,
+          maxOutputTokens: 2000,
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          stopWhen: stepCountIs(10),
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("AI SDK generateText completed", {

@@ -3,8 +3,8 @@
   import { client, parseResult } from "@atlas/client/v2";
   import { invalidateAll } from "$app/navigation";
   import { Dialog } from "$lib/components/dialog";
-  import { formatFullDate } from "$lib/utils/date";
   import { stripSlackAppId } from "$lib/modules/integrations/utils";
+  import { formatFullDate } from "$lib/utils/date";
 
   type Props = {
     name: string;

@@ -30,6 +30,11 @@ vi.mock("ai", () => ({
   tool: vi.fn((opts: Record<string, unknown>) => opts),
 }));
 
+vi.mock("@atlas/agent-sdk/vercel-helpers", () => ({
+  streamTextWithEvents: ({ params }: { params: Record<string, unknown> }) =>
+    mockGenerateText(params),
+}));
+
 vi.mock("@atlas/core/artifacts/server", () => ({
   ArtifactStorage: { create: mockArtifactCreate },
 }));

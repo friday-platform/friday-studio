@@ -3,12 +3,13 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import type { EmailParams } from "@atlas/config";
 import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
-import { generateText, tool } from "ai";
+import { tool } from "ai";
 import { z } from "zod";
 import { validateRecipient } from "./recipient-validation.ts";
 import { escapeHtml, sanitizeHref } from "./sanitize.ts";
@@ -153,45 +154,48 @@ CONTENT GUIDELINES (for composeEmail):
 
 `;
 
-    const res = await generateText({
-      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-      maxRetries: 3,
-      messages: [
-        {
-          role: "system",
-          content: compositionSystem,
-          providerOptions: getDefaultProviderOpts("anthropic"),
-        },
-        temporalGroundingMessage(),
-        { role: "user", content: prompt },
-      ],
-      abortSignal,
-      tools: {
-        composeEmail: tool({
-          description: "Compose an email with the given parameters",
-          inputSchema: composeEmailSchema,
-          execute: (params) => {
-            composedEmail = params;
-            return { status: "success", reason: null };
+    const res = await streamTextWithEvents({
+      params: {
+        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+        maxRetries: 3,
+        messages: [
+          {
+            role: "system",
+            content: compositionSystem,
+            providerOptions: getDefaultProviderOpts("anthropic"),
           },
-        }),
-        emailFailed: tool({
-          description:
-            "Signal that the email cannot be composed due to missing information or unfulfillable request",
-          inputSchema: z.object({
-            reason: z.string().describe("Why the email cannot be composed"),
+          temporalGroundingMessage(),
+          { role: "user", content: prompt },
+        ],
+        abortSignal,
+        tools: {
+          composeEmail: tool({
+            description: "Compose an email with the given parameters",
+            inputSchema: composeEmailSchema,
+            execute: (params) => {
+              composedEmail = params;
+              return { status: "success", reason: null };
+            },
           }),
-          execute: ({ reason }) => {
-            failureState.failed = true;
-            failureState.reason = reason;
-            return { status: "failed", reason };
-          },
-        }),
+          emailFailed: tool({
+            description:
+              "Signal that the email cannot be composed due to missing information or unfulfillable request",
+            inputSchema: z.object({
+              reason: z.string().describe("Why the email cannot be composed"),
+            }),
+            execute: ({ reason }) => {
+              failureState.failed = true;
+              failureState.reason = reason;
+              return { status: "failed", reason };
+            },
+          }),
+        },
+        maxOutputTokens: 4000,
+        temperature: 0.3,
+        toolChoice: "required",
+        experimental_repairToolCall: repairToolCall,
       },
-      maxOutputTokens: 4000,
-      temperature: 0.3,
-      toolChoice: "required",
-      experimental_repairToolCall: repairToolCall,
+      stream,
     });
 
     logger.debug("AI SDK streamText completed", { agent: "email", usage: res.totalUsage });

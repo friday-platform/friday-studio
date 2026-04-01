@@ -1,13 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import type { ModelMessage } from "ai";
-import { generateText, tool } from "ai";
+import { tool } from "ai";
 import { z } from "zod";
 
 /**
@@ -43,7 +44,7 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     ],
   },
 
-  handler: async (prompt, { session, logger, abortSignal }) => {
+  handler: async (prompt, { session, logger, abortSignal, stream }) => {
     try {
       logger.info("Parsing prompt to extract artifact ID and filter criteria");
 
@@ -103,12 +104,15 @@ Call validateArtifact tool with the extracted information to verify the artifact
         { role: "user", content: prompt },
       ];
 
-      const parseResult = await generateText({
-        model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
-        abortSignal,
-        messages: parseMessages,
-        tools: { validateArtifact: validateArtifactTool },
-        experimental_repairToolCall: repairToolCall,
+      const parseResult = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+          abortSignal,
+          messages: parseMessages,
+          tools: { validateArtifact: validateArtifactTool },
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("Parse prompt completed", { usage: parseResult.usage });
@@ -239,12 +243,15 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
         { role: "user", content: filterCriteria },
       ];
 
-      const sqlResult = await generateText({
-        model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
-        abortSignal,
-        messages: sqlMessages,
-        tools: { buildSqlWhere: buildSqlWhereTool },
-        experimental_repairToolCall: repairToolCall,
+      const sqlResult = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+          abortSignal,
+          messages: sqlMessages,
+          tools: { buildSqlWhere: buildSqlWhereTool },
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("SQL generation completed", { usage: sqlResult.usage });

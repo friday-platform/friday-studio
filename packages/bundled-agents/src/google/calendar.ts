@@ -8,7 +8,7 @@ import {
   repairJson,
   repairToolCall,
 } from "@atlas/agent-sdk";
-import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import { collectToolUsageFromSteps, streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import {
@@ -19,7 +19,7 @@ import {
   traceModel,
 } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { generateObject, generateText, stepCountIs } from "ai";
+import { generateObject, stepCountIs } from "ai";
 import { z } from "zod";
 
 /**
@@ -183,20 +183,27 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         );
       }
 
-      const result = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-        abortSignal,
-        maxRetries: 3,
-        messages: [
-          { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
-          temporalGroundingMessage(),
-          { role: "user", content: prompt },
-        ],
-        tools: { ...tools, fail: failTool },
-        maxOutputTokens: 3000,
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
-        stopWhen: stepCountIs(20),
-        experimental_repairToolCall: repairToolCall,
+      const result = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          abortSignal,
+          maxRetries: 3,
+          messages: [
+            {
+              role: "system",
+              content: system,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            temporalGroundingMessage(),
+            { role: "user", content: prompt },
+          ],
+          tools: { ...tools, fail: failTool },
+          maxOutputTokens: 3000,
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          stopWhen: stepCountIs(20),
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("AI SDK generateText completed", {

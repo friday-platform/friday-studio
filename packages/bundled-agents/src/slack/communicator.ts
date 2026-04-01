@@ -14,11 +14,12 @@ import {
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
+  streamTextWithEvents,
 } from "@atlas/agent-sdk/vercel-helpers";
 
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { generateObject, generateText, stepCountIs } from "ai";
+import { generateObject, stepCountIs } from "ai";
 import { z } from "zod";
 import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
 
@@ -158,23 +159,26 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
 
       const translatePrompt = `Read the provided artifact ids and create a Slack mrkdwn compatible artifact, then return the new artifact id. Use the following ids: ${JSON.stringify(plan.artifactIds)}`;
 
-      const translateResult = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-        abortSignal,
-        maxRetries: 3,
-        messages: [
-          {
-            role: "system",
-            content: translateSystem,
-            providerOptions: getDefaultProviderOpts("anthropic"),
-          },
-          { role: "user", content: translatePrompt },
-        ],
-        tools,
-        maxOutputTokens: 2000,
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
-        stopWhen: stepCountIs(10),
-        experimental_repairToolCall: repairToolCall,
+      const translateResult = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          abortSignal,
+          maxRetries: 3,
+          messages: [
+            {
+              role: "system",
+              content: translateSystem,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: "user", content: translatePrompt },
+          ],
+          tools,
+          maxOutputTokens: 2000,
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          stopWhen: stepCountIs(10),
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("AI SDK generateText completed", {
@@ -248,24 +252,27 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
         return err("Cannot complete: Slack tools unavailable");
       }
 
-      const executionResult = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-        abortSignal,
-        maxRetries: 3,
-        messages: [
-          {
-            role: "system",
-            content: executorSystem,
-            providerOptions: getDefaultProviderOpts("anthropic"),
-          },
-          { role: "user", content: executorInstructions },
-        ],
-        tools,
-        toolChoice: "auto",
-        stopWhen: stepCountIs(10),
-        maxOutputTokens: 800,
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
-        experimental_repairToolCall: repairToolCall,
+      const executionResult = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          abortSignal,
+          maxRetries: 3,
+          messages: [
+            {
+              role: "system",
+              content: executorSystem,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: "user", content: executorInstructions },
+          ],
+          tools,
+          toolChoice: "auto",
+          stopWhen: stepCountIs(10),
+          maxOutputTokens: 800,
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
       logger.debug("AI SDK generateText completed", {

@@ -1,8 +1,9 @@
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
-import { generateText, stepCountIs, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 
 import { buildAnalysisPrompt } from "./prompts.ts";
@@ -238,21 +239,24 @@ export const snowflakeAnalystAgent = createAgent<string, SnowflakeAnalystResult>
 
       const systemPrompt = buildAnalysisPrompt(tableName);
 
-      const result = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-        messages: [
-          { role: "system", content: systemPrompt },
-          temporalGroundingMessage(),
-          { role: "user", content: question },
-        ],
-        tools: {
-          execute_sql: executeSqlTool,
-          describe_table: describeTableTool,
-          save_analysis: saveAnalysisTool,
+      const result = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          messages: [
+            { role: "system", content: systemPrompt },
+            temporalGroundingMessage(),
+            { role: "user", content: question },
+          ],
+          tools: {
+            execute_sql: executeSqlTool,
+            describe_table: describeTableTool,
+            save_analysis: saveAnalysisTool,
+          },
+          stopWhen: stepCountIs(50),
+          maxRetries: 3,
+          abortSignal,
         },
-        stopWhen: stepCountIs(50),
-        maxRetries: 3,
-        abortSignal,
+        stream,
       });
 
       logger.debug("Analysis complete", { usage: result.usage, steps: result.steps?.length ?? 0 });

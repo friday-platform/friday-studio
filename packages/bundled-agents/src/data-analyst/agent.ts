@@ -1,14 +1,15 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, err, ok, type StreamEmitter } from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
-import { generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import { z } from "zod";
 
 import { discoverDataSources } from "./discovery.ts";
@@ -167,6 +168,7 @@ async function runAnalysisLoop(
   logger: Logger,
   queryLog: QueryExecution[],
   abortSignal?: AbortSignal,
+  stream?: StreamEmitter,
 ): Promise<{ summary: string; savedResults: SavedResults | null }> {
   const executeSqlTool = createExecuteSqlTool(databases, logger, queryLog, abortSignal);
   const [saveResultsTool, getSavedResults] = createSaveResultsTool(
@@ -176,17 +178,20 @@ async function runAnalysisLoop(
   );
   const analysisPrompt = buildAnalysisPrompt(schemaContext);
 
-  const result = await generateText({
-    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-    messages: [
-      { role: "system", content: analysisPrompt },
-      temporalGroundingMessage(),
-      { role: "user", content: question },
-    ],
-    tools: { execute_sql: executeSqlTool, save_results: saveResultsTool },
-    stopWhen: stepCountIs(50),
-    maxRetries: 3,
-    abortSignal,
+  const result = await streamTextWithEvents({
+    params: {
+      model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+      messages: [
+        { role: "system", content: analysisPrompt },
+        temporalGroundingMessage(),
+        { role: "user", content: question },
+      ],
+      tools: { execute_sql: executeSqlTool, save_results: saveResultsTool },
+      stopWhen: stepCountIs(50),
+      maxRetries: 3,
+      abortSignal,
+    },
+    stream,
   });
 
   logger.debug("Analysis complete", { usage: result.usage, steps: result.steps?.length ?? 0 });
@@ -321,6 +326,7 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         logger,
         queryLog,
         abortSignal,
+        stream,
       );
 
       const summaryRef = await createSummaryArtifact(summary, question, session);

@@ -1,10 +1,10 @@
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
-import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import { collectToolUsageFromSteps, streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { Client, DEFAULT_LIMITER_OPTIONS } from "@hubspot/api-client";
-import { generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import MarkdownIt from "markdown-it";
 import { z } from "zod";
 import { parseOperationConfig } from "../shared/operation-parser.ts";
@@ -240,7 +240,7 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
     ],
   },
 
-  handler: async (prompt, { env: agentEnv, logger, abortSignal }) => {
+  handler: async (prompt, { env: agentEnv, logger, abortSignal, stream }) => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
       return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
@@ -327,20 +327,23 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
     };
 
     try {
-      const result = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: prompt },
-        ],
-        tools,
-        abortSignal,
-        maxRetries: 3,
-        stopWhen: stepCountIs(MAX_STEPS),
-        experimental_repairToolCall: repairToolCall,
+      const result = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: prompt },
+          ],
+          tools,
+          abortSignal,
+          maxRetries: 3,
+          stopWhen: stepCountIs(MAX_STEPS),
+          experimental_repairToolCall: repairToolCall,
+        },
+        stream,
       });
 
-      logger.debug("AI SDK generateText completed", {
+      logger.debug("AI SDK streamTextWithEvents completed", {
         agent: "hubspot",
         usage: result.usage,
         finishReason: result.finishReason,
