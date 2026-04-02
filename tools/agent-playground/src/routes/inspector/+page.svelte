@@ -1,7 +1,7 @@
 <!--
   Inspector page — Job execution debugger ("Chrome DevTools for agent pipelines").
 
-  Two modes driven by `inspector.sessionView !== null`:
+  Two modes driven by `sessionViewQuery.data !== null`:
 
   **No-session mode:** Full-size pipeline DAG + "Run Job" button + recent sessions.
   **Session mode:** Waterfall timeline (hero) + right sidebar with session metadata.
@@ -18,7 +18,8 @@
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import type { AgentBlock } from "@atlas/core/session/session-events";
-  import { Button, Dialog, DropdownMenu, IconSmall } from "@atlas/ui";
+  import { Dialog, DropdownMenu, IconSmall } from "@atlas/ui";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import AgentInspectionPanel from "$lib/components/inspector/agent-inspection-panel.svelte";
@@ -31,7 +32,9 @@
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import WorkspaceJobSelector from "$lib/components/workspace/workspace-job-selector.svelte";
   import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
-  import { createInspectorState } from "$lib/inspector-state.svelte";
+  import { createInspectorState, type ResolvedStepAgent } from "$lib/inspector-state.svelte";
+  import { AGENT_TYPE_LABELS, jobQueries, sessionQueries, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "$lib/queries";
+  import type { WorkspaceAgentDef } from "$lib/queries";
 
   /** URL is the source of truth for workspace, job, session, and selected step. */
   const workspaceId = $derived(page.url.searchParams.get("workspace"));
@@ -43,9 +46,65 @@
   let config = $state<WorkspaceConfig | null>(null);
 
   const inspector = createInspectorState();
+  const queryClient = useQueryClient();
+
+  // ---- TanStack Queries ----
+
+  const jobConfigQuery = createQuery(() => jobQueries.config(jobId, workspaceId));
+  const workspaceConfigQuery = createQuery(() => workspaceQueries.config(workspaceId));
+  const sessionViewQuery = createQuery(() => sessionQueries.view(urlSessionId));
+
+  // ---- Derived data from queries ----
+
+  const fsmSteps = $derived(jobConfigQuery.data ?? []);
+
+  const workspaceAgentDefs = $derived.by((): Record<string, WorkspaceAgentDef> => {
+    const raw = workspaceConfigQuery.data;
+    if (!raw) return {};
+    const parsed = WorkspaceAgentDefsResponseSchema.safeParse(raw);
+    return parsed.success ? parsed.data.config.agents : {};
+  });
 
   /** Whether we're in session-loaded mode (session header + waterfall + detail). */
-  const hasSession = $derived(inspector.sessionView !== null);
+  const hasSession = $derived(sessionViewQuery.data != null);
+
+  /**
+   * Selected block — derived purely from URL step param + session data.
+   * No separate $state, no sync effects. URL is the sole source of truth.
+   */
+  const selectedBlock = $derived.by((): AgentBlock | null => {
+    const step = urlStep;
+    const blocks: AgentBlock[] = sessionViewQuery.data?.agentBlocks ?? [];
+    if (step) {
+      return blocks.find((b) => b.stateId === step && b.status !== "pending") ?? null;
+    }
+    return null;
+  });
+
+  /** Resolved agent metadata for the currently selected block. */
+  const resolvedStepAgent = $derived.by((): ResolvedStepAgent | null => {
+    const block = selectedBlock;
+    if (!block) return null;
+    const stepConfig = block.stateId ? fsmSteps.find((s) => s.stateId === block.stateId) : undefined;
+    const agentDef = workspaceAgentDefs[block.agentName];
+    if (!stepConfig && !agentDef) return null;
+    const rawType = agentDef?.type ?? "unknown";
+    return {
+      agentId: block.agentName,
+      agentType: AGENT_TYPE_LABELS[rawType] ?? rawType,
+      agentDescription: agentDef?.description,
+      stepPrompt: stepConfig?.prompt,
+    };
+  });
+
+  /** Combined error from inspector trigger phase and query failures. */
+  const errorMessage = $derived(
+    inspector.error
+      ?? (sessionViewQuery.error ? `Session load failed: ${sessionViewQuery.error.message}` : null),
+  );
+
+  /** Execution state: trigger phase OR active stream. */
+  const isExecuting = $derived(inspector.isTriggering || sessionViewQuery.isFetching);
 
   /** Selector callback — only takes config (workspace/job come from URL). */
   function handleSelection(selection: {
@@ -65,6 +124,7 @@
     const key = `${workspaceId}:${jobId}`;
     if (prevKey && key !== prevKey) {
       inspector.reset();
+      queryClient.removeQueries({ queryKey: sessionQueries.view(urlSessionId).queryKey });
       if (page.url.searchParams.has("session") || page.url.searchParams.has("step")) {
         const url = new URL(page.url);
         url.searchParams.delete("session");
@@ -75,55 +135,14 @@
     prevKey = key;
   });
 
-  /** Fetch job config when workspace/job are known. */
-  $effect(() => {
-    if (workspaceId && jobId) {
-      inspector.fetchJobConfig(jobId, workspaceId);
-    }
-  });
-
-  /** Load session from URL param. */
-  $effect(() => {
-    if (urlSessionId && inspector.sessionId !== urlSessionId && !inspector.isExecuting) {
-      inspector.loadSession(urlSessionId);
-    }
-  });
-
-  /** Push session ID to URL after a live run completes. */
-  let wasExecuting = $state(false);
-  $effect(() => {
-    const executing = inspector.isExecuting;
-    if (wasExecuting && !executing) {
-      const sid = inspector.sessionId;
-      if (sid) {
-        const url = new URL(page.url);
-        url.searchParams.set("session", sid);
-        url.searchParams.delete("step");
-        goto(url.toString(), { replaceState: true });
-      }
-    }
-    wasExecuting = executing;
-  });
-
-  /** Sync URL step param → inspector selected block. */
-  $effect(() => {
-    const step = urlStep;
-    const blocks = inspector.sessionView?.agentBlocks ?? [];
-    if (step) {
-      const match = blocks.find((b) => b.stateId === step && b.status !== "pending");
-      if (match && inspector.selectedBlock?.stateId !== step) {
-        inspector.selectBlock(match);
-      }
-    } else if (inspector.selectedBlock) {
-      inspector.selectBlock(null);
-    }
-  });
-
   /** Navigate to a step via URL (source of truth for selection). */
   function selectStep(block: AgentBlock | null) {
+    const current = page.url.searchParams.get("step") ?? null;
+    const next = block?.stateId ?? null;
+    if (current === next) return;
     const url = new URL(page.url);
-    if (block?.stateId) {
-      url.searchParams.set("step", block.stateId);
+    if (next) {
+      url.searchParams.set("step", next);
     } else {
       url.searchParams.delete("step");
     }
@@ -183,16 +202,15 @@
 
   /** Derive selectedNodeId for PipelineDiagram from the selected block's stateId. */
   const selectedNodeId = $derived.by(() => {
-    const stateId = inspector.selectedBlock?.stateId;
+    const stateId = selectedBlock?.stateId;
     if (!stateId || !jobId) return null;
     return `${jobId}:${stateId}`;
   });
 
   /** Map DAG node click to waterfall block selection. */
   function handleNodeClick(node: TopologyNode) {
-    // Extract stateId from node ID format "${jobId}:${stateId}"
     const stateId = node.id.includes(":") ? node.id.split(":").slice(1).join(":") : node.label;
-    const blocks = inspector.sessionView?.agentBlocks ?? [];
+    const blocks: AgentBlock[] = sessionViewQuery.data?.agentBlocks ?? [];
     const match = blocks.find((b) => b.stateId === stateId);
     if (match) {
       selectStep(match);
@@ -201,9 +219,9 @@
 
   /** Build node status map for DAG status overlays during live runs. */
   const nodeStatusMap = $derived.by((): Record<string, string> => {
-    if (!jobId || !inspector.sessionView) return {};
+    if (!jobId || !sessionViewQuery.data) return {};
     const result: Record<string, string> = {};
-    for (const block of inspector.sessionView.agentBlocks) {
+    for (const block of sessionViewQuery.data.agentBlocks) {
       if (block.stateId && block.status !== "pending") {
         result[`${jobId}:${block.stateId}`] = block.status;
       }
@@ -217,13 +235,27 @@
     return deriveSignalDetails(jobConfig);
   });
 
-  function handleRun(signalId: string, payload: Record<string, unknown>, skipStates: string[]) {
+  async function handleRun(signalId: string, payload: Record<string, unknown>, skipStates: string[]) {
     if (!workspaceId) return;
-    inspector.run(workspaceId, signalId, payload, skipStates);
+    const sessionId = await inspector.run(workspaceId, signalId, payload, skipStates);
+    if (sessionId) {
+      const url = new URL(page.url);
+      url.searchParams.set("session", sessionId);
+      url.searchParams.delete("step");
+      goto(url.toString(), { replaceState: true });
+    }
   }
 
-  function handleStop() {
-    inspector.stop();
+  async function handleStop() {
+    if (urlSessionId) {
+      try {
+        await fetch(`/api/daemon/api/sessions/${encodeURIComponent(urlSessionId)}`, { method: "DELETE" });
+      } catch {
+        // Best effort
+      }
+    }
+    inspector.cancel();
+    queryClient.invalidateQueries({ queryKey: sessionQueries.view(urlSessionId).queryKey });
   }
 
   /** Navigate back to the job REPL (no-session view). */
@@ -251,7 +283,7 @@
 
   /** Signal payload from the current session's first block input. */
   const sessionPayload = $derived.by((): Record<string, unknown> => {
-    const blocks = inspector.sessionView?.agentBlocks;
+    const blocks = sessionViewQuery.data?.agentBlocks;
     if (!blocks || blocks.length === 0) return {};
     return (blocks[0]?.input as Record<string, unknown>) ?? {};
   });
@@ -262,10 +294,16 @@
     dialogOpen.set(true);
   }
 
-  function handleRerunSubmit(dialogOpen: { set: (v: boolean) => void }) {
+  async function handleRerunSubmit(dialogOpen: { set: (v: boolean) => void }) {
     if (!workspaceId || !primarySignal) return;
     dialogOpen.set(false);
-    inspector.run(workspaceId, primarySignal.name, rerunPayload, [...inspector.disabledSteps]);
+    const sessionId = await inspector.run(workspaceId, primarySignal.name, rerunPayload, [...inspector.disabledSteps]);
+    if (sessionId) {
+      const url = new URL(page.url);
+      url.searchParams.set("session", sessionId);
+      url.searchParams.delete("step");
+      goto(url.toString(), { replaceState: true });
+    }
   }
 
   // -- Copy helpers --
@@ -292,7 +330,6 @@
   }
 
   function handleSessionSelect(sessionId: string) {
-    inspector.loadSession(sessionId);
     const url = new URL(page.url);
     url.searchParams.set("session", sessionId);
     url.searchParams.delete("step");
@@ -308,7 +345,7 @@
     if (target instanceof HTMLElement && target.isContentEditable) return;
 
     // Escape: close inspection panel
-    if (e.key === "Escape" && inspector.selectedBlock) {
+    if (e.key === "Escape" && selectedBlock) {
       e.preventDefault();
       selectStep(null);
       return;
@@ -404,7 +441,7 @@
             signals={jobSignals}
             jobTitle={jobSpec.title}
             jobDescription={jobSpec.description}
-            isExecuting={inspector.isExecuting}
+            {isExecuting}
             onrun={handleRun}
             onstop={handleStop}
             disabledSteps={inspector.disabledSteps}
@@ -413,9 +450,9 @@
         </div>
       {/if}
 
-      {#if inspector.error}
+      {#if errorMessage}
         <div class="zone-empty">
-          <span class="zone-label error-text">{inspector.error}</span>
+          <span class="zone-label error-text">{errorMessage}</span>
         </div>
       {/if}
     </div>
@@ -424,24 +461,24 @@
     <div class="session-layout">
       <div class="session-main">
         <div class="zone zone-waterfall">
-          {#if inspector.error}
+          {#if errorMessage}
             <div class="zone-empty">
-              <span class="zone-label error-text">{inspector.error}</span>
+              <span class="zone-label error-text">{errorMessage}</span>
             </div>
           {:else}
             <WaterfallTimeline
-              sessionView={inspector.sessionView}
-              selectedBlock={inspector.selectedBlock}
+              sessionView={sessionViewQuery.data ?? null}
+              {selectedBlock}
               onselect={(block) => selectStep(block)}
             />
           {/if}
         </div>
 
-        {#if inspector.selectedBlock}
+        {#if selectedBlock}
           <div class="zone zone-inspection">
             <AgentInspectionPanel
-              block={inspector.selectedBlock}
-              resolvedStepAgent={inspector.resolvedStepAgent}
+              block={selectedBlock}
+              {resolvedStepAgent}
               {workspaceId}
               onclose={() => selectStep(null)}
             />
@@ -449,8 +486,8 @@
         {/if}
       </div>
 
-      {#if inspector.sessionView}
-        <InspectorSessionSidebar sessionView={inspector.sessionView} {jobSpec} />
+      {#if sessionViewQuery.data}
+        <InspectorSessionSidebar sessionView={sessionViewQuery.data} {jobSpec} />
       {/if}
     </div>
   {/if}

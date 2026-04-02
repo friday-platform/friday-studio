@@ -6,13 +6,16 @@
 export { agentQueries, invalidateAgentPreflight } from "./agent-queries.ts";
 export type { AgentMetadata, AgentPreflightCredential, AgentPreflightResponse } from "./agent-queries.ts";
 export { integrationQueries } from "./integration-queries.ts";
+export { jobQueries } from "./job-queries.ts";
+export type { FsmStep } from "./job-queries.ts";
 export type { IntegrationPreflight, IntegrationStatus } from "./integration-queries.ts";
 export { sessionQueries } from "./session-queries.ts";
 export { skillQueries } from "./skill-queries.ts";
-export { workspaceQueries } from "./workspace-queries.ts";
+export { AGENT_TYPE_LABELS, useDeleteWorkspace, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "./workspace-queries.ts";
 export type {
   JobSummary,
   Workspace,
+  WorkspaceAgentDef,
   WorkspaceSummary,
   WorkspaceWithJobs,
 } from "./workspace-queries.ts";

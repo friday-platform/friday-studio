@@ -1,16 +1,17 @@
 <script lang="ts">
-  import { Collapsible, IconSmall } from "@atlas/ui";
+  import { Collapsible, Dialog, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
   import { workspaceQueries } from "$lib/queries";
+  import { writable } from "svelte/store";
 
   const pathname = $derived(page.url.pathname);
   /** Workspace ID from route param (platform pages). */
   const activeWorkspaceId = $derived(page.params.workspaceId as string | undefined);
 
-  let showLoader = $state(false);
+  const addDialogOpen = writable(false);
   let showTooltip = $state(false);
 
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
@@ -135,9 +136,7 @@
           <li>
             <button
               class="nav-item as-button"
-              onclick={() => {
-                showLoader = !showLoader;
-              }}
+              onclick={() => addDialogOpen.set(true)}
             >
               <svg
                 width="16"
@@ -182,15 +181,26 @@
   </div>
 </nav>
 
-{#if showLoader}
-  <div class="loader-overlay" role="dialog" aria-label="Load workspace">
-    <WorkspaceLoader
-      onclose={() => {
-        showLoader = false;
-      }}
-    />
-  </div>
-{/if}
+<Dialog.Root open={addDialogOpen}>
+  {#snippet children()}
+    <Dialog.Content>
+      <Dialog.Close />
+
+      {#snippet header()}
+        <Dialog.Title>Add space</Dialog.Title>
+        <Dialog.Description>
+          Your agents, jobs, and signals. Ready to run.
+        </Dialog.Description>
+      {/snippet}
+
+      <WorkspaceLoader inline onclose={() => addDialogOpen.set(false)} />
+
+      {#snippet footer()}
+        <Dialog.Cancel>Cancel</Dialog.Cancel>
+      {/snippet}
+    </Dialog.Content>
+  {/snippet}
+</Dialog.Root>
 
 <style>
   .sidebar {
@@ -403,13 +413,4 @@
     }
   }
 
-  .loader-overlay {
-    background-color: color-mix(in srgb, var(--color-surface-1), transparent 5%);
-    display: flex;
-    inset: 0;
-    justify-content: center;
-    align-items: center;
-    position: fixed;
-    z-index: var(--layer-5);
-  }
 </style>

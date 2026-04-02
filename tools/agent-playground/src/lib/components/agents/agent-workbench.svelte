@@ -346,7 +346,7 @@
           {#if runs.length === 0 && agent.examples.length > 0}
             <div class="example-cards">
               <span class="examples-heading">Try it</span>
-              {#each agent.examples.slice(0, 3) as example (example)}
+              {#each agent.examples.slice(0, 3) as example, i (i)}
                 <button
                   class="example-card"
                   type="button"

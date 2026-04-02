@@ -124,7 +124,7 @@
       <div class="spec-section">
         <h3 class="spec-label">Examples</h3>
         <div class="chip-list">
-          {#each agent.examples as example (example)}
+          {#each agent.examples as example, i (i)}
             <Button variant="secondary" size="small" onclick={() => onExampleClick?.(example)}>
               {example}
             </Button>

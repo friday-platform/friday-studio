@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./utils/session-event-stream.ts", () => ({
-  fetchSessionView: vi.fn(),
   sessionEventStream: vi.fn(),
 }));
 

@@ -6,11 +6,20 @@
  *
  * @module
  */
-import { SessionSummarySchema, type SessionSummary } from "@atlas/core/session/session-events";
-import { queryOptions, skipToken } from "@tanstack/svelte-query";
+import {
+  initialSessionView,
+  reduceSessionEvent,
+} from "@atlas/core/session/session-reducer";
+import {
+  SessionSummarySchema,
+  type SessionStreamEvent,
+  type EphemeralChunk,
+  type SessionSummary,
+} from "@atlas/core/session/session-events";
+import { experimental_streamedQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
-import { fetchSessionView } from "../utils/session-event-stream.ts";
+import { sessionEventStream } from "../utils/session-event-stream.ts";
 
 // ==============================================================================
 // QUERY FACTORIES
@@ -36,11 +45,17 @@ export const sessionQueries = {
       staleTime: 5_000,
     }),
 
-  /** Full session view (JSON endpoint, not SSE). Accepts null to disable via skipToken. */
+  /** Live session view via SSE stream. Handles both running and completed sessions. */
   view: (sessionId: string | null) =>
     queryOptions({
       queryKey: ["daemon", "sessions", "view", sessionId] as const,
-      queryFn: sessionId ? () => fetchSessionView(sessionId) : skipToken,
+      queryFn: sessionId
+        ? experimental_streamedQuery<SessionStreamEvent | EphemeralChunk, ReturnType<typeof initialSessionView>>({
+          streamFn: () => sessionEventStream(sessionId),
+          reducer: reduceSessionEvent,
+          initialValue: initialSessionView(),
+        })
+        : skipToken,
       staleTime: 60_000,
     }),
 };

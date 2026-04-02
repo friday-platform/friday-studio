@@ -4,6 +4,7 @@
   import { getDaemonClient } from "$lib/daemon-client";
   import { workspaceQueries } from "$lib/queries";
   import { parse as parseYaml } from "yaml";
+  import { z } from "zod";
 
   interface Props {
     inline?: boolean;
@@ -79,20 +80,19 @@
       }
 
       const result: unknown = await res.json();
-      const wsId =
-        result && typeof result === "object" && "id" in result
-          ? (result as { id: string }).id
-          : null;
+      const parsed = z.object({
+        workspace: z.object({ id: z.string() }),
+      }).passthrough().safeParse(result);
+
+      if (!parsed.success) {
+        console.warn("Workspace created but response shape unexpected:", parsed.error);
+      }
 
       await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
 
       onclose?.();
 
-      if (wsId) {
-        goto(`/platform/${wsId}`);
-      } else {
-        goto("/platform");
-      }
+      goto(`/platform/${parsed.success ? parsed.data.workspace.id : ""}`);
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to parse YAML";
     } finally {
@@ -101,12 +101,11 @@
   }
 </script>
 
-<div
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<label
   class="drop-zone"
   class:drag-over={dragOver}
   class:inline
-  role="button"
-  tabindex="0"
   ondragover={handleDragOver}
   ondragleave={handleDragLeave}
   ondrop={handleDrop}
@@ -115,12 +114,7 @@
     {#if loading}
       <p class="drop-label">Loading workspace...</p>
     {:else}
-      <p class="drop-label">Drop workspace.yml here</p>
-      <p class="drop-hint">or</p>
-      <label class="browse-btn">
-        Browse files
-        <input type="file" accept=".yml,.yaml" hidden onchange={handleFileInput} />
-      </label>
+      <p class="drop-label">Drop a workspace.yml here, or click to browse</p>
     {/if}
 
     {#if error}
@@ -128,16 +122,19 @@
     {/if}
   </div>
 
+  <input type="file" accept=".yml,.yaml" hidden onchange={handleFileInput} />
+
   {#if !inline && onclose}
     <button type="button" class="close-btn" onclick={onclose}>Close</button>
   {/if}
-</div>
+</label>
 
 <style>
   .drop-zone {
     align-items: center;
-    border: 2px dashed var(--color-border-2);
+    border: 1px dashed var(--color-border-2);
     border-radius: var(--radius-3);
+    cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
@@ -148,15 +145,19 @@
       border-color 200ms ease,
       background-color 200ms ease;
 
+    &:hover {
+      border-color: color-mix(in srgb, var(--color-text), transparent 50%);
+    }
+
     &.drag-over {
       background-color: color-mix(in srgb, var(--color-highlight-1), transparent 50%);
       border-color: var(--color-text);
     }
 
     &.inline {
-      border: none;
-      flex: 1;
+      border-style: dashed;
       min-block-size: 0;
+      padding: var(--size-8) var(--size-10);
     }
   }
 
@@ -175,21 +176,6 @@
   .drop-hint {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-2);
-  }
-
-  .browse-btn {
-    background-color: var(--color-surface-2);
-    border: var(--size-px) solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-2);
-    padding: var(--size-2) var(--size-5);
-    transition: background-color 100ms ease;
-
-    &:hover {
-      background-color: var(--color-highlight-1);
-    }
   }
 
   .drop-error {

@@ -14,7 +14,6 @@ import {
   SessionViewSchema,
   type EphemeralChunk,
   type SessionStreamEvent,
-  type SessionView,
 } from "@atlas/core/session/session-events";
 import { parseSSEStream } from "@atlas/utils/sse";
 
@@ -91,26 +90,6 @@ export async function* sessionEventStream(
   }
 }
 
-/**
- * Fetches the session JSON endpoint and returns the full SessionView.
- * Use for already-finished sessions to avoid an unnecessary SSE round-trip.
- */
-export async function fetchSessionView(sessionId: string): Promise<SessionView> {
-  const jsonUrl = `/api/daemon/api/sessions/${encodeURIComponent(sessionId)}`;
-  const response = await fetch(jsonUrl);
-
-  if (response.status === 410) {
-    throw new Error("Session uses an outdated format and cannot be displayed");
-  }
-
-  if (!response.ok) {
-    throw new Error(`Session JSON request failed: ${response.status} ${response.statusText}`);
-  }
-
-  const json: unknown = await response.json();
-  return SessionViewSchema.parse(json);
-}
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -175,7 +154,7 @@ async function* fetchJsonFallback(
       actionType: block.actionType,
       task: block.task,
       input: block.input,
-      timestamp: view.startedAt,
+      timestamp: block.startedAt ?? view.startedAt,
     };
     yield stepStart;
 

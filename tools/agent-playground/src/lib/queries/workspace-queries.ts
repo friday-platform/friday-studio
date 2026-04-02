@@ -6,7 +6,7 @@
  *
  * @module
  */
-import { queryOptions, skipToken } from "@tanstack/svelte-query";
+import { createMutation, queryOptions, skipToken, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
 
@@ -42,6 +42,28 @@ export type JobSummary = { id: string; title: string; description?: string };
 export type WorkspaceWithJobs = Workspace & { jobs: JobSummary[] };
 
 const WorkspacesResponseSchema = z.array(WorkspaceSummarySchema);
+
+/** Schema for workspace-level agent definitions from workspace config. */
+export const WorkspaceAgentDefSchema = z.object({
+  type: z.string().optional(),
+  agent: z.string().optional(),
+  description: z.string().optional(),
+}).passthrough();
+
+/** A single workspace agent definition. */
+export type WorkspaceAgentDef = z.infer<typeof WorkspaceAgentDefSchema>;
+
+/** Schema for extracting agent definitions from workspace config response. */
+export const WorkspaceAgentDefsResponseSchema = z.object({
+  config: z.object({ agents: z.record(z.string(), WorkspaceAgentDefSchema) }).passthrough(),
+}).passthrough();
+
+/** Map raw workspace agent types to user-friendly labels. */
+export const AGENT_TYPE_LABELS: Record<string, string> = {
+  atlas: "built-in",
+  llm: "llm",
+  system: "system",
+};
 
 /** Workspaces that are internal system concerns and hidden from UI. */
 const HIDDEN_WORKSPACES = new Set(["atlas-conversation", "friday-conversation"]);
@@ -171,3 +193,26 @@ export const workspaceQueries = {
       staleTime: 60_000,
     }),
 };
+
+// ==============================================================================
+// MUTATIONS
+// ==============================================================================
+
+/** Deletes a workspace via the daemon API. */
+export function useDeleteWorkspace() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (workspaceId: string) => {
+      const res = await client.workspace[":workspaceId"].$delete({
+        param: { workspaceId },
+      });
+      if (!res.ok) throw new Error(`Failed to delete workspace: ${res.status}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+    },
+  }));
+}

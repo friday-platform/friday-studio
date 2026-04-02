@@ -31,11 +31,17 @@
 
   const blocks = $derived(sessionView?.agentBlocks ?? []);
   const hasBlocks = $derived(blocks.some((b) => b.status !== "pending"));
-  /** Auto-select first failed block on session failure. */
+
+  /** Ticking clock for running bar growth. Only ticks while session is active and a block is running. */
+  let now = $state(Date.now());
   $effect(() => {
-    if (sessionView?.status !== "failed") return;
-    const firstFailed = blocks.find((b) => b.status === "failed");
-    if (firstFailed) onselect(firstFailed);
+    const terminalStatuses = ["completed", "failed", "skipped"];
+    const isTerminal = terminalStatuses.includes(sessionView?.status ?? "");
+    if (isTerminal || !blocks.some((b) => b.status === "running")) return;
+    const interval = setInterval(() => {
+      now = Date.now();
+    }, 100);
+    return () => clearInterval(interval);
   });
 
   /**
@@ -43,7 +49,9 @@
    * if complete, otherwise derives from timestamps or sums durations.
    */
   const totalDurationMs = $derived(
-    sessionView ? computeTotalDurationMs(blocks, sessionView.startedAt, sessionView.durationMs) : 0,
+    sessionView
+      ? computeTotalDurationMs(blocks, sessionView.startedAt, sessionView.durationMs, now)
+      : 0,
   );
 
   /**
@@ -83,7 +91,7 @@
 
   /** Pre-computed bar left/width percentages for all blocks. */
   const barLayouts = $derived(
-    sessionView ? computeBarLayouts(blocks, sessionView.startedAt, totalDurationMs) : [],
+    sessionView ? computeBarLayouts(blocks, sessionView.startedAt, totalDurationMs, now) : [],
   );
 
   function isSelected(block: AgentBlock): boolean {
@@ -151,6 +159,10 @@
                   style="inset-inline-start: {rightEdge}%"
                 >
                   Skipped
+                </span>
+              {:else if block.status === "running" && block.startedAt}
+                <span class="duration-label" style="inset-inline-start: {rightEdge}%">
+                  {formatMs(now - Date.parse(block.startedAt))}
                 </span>
               {:else if block.durationMs}
                 <span class="duration-label" style="inset-inline-start: {rightEdge}%">

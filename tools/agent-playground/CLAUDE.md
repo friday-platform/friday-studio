@@ -52,3 +52,10 @@ inference.
 - Components use Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`)
 - Design tokens from `@atlas/ui/tokens.css`
 - Use `makeClient(fetch)` in load functions, `getClient()` in browser code
+
+## Gotchas
+
+- Never call `goto()` from `$effect` — it creates invisible infinite navigation
+  loops that hang the browser with no errors. If state mirrors a URL param,
+  use `$derived` from `page.url` instead of syncing `$state` via effects.
+  See `docs/never-again/2026-04-02-effect-goto-loops.md`

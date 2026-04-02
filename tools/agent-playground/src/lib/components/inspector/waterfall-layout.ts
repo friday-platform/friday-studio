@@ -24,11 +24,15 @@ export interface BarLayout {
  *
  * When session `durationMs` is available, use it. Otherwise derive from the
  * blocks themselves — either from real timestamps or by summing durations.
+ * For running sessions, extends the span to include elapsed time of running blocks.
+ *
+ * @param now - Current timestamp in ms, used to compute running block elapsed time
  */
 export function computeTotalDurationMs(
   blocks: AgentBlock[],
   sessionStartedAt: string,
   sessionDurationMs: number | undefined,
+  now: number,
 ): number {
   const skippedCount = blocks.filter((b) => b.status === "skipped").length;
 
@@ -43,7 +47,11 @@ export function computeTotalDurationMs(
     let maxEnd = 0;
     for (const block of blocks) {
       if (block.startedAt) {
-        const end = Date.parse(block.startedAt) + (block.durationMs ?? 0);
+        const blockStart = Date.parse(block.startedAt);
+        const end =
+          block.status === "running"
+            ? now
+            : blockStart + (block.durationMs ?? 0);
         if (end > maxEnd) maxEnd = end;
       }
     }
@@ -63,13 +71,16 @@ export function computeTotalDurationMs(
 /**
  * Compute bar left/width percentages for each block.
  *
- * Returns one `BarLayout` per block. Pending/running blocks without duration
- * get a fixed placeholder width.
+ * Returns one `BarLayout` per block. Running blocks grow proportionally
+ * based on elapsed time; completed blocks use their recorded duration.
+ *
+ * @param now - Current timestamp in ms, used to compute running block widths
  */
 export function computeBarLayouts(
   blocks: AgentBlock[],
   sessionStartedAt: string,
   totalDurationMs: number,
+  now: number,
 ): BarLayout[] {
   if (totalDurationMs <= 0) {
     return blocks.map(() => ({ left: 0, width: 0 }));
@@ -87,7 +98,7 @@ export function computeBarLayouts(
         : prev
           ? prev.left + prev.width
           : 0;
-      const width = Math.min(barWidth(block, totalDurationMs), 100 - left);
+      const width = Math.min(barWidth(block, totalDurationMs, now), 100 - left);
       layouts.push({ left, width });
     }
     return layouts;
@@ -97,7 +108,7 @@ export function computeBarLayouts(
   let cursor = 0;
   return blocks.map((block) => {
     const left = (cursor / totalDurationMs) * 100;
-    const width = barWidth(block, totalDurationMs);
+    const width = barWidth(block, totalDurationMs, now);
     if (block.durationMs) cursor += block.durationMs;
     return { left, width };
   });
@@ -127,9 +138,16 @@ export function rowStatusClasses(status: BlockStatus): string {
   }
 }
 
-function barWidth(block: AgentBlock, totalDurationMs: number): number {
+function barWidth(block: AgentBlock, totalDurationMs: number, now: number): number {
+  if (totalDurationMs <= 0) return 0.5;
   if (block.status === "skipped") return 3;
-  if (block.status === "running") return 15;
+  if (block.status === "running") {
+    if (block.startedAt) {
+      const elapsed = now - Date.parse(block.startedAt);
+      return Math.max((elapsed / totalDurationMs) * 100, 0.5);
+    }
+    return 15; // fallback when no startedAt
+  }
   if (block.durationMs) return Math.max((block.durationMs / totalDurationMs) * 100, 0.5);
   return 1;
 }
