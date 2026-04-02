@@ -53,8 +53,11 @@ RUN npx svelte-kit sync && npx svelte-package -o dist
 WORKDIR /app/tools/agent-playground
 RUN npx svelte-kit sync
 
-# Ensure pty-server spawn-helper is executable (node-pty prebuild)
-RUN chmod +x /app/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true
+# Ensure pty-server spawn-helper is executable (node-pty prebuild).
+# Deno's install doesn't set the execute bit on prebuilt binaries.
+# Check both root node_modules and Deno's .deno/ layout.
+RUN chmod +x /app/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true && \
+    chmod +x /app/node_modules/.deno/node-pty@*/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true
 
 WORKDIR /app
 

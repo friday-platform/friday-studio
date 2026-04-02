@@ -101,7 +101,7 @@ PLAYGROUND_PID=$!
 cd /app
 
 echo "[platform] Starting pty-server on :7681..."
-cd /app/tools/pty-server && deno run -A --no-lock server.ts &
+cd /app/tools/pty-server && npx tsx server.ts &
 PTY_PID=$!
 cd /app
 

@@ -33,15 +33,24 @@
     return `${proto}//${window.location.host}/pty-proxy/pty`;
   }
 
-  // Check PTY server availability via the Vite proxy
+  // Check PTY server availability with retry (handles startup race)
   if (browser) {
-    fetch("/pty-proxy/health")
-      .then((r) => {
-        if (r.ok) ptyAvailable = true;
-      })
-      .catch(() => {
-        // PTY server not available — copy-only mode
-      });
+    checkPtyHealth();
+  }
+
+  async function checkPtyHealth() {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch("/pty-proxy/health");
+        if (res.ok) {
+          ptyAvailable = true;
+          return;
+        }
+      } catch {
+        // PTY server not available yet
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    }
   }
 
   // Focus search input on mount

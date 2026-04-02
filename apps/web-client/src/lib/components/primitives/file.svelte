@@ -57,9 +57,7 @@
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content>
-          <DropdownMenu.Item onclick={handleDownload}>
-            Download File
-          </DropdownMenu.Item>
+          <DropdownMenu.Item onclick={handleDownload}>Download File</DropdownMenu.Item>
           <DropdownMenu.Separator />
           <DropdownMenu.Label>Copy</DropdownMenu.Label>
           <DropdownMenu.Item

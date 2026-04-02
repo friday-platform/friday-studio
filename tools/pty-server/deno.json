@@ -3,5 +3,5 @@
   "name": "@atlas/pty-server",
   "exports": "./server.ts",
   "version": "0.1.0",
-  "tasks": { "start": "deno run -A server.ts" }
+  "tasks": { "start": "npx tsx server.ts" }
 }
