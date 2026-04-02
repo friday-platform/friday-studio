@@ -3,7 +3,6 @@
  */
 
 import type { Database } from "@db/sqlite";
-import { cosineSimilarity } from "ai";
 import { blobToEmbedding, embedQuery } from "./embed.ts";
 
 export interface SearchResult {
@@ -18,10 +17,26 @@ export interface SearchResult {
 
 export interface EmbeddingCache {
   ids: number[];
-  embeddings: number[][];
+  embeddings: Float32Array[];
 }
 
-// Module-level cache: avoids reloading ~140MB of embeddings per request.
+/** Cosine similarity between a number[] query vector and a Float32Array corpus vector. */
+export function cosineSimilarity(a: number[], b: Float32Array): number {
+  const n = a.length;
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < n; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dot += ai * bi;
+    magA += ai * ai;
+    magB += bi * bi;
+  }
+  return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+// Module-level cache: avoids reloading embeddings from SQLite per request.
 // Keyed by corpus file path so a reindex with a new corpus invalidates correctly.
 let _cachedEmbeddings: { path: string; cache: EmbeddingCache } | undefined;
 
@@ -35,16 +50,29 @@ export function loadEmbeddings(db: Database, corpusPath?: string): EmbeddingCach
     return _cachedEmbeddings.cache;
   }
 
-  const rows = db
-    .prepare("SELECT id, embedding FROM documents WHERE embedding IS NOT NULL")
-    .all<{ id: number; embedding: Uint8Array }>();
-
+  // Load in chunks using keyset pagination (WHERE id > ? ORDER BY id LIMIT ?)
+  // instead of .all(). Benchmarked 3x faster (514ms vs 1557ms for 151K rows)
+  // and avoids a ~1 GB RSS spike from materializing all Uint8Array blobs at once.
+  const LOAD_CHUNK = 10000;
   const ids: number[] = [];
-  const embeddings: number[][] = [];
-  for (const row of rows) {
-    ids.push(row.id);
-    embeddings.push(blobToEmbedding(row.embedding));
+  const embeddings: Float32Array[] = [];
+  let lastId = 0;
+
+  const stmt = db.prepare(
+    "SELECT id, embedding FROM documents WHERE embedding IS NOT NULL AND id > ? ORDER BY id LIMIT ?",
+  );
+
+  while (true) {
+    const chunk = stmt.all<{ id: number; embedding: Uint8Array }>(lastId, LOAD_CHUNK);
+    if (chunk.length === 0) break;
+    for (const row of chunk) {
+      ids.push(row.id);
+      embeddings.push(blobToEmbedding(row.embedding));
+      lastId = row.id;
+    }
   }
+
+  stmt.finalize?.();
 
   const cache = { ids, embeddings };
   if (corpusPath) {

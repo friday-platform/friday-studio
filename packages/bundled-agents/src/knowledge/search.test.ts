@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { SearchResult } from "./search.ts";
-import { reciprocalRankFusion, sanitizeFtsQuery } from "./search.ts";
+import { cosineSimilarity, reciprocalRankFusion, sanitizeFtsQuery } from "./search.ts";
 
 // Helper to create a SearchResult for testing
 function makeResult(id: number, sourceType: string, score = 0): SearchResult {
@@ -123,5 +123,61 @@ describe("reciprocalRankFusion", () => {
   test("handles both empty", () => {
     const merged = reciprocalRankFusion([], [], 60, 10);
     expect(merged.length).toBe(0);
+  });
+});
+
+// Tests aligned with vercel/ai SDK's cosine-similarity.test.ts to ensure
+// our custom implementation (typed for Float32Array) matches SDK behavior.
+describe("cosineSimilarity", () => {
+  test("calculates cosine similarity correctly (vercel/ai parity)", () => {
+    const a = [1, 2, 3];
+    const b = new Float32Array([4, 5, 6]);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(0.9746318461970762, 5);
+  });
+
+  test("calculates negative cosine similarity correctly (vercel/ai parity)", () => {
+    const a = [1, 0];
+    const b = new Float32Array([-1, 0]);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(-1, 5);
+  });
+
+  test("gives 0 when one vector is zero (vercel/ai parity)", () => {
+    const a = [0, 1, 2];
+    const b = new Float32Array([0, 0, 0]);
+    expect(cosineSimilarity(a, b)).toBe(0);
+  });
+
+  test("gives 0 when the other vector is zero (vercel/ai parity)", () => {
+    const a = [0, 0, 0];
+    const b = new Float32Array([0, 1, 2]);
+    expect(cosineSimilarity(a, b)).toBe(0);
+  });
+
+  test("handles vectors with very small magnitudes (vercel/ai parity)", () => {
+    const a = [1e-10, 0, 0];
+    const b = new Float32Array([2e-10, 0, 0]);
+    expect(cosineSimilarity(a, b)).toBe(1);
+
+    const c = [1e-10, 0, 0];
+    const d = new Float32Array([-1e-10, 0, 0]);
+    expect(cosineSimilarity(c, d)).toBe(-1);
+  });
+
+  test("identical vectors return 1.0", () => {
+    const a = [0.5, 0.3, 0.8];
+    const b = new Float32Array([0.5, 0.3, 0.8]);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 5);
+  });
+
+  test("orthogonal vectors return 0.0", () => {
+    const a = [1, 0, 0];
+    const b = new Float32Array([0, 1, 0]);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(0.0, 5);
+  });
+
+  test("handles 768-dim embeddings (number[] vs Float32Array)", () => {
+    const a = Array.from({ length: 768 }, (_, i) => Math.sin(i));
+    const b = new Float32Array(a);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 4);
   });
 });

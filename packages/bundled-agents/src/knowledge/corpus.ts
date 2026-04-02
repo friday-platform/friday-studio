@@ -6,10 +6,11 @@
  *   deno run -A corpus.ts --input /path/to/data/dir --output /tmp/corpus.db
  *   deno run -A corpus.ts --input /path/to/file.csv --output /tmp/corpus.db
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, readdirSync, readFileSync, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline";
 import { createLogger } from "@atlas/logger";
 import { Database } from "@db/sqlite";
 import { embedBatch, embeddingToBlob } from "./embed.ts";
@@ -169,77 +170,106 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
-function ingestCsvFile(
+async function ingestCsvFile(
   filePath: string,
   db: Database,
   onProgress?: (done: number, total: number) => void,
-): number {
-  const content = readFileSync(filePath, "utf-8");
-  const lines = content.split("\n");
-  if (lines.length < 2) return 0;
-
-  const headerLine = lines[0] ?? "";
-  const headers = parseCsvRow(headerLine);
-  const mapping = detectColumns(headers);
-
-  if (!mapping.title && !mapping.content) {
-    // Can't map this CSV — skip
-    return 0;
-  }
-
-  const titleIdx = mapping.title ? headers.indexOf(mapping.title) : -1;
-  const contentIdx = mapping.content ? headers.indexOf(mapping.content) : -1;
-  const responseIdx = mapping.response ? headers.indexOf(mapping.response) : -1;
-  const urlIdx = mapping.url ? headers.indexOf(mapping.url) : -1;
-  const idIdx = mapping.idColumn ? headers.indexOf(mapping.idColumn) : -1;
-  const categoryIdx = mapping.categoryColumn ? headers.indexOf(mapping.categoryColumn) : -1;
-
+): Promise<number> {
   const fileName = path.basename(filePath);
+
+  // Stream line-by-line instead of loading entire file into memory.
+  // messages.csv alone is 221 MB — readFileSync would spike heap by ~443 MB.
+  const rl = createInterface({
+    input: createReadStream(filePath, { encoding: "utf-8" }),
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
+
+  let headers: string[] | undefined;
+  let mapping: ColumnMapping | undefined;
+  let titleIdx = -1;
+  let contentIdx = -1;
+  let responseIdx = -1;
+  let urlIdx = -1;
+  let idIdx = -1;
+  let categoryIdx = -1;
+
   const stmt = db.prepare(
     "INSERT INTO documents (source_type, title, content, response, url, metadata) VALUES (?, ?, ?, ?, ?, ?)",
   );
 
   let inserted = 0;
   let buffer = "";
+  let lineNum = 0;
+
+  // Estimate total rows from file size for progress reporting (streaming
+  // doesn't know total upfront). Use 150 bytes/row as a rough average.
+  const estimatedTotal = Math.round(statSync(filePath).size / 150);
 
   db.exec("BEGIN TRANSACTION");
 
-  for (let i = 1; i < lines.length; i++) {
-    // Handle multi-line CSV fields (quoted fields with newlines)
-    buffer += (buffer ? "\n" : "") + (lines[i] ?? "");
-    const quoteCount = (buffer.match(/"/g) ?? []).length;
-    if (quoteCount % 2 !== 0) continue; // incomplete row
+  try {
+    for await (const line of rl) {
+      lineNum++;
 
-    const fields = parseCsvRow(buffer);
-    buffer = "";
+      // First line is the header row
+      if (!headers) {
+        headers = parseCsvRow(line);
+        mapping = detectColumns(headers);
 
-    const title = (titleIdx >= 0 ? fields[titleIdx] : "")?.trim() ?? "";
-    const bodyRaw = (contentIdx >= 0 ? fields[contentIdx] : "")?.trim() ?? "";
-    const body = stripHtml(bodyRaw);
-    const response = responseIdx >= 0 ? stripHtml(fields[responseIdx] ?? "") : null;
-    const url = urlIdx >= 0 ? (fields[urlIdx] ?? "").trim() : null;
-    const ticketId = idIdx >= 0 ? (fields[idIdx] ?? "").trim() : null;
-    const category = categoryIdx >= 0 ? (fields[categoryIdx] ?? "").trim() : null;
+        if (!mapping.title && !mapping.content) {
+          return 0;
+        }
 
-    // Skip rows with no useful content
-    if (title.length < 3 && body.length < 10) continue;
+        titleIdx = mapping.title ? headers.indexOf(mapping.title) : -1;
+        contentIdx = mapping.content ? headers.indexOf(mapping.content) : -1;
+        responseIdx = mapping.response ? headers.indexOf(mapping.response) : -1;
+        urlIdx = mapping.url ? headers.indexOf(mapping.url) : -1;
+        idIdx = mapping.idColumn ? headers.indexOf(mapping.idColumn) : -1;
+        categoryIdx = mapping.categoryColumn ? headers.indexOf(mapping.categoryColumn) : -1;
+        continue;
+      }
 
-    // Skip header row duplicates
-    if (title === mapping.title || body === mapping.content) continue;
+      // Handle multi-line CSV fields (quoted fields with newlines)
+      buffer += (buffer ? "\n" : "") + line;
+      const quoteCount = (buffer.match(/"/g) ?? []).length;
+      if (quoteCount % 2 !== 0) continue; // incomplete row
 
-    const displayTitle = title || `${mapping.sourceType} #${ticketId ?? i}`;
-    const metadata = JSON.stringify({ source_file: fileName, ticket_id: ticketId, category });
+      const fields = parseCsvRow(buffer);
+      buffer = "";
 
-    stmt.run(mapping.sourceType, displayTitle, body, response || null, url || null, metadata);
-    inserted++;
+      // mapping is always set after header parsing (we return 0 if unmappable),
+      // but TypeScript can't narrow across the for-await boundary.
+      if (!mapping) continue;
 
-    if (inserted % 5000 === 0) {
-      onProgress?.(inserted, lines.length);
+      const title = (titleIdx >= 0 ? fields[titleIdx] : "")?.trim() ?? "";
+      const bodyRaw = (contentIdx >= 0 ? fields[contentIdx] : "")?.trim() ?? "";
+      const body = stripHtml(bodyRaw);
+      const response = responseIdx >= 0 ? stripHtml(fields[responseIdx] ?? "") : null;
+      const url = urlIdx >= 0 ? (fields[urlIdx] ?? "").trim() : null;
+      const ticketId = idIdx >= 0 ? (fields[idIdx] ?? "").trim() : null;
+      const category = categoryIdx >= 0 ? (fields[categoryIdx] ?? "").trim() : null;
+
+      // Skip rows with no useful content
+      if (title.length < 3 && body.length < 10) continue;
+
+      // Skip header row duplicates
+      if (title === mapping.title || body === mapping.content) continue;
+
+      const displayTitle = title || `${mapping.sourceType} #${ticketId ?? lineNum}`;
+      const metadata = JSON.stringify({ source_file: fileName, ticket_id: ticketId, category });
+
+      stmt.run(mapping.sourceType, displayTitle, body, response || null, url || null, metadata);
+      inserted++;
+
+      if (inserted % 5000 === 0) {
+        onProgress?.(inserted, estimatedTotal);
+      }
     }
+  } finally {
+    stmt.finalize?.();
+    db.exec(inserted > 0 ? "COMMIT" : "ROLLBACK");
   }
 
-  stmt.finalize?.();
-  db.exec("COMMIT");
   return inserted;
 }
 
@@ -287,32 +317,55 @@ async function embedDocuments(
   db: Database,
   onProgress?: (done: number, total: number) => void,
 ): Promise<number> {
-  const rows = db
-    .prepare("SELECT id, title, content FROM documents WHERE embedding IS NULL")
-    .all<{ id: number; title: string; content: string }>();
+  const total =
+    db.prepare("SELECT count(*) as c FROM documents WHERE embedding IS NULL").get<{ c: number }>()
+      ?.c ?? 0;
 
-  if (rows.length === 0) return 0;
+  if (total === 0) return 0;
 
-  // nomic-embed-text-v1.5 supports 8192 tokens (~32K chars), but Fireworks
-  // has request-body limits when batching 256 items. Cap each text so the
-  // total payload stays well within API limits.
+  // Process in chunks to avoid loading all rows + texts + embeddings into
+  // memory at once. With 151K docs the old approach peaked at ~1.5 GB heap:
+  //   .all() loaded 151K rows (+376 MB), .map() created texts (+214 MB),
+  //   embedBatch accumulated all embeddings (+896 MB).
+  // Chunking at 2000 rows caps each iteration at ~30 MB.
+  const EMBED_CHUNK_SIZE = 2000;
   const MAX_EMBED_CHARS = 2000;
-  const texts = rows.map((r) => `${r.title}\n${r.content}`.slice(0, MAX_EMBED_CHARS));
-  const embeddings = await embedBatch(texts, onProgress);
+  let completed = 0;
 
-  db.exec("BEGIN TRANSACTION");
-  const stmt = db.prepare("UPDATE documents SET embedding = ? WHERE id = ?");
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const emb = embeddings[i];
-    if (row && emb) {
-      stmt.run(embeddingToBlob(emb), row.id);
+  // Each iteration: LIMIT grabs the next chunk of un-embedded rows (rows we
+  // just embedded no longer match WHERE embedding IS NULL).
+  const selectStmt = db.prepare(
+    "SELECT id, title, content FROM documents WHERE embedding IS NULL LIMIT ?",
+  );
+  const updateStmt = db.prepare("UPDATE documents SET embedding = ? WHERE id = ?");
+
+  try {
+    while (completed < total) {
+      const rows = selectStmt.all<{ id: number; title: string; content: string }>(EMBED_CHUNK_SIZE);
+      if (rows.length === 0) break;
+
+      const texts = rows.map((r) => `${r.title}\n${r.content}`.slice(0, MAX_EMBED_CHARS));
+      const embeddings = await embedBatch(texts, (done) => onProgress?.(completed + done, total));
+
+      db.exec("BEGIN TRANSACTION");
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const emb = embeddings[i];
+        if (row && emb) {
+          updateStmt.run(embeddingToBlob(emb), row.id);
+        }
+      }
+      db.exec("COMMIT");
+
+      completed += rows.length;
+      onProgress?.(completed, total);
     }
+  } finally {
+    selectStmt.finalize?.();
+    updateStmt.finalize?.();
   }
-  stmt.finalize?.();
-  db.exec("COMMIT");
 
-  return embeddings.length;
+  return completed;
 }
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -357,7 +410,7 @@ export async function buildCorpus(options: CorpusBuildOptions): Promise<CorpusBu
 
       let count = 0;
       if (ext === ".csv") {
-        count = ingestCsvFile(file, db, (done, total) =>
+        count = await ingestCsvFile(file, db, (done, total) =>
           options.onProgress?.(`Ingesting ${fileName}`, done, total),
         );
       } else {

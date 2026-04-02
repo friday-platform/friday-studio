@@ -7,6 +7,7 @@ describe("embeddingToBlob / blobToEmbedding", () => {
     const blob = embeddingToBlob(embedding);
     const restored = blobToEmbedding(blob);
 
+    expect(restored).toBeInstanceOf(Float32Array);
     expect(restored.length).toBe(768);
     for (let i = 0; i < embedding.length; i++) {
       expect(restored[i]).toBeCloseTo(embedding[i] ?? 0, 5);
@@ -16,7 +17,8 @@ describe("embeddingToBlob / blobToEmbedding", () => {
   test("round-trips an empty embedding", () => {
     const blob = embeddingToBlob([]);
     const restored = blobToEmbedding(blob);
-    expect(restored).toEqual([]);
+    expect(restored).toBeInstanceOf(Float32Array);
+    expect(restored.length).toBe(0);
   });
 
   test("round-trips a single-element embedding", () => {
@@ -30,7 +32,8 @@ describe("embeddingToBlob / blobToEmbedding", () => {
     const embedding = [0, 0, 0];
     const blob = embeddingToBlob(embedding);
     const restored = blobToEmbedding(blob);
-    expect(restored).toEqual([0, 0, 0]);
+    expect(restored.length).toBe(3);
+    expect(Array.from(restored)).toEqual([0, 0, 0]);
   });
 
   test("handles negative values", () => {
@@ -41,6 +44,13 @@ describe("embeddingToBlob / blobToEmbedding", () => {
     for (let i = 0; i < embedding.length; i++) {
       expect(restored[i]).toBeCloseTo(embedding[i] ?? 0, 5);
     }
+  });
+
+  test("Float32Array is independent of original buffer", () => {
+    const original = new Uint8Array([0, 0, 128, 63]); // 1.0 in little-endian float32
+    const copy = blobToEmbedding(original);
+    original[0] = 255; // corrupt original
+    expect(copy[0]).toBeCloseTo(1.0, 5); // copy unaffected
   });
 
   test("blob size is 4 bytes per float", () => {

@@ -75,12 +75,14 @@ export function embeddingToBlob(embedding: number[]): Uint8Array {
   return new Uint8Array(buf);
 }
 
-/** Convert a SQLite BLOB back to a number[] embedding. */
-export function blobToEmbedding(blob: Uint8Array): number[] {
-  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-  const embedding: number[] = [];
-  for (let i = 0; i < blob.byteLength; i += 4) {
-    embedding.push(view.getFloat32(i, true));
-  }
-  return embedding;
+/**
+ * Convert a SQLite BLOB back to a Float32Array embedding.
+ *
+ * Copies into a standalone ArrayBuffer so the original SQLite row's
+ * Uint8Array (and the entire .all() result set) can be garbage-collected.
+ * Without the copy, Float32Array would be a view of the same buffer,
+ * pinning ~445 MB of external memory for 151K embeddings.
+ */
+export function blobToEmbedding(blob: Uint8Array): Float32Array {
+  return new Float32Array(blob.slice().buffer);
 }
