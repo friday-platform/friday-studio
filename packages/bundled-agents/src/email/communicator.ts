@@ -190,7 +190,7 @@ CONTENT GUIDELINES (for composeEmail):
             },
           }),
         },
-        maxOutputTokens: 4000,
+        maxOutputTokens: 16000,
         temperature: 0.3,
         toolChoice: "required",
         experimental_repairToolCall: repairToolCall,
