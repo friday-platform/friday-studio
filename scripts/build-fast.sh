@@ -4,7 +4,7 @@ set -euo pipefail
 # Trigger the platform-docker GitHub Action to build and publish a new
 # Dockerfile-platform image to Google Artifact Registry.
 #
-# Usage: ./scripts/build-platform.sh [--watch]
+# Usage: ./scripts/build-fast.sh [--watch]
 #
 # Options:
 #   --watch   Wait for the workflow run to complete and stream logs

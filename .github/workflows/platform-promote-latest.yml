@@ -1,0 +1,66 @@
+name: platform-promote-latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to promote to latest (e.g. 0.0.16)"
+        required: true
+        type: string
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_ID: "1039443489466"
+  PROJECT_NAME: friday-platform
+  REPOSITORY: releases
+  IMAGE: platform
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.version }} to latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_NAME }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-actions/providers/atlas-github"
+          service_account: github-ci@friday-platform.iam.gserviceaccount.com
+
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker "${{ env.GAR_LOCATION }}-docker.pkg.dev" --quiet
+
+      - name: Validate version exists
+        run: |
+          IMAGE_PATH="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}"
+          if ! gcloud artifacts docker images describe "${IMAGE_PATH}:${{ inputs.version }}" --project="${{ env.PROJECT_NAME }}" &>/dev/null; then
+            echo "::error::Version ${{ inputs.version }} not found in ${IMAGE_PATH}"
+            exit 1
+          fi
+          echo "Found image: ${IMAGE_PATH}:${{ inputs.version }}"
+
+      - name: Promote to latest
+        run: |
+          IMAGE_PATH="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}"
+          gcloud artifacts docker tags add \
+            "${IMAGE_PATH}:${{ inputs.version }}" \
+            "${IMAGE_PATH}:latest"
+          echo "Promoted ${{ inputs.version }} → latest"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Latest Tag Updated"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | \`${{ inputs.version }}\` |"
+            echo "| **Image** | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

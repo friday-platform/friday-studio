@@ -75,7 +75,6 @@ jobs:
           tags: |
             ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}
             ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
-            ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
 
       - name: Summary
         run: |
@@ -86,5 +85,6 @@ jobs:
             echo "|-----|-------|"
             echo "| \`${{ steps.version.outputs.version }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}\` |"
             echo "| \`${{ github.sha }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}\` |"
-            echo "| \`latest\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest\` |"
+            echo ""
+            echo "> To promote this version to \`latest\`, run: \`./scripts/promote-latest.sh ${{ steps.version.outputs.version }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
