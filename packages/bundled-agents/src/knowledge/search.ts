@@ -87,12 +87,12 @@ export function invalidateEmbeddingCache(): void {
 }
 
 /**
- * Sanitize a query string for FTS5 MATCH: strip special chars, reserved words,
- * then rejoin meaningful tokens with OR for broad recall.
+ * Sanitize a query string for FTS5 MATCH: keep only word characters,
+ * strip FTS5 reserved words, then rejoin with OR for broad recall.
  */
 export function sanitizeFtsQuery(query: string): string | null {
   const sanitized = query
-    .replace(/[""()*/\\?!.,:;@#$%^&+={}[\]~`<>]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\b(AND|OR|NOT|NEAR)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();

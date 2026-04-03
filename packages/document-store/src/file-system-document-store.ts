@@ -108,6 +108,14 @@ export class FileSystemDocumentStore extends DocumentStore {
       if (isErrnoException(error) && error.code === "ENOENT") {
         return null;
       }
+      if (error instanceof SyntaxError) {
+        this.logger.warn("Corrupted JSON document file, treating as non-existent", {
+          path: this.buildPath(scope, type, id),
+          type,
+          id,
+        });
+        return null;
+      }
       throw error;
     }
   }

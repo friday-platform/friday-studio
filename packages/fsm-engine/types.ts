@@ -291,7 +291,7 @@ export interface LLMProvider {
     /** Structured messages with mixed content types (e.g., text + images). When present, used instead of prompt. */
     messages?: Array<ModelMessage>;
     tools?: Record<string, Tool>;
-    toolChoice?: "auto" | "required" | "none";
+    toolChoice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
     /** Tool names that should trigger early stop when called successfully */
     stopOnToolCall?: string[];
     /** Provider-specific options (e.g., Anthropic thinking config) */

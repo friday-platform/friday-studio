@@ -329,7 +329,7 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
     try {
       const result = await streamTextWithEvents({
         params: {
-          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: prompt },

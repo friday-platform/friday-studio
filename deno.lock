@@ -8822,6 +8822,7 @@
       "packages/document-store": {
         "packageJson": {
           "dependencies": [
+            "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
         }

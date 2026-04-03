@@ -34,7 +34,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     prompt: string;
     messages?: Array<ModelMessage>;
     tools?: Record<string, Tool>;
-    toolChoice?: "auto" | "required" | "none";
+    toolChoice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
     stopOnToolCall?: string[];
     providerOptions?: Record<string, unknown>;
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;

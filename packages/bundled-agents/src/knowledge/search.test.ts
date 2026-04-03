@@ -58,6 +58,18 @@ describe("sanitizeFtsQuery", () => {
   test("preserves 3-char tokens like SSO", () => {
     expect(sanitizeFtsQuery("SSO login issue")).toBe("SSO OR login OR issue");
   });
+
+  test("strips apostrophes to prevent FTS5 syntax errors", () => {
+    expect(sanitizeFtsQuery("I can't remember my password")).toBe("can OR remember OR password");
+  });
+
+  test("strips curly apostrophes", () => {
+    expect(sanitizeFtsQuery("user\u2019s account")).toBe("user OR account");
+  });
+
+  test("strips hyphens to prevent FTS5 NOT interpretation", () => {
+    expect(sanitizeFtsQuery("re-add the user")).toBe("add OR the OR user");
+  });
 });
 
 describe("reciprocalRankFusion", () => {

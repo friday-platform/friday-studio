@@ -94,6 +94,81 @@ agents:
     env:
       HUBSPOT_ACCESS_TOKEN: from_environment
 
+  synthesizer:
+    type: llm
+    description: >-
+      Lightweight conversation comprehension. Reads a raw ticket
+      conversation and produces a focused search query and concise
+      summary for the knowledge base agent.
+    config:
+      provider: anthropic
+      model: claude-haiku-4-5
+      prompt: >-
+        <role>You are a support ticket analyst that extracts search
+        queries for a knowledge base retrieval system.</role>
+
+        <instructions>
+        Read the ticket conversation and produce two outputs:
+
+        1. searchQuery: A short keyword phrase (3-8 words) to find
+           the right knowledge base article. This query feeds a
+           full-text search where every word is OR-joined, so extra
+           words dilute results and cause missed articles.
+
+        Rules for searchQuery:
+        - Use 3-8 specific words. Fewer is better.
+        - Use the customer's exact error messages and feature names.
+        - Pick ONE primary issue. If the ticket mentions multiple
+          problems, choose the latest unresolved one.
+        - Follow the pattern: "Feature - Error or Symptom".
+        - NEVER concatenate multiple issues with slashes or commas.
+        - NEVER repeat the same concept in different words.
+        - NEVER include filler like "help", "issue", "problem",
+          "request", "unable to".
+        - IGNORE any API errors, HTTP status codes, or tool failures
+          mentioned in the ticket summary. These are internal system
+          issues, not the customer's problem. Focus only on what the
+          customer said.
+
+        2. summary: A concise paragraph for the answering agent.
+           Include: customer name, what they tried, the current
+           unresolved issue, and any error messages verbatim.
+        </instructions>
+
+        <examples>
+        <example>
+        <ticket>Customer says she forgot her password and clicked
+        the reset link but got a "Bad Token" error.</ticket>
+        <good_query>Password Reset Bad Token error</good_query>
+        <bad_query>Password Reset - I can't remember my password /
+        Forgot Password link not working / Bad Token
+        error</bad_query>
+        <why>Bad query repeats the same issue three ways and has
+        16 words. Good query uses 5 words with the exact error
+        message.</why>
+        </example>
+
+        <example>
+        <ticket>Customer tries to redeem an award but gets
+        "Account not funded" when clicking Submit.</ticket>
+        <good_query>Award Redemption Account not funded</good_query>
+        <bad_query>Award Redemption - Can't Redeem Award - Account
+        not funded Error - Submit button problem</bad_query>
+        <why>Bad query restates "redeem" three ways and adds
+        generic words. Good query keeps the exact error.</why>
+        </example>
+
+        <example>
+        <ticket>Customer can't find the invite button to add a new
+        employee in the admin panel.</ticket>
+        <good_query>Add Employee invite admin panel</good_query>
+        <bad_query>Adding New Employee - Can't Find Invite Button -
+        Employee Onboarding Admin Panel Navigation</bad_query>
+        <why>Bad query has 12 words with redundant terms. Good
+        query uses 5 words targeting the exact feature.</why>
+        </example>
+        </examples>
+
 jobs:
   reindex-knowledge-base:
     title: Reindex Knowledge Corpus
@@ -291,29 +366,41 @@ jobs:
               outputTo: ticket-output
               outputType: ticket-result
               prompt: >-
-                Read the HubSpot ticket and its full conversation history.
+                The ticket ID and thread ID are in the input. Call tools
+                immediately.
 
-                1. Use get_crm_object to fetch the ticket by ID. Include
-                   properties: subject, content, hs_pipeline_stage,
-                   hs_ticket_priority, createdate.
+                1. Call get_crm_object with the ticket ID to fetch
+                   subject, content, priority, and stage.
 
-                2. Use get_conversation_threads filtered to this ticket to find
-                   all associated threads.
+                2. Call get_conversation_threads to find threads.
 
-                3. For each thread, use get_thread_messages to read the full
-                   message history including sender names.
+                3. Call get_thread_messages for each thread.
 
-                4. IMPORTANT: Begin your response with the ticket subject on
-                   a line by itself, prefixed with "TICKET_SUBJECT: ". Then
-                   provide the full structured summary including description,
-                   priority, and the complete conversation transcript.
+                4. Return a structured summary with ticket subject,
+                   priority, and full conversation transcript.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_synthesize
+              guards:
+                - guard_ticket_done
+
+        step_synthesize:
+          entry:
+            - type: code
+              function: prepare_synthesize
+            - type: agent
+              agentId: synthesizer
+              outputTo: synthesis-output
+              outputType: synthesis-result
             - type: emit
               event: ADVANCE
           'on':
             ADVANCE:
               target: step_answer
               guards:
-                - guard_ticket_done
+                - guard_synthesize_done
 
         step_answer:
           entry:
@@ -366,14 +453,12 @@ jobs:
                 throw new Error('Missing required input: ticket_url');
               }
 
-              // Extract ticket ID from URL: .../ticket/<id>
               const ticketMatch = ticketUrl.match(/\/ticket\/(\d+)/);
               if (!ticketMatch) {
                 throw new Error('Could not parse ticket ID from URL: ' + ticketUrl);
               }
               const ticketId = ticketMatch[1];
 
-              // Extract thread ID from URL if present: .../thread/<id>
               const threadMatch = ticketUrl.match(/\/thread\/(\d+)/);
               const threadId = threadMatch ? threadMatch[1] : '';
 
@@ -383,8 +468,10 @@ jobs:
                 thread_id: threadId,
               });
 
+              var task = 'Ticket ID: ' + ticketId;
+              if (threadId) task += '\nThread ID: ' + threadId;
               return {
-                task: 'Read HubSpot ticket ' + ticketId + ' and its conversation history',
+                task: task,
                 config: { ticket_id: ticketId, thread_id: threadId },
               };
             }
@@ -396,65 +483,39 @@ jobs:
               return context.results['ticket-output'] !== undefined;
             }
 
-        prepare_answer:
+        prepare_synthesize:
           type: action
           code: |
-            export default function prepare_answer(context, event) {
+            export default function prepare_synthesize(context, event) {
               const ticket = context.results['ticket-output'];
               if (!ticket) {
                 throw new Error('Ticket output not found — read step must complete first');
               }
+              return {
+                task: ticket.response || '',
+              };
+            }
 
-              // The hubspot agent returns { response: "markdown summary" }
-              var summary = ticket.response || '';
+        guard_synthesize_done:
+          type: guard
+          code: |
+            export default function guard_synthesize_done(context, event) {
+              return context.results['synthesis-output'] !== undefined;
+            }
 
-              // Extract a focused search query from the ticket summary.
-              // Try structured marker first, then common markdown patterns.
-              var question = '';
-
-              // Strategy 1: TICKET_SUBJECT marker (prompt instructs agent to include this)
-              var tsMarker = 'TICKET_SUBJECT: ';
-              var tsIdx = summary.indexOf(tsMarker);
-              if (tsIdx !== -1) {
-                var tsAfter = summary.slice(tsIdx + tsMarker.length);
-                var tsEol = tsAfter.indexOf('\n');
-                question = (tsEol !== -1 ? tsAfter.slice(0, tsEol) : tsAfter).trim();
+        prepare_answer:
+          type: action
+          code: |
+            export default function prepare_answer(context, event) {
+              const synthesis = context.results['synthesis-output'];
+              if (!synthesis) {
+                throw new Error('Synthesis output not found — synthesize step must complete first');
               }
-
-              // Strategy 2: "Subject:" in markdown (e.g., "- **Subject:** ...")
-              if (!question) {
-                var sjIdx = summary.indexOf('Subject:');
-                if (sjIdx !== -1) {
-                  var sjAfter = summary.slice(sjIdx + 'Subject:'.length);
-                  var sjEol = sjAfter.indexOf('\n');
-                  var sjRaw = (sjEol !== -1 ? sjAfter.slice(0, sjEol) : sjAfter).trim();
-                  while (sjRaw.startsWith('*')) sjRaw = sjRaw.slice(1);
-                  while (sjRaw.endsWith('*')) sjRaw = sjRaw.slice(0, -1);
-                  question = sjRaw.trim();
-                }
-              }
-
-              // Strategy 3: First quoted customer message (> "...")
-              if (!question) {
-                var qIdx = summary.indexOf('> "');
-                if (qIdx !== -1) {
-                  var qAfter = summary.slice(qIdx + 3);
-                  var qEnd = qAfter.indexOf('"');
-                  if (qEnd !== -1) question = qAfter.slice(0, qEnd).trim();
-                }
-              }
-
-              // Strip any markdown bold markers from the extracted question
-              while (question.startsWith('*')) question = question.slice(1);
-              while (question.endsWith('*')) question = question.slice(0, -1);
-              question = question.trim();
-
-              if (!question) question = 'support ticket question';
-
+              var summary = synthesis.summary || '';
               return {
                 task: 'Customer support ticket context:\n\n' + summary + '\n\nProvide a comprehensive answer to help resolve this support ticket.',
                 config: {
-                  question: question,
+                  question: synthesis.searchQuery,
                   context: 'Customer support ticket context:\n\n' + summary,
                 },
               };
@@ -516,6 +577,26 @@ jobs:
               description: Structured summary of the ticket and conversation history
           required:
             - response
+
+        synthesis-result:
+          type: object
+          properties:
+            searchQuery:
+              type: string
+              description: >-
+                3-8 word keyword phrase for full-text knowledge base
+                search. Use exact error messages and feature names from
+                the conversation. Pattern: "Feature - Symptom".
+                Example: "Password Reset Bad Token error"
+            summary:
+              type: string
+              description: >-
+                Concise summary for the answering agent. Include
+                customer name, issue description, and any prior
+                resolution attempts.
+          required:
+            - searchQuery
+            - summary
 
         answer-result:
           type: object

@@ -1262,13 +1262,17 @@ export class FSMEngine {
                   ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
                   : undefined;
 
+              const llmToolChoice = completeToolInjected
+                ? ({ type: "tool", toolName: "complete" } as const)
+                : ("auto" as const);
+
               let result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
                 model: action.model,
                 prompt: contextPrompt,
                 messages,
                 tools,
-                toolChoice: "auto", // Let LLM decide when to stop calling tools
+                toolChoice: llmToolChoice,
                 stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                 onStreamEvent: sig._context?.onStreamEvent,
               });
@@ -1343,7 +1347,7 @@ export class FSMEngine {
                     prompt: retryPrompt,
                     messages: retryMessages,
                     tools,
-                    toolChoice: "auto", // Let LLM decide when to stop calling tools
+                    toolChoice: llmToolChoice,
                     stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                     onStreamEvent: sig._context?.onStreamEvent,
                   });
