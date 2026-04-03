@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to promote to latest (e.g. 0.0.16)"
+        description: "Version tag or git SHA to promote to latest (e.g. 0.0.16 or full commit hash)"
         required: true
         type: string
 

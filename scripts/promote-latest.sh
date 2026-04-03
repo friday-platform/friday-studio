@@ -4,10 +4,11 @@ set -euo pipefail
 # Trigger the platform-promote-latest GitHub Action to move the 'latest'
 # tag to a specific platform image version in Google Artifact Registry.
 #
-# Usage: ./scripts/promote-latest.sh <version> [--watch]
+# Usage: ./scripts/promote-latest.sh <version-or-sha> [--watch]
 #
 # Arguments:
-#   version   The version tag to promote (e.g. 0.0.16)
+#   version-or-sha   A version tag (e.g. 0.0.16) or a full git SHA from main.
+#                    Every build is tagged with both, so either works.
 #
 # Options:
 #   --watch   Wait for the workflow run to complete and stream logs
@@ -30,8 +31,10 @@ fi
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  echo "Usage: ./scripts/promote-latest.sh <version> [--watch]" >&2
-  echo "Example: ./scripts/promote-latest.sh 0.0.16" >&2
+  echo "Usage: ./scripts/promote-latest.sh <version-or-sha> [--watch]" >&2
+  echo "Examples:" >&2
+  echo "  ./scripts/promote-latest.sh 0.0.16" >&2
+  echo "  ./scripts/promote-latest.sh abc123def456..." >&2
   exit 1
 fi
 

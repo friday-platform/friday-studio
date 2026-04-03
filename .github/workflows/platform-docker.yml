@@ -86,5 +86,5 @@ jobs:
             echo "| \`${{ steps.version.outputs.version }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}\` |"
             echo "| \`${{ github.sha }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}\` |"
             echo ""
-            echo "> To promote this version to \`latest\`, run: \`./scripts/promote-latest.sh ${{ steps.version.outputs.version }}\`"
+            echo "> To promote to \`latest\`, run: \`./scripts/promote-latest.sh ${{ steps.version.outputs.version }}\` (or use the git SHA)"
           } >> "$GITHUB_STEP_SUMMARY"
