@@ -1,6 +1,6 @@
 # Scripts
 
-Scripts for building and releasing FAST platform images and HelloFriday.
+Scripts for building and releasing FAST images and HelloFriday.
 
 No Google Cloud credentials required — everything runs via GitHub Actions.
 
@@ -9,9 +9,9 @@ No Google Cloud credentials required — everything runs via GitHub Actions.
 - [GitHub CLI](https://cli.github.com) (`gh`) installed and authenticated (`gh auth login`)
 - Run scripts from the repo root
 
-## FAST Platform Image
+## FAST Image
 
-### `build-fast.sh` — Build a new platform image
+### `build-fast.sh` — Build a new FAST image
 
 Triggers a GitHub Action that builds `Dockerfile-platform` and pushes it to GAR
 with an auto-incremented version tag (e.g. `0.0.17`).
