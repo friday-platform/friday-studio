@@ -212,6 +212,7 @@
     "npm:vitest@^4.1.2": "4.1.2_@opentelemetry+api@1.9.1_@types+node@25.5.0_vite@7.3.1__@types+node@25.5.0__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
     "npm:ws@^8.20.0": "8.20.0",
     "npm:xstate@^5.28.0": "5.29.0",
+    "npm:yaml@*": "2.8.3",
     "npm:yaml@^2.8.2": "2.8.3",
     "npm:yargs@18": "18.0.0",
     "npm:zod-form-data@^3.0.1": "3.0.1_zod@4.3.6",
@@ -8835,8 +8836,12 @@
         }
       },
       "packages/fsm-engine": {
+        "dependencies": [
+          "jsr:@db/sqlite@0.13"
+        ],
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
             "npm:ai@^6.0.141",
@@ -8892,8 +8897,12 @@
         }
       },
       "packages/mcp-server": {
+        "dependencies": [
+          "jsr:@db/sqlite@0.13"
+        ],
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/db__sqlite@0.12",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
             "npm:ai@^6.0.141",

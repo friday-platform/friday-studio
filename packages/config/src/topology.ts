@@ -57,7 +57,21 @@ export function deriveTopology(config: WorkspaceConfig): Topology {
   // Extract FSM agent metadata for enriching agent-step nodes
   const fsmAgents = extractFSMAgents(config);
 
-  // Build signal nodes
+  // Build signal → job mapping from triggers
+  const signalToJobs = new Map<string, string[]>();
+  if (config.jobs) {
+    for (const [jobId, rawJob] of Object.entries(config.jobs)) {
+      const job = JobSpecificationSchema.safeParse(rawJob);
+      if (!job.success) continue;
+      for (const trigger of job.data.triggers ?? []) {
+        const existing = signalToJobs.get(trigger.signal) ?? [];
+        existing.push(jobId);
+        signalToJobs.set(trigger.signal, existing);
+      }
+    }
+  }
+
+  // Build signal nodes with job associations
   if (config.signals) {
     for (const [signalId, signal] of Object.entries(config.signals)) {
       nodes.push({
@@ -66,6 +80,7 @@ export function deriveTopology(config: WorkspaceConfig): Topology {
         label: signalId,
         metadata: {
           provider: signal.provider,
+          jobIds: signalToJobs.get(signalId) ?? [],
           ...(signal.title ? { title: signal.title } : {}),
           ...(signal.description ? { description: signal.description } : {}),
         },

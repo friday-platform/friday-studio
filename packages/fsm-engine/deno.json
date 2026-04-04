@@ -7,5 +7,8 @@
     "./types": "./types.ts",
     "./mcp-tools": "./mcp-tools/index.ts"
   },
-  "imports": { "@atlas/ledger": "../../apps/ledger/src/index.ts" }
+  "imports": {
+    "@atlas/ledger": "../../apps/ledger/src/index.ts",
+    "@db/sqlite": "jsr:@db/sqlite@0.13"
+  }
 }

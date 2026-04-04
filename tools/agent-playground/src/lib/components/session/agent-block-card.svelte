@@ -324,7 +324,7 @@
     color: var(--color-text-2);
     display: flex;
     flex: none;
-    opacity: 0;
+    opacity: 0.4;
     transition:
       opacity 0.15s ease,
       transform 0.15s ease;
@@ -335,7 +335,7 @@
   }
 
   .header-row:hover .caret {
-    opacity: 0.5;
+    opacity: 1;
   }
 
   .body {

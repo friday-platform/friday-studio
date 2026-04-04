@@ -18,8 +18,12 @@ interface WorkerRequest {
 }
 
 interface Mutation {
-  op: "updateDoc" | "createDoc" | "deleteDoc" | "emit" | "setResult";
+  op: "updateDoc" | "createDoc" | "deleteDoc" | "emit" | "setResult" | "stateAppend";
   args: unknown[];
+}
+
+interface StateCache {
+  [key: string]: Array<{ data: string; _ts: string }>;
 }
 
 function stringifyError(e: unknown): string {
@@ -119,6 +123,33 @@ async function executeFunction(
       // Update local results so subsequent reads in the same execution see the write
       context.results[key] = data;
       mutations.push({ op: "setResult", args: [key, data] });
+    },
+
+    // State tools — pre-loaded cache enables local filtering, append is fire-and-forget
+    stateFilter(
+      key: string,
+      field: string,
+      values: Array<string | number>,
+    ): Array<string | number> {
+      const results = contextData.results ?? {};
+      const cache: StateCache = (results.__stateCache ?? {}) as StateCache;
+      const entries = cache[key] ?? [];
+      const existing = new Set<string>();
+      for (const entry of entries) {
+        try {
+          const raw: unknown = JSON.parse(entry.data);
+          if (typeof raw === "object" && raw !== null && field in raw) {
+            existing.add(String((raw as Record<string, unknown>)[field]));
+          }
+        } catch {
+          // Skip corrupt entries
+        }
+      }
+      return values.filter((v) => !existing.has(String(v)));
+    },
+
+    stateAppend(key: string, entry: Record<string, unknown>, ttlHours?: number) {
+      mutations.push({ op: "stateAppend", args: [key, entry, ttlHours] });
     },
   };
 

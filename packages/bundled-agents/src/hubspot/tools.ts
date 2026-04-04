@@ -3,6 +3,7 @@ import type { Client } from "@hubspot/api-client";
 import { AssociationSpecAssociationCategoryEnum } from "@hubspot/api-client/lib/codegen/crm/objects/models/AssociationSpec.js";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/models/Filter.js";
 import { tool } from "ai";
+import MarkdownIt from "markdown-it";
 import { z } from "zod";
 
 // -- Object Type Enums (module-private) --
@@ -975,8 +976,10 @@ export function createSendThreadCommentTool(accessToken: string) {
     inputSchema: SendThreadCommentInput,
     execute: async (input) => {
       try {
-        const body: Record<string, unknown> = { type: "COMMENT", text: input.text };
-        if (input.richText) body.richText = input.richText;
+        // Auto-convert markdown to HTML for proper rendering in HubSpot inbox
+        const md = new MarkdownIt();
+        const richText = input.richText ?? md.render(input.text);
+        const body: Record<string, unknown> = { type: "COMMENT", text: input.text, richText };
         if (input.senderActorId) body.senderActorId = input.senderActorId;
 
         const data = await hubspotFetch(

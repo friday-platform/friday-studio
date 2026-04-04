@@ -48,6 +48,17 @@ signals:
       required:
         - question
 
+  auto-answer-tickets:
+    provider: schedule
+    title: Auto-Answer New Tickets
+    description: >-
+      Every 5 minutes, fetches new HubSpot tickets from the last 24 hours,
+      skips already-processed ones, and runs the answer pipeline for each.
+      This is a continuation signal — it does NOT reset state.
+    config:
+      schedule: '*/5 * * * *'
+      timezone: UTC
+
   answer-ticket:
     provider: http
     title: Answer HubSpot Ticket
@@ -334,6 +345,470 @@ jobs:
           required:
             - response
             - sources
+
+      tools: {}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Auto-answer cron job
+  # Fetches new tickets → filters processed → read → KB answer → comment
+  # All data flows as typed JSON arrays — no free-text parsing.
+  # ──────────────────────────────────────────────────────────────────
+  auto-answer-new-tickets:
+    title: Auto-Answer New Tickets
+    description: >-
+      Cron job: fetches HubSpot tickets matching configured pipeline stages,
+      filters already-processed via state_filter (deterministic, single call),
+      then runs read → KB answer → comment for each new ticket. All data
+      flows as typed JSON arrays. Edit STAGE_IDS and TIME_RANGE_HOURS in
+      prepare_fetch to customize.
+    triggers:
+      - signal: auto-answer-tickets
+    fsm:
+      id: auto-answer-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            auto-answer-tickets:
+              target: step_fetch_tickets
+
+        step_fetch_tickets:
+          entry:
+            - type: code
+              function: prepare_fetch
+            - type: agent
+              agentId: hubspot
+              outputTo: fetch-output
+              outputType: fetch-result
+              prompt: >-
+                Search for HubSpot tickets. The Input section contains
+                stage_ids and cutoff — use those exact values.
+
+                Call search_crm_objects with:
+                  objectType: tickets
+                  filters:
+                    - propertyName: hs_pipeline_stage
+                      operator: IN
+                      values: (stage_ids from Input)
+                    - propertyName: createdate
+                      operator: GTE
+                      value: (cutoff from Input)
+                  properties: [subject, content, createdate, hs_pipeline_stage]
+                  sorts: [{propertyName: createdate, direction: DESCENDING}]
+                  limit: 100
+
+                Return only a JSON array of ticket ID strings, nothing else.
+                Example: ["305502595831","305515225837"]
+                If no tickets found, return: []
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_pick_ticket
+              guards:
+                - guard_fetch_done
+
+        step_pick_ticket:
+          entry:
+            - type: code
+              function: pick_next_ticket
+          'on':
+            PROCESS:
+              target: step_read_ticket
+            NO_TICKETS:
+              target: completed
+
+        step_read_ticket:
+          entry:
+            - type: code
+              function: prepare_read_ticket
+            - type: agent
+              agentId: hubspot
+              outputTo: ticket-output
+              outputType: ticket-result
+              prompt: >-
+                The ticket ID is in the input. Call tools immediately.
+
+                1. Call get_crm_object with the ticket ID to fetch
+                   subject, content, priority, and stage.
+
+                2. Call get_conversation_threads to find threads.
+
+                3. Call get_thread_messages for each thread.
+
+                4. Return a structured summary with ticket subject,
+                   priority, full conversation transcript, AND the
+                   threadId from step 2.
+            - type: emit
+              event: TICKET_READ
+          'on':
+            TICKET_READ:
+              target: step_synthesize
+              guards:
+                - guard_ticket_done
+
+        step_synthesize:
+          entry:
+            - type: code
+              function: prepare_synthesize
+            - type: agent
+              agentId: synthesizer
+              outputTo: synthesis-output
+              outputType: synthesis-result
+            - type: emit
+              event: SYNTHESIZED
+          'on':
+            SYNTHESIZED:
+              target: step_answer_ticket
+              guards:
+                - guard_synthesize_done
+
+        step_answer_ticket:
+          entry:
+            - type: code
+              function: prepare_answer
+            - type: agent
+              agentId: knowledge
+              outputTo: answer-output
+              outputType: answer-result
+            - type: emit
+              event: ANSWER_READY
+          'on':
+            ANSWER_READY:
+              target: step_post_comment
+              guards:
+                - guard_answer_done
+
+        step_post_comment:
+          entry:
+            - type: code
+              function: prepare_comment
+            - type: agent
+              agentId: hubspot
+              outputTo: comment-output
+              outputType: comment-result
+              prompt: >-
+                Post the knowledge base answer as a thread comment.
+                If the text is provided in Input, use it exactly as-is.
+                If you need to find the thread, call
+                get_conversation_threads with the ticket_id first.
+                Do NOT modify, summarize, or add headers to the text.
+            - type: code
+              function: record_and_advance
+            - type: emit
+              event: COMMENT_POSTED
+          'on':
+            COMMENT_POSTED:
+              target: step_pick_ticket
+              guards:
+                - guard_comment_done
+
+        completed:
+          type: final
+
+      functions:
+        prepare_fetch:
+          type: action
+          code: |
+            export default function prepare_fetch(context, event) {
+              // ── Customer Configuration ──────────────────────
+              // HubSpot pipeline stage IDs to monitor for new tickets.
+              // Find IDs: HubSpot → Settings → Objects → Tickets → Pipelines
+              var STAGE_IDS = ['1'];
+
+              // How far back to search for tickets (in hours).
+              var TIME_RANGE_HOURS = 1;
+              // ────────────────────────────────────────────────
+
+              var cutoff = new Date(Date.now() - TIME_RANGE_HOURS * 60 * 60 * 1000);
+              return {
+                task: 'Search for new HubSpot tickets',
+                config: {
+                  stage_ids: STAGE_IDS,
+                  cutoff: cutoff.toISOString(),
+                },
+              };
+            }
+
+        guard_fetch_done:
+          type: guard
+          code: |
+            export default function guard_fetch_done(context, event) {
+              return context.results['fetch-output'] !== undefined;
+            }
+
+        pick_next_ticket:
+          type: action
+          code: |
+            export default function pick_next_ticket(context, event) {
+              var queue = context.results['ticket-queue'];
+
+              if (!queue) {
+                // Parse ticket IDs from HubSpot agent's JSON array response
+                var fetchResult = context.results['fetch-output'];
+                if (!fetchResult) throw new Error('Fetch output missing');
+                var response = fetchResult.response || '';
+                var allIds = [];
+                try {
+                  var match = response.match(/\[[\s\S]*\]/);
+                  if (match) {
+                    var parsed = JSON.parse(match[0]);
+                    if (Array.isArray(parsed)) {
+                      allIds = parsed.map(function(v) { return String(v); });
+                    }
+                  }
+                } catch (e) {
+                  // Fall back to empty
+                }
+
+                // Deterministic filter — stateFilter reads pre-loaded SQLite cache
+                var ids = context.stateFilter('processed-tickets', 'ticketId', allIds);
+                queue = { ids: ids, index: 0 };
+                context.setResult('ticket-queue', queue);
+              }
+
+              if (queue.index >= queue.ids.length) {
+                context.emit({ type: 'NO_TICKETS' });
+                return;
+              }
+
+              var ticketId = queue.ids[queue.index];
+              context.setResult('current-ticket', { ticketId: ticketId });
+              context.emit({ type: 'PROCESS' });
+            }
+
+        prepare_read_ticket:
+          type: action
+          code: |
+            export default function prepare_read_ticket(context, event) {
+              var current = context.results['current-ticket'];
+              var ticketId = current ? current.ticketId : '';
+
+              context.setResult('pipeline-input', {
+                ticket_id: ticketId,
+                thread_id: '',
+              });
+
+              return {
+                task: 'Ticket ID: ' + ticketId,
+                config: { ticket_id: ticketId },
+              };
+            }
+
+        guard_ticket_done:
+          type: guard
+          code: |
+            export default function guard_ticket_done(context, event) {
+              return context.results['ticket-output'] !== undefined;
+            }
+
+        prepare_synthesize:
+          type: action
+          code: |
+            export default function prepare_synthesize(context, event) {
+              const ticket = context.results['ticket-output'];
+              if (!ticket) {
+                throw new Error('Ticket output not found — read step must complete first');
+              }
+              return {
+                task: ticket.response || '',
+              };
+            }
+
+        guard_synthesize_done:
+          type: guard
+          code: |
+            export default function guard_synthesize_done(context, event) {
+              return context.results['synthesis-output'] !== undefined;
+            }
+
+        prepare_answer:
+          type: action
+          code: |
+            export default function prepare_answer(context, event) {
+              const synthesis = context.results['synthesis-output'];
+              if (!synthesis) {
+                throw new Error('Synthesis output not found — synthesize step must complete first');
+              }
+              var summary = synthesis.summary || '';
+              return {
+                task: 'Customer support ticket context:\n\n' + summary + '\n\nProvide a comprehensive answer to help resolve this support ticket.',
+                config: {
+                  question: synthesis.searchQuery,
+                  context: 'Customer support ticket context:\n\n' + summary,
+                },
+              };
+            }
+
+        guard_answer_done:
+          type: guard
+          code: |
+            export default function guard_answer_done(context, event) {
+              return context.results['answer-output'] !== undefined;
+            }
+
+        prepare_comment:
+          type: action
+          code: |
+            export default function prepare_comment(context, event) {
+              const answer = context.results['answer-output'];
+              const input = context.results['pipeline-input'];
+              const ticket = context.results['ticket-output'];
+
+              if (!answer) {
+                throw new Error('Answer output not found — query step must complete first');
+              }
+
+              var ticketId = input?.ticket_id || '';
+              var threadId = ticket?.threadId || '';
+
+              if (threadId) {
+                // Deterministic path — same as answer-hubspot-ticket
+                context.createDoc({
+                  id: 'hubspot-operation',
+                  type: 'hubspot-operation',
+                  data: {
+                    operation: 'send-thread-comment',
+                    threadId: threadId,
+                    text: answer.response,
+                  },
+                });
+                return {
+                  task: 'Post KB answer as comment on thread ' + threadId,
+                  config: {
+                    thread_id: threadId,
+                    ticket_id: ticketId,
+                  },
+                };
+              }
+
+              // Fallback — agent discovers thread, posts exact text
+              return {
+                task: 'Post KB answer as comment on ticket ' + ticketId,
+                config: {
+                  ticket_id: ticketId,
+                  text: answer.response,
+                },
+              };
+            }
+
+        record_and_advance:
+          type: action
+          code: |
+            export default function record_and_advance(context, event) {
+              var current = context.results['current-ticket'];
+              var ticketId = current ? current.ticketId : '';
+
+              // Record AFTER comment succeeds — if this code action runs,
+              // the agent posted successfully. At-least-once semantics:
+              // if THIS fails, ticket gets reprocessed next run (safe,
+              // duplicate comments are idempotent).
+              context.stateAppend('processed-tickets', { ticketId: ticketId }, 48);
+
+              // Advance queue for next iteration
+              var queue = context.results['ticket-queue'];
+              if (queue) {
+                context.setResult('ticket-queue', {
+                  ids: queue.ids,
+                  index: queue.index + 1,
+                });
+                context.setResult('pipeline-input', { ticket_id: '', thread_id: '' });
+                context.setResult('ticket-output', { response: '', threadId: '' });
+                context.setResult('synthesis-output', { searchQuery: '', summary: '' });
+                context.setResult('answer-output', { response: '' });
+                context.setResult('comment-output', { response: '' });
+                context.deleteDoc('hubspot-operation');
+              }
+            }
+
+        guard_comment_done:
+          type: guard
+          code: |
+            export default function guard_comment_done(context, event) {
+              return context.results['comment-output'] !== undefined;
+            }
+
+      documentTypes:
+        fetch-result:
+          type: object
+          properties:
+            response:
+              type: string
+          required:
+            - response
+
+        ticket-result:
+          type: object
+          properties:
+            response:
+              type: string
+            threadId:
+              type: string
+              description: Conversation thread ID from get_conversation_threads
+          required:
+            - response
+
+        synthesis-result:
+          type: object
+          properties:
+            searchQuery:
+              type: string
+              description: >-
+                3-8 word keyword phrase for full-text knowledge base
+                search. Pattern: "Feature - Symptom".
+            summary:
+              type: string
+              description: >-
+                Concise summary for the answering agent. Include
+                customer name, issue description, and error messages.
+          required:
+            - searchQuery
+            - summary
+
+        answer-result:
+          type: object
+          properties:
+            response:
+              type: string
+            sources:
+              type: array
+          required:
+            - response
+
+        hubspot-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            threadId:
+              type: string
+            text:
+              type: string
+            richText:
+              type: string
+            senderActorId:
+              type: string
+          required:
+            - operation
+            - threadId
+            - text
+
+        comment-result:
+          type: object
+          properties:
+            response:
+              type: string
+            operation:
+              type: string
+              description: Operation name when deterministic path was used
+            success:
+              type: boolean
+              description: Whether the deterministic operation succeeded
+            data:
+              type: object
+              description: Structured payload from deterministic operations
+          required:
+            - response
 
       tools: {}
 

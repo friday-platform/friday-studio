@@ -38,6 +38,10 @@ import { registerSessionDescribeTool } from "./session/describe.ts";
 // Import signal tools
 import { registerSignalsListTool } from "./signals/list.ts";
 import { registerSignalTriggerTool } from "./signals/trigger.ts";
+// Import state tools
+import { registerStateAppendTool } from "./state/append.ts";
+import { registerStateFilterTool } from "./state/filter.ts";
+import { registerStateLookupTool } from "./state/lookup.ts";
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
 import type { ToolContext } from "./types.ts";
@@ -98,6 +102,11 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerArtifactsUpdateTool(server, context);
   registerArtifactsGetTool(server, context);
   registerArtifactsGetByChatTool(server, context);
+
+  // State tools
+  registerStateAppendTool(server, context);
+  registerStateFilterTool(server, context);
+  registerStateLookupTool(server, context);
 
   // System tools
   registerBashTool(server, context);

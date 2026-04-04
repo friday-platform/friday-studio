@@ -230,7 +230,7 @@ describe("mapSessionToStepStatus", () => {
       expect(result.get("pr-code-review:step_clone_repo")).toBe("completed");
     });
 
-    test("maps skipped blocks to completed", () => {
+    test("maps skipped blocks to skipped", () => {
       const topology = prReviewTopology();
       const session = sessionView({
         status: "completed",
@@ -243,7 +243,7 @@ describe("mapSessionToStepStatus", () => {
 
       const result = mapSessionToStepStatus(session, topology);
 
-      expect(result.get("pr-code-review:step_review_pr")).toBe("completed");
+      expect(result.get("pr-code-review:step_review_pr")).toBe("skipped");
     });
 
     test("maps pending blocks to pending", () => {

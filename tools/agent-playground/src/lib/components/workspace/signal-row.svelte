@@ -54,63 +54,55 @@
    */
   function humanizeCron(expr: string, tz: string): string {
     const parts = expr.trim().split(/\s+/);
-    if (parts.length !== 5) return `${expr} ${tz}`;
+    if (parts.length !== 5) return tz;
 
     const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-
-    // Every minute
-    if (
-      minute === "*" &&
-      hour === "*" &&
-      dayOfMonth === "*" &&
-      month === "*" &&
-      dayOfWeek === "*"
-    ) {
-      return `every minute ${tz}`;
-    }
-
-    // Every N minutes (*/N * * * *)
-    const everyNMin = minute.match(/^\*\/(\d+)$/);
-    if (everyNMin && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-      return `every ${everyNMin[1]} min ${tz}`;
-    }
-
-    // Hourly at :MM
-    if (
-      minute.match(/^\d+$/) &&
-      hour === "*" &&
-      dayOfMonth === "*" &&
-      month === "*" &&
-      dayOfWeek === "*"
-    ) {
-      return `hourly at :${minute.padStart(2, "0")} ${tz}`;
-    }
-
-    // Daily at HH:MM
-    if (
-      minute.match(/^\d+$/) &&
-      hour.match(/^\d+$/) &&
-      dayOfMonth === "*" &&
-      month === "*" &&
-      dayOfWeek === "*"
-    ) {
-      return `daily ${formatTime(Number(hour), Number(minute))} ${tz}`;
-    }
-
-    // Weekly (specific day of week)
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    if (
-      minute.match(/^\d+$/) &&
-      hour.match(/^\d+$/) &&
-      dayOfMonth === "*" &&
-      month === "*" &&
-      dayOfWeek.match(/^\d$/)
-    ) {
-      const day = dayNames[Number(dayOfWeek)] ?? dayOfWeek;
-      return `${day} ${formatTime(Number(hour), Number(minute))} ${tz}`;
+    const segments: string[] = [];
+
+    // Frequency (minute + hour)
+    const everyNMin = minute.match(/^\*\/(\d+)$/);
+    const everyNHour = hour.match(/^\*\/(\d+)$/);
+    if (minute === "*" && hour === "*") {
+      segments.push("every minute");
+    } else if (everyNMin && hour === "*") {
+      segments.push(`every ${everyNMin[1]} min`);
+    } else if (minute === "*" && everyNHour) {
+      segments.push(`every ${everyNHour[1]} hours`);
+    } else if (minute.match(/^\d+$/) && hour === "*") {
+      segments.push(`hourly at :${minute.padStart(2, "0")}`);
+    } else if (minute.match(/^\d+$/) && hour.match(/^\d+$/)) {
+      segments.push(formatTime(Number(hour), Number(minute)));
+    } else if (everyNMin && hour.match(/^\d+$/)) {
+      segments.push(`every ${everyNMin[1]} min starting ${formatTime(Number(hour), 0)}`);
     }
 
-    return `${expr} ${tz}`;
+    // Day-of-week constraint
+    if (dayOfWeek !== "*") {
+      const dowParts = dayOfWeek.split(",");
+      const names = dowParts
+        .map((d) => dayNames[Number(d)] ?? d)
+        .filter(Boolean);
+      if (names.length > 0) segments.push(names.join(", "));
+    }
+
+    // Day-of-month constraint
+    if (dayOfMonth !== "*") {
+      segments.push(`day ${dayOfMonth}`);
+    }
+
+    // Month constraint
+    if (month !== "*") {
+      const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthParts = month.split(",");
+      const names = monthParts
+        .map((m) => monthNames[Number(m)] ?? m)
+        .filter(Boolean);
+      if (names.length > 0) segments.push(names.join(", "));
+    }
+
+    if (segments.length === 0) return tz;
+    return `${segments.join(" · ")} ${tz}`;
   }
 
   /** Formats hour + minute as 12-hour time (e.g. "9:00 AM"). */
@@ -193,7 +185,7 @@
 <div class="row">
   <div class="row-header">
     <span class="signal-name">{signal.name}</span>
-    <InlineBadge variant="info">{signal.type}</InlineBadge>
+    <InlineBadge variant="info">{signal.type === "http" ? "webhook" : signal.type}</InlineBadge>
 
     <div class="row-actions">
       <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>

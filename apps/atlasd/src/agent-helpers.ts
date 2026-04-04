@@ -149,6 +149,12 @@ export async function buildAgentPrompt(
     sections.push(`## Available Documents\n\n${documentsSection}`);
   }
 
+  // Include prepare result (task + config from code action) so agents
+  // receive computed values from prepare functions, matching LLM action behavior
+  if (fsmContext.input) {
+    sections.push(`## Input\n\n\`\`\`json\n${JSON.stringify(fsmContext.input, null, 2)}\n\`\`\``);
+  }
+
   // Include signal data
   if (signalContext && Object.keys(signalContext).length > 0) {
     sections.push(

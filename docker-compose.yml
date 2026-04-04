@@ -1,8 +1,7 @@
 services:
   platform:
-    image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
-    pull_policy: always    # always pull latest; set to "never" for local builds
-    platform: linux/amd64  # required on Apple Silicon Macs
+    image: atlas-platform:latest
+    pull_policy: never    # always pull latest; set to "never" for local builds
     ports:
       - "${FRIDAY_DAEMON_PORT:-18080}:8080"  # Friday daemon API
       - "${FRIDAY_LINK_PORT:-13100}:3100"    # Link (credential/auth service)
@@ -19,9 +18,11 @@ services:
       FRIDAY_STUDIO_PORT: ${FRIDAY_STUDIO_PORT:-15200}
       FRIDAY_PTY_PORT: ${FRIDAY_PTY_PORT:-17681}
       FRIDAY_TUNNEL_PORT: ${FRIDAY_TUNNEL_PORT:-19090}
+      KNOWLEDGE_DATA_DIR: ${KNOWLEDGE_DATA_DIR:-}
     volumes:
       - atlas-data:/data/atlas
       - link-data:/data/link
+      - ${KNOWLEDGE_DATA_DIR:-/tmp/knowledge}:${KNOWLEDGE_DATA_DIR:-/tmp/knowledge}:ro
       # Uncomment to override default webhook mappings:
       # - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
     dns:

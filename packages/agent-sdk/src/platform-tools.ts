@@ -47,6 +47,10 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "artifacts_update",
   "artifacts_get_by_chat",
   "artifacts_delete",
+  // State
+  "state_append",
+  "state_filter",
+  "state_lookup",
   // System / data processing
   "bash",
   "csv",

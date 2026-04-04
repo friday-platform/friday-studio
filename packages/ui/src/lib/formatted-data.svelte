@@ -106,7 +106,6 @@
     color: color-mix(in srgb, var(--color-text) 60%, transparent);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-4-5);
-    opacity: 0;
     transition: all 200ms ease;
 
     &:hover {
@@ -114,26 +113,17 @@
     }
   }
 
-  .formatted-data:hover .expand-btn {
-    opacity: 1;
-  }
-
   .copy-btn {
-    color: var(--color-text);
+    color: color-mix(in srgb, var(--color-text) 50%, transparent);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-4-5);
     inset-block-start: var(--size-2);
     inset-inline-end: var(--size-3);
-    opacity: 0;
     position: absolute;
-    transition: opacity 0.15s;
-  }
+    transition: color 0.15s;
 
-  .formatted-data:hover .copy-btn {
-    opacity: 0.5;
-  }
-
-  .copy-btn:hover {
-    opacity: 1 !important;
+    &:hover {
+      color: var(--color-text);
+    }
   }
 </style>

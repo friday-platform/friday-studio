@@ -44,9 +44,15 @@
     return mapSessionToStepStatus(view, topology);
   });
 
-  /** Signal nodes — rendered as trigger tags. */
+  /** Signal nodes for THIS job only — filter by job association from topology. */
   const signalSteps = $derived.by(() => {
-    return topology.nodes.filter((n) => n.type === "signal");
+    const jobId = session.jobName;
+    return topology.nodes.filter(
+      (n) =>
+        n.type === "signal" &&
+        Array.isArray(n.metadata.jobIds) &&
+        n.metadata.jobIds.includes(jobId),
+    );
   });
 
   /** Agent-step nodes for this session's job — rendered as status pills. */
@@ -80,10 +86,12 @@
     return correctedStatuses.get(nodeId) ?? "pending";
   }
 
-  /** Extract the signal provider from metadata (HTTP, cron, etc). */
+  /** Extract the signal provider from metadata for display. */
   function signalType(node: { metadata: Record<string, unknown> }): string {
     const provider = node.metadata?.provider;
-    return typeof provider === "string" ? provider.toUpperCase() : "SIGNAL";
+    if (typeof provider !== "string") return "SIGNAL";
+    if (provider === "http") return "WEBHOOK";
+    return provider.toUpperCase();
   }
 
   function formatDuration(ms: number | undefined): string {
@@ -160,12 +168,13 @@
         {#if i > 0}
           <span
             class="step-connector"
-            class:step-connector--done={status === "completed" || status === "failed"}
+            class:step-connector--done={status === "completed" || status === "skipped" || status === "failed"}
           ></span>
         {/if}
         <span
           class="step-pill"
           class:step-pill--completed={status === "completed"}
+          class:step-pill--skipped={status === "skipped"}
           class:step-pill--active={status === "active"}
           class:step-pill--failed={status === "failed"}
           class:step-pill--pending={status === "pending"}
@@ -180,6 +189,17 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 />
+              </svg>
+            {:else if status === "skipped"}
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M3 3L7 6L3 9"
+                  stroke="currentColor"
+                  stroke-width="1.25"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <line x1="8.5" y1="3" x2="8.5" y2="9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
               </svg>
             {:else if status === "active"}
               <span class="pulse-dot"></span>
@@ -338,6 +358,12 @@
     .step-icon {
       color: var(--color-error);
     }
+  }
+
+  .step-pill--skipped {
+    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    border-style: dashed;
   }
 
   .step-pill--pending {

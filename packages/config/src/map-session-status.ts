@@ -15,7 +15,7 @@ import type { Topology } from "./topology.ts";
 // TYPES
 // ==============================================================================
 
-export type StepStatus = "pending" | "active" | "completed" | "failed";
+export type StepStatus = "pending" | "active" | "completed" | "skipped" | "failed";
 
 // ==============================================================================
 // IMPLEMENTATION
@@ -59,8 +59,10 @@ export function mapSessionToStepStatus(
     // Map AgentBlock status to StepStatus
     switch (block.status) {
       case "completed":
-      case "skipped":
         result.set(nodeId, "completed");
+        break;
+      case "skipped":
+        result.set(nodeId, "skipped");
         break;
       case "running":
         result.set(nodeId, "active");

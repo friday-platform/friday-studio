@@ -50,6 +50,10 @@ const MutationSchema = z.discriminatedUnion("op", [
     op: z.literal("setResult"),
     args: z.tuple([z.string(), z.record(z.string(), z.unknown())]),
   }),
+  z.object({
+    op: z.literal("stateAppend"),
+    args: z.tuple([z.string(), z.record(z.string(), z.unknown()), z.number().optional()]),
+  }),
 ]);
 
 type Mutation = z.infer<typeof MutationSchema>;
@@ -185,6 +189,13 @@ export class WorkerExecutor {
   }
 
   private applyMutations(mutations: Mutation[], context: Context): void {
+    // Collect stateAppend mutations separately — they're applied by the engine to SQLite
+    const pendingAppends: Array<{
+      key: string;
+      entry: Record<string, unknown>;
+      ttlHours?: number;
+    }> = [];
+
     for (const mutation of mutations) {
       switch (mutation.op) {
         case "updateDoc":
@@ -202,7 +213,18 @@ export class WorkerExecutor {
         case "setResult":
           context.setResult?.(mutation.args[0], mutation.args[1]);
           break;
+        case "stateAppend":
+          pendingAppends.push({
+            key: mutation.args[0],
+            entry: mutation.args[1],
+            ttlHours: mutation.args[2],
+          });
+          break;
       }
+    }
+
+    if (pendingAppends.length > 0) {
+      context.setResult?.("__pendingStateAppends", { items: pendingAppends });
     }
   }
 }
