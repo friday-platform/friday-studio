@@ -48,8 +48,8 @@
     "npm:@coderabbitai/bitbucket@^1.1.4": "1.1.4",
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@electric-sql/pglite@0.4": "0.4.2",
-    "npm:@eslint/compat@^2.0.2": "2.0.3_eslint@10.1.0",
-    "npm:@eslint/compat@^2.0.3": "2.0.3_eslint@10.1.0",
+    "npm:@eslint/compat@^2.0.2": "2.0.4_eslint@10.1.0",
+    "npm:@eslint/compat@^2.0.4": "2.0.4_eslint@10.1.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.1.0",
     "npm:@faker-js/faker@^10.3.0": "10.4.0",
     "npm:@hono/mcp@~0.2.4": "0.2.4_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.8__ajv@8.18.0__express@5.2.1_hono@4.12.8_hono-rate-limiter@0.4.2__hono@4.12.8_zod@4.3.6",
@@ -1669,8 +1669,8 @@
     "@eslint-community/regexpp@4.12.2": {
       "integrity": "sha512-EriSTlt5OC9/7SXkRSCAhfSxxoSUgBm33OH+IkwbdpgoqsSsUg7y3uh+IICI/Qg4BBWr3U2i39RpmycbxMq4ew=="
     },
-    "@eslint/compat@2.0.3_eslint@10.1.0": {
-      "integrity": "sha512-SjIJhGigp8hmd1YGIBwh7Ovri7Kisl42GYFjrOyHhtfYGGoLW6teYi/5p8W50KSsawUPpuLOSmsq1bD0NGQLBw==",
+    "@eslint/compat@2.0.4_eslint@10.1.0": {
+      "integrity": "sha512-o598tCGstJv9Kk4XapwP+oDij9HD9Qr3V37ABzTfdzVvbFciV+sfg9zSW6olj6G/IXj7p89SwSzPnZ+JUEPIPg==",
       "dependencies": [
         "@eslint/core",
         "eslint"
@@ -1693,8 +1693,8 @@
         "@eslint/core"
       ]
     },
-    "@eslint/core@1.1.1": {
-      "integrity": "sha512-QUPblTtE51/7/Zhfv8BDwO0qkkzQL7P/aWWbqcf4xWLEYn1oKjdO0gglQBB4GAsu7u6wjijbCmzsUTy6mnk6oQ==",
+    "@eslint/core@1.2.0": {
+      "integrity": "sha512-8FTGbNzTvmSlc4cZBaShkC6YvFMG0riksYWRFKXztqVdXaQbcZLXlFbSpC05s70sGEsXAw0qwhx69JiW7hQS7A==",
       "dependencies": [
         "@types/json-schema"
       ]
@@ -8557,7 +8557,7 @@
       "apps/friday-website": {
         "packageJson": {
           "dependencies": [
-            "npm:@eslint/compat@^2.0.3",
+            "npm:@eslint/compat@^2.0.4",
             "npm:@eslint/js@^10.0.1",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sveltejs/adapter-node@^5.5.4",

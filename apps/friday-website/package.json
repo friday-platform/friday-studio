@@ -24,7 +24,7 @@
   },
   "pnpm": { "overrides": { "cookie": "^0.7.0", "minimatch": ">=10.2.1" } },
   "devDependencies": {
-    "@eslint/compat": "^2.0.3",
+    "@eslint/compat": "^2.0.4",
     "@eslint/js": "^10.0.1",
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.55.0",
