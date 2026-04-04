@@ -33,7 +33,7 @@
     "@lezer/highlight": "^1.2.3",
     "@melt-ui/svelte": "~0.86.6",
     "@tanstack/query-core": "^5.85.1",
-    "@tanstack/svelte-query": "^6.1.0",
+    "@tanstack/svelte-query": "^6.1.13",
     "@types/deno": "2.5.0",
     "ai": "^6.0.141",
     "codemirror": "^6.0.2",
