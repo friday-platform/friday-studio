@@ -131,8 +131,7 @@
     "npm:dompurify@^3.3.3": "3.3.3",
     "npm:dotenv@17.4.0": "17.4.0",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.1.0",
-    "npm:eslint-plugin-svelte@^3.15.2": "3.16.0_eslint@10.1.0_svelte@5.55.1",
-    "npm:eslint-plugin-svelte@^3.16.0": "3.16.0_eslint@10.1.0_svelte@5.55.1",
+    "npm:eslint-plugin-svelte@^3.17.0": "3.17.0_eslint@10.1.0_svelte@5.55.1",
     "npm:eslint@^10.1.0": "10.1.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.3": "21.3.4",
@@ -5116,8 +5115,8 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.16.0_eslint@10.1.0_svelte@5.55.1": {
-      "integrity": "sha512-DJXxqpYZUxcE0SfYo8EJzV2ZC+zAD7fJp1n1HwcEMRR1cOEUYvjT9GuzJeNghMjgb7uxuK3IJAzI+x6zzUxO5A==",
+    "eslint-plugin-svelte@3.17.0_eslint@10.1.0_svelte@5.55.1": {
+      "integrity": "sha512-sF6wgd5FLS2P8CCaOy2HdYYYEcZ6TwL251dLHUkNmtLnWECk1Dwc+j6VeulmmnFxr7Xs0WNtjweOA+bJ0PnaFw==",
       "dependencies": [
         "@eslint-community/eslint-utils",
         "@jridgewell/sourcemap-codec",
@@ -8566,7 +8565,7 @@
             "npm:@types/deno@2.5.0",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.16.0",
+            "npm:eslint-plugin-svelte@^3.17.0",
             "npm:eslint@^10.1.0",
             "npm:globals@^17.4.0",
             "npm:gsap@^3.14.2",
@@ -9021,7 +9020,7 @@
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.15.2",
+            "npm:eslint-plugin-svelte@^3.17.0",
             "npm:eslint@^10.1.0",
             "npm:globals@^17.4.0",
             "npm:prettier-plugin-svelte@^3.4.1",
