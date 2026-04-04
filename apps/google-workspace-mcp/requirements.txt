@@ -197,6 +197,8 @@ python-dotenv==1.2.1
     #   workspace-mcp
 python-multipart==0.0.22
     # via mcp
+pytz==2026.1.post1
+    # via workspace-mcp
 pyyaml==6.0.3
     # via
     #   fastmcp
@@ -264,7 +266,7 @@ watchfiles==1.1.1
     # via fastmcp
 websockets==16.0
     # via fastmcp
-workspace-mcp==1.16.0
+workspace-mcp==1.17.2
     # via -r requirements.in
 zipp==3.23.0
     # via importlib-metadata
