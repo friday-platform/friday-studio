@@ -32,7 +32,7 @@
     "@hono/zod-validator": "~0.7.6",
     "@lezer/highlight": "^1.2.3",
     "@melt-ui/svelte": "~0.86.6",
-    "@tanstack/query-core": "^5.85.1",
+    "@tanstack/query-core": "^5.96.2",
     "@tanstack/svelte-query": "^6.1.13",
     "@types/deno": "2.5.0",
     "ai": "^6.0.141",
