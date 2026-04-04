@@ -5,7 +5,7 @@
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
   "dependencies": {
-    "@ai-sdk/groq": "^3.0.31",
+    "@ai-sdk/groq": "^3.0.33",
     "@atlas/logger": "workspace:*",
     "@ai-sdk/anthropic": "^3.0.64",
     "@ai-sdk/google": "^3.0.53",
