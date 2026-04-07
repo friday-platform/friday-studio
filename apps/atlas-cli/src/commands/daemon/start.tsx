@@ -592,6 +592,14 @@ async function startForeground(argv: StartArgs): Promise<void> {
     cors: ["http://127.0.0.1:1420"],
   });
 
+  // Catch unhandled promise rejections so a single async error
+  // (e.g. WouldBlock from a logger write) doesn't take down the process.
+  globalThis.addEventListener("unhandledrejection", (event) => {
+    event.preventDefault();
+    logger.error("Unhandled promise rejection", { error: event.reason });
+    captureException(event.reason);
+  });
+
   // Handle graceful shutdown
   const shutdown = async () => {
     infoOutput("\nShutting down Atlas daemon...");

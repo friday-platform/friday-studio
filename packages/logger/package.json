@@ -8,6 +8,7 @@
     "./telemetry": "./src/telemetry.ts"
   },
   "main": "./mod.ts",
+  "devDependencies": { "vitest": "^4.1.0" },
   "dependencies": {
     "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",

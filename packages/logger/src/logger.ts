@@ -30,7 +30,9 @@ class AtlasLoggerV2 extends BaseLogger {
     // Create log entry once for potential reuse
     const entry = this.formatLogEntry(level, message, finalContext);
 
-    this.outputToConsole(level, JSON.stringify(entry));
+    if (this.shouldOutputToConsole(level)) {
+      this.outputToConsole(level, JSON.stringify(entry));
+    }
 
     // Write to file (ignore failures)
     try {

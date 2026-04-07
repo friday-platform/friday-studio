@@ -8889,6 +8889,7 @@
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.1",
             "npm:hono@4.12.8",
+            "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
         }

@@ -18,6 +18,10 @@ class ConsoleOnlyLogger extends BaseLogger {
   }
 
   protected log(level: LogLevel, message: string, context?: LogContext): void {
+    if (!this.shouldOutputToConsole(level)) {
+      return;
+    }
+
     const finalContext = { ...this.baseContext, ...context };
     const entry = { timestamp: new Date().toISOString(), level, message, context: finalContext };
     this.outputToConsole(level, JSON.stringify(entry));
