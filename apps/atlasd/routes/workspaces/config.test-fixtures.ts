@@ -97,6 +97,8 @@ export function createTestApp(options: {
     destroyWorkspaceRuntime,
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],

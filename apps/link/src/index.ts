@@ -20,11 +20,6 @@ import {
   PostgresSlackAppWorkspaceRepository,
   type SlackAppWorkspaceRepository,
 } from "./adapters/slack-app-workspace-repository.ts";
-import {
-  NoOpWebhookSecretRepository,
-  PostgresWebhookSecretRepository,
-  type WebhookSecretRepository,
-} from "./adapters/webhook-secret-repository.ts";
 import { AppInstallService } from "./app-install/service.ts";
 import { getAuthToken, runWithAuthToken } from "./auth-context.ts";
 import { config, readConfig } from "./config.ts";
@@ -49,7 +44,6 @@ export function createApp(
   storage: StorageAdapter,
   oauthService: OAuthService,
   platformRouteRepo: PlatformRouteRepository,
-  webhookSecretRepo: WebhookSecretRepository,
   slackAppWorkspaceRepo: SlackAppWorkspaceRepository,
 ) {
   const cfg = readConfig();
@@ -161,17 +155,17 @@ export function createApp(
   );
 
   if (!registry.has("slack-app")) {
-    registry.register(createSlackAppDynamicProvider(storage, webhookSecretRepo));
+    registry.register(createSlackAppDynamicProvider(storage));
   }
 
-  const slackAppService = new SlackAppService(storage, webhookSecretRepo, slackAppWorkspaceRepo);
+  const slackAppService = new SlackAppService(storage, slackAppWorkspaceRepo);
 
   return baseApp
     .route("/v1/providers", providersRouter)
     .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
     .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
     .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
-    .route("/v1/summary", createSummaryRoutes(storage))
+    .route("/v1/summary", createSummaryRoutes(storage, slackAppWorkspaceRepo))
     .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
     .route("/v1/app-install", createAppInstallRoutes(appInstallService))
     .route("/v1/slack-apps", createSlackAppRoutes(slackAppService))
@@ -260,19 +254,6 @@ function createPlatformRouteRepo(): PlatformRouteRepository {
 
 const platformRouteRepo = createPlatformRouteRepo();
 
-function createWebhookSecretRepo(): WebhookSecretRepository {
-  if (sql) {
-    return new PostgresWebhookSecretRepository(sql);
-  }
-  if (config.devMode) {
-    logger.warn("Using NoOpWebhookSecretRepository - webhook secrets will not persist");
-    return new NoOpWebhookSecretRepository();
-  }
-  throw new Error("POSTGRES_CONNECTION required in production for webhook secret storage");
-}
-
-const webhookSecretRepo = createWebhookSecretRepo();
-
 function createSlackAppWorkspaceRepo(): SlackAppWorkspaceRepository {
   if (sql) {
     return new PostgresSlackAppWorkspaceRepository(sql);
@@ -290,7 +271,6 @@ export const app = createApp(
   defaultStorage,
   defaultOAuthService,
   platformRouteRepo,
-  webhookSecretRepo,
   slackAppWorkspaceRepo,
 );
 

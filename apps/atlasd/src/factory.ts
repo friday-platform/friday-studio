@@ -7,6 +7,7 @@ import type { LibraryStorageAdapter } from "@atlas/storage";
 import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
+import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 
@@ -45,6 +46,10 @@ export interface AppContext {
 
   // Agent registry
   getAgentRegistry(): AgentRegistry;
+
+  // Chat SDK instance per workspace
+  getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance>;
+  evictChatSdkInstance(workspaceId: string): Promise<void>;
 
   // Core daemon access
   daemon: AtlasDaemon;

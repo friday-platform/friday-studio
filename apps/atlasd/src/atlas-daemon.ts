@@ -72,14 +72,17 @@ import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
+import type { PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
+import {
+  type ChatSdkInstance,
+  type ChatSdkInstanceConfig,
+  initializeChatSdkInstance,
+  resolvePlatformCredentials,
+} from "./chat-sdk/chat-sdk-instance.ts";
 import { createApp } from "./factory.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
-import {
-  createLinkSlackEventManager,
-  SlackSignalRegistrar,
-} from "./signal-registrars/slack-registrar.ts";
 import { StreamRegistry } from "./stream-registry.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -131,6 +134,7 @@ export class AtlasDaemon {
   public streamRegistry!: StreamRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
+  private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
   private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Store per-session MCP servers and transports
@@ -195,6 +199,8 @@ export class AtlasDaemon {
       getLibraryStorage: this.getLibraryStorage.bind(this),
       getLedgerAdapter: this.getLedgerAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
+      getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
+      evictChatSdkInstance: this.evictChatSdkInstance.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
@@ -356,15 +362,8 @@ export class AtlasDaemon {
     // Create signal registrars and pass them to WorkspaceManager.initialize
     const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
-    const slackRegistrar = new SlackSignalRegistrar({
-      eventManager: createLinkSlackEventManager(),
-    });
 
-    const signalRegistrars: WorkspaceSignalRegistrar[] = [
-      fsRegistrar,
-      cronRegistrar,
-      slackRegistrar,
-    ];
+    const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
@@ -1158,6 +1157,86 @@ export class AtlasDaemon {
     }
   }
 
+  /** Cached per workspace; torn down when the runtime is destroyed. */
+  getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
+    const existing = this.chatSdkInstances.get(workspaceId);
+    if (existing) return existing;
+
+    const promise = this.buildChatSdkInstance(workspaceId);
+    this.chatSdkInstances.set(workspaceId, promise);
+    promise.catch(() => {
+      // Let the next caller retry on failure.
+      if (this.chatSdkInstances.get(workspaceId) === promise) {
+        this.chatSdkInstances.delete(workspaceId);
+      }
+    });
+    return promise;
+  }
+
+  private async buildChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
+    const manager = this.getWorkspaceManager();
+    const config = await manager.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new WorkspaceNotFoundError(workspaceId);
+    }
+
+    const workspace = await manager.find({ id: workspaceId });
+    const userId = workspace?.metadata?.createdBy ?? "default-user";
+
+    let credentials: PlatformCredentials | undefined;
+    let credentialId: string | undefined;
+    try {
+      const resolved = await resolvePlatformCredentials(workspaceId);
+      if (resolved) {
+        credentials = resolved.credentials;
+        credentialId = resolved.credentialId;
+      }
+    } catch (error) {
+      logger.warn("chat_sdk_credential_resolution_failed", { workspaceId, error });
+    }
+
+    const instanceConfig: ChatSdkInstanceConfig = {
+      workspaceId,
+      userId,
+      signals: config.workspace?.signals as
+        | Record<string, { provider?: string; config?: Record<string, unknown> }>
+        | undefined,
+      streamRegistry: this.streamRegistry,
+      triggerFn: async (signalId, signalData, streamId, onStreamEvent) => {
+        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+        const session = await runtime.triggerSignalWithSession(
+          signalId,
+          signalData,
+          streamId,
+          onStreamEvent,
+        );
+        return { sessionId: session.id };
+      },
+    };
+
+    const instance = await initializeChatSdkInstance(instanceConfig, credentials);
+    instance.credentialId = credentialId;
+    return instance;
+  }
+
+  /**
+   * Drop the cached Chat SDK instance so the next get rebuilds it with fresh
+   * config. Does NOT disable Slack event subscriptions — those stay active
+   * so incoming Slack messages can wake an idle workspace. Use
+   * `disconnectSlack()` for explicit Slack removal.
+   */
+  async evictChatSdkInstance(workspaceId: string): Promise<void> {
+    const pending = this.chatSdkInstances.get(workspaceId);
+    if (!pending) return;
+    this.chatSdkInstances.delete(workspaceId);
+    try {
+      const instance = await pending;
+      await instance.teardown();
+    } catch (error) {
+      logger.error("Error evicting Chat SDK instance", { error, workspaceId });
+    }
+  }
+
   /**
    * Trigger a workspace signal and handle lifecycle updates (lastSeen, idle timeout)
    *
@@ -1458,6 +1537,8 @@ export class AtlasDaemon {
     }
 
     this.runtimes.delete(workspaceId);
+
+    await this.evictChatSdkInstance(workspaceId);
 
     // Unregister runtime from WorkspaceManager
     const manager = this.getWorkspaceManager();

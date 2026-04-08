@@ -115,6 +115,8 @@ function createExportTestApp(options: {
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
   };

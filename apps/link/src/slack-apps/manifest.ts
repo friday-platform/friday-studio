@@ -23,21 +23,21 @@ export const BOT_SCOPES = [
   "mpim:history",
   "mpim:read",
   "mpim:write",
+  "reactions:write",
   "users:read",
 ] as const;
 
 /**
- * Converts an app name to a valid Slack bot display_name.
- * Allowed characters: a-z, 0-9, -, _, .
+ * Sanitizes an app name for use as a Slack bot display_name.
+ * Preserves original casing and spaces. Strips characters outside
+ * the allowed set: letters, digits, spaces, hyphens, underscores, dots.
  */
 export function toDisplayName(name: string): string {
   const sanitized = name
     .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9\-_.]/g, "")
-    .replace(/_{2,}/g, "_")
-    .replace(/^[_.-]+|[_.-]+$/g, "")
+    .replace(/[^a-zA-Z0-9 \-_.]/g, "")
+    .replace(/ {2,}/g, " ")
+    .trim()
     .slice(0, DISPLAY_NAME_MAX);
   return sanitized || "friday";
 }
@@ -49,7 +49,14 @@ export interface EventSubscriptions {
 
 export interface SlackManifest {
   display_information: { name: string; description: string };
-  features: { bot_user: { display_name: string; always_online: boolean } };
+  features: {
+    app_home: {
+      home_tab_enabled: boolean;
+      messages_tab_enabled: boolean;
+      messages_tab_read_only_enabled: boolean;
+    };
+    bot_user: { display_name: string; always_online: boolean };
+  };
   oauth_config: { scopes: { bot: string[] }; redirect_urls: string[] };
   settings: {
     org_deploy_enabled: boolean;
@@ -72,7 +79,14 @@ export function buildManifest(params: {
       name: appName.slice(0, NAME_MAX),
       description: description.slice(0, DESCRIPTION_MAX),
     },
-    features: { bot_user: { display_name: toDisplayName(appName), always_online: true } },
+    features: {
+      app_home: {
+        home_tab_enabled: false,
+        messages_tab_enabled: true,
+        messages_tab_read_only_enabled: false,
+      },
+      bot_user: { display_name: toDisplayName(appName), always_online: true },
+    },
     oauth_config: { scopes: { bot: [...BOT_SCOPES] }, redirect_urls: [callbackUrl] },
     settings: {
       org_deploy_enabled: false,

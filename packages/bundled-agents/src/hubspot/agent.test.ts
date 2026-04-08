@@ -283,7 +283,7 @@ describe("hubspotAgent deterministic path", () => {
     await hubspotAgent.execute(prompt, validContext());
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const init = mockFetch.mock.calls[0]![1];
+    const init = mockFetch.mock.calls[0]?.[1];
     const body = JSON.parse(init?.body as string) as Record<string, unknown>;
     expect(body.text).toBe(verbatimText);
     expect(mockGenerateText).not.toHaveBeenCalled();

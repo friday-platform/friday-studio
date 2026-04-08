@@ -3,7 +3,6 @@
 import { randomBytes } from "node:crypto";
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
-import type { WebhookSecretRepository } from "../adapters/webhook-secret-repository.ts";
 import { decodeAppInstallState, encodeAppInstallState } from "../app-install/app-state.ts";
 import { AppInstallError } from "../app-install/errors.ts";
 import { BOT_SCOPES, buildManifest, PENDING_TOKEN } from "../slack-apps/manifest.ts";
@@ -82,10 +81,7 @@ async function findIncompleteCredential(
   return null;
 }
 
-export function createSlackAppDynamicProvider(
-  storage: StorageAdapter,
-  webhookSecrets: WebhookSecretRepository,
-) {
+export function createSlackAppDynamicProvider(storage: StorageAdapter) {
   return defineAppInstallProvider({
     id: "slack-app",
     platform: "slack",
@@ -165,8 +161,6 @@ export function createSlackAppDynamicProvider(
         );
       }
 
-      await webhookSecrets.insert(parsed.app_id, userId, parsed.credentials.signing_secret);
-
       // Save incomplete credential with pending token
       const { id: credentialId } = await storage.save(
         {
@@ -177,6 +171,7 @@ export function createSlackAppDynamicProvider(
             platform: "slack" as const,
             externalId: parsed.app_id,
             access_token: PENDING_TOKEN,
+            signing_secret: parsed.credentials.signing_secret,
             slack: {
               clientId: parsed.credentials.client_id,
               clientSecret: parsed.credentials.client_secret,
@@ -283,6 +278,9 @@ export function createSlackAppDynamicProvider(
             platform: "slack" as const,
             externalId: secret.externalId,
             access_token: parsed.access_token,
+            // Preserve signing_secret from the original credential — OAuth
+            // completion overwrites the secret and must carry it forward.
+            signing_secret: secret.signing_secret,
             refresh_token: parsed.refresh_token,
             expires_at: parsed.expires_in
               ? Math.floor(Date.now() / 1000) + parsed.expires_in

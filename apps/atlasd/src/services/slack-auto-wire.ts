@@ -122,6 +122,46 @@ export function createLinkWireClient(): SlackAutoWireDeps["wireToWorkspace"] {
   };
 }
 
+/** Best-effort toggle — logs warnings on failure rather than throwing. */
+async function setSlackEventSubscriptions(credentialId: string, enable: boolean): Promise<void> {
+  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  const url = `${linkServiceUrl}/internal/v1/slack-apps/${encodeURIComponent(credentialId)}/events`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+  const atlasKey = process.env.ATLAS_KEY;
+  if (atlasKey) {
+    headers.Authorization = `Bearer ${atlasKey}`;
+  }
+
+  try {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ enable }) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn("slack_event_subscriptions_failed", {
+        credentialId,
+        enable,
+        status: res.status,
+        body,
+      });
+    } else {
+      logger.info(
+        enable ? "slack_event_subscriptions_enabled" : "slack_event_subscriptions_disabled",
+        { credentialId },
+      );
+    }
+  } catch (error) {
+    logger.warn("slack_event_subscriptions_error", { credentialId, enable, error });
+  }
+}
+
+export function enableSlackEventSubscriptions(credentialId: string): Promise<void> {
+  return setSlackEventSubscriptions(credentialId, true);
+}
+
+export function disableSlackEventSubscriptions(credentialId: string): Promise<void> {
+  return setSlackEventSubscriptions(credentialId, false);
+}
+
 const UnwiredResponseSchema = z.object({ credential_id: z.string(), app_id: z.string() });
 
 /** HTTP client for GET /internal/v1/slack-apps/unwired. */

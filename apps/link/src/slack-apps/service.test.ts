@@ -1,15 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  TestSlackAppWorkspaceRepository,
-  TestStorageAdapter,
-  TestWebhookSecretRepository,
-} from "../adapters/test-storage.ts";
+import { TestSlackAppWorkspaceRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
 import { PENDING_TOKEN } from "./manifest.ts";
 import { SlackAppService } from "./service.ts";
 
 describe("SlackAppService", () => {
   let storage: TestStorageAdapter;
-  let webhookSecrets: TestWebhookSecretRepository;
   let workspaceRepo: TestSlackAppWorkspaceRepository;
   let service: SlackAppService;
   const userId = "user-1";
@@ -35,15 +30,13 @@ describe("SlackAppService", () => {
       },
       userId,
     );
-    await webhookSecrets.insert("A012ABCD0A0", userId, "signing-xyz");
     return id;
   }
 
   beforeEach(async () => {
     storage = new TestStorageAdapter();
-    webhookSecrets = new TestWebhookSecretRepository();
     workspaceRepo = new TestSlackAppWorkspaceRepository();
-    service = new SlackAppService(storage, webhookSecrets, workspaceRepo);
+    service = new SlackAppService(storage, workspaceRepo);
 
     const { id } = await storage.save(
       {
@@ -253,7 +246,7 @@ describe("SlackAppService", () => {
       expect(body.app_id).toBe("A012ABCD0A0");
       expect(body.manifest.display_information.name).toBe("My Workspace");
       expect(body.manifest.display_information.description).toBe("A test workspace");
-      expect(body.manifest.features.bot_user.display_name).toBe("my_workspace");
+      expect(body.manifest.features.bot_user.display_name).toBe("My Workspace");
       expect(body.manifest.features.bot_user.always_online).toBe(true);
       // Critical: redirect_urls preserved from exported manifest
       expect(body.manifest.oauth_config.redirect_urls).toEqual([
@@ -350,10 +343,10 @@ describe("SlackAppService", () => {
 
     beforeEach(async () => {
       slackAppCredentialId = await seedSlackApp();
-      await workspaceRepo.insert(slackAppCredentialId, "ws-to-delete");
+      await workspaceRepo.insert(slackAppCredentialId, "ws-to-delete", userId);
     });
 
-    it("deletes app via Slack API and removes credential, webhook secret, and workspace mapping", async () => {
+    it("deletes app via Slack API and removes credential and workspace mapping", async () => {
       vi.stubGlobal(
         "fetch",
         vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ok: true }))),
@@ -363,7 +356,6 @@ describe("SlackAppService", () => {
 
       const cred = await storage.get(slackAppCredentialId, userId);
       expect(cred).toBeNull();
-      expect(webhookSecrets.getSecret("A012ABCD0A0")).toBeUndefined();
       expect(workspaceRepo.getWorkspace(slackAppCredentialId)).toBeUndefined();
 
       const fetchCall = vi.mocked(fetch).mock.calls[0];
@@ -417,6 +409,112 @@ describe("SlackAppService", () => {
 
     it("no-ops when no credential found for app_id", async () => {
       await expect(service.deleteAppByAppId("A_NONEXISTENT", userId)).resolves.toBeUndefined();
+    });
+  });
+
+  // Regression: the previous adapter did a `DELETE ... WHERE workspace_id = $1`
+  // with no user scoping, so two users with colliding workspace IDs (trivial
+  // in a multi-tenant deployment where each atlasd generates IDs independently)
+  // could silently wipe each other's Slack wiring. The RLS migration + the
+  // user_id-scoped TestSlackAppWorkspaceRepository make that structurally
+  // impossible — this test pins the invariant.
+  describe("cross-user isolation", () => {
+    it("wiring a workspace with a colliding id does not touch another user's mapping", async () => {
+      const otherUserId = "user-2";
+
+      // Seed user-2's own slack-user + slack-app credentials, wire them to "ops".
+      const otherSlackUser = await storage.save(
+        {
+          type: "oauth",
+          provider: "slack-user",
+          label: "Other Team",
+          secret: {
+            platform: "slack-user",
+            access_token: "xoxp-other",
+            team_id: "T-OTHER",
+            team_name: "Other",
+            user_id: "U-OTHER",
+          },
+        },
+        otherUserId,
+      );
+      const otherSlackApp = await storage.save(
+        {
+          type: "oauth",
+          provider: "slack-app",
+          label: "",
+          secret: {
+            platform: "slack",
+            externalId: "A_OTHER_APP",
+            access_token: "xoxb-other",
+            slack: {
+              clientId: "999.999",
+              clientSecret: "cs-other",
+              slackUserCredentialId: otherSlackUser.id,
+            },
+          },
+        },
+        otherUserId,
+      );
+      await workspaceRepo.insert(otherSlackApp.id, "ops", otherUserId);
+
+      // user-1 (the default `userId` in this suite) wires their own slack-app
+      // to a workspace that happens to share the id "ops".
+      const ourSlackAppId = await seedSlackApp({ accessToken: "xoxb-bot-token" });
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValueOnce(
+            new Response(
+              JSON.stringify({
+                ok: true,
+                manifest: {
+                  display_information: { name: "x" },
+                  features: { bot_user: { display_name: "x" } },
+                },
+              }),
+            ),
+          )
+          .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }))),
+      );
+
+      await service.wireToWorkspace(ourSlackAppId, userId, "ops", "Ops WS");
+
+      // user-2's (otherSlackApp.id → "ops") mapping must still be intact.
+      const otherMapping = await workspaceRepo.findByCredentialId(otherSlackApp.id, otherUserId);
+      expect(otherMapping).toEqual({ workspaceId: "ops" });
+
+      // user-1 also has its own (ourSlackAppId → "ops") mapping.
+      const ourMapping = await workspaceRepo.findByCredentialId(ourSlackAppId, userId);
+      expect(ourMapping).toEqual({ workspaceId: "ops" });
+
+      // Cross-user lookups return null — user-1 cannot see user-2's mapping
+      // and vice versa.
+      expect(await workspaceRepo.findByCredentialId(otherSlackApp.id, userId)).toBeNull();
+      expect(await workspaceRepo.findByCredentialId(ourSlackAppId, otherUserId)).toBeNull();
+      expect(await workspaceRepo.findByWorkspaceId("ops", userId)).toEqual({
+        credentialId: ourSlackAppId,
+      });
+      expect(await workspaceRepo.findByWorkspaceId("ops", otherUserId)).toEqual({
+        credentialId: otherSlackApp.id,
+      });
+    });
+
+    it("deleteByCredentialId with the wrong userId is a silent no-op", async () => {
+      const otherUserId = "user-2";
+      const credentialId = await seedSlackApp({ accessToken: "xoxb-bot-token" });
+      await workspaceRepo.insert(credentialId, "ws-mine", userId);
+
+      // Another user calling delete against our credential must not wipe our row.
+      await workspaceRepo.deleteByCredentialId(credentialId, otherUserId);
+
+      // Our mapping is intact under our own scope.
+      expect(await workspaceRepo.findByCredentialId(credentialId, userId)).toEqual({
+        workspaceId: "ws-mine",
+      });
+      // And invisible to the other user.
+      expect(await workspaceRepo.findByCredentialId(credentialId, otherUserId)).toBeNull();
     });
   });
 });

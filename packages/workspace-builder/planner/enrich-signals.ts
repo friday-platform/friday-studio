@@ -144,9 +144,6 @@ export async function enrichSignals(
           config: await callEnrichmentLLM(signal, ENRICHMENT_CONFIG.http, options?.abortSignal),
         };
         break;
-      case "slack":
-        signalConfig = { provider: "slack", config: {} };
-        break;
     }
 
     if (signalConfig.provider === "schedule") {

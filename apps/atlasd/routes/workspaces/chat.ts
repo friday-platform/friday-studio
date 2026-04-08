@@ -1,7 +1,7 @@
 /**
  * Workspace chat routes.
  *
- * POST /                 — Create chat, stream response via SSE
+ * POST /                 — Create chat, stream response via Chat SDK
  * GET  /                 — List workspace chats
  * GET  /:chatId          — Get workspace chat
  * GET  /:chatId/stream   — Resume SSE stream
@@ -10,33 +10,13 @@
 
 import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
-import { stream } from "hono/streaming";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
-import { isClientSafeEvent } from "../../src/stream-event-filter.ts";
-
-const analytics = createAnalyticsClient();
-
-const chatRequestSchema = z.object({
-  id: z.string().min(1),
-  message: z.unknown(),
-  datetime: z
-    .object({
-      timezone: z.string(),
-      timestamp: z.string(),
-      localDate: z.string(),
-      localTime: z.string(),
-      timezoneOffset: z.string(),
-    })
-    .optional(),
-});
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
@@ -54,10 +34,6 @@ function getUserId(): string {
 
 const workspaceChatRoutes = daemonFactory
   .createApp()
-  /**
-   * Middleware: validate workspace exists for all chat routes.
-   * Runs before every handler — returns 404 for unknown workspaceIds.
-   */
   .use("*", async (c, next) => {
     const workspaceId = c.req.param("workspaceId");
     if (!workspaceId) {
@@ -71,10 +47,6 @@ const workspaceChatRoutes = daemonFactory
     }
     await next();
   })
-  /**
-   * GET /
-   * List chats for this workspace.
-   */
   .get("/", zValidator("query", listChatsQuerySchema), async (c) => {
     const workspaceId = c.req.param("workspaceId");
     if (!workspaceId) {
@@ -91,120 +63,38 @@ const workspaceChatRoutes = daemonFactory
   })
 
   /**
-   * POST /
-   * Create chat, store message, trigger "chat" signal, stream events.
+   * Forwards the raw request to `chat.webhooks.atlas()`, which handles
+   * validation, persistence, signal trigger, and SSE streaming.
    */
-  .post("/", zValidator("json", chatRequestSchema), async (c) => {
+  .post("/", async (c) => {
     const ctx = c.get("app");
     const workspaceId = c.req.param("workspaceId");
     if (!workspaceId) {
       return c.json({ error: "Missing workspaceId" }, 400);
     }
 
-    const { id: chatId, message, datetime } = c.req.valid("json");
-    const userId = getUserId();
-
-    const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
-    if (!result.ok) {
-      return c.json({ error: "Failed to create chat" }, 500);
-    }
-
-    analytics.emit({
-      eventName: EventNames.CONVERSATION_STARTED,
-      userId,
-      workspaceId,
-      conversationId: chatId,
-    });
-
-    const [userMessage] = await validateAtlasUIMessages([message]);
-    if (!userMessage) {
-      return c.json({ error: "Invalid message format" }, 400);
-    }
-
-    const appendResult = await ChatStorage.appendMessage(chatId, userMessage, workspaceId);
-    if (!appendResult.ok) {
-      return c.json({ error: "Failed to store message" }, 500);
-    }
-
-    const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId).catch((error: unknown) => {
-      if (error instanceof WorkspaceNotFoundError) {
-        return null;
-      }
+    const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
+      if (error instanceof WorkspaceNotFoundError) return null;
       throw error;
     });
-
-    if (!runtime) {
+    if (!instance) {
       return c.json({ error: "Workspace not found" }, 404);
     }
 
-    // Initialize stream buffer for resumption support
-    ctx.streamRegistry.createStream(chatId);
+    const handler = instance.chat.webhooks.atlas;
+    if (!handler) {
+      return c.json({ error: "Atlas web adapter not configured" }, 500);
+    }
 
-    // Stream response directly with SSE format
-    return stream(c, async (streamWriter) => {
-      let sessionComplete = false;
-
-      runtime
-        .triggerSignalWithSession(
-          "chat",
-          { chatId, userId, streamId: chatId, datetime },
-          chatId,
-          async (chunk) => {
-            if (chunk.type === "data-session-finish") {
-              sessionComplete = true;
-            }
-
-            // Only forward UI message stream events to the client.
-            // FSM lifecycle events (data-fsm-*, data-session-*) break the
-            // AI SDK's client-side parser which validates against uiMessageChunkSchema.
-            if (!isClientSafeEvent(chunk)) return;
-
-            // Buffer event for potential resumption
-            ctx.streamRegistry.appendEvent(chatId, chunk);
-
-            // Write to this HTTP connection
-            try {
-              await streamWriter.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            } catch (error) {
-              // Client disconnected - events continue buffering in registry
-              logger.debug("Client disconnected during workspace chat stream", {
-                chatId,
-                workspaceId,
-                error,
-              });
-            }
-          },
-        )
-        .catch((error) => {
-          logger.error("Workspace chat session error", { error, chatId, workspaceId });
-          streamWriter.writeln(
-            `data: ${JSON.stringify({
-              type: "data-error",
-              data: { error: stringifyError(error), errorCause: error },
-            })}`,
-          );
-          streamWriter.writeln("");
-          sessionComplete = true;
-        })
-        .finally(() => {
-          ctx.streamRegistry.finishStream(chatId);
-        });
-
-      // Keep stream alive until session completes
-      while (!sessionComplete) {
-        await streamWriter.sleep(100);
-      }
-
-      // Send completion marker
-      await streamWriter.writeln("data: [DONE]");
-      await streamWriter.writeln("");
-    });
+    // Clone and set userId header — adapter reads it for message attribution.
+    // `set` replaces any client-supplied value so a malicious client can't
+    // smuggle their own identity into analytics/audit logs.
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("X-Atlas-User-Id", getUserId());
+    const request = new Request(c.req.raw, { headers });
+    return handler(request);
   })
 
-  /**
-   * DELETE /:chatId/stream
-   * Mark a stream as finished (cosmetic stop).
-   */
   .delete("/:chatId/stream", (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
@@ -214,17 +104,13 @@ const workspaceChatRoutes = daemonFactory
     return c.json({ success: true }, 200);
   })
 
-  /**
-   * GET /:chatId/stream
-   * Reconnect to an active chat stream for resumption.
-   */
   .get("/:chatId/stream", (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
     const buffer = ctx.streamRegistry.getStream(chatId);
 
-    if (!buffer || !buffer.active) {
+    if (!buffer?.active) {
       return c.body(null, 204);
     }
 
@@ -251,10 +137,6 @@ const workspaceChatRoutes = daemonFactory
     });
   })
 
-  /**
-   * GET /:chatId
-   * Retrieve chat metadata and message history.
-   */
   .get("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
@@ -273,10 +155,6 @@ const workspaceChatRoutes = daemonFactory
     );
   })
 
-  /**
-   * POST /:chatId/message
-   * Append assistant message to chat history.
-   */
   .post("/:chatId/message", zValidator("json", z.object({ message: z.unknown() })), async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
@@ -291,20 +169,23 @@ const workspaceChatRoutes = daemonFactory
     if (!validatedMessage) {
       return c.json({ error: "Invalid message format" }, 400);
     }
+    // Only user-role messages may be appended through this endpoint. Assistant
+    // and system messages are produced server-side by agents, which persist
+    // them in-process via ChatStorage. Allowing client-supplied roles here
+    // would let any caller poison the next LLM turn (prompt injection).
+    if (validatedMessage.role !== "user") {
+      return c.json({ error: "Only user-role messages may be appended" }, 403);
+    }
 
     const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage, workspaceId);
     if (!appendResult.ok) {
-      logger.error("Failed to append assistant message", { chatId, error: appendResult.error });
+      logger.error("Failed to append message", { chatId, error: appendResult.error });
       return c.json({ error: "Failed to append message" }, 500);
     }
 
     return c.json({ success: true }, 200);
   })
 
-  /**
-   * PATCH /:chatId/title
-   * Update chat title.
-   */
   .patch("/:chatId/title", zValidator("json", z.object({ title: z.string() })), async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");

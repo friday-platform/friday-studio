@@ -18,6 +18,25 @@ export const workspaceCreationSkill = {
 - Questions about capabilities
 - Using existing workspaces (use workspace_signal_trigger instead)
 
+## Slack in workspaces
+
+Slack shows up two ways:
+
+**Output destination** — agents post digests, alerts, or reports to Slack
+channels. Plan normally with a schedule or http signal, include a Slack agent,
+and put the channel in its configuration.
+
+**Chat surface (Communicator)** — the user talks to the workspace in Slack
+the same way they talk to it in web chat. The workspace chat handles inbound
+mentions and DMs automatically. Users enable this per-workspace from the
+Slack Communicator button on the workspace page.
+
+When the user wants to *interact with the workspace from Slack* ("react when
+I'm mentioned", "let me DM the bot", "chat with this in Slack"), create the
+workspace with the rest of their requirements (schedule, http, or
+resource-only), then point them to the Slack Communicator button on the
+workspace page.
+
 ## Required Tools
 - workspace-planner: generates plan artifact (auto-displayed to user)
 - fsm-workspace-creator: creates workspace from artifact

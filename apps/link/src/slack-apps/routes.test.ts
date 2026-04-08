@@ -1,10 +1,6 @@
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  TestSlackAppWorkspaceRepository,
-  TestStorageAdapter,
-  TestWebhookSecretRepository,
-} from "../adapters/test-storage.ts";
+import { TestSlackAppWorkspaceRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
 import { createInternalSlackAppRoutes, createSlackAppRoutes } from "./routes.ts";
 import { SlackAppService } from "./service.ts";
 
@@ -58,7 +54,7 @@ describe("Slack App Routes", () => {
   beforeEach(() => {
     storage = new TestStorageAdapter();
     workspaceRepo = new TestSlackAppWorkspaceRepository();
-    service = new SlackAppService(storage, new TestWebhookSecretRepository(), workspaceRepo);
+    service = new SlackAppService(storage, workspaceRepo);
 
     app = new Hono();
     app.use("*", async (c, next) => {
@@ -112,7 +108,7 @@ describe("Slack App Routes", () => {
   describe("GET /internal/v1/slack-apps/by-workspace/:workspace_id", () => {
     it("returns credential and app ID for a wired workspace", async () => {
       const { slackAppCredId } = await seedCompleteSlackApp();
-      await workspaceRepo.insert(slackAppCredId, "ws-789");
+      await workspaceRepo.insert(slackAppCredId, "ws-789", userId);
 
       const res = await app.request("/internal/v1/slack-apps/by-workspace/ws-789");
 
@@ -146,7 +142,7 @@ describe("Slack App Routes", () => {
 
     it("returns 404 when all credentials are wired", async () => {
       const { slackAppCredId } = await seedCompleteSlackApp();
-      await workspaceRepo.insert(slackAppCredId, "ws-789");
+      await workspaceRepo.insert(slackAppCredId, "ws-789", userId);
 
       const res = await app.request("/internal/v1/slack-apps/unwired");
 

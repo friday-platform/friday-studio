@@ -7,7 +7,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { MutationError, MutationResult } from "@atlas/config/mutations";
+import type { MutationResult } from "@atlas/config/mutations";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
@@ -18,6 +18,7 @@ import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { compileBlueprint, WorkspaceBlueprintSchema } from "@atlas/workspace-builder";
 import type { Context } from "hono";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
+import { mapMutationError } from "./mutation-errors.ts";
 
 const logger = createLogger({ component: "blueprint-recompile" });
 
@@ -216,40 +217,6 @@ export async function saveAndRecompileBlueprint(
 }
 
 /**
- * Map a blueprint mutation error to an HTTP response.
- */
-function mapBlueprintMutationError(c: Context<AppVariables>, error: MutationError): Response {
-  switch (error.type) {
-    case "not_found":
-      return c.json(
-        {
-          success: false,
-          error: "not_found",
-          entityType: error.entityType,
-          entityId: error.entityId,
-        },
-        404,
-      );
-    case "not_supported":
-      return c.json({ success: false, error: "not_supported", message: error.message }, 422);
-    case "validation":
-      return c.json(
-        { success: false, error: "validation", message: error.message, issues: error.issues },
-        400,
-      );
-    case "invalid_operation":
-      return c.json({ success: false, error: "invalid_operation", message: error.message }, 422);
-    case "conflict":
-      return c.json(
-        { success: false, error: "conflict", willUnlinkFrom: error.willUnlinkFrom },
-        409,
-      );
-    case "write":
-      return c.json({ success: false, error: "write", message: error.message }, 500);
-  }
-}
-
-/**
  * Shared flow for blueprint-aware mutation handlers.
  *
  * Encapsulates: workspace lookup → system check → load blueprint → apply mutation →
@@ -307,7 +274,7 @@ export async function withBlueprintMutation(
 
   const mutationResult = opts.mutate(loaded.blueprint);
   if (!mutationResult.ok) {
-    return { mode: "blueprint", response: mapBlueprintMutationError(c, mutationResult.error) };
+    return { mode: "blueprint", response: mapMutationError(c, mutationResult.error) };
   }
 
   const recompileResult = await saveAndRecompileBlueprint(

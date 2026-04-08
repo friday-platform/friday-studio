@@ -6,7 +6,6 @@ import { z } from "zod";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
-import { NoOpWebhookSecretRepository } from "../src/adapters/webhook-secret-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
@@ -64,7 +63,6 @@ describe("OAuth Integration", async () => {
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpWebhookSecretRepository(),
     new NoOpSlackAppWorkspaceRepository(),
   );
 
@@ -566,7 +564,6 @@ describe("Static OAuth Integration", async () => {
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpWebhookSecretRepository(),
     new NoOpSlackAppWorkspaceRepository(),
   );
 

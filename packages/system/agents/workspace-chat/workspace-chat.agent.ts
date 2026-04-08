@@ -382,16 +382,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           }
         }
 
-        // Persist assistant message
+        // Persist assistant message directly via ChatStorage. The HTTP route
+        // is locked down to user-role messages only — assistant persistence
+        // happens in-process to avoid that guard and to skip an unnecessary
+        // localhost roundtrip.
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
-          const appendResult = await parseResult(
-            client
-              .workspaceChat(workspaceId)
-              [":chatId"].message.$post({
-                param: { chatId: session.streamId },
-                json: { message: lastMessage },
-              }),
+          const appendResult = await ChatStorage.appendMessage(
+            session.streamId,
+            lastMessage,
+            workspaceId,
           );
           if (!appendResult.ok) {
             logger.error("Failed to append assistant message to chat storage", {

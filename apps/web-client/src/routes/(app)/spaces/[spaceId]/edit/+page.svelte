@@ -3,7 +3,7 @@
   import { client, parseResult } from "@atlas/client/v2";
   import { stringifyError } from "@atlas/utils";
   import type { Color } from "@atlas/utils";
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto, invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "$lib/components/button.svelte";
@@ -13,8 +13,10 @@
   import { IconSmall } from "$lib/components/icons/small";
   import { toast } from "$lib/components/notification/notification.svelte";
   import Logo from "$lib/modules/integrations/logo-column.svelte";
-  import { formatFullDate } from "$lib/utils/date";
+  import { stripSlackAppId, toSlackBotDisplayName } from "$lib/modules/integrations/utils";
   import { onMount } from "svelte";
+  import ConnectSlack from "../(components)/connect-slack.svelte";
+  import DisconnectSlack from "../(components)/disconnect-slack.svelte";
   import IntegrationTable from "../(components)/integration-table.svelte";
   import type { PageData } from "./$types";
 
@@ -27,13 +29,9 @@
   const workspace = $derived(data.workspace);
   const integrations = $derived(data.integrations);
 
-  /** Slack-app integration shown in its own read-only section */
-  const slackAppIntegration = $derived(integrations.find((i) => i.provider === "slack-app"));
-
-  /** All other integrations go into the regular table */
+  // slack-app is shown in the Communicators section below, not the Integrations table.
   const regularIntegrations = $derived(integrations.filter((i) => i.provider !== "slack-app"));
 
-  /** Extract the Slack App ID from workspace signal config for the settings link */
   const slackAppId = $derived.by(() => {
     const signals = workspace.config?.signals;
     if (!signals) return undefined;
@@ -43,6 +41,25 @@
       }
     }
     return undefined;
+  });
+
+  const slackCredQuery = createQuery(() => ({
+    queryKey: ["slack-app-credential", slackAppId],
+    queryFn: async () => {
+      const res = await parseResult(client.link.v1.summary.$get({ query: {} }));
+      if (!res.ok) return null;
+      return (
+        res.data.credentials.find(
+          (c) => c.provider === "slack-app" && c.label.includes(`(${slackAppId})`),
+        ) ?? null
+      );
+    },
+    enabled: !!slackAppId,
+  }));
+  const slackAppName = $derived.by(() => {
+    const cred = slackCredQuery.data;
+    if (!cred) return undefined;
+    return stripSlackAppId(cred.displayName ?? cred.label);
   });
 
   onMount(() => {
@@ -169,42 +186,37 @@
     </div>
   {/if}
 
-  {#if slackAppIntegration}
-    <div>
-      <h2>Slack Bot</h2>
+  <div>
+    <h2>Communicators</h2>
 
+    {#if slackAppId}
       <div class="slack-app-info">
         <Logo provider="slack-app" />
         <div class="slack-app-details">
           <div class="slack-app-header">
-            <span class="provider-name">
-              {slackAppIntegration.credential?.displayName ?? "Slack App"}
-            </span>
-            {#if slackAppIntegration.credential?.label}
+            <span class="provider-name">@{toSlackBotDisplayName(workspace.name)}</span>
+            {#if slackAppName}
               <span class="slack-separator">•</span>
-              <span class="slack-label">{slackAppIntegration.credential.label}</span>
+              <span class="slack-team">{slackAppName}</span>
             {/if}
           </div>
-          {#if slackAppIntegration.credential?.createdAt}
-            <time datetime={slackAppIntegration.credential.createdAt}>
-              Connected {formatFullDate(slackAppIntegration.credential.createdAt)}
-            </time>
-          {/if}
+          <span class="slack-label">Slack Bot</span>
         </div>
-        {#if slackAppId}
-          <a
-            class="slack-settings-link"
-            href="https://api.slack.com/apps/{slackAppId}"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <IconSmall.ExternalLink />
-            App Settings
-          </a>
-        {/if}
+        <a
+          class="slack-settings-link"
+          href="https://api.slack.com/apps/{slackAppId}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <IconSmall.ExternalLink />
+          App Settings
+        </a>
+        <DisconnectSlack workspaceId={workspace.id} />
       </div>
-    </div>
-  {/if}
+    {:else}
+      <ConnectSlack workspaceId={workspace.id} />
+    {/if}
+  </div>
 
   <div>
     <h2>Actions</h2>
@@ -359,12 +371,12 @@
     opacity: 0.6;
   }
 
-  .slack-label {
+  .slack-team {
     font-size: var(--font-size-2);
     opacity: 0.6;
   }
 
-  .slack-app-details time {
+  .slack-label {
     font-size: var(--font-size-2);
     opacity: 0.6;
   }

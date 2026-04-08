@@ -177,6 +177,8 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: () => ledger,
     getActivityAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],

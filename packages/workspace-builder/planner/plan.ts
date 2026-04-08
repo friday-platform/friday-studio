@@ -260,9 +260,6 @@ Each signal must have a signalType:
 - **http**: Webhook/API endpoints. Use for "webhook", "API endpoint", "receives events", "HTTP POST", or external event triggers.
   Examples: "GitHub push webhook", "Stripe payment webhook", "manual trigger endpoint"
 
-- **slack**: Slack events (mentions, DMs, channel messages). Use for any trigger that reacts to Slack messages or bot mentions.
-  Examples: "when someone mentions the bot", "Slack DM received", "message in #channel"
-
 ## Output format
 
 Generate structured plan with:
@@ -339,9 +336,9 @@ const SignalSchema = z.object({
       "Short verb-noun sentence for UI. Start with verb. Examples: 'Triggers daily at 10am PST', 'Receives GitHub push events', 'Watches for file changes'",
     ),
   signalType: z
-    .enum(["schedule", "http", "slack"])
+    .enum(["schedule", "http"])
     .describe(
-      "Signal provider type. 'schedule' for cron/time-based triggers, 'http' for webhooks/API endpoints, 'slack' for Slack events (mentions, DMs, messages).",
+      "Signal provider type. 'schedule' for cron/time-based triggers, 'http' for webhooks/API endpoints.",
     ),
   description: z
     .string()

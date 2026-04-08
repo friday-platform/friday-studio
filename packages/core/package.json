@@ -15,6 +15,7 @@
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",
+    "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
     "./mcp-registry/registry-consolidated": "./src/mcp-registry/registry-consolidated.ts",
@@ -51,6 +52,7 @@
     "proper-lockfile": "^4.1.2",
     "vitest": "^4.1.0",
     "xstate": "^5.28.0",
+    "chat": "^4.23.0",
     "zod": "^4.3.5"
   }
 }

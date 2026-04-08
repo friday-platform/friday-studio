@@ -22,6 +22,7 @@ const mockParseResult = vi.hoisted(() => vi.fn());
 const mockClientWorkspaceChat = vi.hoisted(() => vi.fn());
 
 const mockSetSystemPromptContext = vi.hoisted(() => vi.fn());
+const mockAppendMessage = vi.hoisted(() => vi.fn());
 const mockSkillStorageList = vi.hoisted(() => vi.fn());
 const mockCreateLoadSkillTool = vi.hoisted(() => vi.fn());
 const mockRegistryLanguageModel = vi.hoisted(() => vi.fn());
@@ -95,7 +96,10 @@ vi.mock("@atlas/client/v2", () => {
 });
 
 vi.mock("@atlas/core/chat/storage", () => ({
-  ChatStorage: { setSystemPromptContext: mockSetSystemPromptContext },
+  ChatStorage: {
+    setSystemPromptContext: mockSetSystemPromptContext,
+    appendMessage: mockAppendMessage,
+  },
 }));
 
 vi.mock("@atlas/core/errors", () => ({
@@ -262,6 +266,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
 
   // ChatStorage
   mockSetSystemPromptContext.mockResolvedValue({ ok: true });
+  mockAppendMessage.mockResolvedValue({ ok: true });
 
   // smoothStream / stepCountIs / hasToolCall return identity functions
   mockSmoothStream.mockReturnValue((x: unknown) => x);
@@ -333,6 +338,7 @@ describe("workspace-chat handler", () => {
     mockParseResult.mockReset();
     mockClientWorkspaceChat.mockReset();
     mockSetSystemPromptContext.mockReset();
+    mockAppendMessage.mockReset();
     mockSkillStorageList.mockReset();
     mockCreateLoadSkillTool.mockReset();
     mockRegistryLanguageModel.mockReset();
@@ -600,29 +606,20 @@ describe("workspace-chat handler", () => {
   // Message persistence
   // -----------------------------------------------------------------------
 
-  it("persists assistant message via onFinish", async () => {
+  it("persists assistant message via onFinish through ChatStorage directly", async () => {
     setupDefaultMocks([makeMessage("user", "Hello")]);
-
-    // Track parseResult calls to find the message persistence call
-    const parseResultCalls: unknown[][] = [];
-    const originalImpl = mockParseResult.getMockImplementation();
-    mockParseResult.mockImplementation((...args: unknown[]) => {
-      parseResultCalls.push(args);
-      if (originalImpl) return originalImpl(...args);
-      return Promise.resolve({ ok: true, data: {} });
-    });
 
     const handler = getHandler();
     const ctx = makeContext();
     await handler("", ctx);
 
-    // The handler should have called parseResult multiple times:
-    // 1. chat history load
-    // 2-6. workspace details (workspace, agents, jobs, signals, artifacts)
-    // 7. workspace config
-    // 8. title update (messages.length === 2)
-    // 9. message persistence
-    // Verify parseResult was called enough times to include persistence
-    expect(parseResultCalls.length).toBeGreaterThanOrEqual(3);
+    // Persistence skips the HTTP route and writes through ChatStorage in-process,
+    // so the public POST /:chatId/message endpoint can stay user-only.
+    expect(mockAppendMessage).toHaveBeenCalledOnce();
+    expect(mockAppendMessage).toHaveBeenCalledWith(
+      "stream-1",
+      expect.objectContaining({ role: "assistant" }),
+      "ws-1",
+    );
   });
 });

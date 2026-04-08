@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildManifest } from "./manifest.ts";
+import { BOT_SCOPES, buildManifest } from "./manifest.ts";
 
 describe("buildManifest", () => {
   const defaults = {
@@ -8,14 +8,21 @@ describe("buildManifest", () => {
     callbackUrl: "https://link.example.com/v1/callback/slack-app",
   };
 
-  it("produces valid manifest structure", () => {
+  it("produces a manifest with the expected static shape, scopes, and callback URL", () => {
     const manifest = buildManifest(defaults);
 
     expect(manifest).toMatchObject({
       display_information: { name: "My Workspace", description: "A workspace for testing" },
-      features: { bot_user: { display_name: "my_workspace", always_online: true } },
+      features: {
+        app_home: {
+          home_tab_enabled: false,
+          messages_tab_enabled: true,
+          messages_tab_read_only_enabled: false,
+        },
+        bot_user: { display_name: "My Workspace", always_online: true },
+      },
       oauth_config: {
-        scopes: { bot: expect.any(Array) },
+        scopes: { bot: [...BOT_SCOPES] },
         redirect_urls: ["https://link.example.com/v1/callback/slack-app"],
       },
       settings: {
@@ -24,39 +31,8 @@ describe("buildManifest", () => {
         token_rotation_enabled: false,
       },
     });
-  });
-
-  it("does not include event_subscriptions", () => {
-    const manifest = buildManifest(defaults);
-
+    // event_subscriptions is added later by withEventSubscriptions, never here
     expect(manifest.settings).not.toHaveProperty("event_subscriptions");
-  });
-
-  it("includes all required bot scopes", () => {
-    const manifest = buildManifest(defaults);
-    const scopes = manifest.oauth_config.scopes.bot;
-
-    const required = [
-      "chat:write",
-      "chat:write.public",
-      "app_mentions:read",
-      "channels:history",
-      "channels:read",
-      "groups:history",
-      "groups:read",
-      "im:history",
-      "im:read",
-      "im:write",
-      "mpim:history",
-      "mpim:read",
-      "mpim:write",
-      "users:read",
-    ];
-
-    for (const scope of required) {
-      expect(scopes).toContain(scope);
-    }
-    expect(scopes).toHaveLength(required.length);
   });
 
   describe("name truncation", () => {
@@ -81,37 +57,24 @@ describe("buildManifest", () => {
     });
   });
 
-  describe("callback URL", () => {
-    it("uses the provided callback URL in redirect_urls", () => {
-      const manifest = buildManifest({
-        ...defaults,
-        callbackUrl: "https://custom.example.com/v1/callback/slack-app",
-      });
-
-      expect(manifest.oauth_config.redirect_urls).toEqual([
-        "https://custom.example.com/v1/callback/slack-app",
-      ]);
-    });
-  });
-
-  describe("display_name snake_case conversion", () => {
+  describe("display_name sanitization", () => {
     const cases = [
-      { name: "spaces to underscores", input: "My Workspace", expected: "my_workspace" },
-      { name: "uppercase to lowercase", input: "LOUD NAME", expected: "loud_name" },
+      { name: "preserves casing and spaces", input: "My Workspace", expected: "My Workspace" },
+      { name: "preserves uppercase", input: "LOUD NAME", expected: "LOUD NAME" },
       { name: "preserves hyphens", input: "my-workspace", expected: "my-workspace" },
       { name: "preserves dots", input: "my.workspace", expected: "my.workspace" },
       { name: "preserves underscores", input: "my_workspace", expected: "my_workspace" },
-      { name: "preserves digits", input: "workspace 42", expected: "workspace_42" },
+      { name: "preserves digits", input: "workspace 42", expected: "workspace 42" },
       {
         name: "strips disallowed characters",
         input: "My Workspace! @#$%",
-        expected: "my_workspace",
+        expected: "My Workspace",
       },
-      { name: "collapses multiple spaces", input: "My   Workspace", expected: "my_workspace" },
+      { name: "collapses multiple spaces", input: "My   Workspace", expected: "My Workspace" },
       {
         name: "trims leading/trailing spaces",
         input: "  My Workspace  ",
-        expected: "my_workspace",
+        expected: "My Workspace",
       },
     ] as const;
 

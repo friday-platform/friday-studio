@@ -1284,7 +1284,7 @@ describe("createGetConversationThreadsTool", () => {
     await execute({ status: "OPEN", inboxId: "1543478871", limit: 20 }, TOOL_CONTEXT);
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe(
       "https://api.hubapi.com/conversations/v3/conversations/threads",
     );
@@ -1293,8 +1293,8 @@ describe("createGetConversationThreadsTool", () => {
     expect(url.searchParams.get("inboxId")).toBe("1543478871");
     expect(url.searchParams.get("limit")).toBe("20");
 
-    const headers = mockFetch.mock.calls[0]![1]?.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer test-token");
+    const headers = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer test-token");
 
     vi.unstubAllGlobals();
   });
@@ -1369,7 +1369,7 @@ describe("createGetConversationThreadsTool", () => {
     const execute = getExecute(createGetConversationThreadsTool("test-token"));
     await execute({ after: "cursor-abc", limit: 10 }, TOOL_CONTEXT);
 
-    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.searchParams.get("after")).toBe("cursor-abc");
 
     vi.unstubAllGlobals();
@@ -1430,14 +1430,14 @@ describe("createGetThreadMessagesTool", () => {
     await execute({ threadId: "11306536687", limit: 50, includeRichText: false }, TOOL_CONTEXT);
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe(
       "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
     );
     expect(url.searchParams.get("limit")).toBe("50");
 
-    const headers = mockFetch.mock.calls[0]![1]?.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer test-token");
+    const headers = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer test-token");
 
     vi.unstubAllGlobals();
   });
@@ -1460,13 +1460,13 @@ describe("createGetThreadMessagesTool", () => {
     const messages = (result as { messages: Array<{ senderName?: string; createdBy: string }> })
       .messages;
     // COMMENT by A-163365429 → "Eric Skram"
-    expect(messages[0]!.senderName).toBe("Eric Skram");
+    expect(messages[0]?.senderName).toBe("Eric Skram");
     // COMMENT by A-88914248 → "Yena Oh"
-    expect(messages[1]!.senderName).toBe("Yena Oh");
+    expect(messages[1]?.senderName).toBe("Yena Oh");
     // THREAD_STATUS_CHANGE by S-hubspot → no resolution (not A-prefix)
-    expect(messages[2]!.senderName).toBeUndefined();
+    expect(messages[2]?.senderName).toBeUndefined();
     // MESSAGE by V-462631283404 → no resolution (not A-prefix)
-    expect(messages[3]!.senderName).toBeUndefined();
+    expect(messages[3]?.senderName).toBeUndefined();
 
     vi.unstubAllGlobals();
   });
@@ -1486,8 +1486,8 @@ describe("createGetThreadMessagesTool", () => {
     const messages = (result as { messages: Array<{ createdBy: string; senderName?: string }> })
       .messages;
     expect(messages).toHaveLength(4);
-    expect(messages[0]!.createdBy).toBe("A-163365429");
-    expect(messages[0]!.senderName).toBeUndefined();
+    expect(messages[0]?.createdBy).toBe("A-163365429");
+    expect(messages[0]?.senderName).toBeUndefined();
 
     vi.unstubAllGlobals();
   });
@@ -1518,9 +1518,9 @@ describe("createGetThreadMessagesTool", () => {
     const messagesRich = (resultRich as { messages: Array<{ richText?: string; text?: string }> })
       .messages;
     // COMMENT messages have richText in fixture
-    expect(messagesRich[0]!.richText).toContain("Just adding test comment!");
+    expect(messagesRich[0]?.richText).toContain("Just adding test comment!");
     // THREAD_STATUS_CHANGE has no richText — should stay undefined
-    expect(messagesRich[2]!.richText).toBeUndefined();
+    expect(messagesRich[2]?.richText).toBeUndefined();
     vi.unstubAllGlobals();
   });
 
@@ -1577,12 +1577,12 @@ describe("createSendThreadCommentTool", () => {
     );
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const url = new URL(mockFetch.mock.calls[0]![0] as string);
+    const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe(
       "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
     );
 
-    const init = mockFetch.mock.calls[0]![1];
+    const init = mockFetch.mock.calls[0]?.[1];
     expect(init?.method).toBe("POST");
     const body = JSON.parse(init?.body as string) as Record<string, unknown>;
     expect(body.type).toBe("COMMENT");
@@ -1602,7 +1602,7 @@ describe("createSendThreadCommentTool", () => {
       TOOL_CONTEXT,
     );
 
-    const body1 = JSON.parse(mockFetch1.mock.calls[0]![1]?.body as string) as Record<
+    const body1 = JSON.parse(mockFetch1.mock.calls[0]?.[1]?.body as string) as Record<
       string,
       unknown
     >;
@@ -1616,7 +1616,7 @@ describe("createSendThreadCommentTool", () => {
     const execute2 = getExecute(createSendThreadCommentTool("test-token"));
     await execute2({ threadId: "11306536687", text: "test" }, TOOL_CONTEXT);
 
-    const body2 = JSON.parse(mockFetch2.mock.calls[0]![1]?.body as string) as Record<
+    const body2 = JSON.parse(mockFetch2.mock.calls[0]?.[1]?.body as string) as Record<
       string,
       unknown
     >;

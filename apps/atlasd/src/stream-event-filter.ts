@@ -10,15 +10,22 @@
  * entire stream. We filter out internal events before they reach the client.
  */
 
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+
 const INTERNAL_EVENT_PREFIXES = ["data-fsm-", "data-session-"];
 
 /**
  * Returns true if the event should be forwarded to the client's SSE stream.
  * Internal pipeline events (FSM lifecycle, session management) are filtered out.
+ * Narrows `unknown` to `AtlasUIMessageChunk` — client-safe events are valid
+ * UI message stream chunks by definition.
  */
-export function isClientSafeEvent(chunk: { type: string }): boolean {
+export function isClientSafeEvent(chunk: unknown): chunk is AtlasUIMessageChunk {
+  if (typeof chunk !== "object" || chunk === null || !("type" in chunk)) return false;
+  const { type } = chunk;
+  if (typeof type !== "string") return false;
   for (const prefix of INTERNAL_EVENT_PREFIXES) {
-    if (chunk.type.startsWith(prefix) && chunk.type !== "data-session-start") return false;
+    if (type.startsWith(prefix) && type !== "data-session-start") return false;
   }
   return true;
 }

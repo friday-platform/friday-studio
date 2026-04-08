@@ -21,6 +21,7 @@
   import ActivityColumn from "$lib/modules/activity/activity-column.svelte";
   import UnreadDotColumn from "$lib/modules/activity/unread-dot-column.svelte";
   import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
+  import { toSlackBotDisplayName } from "$lib/modules/integrations/utils";
   import {
     getWorkspaceUnreadCount,
     listWorkspaceActivity,
@@ -28,6 +29,8 @@
     type ActivityWithReadStatus,
   } from "$lib/queries/activity";
   import { listWorkspaceJobs } from "$lib/queries/jobs";
+  import ConnectSlack from "./(components)/connect-slack.svelte";
+  import DisconnectSlack from "./(components)/disconnect-slack.svelte";
   import NewChat from "./(components)/new-chat.svelte";
   import PendingRevision from "./(components)/pending-revision.svelte";
   import RunJobDialog from "./(components)/run-job-dialog.svelte";
@@ -45,6 +48,12 @@
 
   const recentArtifacts = $derived(data.artifacts.slice(0, 5));
   const resources = $derived(data.resources);
+
+  const hasSlackBot = $derived.by(() => {
+    const signals = workspace.config?.signals;
+    if (!signals) return false;
+    return Object.values(signals).some((s) => s.provider === "slack");
+  });
 
   const connectedAccounts = $derived(
     data.integrations
@@ -131,7 +140,6 @@
     trackEvent(GA4.SPACE_VIEW, { space_id: workspace.id, space_name: workspace.name });
   });
 
-  /** Look up the full job config by API job id, needed for RunJobDialog. */
   function getJobConfig(jobId: string) {
     const jobs = workspace.config?.jobs ?? {};
     return jobs[jobId];
@@ -383,6 +391,24 @@
             Learn about Accounts and Integrations
           </a>
         {/if}
+      </div>
+
+      <div class="section">
+        <h2>Communicators</h2>
+
+        <div class="communicator-row">
+          <span class="communicator-icon">
+            <Icons.Slack />
+          </span>
+          {#if hasSlackBot}
+            <span class="communicator-mention">
+              @{toSlackBotDisplayName(workspace.name)}
+            </span>
+            <DisconnectSlack workspaceId={workspace.id} />
+          {:else}
+            <ConnectSlack workspaceId={workspace.id} compact />
+          {/if}
+        </div>
       </div>
 
       {#if workspace.metadata?.pendingRevision}
@@ -657,5 +683,34 @@
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-4-5);
     opacity: 0.6;
+  }
+
+  .communicator-row {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+    margin-block: var(--size-2) 0;
+  }
+
+  .communicator-icon {
+    block-size: var(--size-4);
+    display: flex;
+    flex-shrink: 0;
+    inline-size: var(--size-4);
+
+    :global(svg) {
+      block-size: 100%;
+      inline-size: 100%;
+    }
+  }
+
+  .communicator-mention {
+    flex-grow: 1;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

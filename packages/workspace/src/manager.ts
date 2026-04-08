@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { MissingEnvironmentError } from "@atlas/core";
+import { deleteSlackApp } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
@@ -426,36 +427,18 @@ export class WorkspaceManager {
     try {
       const config = await this.getWorkspaceConfig(id);
       if (config) {
-        const linkUrl = env.LINK_SERVICE_URL ?? "http://localhost:3100";
-        const atlasKey = env.ATLAS_KEY;
-        const headers: Record<string, string> = atlasKey
-          ? { Authorization: `Bearer ${atlasKey}` }
-          : {};
-
         const signals = config.workspace.signals ?? {};
         for (const [signalName, signal] of Object.entries(signals)) {
           if (signal.provider !== "slack") continue;
           const appId = signal.config.app_id;
           if (!appId) continue;
           try {
-            const res = await fetch(`${linkUrl}/internal/v1/slack-apps/by-app-id/${appId}`, {
-              method: "DELETE",
-              headers,
+            await deleteSlackApp(appId);
+            logger.info("Slack app deleted during workspace cleanup", {
+              appId,
+              signalName,
+              workspaceId: id,
             });
-            if (!res.ok) {
-              logger.warn("Slack app deletion returned non-OK status", {
-                appId,
-                signalName,
-                workspaceId: id,
-                status: res.status,
-              });
-            } else {
-              logger.info("Slack app deleted during workspace cleanup", {
-                appId,
-                signalName,
-                workspaceId: id,
-              });
-            }
           } catch (error) {
             logger.warn("Failed to delete Slack app during workspace cleanup", {
               appId,

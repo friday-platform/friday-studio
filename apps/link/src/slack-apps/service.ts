@@ -4,7 +4,6 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type { SlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
-import type { WebhookSecretRepository } from "../adapters/webhook-secret-repository.ts";
 import { AppInstallError } from "../app-install/errors.ts";
 import type { Credential, StorageAdapter } from "../types.ts";
 import {
@@ -39,6 +38,7 @@ export const SlackAppSecretSchema = z.object({
   platform: z.literal("slack"),
   externalId: z.string(),
   access_token: z.string(),
+  signing_secret: z.string().optional(),
   slack: z
     .object({ clientId: z.string(), clientSecret: z.string(), slackUserCredentialId: z.string() })
     .optional(),
@@ -65,7 +65,6 @@ export type EventSubscriptionResult =
 export class SlackAppService {
   constructor(
     private storage: StorageAdapter,
-    private webhookSecrets: WebhookSecretRepository,
     private workspaceRepo: SlackAppWorkspaceRepository,
     private log = logger,
   ) {}
@@ -86,7 +85,7 @@ export class SlackAppService {
       );
     }
 
-    const existing = await this.workspaceRepo.findByCredentialId(credentialId);
+    const existing = await this.workspaceRepo.findByCredentialId(credentialId, userId);
     if (existing) {
       throw new AppInstallError(
         "INVALID_CREDENTIAL",
@@ -131,7 +130,7 @@ export class SlackAppService {
       );
     }
 
-    await this.workspaceRepo.insert(credentialId, workspaceId);
+    await this.workspaceRepo.insert(credentialId, workspaceId, userId);
     await this.storage.updateMetadata(credentialId, { displayName: workspaceName }, userId);
 
     this.log.info("slack_app_wired", {
@@ -250,20 +249,10 @@ export class SlackAppService {
           error: stringifyError(err),
         });
       }
-
-      try {
-        await this.webhookSecrets.delete(appId);
-      } catch (err) {
-        this.log.warn("slack_app_delete_webhook_secret_failed", {
-          credentialId,
-          appId,
-          error: stringifyError(err),
-        });
-      }
     }
 
     try {
-      await this.workspaceRepo.deleteByCredentialId(credentialId);
+      await this.workspaceRepo.deleteByCredentialId(credentialId, userId);
     } catch (err) {
       this.log.warn("slack_app_delete_workspace_mapping_failed", {
         credentialId,
@@ -290,7 +279,7 @@ export class SlackAppService {
     workspaceId: string,
     userId: string,
   ): Promise<{ credentialId: string; appId: string } | null> {
-    const mapping = await this.workspaceRepo.findByWorkspaceId(workspaceId);
+    const mapping = await this.workspaceRepo.findByWorkspaceId(workspaceId, userId);
     if (!mapping) return null;
 
     const cred = await this.storage.get(mapping.credentialId, userId);
@@ -311,7 +300,7 @@ export class SlackAppService {
     for (const summary of summaries) {
       if (summary.provider !== "slack-app") continue;
 
-      const mapping = await this.workspaceRepo.findByCredentialId(summary.id);
+      const mapping = await this.workspaceRepo.findByCredentialId(summary.id, userId);
       if (mapping) continue;
 
       const cred = await this.storage.get(summary.id, userId);

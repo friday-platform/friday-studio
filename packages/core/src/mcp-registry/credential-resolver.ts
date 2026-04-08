@@ -133,6 +133,27 @@ export async function resolveSlackAppByWorkspace(
   return { credentialId: result.data.credential_id, appId: result.data.app_id };
 }
 
+/**
+ * Delete a Slack app via Link — removes the app from Slack, the webhook secret,
+ * the workspace↔credential mapping, and the credential itself. Idempotent:
+ * a 404 from Link is treated as success.
+ */
+export async function deleteSlackApp(appId: string): Promise<void> {
+  const result = await parseResult(
+    client.link.internal.v1["slack-apps"]["by-app-id"][":app_id"].$delete(
+      { param: { app_id: appId } },
+      { headers: getLinkAuthHeaders() },
+    ),
+  );
+
+  if (!result.ok) {
+    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
+      return;
+    }
+    throw new Error(`Failed to delete slack app '${appId}': ${result.error}`);
+  }
+}
+
 export async function resolveCredentialsByProvider(
   provider: string,
   opts?: { workspaceId?: string },

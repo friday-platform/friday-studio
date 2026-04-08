@@ -32,6 +32,8 @@
       return {
         chats: d.pages
           .flatMap((c) => c.chats)
+          // Hide slack-sourced chats — those live in Slack, not in the sidebar.
+          .filter((chat) => chat.source !== "slack")
           .filter((chat) => {
             if (seen.has(chat.id)) return false;
             seen.add(chat.id);

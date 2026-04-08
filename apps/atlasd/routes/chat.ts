@@ -81,10 +81,16 @@ const chatRoutes = daemonFactory
       conversationId: chatId,
     });
 
-    // // Validate and parse the message
     const [userMessage] = await validateAtlasUIMessages([message]);
     if (!userMessage) {
       return c.json({ error: "Invalid message format" }, 400);
+    }
+    // Only user-role messages may be submitted. Assistant and system messages
+    // are produced server-side by agents and persisted in-process via
+    // ChatStorage. Allowing client-supplied roles here would let any caller
+    // seed the chat with a forged assistant turn (prompt injection).
+    if (userMessage.role !== "user") {
+      return c.json({ error: "Only user-role messages may be submitted" }, 403);
     }
 
     const appendResult = await ChatStorage.appendMessage(chatId, userMessage, workspaceId);
@@ -242,8 +248,12 @@ const chatRoutes = daemonFactory
 
   /**
    * POST /api/chat/:chatId/message
-   * Append assistant message to chat history.
-   * Called from conversation agent's onFinish callback.
+   * Append a user message to chat history.
+   *
+   * Only user-role messages are accepted. Assistant and system messages are
+   * produced server-side by agents, which persist them in-process via
+   * ChatStorage. Allowing client-supplied roles here would let any caller
+   * poison the next LLM turn (prompt injection).
    */
   .post("/:chatId/message", zValidator("json", appendMessageSchema), async (c) => {
     const chatId = c.req.param("chatId");
@@ -260,15 +270,18 @@ const chatRoutes = daemonFactory
     if (!validatedMessage) {
       return c.json({ error: "Invalid message format" }, 400);
     }
+    if (validatedMessage.role !== "user") {
+      return c.json({ error: "Only user-role messages may be appended" }, 403);
+    }
 
-    // Append the assistant message (use workspace ID from chat metadata for correct file path)
+    // Append the user message (use workspace ID from chat metadata for correct file path)
     const appendResult = await ChatStorage.appendMessage(
       chatId,
       validatedMessage,
       chatResult.data.workspaceId,
     );
     if (!appendResult.ok) {
-      logger.error("Failed to append assistant message", { chatId, error: appendResult.error });
+      logger.error("Failed to append message", { chatId, error: appendResult.error });
       return c.json({ error: "Failed to append message" }, 500);
     }
 

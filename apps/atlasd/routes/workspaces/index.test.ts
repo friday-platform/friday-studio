@@ -45,6 +45,8 @@ function createTestApp() {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
     daemon: {
@@ -329,6 +331,8 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
       destroyWorkspaceRuntime: vi.fn(),
       getLibraryStorage: vi.fn(),
       getAgentRegistry: vi.fn(),
+      getOrCreateChatSdkInstance: vi.fn(),
+      evictChatSdkInstance: vi.fn(),
       getLedgerAdapter: vi.fn(),
       getActivityAdapter: vi.fn(),
       daemon: mockDaemon as unknown as AppContext["daemon"],

@@ -430,11 +430,14 @@ export const conversationAgent = createAgent<string, ConversationResult>({
                 data: { sessionId: session.sessionId },
               });
             }
-            const appendResult = await parseResult(
-              client.chat[":chatId"].message.$post({
-                param: { chatId: session.streamId },
-                json: { message: lastMessage },
-              }),
+            // Persist assistant message directly via ChatStorage. The HTTP
+            // route is locked down to user-role messages only — assistant
+            // persistence happens in-process to avoid that guard and to skip
+            // an unnecessary localhost roundtrip.
+            const appendResult = await ChatStorage.appendMessage(
+              session.streamId,
+              lastMessage,
+              session.workspaceId || "atlas-conversation",
             );
             if (!appendResult.ok) {
               logger.error("Failed to append assistant message to chat storage", {

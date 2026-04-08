@@ -15,7 +15,6 @@ async function makeTempFile(): Promise<string> {
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
-import { NoOpWebhookSecretRepository } from "../src/adapters/webhook-secret-repository.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 import { CredentialSummarySchema } from "../src/types.ts";
@@ -85,7 +84,6 @@ async function setupProdAuthApp(
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpWebhookSecretRepository(),
     new NoOpSlackAppWorkspaceRepository(),
   );
 
@@ -126,7 +124,6 @@ describe("auth middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpWebhookSecretRepository(),
       new NoOpSlackAppWorkspaceRepository(),
     );
 
@@ -276,7 +273,6 @@ describe("tenancy middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpWebhookSecretRepository(),
       new NoOpSlackAppWorkspaceRepository(),
     );
 
@@ -334,7 +330,6 @@ describe("tenancy middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpWebhookSecretRepository(),
       new NoOpSlackAppWorkspaceRepository(),
     );
 

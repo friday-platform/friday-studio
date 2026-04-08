@@ -38,6 +38,8 @@
     "papaparse": "^5.5.3",
     "@opentelemetry/api": "^1.9.1",
     "ai": "^6.0.141",
+    "chat": "4.23.0",
+    "@chat-adapter/slack": "4.23.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

@@ -14,7 +14,6 @@ import {
   extractFSMAgents,
   type FSMAgentResponse,
   FSMAgentUpdateSchema,
-  type MutationError,
   type MutationResult,
   parseCredentialPath,
   patchBlueprintSignalConfig,
@@ -47,6 +46,7 @@ import {
   withBlueprintMutation,
 } from "./blueprint-recompile.ts";
 import { injectBundledAgentRefs } from "./index.ts";
+import { mapMutationError } from "./mutation-errors.ts";
 
 /**
  * Extract a required route parameter from the Hono context.
@@ -553,51 +553,6 @@ interface MutationHandlerConfigWithoutSchema<TParams> extends MutationHandlerCon
    * Called with undefined input and params when a conflict occurs.
    */
   conflictMessage?: (input: undefined, params: TParams, referenceCount: number) => string;
-}
-
-/**
- * Map MutationError to HTTP response.
- * Centralizes error response shaping per design doc.
- *
- * @param c - Hono context for response
- * @param error - The mutation error to map
- * @param conflictMessage - Message for conflict errors
- * @returns HTTP response with appropriate status code
- */
-function mapMutationError(c: Context, error: MutationError, conflictMessage: string): Response {
-  switch (error.type) {
-    case "not_found":
-      return c.json(
-        {
-          success: false,
-          error: "not_found",
-          entityType: error.entityType,
-          entityId: error.entityId,
-        },
-        404,
-      );
-    case "validation":
-      return c.json(
-        { success: false, error: "validation", message: error.message, issues: error.issues },
-        400,
-      );
-    case "conflict":
-      return c.json(
-        {
-          success: false,
-          error: "conflict",
-          willUnlinkFrom: error.willUnlinkFrom,
-          message: conflictMessage,
-        },
-        409,
-      );
-    case "invalid_operation":
-      return c.json({ success: false, error: "invalid_operation", message: error.message }, 422);
-    case "not_supported":
-      return c.json({ success: false, error: "not_supported", message: error.message }, 422);
-    case "write":
-      return c.json({ success: false, error: "write", message: error.message }, 500);
-  }
 }
 
 /**

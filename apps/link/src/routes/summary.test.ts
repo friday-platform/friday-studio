@@ -11,7 +11,6 @@ async function makeTempDir(): Promise<string> {
 import { FileSystemStorageAdapter } from "../adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { NoOpSlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
-import { NoOpWebhookSecretRepository } from "../adapters/webhook-secret-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { registry } from "../providers/registry.ts";
@@ -55,6 +54,7 @@ const SummaryResponseSchema = z.object({
       isDefault: z.boolean(),
       createdAt: z.string(),
       updatedAt: z.string(),
+      wiredWorkspaceId: z.string().nullable().optional(),
     }),
   ),
 });
@@ -71,7 +71,6 @@ describe("GET /v1/summary endpoint", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpWebhookSecretRepository(),
       new NoOpSlackAppWorkspaceRepository(),
     );
 
@@ -180,7 +179,6 @@ describe("GET /v1/summary endpoint", () => {
       emptyStorage,
       emptyOauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpWebhookSecretRepository(),
       new NoOpSlackAppWorkspaceRepository(),
     );
 

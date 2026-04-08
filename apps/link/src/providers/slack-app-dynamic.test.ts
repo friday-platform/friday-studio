@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TestStorageAdapter, TestWebhookSecretRepository } from "../adapters/test-storage.ts";
+import { TestStorageAdapter } from "../adapters/test-storage.ts";
 import { encodeAppInstallState } from "../app-install/app-state.ts";
 import { PENDING_TOKEN } from "../slack-apps/manifest.ts";
 import { createSlackAppDynamicProvider } from "./slack-app-dynamic.ts";
@@ -23,7 +23,7 @@ describe("slack-app dynamic provider", () => {
 
   beforeEach(async () => {
     storage = new TestStorageAdapter();
-    provider = createSlackAppDynamicProvider(storage, new TestWebhookSecretRepository());
+    provider = createSlackAppDynamicProvider(storage);
 
     // Seed an incomplete slack-app credential
     const { id } = await storage.save(
@@ -35,6 +35,7 @@ describe("slack-app dynamic provider", () => {
           platform: "slack",
           externalId: "A012ABCD0A0",
           access_token: PENDING_TOKEN,
+          signing_secret: "test-signing-secret",
           slack: {
             clientId: "1234567890.1234567890",
             clientSecret: "secret-abc",
@@ -79,6 +80,7 @@ describe("slack-app dynamic provider", () => {
           platform: "slack",
           externalId: "A012ABCD0A0",
           access_token: "xoxb-bot-token-123",
+          signing_secret: "test-signing-secret",
           slack: {
             clientId: "1234567890.1234567890",
             clientSecret: "secret-abc",

@@ -40,6 +40,8 @@ function createJobsTestApp(options: { config?: MergedConfig | null }) {
     destroyWorkspaceRuntime: vi.fn(),
     getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],

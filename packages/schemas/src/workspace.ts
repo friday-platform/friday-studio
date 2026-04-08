@@ -7,11 +7,7 @@
  * creating a circular dependency.
  */
 
-import {
-  HTTPProviderConfigSchema,
-  ScheduleProviderConfigSchema,
-  SlackProviderConfigSchema,
-} from "@atlas/config";
+import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
 import { z } from "zod";
 import type { ValidatedJSONSchema } from "./json-schema.ts";
 import { JSONSchemaSchema } from "./json-schema.ts";
@@ -84,13 +80,16 @@ export type ResourceDeclaration = z.infer<typeof ResourceDeclarationSchema>;
 // Signal & Agent
 // ---------------------------------------------------------------------------
 
-/** Signal types the planner can generate (fs-watch and system excluded). */
-const SignalTypeSchema = z.enum(["schedule", "http", "slack"]);
+/**
+ * Signal types the planner can generate: time-based triggers (schedule) and
+ * external event triggers (http). Slack attaches per-workspace as a chat
+ * surface via the Communicator flow, handled outside the planner.
+ */
+const SignalTypeSchema = z.enum(["schedule", "http"]);
 
 export const SignalConfigSchema = z.discriminatedUnion("provider", [
   z.strictObject({ provider: z.literal("schedule"), config: ScheduleProviderConfigSchema }),
   z.strictObject({ provider: z.literal("http"), config: HTTPProviderConfigSchema }),
-  z.strictObject({ provider: z.literal("slack"), config: SlackProviderConfigSchema }),
 ]);
 export type SignalConfig = z.infer<typeof SignalConfigSchema>;
 

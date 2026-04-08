@@ -4,6 +4,7 @@
   "exports": {
     ".": "./mod.ts",
     "./manager": "./src/manager.ts",
+    "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
     "./types": "./src/types.ts"
   },

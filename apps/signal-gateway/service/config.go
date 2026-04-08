@@ -12,12 +12,8 @@ type Config struct {
 	MetricsPort string `env:"METRICS_PORT" envDefault:"9090"`
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 
-	PostgresConnection string `env:"POSTGRES_CONNECTION" envDefault:"postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable"`
-
 	AtlasURLTemplate    string `env:"ATLAS_URL_TEMPLATE" envDefault:"https://atlas-%s.atlas.svc.cluster.local"`
 	AtlasTimeoutSeconds int    `env:"ATLAS_TIMEOUT_SECONDS" envDefault:"10"`
-
-	RouteCacheTTLMinutes int `env:"ROUTE_CACHE_TTL_MINUTES" envDefault:"5"`
 
 	TLSConfig *server.TLSConfig
 	Profiler  profiler.Config

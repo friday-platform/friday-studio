@@ -2,6 +2,7 @@
   import { GA4, trackEvent } from "@atlas/analytics/ga4";
   import { client, parseResult } from "@atlas/client/v2";
   import { createCollapsible } from "@melt-ui/svelte";
+  import { createQuery } from "@tanstack/svelte-query";
   import {
     createColumnHelper,
     createTable,
@@ -16,8 +17,10 @@
   import Logo from "$lib/modules/integrations/logo-column.svelte";
   import ProviderDetails from "$lib/modules/integrations/provider-details-column.svelte";
   import { stripSlackAppId } from "$lib/modules/integrations/utils";
+  import { listSpaces } from "$lib/queries/spaces";
   import { onMount } from "svelte";
   import AddIntegrationDialog from "./(components)/add-integration-dialog.svelte";
+  import CommunicatorDetails from "./(components)/communicator-details-column.svelte";
   import CredentialActionsCell from "./(components)/credential-actions-cell.svelte";
   import KeyInputCell from "./(components)/key-input-cell.svelte";
   import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
@@ -27,6 +30,20 @@
   let { data }: { data: PageData } = $props();
   const credentials = $derived(data.credentials ?? []);
   const providers = $derived(data.providers ?? []);
+
+  // slack-app rows go to the Communicators section, everything else to Integrations.
+  const integrationCreds = $derived(credentials.filter((c) => c.provider !== "slack-app"));
+  const communicatorCreds = $derived(credentials.filter((c) => c.provider === "slack-app"));
+
+  // Resolves wiredWorkspaceId → workspace.name for Communicator rows.
+  const spacesQuery = createQuery(() => ({ queryKey: ["spaces"], queryFn: () => listSpaces() }));
+  const workspaceNameById = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const w of spacesQuery.data ?? []) {
+      map.set(w.id, w.name);
+    }
+    return map;
+  });
 
   type CredentialRow = PageData["credentials"][number];
 
@@ -50,7 +67,6 @@
 
   const ctx = getClientContext();
 
-  // Initialize env vars from loaded data
   let nextId = 1;
   let envVars = $derived<{ key: string; value: string; id: number }[]>(
     Object.entries(data.envVars)
@@ -59,12 +75,11 @@
   );
   let _isSaving = $state(false);
 
-  // Integrations table (connected credentials only)
   const columnHelper = createColumnHelper<CredentialRow>();
 
   const integrationsTable = createTable({
     get data() {
-      return credentials;
+      return integrationCreds;
     },
     columns: [
       columnHelper.display({
@@ -78,15 +93,10 @@
         header: "Provider",
         cell: (info) => {
           const row = info.row.original;
-          const isSlackApp = row.provider === "slack-app";
-          const rawName = isSlackApp
-            ? (row.displayName ?? row.label)
-            : getProviderName(row.provider);
-          const name = isSlackApp && rawName ? stripSlackAppId(rawName) : rawName;
           return renderComponent(ProviderDetails, {
-            name,
+            name: getProviderName(row.provider),
             label: row.label,
-            displayName: isSlackApp ? undefined : row.displayName,
+            displayName: row.displayName,
             date: row.createdAt,
             credentialId: row.id,
             isDefault: row.isDefault,
@@ -99,12 +109,10 @@
         header: "",
         cell: (info) => {
           const row = info.row.original;
-          const isSlack = row.provider === "slack-app";
-          const actionLabel = row.displayName ?? row.label;
           return renderComponent(CredentialActionsCell, {
             credentialId: row.id,
             provider: row.provider,
-            displayName: isSlack && actionLabel ? stripSlackAppId(actionLabel) : actionLabel,
+            displayName: row.displayName ?? row.label,
             isDefault: row.isDefault,
             onRemove: removeCredential,
           });
@@ -116,7 +124,52 @@
     getRowId: (row) => row.id,
   });
 
-  // Env vars table
+  const communicatorsTable = createTable({
+    get data() {
+      return communicatorCreds;
+    },
+    columns: [
+      columnHelper.display({
+        id: "provider_logo",
+        header: "",
+        cell: (info) => renderComponent(Logo, { provider: info.row.original.provider }),
+        meta: { shrink: true },
+      }),
+      columnHelper.display({
+        id: "details",
+        header: "Communicator",
+        cell: (info) => {
+          const row = info.row.original;
+          const wiredId = row.wiredWorkspaceId ?? null;
+          const workspaceName = wiredId ? (workspaceNameById.get(wiredId) ?? null) : null;
+          return renderComponent(CommunicatorDetails, {
+            label: row.label,
+            createdAt: row.createdAt,
+            workspaceName,
+          });
+        },
+      }),
+      columnHelper.display({
+        id: "actions",
+        header: "",
+        cell: (info) => {
+          const row = info.row.original;
+          const actionLabel = row.displayName ?? row.label;
+          return renderComponent(CredentialActionsCell, {
+            credentialId: row.id,
+            provider: row.provider,
+            displayName: stripSlackAppId(actionLabel),
+            isDefault: row.isDefault,
+            onRemove: removeCredential,
+          });
+        },
+        meta: { shrink: true },
+      }),
+    ],
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id,
+  });
+
   type EnvVarRow = { key: string; value: string; id: number };
 
   const envVarColumnHelper = createColumnHelper<EnvVarRow>();
@@ -167,7 +220,7 @@
   });
 
   onMount(async () => {
-    // Handle OAuth redirect fallback (popup-blocked same-tab redirect)
+    // OAuth redirect fallback when popup was blocked.
     const params = new URLSearchParams(window.location.search);
     if (params.has("credential_id")) {
       const cleanUrl = new URL(window.location.href);
@@ -195,7 +248,6 @@
     _isSaving = true;
 
     try {
-      // Only save entries that have both key and value
       const validEntries = envVars.filter((v) => v.key.trim() !== "" && v.value.trim() !== "");
       const envObject: Record<string, string> = {};
 
@@ -223,7 +275,7 @@
     <h1>Integrations</h1>
     <p>Manage connections to external services</p>
 
-    {#if credentials.length === 0}
+    {#if integrationCreds.length === 0}
       <p class="empty">No integrations connected</p>
     {:else}
       <div class="credentials-table">
@@ -232,6 +284,15 @@
     {/if}
 
     <AddIntegrationDialog {providers} />
+
+    {#if communicatorCreds.length > 0}
+      <section class="communicators">
+        <h2 class="section-title">Communicators</h2>
+        <div class="credentials-table">
+          <Table.Root table={communicatorsTable} rowSize="large" hideHeader />
+        </div>
+      </section>
+    {/if}
 
     <div class="advanced-settings" {...$root} use:root>
       <h2>
@@ -302,6 +363,18 @@
 
   .env-vars-table {
     margin-block: var(--size-4);
+  }
+
+  .communicators {
+    margin-block-start: var(--size-10);
+
+    .section-title {
+      margin-block-end: var(--size-1);
+    }
+
+    .credentials-table {
+      margin-block-start: var(--size-4);
+    }
   }
 
   .advanced-settings {

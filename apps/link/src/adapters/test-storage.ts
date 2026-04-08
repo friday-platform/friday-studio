@@ -8,7 +8,6 @@ import type {
 } from "../types.ts";
 import { type PlatformRouteRepository, RouteOwnershipError } from "./platform-route-repository.ts";
 import type { SlackAppWorkspaceRepository } from "./slack-app-workspace-repository.ts";
-import type { WebhookSecretRepository } from "./webhook-secret-repository.ts";
 
 export class TestStorageAdapter implements StorageAdapter {
   private credentials = new Map<string, Credential>();
@@ -175,54 +174,54 @@ export class TestPlatformRouteRepository implements PlatformRouteRepository {
   }
 }
 
-export class TestWebhookSecretRepository implements WebhookSecretRepository {
-  private secrets = new Map<string, { userId: string; signingSecret: string }>();
-
-  insert(appId: string, userId: string, signingSecret: string): Promise<void> {
-    // Mimic ON CONFLICT DO UPDATE — always upsert
-    this.secrets.set(appId, { userId, signingSecret });
-    return Promise.resolve();
-  }
-
-  delete(appId: string): Promise<void> {
-    this.secrets.delete(appId);
-    return Promise.resolve();
-  }
-
-  /** Test helper - get stored secret for assertions */
-  getSecret(appId: string): { userId: string; signingSecret: string } | undefined {
-    return this.secrets.get(appId);
-  }
-}
-
+/**
+ * In-memory implementation that mirrors the RLS-enforced Postgres adapter:
+ * every query is scoped by `userId`, and rows carry a user_id so tests can
+ * exercise per-user isolation the same way production would.
+ */
 export class TestSlackAppWorkspaceRepository implements SlackAppWorkspaceRepository {
-  private mappings = new Map<string, string>(); // credentialId → workspaceId
+  private mappings = new Map<string, { workspaceId: string; userId: string }>();
 
-  insert(credentialId: string, workspaceId: string): Promise<void> {
-    this.mappings.set(credentialId, workspaceId);
+  insert(credentialId: string, workspaceId: string, userId: string): Promise<void> {
+    // Enforce per-user 1:1 (user_id, workspace_id). Mimics the unique index
+    // added by 20260408000000_add_user_id_to_slack_app_workspace.sql.
+    for (const [cid, entry] of this.mappings) {
+      if (entry.userId === userId && entry.workspaceId === workspaceId && cid !== credentialId) {
+        this.mappings.delete(cid);
+      }
+    }
+    this.mappings.set(credentialId, { workspaceId, userId });
     return Promise.resolve();
   }
 
-  deleteByCredentialId(credentialId: string): Promise<void> {
-    this.mappings.delete(credentialId);
+  deleteByCredentialId(credentialId: string, userId: string): Promise<void> {
+    const entry = this.mappings.get(credentialId);
+    if (entry && entry.userId === userId) {
+      this.mappings.delete(credentialId);
+    }
     return Promise.resolve();
   }
 
-  findByWorkspaceId(workspaceId: string): Promise<{ credentialId: string } | null> {
-    for (const [credentialId, wsId] of this.mappings) {
-      if (wsId === workspaceId) return Promise.resolve({ credentialId });
+  findByWorkspaceId(workspaceId: string, userId: string): Promise<{ credentialId: string } | null> {
+    for (const [credentialId, entry] of this.mappings) {
+      if (entry.workspaceId === workspaceId && entry.userId === userId) {
+        return Promise.resolve({ credentialId });
+      }
     }
     return Promise.resolve(null);
   }
 
-  findByCredentialId(credentialId: string): Promise<{ workspaceId: string } | null> {
-    const wsId = this.mappings.get(credentialId);
-    if (!wsId) return Promise.resolve(null);
-    return Promise.resolve({ workspaceId: wsId });
+  findByCredentialId(
+    credentialId: string,
+    userId: string,
+  ): Promise<{ workspaceId: string } | null> {
+    const entry = this.mappings.get(credentialId);
+    if (!entry || entry.userId !== userId) return Promise.resolve(null);
+    return Promise.resolve({ workspaceId: entry.workspaceId });
   }
 
-  /** Test helper - get workspace for a credential */
+  /** Test helper — returns the stored workspace regardless of user. */
   getWorkspace(credentialId: string): string | undefined {
-    return this.mappings.get(credentialId);
+    return this.mappings.get(credentialId)?.workspaceId;
   }
 }

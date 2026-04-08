@@ -15,6 +15,7 @@
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
+    "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
     "./session/session-events": "./src/session/session-events.ts",

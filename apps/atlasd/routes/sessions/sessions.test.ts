@@ -153,6 +153,8 @@ function createTestApp(options: {
     sessionStreamRegistry: registry,
     sessionHistoryAdapter: adapter,
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
+    getOrCreateChatSdkInstance: vi.fn() as unknown as AppContext["getOrCreateChatSdkInstance"],
+    evictChatSdkInstance: vi.fn() as unknown as AppContext["evictChatSdkInstance"],
     getLedgerAdapter: vi.fn() as unknown as AppContext["getLedgerAdapter"],
     getActivityAdapter: vi.fn() as unknown as AppContext["getActivityAdapter"],
   };
