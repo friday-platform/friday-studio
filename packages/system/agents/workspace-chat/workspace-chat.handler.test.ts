@@ -24,6 +24,7 @@ const mockClientWorkspaceChat = vi.hoisted(() => vi.fn());
 const mockSetSystemPromptContext = vi.hoisted(() => vi.fn());
 const mockAppendMessage = vi.hoisted(() => vi.fn());
 const mockSkillStorageList = vi.hoisted(() => vi.fn());
+const mockResolveVisibleSkills = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const mockCreateLoadSkillTool = vi.hoisted(() => vi.fn());
 const mockRegistryLanguageModel = vi.hoisted(() => vi.fn());
 const mockTraceModel = vi.hoisted(() => vi.fn());
@@ -120,6 +121,7 @@ vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: mockGetAtlasDaemonUrl 
 vi.mock("@atlas/skills", () => ({
   SkillStorage: { list: mockSkillStorageList },
   createLoadSkillTool: mockCreateLoadSkillTool,
+  resolveVisibleSkills: mockResolveVisibleSkills,
 }));
 
 vi.mock("../conversation/link-context.ts", () => ({

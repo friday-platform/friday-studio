@@ -33,6 +33,23 @@ CREATE TABLE IF NOT EXISTS skills (
   created_at TEXT NOT NULL,
   UNIQUE(skill_id, version)
 );
+
+CREATE TABLE IF NOT EXISTS skill_assignments (
+  skill_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (skill_id, workspace_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace ON skill_assignments(workspace_id);
+`;
+
+/** One-time cleanup of tables introduced by an earlier iteration of this feature. */
+const DROP_LEGACY = `
+DROP TABLE IF EXISTS workspace_collection_assignments;
+DROP TABLE IF EXISTS collection_members;
+DROP TABLE IF EXISTS collections;
+DROP TABLE IF EXISTS skill_metadata;
 `;
 
 export class LocalSkillAdapter implements SkillStorageAdapter {
@@ -51,8 +68,30 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       this.db = new SqliteDatabase(this.dbPath);
       this.migrateIfNeeded(this.db);
       this.db.exec(SCHEMA);
+      this.db.exec(DROP_LEGACY);
+      this.dropLegacyAssignmentColumn(this.db);
     }
     return this.db;
+  }
+
+  /** Drop pinned_version from skill_assignments if a previous iteration added it. */
+  private dropLegacyAssignmentColumn(db: Database): void {
+    const cols = db.prepare("PRAGMA table_info(skill_assignments)").all() as { name: string }[];
+    if (cols.some((c) => c.name === "pinned_version")) {
+      db.exec(`
+        CREATE TABLE skill_assignments_new (
+          skill_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (skill_id, workspace_id)
+        );
+        INSERT INTO skill_assignments_new (skill_id, workspace_id, created_at)
+          SELECT skill_id, workspace_id, created_at FROM skill_assignments;
+        DROP TABLE skill_assignments;
+        ALTER TABLE skill_assignments_new RENAME TO skill_assignments;
+        CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace ON skill_assignments(workspace_id);
+      `);
+    }
   }
 
   /** Drop the old workspace-scoped skills table if it lacks the namespace column. */
@@ -247,6 +286,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
         createdBy,
         now,
       );
+
       return success({ id, version, name, skillId });
     } catch (e) {
       return fail(stringifyError(e));
@@ -394,8 +434,83 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
   async deleteSkill(skillId: string): Promise<Result<void, string>> {
     const db = await this.getDb();
+    db.prepare("DELETE FROM skill_assignments WHERE skill_id = ?").run(skillId);
     db.prepare("DELETE FROM skills WHERE skill_id = ?").run(skillId);
     return success(undefined);
+  }
+
+  // ─── SCOPED LISTING ─────────────────────────────────────────────────────────
+
+  /** Skills with no assignments — visible to every workspace. */
+  async listUnassigned(): Promise<Result<SkillSummary[], string>> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(`
+        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
+        FROM skills s
+        INNER JOIN (
+          SELECT skill_id, MAX(version) as max_version
+          FROM skills
+          GROUP BY skill_id
+        ) latest ON s.skill_id = latest.skill_id AND s.version = latest.max_version
+        LEFT JOIN skill_assignments sa ON s.skill_id = sa.skill_id
+        WHERE s.name IS NOT NULL
+          AND s.description != ''
+          AND s.disabled = 0
+          AND sa.skill_id IS NULL
+        ORDER BY s.namespace, s.name
+      `)
+      .all() as SkillRow[];
+    return success(rows.map(rowToSummary));
+  }
+
+  async listAssigned(workspaceId: string): Promise<Result<SkillSummary[], string>> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(`
+        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
+        FROM skills s
+        INNER JOIN (
+          SELECT skill_id, MAX(version) as max_version
+          FROM skills
+          GROUP BY skill_id
+        ) latest ON s.skill_id = latest.skill_id AND s.version = latest.max_version
+        INNER JOIN skill_assignments sa ON s.skill_id = sa.skill_id
+        WHERE sa.workspace_id = ?
+          AND s.name IS NOT NULL
+          AND s.description != ''
+          AND s.disabled = 0
+        ORDER BY s.namespace, s.name
+      `)
+      .all(workspaceId) as SkillRow[];
+    return success(rows.map(rowToSummary));
+  }
+
+  // ─── ASSIGNMENTS ────────────────────────────────────────────────────────────
+
+  async assignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>> {
+    const db = await this.getDb();
+    db.prepare(`
+      INSERT OR IGNORE INTO skill_assignments (skill_id, workspace_id) VALUES (?, ?)
+    `).run(skillId, workspaceId);
+    return success(undefined);
+  }
+
+  async unassignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>> {
+    const db = await this.getDb();
+    db.prepare("DELETE FROM skill_assignments WHERE skill_id = ? AND workspace_id = ?").run(
+      skillId,
+      workspaceId,
+    );
+    return success(undefined);
+  }
+
+  async listAssignments(skillId: string): Promise<Result<string[], string>> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare("SELECT workspace_id FROM skill_assignments WHERE skill_id = ?")
+      .all(skillId) as { workspace_id: string }[];
+    return success(rows.map((r) => r.workspace_id));
   }
 
   private rowToSkill(row: unknown): Skill {
@@ -416,4 +531,30 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       createdAt: new Date(r.created_at),
     };
   }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+interface SkillRow {
+  id: string;
+  skill_id: string;
+  namespace: string;
+  name: string | null;
+  description: string;
+  disabled: number;
+  latestVersion: number;
+  created_at: string;
+}
+
+function rowToSummary(r: SkillRow): SkillSummary {
+  return {
+    id: r.id,
+    skillId: r.skill_id,
+    namespace: r.namespace,
+    name: r.name,
+    description: r.description,
+    disabled: r.disabled !== 0,
+    latestVersion: r.latestVersion,
+    createdAt: new Date(r.created_at),
+  };
 }

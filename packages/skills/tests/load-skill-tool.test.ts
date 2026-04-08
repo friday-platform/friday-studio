@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import type { GlobalSkillRefConfig, InlineSkillConfig } from "@atlas/config";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HardcodedSkill, LoadSkillToolResult } from "../src/load-skill-tool.ts";
 import { createLoadSkillTool } from "../src/load-skill-tool.ts";
@@ -32,20 +31,6 @@ const hardcodedSkills: readonly HardcodedSkill[] = [
   { id: "commit", description: "Git commit helper", instructions: "# Commit\nRun git commit." },
 ];
 
-const inlineSkills: InlineSkillConfig[] = [
-  {
-    name: "my-lint",
-    inline: true,
-    description: "Custom lint rules",
-    instructions: "# Lint\nRun the linter.",
-  },
-];
-
-const skillEntries: GlobalSkillRefConfig[] = [
-  { name: "@atlas/deploy", version: 3 },
-  { name: "@atlas/testing" },
-];
-
 // =============================================================================
 // Mocks
 // =============================================================================
@@ -62,7 +47,7 @@ afterEach(() => {
 // Tests
 // =============================================================================
 
-describe("createLoadSkillTool — three-tier resolution", () => {
+describe("createLoadSkillTool — two-tier resolution", () => {
   // -------------------------------------------------------------------------
   // Tier 1: Hardcoded
   // -------------------------------------------------------------------------
@@ -70,48 +55,10 @@ describe("createLoadSkillTool — three-tier resolution", () => {
   it("resolves hardcoded skill by name (tier 1)", async () => {
     const getSpy = vi.spyOn(SkillStorage, "get");
 
-    const tool = createLoadSkillTool({ hardcodedSkills, inlineSkills, skillEntries });
+    const tool = createLoadSkillTool({ hardcodedSkills });
     const result = await exec(tool, "commit");
 
     expect(getSpy).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ name: "commit", instructions: "# Commit\nRun git commit." });
-  });
-
-  // -------------------------------------------------------------------------
-  // Tier 2: Inline
-  // -------------------------------------------------------------------------
-
-  it("resolves inline skill by name (tier 2)", async () => {
-    const getSpy = vi.spyOn(SkillStorage, "get");
-
-    const tool = createLoadSkillTool({ hardcodedSkills, inlineSkills, skillEntries });
-    const result = await exec(tool, "my-lint");
-
-    expect(getSpy).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      name: "my-lint",
-      description: "Custom lint rules",
-      instructions: "# Lint\nRun the linter.",
-    });
-  });
-
-  it("hardcoded takes precedence over inline with same name", async () => {
-    const conflictInline: InlineSkillConfig[] = [
-      {
-        name: "commit",
-        inline: true,
-        description: "Inline commit",
-        instructions: "# Inline Commit\nDifferent.",
-      },
-    ];
-
-    const tool = createLoadSkillTool({
-      hardcodedSkills,
-      inlineSkills: conflictInline,
-      skillEntries: [],
-    });
-    const result = await exec(tool, "commit");
-
     expect(result).toMatchObject({ name: "commit", instructions: "# Commit\nRun git commit." });
   });
 
@@ -130,7 +77,6 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,
@@ -142,11 +88,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
       },
     });
 
-    const tool = createLoadSkillTool({
-      hardcodedSkills: [],
-      inlineSkills: [],
-      skillEntries: [{ name: "@atlas/with-files" }],
-    });
+    const tool = createLoadSkillTool({ hardcodedSkills: [] });
     const result = await exec(tool, "@atlas/with-files");
 
     expect(result).toMatchObject({
@@ -169,7 +111,6 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,
@@ -181,11 +122,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
       },
     });
 
-    const result = createLoadSkillTool({
-      hardcodedSkills: [],
-      inlineSkills: [],
-      skillEntries: [{ name: "@atlas/with-files" }],
-    });
+    const result = createLoadSkillTool({ hardcodedSkills: [] });
 
     // Load same skill twice
     await exec(result, "@atlas/with-files");
@@ -208,7 +145,6 @@ describe("createLoadSkillTool — three-tier resolution", () => {
         namespace: "atlas",
         name: "with-files",
         version: 1,
-
         description: "Skill with files",
         descriptionManual: false,
         disabled: false,
@@ -220,11 +156,7 @@ describe("createLoadSkillTool — three-tier resolution", () => {
       },
     });
 
-    const result = createLoadSkillTool({
-      hardcodedSkills: [],
-      inlineSkills: [],
-      skillEntries: [{ name: "@atlas/with-files" }],
-    });
+    const result = createLoadSkillTool({ hardcodedSkills: [] });
 
     await exec(result, "@atlas/with-files");
     expect(extractSkillArchive).toHaveBeenCalledTimes(1);
@@ -241,27 +173,10 @@ describe("createLoadSkillTool — three-tier resolution", () => {
   // Error cases
   // -------------------------------------------------------------------------
 
-  it("returns error for missing global skill with version", async () => {
+  it("returns error for missing global skill", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
-    const tool = createLoadSkillTool({
-      hardcodedSkills: [],
-      inlineSkills: [],
-      skillEntries: [{ name: "@atlas/deploy", version: 3 }],
-    });
-    const result = await exec(tool, "@atlas/deploy");
-
-    expect(result).toHaveProperty("error");
-    const error = (result as { error: string }).error;
-    expect(error).toContain("@atlas/deploy");
-    expect(error).toContain("version 3");
-    expect(error).toContain("not found");
-  });
-
-  it("returns error for missing global skill without version", async () => {
-    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
-
-    const tool = createLoadSkillTool({ hardcodedSkills: [], inlineSkills: [], skillEntries: [] });
+    const tool = createLoadSkillTool({ hardcodedSkills: [] });
     const result = await exec(tool, "@atlas/nonexistent");
 
     expect(result).toHaveProperty("error");
@@ -271,12 +186,80 @@ describe("createLoadSkillTool — three-tier resolution", () => {
   });
 
   it("returns error for unknown non-ref skill name", async () => {
-    const tool = createLoadSkillTool({ hardcodedSkills, inlineSkills, skillEntries: [] });
+    const tool = createLoadSkillTool({ hardcodedSkills });
     const result = await exec(tool, "nonexistent");
 
     expect(result).toHaveProperty("error");
     const error = (result as { error: string }).error;
     expect(error).toContain("nonexistent");
     expect(error).toContain("not found");
+  });
+});
+
+// =============================================================================
+// Workspace scoping (defense in depth)
+// =============================================================================
+
+describe("createLoadSkillTool — workspace scoping", () => {
+  const SKILL_DATA = {
+    id: "skill-1",
+    skillId: "skill-1",
+    namespace: "atlas",
+    name: "internal-tool",
+    version: 1,
+    description: "Internal tool",
+    descriptionManual: false,
+    disabled: false,
+    frontmatter: {},
+    instructions: "Do internal things.",
+    archive: null,
+    createdBy: "user-1",
+    createdAt: new Date(),
+  };
+
+  it("loads an unassigned (global) skill in any workspace", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({ ok: true, data: [] });
+
+    const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(result).toMatchObject({ name: "internal-tool", instructions: "Do internal things." });
+  });
+
+  it("loads a skill assigned to the current workspace", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({
+      ok: true,
+      data: ["ws-1", "ws-2"],
+    });
+
+    const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(result).toMatchObject({ name: "internal-tool" });
+  });
+
+  it("blocks a skill that is assigned to other workspaces only", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({ ok: true, data: ["ws-other"] });
+
+    const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(result).toHaveProperty("error");
+    const error = (result as { error: string }).error;
+    expect(error).toContain("not available in this workspace");
+  });
+
+  it("skips the scoping check entirely when no workspaceId is provided", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    const listSpy = vi.spyOn(SkillStorage, "listAssignments");
+
+    const tool = createLoadSkillTool({ hardcodedSkills: [] });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(listSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ name: "internal-tool" });
   });
 });

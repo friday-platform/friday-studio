@@ -33,6 +33,7 @@ import {
 import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
 import { createLogger, logger } from "@atlas/logger";
 import { createLedgerClient } from "@atlas/resources";
+import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -1957,7 +1958,17 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  .route("/:workspaceId/resources", resourceRoutes);
+  .route("/:workspaceId/resources", resourceRoutes)
+  // ─── WORKSPACE SKILLS (resolved) ──────────────────────────────────────────
+  .get(
+    "/:workspaceId/skills",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const skills = await resolveVisibleSkills(workspaceId, SkillStorage);
+      return c.json({ skills });
+    },
+  );
 
 export { workspacesRoutes };
 export type WorkspaceRoutes = typeof workspacesRoutes;

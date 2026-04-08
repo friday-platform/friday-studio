@@ -17,7 +17,8 @@ vi.mock("@atlas/client/v2", () => ({
 
 vi.mock("@atlas/skills", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@atlas/skills")>();
-  return { ...actual, SkillStorage: { list: () => Promise.resolve({ ok: true, data: [] }) } };
+  const empty = () => Promise.resolve({ ok: true, data: [] });
+  return { ...actual, SkillStorage: { list: empty, listUnassigned: empty, listAssigned: empty } };
 });
 
 /** Convert simple mock data into the AgentResult envelope the engine expects. */

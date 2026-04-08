@@ -28,6 +28,17 @@ export interface SkillStorageAdapter {
   deleteVersion(namespace: string, name: string, version: number): Promise<Result<void, string>>;
   setDisabled(skillId: string, disabled: boolean): Promise<Result<void, string>>;
   deleteSkill(skillId: string): Promise<Result<void, string>>;
+
+  // Scoped listing
+  /** Skills with no assignments — visible to every workspace. */
+  listUnassigned(): Promise<Result<SkillSummary[], string>>;
+  /** Skills explicitly assigned to the given workspace. */
+  listAssigned(workspaceId: string): Promise<Result<SkillSummary[], string>>;
+
+  // Direct assignments
+  assignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>>;
+  unassignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>>;
+  listAssignments(skillId: string): Promise<Result<string[], string>>;
 }
 
 function createSkillStorageAdapter(): SkillStorageAdapter {
@@ -76,4 +87,9 @@ export const SkillStorage: SkillStorageAdapter = {
   deleteVersion: (...args) => getStorage().deleteVersion(...args),
   setDisabled: (...args) => getStorage().setDisabled(...args),
   deleteSkill: (...args) => getStorage().deleteSkill(...args),
+  listUnassigned: (...args) => getStorage().listUnassigned(...args),
+  listAssigned: (...args) => getStorage().listAssigned(...args),
+  assignSkill: (...args) => getStorage().assignSkill(...args),
+  unassignSkill: (...args) => getStorage().unassignSkill(...args),
+  listAssignments: (...args) => getStorage().listAssignments(...args),
 };

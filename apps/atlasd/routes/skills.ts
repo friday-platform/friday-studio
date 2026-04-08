@@ -84,6 +84,57 @@ export const skillsRoutes = daemonFactory
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ skillId: result.data.skillId }, 201);
   })
+  // ─── SCOPING: WORKSPACE ASSIGNMENTS ────────────────────────────────────────
+  // These must be registered before /:namespace/:name routes to avoid
+  // Hono matching "scoping" as a namespace param.
+  .get("/scoping/:skillId/assignments", zValidator("param", SkillIdParam), async (c) => {
+    const { skillId } = c.req.valid("param");
+    const result = await SkillStorage.listAssignments(skillId);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    return c.json({ workspaceIds: result.data });
+  })
+  .post(
+    "/scoping/:skillId/assignments",
+    zValidator("param", SkillIdParam),
+    zValidator("json", z.object({ workspaceIds: z.array(z.string().min(1)) })),
+    async (c) => {
+      const { skillId } = c.req.valid("param");
+      const { workspaceIds } = c.req.valid("json");
+
+      // Try every workspace independently. The caller learns exactly which
+      // assignments succeeded and which failed instead of stopping at the
+      // first error and leaving partial state with no signal.
+      const results = await Promise.all(
+        workspaceIds.map(async (workspaceId) => {
+          const result = await SkillStorage.assignSkill(skillId, workspaceId);
+          return result.ok
+            ? { workspaceId, ok: true as const }
+            : { workspaceId, ok: false as const, error: result.error };
+        }),
+      );
+
+      const assigned: string[] = [];
+      const failed: { workspaceId: string; error: string }[] = [];
+      for (const r of results) {
+        if (r.ok) assigned.push(r.workspaceId);
+        else failed.push({ workspaceId: r.workspaceId, error: r.error });
+      }
+
+      // 200 all succeeded; 207 partial; 500 nothing succeeded
+      const status = failed.length === 0 ? 200 : assigned.length === 0 ? 500 : 207;
+      return c.json({ assigned, failed }, status);
+    },
+  )
+  .delete(
+    "/scoping/:skillId/assignments/:workspaceId",
+    zValidator("param", z.object({ skillId: z.string().min(1), workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { skillId, workspaceId } = c.req.valid("param");
+      const result = await SkillStorage.unassignSkill(skillId, workspaceId);
+      if (!result.ok) return c.json({ error: result.error }, 500);
+      return c.body(null, 204);
+    },
+  )
   // ─── GET LATEST ─────────────────────────────────────────────────────────────
   .get(
     "/:namespace/:name",

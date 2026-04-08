@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { rm } from "node:fs/promises";
-import type { GlobalSkillRefConfig, InlineSkillConfig } from "@atlas/config";
 import { parseSkillRef } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -31,17 +30,15 @@ export interface CreateLoadSkillToolOptions {
   hardcodedSkills?: readonly HardcodedSkill[];
 
   /**
-   * Inline skills from workspace config (in-memory only).
-   * Checked second (tier 2).
+   * When set, the tool refuses to load any catalog skill that is assigned
+   * to a different workspace. Skills with no assignments (global) and skills
+   * assigned to this workspace are allowed.
+   *
+   * This is defense in depth: the agent's prompt should already only list
+   * resolved skills, but a hallucinated or injected skill name shouldn't be
+   * able to bypass scoping just because it doesn't appear in <available_skills>.
    */
-  inlineSkills?: readonly InlineSkillConfig[];
-
-  /**
-   * Global skill references from workspace config, used for version pinning.
-   * When a global skill ref has `version`, that exact version is fetched.
-   * Otherwise, latest is resolved.
-   */
-  skillEntries?: readonly GlobalSkillRefConfig[];
+  workspaceId?: string;
 }
 
 export interface LoadSkillToolResult {
@@ -51,22 +48,19 @@ export interface LoadSkillToolResult {
 }
 
 /**
- * Creates a load_skill tool with three-tier resolution:
+ * Creates a load_skill tool with two-tier resolution:
  *   1. Hardcoded skills (conversation agent's bundled skills)
- *   2. Inline skills (workspace config, in-memory)
- *   3. Global catalog (SkillStorage.get with namespace/name/version)
+ *   2. Global catalog
+ *
+ * When `workspaceId` is set, catalog lookups enforce assignment-based
+ * scoping (defense in depth on top of the upstream prompt filtering).
  *
  * Returns `{ tool, cleanup }`. Call `cleanup()` when the session ends to
  * remove extracted skill archive directories.
  */
 export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): LoadSkillToolResult {
-  const { hardcodedSkills = [], inlineSkills = [], skillEntries = [] } = options;
+  const { hardcodedSkills = [], workspaceId } = options;
   const hardcodedIds = hardcodedSkills.map((s) => s.id);
-
-  const versionMap = new Map<string, number | undefined>();
-  for (const entry of skillEntries) {
-    versionMap.set(entry.name, entry.version);
-  }
 
   // Cache extracted skill dirs by "namespace/name/version" to avoid re-extracting
   const extractedDirs = new Map<string, string>();
@@ -100,27 +94,12 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
         };
       }
 
-      // Tier 2: Inline skills from workspace config
-      const inline = inlineSkills.find((s) => s.name === name);
-      if (inline) {
-        logger.info("skill_loaded", { skill: name, source: "inline", reason });
-        return {
-          name: inline.name,
-          description: inline.description,
-          instructions: inline.instructions,
-        };
-      }
-
-      // Tier 3: Global catalog
+      // Tier 2: Global catalog
       if (name.startsWith("@") && name.includes("/")) {
-        return await resolveGlobalSkill(name, versionMap, extractedDirs);
+        return await resolveGlobalSkill(name, extractedDirs, workspaceId);
       }
 
-      const sources = [
-        hardcodedSkills.length > 0 ? "built-in" : null,
-        inlineSkills.length > 0 ? "inline" : null,
-        "global catalog",
-      ]
+      const sources = [hardcodedSkills.length > 0 ? "built-in" : null, "global catalog"]
         .filter(Boolean)
         .join(", ");
 
@@ -146,8 +125,8 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
 
 async function resolveGlobalSkill(
   ref: string,
-  versionMap: Map<string, number | undefined>,
   extractedDirs: Map<string, string>,
+  workspaceId?: string,
 ): Promise<
   | {
       name: string;
@@ -168,18 +147,26 @@ async function resolveGlobalSkill(
     return { error: `Invalid skill reference "${ref}". Expected @namespace/skill-name format.` };
   }
 
-  const pinnedVersion = versionMap.get(ref);
-
-  const result = await SkillStorage.get(namespace, skillName, pinnedVersion);
+  const result = await SkillStorage.get(namespace, skillName);
   if (!result.ok) {
     logger.warn("skill_load_failed", { skill: ref, error: result.error });
     return { error: result.error };
   }
 
   if (!result.data) {
-    const versionStr = pinnedVersion ? ` version ${pinnedVersion}` : "";
-    logger.warn("skill_not_found", { skill: ref, version: pinnedVersion });
-    return { error: `skill ${ref}${versionStr} not found` };
+    logger.warn("skill_not_found", { skill: ref });
+    return { error: `skill ${ref} not found` };
+  }
+
+  // Defense in depth: enforce workspace scoping at load time too. The prompt
+  // filter is the primary gate, but a hallucinated/injected skill name
+  // shouldn't be able to slip through just because it bypasses the prompt.
+  if (workspaceId) {
+    const assignments = await SkillStorage.listAssignments(result.data.skillId);
+    if (assignments.ok && assignments.data.length > 0 && !assignments.data.includes(workspaceId)) {
+      logger.warn("skill_not_visible", { skill: ref, workspaceId });
+      return { error: `Skill "${ref}" is not available in this workspace` };
+    }
   }
 
   const skill = result.data;

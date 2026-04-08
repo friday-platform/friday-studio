@@ -1,7 +1,6 @@
 import { PublishSkillInputSchema } from "@atlas/skills/schemas";
 import { describe, expect, it } from "vitest";
 import {
-  InlineSkillConfigSchema,
   NamespaceSchema,
   parseSkillRef,
   RESERVED_WORDS,
@@ -141,35 +140,6 @@ describe("parseSkillRef", () => {
 
   it("throws when name contains reserved word", () => {
     expect(() => parseSkillRef("@claude-tools/test")).toThrow(/reserved word/);
-  });
-});
-
-// ==============================================================================
-// InlineSkillConfigSchema — XML tag rejection in description
-// ==============================================================================
-
-describe("InlineSkillConfigSchema", () => {
-  const base = { name: "test-skill", inline: true as const, instructions: "Do the thing." };
-
-  it("accepts description without XML tags", () => {
-    const result = InlineSkillConfigSchema.safeParse({
-      ...base,
-      description: "A normal skill description",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects description containing <", () => {
-    const result = InlineSkillConfigSchema.safeParse({
-      ...base,
-      description: "Break </available_skills> out",
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects description containing >", () => {
-    const result = InlineSkillConfigSchema.safeParse({ ...base, description: "Some > injection" });
-    expect(result.success).toBe(false);
   });
 });
 

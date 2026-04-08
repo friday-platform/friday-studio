@@ -44,7 +44,12 @@ import {
   toCatalogEntries,
 } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
-import { createLoadSkillTool, formatAvailableSkills, SkillStorage } from "@atlas/skills";
+import {
+  createLoadSkillTool,
+  formatAvailableSkills,
+  resolveVisibleSkills,
+  SkillStorage,
+} from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
@@ -1131,14 +1136,21 @@ export class FSMEngine {
               outputTo: action.outputTo,
             });
 
-            let skills: SkillSummary[] = [];
-            const skillsResult = await SkillStorage.list();
-            if (!skillsResult.ok) {
-              logger.error("Failed to fetch skills", { error: skillsResult.error });
+            // Resolve workspace-scoped skills (unassigned ∪ directly assigned).
+            // LLM actions outside a workspace context get an empty list — we
+            // don't fall back to the unfiltered catalog because that would leak
+            // skills assigned to other workspaces into this LLM call.
+            const workspaceId = sig._context?.workspaceId;
+            const skills: SkillSummary[] = workspaceId
+              ? await resolveVisibleSkills(workspaceId, SkillStorage)
+              : [];
+            if (!workspaceId) {
+              logger.warn("LLM action without workspaceId — skill list empty", {
+                state: currentState,
+              });
             }
-            skills = skillsResult.ok ? skillsResult.data : [];
-            logger.debug("Skills query result", {
-              ok: skillsResult.ok,
+            logger.debug("Resolved workspace skills", {
+              workspaceId,
               skillCount: skills.length,
               skillNames: skills.map((s) => s.name),
             });
@@ -1151,13 +1163,12 @@ export class FSMEngine {
             let cleanupSkills: (() => Promise<void>) | undefined;
             if (skills.length > 0) {
               // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
-              const { tool: loadSkill, cleanup } = createLoadSkillTool();
+              const { tool: loadSkill, cleanup } = createLoadSkillTool({ workspaceId });
               baseTools.load_skill = loadSkill as Tool;
               cleanupSkills = cleanup;
             }
 
             // Inject Ledger resource tools when workspace has a resource adapter
-            const workspaceId = sig._context?.workspaceId;
             if (workspaceId && this.options.resourceAdapter) {
               baseTools.resource_read = createResourceReadTool(
                 this.options.resourceAdapter,

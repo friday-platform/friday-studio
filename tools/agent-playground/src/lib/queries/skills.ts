@@ -1,92 +1,19 @@
 /**
- * Skill mutations, types, and derivation logic.
+ * Skill mutations and types.
  *
  * Query hooks have been replaced by `skillQueries` factories in `skill-queries.ts`.
- * Mutations remain here with invalidation keys referencing the factory.
+ * Mutations for the global skill catalog remain here.
  *
  * @module
  */
-import type { InlineSkillConfig, SkillEntry } from "@atlas/config";
-import { parseSkillRef } from "@atlas/config";
 import { createMutation, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
 import { skillQueries } from "./skill-queries.ts";
-import { workspaceQueries } from "./workspace-queries.ts";
-
-// ==============================================================================
-// DERIVATION — extract skills from workspace config
-// ==============================================================================
-
-/** A global skill ref parsed into its namespace/name components */
-export interface ParsedGlobalRef {
-  ref: string;
-  namespace: string;
-  name: string;
-  version: number | undefined;
-}
-
-/** An inline skill extracted from workspace config */
-export interface ParsedInlineSkill {
-  name: string;
-  description: string;
-  instructions: string;
-}
-
-export interface DerivedWorkspaceSkills {
-  globalRefs: ParsedGlobalRef[];
-  inlineSkills: ParsedInlineSkill[];
-}
-
-/**
- * Separates a workspace config's skills array into global catalog refs
- * and inline skill definitions.
- *
- * @param skills - The `skills` array from workspace config (may be undefined)
- */
-export function deriveWorkspaceSkills(skills: SkillEntry[] | undefined): DerivedWorkspaceSkills {
-  if (!skills || skills.length === 0) {
-    return { globalRefs: [], inlineSkills: [] };
-  }
-
-  const globalRefs: ParsedGlobalRef[] = [];
-  const inlineSkills: ParsedInlineSkill[] = [];
-
-  for (const entry of skills) {
-    if (isInlineSkill(entry)) {
-      inlineSkills.push({
-        name: entry.name,
-        description: entry.description,
-        instructions: entry.instructions,
-      });
-    } else {
-      const { namespace, name } = parseSkillRef(entry.name);
-      globalRefs.push({ ref: entry.name, namespace, name, version: entry.version });
-    }
-  }
-
-  return { globalRefs, inlineSkills };
-}
-
-function isInlineSkill(entry: SkillEntry): entry is InlineSkillConfig {
-  return "inline" in entry && (entry as InlineSkillConfig).inline === true;
-}
 
 // ==============================================================================
 // TYPES
 // ==============================================================================
-
-/** Catalog skill summary (from GET /api/skills/) */
-export interface CatalogSkill {
-  id: string;
-  skillId: string;
-  namespace: string;
-  name: string | null;
-  description: string;
-  disabled: boolean;
-  latestVersion: number;
-  createdAt: string;
-}
 
 /** Input for publishing a new skill version */
 export interface PublishSkillInput {
@@ -116,66 +43,6 @@ const UpdateSkillFileResponseSchema = z.object({ path: z.string(), version: z.nu
 // ==============================================================================
 // MUTATION HOOKS
 // ==============================================================================
-
-/**
- * Mutation for removing a skill binding from the workspace config.
- * Wraps `DELETE /api/workspaces/:workspaceId/config/skills/:skillName` via daemon client.
- * Invalidates workspace config and skills queries on success.
- *
- * @param workspaceId - Reactive getter returning the workspace ID
- */
-export function useRemoveWorkspaceSkill(workspaceId: () => string | null) {
-  const client = getDaemonClient();
-  const queryClient = useQueryClient();
-
-  return createMutation(() => ({
-    mutationFn: async (skillName: string) => {
-      const id = workspaceId();
-      if (!id) throw new Error("No workspace selected");
-      const configClient = client.workspaceConfig(id);
-      const res = await configClient.skills[":skillName"].$delete({ param: { skillName } });
-      if (!res.ok) throw new Error(`Failed to remove skill: ${res.status}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      const id = workspaceId();
-      if (id) {
-        queryClient.invalidateQueries({ queryKey: skillQueries.workspaceSkills(id).queryKey });
-        queryClient.invalidateQueries({ queryKey: workspaceQueries.config(id).queryKey });
-      }
-    },
-  }));
-}
-
-/**
- * Mutation for adding a catalog skill binding to the workspace config.
- * Wraps `POST /api/workspaces/:workspaceId/config/skills` via daemon client.
- * Invalidates workspace config and skills queries on success.
- *
- * @param workspaceId - Reactive getter returning the workspace ID
- */
-export function useAddWorkspaceSkill(workspaceId: () => string | null) {
-  const client = getDaemonClient();
-  const queryClient = useQueryClient();
-
-  return createMutation(() => ({
-    mutationFn: async (skillRef: string) => {
-      const id = workspaceId();
-      if (!id) throw new Error("No workspace selected");
-      const configClient = client.workspaceConfig(id);
-      const res = await configClient.skills.$post({ json: { skillRef } });
-      if (!res.ok) throw new Error(`Failed to add skill: ${res.status}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      const id = workspaceId();
-      if (id) {
-        queryClient.invalidateQueries({ queryKey: skillQueries.workspaceSkills(id).queryKey });
-        queryClient.invalidateQueries({ queryKey: workspaceQueries.config(id).queryKey });
-      }
-    },
-  }));
-}
 
 /**
  * Mutation for publishing a new version of a skill.

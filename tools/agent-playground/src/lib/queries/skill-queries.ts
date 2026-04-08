@@ -6,11 +6,14 @@
  *
  * @module
  */
-import { SkillEntrySchema } from "@atlas/config";
+import { SkillSummarySchema } from "@atlas/skills/schemas";
 import { queryOptions, skipToken } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
-import { deriveWorkspaceSkills } from "./skills.ts";
+
+const WorkspaceSkillsResponseSchema = z.object({
+  skills: z.array(SkillSummarySchema),
+});
 
 // ==============================================================================
 // SCHEMAS & TYPES
@@ -102,20 +105,20 @@ export const skillQueries = {
       staleTime: 60_000,
     }),
 
-  /** Skills derived from workspace config (global refs + inline skills). Accepts null to disable via skipToken. */
+  /**
+   * Skills visible to a workspace (unassigned ∪ directly assigned).
+   * Accepts null to disable via skipToken.
+   */
   workspaceSkills: (workspaceId: string | null) =>
     queryOptions({
       queryKey: ["daemon", "workspace", workspaceId, "skills"] as const,
       queryFn: workspaceId
         ? async () => {
-            const client = getDaemonClient();
-            const res = await client.workspace[":workspaceId"].config.$get({
-              param: { workspaceId },
-            });
-            if (!res.ok) throw new Error(`Failed to fetch config: ${res.status}`);
-            const config = await res.json();
-            const skills = z.array(SkillEntrySchema).optional().parse(config.config.skills);
-            return deriveWorkspaceSkills(skills);
+            const res = await fetch(
+              `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
+            );
+            if (!res.ok) throw new Error(`Failed to fetch workspace skills: ${res.status}`);
+            return WorkspaceSkillsResponseSchema.parse(await res.json()).skills;
           }
         : skipToken,
       staleTime: 60_000,

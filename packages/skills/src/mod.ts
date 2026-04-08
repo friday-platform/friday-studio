@@ -15,13 +15,10 @@ export type {
   LoadSkillToolResult,
 } from "./load-skill-tool.ts";
 export { createLoadSkillTool } from "./load-skill-tool.ts";
+// Resolver
+export { resolveVisibleSkills } from "./resolve.ts";
 // Schemas and types
-export type {
-  PublishSkillInput,
-  Skill,
-  SkillSummary,
-  VersionInfo,
-} from "./schemas.ts";
+export type { PublishSkillInput, Skill, SkillSummary, VersionInfo } from "./schemas.ts";
 export {
   PublishSkillInputSchema,
   SkillDbRowSchema,

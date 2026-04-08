@@ -6,14 +6,7 @@ import type {
   AtlasTool,
 } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import {
-  type GlobalSkillRefConfig,
-  type InlineSkillConfig,
-  type MCPServerConfig,
-  parseSkillRef,
-  type SkillEntry,
-  type WorkspaceConfig,
-} from "@atlas/config";
+import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -21,6 +14,7 @@ import {
   createLoadSkillTool,
   extractArchiveContents,
   formatAvailableSkills,
+  resolveVisibleSkills,
   SkillStorage,
   validateSkillReferences,
 } from "@atlas/skills";
@@ -63,7 +57,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     });
 
     let allTools: Record<string, AtlasTool> = {};
-    let skillEntries: SkillEntry[] = [];
     let releaseMCPTools: () => Promise<void> = () => Promise.resolve();
     agentLogger.debug("Building agent context", {
       agentId: agent.metadata.id,
@@ -78,7 +71,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         overrides?.abortSignal,
       );
       allTools = fetched.tools;
-      skillEntries = fetched.skillEntries;
       releaseMCPTools = fetched.release;
 
       agentLogger.info("Pre-fetched tools", { toolCount: Object.keys(allTools).length });
@@ -106,95 +98,63 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       let resolvedSkills: AgentSkill[] | undefined;
 
       if (agent.useWorkspaceSkills) {
-        const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
-        const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
+        // Resolve visible skills: unassigned (global) ∪ directly assigned
+        const visibleSummaries = await resolveVisibleSkills(sessionData.workspaceId, SkillStorage);
 
-        const globalResult = await SkillStorage.list();
-        const globalSummaries = globalResult.ok ? globalResult.data : [];
-
-        const availableSkills = [
-          ...inlineSkills.map((s) => ({ name: s.name, description: s.description })),
-          ...globalSummaries.map((s) => ({
-            name: `@${s.namespace}/${s.name}`,
-            description: s.description,
-          })),
-        ];
-
-        // Resolve all workspace skills eagerly so agents that use their own tool systems
-        // (e.g. claude-code with Claude Code SDK) can access skill content via context.skills.
-        // Global skills are also still available via load_skill tool for LLM-based agents.
-        const allResolved: AgentSkill[] = inlineSkills.map((s) => ({
-          name: s.name,
+        const availableSkills = visibleSummaries.map((s) => ({
+          name: `@${s.namespace}/${s.name}`,
           description: s.description,
-          instructions: s.instructions,
         }));
 
-        if (globalRefs.length > 0) {
-          const fetchResults = await Promise.allSettled(
-            globalRefs.map(async (ref) => {
-              const { namespace, name } = parseSkillRef(ref.name);
-              const result = await SkillStorage.get(namespace, name, ref.version);
-              if (!result.ok) {
-                agentLogger.warn("Failed to resolve global skill", {
-                  skill: ref.name,
-                  error: result.error,
-                });
-                return null;
-              }
-              if (!result.data) {
-                agentLogger.warn("Global skill not found", {
-                  skill: ref.name,
-                  version: ref.version,
-                });
-                return null;
-              }
-              const skill = result.data;
-
-              // Extract archive reference files into memory so agents can
-              // write them alongside SKILL.md in their sandbox.
-              let referenceFiles: Record<string, string> | undefined;
-              if (skill.archive) {
-                try {
-                  referenceFiles = await extractArchiveContents(new Uint8Array(skill.archive));
-                  agentLogger.info("Extracted skill archive", {
-                    skill: ref.name,
-                    fileCount: Object.keys(referenceFiles).length,
-                  });
-                } catch (e) {
-                  agentLogger.warn("Failed to extract skill archive", {
-                    skill: ref.name,
-                    error: stringifyError(e),
-                  });
-                }
-              }
-
-              // Validate that all file references in instructions point to
-              // files that exist in the archive. Dead links = broken skill.
-              const archiveFileList = referenceFiles ? Object.keys(referenceFiles) : [];
-              const deadLinks = validateSkillReferences(skill.instructions, archiveFileList);
-              if (deadLinks.length > 0) {
-                agentLogger.warn("Skill has dead file references", { skill: ref.name, deadLinks });
-              }
-
-              agentLogger.info("Resolved global skill", {
-                skill: ref.name,
-                version: skill.version,
-                hasArchive: !!skill.archive,
-                deadLinks: deadLinks.length,
+        // Eagerly resolve full content for all visible skills so agents that use
+        // their own tool systems (e.g. claude-code with Claude Code SDK) can
+        // access skill content via context.skills.
+        const allResolved: AgentSkill[] = [];
+        const fetchResults = await Promise.allSettled(
+          visibleSummaries.map(async (summary) => {
+            const result = await SkillStorage.get(summary.namespace, summary.name ?? "");
+            if (!result.ok || !result.data) {
+              agentLogger.warn("Failed to resolve skill", {
+                skill: `@${summary.namespace}/${summary.name}`,
+                error: result.ok ? "not found" : result.error,
               });
-              return {
-                // Use short name (not @namespace/name) for sandbox path compatibility
-                name: skill.name ?? name,
-                description: skill.description,
-                instructions: skill.instructions,
-                referenceFiles,
-              };
-            }),
-          );
-          for (const fetchResult of fetchResults) {
-            if (fetchResult.status === "fulfilled" && fetchResult.value) {
-              allResolved.push(fetchResult.value);
+              return null;
             }
+            const skill = result.data;
+
+            // Extract archive reference files into memory
+            let referenceFiles: Record<string, string> | undefined;
+            if (skill.archive) {
+              try {
+                referenceFiles = await extractArchiveContents(new Uint8Array(skill.archive));
+              } catch (e) {
+                agentLogger.warn("Failed to extract skill archive", {
+                  skill: `@${summary.namespace}/${summary.name}`,
+                  error: stringifyError(e),
+                });
+              }
+            }
+
+            const archiveFileList = referenceFiles ? Object.keys(referenceFiles) : [];
+            const deadLinks = validateSkillReferences(skill.instructions, archiveFileList);
+            if (deadLinks.length > 0) {
+              agentLogger.warn("Skill has dead file references", {
+                skill: `@${summary.namespace}/${summary.name}`,
+                deadLinks,
+              });
+            }
+
+            return {
+              name: skill.name ?? summary.name ?? "",
+              description: skill.description,
+              instructions: skill.instructions,
+              referenceFiles,
+            };
+          }),
+        );
+        for (const fetchResult of fetchResults) {
+          if (fetchResult.status === "fulfilled" && fetchResult.value) {
+            allResolved.push(fetchResult.value);
           }
         }
 
@@ -204,12 +164,9 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
         if (availableSkills.length > 0) {
           // Add load_skill tool only if one doesn't already exist.
-          // This preserves any unified or specialized load_skill tool (e.g., conversation agent's
-          // unified tool that checks hardcoded skills first).
           if (!allTools.load_skill) {
             const { tool: loadSkill, cleanup } = createLoadSkillTool({
-              inlineSkills,
-              skillEntries: globalRefs,
+              workspaceId: sessionData.workspaceId,
             });
             allTools.load_skill = loadSkill;
             cleanupSkills = cleanup;
@@ -276,11 +233,7 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
-): Promise<{
-  tools: Record<string, AtlasTool>;
-  skillEntries: SkillEntry[];
-  release: () => Promise<void>;
-}> {
+): Promise<{ tools: Record<string, AtlasTool>; release: () => Promise<void> }> {
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
@@ -323,10 +276,8 @@ async function fetchAllTools(
   // downstream env resolver fetches the correct credential by ID.
   await injectSlackAppCredentialId(allServerConfigs, workspaceId);
 
-  const skillEntries = workspaceConfig.skills ?? [];
-
   const { tools, dispose } = await createMCPTools(allServerConfigs, logger, { signal });
-  return { tools, skillEntries, release: dispose };
+  return { tools, release: dispose };
 }
 
 /**

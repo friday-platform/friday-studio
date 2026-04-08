@@ -19,7 +19,7 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { ResourceEntry } from "@atlas/resources";
 import { buildResourceGuidance, createLedgerClient } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
-import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
+import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -437,10 +437,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ? formatIntegrationsSection(linkSummary)
           : undefined;
 
-        // Skills
-        const globalSkillsResult = await SkillStorage.list();
-        const globalSkills = globalSkillsResult.ok ? globalSkillsResult.data : [];
-        const skillsSection = buildSkillsSection(globalSkills);
+        // Skills — scoped to this workspace (unassigned ∪ directly assigned)
+        const visibleSkills = await resolveVisibleSkills(workspaceId, SkillStorage);
+        const skillsSection = buildSkillsSection(visibleSkills);
 
         // Connect service tool
         const connectServiceTool: AtlasTools = {};
@@ -476,7 +475,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         );
 
         // load_skill
-        const loadSkillResult = createLoadSkillTool({});
+        const loadSkillResult = createLoadSkillTool({ workspaceId });
         const loadSkillTool = loadSkillResult.tool;
         cleanupSkills = loadSkillResult.cleanup;
 

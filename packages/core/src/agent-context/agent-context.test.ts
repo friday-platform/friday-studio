@@ -82,6 +82,13 @@ describe("buildAgentContext skill injection", () => {
     // Mock fetch for workspace config
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
+
+    // Wire SkillStorage delegates that resolveVisibleSkills + agent-context use
+    vi.spyOn(SkillStorage, "listUnassigned").mockImplementation(() => tempAdapter.listUnassigned());
+    vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) =>
+      tempAdapter.listAssigned(wsId),
+    );
+    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
   });
 
   afterEach(() => {
@@ -333,74 +340,15 @@ describe("buildAgentContext skill injection", () => {
     expect(context.skills?.[0]?.instructions).toBe("Review the PR diff carefully");
   });
 
-  it("merges inline and global skills in context.skills", async () => {
-    const workspaceId = "ws-mixed-skills";
-
-    // Workspace config has both inline and global skills
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [
-                {
-                  name: "local-helper",
-                  inline: true,
-                  description: "A local helper skill",
-                  instructions: "Do local things",
-                },
-                { name: "@atlas/global-skill" },
-              ],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
-    await tempAdapter.publish("atlas", "global-skill", "user-1", {
-      description: "A global skill",
-      instructions: "Do global things",
-    });
-
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
-    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
-
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
-
-    const { context } = await buildAgentContext(
-      createTestAgent({ useWorkspaceSkills: true }),
-      createTestSessionData(workspaceId),
-      "Test prompt",
-    );
-
-    expect(context.skills).toBeDefined();
-    expect(context.skills).toHaveLength(2);
-    expect(context.skills?.[0]?.name).toBe("local-helper");
-    expect(context.skills?.[0]?.instructions).toBe("Do local things");
-    expect(context.skills?.[1]?.name).toBe("global-skill");
-    expect(context.skills?.[1]?.instructions).toBe("Do global things");
-  });
-
   it("handles failed global skill fetch gracefully", async () => {
     const workspaceId = "ws-skill-error";
 
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/broken-skill" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    // Publish a skill so listUnassigned returns it, then make get() fail
+    await tempAdapter.publish("atlas", "broken-skill", "user-1", {
+      description: "A broken skill",
+      instructions: "Will fail to load",
+    });
 
-    vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: true, data: [] });
     vi.spyOn(SkillStorage, "get").mockResolvedValue({
       ok: false,
       error: "Database connection failed",
@@ -415,28 +363,18 @@ describe("buildAgentContext skill injection", () => {
       "Test prompt",
     );
 
-    // Skills should be undefined (failed skill skipped, no inline skills)
+    // Skills should be undefined (failed skill skipped)
     expect(context.skills).toBeUndefined();
   });
 
   it("handles missing global skill gracefully", async () => {
     const workspaceId = "ws-skill-missing";
 
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/deleted-skill" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    await tempAdapter.publish("atlas", "deleted-skill", "user-1", {
+      description: "A skill that disappears",
+      instructions: "Gone before fetch",
+    });
 
-    vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: true, data: [] });
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
     const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
@@ -448,61 +386,6 @@ describe("buildAgentContext skill injection", () => {
     );
 
     expect(context.skills).toBeUndefined();
-  });
-
-  it("respects version pinning on global skill refs", async () => {
-    const workspaceId = "ws-version-pin";
-
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/pinned-skill", version: 2 }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
-    vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: true, data: [] });
-    const getSpy = vi
-      .spyOn(SkillStorage, "get")
-      .mockResolvedValue({
-        ok: true,
-        data: {
-          id: "v-2",
-          skillId: "sk-1",
-          namespace: "atlas",
-          name: "pinned-skill",
-          version: 2,
-          description: "Pinned version",
-          descriptionManual: false,
-          disabled: false,
-          frontmatter: {},
-          instructions: "Version 2 instructions",
-          archive: null,
-          createdBy: "user-1",
-          createdAt: new Date(),
-        },
-      });
-
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
-
-    const { context } = await buildAgentContext(
-      createTestAgent({ useWorkspaceSkills: true }),
-      createTestSessionData(workspaceId),
-      "Test prompt",
-    );
-
-    // Verify SkillStorage.get was called with pinned version
-    expect(getSpy).toHaveBeenCalledWith("atlas", "pinned-skill", 2);
-
-    expect(context.skills).toBeDefined();
-    expect(context.skills).toHaveLength(1);
-    expect(context.skills?.[0]?.instructions).toBe("Version 2 instructions");
   });
 
   it("resolves global skill with archive into referenceFiles", async () => {

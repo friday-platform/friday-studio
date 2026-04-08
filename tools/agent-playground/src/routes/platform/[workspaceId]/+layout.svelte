@@ -106,7 +106,7 @@
   // --- Skill index sidebar data ---
   const skillsQuery = createQuery(() => skillQueries.workspaceSkills(workspaceId));
   const workspaceSkillCount = $derived(
-    (skillsQuery.data?.globalRefs?.length ?? 0) + (skillsQuery.data?.inlineSkills?.length ?? 0),
+    Array.isArray(skillsQuery.data) ? skillsQuery.data.length : 0,
   );
 
   function openSkillPicker() {

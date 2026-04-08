@@ -6,7 +6,7 @@ interface SkillInfo {
 
 /**
  * Format skills as an XML block for agent prompts.
- * Callers (InlineSkillConfigSchema, PublishSkillInputSchema) validate that names and
+ * Callers (PublishSkillInputSchema) validate that names and
  * descriptions contain no `<` or `>` via noXmlTags schema refinements, so the values
  * interpolated here are safe to embed in XML.
  */

@@ -6,7 +6,6 @@ import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
 import { NotificationConfigSchema } from "./notifications.ts";
 import { WorkspaceSignalConfigSchema } from "./signals.ts";
-import { SkillEntrySchema } from "./skills.ts";
 
 // ==============================================================================
 // RESOURCE DECLARATIONS (config-level schema, strict validation at provisioning)
@@ -53,7 +52,6 @@ export const WorkspaceConfigSchema = z.strictObject({
   workspace: WorkspaceIdentitySchema,
   server: ServerConfigSchema.optional(),
   tools: ToolsConfigSchema.optional(),
-  skills: z.array(SkillEntrySchema).optional(),
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),

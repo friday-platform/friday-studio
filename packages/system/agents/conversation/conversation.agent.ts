@@ -24,7 +24,7 @@ import {
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
-import { createLoadSkillTool, SkillStorage } from "@atlas/skills";
+import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
   createUIMessageStream,
   jsonSchema,
@@ -681,9 +681,12 @@ export const conversationAgent = createAgent<string, ConversationResult>({
 
         const workspaceId = session.workspaceId || "atlas-conversation";
 
-        const globalSkillsResult = await SkillStorage.list();
-        const globalSkills = globalSkillsResult.ok ? globalSkillsResult.data : [];
-        const skillsSection = buildSkillsSection(skills, globalSkills);
+        // Resolve workspace-scoped skills (unassigned ∪ assigned). When the
+        // session has no real workspace, the synthetic "atlas-conversation" ID
+        // matches no assignment row, so resolveVisibleSkills returns only
+        // unassigned (global) skills — which is exactly the desired behavior.
+        const visibleSkills = await resolveVisibleSkills(workspaceId, SkillStorage);
+        const skillsSection = buildSkillsSection(skills, visibleSkills);
 
         const doTaskTool = createDoTaskTool(
           writer,
@@ -714,7 +717,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           abortSignal,
         );
 
-        const loadSkillResult = createLoadSkillTool({ hardcodedSkills: skills });
+        const loadSkillResult = createLoadSkillTool({ hardcodedSkills: skills, workspaceId });
         const loadSkillTool = loadSkillResult.tool;
         cleanupSkills = loadSkillResult.cleanup;
 

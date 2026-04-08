@@ -387,6 +387,26 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
   }
 
   // ---------------------------------------------------------------------------
+  // Assignments — not implemented for Cortex (unused in prod)
+  // ---------------------------------------------------------------------------
+
+  listUnassigned(): Promise<Result<SkillSummary[], string>> {
+    return this.list();
+  }
+  listAssigned(): Promise<Result<SkillSummary[], string>> {
+    return Promise.resolve(success([]));
+  }
+  assignSkill(): Promise<Result<void, string>> {
+    return Promise.resolve(fail("CortexSkillAdapter does not support assignSkill"));
+  }
+  unassignSkill(): Promise<Result<void, string>> {
+    return Promise.resolve(fail("CortexSkillAdapter does not support unassignSkill"));
+  }
+  listAssignments(): Promise<Result<string[], string>> {
+    return Promise.resolve(success([]));
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

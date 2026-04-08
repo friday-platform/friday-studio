@@ -5,7 +5,6 @@ import {
   WorkspaceSignalConfigSchema,
 } from "@atlas/config";
 import {
-  addSkill,
   applyMutation,
   type CredentialUsage,
   createSignal,
@@ -18,7 +17,6 @@ import {
   parseCredentialPath,
   patchBlueprintSignalConfig,
   patchSignalConfig,
-  removeSkill,
   updateBlueprintCredential,
   updateBlueprintFSMAgent,
   updateBlueprintSignalConfig,
@@ -825,36 +823,6 @@ const handleCreateSignal = createMutationHandler({
   conflictMessage: ({ signalId }) => `Signal '${signalId}' already exists`,
 });
 
-/**
- * Schema for adding a skill binding to a workspace.
- */
-const AddSkillInputSchema = z.object({ skillRef: z.string().min(1, "Skill ref is required") });
-
-/** POST /skills - Add a catalog skill binding to workspace */
-const handleAddSkill = createMutationHandler({
-  schema: AddSkillInputSchema,
-  extractParams: () => ({}),
-  buildMutation:
-    ({ skillRef }) =>
-    (config) =>
-      addSkill(config, skillRef),
-  successStatus: 201,
-  entityName: "Skill",
-  conflictMessage: ({ skillRef }) => `Skill '${skillRef}' is already bound to this workspace`,
-});
-
-/** DELETE /skills/:skillName - Remove a skill binding from workspace */
-const handleRemoveSkill = createMutationHandler({
-  schema: undefined,
-  extractParams: (c) => ({ skillName: requireParam(c, "skillName") }),
-  buildMutation:
-    (_, { skillName }) =>
-    (config) =>
-      removeSkill(config, skillName),
-  successStatus: 200,
-  entityName: "Skill",
-});
-
 /** PUT /agents/:agentId - Update existing FSM-embedded agent */
 const handleUpdateAgentLegacy = createMutationHandler({
   schema: FSMAgentUpdateSchema,
@@ -925,11 +893,6 @@ const configRoutes = daemonFactory
   )
   .post("/agents", handleAgentMethodNotAllowed)
   .delete("/agents/:agentId", handleAgentDeleteMethodNotAllowed)
-  // Skills - bind/unbind only (editing is via global skill catalog)
-  .post("/skills", zValidator("json", AddSkillInputSchema), (c) =>
-    handleAddSkill(c, c.req.valid("json")),
-  )
-  .delete("/skills/:skillName", handleRemoveSkill)
   // Credentials - read + update (with Link validation)
   .get("/credentials", handleListCredentials)
   .put("/credentials/:path", zValidator("json", UpdateCredentialInputSchema), (c) =>

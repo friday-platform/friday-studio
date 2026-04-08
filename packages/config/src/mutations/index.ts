@@ -49,8 +49,6 @@ export type {
 export { deriveIntegrations } from "./integrations.ts";
 // Signal mutations
 export { createSignal, deleteSignal, patchSignalConfig, updateSignal } from "./signals.ts";
-// Skill mutations
-export { addSkill, removeSkill } from "./skills.ts";
 // Types
 export type {
   CascadeTarget,
