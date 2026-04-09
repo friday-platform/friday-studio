@@ -19,8 +19,9 @@ import {
 
 import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { generateObject, stepCountIs } from "ai";
+import { generateObject, stepCountIs, wrapLanguageModel } from "ai";
 import { z } from "zod";
+import { slackFormatMiddleware } from "./format-middleware.ts";
 import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
 
 /**
@@ -69,11 +70,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
   },
   mcp: {
     slack: {
-      transport: {
-        type: "stdio",
-        command: "npx",
-        args: ["-y", "@tempestteam/slack-mcp-server@latest"],
-      },
+      transport: { type: "stdio", command: "npx", args: ["-y", "slack-mcp-server@latest"] },
       env: {
         SLACK_MCP_XOXP_TOKEN: {
           from: "link",
@@ -254,7 +251,10 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
 
       const executionResult = await streamTextWithEvents({
         params: {
-          model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+          model: wrapLanguageModel({
+            model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+            middleware: slackFormatMiddleware,
+          }),
           abortSignal,
           maxRetries: 3,
           messages: [
