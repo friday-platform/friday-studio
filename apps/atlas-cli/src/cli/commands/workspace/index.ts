@@ -1,4 +1,5 @@
 import { define } from "gunshi";
+import { alias } from "../../../utils/alias.ts";
 import { addCommand } from "./add.ts";
 import { cleanupCommand } from "./cleanup.ts";
 import { listCommand } from "./list.ts";
@@ -11,15 +12,15 @@ export const workspaceCommand = define({
   rendering: { header: null },
   subCommands: {
     list: listCommand,
-    ls: listCommand,
+    ls: alias(listCommand),
     add: addCommand,
-    register: addCommand,
+    register: alias(addCommand),
     status: statusCommand,
     remove: removeCommand,
-    rm: removeCommand,
-    delete: removeCommand,
+    rm: alias(removeCommand),
+    delete: alias(removeCommand),
     cleanup: cleanupCommand,
-    clean: cleanupCommand,
+    clean: alias(cleanupCommand),
   },
   run: () => {
     console.log("Usage: atlas workspace <command>");

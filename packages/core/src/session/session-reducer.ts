@@ -184,6 +184,7 @@ function reduceStepComplete(
       toolCalls: event.toolCalls,
       reasoning: event.reasoning,
       output: event.output,
+      artifactRefs: event.artifactRefs,
       error: event.error,
     };
     return { ...view, agentBlocks: [...view.agentBlocks, placeholder] };
@@ -199,6 +200,7 @@ function reduceStepComplete(
     toolCalls: event.toolCalls,
     reasoning: event.reasoning,
     output: event.output,
+    artifactRefs: event.artifactRefs,
     error: event.error,
     ephemeral: undefined, // clear ephemeral on completion
   };

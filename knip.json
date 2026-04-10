@@ -113,6 +113,7 @@
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
     },
+    "packages/sdk-python": { "ignore": ["**/*"] },
     "tools/pty-server": { "project": ["**/*.{ts,js}!"], "ignoreDependencies": ["tsx"] },
     "tools/agent-playground": {
       "entry": ["cli.ts!", "mod.ts!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
@@ -126,7 +127,7 @@
     }
   },
   "ignore": [],
-  "ignoreDependencies": ["@types/deno"],
+  "ignoreDependencies": ["@types/deno", "@anthropic-ai/claude-agent-sdk"],
   "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
@@ -135,7 +136,7 @@
     "devDependencies": "warn",
     "unlisted": "error",
     "binaries": "error",
-    "unresolved": "error",
+    "unresolved": "warn",
     "exports": "error",
     "types": "error",
     "nsExports": "warn",

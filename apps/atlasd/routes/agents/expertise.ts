@@ -33,7 +33,7 @@ getAgentExpertise.get(
 
       const registry = c.get("app").getAgentRegistry();
       const agent = await registry.getAgent(id);
-      if (!agent || !agent.metadata.expertise) {
+      if (!agent?.metadata.expertise) {
         return c.json({ error: "Agent expertise not found" }, 404);
       }
 

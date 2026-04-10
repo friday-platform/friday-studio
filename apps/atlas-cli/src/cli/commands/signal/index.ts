@@ -1,4 +1,5 @@
 import { define } from "gunshi";
+import { alias } from "../../../utils/alias.ts";
 import { listCommand } from "./list.ts";
 import { triggerCommand } from "./trigger.ts";
 
@@ -8,10 +9,10 @@ export const signalCommand = define({
   rendering: { header: null },
   subCommands: {
     list: listCommand,
-    ls: listCommand,
+    ls: alias(listCommand),
     trigger: triggerCommand,
-    fire: triggerCommand,
-    send: triggerCommand,
+    fire: alias(triggerCommand),
+    send: alias(triggerCommand),
   },
   run: () => {
     console.log("Usage: atlas signal <command>");

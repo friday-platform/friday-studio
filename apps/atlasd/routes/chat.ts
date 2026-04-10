@@ -195,7 +195,7 @@ const chatRoutes = daemonFactory
     // message on resumeStream(), so full replay causes duplicate messages in the UI.
     // Late reconnectors get eventual consistency via page reload (messages persisted to DB).
     // TODO: Add Last-Event-Id / offset-based replay to eliminate the data gap.
-    if (!buffer || !buffer.active) {
+    if (!buffer?.active) {
       return c.body(null, 204);
     }
 

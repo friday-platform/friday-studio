@@ -260,12 +260,12 @@ describe("deriveTopology", () => {
       // Agent steps with agent actions should have agent metadata
       const cloneStep = agentNodes.find((n) => n.id.includes("step_clone_repo"));
       expect(cloneStep).toBeDefined();
-      expect(cloneStep!.metadata).toMatchObject({ type: "agent", agentId: "claude-code" });
+      expect(cloneStep?.metadata).toMatchObject({ type: "agent", agentId: "claude-code" });
 
       // Idle state has no agent metadata (only code actions)
       const idleStep = agentNodes.find((n) => n.id.includes("idle"));
       expect(idleStep).toBeDefined();
-      expect(idleStep!.metadata).toEqual({});
+      expect(idleStep?.metadata).toEqual({});
     });
 
     test("produces terminal node for final state", () => {
@@ -309,7 +309,7 @@ describe("deriveTopology", () => {
         (e) => e.from.includes("step_clone_repo") && e.to.includes("step_review_pr"),
       );
       expect(advanceEdge).toBeDefined();
-      expect(advanceEdge!.label).toBe("ADVANCE");
+      expect(advanceEdge?.label).toBe("ADVANCE");
     });
   });
 
@@ -347,7 +347,7 @@ describe("deriveTopology", () => {
         (n) => n.type === "agent-step" && n.jobId === "webhook-job",
       );
       expect(llmNode).toBeDefined();
-      expect(llmNode!.metadata).toMatchObject({
+      expect(llmNode?.metadata).toMatchObject({
         type: "llm",
         provider: "anthropic",
         model: "claude-sonnet-4-6",

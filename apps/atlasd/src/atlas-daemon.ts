@@ -1,4 +1,5 @@
-import { stat } from "node:fs/promises";
+import { cp, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process, { env } from "node:process";
 import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
@@ -36,6 +37,7 @@ import {
   WorkspaceManager,
   WorkspaceRuntime,
 } from "@atlas/workspace";
+import { buildAgent, resolveSdkPath } from "@atlas/workspace/agent-builder";
 import type {
   WorkspaceSignalRegistrar,
   WorkspaceSignalTriggerCallback,
@@ -283,9 +285,54 @@ export class AtlasDaemon {
       logger.info("Activity storage using local SQLite adapter");
     }
 
-    // Initialize agent registry with bundled agents
+    // Build agents from source directory (host-mounted volume in Docker)
+    const agentSourceDir = process.env.AGENT_SOURCE_DIR;
+    if (agentSourceDir) {
+      try {
+        const srcStat = await stat(agentSourceDir);
+        if (srcStat.isDirectory()) {
+          const entries = await readdir(agentSourceDir, { withFileTypes: true });
+          const dirs = entries.filter((e) => e.isDirectory());
+          if (dirs.length > 0) {
+            const sdkPath = resolveSdkPath(agentSourceDir);
+            if (!sdkPath) {
+              logger.warn(
+                "AGENT_SOURCE_DIR set but friday-agent-sdk not found, skipping source builds",
+              );
+            } else {
+              logger.info(`Building ${dirs.length} agent(s) from ${agentSourceDir} (parallel)`);
+              await Promise.all(
+                dirs.map(async (dir) => {
+                  const srcDir = join(agentSourceDir, dir.name);
+                  const tmpDir = await mkdtemp(join(tmpdir(), "atlas-build-"));
+                  try {
+                    const agentDir = join(tmpDir, dir.name);
+                    await cp(srcDir, agentDir, { recursive: true });
+                    const result = await buildAgent({ agentDir, sdkPath, logger });
+                    logger.info(`Built agent ${result.id}@${result.version} from source`);
+                  } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    logger.warn(`Failed to build agent from ${dir.name}: ${msg}`);
+                  } finally {
+                    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+                  }
+                }),
+              );
+            }
+          }
+        }
+      } catch {
+        // Directory doesn't exist or isn't readable — not an error
+        logger.debug("AGENT_SOURCE_DIR not accessible, skipping source builds", { agentSourceDir });
+      }
+    }
+
+    // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");
-    const agentRegistry = new CoreAgentRegistry({ includeSystemAgents: true });
+    const agentRegistry = new CoreAgentRegistry({
+      includeSystemAgents: true,
+      userAgentsDir: join(getAtlasHome(), "agents"),
+    });
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;

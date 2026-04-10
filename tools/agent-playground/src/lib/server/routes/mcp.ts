@@ -110,20 +110,26 @@ export const mcpRoute = new Hono()
     }
 
     // Connect, fetch tools, dispose
-    const { tools: toolsRecord, dispose } = await createMCPTools(configs, logger);
-    const tools: Array<{ name: string; description: string; inputSchema: unknown }> = [];
-
     try {
-      for (const [name, tool] of Object.entries(toolsRecord)) {
-        tools.push({
-          name,
-          description: tool.description ?? "",
-          inputSchema: tool.inputSchema ?? {},
-        });
-      }
-    } finally {
-      await dispose();
-    }
+      const { tools: toolsRecord, dispose } = await createMCPTools(configs, logger);
+      const tools: Array<{ name: string; description: string; inputSchema: unknown }> = [];
 
-    return c.json({ tools });
+      try {
+        for (const [name, tool] of Object.entries(toolsRecord)) {
+          tools.push({
+            name,
+            description: tool.description ?? "",
+            inputSchema: tool.inputSchema ?? {},
+          });
+        }
+      } finally {
+        await dispose();
+      }
+
+      return c.json({ tools });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed to connect to MCP servers", { error, serverIds });
+      return c.json({ error: `Failed to connect to MCP servers: ${message}` }, 500);
+    }
   });

@@ -1,0 +1,57 @@
+version: '1.0'
+workspace:
+  name: Claude Code Smoke Test
+  description: Minimal workspace for testing Python claude-code agent.
+
+agents:
+  claude-code:
+    type: user
+    agent: claude-code
+    description: Autonomous coding agent via Python WASM.
+    prompt: You are a coding assistant.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+      GH_TOKEN: from_environment
+
+signals:
+  run-code:
+    provider: http
+    title: Run Code Agent
+    description: Directly invoke the claude-code agent with a prompt.
+    config:
+      path: /webhooks/run-code
+    schema:
+      type: object
+      properties:
+        prompt:
+          type: string
+          title: Prompt
+          description: The prompt to send to the coding agent.
+      required:
+        - prompt
+
+jobs:
+  code-job:
+    title: Run Code Agent
+    description: Directly invoke the Python claude-code agent.
+    triggers:
+      - signal: run-code
+    fsm:
+      id: code-smoke-pipeline
+      initial: idle
+      states:
+        idle:
+          on:
+            run-code:
+              target: run_agent
+        run_agent:
+          entry:
+            - type: agent
+              agentId: claude-code
+            - type: emit
+              event: DONE
+          on:
+            DONE:
+              target: completed
+        completed:
+          type: final

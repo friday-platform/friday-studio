@@ -41,7 +41,7 @@ export type Duration = z.infer<typeof DurationSchema>;
  */
 export function parseDuration(duration: Duration): number {
   const match = duration.match(/^(\d+)([smh])$/);
-  if (!match || !match[1] || !match[2]) {
+  if (!match?.[1] || !match[2]) {
     throw new Error(`Invalid duration format: ${duration}`);
   }
 

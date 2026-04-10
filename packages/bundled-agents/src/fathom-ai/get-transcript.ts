@@ -103,7 +103,7 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
 
       const latestMeeting = meetings.items[0];
 
-      if (!latestMeeting || !latestMeeting.recording_id) {
+      if (!latestMeeting?.recording_id) {
         return ok({ response: "Latest meeting has no recording ID available" });
       }
 

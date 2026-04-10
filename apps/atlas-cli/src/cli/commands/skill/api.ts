@@ -44,6 +44,6 @@ export function exitWithError(message: string): never {
 
 export function parseSkillRef(ref: string): { namespace: string; name: string } | null {
   const match = ref.match(/^@([a-z0-9-]+)\/([a-z0-9-]+)$/);
-  if (!match || !match[1] || !match[2]) return null;
+  if (!match?.[1] || !match[2]) return null;
   return { namespace: match[1], name: match[2] };
 }

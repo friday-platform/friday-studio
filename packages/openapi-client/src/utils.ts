@@ -32,7 +32,7 @@ export function getAtlasDaemonUrl(): string {
 
   // Try to get from environment
   let daemonUrl: string | undefined;
-  if (typeof process !== "undefined" && process?.env) {
+  if (process?.env) {
     daemonUrl = process.env.ATLAS_DAEMON_URL;
   }
 

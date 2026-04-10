@@ -95,7 +95,7 @@ function resolveSkillRef(
 
   // Fall back to SKILL.md frontmatter name field
   const nameMatch = skillMd.match(/^name:\s*(.+)$/m);
-  if (!nameMatch || !nameMatch[1]) return null;
+  if (!nameMatch?.[1]) return null;
 
   const name = nameMatch[1].trim();
   // If the name in frontmatter is just the skill name (no namespace), default to @tempest

@@ -165,7 +165,7 @@ class DaemonClient {
    */
   async listAgents(
     workspaceId: string,
-  ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
+  ): Promise<Array<{ id: string; type: string; description?: string }>> {
     const response = await parseResult(
       v2Client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } }),
     );

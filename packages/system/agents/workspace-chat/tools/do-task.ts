@@ -41,7 +41,13 @@ export function createWorkspaceDoTask(
 ) {
   const workspaceAgents: DoTaskWorkspaceContext["workspaceAgents"] = Object.entries(
     workspaceConfig.agents ?? {},
-  ).map(([id, agent]) => ({ id, description: agent.description, type: agent.type }));
+  ).map(([id, agent]) => ({
+    id,
+    description: agent.description,
+    type: agent.type,
+    envKeys:
+      (agent.type === "atlas" || agent.type === "user") && agent.env ? Object.keys(agent.env) : [],
+  }));
 
   const workspaceContext: DoTaskWorkspaceContext = { workspaceAgents };
 

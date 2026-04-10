@@ -1,13 +1,20 @@
+import { join } from "node:path";
+import type { MCPServerConfig } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
+import { UserAdapter } from "@atlas/core/agent-loader";
 import { enterTraceScope, type TraceEntry } from "@atlas/llm";
 import { logger } from "@atlas/logger/console";
 import { createMCPTools } from "@atlas/mcp";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
+import { getAtlasHome } from "@atlas/utils/paths.server";
+import { createBashTool } from "@atlas/workspace/bash-tool";
+import { CodeAgentExecutor } from "@atlas/workspace/code-agent-executor";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { DAEMON_BASE_URL } from "../../daemon-url.ts";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
+import { userAgentExists } from "../lib/user-agents.ts";
 
 const ExecuteBody = z.object({
   agentId: z.string().min(1),
@@ -22,8 +29,65 @@ const ExecuteBody = z.object({
  * (artifacts_create, artifacts_get, etc.) so agents can create and
  * read artifacts during execution.
  */
-export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody), (c) => {
+export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody), async (c) => {
   const { agentId, input, env } = c.req.valid("json");
+
+  // User (WASM code) agents — execute directly via CodeAgentExecutor
+  if (await userAgentExists(agentId)) {
+    return createSSEStream(async (emitter, signal) => {
+      const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
+      const agentSource = await adapter.loadAgent(agentId);
+      const sourceLocation = join(agentSource.metadata.sourceLocation, "agent-js");
+
+      const mcpConfigs: Record<string, MCPServerConfig> = {
+        "atlas-platform": getAtlasPlatformServerConfig(),
+      };
+      if (agentSource.metadata.mcp) {
+        for (const [id, config] of Object.entries(agentSource.metadata.mcp)) {
+          mcpConfigs[id] = config;
+        }
+      }
+
+      const { tools: mcpTools, dispose } = await createMCPTools(mcpConfigs, logger, { signal });
+      mcpTools["bash"] = createBashTool();
+
+      try {
+        const executor = new CodeAgentExecutor();
+        const startTime = performance.now();
+
+        const result = await executor.execute(sourceLocation, input, {
+          logger,
+          streamEmitter: { emit: (event) => emitter.progress(event as never) },
+          mcpToolCall: async (name, args) => {
+            const tool = mcpTools[name];
+            if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
+            return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
+          },
+          mcpListTools: () =>
+            Promise.resolve(
+              Object.entries(mcpTools).map(([name, tool]) => ({
+                name,
+                description: tool.description ?? "",
+                inputSchema: tool.inputSchema,
+              })),
+            ),
+          sessionContext: {
+            id: crypto.randomUUID(),
+            workspaceId: "playground",
+          },
+          agentLlmConfig: agentSource.metadata.llm,
+          env,
+        });
+
+        emitter.result(result);
+        emitter.done({
+          durationMs: Math.round(performance.now() - startTime),
+        });
+      } finally {
+        await dispose();
+      }
+    });
+  }
 
   const agent = bundledAgents.find((a) => a.metadata.id === agentId);
   if (!agent) {
@@ -33,7 +97,7 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
   return createSSEStream(async (emitter, signal) => {
     // Connect to the daemon's MCP server for platform tools
     const { tools, dispose } = await createMCPTools(
-      { "atlas-platform": { transport: { type: "http", url: `${DAEMON_BASE_URL}/mcp` } } },
+      { "atlas-platform": getAtlasPlatformServerConfig() },
       logger,
       { signal },
     );

@@ -43,7 +43,7 @@ export interface CreateMCPToolsOptions {
 
 /**
  * Connect to MCP servers, fetch tools, return a dispose callback.
- * Credential errors re-throw immediately. Other server failures are logged and skipped.
+ * Throws on any server connection failure — credential errors and startup failures alike.
  */
 export async function createMCPTools(
   configs: Record<string, MCPServerConfig>,
@@ -113,11 +113,18 @@ export async function createMCPTools(
         throw error;
       }
 
-      logger.warn(`Failed to connect MCP server: ${serverId}`, {
-        operation: "mcp_connect",
-        serverId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // Clean up any already-connected clients before throwing
+      await Promise.allSettled(clients.map((c) => c.close()));
+
+      const command =
+        config.transport.type === "stdio"
+          ? `${config.transport.command} ${(config.transport.args ?? []).join(" ")}`.trim()
+          : config.transport.url;
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `MCP server "${serverId}" failed to start (${command}): ${reason}. ` +
+          `Check that the command is installed and available in the container.`,
+      );
     }
   }
 

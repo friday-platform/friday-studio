@@ -74,3 +74,30 @@ export function noXmlTags(s: string): boolean {
 
 export const noXmlTagsMessage =
   "Must not contain < or > characters (prevents XML injection in agent prompts)";
+
+// ==============================================================================
+// WORKSPACE.YML SKILL ENTRY SCHEMAS
+// ==============================================================================
+
+/** Global skill reference — points to a skill in the global catalog */
+export const GlobalSkillRefConfigSchema = z.strictObject({
+  name: SkillRefSchema,
+  version: z.number().int().positive().optional(),
+});
+
+export type GlobalSkillRefConfig = z.infer<typeof GlobalSkillRefConfigSchema>;
+
+/** Inline skill definition — workspace-specific, lives in memory only */
+export const InlineSkillConfigSchema = z.strictObject({
+  name: SkillNameSchema,
+  inline: z.literal(true),
+  description: z.string().min(1).max(1024).refine(noXmlTags, { message: noXmlTagsMessage }),
+  instructions: z.string().min(1),
+});
+
+export type InlineSkillConfig = z.infer<typeof InlineSkillConfigSchema>;
+
+/** A single entry in the workspace.yml skills list */
+export const SkillEntrySchema = z.union([GlobalSkillRefConfigSchema, InlineSkillConfigSchema]);
+
+export type SkillEntry = z.infer<typeof SkillEntrySchema>;

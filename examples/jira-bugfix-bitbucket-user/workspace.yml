@@ -1,0 +1,635 @@
+version: '1.0'
+workspace:
+  name: Jira Bug Fix (Bitbucket) — User Agents
+  description: >-
+    Fixes bugs from Jira tickets. Reads the issue, implements a fix, and opens
+    a PR on Bitbucket.
+
+signals:
+  fix-bug:
+    provider: http
+    title: Fix bug
+    description: >-
+      Fix a Jira bug ticket — read the issue, implement a fix, and open a PR.
+    config:
+      path: /webhooks/fix-bug
+    schema:
+      type: object
+      properties:
+        issue_key:
+          type: string
+          title: Jira issue key
+          description: >-
+            The Jira issue key (e.g., PROJ-123). Must have the "bug" label.
+        repo_url:
+          type: string
+          title: Bitbucket repository URL
+          description: >-
+            Full Bitbucket repository URL
+            (e.g., https://bitbucket.org/insanelygreatteam/google_workspace_mcp)
+      required:
+        - issue_key
+
+agents:
+  jira:
+    type: user
+    agent: jira
+    description: >-
+      Runs Jira Cloud API calls — read issues, search with JQL, create issues,
+      transition statuses.
+    prompt: Execute Jira Cloud operation.
+    env:
+      JIRA_SITE: from_environment
+      JIRA_EMAIL: from_environment
+      JIRA_API_TOKEN: from_environment
+
+  bb:
+    type: user
+    agent: bb
+    description: >-
+      Runs Bitbucket Cloud API calls — clone repos, push branches, create PRs.
+    prompt: Execute Bitbucket Cloud operation.
+    env:
+      BITBUCKET_EMAIL: from_environment
+      BITBUCKET_TOKEN: from_environment
+
+  claude-code:
+    type: user
+    agent: claude-code
+    description: >-
+      Implements bug fixes in a cloned repository. Reads the bug description,
+      explores the codebase, and commits a fix on a feature branch.
+    prompt: >-
+      You are a senior software engineer. Implement bug fixes based on the Jira
+      ticket description. Write clean, well-tested code.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
+jobs:
+  jira-bugfix:
+    title: Fix bug
+    description: >-
+      A committed fix on a feature branch with a PR opened on Bitbucket.
+    triggers:
+      - signal: fix-bug
+    fsm:
+      id: jira-bugfix-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            fix-bug:
+              target: step_read_ticket
+
+        step_read_ticket:
+          entry:
+            - type: code
+              function: prepare_read_ticket
+            - type: agent
+              agentId: jira
+              outputTo: ticket-output
+              outputType: jira-ticket
+              prompt: Execute Jira issue-view operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_clone_repo
+              guards:
+                - guard_ticket_done
+
+        step_clone_repo:
+          entry:
+            - type: code
+              function: prepare_clone
+            - type: agent
+              agentId: bb
+              outputTo: clone-output
+              outputType: clone-result
+              prompt: Execute Bitbucket repo-clone operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement_fix
+              guards:
+                - guard_clone_done
+
+        step_implement_fix:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: claude-code
+              outputTo: fix-output
+              outputType: fix-result
+              prompt: >-
+                You are implementing a bug fix. The repository has been cloned
+                and the main branch is checked out. Your input contains the
+                clone_path, bug details from the Jira ticket, and the repo URL.
+
+                Follow these steps:
+
+                1. Read the bug description carefully to understand the issue.
+
+                2. Create a new branch named `fix/<issue_key>` (lowercase,
+                   e.g., `fix/proj-123`).
+
+                3. Explore the codebase to understand the relevant code.
+                   Read full files, not just grep results.
+
+                4. Implement the fix. Write clean, minimal code that addresses
+                   the bug without unnecessary refactoring.
+
+                5. If the project has tests, add or update tests to cover the
+                   fix.
+
+                6. Commit the changes with a descriptive message referencing
+                   the Jira issue key.
+
+                7. Do NOT push the branch — a separate agent handles that.
+
+                8. Use the `complete` tool to output:
+                   {
+                     "branch_name": "fix/proj-123",
+                     "commit_message": "fix: description of the fix (PROJ-123)",
+                     "files_changed": ["path/to/file.ts"],
+                     "summary": "Brief description of what was fixed and how"
+                   }
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_push_branch
+              guards:
+                - guard_fix_done
+
+        step_push_branch:
+          entry:
+            - type: code
+              function: prepare_push
+            - type: agent
+              agentId: bb
+              outputTo: push-output
+              outputType: push-result
+              prompt: Execute Bitbucket repo-push operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_create_pr
+              guards:
+                - guard_push_done
+
+        step_create_pr:
+          entry:
+            - type: code
+              function: prepare_create_pr
+            - type: agent
+              agentId: bb
+              outputTo: pr-output
+              outputType: pr-create-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_update_ticket
+              guards:
+                - guard_pr_done
+
+        step_update_ticket:
+          entry:
+            - type: code
+              function: prepare_update_ticket
+            - type: agent
+              agentId: jira
+              outputTo: ticket-update-output
+              outputType: jira-ticket
+              prompt: Execute Jira issue-comment operation.
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_ticket_updated
+
+        completed:
+          type: final
+
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+
+        prepare_read_ticket:
+          type: action
+          code: |
+            export default function prepare_read_ticket(context, event) {
+              const issueKey = event.data?.issue_key;
+              if (!issueKey || typeof issueKey !== 'string') {
+                throw new Error('Missing required input: issue_key');
+              }
+
+              const repoUrl = event.data?.repo_url || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+
+              context.setResult('pipeline-input', { issue_key: issueKey, repo_url: repoUrl });
+
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-view',
+                  issue_key: issueKey,
+                },
+              });
+
+              return {
+                task: 'Read Jira ticket ' + issueKey,
+                config: { operation: 'issue-view', issue_key: issueKey },
+              };
+            }
+
+        guard_ticket_done:
+          type: guard
+          code: |
+            export default function guard_ticket_done(context, event) {
+              return context.results['ticket-output'] !== undefined;
+            }
+
+        prepare_clone:
+          type: action
+          code: |
+            export default function prepare_clone(context, event) {
+              const ticket = context.results['ticket-output'];
+              if (!ticket) {
+                throw new Error('Ticket output not found — read step must complete first');
+              }
+
+              // Jira agent returns { operation, success, data: { labels, ... } }
+              var ticketData = ticket.data || ticket;
+              var labels = ticketData.labels || [];
+
+              // Abort if not a bug
+              if (labels.indexOf('bug') === -1) {
+                throw new Error('Issue does not have the "bug" label — aborting. Labels: ' + JSON.stringify(labels));
+              }
+
+              const repoUrl = context.results['pipeline-input']?.repo_url
+                || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+
+              // Delete old jira-operation doc, create bb-operation for repo-clone
+              context.deleteDoc('jira-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'repo-clone',
+                  repo_url: repoUrl,
+                },
+              });
+
+              return {
+                task: 'Clone repository from ' + repoUrl,
+                config: { operation: 'repo-clone', repo_url: repoUrl },
+              };
+            }
+
+        guard_clone_done:
+          type: guard
+          code: |
+            export default function guard_clone_done(context, event) {
+              return context.results['clone-output'] !== undefined;
+            }
+
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              const ticket = context.results['ticket-output'];
+              const cloneOutput = context.results['clone-output'];
+              const input = context.results['pipeline-input'];
+
+              if (!ticket) {
+                throw new Error('Ticket output not found — ticket step must complete first');
+              }
+              if (!cloneOutput) {
+                throw new Error('Clone output not found — clone step must complete first');
+              }
+
+              var ticketData = ticket.data || ticket;
+              var cloneData = cloneOutput.data || {};
+
+              return {
+                task: 'Fix bug ' + (ticketData.key || input?.issue_key),
+                config: {
+                  workDir: cloneData.path,
+                  repo: cloneData.repo,
+                  branch: cloneData.branch,
+                  issue_key: ticketData.key || input?.issue_key,
+                  bug_title: ticketData.summary || '',
+                  bug_description: ticketData.description || '',
+                },
+              };
+            }
+
+        guard_fix_done:
+          type: guard
+          code: |
+            export default function guard_fix_done(context, event) {
+              return context.results['fix-output'] !== undefined;
+            }
+
+        prepare_push:
+          type: action
+          code: |
+            export default function prepare_push(context, event) {
+              const fix = context.results['fix-output'];
+              const cloneOutput = context.results['clone-output'];
+              const input = context.results['pipeline-input'];
+
+              if (!fix || !fix.branch_name) {
+                throw new Error('Fix output with branch_name not found');
+              }
+
+              var cloneData = cloneOutput?.data || {};
+
+              context.deleteDoc('bb-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'repo-push',
+                  path: cloneData.path,
+                  branch: fix.branch_name,
+                  repo_url: input.repo_url,
+                },
+              });
+
+              return {
+                task: 'Push branch ' + fix.branch_name,
+                config: { operation: 'repo-push', branch: fix.branch_name, repo_url: input.repo_url },
+              };
+            }
+
+        guard_push_done:
+          type: guard
+          code: |
+            export default function guard_push_done(context, event) {
+              return context.results['push-output'] !== undefined;
+            }
+
+        prepare_create_pr:
+          type: action
+          code: |
+            export default function prepare_create_pr(context, event) {
+              const fix = context.results['fix-output'];
+              const ticket = context.results['ticket-output'];
+              const input = context.results['pipeline-input'];
+              const repoUrl = input?.repo_url
+                || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+
+              if (!fix) {
+                throw new Error('Fix output not found — implement step must complete first');
+              }
+
+              var ticketData = ticket?.data || ticket || {};
+              var issueKey = ticketData.key || input?.issue_key || '';
+              var title = issueKey + ': ' + (fix.commit_message || fix.summary || 'Bug fix');
+
+              context.deleteDoc('bb-operation');
+              context.createDoc({
+                id: 'bb-operation',
+                type: 'bb-operation',
+                data: {
+                  operation: 'pr-create',
+                  repo_url: repoUrl,
+                  source_branch: fix.branch_name,
+                  destination_branch: 'main',
+                  title: title,
+                  issue_key: issueKey,
+                  summary: fix.summary || fix.commit_message || '',
+                  files_changed: fix.files_changed || [],
+                  close_source_branch: true,
+                },
+              });
+
+              return {
+                task: 'Create PR: ' + title,
+                config: { operation: 'pr-create', source_branch: fix.branch_name, issue_key: issueKey },
+              };
+            }
+
+        guard_pr_done:
+          type: guard
+          code: |
+            export default function guard_pr_done(context, event) {
+              return context.results['pr-output'] !== undefined;
+            }
+
+        prepare_update_ticket:
+          type: action
+          code: |
+            export default function prepare_update_ticket(context, event) {
+              const input = context.results['pipeline-input'];
+              const ticket = context.results['ticket-output'];
+              const prOutput = context.results['pr-output'];
+
+              var ticketData = ticket?.data || ticket || {};
+              var issueKey = ticketData.key || input?.issue_key || '';
+              var prData = prOutput?.data || {};
+              var prUrl = prData.pr_url || '';
+              var prNumber = prData.pr_number || '';
+
+              // Post a comment on the Jira ticket with the PR link
+              context.deleteDoc('jira-operation');
+              context.deleteDoc('bb-operation');
+              context.createDoc({
+                id: 'jira-operation',
+                type: 'jira-operation',
+                data: {
+                  operation: 'issue-comment',
+                  issue_key: issueKey,
+                  body: 'Pull request created by Friday: [PR #' + prNumber + '](' + prUrl + ')',
+                },
+              });
+
+              return {
+                task: 'Comment on ticket ' + issueKey + ' with PR link',
+                config: { operation: 'issue-comment', issue_key: issueKey },
+              };
+            }
+
+        guard_ticket_updated:
+          type: guard
+          code: |
+            export default function guard_ticket_updated(context, event) {
+              return context.results['ticket-update-output'] !== undefined;
+            }
+
+      documentTypes:
+        jira-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            issue_key:
+              type: string
+            jql:
+              type: string
+            project_key:
+              type: string
+            summary:
+              type: string
+            description:
+              type: string
+            issue_type:
+              type: string
+            body:
+              type: string
+          required:
+            - operation
+
+        jira-ticket:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                key:
+                  type: string
+                summary:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                priority:
+                  type: string
+                labels:
+                  type: array
+                  items:
+                    type: string
+                assignee:
+                  type: string
+                reporter:
+                  type: string
+          required:
+            - operation
+            - success
+
+        bb-operation:
+          type: object
+          properties:
+            operation:
+              type: string
+            repo_url:
+              type: string
+            pr_url:
+              type: string
+            source_branch:
+              type: string
+            destination_branch:
+              type: string
+            title:
+              type: string
+            description:
+              type: string
+            close_source_branch:
+              type: boolean
+            body:
+              type: string
+          required:
+            - operation
+
+        push-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                repo: { type: string }
+                branch: { type: string }
+          required:
+            - operation
+            - success
+
+        clone-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                repo_url:
+                  type: string
+                path:
+                  type: string
+                repo:
+                  type: string
+                branch:
+                  type: string
+          required:
+            - operation
+            - success
+
+        fix-result:
+          type: object
+          properties:
+            branch_name:
+              type: string
+            commit_message:
+              type: string
+            files_changed:
+              type: array
+              items:
+                type: string
+            summary:
+              type: string
+          required: [branch_name, summary]
+
+        pr-create-result:
+          type: object
+          properties:
+            operation:
+              type: string
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                pr_number:
+                  type: number
+                pr_url:
+                  type: string
+                repo:
+                  type: string
+                source_branch:
+                  type: string
+                destination_branch:
+                  type: string
+                title:
+                  type: string
+          required:
+            - operation
+            - success
+            - data
+
+      tools: {}

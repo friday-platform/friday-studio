@@ -1,16 +1,27 @@
 /** Multi-FSM coordinator: manages jobs and sessions within a workspace. */
 
 import { EventEmitter } from "node:events";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
+import process from "node:process";
 import type { ActivityStorageAdapter } from "@atlas/activity";
 import { generateSessionActivityTitle } from "@atlas/activity/title-generator";
 import { kebabToSentenceCase } from "@atlas/activity/titles";
-import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type {
+  AgentResult,
+  AgentSkill,
+  AtlasUIMessageChunk,
+  LinkCredentialRef,
+  MCPServerConfig,
+} from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   expandAgentActions,
+  type GlobalSkillRefConfig,
+  type InlineSkillConfig,
   type MergedConfig,
+  parseSkillRef,
   resolveRuntimeAgentId,
   validateSignalPayload,
 } from "@atlas/config";
@@ -34,7 +45,9 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
+import { UserAdapter } from "@atlas/core/agent-loader";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
+import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -54,7 +67,10 @@ import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { publishDirtyDrafts } from "@atlas/resources";
+import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { withOtelSpan } from "@atlas/utils/telemetry.server";
@@ -76,6 +92,8 @@ import type {
   SessionSummary,
 } from "../../../apps/atlasd/src/types/core.ts";
 import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
+import { createBashTool } from "./bash-tool.ts";
+import { CodeAgentExecutor } from "./code-agent-executor.ts";
 import {
   type ImproverAgentInput,
   type ImproverAgentResult,
@@ -265,6 +283,8 @@ export class WorkspaceRuntime {
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
+  private codeAgentExecutor = new CodeAgentExecutor();
+  private userAdapter = new UserAdapter(path.join(getAtlasHome(), "agents"));
 
   // Job tracking (each job has its own FSMEngine and DocumentStore)
   private jobs = new Map<string, FSMJob>();
@@ -1197,9 +1217,10 @@ export class WorkspaceRuntime {
 
     const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
 
-    // Map "atlas" config type to "sdk" for consistency with function parameter
-    // Default to "sdk" when agent has no workspace config (code-based agents)
-    const agentType = agentConfig?.type === "atlas" ? "sdk" : (agentConfig?.type ?? "sdk");
+    // Map config types to validateAgentOutput's expected parameter.
+    // "atlas" and "user" agents map to "sdk"; default to "sdk" for unconfigured agents.
+    const agentType: "llm" | "system" | "sdk" =
+      agentConfig?.type === "llm" ? "llm" : agentConfig?.type === "system" ? "system" : "sdk";
 
     // Merge workspace agent config with prepare function's config.
     // Prepare config (from FSM `return { task, config }`) takes precedence
@@ -1209,28 +1230,41 @@ export class WorkspaceRuntime {
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
 
-    // Execute agent via orchestrator - returns AgentResult directly
+    // Execute agent via orchestrator or CodeAgentExecutor
     const result = await withOtelSpan(
       "agent.execute",
       {
         "atlas.agent.id": agentId,
-        "atlas.agent.type": agentType,
+        "atlas.agent.type": agentConfig?.type ?? "sdk",
         "atlas.workspace.id": workspaceId,
         "atlas.session.id": sessionId,
       },
       async (agentOtelSpan) => {
-        const agentResult = await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
-          sessionId,
-          workspaceId,
-          streamId,
-          datetime,
-          // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
-          // keeping the FSM onEvent callback clean (FSMEvent types only)
-          onStreamEvent: signal._context?.onStreamEvent,
-          additionalContext: { documents: fsmContext.documents },
-          config: mergedConfig,
-          outputSchema: options?.outputSchema,
-        });
+        // User (code) agents bypass the MCP orchestrator — execute directly via WASM
+        const agentResult =
+          agentConfig?.type === "user"
+            ? await this.executeCodeAgent(agentConfig.agent, prompt, {
+                sessionId,
+                workspaceId,
+                streamId,
+                onStreamEvent: signal._context?.onStreamEvent,
+                config: mergedConfig,
+                outputSchema: options?.outputSchema,
+                datetime,
+                agentEnv: agentConfig.env,
+              })
+            : await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
+                sessionId,
+                workspaceId,
+                streamId,
+                datetime,
+                // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
+                // keeping the FSM onEvent callback clean (FSMEvent types only)
+                onStreamEvent: signal._context?.onStreamEvent,
+                additionalContext: { documents: fsmContext.documents },
+                config: mergedConfig,
+                outputSchema: options?.outputSchema,
+              });
 
         if (agentOtelSpan) {
           agentOtelSpan.setAttribute("atlas.agent.result.ok", agentResult.ok);
@@ -1275,12 +1309,239 @@ export class WorkspaceRuntime {
           toolCalls,
           reasoning: result.ok ? result.reasoning : undefined,
           output: completeCall?.args ?? (result.ok ? result.data : undefined),
+          artifactRefs: result.ok ? result.artifactRefs : undefined,
         };
         sideChannel.set(key, agentResultData);
       }
     }
 
     return result;
+  }
+
+  /**
+   * Execute a user (WASM code) agent via CodeAgentExecutor.
+   * Creates ephemeral MCP connections for tool access, resolves the agent's
+   * source location from UserAdapter, and runs the WASM module directly.
+   */
+  private async executeCodeAgent(
+    userAgentId: string,
+    prompt: string,
+    opts: {
+      sessionId: string;
+      workspaceId: string;
+      streamId?: string;
+      onStreamEvent?: (event: AtlasUIMessageChunk) => void;
+      config?: Record<string, unknown>;
+      outputSchema?: Record<string, unknown>;
+      datetime?: unknown;
+      agentEnv?: Record<string, string | LinkCredentialRef>;
+    },
+  ): Promise<AgentResult> {
+    // Resolve agent source location from disk
+    const agentSource = await this.userAdapter.loadAgent(userAgentId);
+    const sourceLocation = path.join(agentSource.metadata.sourceLocation, "agent-js");
+
+    // Resolve workspace skills when the agent opts in
+    let resolvedSkills: AgentSkill[] | undefined;
+    let skillsTempDir: string | undefined;
+
+    if (agentSource.metadata.useWorkspaceSkills && this.config.workspace.skills) {
+      const skillEntries = this.config.workspace.skills;
+      const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
+      const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
+
+      const allResolved: AgentSkill[] = inlineSkills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        instructions: s.instructions,
+      }));
+
+      if (globalRefs.length > 0) {
+        const fetchResults = await Promise.allSettled(
+          globalRefs.map(async (ref) => {
+            const { namespace, name } = parseSkillRef(ref.name);
+            const result = await SkillStorage.get(namespace, name, ref.version);
+            if (!result.ok) {
+              logger.warn("Failed to resolve global skill for code agent", {
+                skill: ref.name,
+                error: result.error,
+              });
+              return null;
+            }
+            if (!result.data) {
+              logger.warn("Global skill not found for code agent", {
+                skill: ref.name,
+                version: ref.version,
+              });
+              return null;
+            }
+            const skill = result.data;
+
+            let referenceFiles: Record<string, string> | undefined;
+            if (skill.archive) {
+              try {
+                referenceFiles = await extractArchiveContents(new Uint8Array(skill.archive));
+              } catch (e) {
+                logger.warn("Failed to extract skill archive", {
+                  skill: ref.name,
+                  error: stringifyError(e),
+                });
+              }
+            }
+
+            const archiveFileList = referenceFiles ? Object.keys(referenceFiles) : [];
+            const deadLinks = validateSkillReferences(skill.instructions, archiveFileList);
+            if (deadLinks.length > 0) {
+              logger.warn("Skill has dead file references", { skill: ref.name, deadLinks });
+            }
+
+            return {
+              name: skill.name ?? name,
+              description: skill.description,
+              instructions: skill.instructions,
+              referenceFiles,
+            };
+          }),
+        );
+        for (const fetchResult of fetchResults) {
+          if (fetchResult.status === "fulfilled" && fetchResult.value) {
+            allResolved.push(fetchResult.value);
+          }
+        }
+      }
+
+      if (allResolved.length > 0) {
+        resolvedSkills = allResolved;
+
+        // Write skills to existing workDir (FSM clone path) or create a temp dir.
+        // FSM pipelines set config.workDir to the cloned repo — skills must coexist there
+        // so the claude-code provider discovers them at {cwd}/.claude/skills/.
+        const existingWorkDir =
+          opts.config && typeof opts.config === "object"
+            ? (opts.config as Record<string, unknown>).workDir
+            : undefined;
+        const skillsBaseDir =
+          typeof existingWorkDir === "string"
+            ? existingWorkDir
+            : await mkdtemp(path.join(tmpdir(), "atlas-skills-"));
+        if (typeof existingWorkDir !== "string") {
+          skillsTempDir = skillsBaseDir; // Only track for cleanup if we created it
+        }
+
+        for (const skill of allResolved) {
+          const skillDirPath = path.join(skillsBaseDir, ".claude", "skills", skill.name);
+          await mkdir(skillDirPath, { recursive: true });
+
+          if (skill.referenceFiles) {
+            for (const [relPath, content] of Object.entries(skill.referenceFiles)) {
+              const filePath = path.resolve(skillDirPath, relPath);
+              if (!filePath.startsWith(`${skillDirPath}/`)) continue;
+              await mkdir(path.dirname(filePath), { recursive: true });
+              await writeFile(filePath, content);
+            }
+          }
+
+          const resolvedInstructions = skill.instructions.replaceAll("$SKILL_DIR/", "");
+          const safeDescription = JSON.stringify(skill.description);
+          await writeFile(
+            path.join(skillDirPath, "SKILL.md"),
+            `---\nname: ${skill.name}\ndescription: ${safeDescription}\nuser-invocable: false\n---\n\n${resolvedInstructions}`,
+          );
+        }
+        logger.info("Materialized workspace skills for code agent", {
+          agentId: userAgentId,
+          count: allResolved.length,
+          names: allResolved.map((s) => s.name),
+          baseDir: skillsBaseDir,
+          ownedDir: skillsTempDir !== undefined,
+        });
+      }
+    }
+
+    // Create ephemeral MCP connections for platform tools + workspace tools
+    const mcpConfigs: Record<string, MCPServerConfig> = {
+      "atlas-platform": getAtlasPlatformServerConfig(),
+    };
+    const workspaceMcpServers = this.config.workspace.tools?.mcp?.servers;
+    if (workspaceMcpServers) {
+      for (const [id, config] of Object.entries(workspaceMcpServers)) {
+        if (id !== "atlas-platform") {
+          mcpConfigs[id] = config;
+        }
+      }
+    }
+
+    // Agent-declared MCP servers take precedence over workspace configs
+    if (agentSource.metadata.mcp) {
+      for (const [id, config] of Object.entries(agentSource.metadata.mcp)) {
+        mcpConfigs[id] = config;
+      }
+    }
+
+    const { tools: mcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+
+    // Inject built-in bash tool so code agents can shell out
+    mcpTools.bash = createBashTool();
+
+    // Merge skills metadata into agent config when resolved
+    let agentConfig = opts.config;
+    if (resolvedSkills) {
+      const existingWorkDir =
+        agentConfig && typeof agentConfig === "object"
+          ? (agentConfig as Record<string, unknown>).workDir
+          : undefined;
+      agentConfig = {
+        ...agentConfig,
+        skills: resolvedSkills.map((s) => ({ name: s.name, description: s.description })),
+        // Only set workDir if we created a temp dir (don't overwrite FSM's clone path)
+        ...(skillsTempDir && !existingWorkDir && { workDir: skillsTempDir }),
+      };
+    }
+
+    try {
+      return await this.codeAgentExecutor.execute(sourceLocation, prompt, {
+        env: opts.agentEnv
+          ? await resolveEnvValues(opts.agentEnv, logger)
+          : Object.fromEntries(
+              Object.entries(process.env).filter(
+                (e): e is [string, string] => typeof e[1] === "string",
+              ),
+            ),
+        logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
+        streamEmitter: opts.onStreamEvent
+          ? {
+              emit: (event) =>
+                opts.onStreamEvent?.({ type: event.type, data: event.data } as AtlasUIMessageChunk),
+            }
+          : undefined,
+        mcpToolCall: async (name, args) => {
+          const tool = mcpTools[name];
+          if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
+          return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
+        },
+        mcpListTools: () =>
+          Promise.resolve(
+            Object.entries(mcpTools).map(([name, tool]) => ({
+              name,
+              description: tool.description ?? "",
+              inputSchema: tool.inputSchema,
+            })),
+          ),
+        sessionContext: {
+          id: opts.sessionId,
+          workspaceId: opts.workspaceId,
+          datetime: opts.datetime,
+        },
+        agentConfig,
+        agentLlmConfig: agentSource.metadata.llm,
+        outputSchema: opts.outputSchema,
+      });
+    } finally {
+      await dispose();
+      if (skillsTempDir) {
+        await rm(skillsTempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
   }
 
   private extractArtifacts(

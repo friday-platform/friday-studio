@@ -68,7 +68,7 @@ export class CypherHttpClient implements CypherClient {
     baseUrl: string,
     private readonly getAuthToken: () => Promise<string>,
   ) {
-    if (!baseUrl || !baseUrl.startsWith("http")) {
+    if (!baseUrl?.startsWith("http")) {
       throw new Error("Invalid baseUrl: must be a valid HTTP(S) URL");
     }
     // Normalize: remove trailing slash

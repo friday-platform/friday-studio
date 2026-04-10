@@ -245,7 +245,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       timeoutMs: 0,
     });
 
-    if (!response || !response.body) {
+    if (!response?.body) {
       return false;
     }
 
@@ -386,7 +386,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         throw error;
       }
 
-      if (!fileUploadResponse || !fileUploadResponse.id) {
+      if (!fileUploadResponse?.id) {
         return fail("Failed to upload file to Cortex: no ID returned");
       }
 
@@ -436,7 +436,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       { parseJson: true },
     );
 
-    if (!artifactDataUploadResponse || !artifactDataUploadResponse.id) {
+    if (!artifactDataUploadResponse?.id) {
       return fail("Failed to upload artifact data to Cortex: no ID returned");
     }
 
@@ -478,7 +478,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       { parseJson: true },
     );
 
-    if (!artifactDataUploadResponse || !artifactDataUploadResponse.id) {
+    if (!artifactDataUploadResponse?.id) {
       return fail("Failed to upload artifact data to Cortex: no ID returned");
     }
 
@@ -529,7 +529,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
           { parseJson: true },
         );
 
-        if (!uploadResponse || !uploadResponse.id) {
+        if (!uploadResponse?.id) {
           return fail("Failed to upload blob to Cortex: no ID returned");
         }
 
@@ -645,7 +645,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
           { parseJson: true },
         );
 
-        if (!uploadResponse || !uploadResponse.id) {
+        if (!uploadResponse?.id) {
           return fail("Failed to upload new revision blob");
         }
 

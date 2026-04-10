@@ -4,10 +4,13 @@
   "type": "module",
   "exports": {
     ".": "./mod.ts",
+    "./bash-tool": "./src/bash-tool.ts",
+    "./code-agent-executor": "./src/code-agent-executor.ts",
     "./manager": "./src/manager.ts",
     "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./agent-builder": "./src/agent-builder.ts"
   },
   "main": "./mod.ts",
   "dependencies": {
@@ -22,6 +25,8 @@
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
+    "@atlas/oapi-client": "workspace:*",
     "@atlas/resources": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/system": "workspace:*",

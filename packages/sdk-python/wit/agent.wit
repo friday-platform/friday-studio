@@ -1,0 +1,50 @@
+package friday:agent@0.1.0;
+
+interface types {
+    variant agent-result {
+        ok(string),
+        err(string),
+    }
+
+    record tool-definition {
+        name: string,
+        description: string,
+        input-schema: string,
+    }
+}
+
+interface capabilities {
+    use types.{tool-definition};
+
+    call-tool: func(name: string, args: string) -> result<string, string>;
+    list-tools: func() -> list<tool-definition>;
+    log: func(level: u8, message: string);
+    stream-emit: func(event-type: string, data: string);
+
+    /// Make an LLM inference call through the host's @atlas/llm registry.
+    /// request: JSON-serialized LlmRequest (model, messages, etc.)
+    /// Returns JSON-serialized LlmResponse on success, error message on failure.
+    llm-generate: func(request: string) -> result<string, string>;
+
+    /// Make an outbound HTTP request through the host.
+    /// request: JSON-serialized HttpRequest (url, method, headers, body)
+    /// Returns JSON-serialized HttpResponse on success, error message on failure.
+    http-fetch: func(request: string) -> result<string, string>;
+}
+
+interface agent {
+    use types.{agent-result};
+
+    /// Returns JSON blob matching CreateAgentConfig shape (minus handler).
+    /// Parsed by host with CreateAgentConfigValidationSchema (Zod).
+    get-metadata: func() -> string;
+
+    /// prompt: string or JSON-serialized structured input.
+    /// context: JSON blob with env, config, session, output_schema.
+    execute: func(prompt: string, context: string) -> agent-result;
+}
+
+world friday-agent {
+    import capabilities;
+    export agent;
+}

@@ -123,7 +123,7 @@ export class StreamRegistry {
    */
   appendEvent(chatId: string, event: AtlasUIMessageChunk): boolean {
     const buffer = this.streams.get(chatId);
-    if (!buffer || !buffer.active) {
+    if (!buffer?.active) {
       return false;
     }
 
@@ -157,7 +157,7 @@ export class StreamRegistry {
    */
   subscribe(chatId: string, controller: StreamController): boolean {
     const buffer = this.streams.get(chatId);
-    if (!buffer || !buffer.active) {
+    if (!buffer?.active) {
       return false;
     }
 

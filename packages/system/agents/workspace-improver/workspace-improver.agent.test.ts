@@ -1,5 +1,5 @@
 import { type WorkspaceBlueprint, WorkspaceBlueprintSchema } from "@atlas/workspace-builder";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type MockedFunction, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks (hoisted)
@@ -34,6 +34,15 @@ vi.mock("@atlas/agent-sdk", async () => {
         description: config.description,
         expertise: config.expertise,
       },
+      execute: (input: unknown, context: unknown) => {
+        if (typeof config.handler === "function") {
+          return (config.handler as (input: unknown, ctx: unknown) => Promise<unknown>)(
+            input,
+            context,
+          );
+        }
+        throw new Error("No handler provided to createAgent mock");
+      },
     })),
     ok: vi.fn((data: unknown) => ({ ok: true, data })),
     err: vi.fn((error: unknown) => ({ ok: false, error })),
@@ -53,16 +62,9 @@ vi.mock("@atlas/client/v2", () => ({
 
 import { workspaceImproverAgent } from "./workspace-improver.agent.ts";
 
-// Extract handler for testing (createAgent mock returns config directly)
-// deno-lint-ignore no-explicit-any
-const rawHandler = (workspaceImproverAgent as any).handler as (
-  input: string,
-  ctx: Record<string, unknown>,
-) => Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }>;
-
-// Wrap to accept object input (JSON-serializes like the daemon does)
-const handler = (input: Record<string, unknown>, ctx: Record<string, unknown>) =>
-  rawHandler(JSON.stringify(input), ctx);
+// Wrap agent execute to accept object input (JSON-serializes like the daemon does)
+const handler = (input: Record<string, unknown>, ctx: TestContext) =>
+  workspaceImproverAgent.execute(JSON.stringify(input), ctx);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -138,10 +140,41 @@ const defaultInput = {
     '[tool-call] search-web({"query": "test"})\n[fsm-action] analyze-job/step-1 (llm) status=failed',
 };
 
-function makeContext() {
+interface TestContext {
+  logger: {
+    info: MockedFunction<(...args: unknown[]) => void>;
+    warn: MockedFunction<(...args: unknown[]) => void>;
+    error: MockedFunction<(...args: unknown[]) => void>;
+    debug: MockedFunction<(...args: unknown[]) => void>;
+    trace: MockedFunction<(...args: unknown[]) => void>;
+    fatal: MockedFunction<(...args: unknown[]) => void>;
+    child: MockedFunction<(...args: unknown[]) => TestContext["logger"]>;
+  };
+  stream: {
+    emit: MockedFunction<(event: unknown) => void>;
+    end: MockedFunction<() => void>;
+    error: MockedFunction<(err: unknown) => void>;
+  };
+  session: { sessionId: string; workspaceId: string };
+  abortSignal: undefined;
+  tools: Record<string, never>;
+  env: Record<string, never>;
+  // Allow additional properties for AgentContext compatibility
+  [key: string]: unknown;
+}
+
+function makeContext(): TestContext {
   return {
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    stream: { emit: vi.fn() },
+    logger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn(),
+    },
+    stream: { emit: vi.fn(), end: vi.fn(), error: vi.fn() },
     session: { sessionId: "s1", workspaceId: "w1" },
     abortSignal: undefined,
     tools: {},
@@ -329,7 +362,9 @@ describe("workspaceImproverAgent", () => {
 
     const result = await handler(defaultInput, makeContext());
 
-    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("Expected error result but got success");
+    }
     expect(result.error).toContain("scope constraints");
   });
 });

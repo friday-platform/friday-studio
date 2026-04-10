@@ -1,6 +1,6 @@
 // Agent loading system
 
-// Adapters for different agent sources
-// Types and utilities;
+export type { AgentSourceType, AgentSummary } from "./adapters/types.ts";
+export { UserAdapter } from "./adapters/user-adapter.ts";
 export { AgentLoader } from "./loader.ts";
 export { AgentRegistry } from "./registry.ts";

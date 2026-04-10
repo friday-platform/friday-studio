@@ -1,4 +1,5 @@
 import { define } from "gunshi";
+import { alias } from "../../../utils/alias.ts";
 import { getCommand } from "./get.ts";
 import { listCommand } from "./list.ts";
 import { publishCommand } from "./publish.ts";
@@ -10,10 +11,10 @@ export const skillCommand = define({
   rendering: { header: null },
   subCommands: {
     list: listCommand,
-    ls: listCommand,
+    ls: alias(listCommand),
     get: getCommand,
     publish: publishCommand,
-    pub: publishCommand,
+    pub: alias(publishCommand),
     versions: versionsCommand,
   },
   run: () => {

@@ -66,7 +66,7 @@ export function validateFSMStructure(fsm: FSMDefinition): ValidationResult {
           // Check guard references
           if (transition.guards) {
             for (const guardName of transition.guards) {
-              if (!fsm.functions || !fsm.functions[guardName]) {
+              if (!fsm.functions?.[guardName]) {
                 errors.push(
                   `State "${stateName}" transition references undefined guard "${guardName}". ` +
                     `Fix: Add function "${guardName}" to functions object with type: "guard" and code.`,
@@ -85,7 +85,7 @@ export function validateFSMStructure(fsm: FSMDefinition): ValidationResult {
             for (const action of transition.actions) {
               if (action.type === "code") {
                 const functionName = (action as { function: string }).function;
-                if (!fsm.functions || !fsm.functions[functionName]) {
+                if (!fsm.functions?.[functionName]) {
                   errors.push(
                     `State "${stateName}" transition references undefined action function "${functionName}". ` +
                       `Fix: Add function "${functionName}" to functions object with type: "action" and code.`,
@@ -178,7 +178,7 @@ function checkReachability(fsm: FSMDefinition): { reachable: Set<string>; unreac
     visited.add(state);
 
     const stateObj = fsm.states[state];
-    if (!stateObj || !stateObj.on) continue;
+    if (!stateObj?.on) continue;
 
     for (const transitionsOrSingle of Object.values(stateObj.on)) {
       const transitions = Array.isArray(transitionsOrSingle)

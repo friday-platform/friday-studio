@@ -25,6 +25,7 @@
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
+    "@bytecodealliance/preview2-shim": "^0.17.8",
     "@opentelemetry/api": "^1.9.1",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "lint-staged": "^16.4.0",

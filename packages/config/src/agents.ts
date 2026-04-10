@@ -2,7 +2,7 @@
  * Agent configuration schemas with tagged unions
  */
 
-import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
+import { AtlasAgentConfigSchema, LinkCredentialRefSchema } from "@atlas/agent-sdk";
 import { z } from "zod";
 import { DurationSchema, ErrorConfigSchema, SuccessConfigSchema } from "./base.ts";
 
@@ -108,6 +108,22 @@ export const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
 });
 
 // ==============================================================================
+// USER AGENT (code agents built with `atlas agent build`)
+// ==============================================================================
+
+export const UserAgentConfigSchema = BaseAgentConfigSchema.extend({
+  type: z.literal("user"),
+  agent: z.string().describe("User agent ID (matches build output)"),
+  prompt: z.string().optional().describe("Additional workspace context"),
+  env: z
+    .record(z.string(), z.union([z.string(), LinkCredentialRefSchema]))
+    .optional()
+    .meta({ description: "Environment variables for the agent" }),
+});
+
+export type UserAgentConfig = z.infer<typeof UserAgentConfigSchema>;
+
+// ==============================================================================
 // DISCRIMINATED UNION
 // ==============================================================================
 
@@ -118,6 +134,7 @@ export const WorkspaceAgentConfigSchema = z.discriminatedUnion("type", [
   LLMAgentConfigSchema,
   SystemAgentConfigSchema,
   AtlasAgentConfigSchema,
+  UserAgentConfigSchema,
 ]);
 
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;

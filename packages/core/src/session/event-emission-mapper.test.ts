@@ -194,6 +194,30 @@ describe("mapActionToStepComplete", () => {
 
     expect(result.reasoning).toBeUndefined();
   });
+
+  test("passes artifactRefs from agent result to step:complete", () => {
+    const refs = [{ id: "art-1", type: "code", summary: "divide function" }];
+    const ar = agentResultData({ artifactRefs: refs });
+    const event = agentExecutionEvent({ status: "completed", durationMs: 300 });
+    const result = mapActionToStepComplete(event, ar, 1);
+
+    expect(result.artifactRefs).toEqual(refs);
+  });
+
+  test("omits artifactRefs when not present in agent result", () => {
+    const ar = agentResultData();
+    const event = agentExecutionEvent({ status: "completed", durationMs: 100 });
+    const result = mapActionToStepComplete(event, ar, 1);
+
+    expect(result.artifactRefs).toBeUndefined();
+  });
+
+  test("omits artifactRefs when agent result is undefined (side-channel miss)", () => {
+    const event = agentExecutionEvent({ status: "completed", durationMs: 100 });
+    const result = mapActionToStepComplete(event, undefined, 1);
+
+    expect(result.artifactRefs).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

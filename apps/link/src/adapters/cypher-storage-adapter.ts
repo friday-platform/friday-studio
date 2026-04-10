@@ -365,7 +365,7 @@ export class CypherStorageAdapter implements StorageAdapter {
       `;
 
       const row = deleted[0];
-      if (!row || !row.is_default) return;
+      if (!row?.is_default) return;
 
       // Promote the next-oldest active credential for the same provider
       await tx`

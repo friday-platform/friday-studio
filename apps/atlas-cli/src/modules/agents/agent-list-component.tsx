@@ -5,20 +5,25 @@ interface Agent {
   type: string;
   model: string;
   status: string;
+  purpose: string;
 }
 
 // Component that renders the agent list
 export function AgentListComponent({
   agents,
   workspaceName,
+  source,
 }: {
   agents: Agent[];
   workspaceName: string;
+  source?: "user" | "workspace";
 }) {
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
-        Agents in workspace: {workspaceName}
+        {source === "user"
+          ? "User agents (~/.atlas/agents/)"
+          : `Agents in workspace: ${workspaceName}`}
       </Text>
       <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
       {agents.length === 0 ? (
@@ -68,6 +73,9 @@ export function AgentListComponent({
               </Box>
               <Box width={10}>
                 <Text color="green">{agent.status}</Text>
+              </Box>
+              <Box width={45}>
+                <Text>{agent.purpose}</Text>
               </Box>
             </Box>
           ))}

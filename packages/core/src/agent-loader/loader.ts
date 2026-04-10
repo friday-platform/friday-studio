@@ -186,6 +186,14 @@ export class AgentLoader {
         }
         return source.agent;
 
+      case "user":
+        // User agents (WASM code agents) don't carry an AtlasAgent instance —
+        // they're loaded by CodeAgentExecutor at execution time. The registry
+        // stores source data; the executor handles instantiation.
+        throw new Error(
+          `User agent "${source.id}" cannot be converted to AtlasAgent directly. Use CodeAgentExecutor.`,
+        );
+
       default:
         throw new Error(`Unknown agent source type: ${source.type}`);
     }

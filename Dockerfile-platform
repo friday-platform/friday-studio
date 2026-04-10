@@ -120,6 +120,18 @@ RUN apt-get update && \
     chmod +x /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
 
+# Agent build toolchain — componentize-py + jco for server-side Python→WASM builds
+# Python 3 is needed by componentize-py; jco is an npm global
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir --break-system-packages componentize-py==0.22.0 uv && \
+    npm install -g @bytecodealliance/jco@1.16.1
+
+# Copy friday-agent-sdk (Python package + WIT definitions) to well-known container path
+COPY --from=builder /app/packages/sdk-python/friday_agent_sdk /opt/friday-agent-sdk/friday_agent_sdk
+COPY --from=builder /app/packages/sdk-python/wit /opt/friday-agent-sdk/wit
+
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
@@ -211,6 +223,7 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_SQLITE3_PATH=/usr/bin/sqlite3 \
     DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0 \
     WEBHOOK_MAPPINGS_PATH=/app/config/webhook-mappings.yml \
+    AGENT_SOURCE_DIR=/home/atlas/agent-src \
     LINK_DEV_MODE=true \
     LINK_PORT=3100 \
     DEV_MODE=true \

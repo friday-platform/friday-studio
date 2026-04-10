@@ -4,10 +4,38 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { ProviderV3 } from "@ai-sdk/provider";
 
 import { createProviderRegistry } from "ai";
+import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
 import { createGroqWithOptions } from "./groq.ts";
 import { createOpenAIWithOptions } from "./openai.ts";
+
+/**
+ * Strips the CLAUDECODE env var to prevent infinite nesting when
+ * the claude-code provider spawns a Claude Code subprocess.
+ */
+function strippedEnv(): Record<string, string | undefined> {
+  return { ...process.env, CLAUDECODE: undefined };
+}
+
+/**
+ * Creates the claude-code provider with default workspace-level settings.
+ * The provider wraps @anthropic-ai/claude-agent-sdk behind the AI SDK LanguageModel interface.
+ */
+function createClaudeCodeProvider() {
+  return createClaudeCode({
+    defaultSettings: {
+      pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
+      permissionMode: "bypassPermissions",
+      disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
+      settingSources: ["project"],
+      maxTurns: 100,
+      sandbox: { enabled: true, autoAllowBashIfSandboxed: true },
+      includePartialMessages: true,
+      env: strippedEnv(),
+    },
+  });
+}
 
 /**
  * Creates a wrapper provider that forces the Chat Completions API.
@@ -72,6 +100,7 @@ function createRegistry() {
 
     return createProviderRegistry({
       anthropic: anthropicViaLitellm,
+      "claude-code": createClaudeCodeProvider(),
       google: googleViaLitellm,
       groq: groqViaLitellm,
       openai: litellmChatProvider,
@@ -81,6 +110,7 @@ function createRegistry() {
   // Direct provider connections
   return createProviderRegistry({
     anthropic: createAnthropicWithOptions(),
+    "claude-code": createClaudeCodeProvider(),
     google: createGoogleWithOptions(),
     groq: createGroqWithOptions(),
     openai: createOpenAIWithOptions(),

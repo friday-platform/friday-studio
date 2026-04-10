@@ -1,5 +1,4 @@
 import type { CommandModule } from "yargs";
-import * as agentCmd from "./agent.ts";
 import * as artifactsCmd from "./artifacts/index.ts";
 import * as chatCmd from "./chat.ts";
 import * as daemonCmd from "./daemon.ts";
@@ -17,7 +16,6 @@ export const commands: ReadonlyArray<CommandModule> = [
   versionCmd,
   sessionCmd,
   psCmd,
-  agentCmd,
   libraryCmd,
   artifactsCmd,
   daemonCmd,

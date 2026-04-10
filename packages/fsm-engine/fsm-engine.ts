@@ -654,7 +654,7 @@ export class FSMEngine {
     const state = this._definition.states[this._currentState];
     if (!state) throw new Error(`Invalid state: ${this._currentState}`);
 
-    if (!state.on || !state.on[sig.type]) {
+    if (!state.on?.[sig.type]) {
       logger.debug("No transition defined for signal", {
         signalType: sig.type,
         currentState: this._currentState,

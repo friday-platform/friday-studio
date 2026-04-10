@@ -88,6 +88,12 @@ Base: `http://localhost:8080/api`
 - `GET /library` — list/search library items
 - `GET /artifacts/:id` — get artifact content
 
+### Agents
+
+- `GET /agents` — list all available agents (bundled + user-built)
+- `GET /agents/:agentId` — get agent metadata by ID
+- `POST /agents/build` — build Python WASM agent from uploaded .py files (multipart/form-data)
+
 ### Credentials (Link service)
 
 - `GET /link/v1/credentials` — list credentials
@@ -115,6 +121,11 @@ deno task atlas workspace list
 deno task atlas session list
 deno task atlas session get <id>
 deno task atlas session watch <id>
+
+# Agents
+deno task atlas agent exec <id> -i "prompt"     # execute agent directly
+deno task atlas agent exec <id> -i "prompt" --json  # NDJSON output
+deno task atlas agent exec <id> -i "prompt" --url http://localhost:15200  # docker
 
 # Signals
 deno task atlas signal trigger <name>

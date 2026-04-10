@@ -87,10 +87,10 @@ function extractAgentId(agentConfig: WorkspaceAgentConfig): string | undefined {
 
 /**
  * Extract env vars from a typed agent config.
- * Only atlas agents have top-level env.
+ * Atlas and user agents have top-level env.
  */
 function extractEnv(agentConfig: WorkspaceAgentConfig): Record<string, unknown> {
-  if (agentConfig.type === "atlas") {
+  if (agentConfig.type === "atlas" || agentConfig.type === "user") {
     return agentConfig.env ?? {};
   }
   return {};

@@ -19,6 +19,8 @@ const NATIVE_COMMANDS = new Set([
   "workspace",
   "work",
   "w",
+  "agent",
+  "ag",
 ]);
 
 const LEGACY_COMMANDS = new Set([
@@ -35,8 +37,6 @@ const LEGACY_COMMANDS = new Set([
   "session",
   "sesh",
   "sess",
-  "agent",
-  "ag",
   "library",
   "lib",
   "artifacts",
@@ -49,10 +49,12 @@ const cmd = argv[0];
 if (cmd && NATIVE_COMMANDS.has(cmd)) {
   // Native gunshi path — let gunshi handle --help/--version flags naturally
   const { cli, define } = await import("gunshi");
+  const { alias } = await import("./utils/alias.ts");
   const { versionCommand } = await import("./cli/commands/version.ts");
   const { skillCommand } = await import("./cli/commands/skill/index.ts");
   const { signalCommand } = await import("./cli/commands/signal/index.ts");
   const { workspaceCommand } = await import("./cli/commands/workspace/index.ts");
+  const { agentCommand } = await import("./cli/commands/agent/index.ts");
 
   const mainCommand = define({
     name: "atlas",
@@ -66,14 +68,16 @@ if (cmd && NATIVE_COMMANDS.has(cmd)) {
       version: getVersionInfo().version,
       subCommands: {
         version: versionCommand,
-        v: versionCommand,
+        v: alias(versionCommand),
         skill: skillCommand,
-        sk: skillCommand,
+        sk: alias(skillCommand),
         signal: signalCommand,
-        sig: signalCommand,
+        sig: alias(signalCommand),
         workspace: workspaceCommand,
-        work: workspaceCommand,
-        w: workspaceCommand,
+        work: alias(workspaceCommand),
+        w: alias(workspaceCommand),
+        agent: agentCommand,
+        ag: alias(agentCommand),
       },
     });
   } catch (error: unknown) {

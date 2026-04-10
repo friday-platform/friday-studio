@@ -209,8 +209,8 @@ export type AgentEnvironmentConfig = z.infer<typeof AgentEnvironmentConfigSchema
 /** LLM settings for configuration-based agents (TypeScript agents bring their own) */
 export const AgentLLMConfigSchema = z.object({
   provider: z
-    .enum(["anthropic", "openai", "google"], {
-      message: "Provider must be 'anthropic', 'openai', or 'google'",
+    .enum(["anthropic", "openai", "google", "claude-code"], {
+      message: "Provider must be 'anthropic', 'openai', 'google', or 'claude-code'",
     })
     .optional(),
   model: z.string().optional(),
@@ -314,6 +314,7 @@ export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
   environment: AgentEnvironmentConfigSchema.optional(),
   mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
   llm: AgentLLMConfigSchema.optional(),
+  useWorkspaceSkills: z.boolean().optional(),
 });
 
 /** Created by createAgent(), stored in registry, executed by AtlasAgentsMCPServer */
@@ -347,6 +348,9 @@ export interface AgentRegistry {
   getAgent(id: string): Promise<AtlasAgent | undefined>;
 
   registerAgent(agent: AtlasAgent): Promise<void>;
+
+  /** Reload the registry, re-scanning all adapters for new/removed agents */
+  reload(): Promise<void>;
 }
 
 /** workspace.yml agent configuration */

@@ -27,6 +27,7 @@ import {
   generatePlan,
   PipelineError,
   resolveCredentials,
+  type UnresolvedCredential,
 } from "@atlas/workspace-builder";
 import type { UIMessageStreamWriter } from "ai";
 import { jsonSchema, tool } from "ai";
@@ -290,10 +291,47 @@ export function buildWorkspaceAgentConfigs(agents: Agent[]): Record<string, Work
 }
 
 /**
+ * Filter unresolved credentials that the workspace agent config already provides via `env`.
+ *
+ * When a workspace agent declares `env: { SOME_KEY: ... }`, the runtime will inject that
+ * variable — no Link credential is needed. This removes false-positive blockers from the
+ * pre-flight credential check.
+ */
+function filterWorkspaceProvidedCredentials(
+  unresolved: UnresolvedCredential[],
+  workspaceAgents: DoTaskWorkspaceContext["workspaceAgents"],
+): UnresolvedCredential[] {
+  if (!workspaceAgents?.length) return unresolved;
+
+  const envKeysByAgentId = new Map<string, Set<string>>();
+  for (const wa of workspaceAgents) {
+    if (wa.envKeys?.length) {
+      envKeysByAgentId.set(wa.id, new Set(wa.envKeys));
+    }
+  }
+  if (envKeysByAgentId.size === 0) return unresolved;
+
+  return unresolved.filter((u) => {
+    // For agent-targeted credentials, match by the agent ID
+    if (u.targetType === "agent") {
+      const keys = envKeysByAgentId.get(u.targetId);
+      if (keys?.has(u.field)) return false;
+    }
+    return true;
+  });
+}
+
+/**
  * Creates the do_task tool with writer closure access.
  */
 export interface DoTaskWorkspaceContext {
-  workspaceAgents?: Array<{ id: string; description?: string; type?: string }>;
+  workspaceAgents?: Array<{
+    id: string;
+    description?: string;
+    type?: string;
+    /** Environment variable keys provided by the workspace agent config (never values). */
+    envKeys?: string[];
+  }>;
 }
 
 export function createDoTaskTool(
@@ -412,9 +450,13 @@ export function createDoTaskTool(
               workspaceId: session.workspaceId,
             });
 
-            // Bail on unresolved credentials
-            if (credResult.unresolved.length > 0) {
-              const first = credResult.unresolved[0];
+            // Bail on unresolved credentials (excluding those provided by workspace agent env)
+            const unresolvedAfterEnv = filterWorkspaceProvidedCredentials(
+              credResult.unresolved,
+              workspaceContext?.workspaceAgents,
+            );
+            if (unresolvedAfterEnv.length > 0) {
+              const first = unresolvedAfterEnv[0];
               const error = first
                 ? `Cannot execute task: ${first.reason}. Provider '${first.provider}' requires credentials for field '${first.field}'.`
                 : "Cannot execute task: unresolved credentials";
@@ -632,9 +674,13 @@ export function createDoTaskTool(
           };
         }
 
-        // Bail on unresolved credentials
-        if (blueprintResult.credentials.unresolved.length > 0) {
-          const first = blueprintResult.credentials.unresolved[0];
+        // Bail on unresolved credentials (excluding those provided by workspace agent env)
+        const pipelineUnresolved = filterWorkspaceProvidedCredentials(
+          blueprintResult.credentials.unresolved,
+          workspaceContext?.workspaceAgents,
+        );
+        if (pipelineUnresolved.length > 0) {
+          const first = pipelineUnresolved[0];
           if (!first)
             return {
               success: false,

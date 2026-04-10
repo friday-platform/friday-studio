@@ -29,6 +29,7 @@ export interface AgentResultData {
   toolCalls: ToolCallSummary[];
   reasoning?: string;
   output: unknown;
+  artifactRefs?: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,7 @@ export function mapActionToStepComplete(
     toolCalls: agentResult?.toolCalls ?? [],
     reasoning: agentResult?.reasoning,
     output: agentResult?.output,
+    artifactRefs: agentResult?.artifactRefs,
     error: event.data.error,
     timestamp: new Date(event.data.timestamp).toISOString(),
   };

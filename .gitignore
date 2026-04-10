@@ -8,6 +8,10 @@
 .atlas/
 .local-dev/
 
+# User agent development (keep the README, ignore agent subdirectories)
+/agents/*/
+!/agents/README.md
+
 # Deno
 .deno/
 coverage/

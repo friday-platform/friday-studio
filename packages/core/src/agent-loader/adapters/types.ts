@@ -1,10 +1,10 @@
-import type { AtlasAgent } from "@atlas/agent-sdk";
+import type { AgentLLMConfig, AtlasAgent, MCPServerConfig } from "@atlas/agent-sdk";
 
 /**
  * Agent source type defines where an agent is loaded from in Atlas.
  * Maps to specific adapters in the agent loader system.
  */
-export type AgentSourceType = "system" | "bundled" | "sdk";
+export type AgentSourceType = "system" | "bundled" | "sdk" | "user";
 
 /**
  * Raw agent data from an adapter before conversion to AtlasAgent.
@@ -24,6 +24,12 @@ export interface AgentSourceData {
     lastModified?: Date;
     /** Agent version if specified */
     version?: string;
+    /** LLM config from agent decorator (provider, model, temperature, max_tokens) */
+    llm?: AgentLLMConfig;
+    /** MCP server configs declared by the agent */
+    mcp?: Record<string, MCPServerConfig>;
+    /** When true, host should resolve workspace skills and pass them to the agent */
+    useWorkspaceSkills?: boolean;
   };
 }
 

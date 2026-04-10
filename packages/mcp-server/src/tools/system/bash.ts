@@ -42,12 +42,25 @@ Usage notes:
           .max(MAX_TIMEOUT)
           .optional()
           .describe("Optional timeout in milliseconds."),
+        cwd: z.string().optional().describe("Working directory for the command"),
+        env: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Environment variables to merge with process env"),
       },
     },
     async (params) => {
       const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT);
 
-      ctx.logger.info("Executing bash command", { command: params.command, timeout });
+      const cwd = params.cwd ?? Deno.cwd();
+      const mergedEnv = params.env ? { ...Deno.env.toObject(), ...params.env } : undefined;
+
+      ctx.logger.info("Executing bash command", {
+        command: params.command,
+        timeout,
+        cwd,
+        envKeys: params.env ? Object.keys(params.env) : undefined,
+      });
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -55,7 +68,8 @@ Usage notes:
       try {
         const command = new Deno.Command("bash", {
           args: ["-c", params.command],
-          cwd: Deno.cwd(),
+          cwd,
+          env: mergedEnv,
           stdout: "piped",
           stderr: "piped",
           signal: controller.signal,

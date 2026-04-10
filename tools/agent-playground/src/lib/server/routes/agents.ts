@@ -1,6 +1,7 @@
 import type { BundledAgentConfigField } from "@atlas/bundled-agents";
 import { bundledAgents, bundledAgentsRegistry } from "@atlas/bundled-agents";
 import { Hono } from "hono";
+import { listUserAgents } from "../lib/user-agents.ts";
 
 /**
  * Maps a required config field to the API response shape.
@@ -31,10 +32,10 @@ function toOptionalConfigEntry(field: BundledAgentConfigField) {
 }
 
 /**
- * GET /api/agents — returns metadata for all bundled agents.
+ * GET /api/agents — returns metadata for all bundled + user agents.
  * Used by the agent selector UI and execute route.
  */
-export const agentsRoute = new Hono().get("/", (c) => {
+export const agentsRoute = new Hono().get("/", async (c) => {
   const agents = bundledAgents.flatMap((agent) => {
     const entry = bundledAgentsRegistry[agent.metadata.id];
     if (!entry) return [];
@@ -53,6 +54,24 @@ export const agentsRoute = new Hono().get("/", (c) => {
       optionalConfig: entry.optionalConfig.map(toOptionalConfigEntry),
     };
   });
+
+  // Append user agents discovered from ~/.atlas/agents/
+  const userAgents = await listUserAgents();
+  for (const ua of userAgents) {
+    agents.push({
+      id: ua.id,
+      displayName: ua.displayName ?? ua.id,
+      description: ua.description ?? "",
+      summary: "",
+      constraints: "",
+      version: ua.version ?? "0.0.0",
+      examples: [],
+      inputSchema: null,
+      outputSchema: null,
+      requiredConfig: [],
+      optionalConfig: [],
+    });
+  }
 
   return c.json({ agents });
 });

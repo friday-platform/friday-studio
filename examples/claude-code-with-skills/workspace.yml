@@ -1,0 +1,58 @@
+version: '1.0'
+workspace:
+  name: Claude Code + Skills
+  description: Tests that workspace skills are resolved and available to the Python claude-code agent.
+
+skills:
+  - name: "@tempest/pr-code-review"
+
+agents:
+  claude-code:
+    type: user
+    agent: claude-code
+    description: Code reviewer with workspace skills.
+    prompt: You are a code reviewer. Use your loaded skills to guide your review.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+      GH_TOKEN: from_environment
+
+signals:
+  review-code:
+    provider: http
+    title: Review Code
+    description: Invoke the code review agent with skills.
+    config:
+      path: /webhooks/review-code
+    schema:
+      type: object
+      properties:
+        prompt:
+          type: string
+      required:
+        - prompt
+
+jobs:
+  review-job:
+    title: Review Code
+    description: Invoke claude-code with workspace skills.
+    triggers:
+      - signal: review-code
+    fsm:
+      id: skills-test-pipeline
+      initial: idle
+      states:
+        idle:
+          on:
+            review-code:
+              target: run_agent
+        run_agent:
+          entry:
+            - type: agent
+              agentId: claude-code
+            - type: emit
+              event: DONE
+          on:
+            DONE:
+              target: completed
+        completed:
+          type: final

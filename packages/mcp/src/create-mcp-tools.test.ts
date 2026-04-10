@@ -101,31 +101,18 @@ describe("createMCPTools", () => {
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
-  it("skips a server that fails to connect and continues with others", async () => {
-    let callCount = 0;
-    mockCreateMCPClient.mockImplementation(() => {
-      callCount++;
-      if (callCount <= 3) {
-        // First server retries 3 times then gives up
-        return Promise.reject(new Error("spawn failed"));
-      }
-      // Second server succeeds
-      return Promise.resolve({
-        tools: vi.fn().mockResolvedValue({ "good-tool": { description: "works" } }),
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-    });
+  it("throws when a server fails to connect instead of continuing", async () => {
+    mockCreateMCPClient.mockRejectedValue(new Error("spawn failed"));
 
     const configs: Record<string, MCPServerConfig> = {
       "broken-server": { transport: { type: "stdio", command: "nonexistent", args: [] } },
-      "working-server": { transport: { type: "stdio", command: "echo", args: [] } },
     };
 
-    const result = await createMCPTools(configs, fakeLogger);
-
-    expect(result.tools).toHaveProperty("good-tool");
-    expect(Object.keys(result.tools)).toHaveLength(1);
-    expect(fakeLogger.warn).toHaveBeenCalled();
+    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("broken-server");
+    expect((error as Error).message).toContain("nonexistent");
+    expect((error as Error).message).toContain("spawn failed");
   });
 
   it("re-throws LinkCredentialNotFoundError immediately", async () => {
@@ -457,35 +444,42 @@ describe("createMCPTools", () => {
     expect(closeA).toHaveBeenCalledTimes(1);
   });
 
-  it("closes leaked HTTP client when tools() throws after successful connect", async () => {
-    const leakedClose = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-
-    // HTTP server: createMCPClient succeeds but tools() throws
-    mockCreateMCPClient.mockResolvedValueOnce({
-      tools: vi.fn().mockRejectedValue(new Error("tools fetch failed")),
-      close: leakedClose,
-    });
-
-    // Second server succeeds normally
-    mockCreateMCPClient.mockResolvedValueOnce({
-      tools: vi.fn().mockResolvedValue({ "good-tool": { description: "works" } }),
-      close: vi.fn().mockResolvedValue(undefined),
-    });
+  it("throws and includes URL when HTTP server fails to connect", async () => {
+    mockCreateMCPClient.mockRejectedValue(new Error("connection refused"));
 
     const configs: Record<string, MCPServerConfig> = {
       "broken-http": { transport: { type: "http", url: "https://mcp.example.com" } },
-      "working-server": { transport: { type: "stdio", command: "echo", args: [] } },
     };
 
-    const result = await createMCPTools(configs, fakeLogger);
+    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("broken-http");
+    expect((error as Error).message).toContain("https://mcp.example.com");
+    expect((error as Error).message).toContain("connection refused");
+  });
 
-    // The leaked HTTP client must have been closed
-    expect(leakedClose).toHaveBeenCalledTimes(1);
-    // Server was skipped with a warning
-    expect(fakeLogger.warn).toHaveBeenCalled();
-    // Second server's tools still available
-    expect(result.tools).toHaveProperty("good-tool");
-    expect(Object.keys(result.tools)).toHaveLength(1);
+  it("cleans up already-connected clients when a later server fails", async () => {
+    const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+    // Server A connects successfully
+    mockCreateMCPClient
+      .mockResolvedValueOnce({
+        tools: vi.fn().mockResolvedValue({ "tool-a": { description: "from A" } }),
+        close: closeA,
+      })
+      // Server B fails after retries
+      .mockRejectedValue(new Error("spawn failed"));
+
+    const configs: Record<string, MCPServerConfig> = {
+      "server-a": { transport: { type: "stdio", command: "echo", args: [] } },
+      "server-b": { transport: { type: "stdio", command: "nonexistent", args: [] } },
+    };
+
+    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("server-b");
+    // Server A's client must have been cleaned up before throwing
+    expect(closeA).toHaveBeenCalledTimes(1);
   });
 
   it("dispose completes even when one client close() rejects", async () => {

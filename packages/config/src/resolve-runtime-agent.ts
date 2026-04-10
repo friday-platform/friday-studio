@@ -18,6 +18,9 @@ export function resolveRuntimeAgentId(
   if (agentConfig?.type === "system") {
     return agentConfig.agent;
   }
+  if (agentConfig?.type === "user") {
+    return `user:${agentConfig.agent}`;
+  }
   // LLM agents pass through — expansion should have converted them before
   // reaching the executor. Callers can log if this is unexpected.
   return agentId;
