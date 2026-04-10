@@ -33,7 +33,7 @@
     "npm:@ai-sdk/google@^3.0.53": "3.0.59_zod@4.3.6",
     "npm:@ai-sdk/groq@3.0.33": "3.0.33_zod@4.3.6",
     "npm:@ai-sdk/groq@^3.0.33": "3.0.33_zod@4.3.6",
-    "npm:@ai-sdk/mcp@^1.0.30": "1.0.35_zod@4.3.6",
+    "npm:@ai-sdk/mcp@^1.0.36": "1.0.36_zod@4.3.6",
     "npm:@ai-sdk/openai@^3.0.48": "3.0.51_zod@4.3.6",
     "npm:@ai-sdk/provider@^3.0.8": "3.0.8",
     "npm:@ai-sdk/svelte@^4.0.141": "4.0.149_svelte@5.55.1__acorn@8.16.0_zod@4.3.6",
@@ -361,8 +361,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/mcp@1.0.35_zod@4.3.6": {
-      "integrity": "sha512-YeFHyq3pq/tkD8rp/U0P9sJsQfDTT4F/8WdpRLLo30cCLx2kfuIYafRyTLfERnYayYlLbH5aMBpjttFunvIDCA==",
+    "@ai-sdk/mcp@1.0.36_zod@4.3.6": {
+      "integrity": "sha512-THQKwlknp7OU2ViLPfIU7W01XvDRM2eqH+4UULQgP64AopnwI9mGqqJeGIx2l/pxUu9yIDQtW9YtYM8kHm2CQg==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
@@ -8921,7 +8921,7 @@
       "packages/mcp": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/mcp@^1.0.30",
+            "npm:@ai-sdk/mcp@^1.0.36",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
             "npm:ai@^6.0.141",
