@@ -214,8 +214,9 @@
     "npm:vite-plugin-compression2@^2.5.3": "2.5.3",
     "npm:vite@^7.3.1": "7.3.2_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
     "npm:vite@^7.3.2": "7.3.2_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
-    "npm:vitest@^4.1.0": "4.1.2_@opentelemetry+api@1.9.1_@types+node@25.5.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
-    "npm:vitest@^4.1.2": "4.1.2_@opentelemetry+api@1.9.1_@types+node@25.5.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
+    "npm:vitest@^4.1.0": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
+    "npm:vitest@^4.1.2": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
+    "npm:vitest@^4.1.4": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:ws@^8.20.0": "8.20.0",
     "npm:xstate@^5.28.0": "5.30.0",
     "npm:yaml@^2.8.2": "2.8.3",
@@ -4381,7 +4382,7 @@
         "obug",
         "std-env",
         "tinyrainbow",
-        "vitest"
+        "vitest@4.1.2_@opentelemetry+api@1.9.1_@types+node@25.5.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3"
       ]
     },
     "@vitest/expect@4.1.2": {
@@ -4389,8 +4390,19 @@
       "dependencies": [
         "@standard-schema/spec",
         "@types/chai",
-        "@vitest/spy",
+        "@vitest/spy@4.1.2",
         "@vitest/utils@4.1.2",
+        "chai",
+        "tinyrainbow"
+      ]
+    },
+    "@vitest/expect@4.1.4": {
+      "integrity": "sha512-iPBpra+VDuXmBFI3FMKHSFXp3Gx5HfmSCE8X67Dn+bwephCnQCaB7qWK2ldHa+8ncN8hJU8VTMcxjPpyMkUjww==",
+      "dependencies": [
+        "@standard-schema/spec",
+        "@types/chai",
+        "@vitest/spy@4.1.4",
+        "@vitest/utils@4.1.4",
         "chai",
         "tinyrainbow"
       ]
@@ -4398,7 +4410,19 @@
     "@vitest/mocker@4.1.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3": {
       "integrity": "sha512-Ize4iQtEALHDttPRCmN+FKqOl2vxTiNUhzobQFFt/BM1lRUTG7zRCLOykG/6Vo4E4hnUdfVLo5/eqKPukcWW7Q==",
       "dependencies": [
-        "@vitest/spy",
+        "@vitest/spy@4.1.2",
+        "estree-walker@3.0.3",
+        "magic-string",
+        "vite"
+      ],
+      "optionalPeers": [
+        "vite"
+      ]
+    },
+    "@vitest/mocker@4.1.4_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4": {
+      "integrity": "sha512-R9HTZBhW6yCSGbGQnDnH3QHfJxokKN4KB+Yvk9Q1le7eQNYwiCyKxmLmurSpFy6BzJanSLuEUDrD+j97Q+ZLPg==",
+      "dependencies": [
+        "@vitest/spy@4.1.4",
         "estree-walker@3.0.3",
         "magic-string",
         "vite"
@@ -4419,10 +4443,23 @@
         "tinyrainbow"
       ]
     },
+    "@vitest/pretty-format@4.1.4": {
+      "integrity": "sha512-ddmDHU0gjEUyEVLxtZa7xamrpIefdEETu3nZjWtHeZX4QxqJ7tRxSteHVXJOcr8jhiLoGAhkK4WJ3WqBpjx42A==",
+      "dependencies": [
+        "tinyrainbow"
+      ]
+    },
     "@vitest/runner@4.1.2": {
       "integrity": "sha512-Gr+FQan34CdiYAwpGJmQG8PgkyFVmARK8/xSijia3eTFgVfpcpztWLuP6FttGNfPLJhaZVP/euvujeNYar36OQ==",
       "dependencies": [
         "@vitest/utils@4.1.2",
+        "pathe"
+      ]
+    },
+    "@vitest/runner@4.1.4": {
+      "integrity": "sha512-xTp7VZ5aXP5ZJrn15UtJUWlx6qXLnGtF6jNxHepdPHpMfz/aVPx+htHtgcAL2mDXJgKhpoo2e9/hVJsIeFbytQ==",
+      "dependencies": [
+        "@vitest/utils@4.1.4",
         "pathe"
       ]
     },
@@ -4435,8 +4472,20 @@
         "pathe"
       ]
     },
+    "@vitest/snapshot@4.1.4": {
+      "integrity": "sha512-MCjCFgaS8aZz+m5nTcEcgk/xhWv0rEH4Yl53PPlMXOZ1/Ka2VcZU6CJ+MgYCZbcJvzGhQRjVrGQNZqkGPttIKw==",
+      "dependencies": [
+        "@vitest/pretty-format@4.1.4",
+        "@vitest/utils@4.1.4",
+        "magic-string",
+        "pathe"
+      ]
+    },
     "@vitest/spy@4.1.2": {
       "integrity": "sha512-DU4fBnbVCJGNBwVA6xSToNXrkZNSiw59H8tcuUspVMsBDBST4nfvsPsEHDHGtWRRnqBERBQu7TrTKskmjqTXKA=="
+    },
+    "@vitest/spy@4.1.4": {
+      "integrity": "sha512-XxNdAsKW7C+FLydqFJLb5KhJtl3PGCMmYwFRfhvIgxJvLSXhhVI1zM8f1qD3Zg7RCjTSzDVyct6sghs9UEgBEQ=="
     },
     "@vitest/utils@4.1.0": {
       "integrity": "sha512-XfPXT6a8TZY3dcGY8EdwsBulFCIw+BeeX0RZn2x/BtiY/75YGh8FeWGG8QISN/WhaqSrE2OrlDgtF8q5uhOTmw==",
@@ -4450,6 +4499,14 @@
       "integrity": "sha512-xw2/TiX82lQHA06cgbqRKFb5lCAy3axQ4H4SoUFhUsg+wztiet+co86IAMDtF6Vm1hc7J6j09oh/rgDn+JdKIQ==",
       "dependencies": [
         "@vitest/pretty-format@4.1.2",
+        "convert-source-map",
+        "tinyrainbow"
+      ]
+    },
+    "@vitest/utils@4.1.4": {
+      "integrity": "sha512-13QMT+eysM5uVGa1rG4kegGYNp6cnQcsTc67ELFbhNLQO+vgsygtYJx2khvdt4gVQqSSpC/KT5FZZxUpP3Oatw==",
+      "dependencies": [
+        "@vitest/pretty-format@4.1.4",
         "convert-source-map",
         "tinyrainbow"
       ]
@@ -8286,12 +8343,12 @@
       "dependencies": [
         "@opentelemetry/api@1.9.1",
         "@types/node",
-        "@vitest/expect",
-        "@vitest/mocker",
+        "@vitest/expect@4.1.2",
+        "@vitest/mocker@4.1.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3",
         "@vitest/pretty-format@4.1.2",
-        "@vitest/runner",
-        "@vitest/snapshot",
-        "@vitest/spy",
+        "@vitest/runner@4.1.2",
+        "@vitest/snapshot@4.1.2",
+        "@vitest/spy@4.1.2",
         "@vitest/utils@4.1.2",
         "es-module-lexer",
         "expect-type",
@@ -8310,6 +8367,40 @@
       "optionalPeers": [
         "@opentelemetry/api@1.9.1",
         "@types/node"
+      ],
+      "bin": true
+    },
+    "vitest@4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4": {
+      "integrity": "sha512-tFuJqTxKb8AvfyqMfnavXdzfy3h3sWZRWwfluGbkeR7n0HUev+FmNgZ8SDrRBTVrVCjgH5cA21qGbCffMNtWvg==",
+      "dependencies": [
+        "@opentelemetry/api@1.9.1",
+        "@types/node",
+        "@vitest/coverage-v8",
+        "@vitest/expect@4.1.4",
+        "@vitest/mocker@4.1.4_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
+        "@vitest/pretty-format@4.1.4",
+        "@vitest/runner@4.1.4",
+        "@vitest/snapshot@4.1.4",
+        "@vitest/spy@4.1.4",
+        "@vitest/utils@4.1.4",
+        "es-module-lexer",
+        "expect-type",
+        "magic-string",
+        "obug",
+        "pathe",
+        "picomatch@4.0.4",
+        "std-env",
+        "tinybench",
+        "tinyexec",
+        "tinyglobby",
+        "tinyrainbow",
+        "vite",
+        "why-is-node-running"
+      ],
+      "optionalPeers": [
+        "@opentelemetry/api@1.9.1",
+        "@types/node",
+        "@vitest/coverage-v8"
       ],
       "bin": true
     },
@@ -8598,7 +8689,7 @@
             "npm:typescript@^5.9.3",
             "npm:vite-plugin-compression2@^2.5.3",
             "npm:vite@^7.3.2",
-            "npm:vitest@^4.1.2"
+            "npm:vitest@^4.1.4"
           ]
         }
       },
