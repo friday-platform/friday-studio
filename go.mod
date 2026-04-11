@@ -3,7 +3,7 @@ module github.com/tempestteam/atlas
 go 1.25.4
 
 require (
-	cloud.google.com/go/auth v0.19.0
+	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/bigquery v1.75.0
 	cloud.google.com/go/profiler v0.6.0
 	cloud.google.com/go/secretmanager v1.17.0
