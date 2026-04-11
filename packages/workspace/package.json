@@ -33,7 +33,7 @@
     "@atlas/utils": "workspace:*",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "ai": "^6.0.141",
+    "ai": "^6.0.158",
     "zod": "^4.3.5"
   },
   "devDependencies": { "vitest": "^4.1.0" }

@@ -36,7 +36,7 @@
     "@types/deno": "2.5.0",
     "@types/markdown-it": "^14.1.2",
     "@types/papaparse": "^5.5.2",
-    "ai": "^6.0.141",
+    "ai": "^6.0.158",
     "dompurify": "^3.3.3",
     "markdown-it": "^14.1.1",
     "papaparse": "^5.5.3",

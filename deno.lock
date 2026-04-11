@@ -125,7 +125,8 @@
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.8.11": "0.8.12",
     "npm:ai-sdk-provider-claude-code@^3.4.4": "3.4.4_zod@4.3.6",
-    "npm:ai@^6.0.141": "6.0.149_zod@4.3.6",
+    "npm:ai@^6.0.141": "6.0.158_zod@4.3.6",
+    "npm:ai@^6.0.158": "6.0.158_zod@4.3.6",
     "npm:chat@4.23.0": "4.23.0",
     "npm:chat@^4.23.0": "4.23.0",
     "npm:cloudflared@~0.7.1": "0.7.1",
@@ -347,6 +348,15 @@
         "zod"
       ]
     },
+    "@ai-sdk/gateway@3.0.95_zod@4.3.6": {
+      "integrity": "sha512-ZmUNNbZl3V42xwQzPaNUi+s8eqR2lnrxf0bvB6YbLXpLjHYv0k2Y78t12cNOfY0bxGeuVVTLyk856uLuQIuXEQ==",
+      "dependencies": [
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
+        "@vercel/oidc",
+        "zod"
+      ]
+    },
     "@ai-sdk/google@3.0.59_zod@4.3.6": {
       "integrity": "sha512-N5pyd6xSIIguG45kM/hvWdTrmudOY/iZ07DZu12K5q/NSeapQQFOYg+3DRKONzS9+FESLugjjzFrzfA24sQ6lw==",
       "dependencies": [
@@ -425,7 +435,7 @@
       "integrity": "sha512-oX+unJns1pkyvJeCJwgAk5RYCPK0eIH88iK4SYuXbptN2RaoB3vc5EPefSlRsVxQRelgVZmd1b/Bg0gl999nNw==",
       "dependencies": [
         "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
-        "ai",
+        "ai@6.0.149_zod@4.3.6",
         "svelte"
       ]
     },
@@ -4571,7 +4581,17 @@
     "ai@6.0.149_zod@4.3.6": {
       "integrity": "sha512-3asRb/m3ZGH7H4+VTuTgj8eQYJZ9IJUmV0ljLslY92mQp6Zj+NVn4SmFj0TBr2Y/wFBWC3xgn++47tSGOXxdbw==",
       "dependencies": [
-        "@ai-sdk/gateway",
+        "@ai-sdk/gateway@3.0.91_zod@4.3.6",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
+        "@opentelemetry/api@1.9.0",
+        "zod"
+      ]
+    },
+    "ai@6.0.158_zod@4.3.6": {
+      "integrity": "sha512-gLTp1UXFtMqKUi3XHs33K7UFglbvojkxF/aq337TxnLGOhHIW9+GyP2jwW4hYX87f1es+wId3VQoPRRu9zEStQ==",
+      "dependencies": [
+        "@ai-sdk/gateway@3.0.95_zod@4.3.6",
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
         "@opentelemetry/api@1.9.0",
@@ -8625,7 +8645,7 @@
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@types/react@^19.2.14",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:gunshi@~0.29.3",
             "npm:ink@^6.8.0",
             "npm:js-levenshtein@^1.1.6",
@@ -8652,7 +8672,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.3.4",
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:chat@4.23.0",
             "npm:file-type@^22.0.1",
             "npm:hono-openapi@^1.3.0",
@@ -8779,7 +8799,7 @@
             "npm:@types/deno@2.5.0",
             "npm:@types/markdown-it@^14.1.2",
             "npm:@types/papaparse@^5.5.2",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:dompurify@^3.3.3",
             "npm:eslint@^10.1.0",
             "npm:markdown-it@^14.1.1",
@@ -8842,7 +8862,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:jsonrepair@^3.13.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -8879,7 +8899,7 @@
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@types/markdown-it@^14.1.2",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:chat@4.23.0",
             "npm:jira.js@^5.3.1",
             "npm:markdown-it@^14.1.1",
@@ -8924,7 +8944,7 @@
             "npm:@libpdf/core@~0.3.4",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@xmldom/xmldom@~0.8.11",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:chat@^4.23.0",
             "npm:jose@^6.1.3",
             "npm:jszip@^3.10.1",
@@ -8976,7 +8996,7 @@
       "packages/hallucination": {
         "packageJson": {
           "dependencies": [
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -8993,7 +9013,7 @@
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.92",
             "npm:@jsr/std__collections@^1.1.3",
             "npm:ai-sdk-provider-claude-code@^3.4.4",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:undici@^7.24.6",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -9016,7 +9036,7 @@
             "npm:@ai-sdk/mcp@^1.0.36",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@modelcontextprotocol/sdk@^1.27.0",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -9031,7 +9051,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.2.4",
             "npm:papaparse@^5.5.3",
@@ -9085,7 +9105,7 @@
           "dependencies": [
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:markdown-it@^14.1.1",
             "npm:nanoid@^5.1.6",
             "npm:tar@^7.5.13",
@@ -9116,7 +9136,7 @@
           "dependencies": [
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -9168,7 +9188,7 @@
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -9178,7 +9198,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:cron-parser@^5.5.0",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -9205,7 +9225,7 @@
             "npm:@tanstack/query-core@^5.96.2",
             "npm:@tanstack/svelte-query@^6.1.13",
             "npm:@types/deno@2.5.0",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:codemirror@^6.0.2",
             "npm:dompurify@^3.3.3",
             "npm:eslint@^10.1.0",
@@ -9233,7 +9253,7 @@
             "npm:@faker-js/faker@^10.3.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",
-            "npm:ai@^6.0.141",
+            "npm:ai@^6.0.158",
             "npm:dotenv@17.4.0",
             "npm:gunshi@~0.29.3",
             "npm:papaparse@^5.5.3",
