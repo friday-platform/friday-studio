@@ -5,9 +5,9 @@ go 1.25.4
 require (
 	cloud.google.com/go/auth v0.19.0
 	cloud.google.com/go/bigquery v1.75.0
-	cloud.google.com/go/profiler v0.5.0
+	cloud.google.com/go/profiler v0.6.0
 	cloud.google.com/go/secretmanager v1.17.0
-	cloud.google.com/go/storage v1.61.3
+	cloud.google.com/go/storage v1.62.0
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/ggicci/httpin v0.20.3
 	github.com/go-chi/chi/v5 v5.2.5
@@ -150,10 +150,10 @@ require (
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
-	github.com/google/pprof v0.0.0-20260302011040-a15ffb7f9dcc // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
-	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
