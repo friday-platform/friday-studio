@@ -54,7 +54,7 @@
     "npm:@eslint/compat@^2.0.4": "2.0.4_eslint@10.2.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.2.0",
     "npm:@faker-js/faker@^10.3.0": "10.4.0",
-    "npm:@hono/mcp@~0.2.4": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.8__ajv@8.18.0__express@5.2.1_hono@4.12.8_hono-rate-limiter@0.4.2__hono@4.12.8_zod@4.3.6",
+    "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.8__ajv@8.18.0__express@5.2.1_hono@4.12.8_hono-rate-limiter@0.4.2__hono@4.12.8_zod@4.3.6",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.8",
     "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.12.8_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.8_zod@4.3.6",
@@ -8552,7 +8552,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@chat-adapter/slack@4.23.0",
-            "npm:@hono/mcp@~0.2.4",
+            "npm:@hono/mcp@~0.2.5",
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/db__sqlite@0.12",
