@@ -39,7 +39,7 @@
     "@opentelemetry/api": "^1.9.1",
     "ai": "^6.0.158",
     "chat": "4.23.0",
-    "@chat-adapter/slack": "4.23.0",
+    "@chat-adapter/slack": "4.25.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {
