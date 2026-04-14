@@ -106,14 +106,37 @@ def _fetch_session(ctx: AgentContext, session_id: str) -> dict[str, Any]:
     return _http_get_json(ctx, f"/api/sessions/{session_id}")
 
 
+# Job names the reflector should NOT pick when finding "latest" — these
+# are reflective/meta jobs whose output isn't substantive work to learn
+# from. Reflecting on a reflection produces nothing useful.
+_SKIP_JOB_NAMES = frozenset({
+    "reflect-on-last-run",
+    "apply-reflection",
+    "audit-orphans",
+    "cross-session-reflect",
+    "autopilot-tick",
+})
+
+
 def _fetch_latest_session(ctx: AgentContext, workspace_id: str) -> dict[str, Any]:
+    """Find the most recent SUBSTANTIVE completed session — skips meta jobs.
+
+    Asks for 25 sessions and walks them in order, returning the first
+    completed session whose jobName is NOT in _SKIP_JOB_NAMES. Falls back
+    to the first completed session if all 25 are meta.
+    """
     data = _http_get_json(
-        ctx, f"/api/sessions?workspaceId={workspace_id}&limit=5"
+        ctx, f"/api/sessions?workspaceId={workspace_id}&limit=25"
     )
     sessions = data.get("sessions", data if isinstance(data, list) else [])
     completed = [s for s in sessions if s.get("status") == "completed"]
     if not completed:
         raise RuntimeError(f"no completed sessions for workspace {workspace_id}")
+    # Prefer substantive sessions (skip meta jobs)
+    for s in completed:
+        if s.get("jobName") not in _SKIP_JOB_NAMES:
+            return _fetch_session(ctx, s["sessionId"])
+    # Fallback: return the most recent completed session even if it's a meta job
     return _fetch_session(ctx, completed[0]["sessionId"])
 
 
@@ -264,7 +287,7 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
 
 @agent(
     id="reflector",
-    version="1.1.0",
+    version="1.2.0",
     description=(
         "Deterministic session reader + focused LLM judgment for the FAST "
         "self-modification loop. Reads a completed session via daemon HTTP, "
