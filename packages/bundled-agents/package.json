@@ -9,7 +9,7 @@
     "./shared-schemas": "./src/shared-schemas.ts"
   },
   "dependencies": {
-    "@ai-sdk/fireworks": "2.0.42",
+    "@ai-sdk/fireworks": "2.0.46",
     "@ai-sdk/groq": "3.0.35",
     "@ai-sdk/provider": "^3.0.8",
     "@anthropic-ai/claude-agent-sdk": "^0.2.79",
