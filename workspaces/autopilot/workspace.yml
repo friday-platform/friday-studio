@@ -161,12 +161,21 @@ agents:
   skill-author:
     type: user
     agent: skill-author
+    description: >-
+      Custom Python WASM agent. Takes a high-confidence reflection
+      proposal + current SKILL.md and produces a complete replacement
+      SKILL.md with a new failure-mode row added. Single LLM call,
+      strict structured output, gated on confidence >= 0.9.
     env:
       ANTHROPIC_API_KEY: from_environment
 
   skill-publisher:
     type: user
     agent: skill-publisher
+    description: >-
+      Custom Python WASM agent. Pure mechanical multipart upload of
+      a new SKILL.md to /api/skills/@tempest/{name}/upload. Records
+      previous_version for rollback. No LLM call.
     env:
       ANTHROPIC_API_KEY: from_environment
 
