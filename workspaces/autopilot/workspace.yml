@@ -66,6 +66,25 @@ signals:
       type: object
       properties: {}
 
+  cross-session-reflect:
+    provider: http
+    title: Cross-session reflect
+    description: >-
+      Run the multi-session-reflector against a target workspace's
+      recent N completed sessions. Surfaces recurring failure
+      patterns that a single-session reflector cannot see.
+    config:
+      path: /webhooks/cross-session-reflect
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Target workspace whose sessions to scan. Defaults to grilled_xylem.
+        n:
+          type: integer
+          description: How many recent completed sessions to scan. Default 10.
+
 agents:
   planner:
     type: user
@@ -104,6 +123,21 @@ agents:
       /api/agents, scan workspace.config.agents in every workspace
       via /api/workspaces and /api/workspaces/{id}, return the
       agents not referenced anywhere as orphans.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
+  cross-session-reflector:
+    type: user
+    agent: multi-session-reflector
+    description: >-
+      Custom Python WASM agent. Cross-session reflector — reads the
+      last N completed sessions for a workspace, computes structural
+      signals, asks claude-haiku for a single recurring-pattern
+      judgment. Companion to the single-session reflector. Wired
+      here so the agent isn't orphaned.
+    prompt: |
+      You are the cross-session reflector. Read your config
+      (workspace_id, n) and emit a reflection-result-multi.
     env:
       ANTHROPIC_API_KEY: from_environment
 
@@ -267,10 +301,35 @@ jobs:
           type: action
           code: |
             export default function prepare_audit(context, event) {
+              // Exclude bundled atlas agents (they're globally available
+              // and don't need FSM consumers) and library-style user agents
+              // (called by other agents, not by FSMs directly).
               return {
                 task: 'Audit orphan agents across all workspaces',
                 config: {
                   platformUrl: 'http://localhost:8080',
+                  // Restrict to known user-built agents so we don't flag
+                  // bundled atlas agents (claude-code, slack, etc.) as orphans.
+                  user_agent_ids: [
+                    'autopilot-planner',
+                    'multi-session-reflector',
+                    'orphan-agent-auditor',
+                    'reflection-aggregator',
+                    'reflector',
+                    'session-summarizer',
+                    'skill-publisher',
+                    'task-router',
+                    'workspace-creator'
+                  ],
+                  // Library agents are called from inside other agents,
+                  // not directly from FSMs. They legitimately have no
+                  // FSM consumer so we exclude them from the orphan set.
+                  // (Note: orphan-agent-auditor v1 doesn't honor this
+                  // field yet — TODO bake it into the algorithm in v2.)
+                  library_agents: [
+                    'session-summarizer',
+                    'reflection-aggregator'
+                  ]
                 },
               };
             }
@@ -312,4 +371,78 @@ jobs:
             - orphan_count
             - orphans
             - rationale
+      tools: {}
+
+  cross-session-reflect:
+    title: Cross-session reflect
+    description: >-
+      Run multi-session-reflector against a target workspace to
+      surface recurring failure patterns. v1 just emits the
+      judgment; v2 will chain into skill-author + skill-publisher.
+    triggers:
+      - signal: cross-session-reflect
+    fsm:
+      id: cross-session-reflect-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            cross-session-reflect:
+              target: step_reflect
+        step_reflect:
+          entry:
+            - type: code
+              function: prepare_reflect
+            - type: agent
+              agentId: cross-session-reflector
+              outputTo: reflect-output
+              outputType: cross-session-reflect-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_reflect_done
+        completed:
+          type: final
+      functions:
+        prepare_reflect:
+          type: action
+          code: |
+            export default function prepare_reflect(context, event) {
+              var wsId = (event.data && event.data.workspace_id) || 'grilled_xylem';
+              var n = (event.data && event.data.n) || 10;
+              return {
+                task: 'Cross-session reflect on ' + wsId,
+                config: {
+                  workspace_id: wsId,
+                  n: n,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_reflect_done:
+          type: guard
+          code: |
+            export default function guard_reflect_done(context, event) {
+              return context.results['reflect-output'] !== undefined;
+            }
+      documentTypes:
+        cross-session-reflect-result:
+          type: object
+          properties:
+            workspace_id: { type: string }
+            n_sessions_scanned: { type: integer }
+            judgment:
+              type: object
+              properties:
+                matches_known_pattern: { type: boolean }
+                skill_update_warranted: { type: boolean }
+                confidence: { type: number }
+                rationale: { type: string }
+            summary: { type: string }
+          required:
+            - workspace_id
+            - judgment
       tools: {}
