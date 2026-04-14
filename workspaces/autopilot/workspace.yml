@@ -126,6 +126,23 @@ agents:
     env:
       ANTHROPIC_API_KEY: from_environment
 
+  dispatcher:
+    type: user
+    agent: autopilot-dispatcher
+    description: >-
+      Custom Python WASM agent. Takes a planner plan-output and fires
+      the target signal at the target workspace via HTTP POST. Blocks
+      until the downstream FSM returns. Closes the autopilot loop —
+      without this, planner output is inert metadata.
+    prompt: |
+      You are the autopilot dispatcher. Read your config, short-circuit
+      on action=='idle', otherwise POST to
+      /api/workspaces/{target_workspace_id}/signals/{target_signal_id}
+      with the signal payload. Return dispatched=true with session_id
+      on 2xx; dispatched=false on idle; err on 4xx/5xx.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
   cross-session-reflector:
     type: user
     agent: multi-session-reflector
@@ -171,9 +188,25 @@ jobs:
               event: ADVANCE
           'on':
             ADVANCE:
-              target: completed
+              target: step_dispatch
               guards:
                 - guard_plan_done
+
+        step_dispatch:
+          entry:
+            - type: code
+              function: prepare_dispatch
+            - type: agent
+              agentId: dispatcher
+              outputTo: dispatch-output
+              outputType: dispatch-result
+            - type: emit
+              event: DISPATCHED
+          'on':
+            DISPATCHED:
+              target: completed
+              guards:
+                - guard_dispatch_done
 
         completed:
           type: final
@@ -229,7 +262,59 @@ jobs:
               return context.results['plan-output'] !== undefined;
             }
 
+        prepare_dispatch:
+          type: action
+          code: |
+            export default function prepare_dispatch(context, event) {
+              var plan = context.results['plan-output'];
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Dispatch: ' + (plan.task_id || '(idle)'),
+                config: {
+                  action: plan.action,
+                  target_workspace_id: plan.target_workspace_id,
+                  target_signal_id: plan.target_signal_id,
+                  signal_payload: plan.signal_payload,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+
+        guard_dispatch_done:
+          type: guard
+          code: |
+            export default function guard_dispatch_done(context, event) {
+              return context.results['dispatch-output'] !== undefined;
+            }
+
       documentTypes:
+        dispatch-result:
+          type: object
+          properties:
+            dispatched: { type: boolean }
+            action:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            target_workspace_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            target_signal_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            session_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            rationale:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+          required:
+            - dispatched
+
         plan-result:
           type: object
           properties:
