@@ -109,7 +109,7 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
