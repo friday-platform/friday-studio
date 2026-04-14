@@ -44,7 +44,7 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
     id="autopilot-planner",
     version="1.0.0",
     description=(
-        "Pure-deterministic backlog planner for the FAST autopilot loop. "
+        "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
         "and dependency resolution, and returns the next task to execute. "
         "No LLM call — this is a router, not a reasoner. Consumed by the "
