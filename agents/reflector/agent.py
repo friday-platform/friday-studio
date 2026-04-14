@@ -162,9 +162,25 @@ def _summarize_session(session: dict[str, Any]) -> dict[str, Any]:
     impl_out = _extract_block_output(implement)
     review_out = _extract_block_output(review)
 
+    # Collect any error messages — session-level + per-block. Without these
+    # the reflector is blind on hard failures and just sees "step did not
+    # complete" without knowing why.
+    session_error = session.get("error")
+    block_errors: list[dict[str, Any]] = []
+    for block in blocks:
+        err = block.get("error")
+        if err:
+            block_errors.append({
+                "stateId": block.get("stateId"),
+                "status": block.get("status"),
+                "error": str(err)[:400],
+            })
+
     return {
         "session_id": session.get("sessionId"),
         "session_status": session.get("status"),
+        "session_error": str(session_error)[:400] if session_error else None,
+        "block_errors": block_errors,
         "workspace_id": session.get("workspaceId"),
         "task": session.get("task"),
         "step_count": len(blocks),
@@ -248,7 +264,7 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
 
 @agent(
     id="reflector",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "Deterministic session reader + focused LLM judgment for the FAST "
         "self-modification loop. Reads a completed session via daemon HTTP, "
