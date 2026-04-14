@@ -158,6 +158,18 @@ agents:
     env:
       ANTHROPIC_API_KEY: from_environment
 
+  skill-author:
+    type: user
+    agent: skill-author
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
+  skill-publisher:
+    type: user
+    agent: skill-publisher
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
 jobs:
   autopilot-tick:
     title: Autopilot iteration
@@ -441,9 +453,9 @@ jobs:
   cross-session-reflect:
     title: Cross-session reflect
     description: >-
-      Run multi-session-reflector against a target workspace to
-      surface recurring failure patterns. v1 just emits the
-      judgment; v2 will chain into skill-author + skill-publisher.
+      Run multi-session-reflector against a target workspace to surface
+      recurring failure patterns. v2 chains into skill-author +
+      skill-publisher behind a confidence gate (>= 0.9).
     triggers:
       - signal: cross-session-reflect
     fsm:
@@ -466,9 +478,45 @@ jobs:
               event: ADVANCE
           'on':
             ADVANCE:
+              - target: step_author
+                guards:
+                  - guard_reflect_done
+                  - guard_skill_warranted
+              - target: completed
+                guards:
+                  - guard_reflect_done
+        step_author:
+          entry:
+            - type: code
+              function: prepare_author
+            - type: agent
+              agentId: skill-author
+              outputTo: author-output
+              outputType: skill-author-result
+            - type: emit
+              event: AUTHOR_DONE
+          'on':
+            AUTHOR_DONE:
+              - target: step_publish
+                guards:
+                  - guard_author_done
+                  - guard_publish_ready
+              - target: completed
+                guards:
+                  - guard_author_done
+        step_publish:
+          entry:
+            - type: code
+              function: prepare_publish
+            - type: agent
+              agentId: skill-publisher
+              outputTo: publish-output
+              outputType: skill-publisher-result
+            - type: emit
+              event: PUBLISH_DONE
+          'on':
+            PUBLISH_DONE:
               target: completed
-              guards:
-                - guard_reflect_done
         completed:
           type: final
       functions:
@@ -493,6 +541,57 @@ jobs:
             export default function guard_reflect_done(context, event) {
               return context.results['reflect-output'] !== undefined;
             }
+        guard_skill_warranted:
+          type: guard
+          code: |
+            export default function guard_skill_warranted(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect || !reflect.judgment) return false;
+              return reflect.judgment.skill_update_warranted === true &&
+                     reflect.judgment.confidence >= 0.9;
+            }
+        prepare_author:
+          type: action
+          code: |
+            export default function prepare_author(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect) throw new Error('Reflect output not found');
+              return {
+                task: 'Author skill update based on cross-session judgment',
+                config: {
+                  judgment: reflect.judgment,
+                  current_skill_md: '',
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_author_done:
+          type: guard
+          code: |
+            export default function guard_author_done(context, event) {
+              return context.results['author-output'] !== undefined;
+            }
+        guard_publish_ready:
+          type: guard
+          code: |
+            export default function guard_publish_ready(context, event) {
+              var author = context.results['author-output'];
+              return author != null && author.proposed_skill_md != null;
+            }
+        prepare_publish:
+          type: action
+          code: |
+            export default function prepare_publish(context, event) {
+              var author = context.results['author-output'];
+              if (!author) throw new Error('Author output not found');
+              return {
+                task: 'Publish proposed skill update',
+                config: {
+                  proposed_skill_md: author.proposed_skill_md,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
       documentTypes:
         cross-session-reflect-result:
           type: object
@@ -510,4 +609,34 @@ jobs:
           required:
             - workspace_id
             - judgment
+        skill-author-result:
+          type: object
+          properties:
+            proposed_skill_md:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            rationale:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+          required: []
+        skill-publisher-result:
+          type: object
+          properties:
+            published: { type: boolean }
+            skill_name:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            version:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            rationale:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+          required:
+            - published
       tools: {}
