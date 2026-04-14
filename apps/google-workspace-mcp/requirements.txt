@@ -61,7 +61,7 @@ exceptiongroup==1.3.1
     # via fastmcp
 fastapi==0.132.0
     # via workspace-mcp
-fastmcp==3.2.3
+fastmcp==3.2.4
     # via
     #   -r requirements.in
     #   workspace-mcp
@@ -83,6 +83,8 @@ google-auth-oauthlib==1.2.4
     # via workspace-mcp
 googleapis-common-protos==1.72.0
     # via google-api-core
+griffelib==2.0.2
+    # via fastmcp
 h11==0.16.0
     # via
     #   httpcore
