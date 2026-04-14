@@ -111,9 +111,11 @@ signals:
       properties:
         reflection_session_id:
           type: string
-          description: Session ID of a completed reflect-on-last-run run that emitted a proposal.
-      required:
-        - reflection_session_id
+          description: >-
+            Session ID of a completed reflect-on-last-run run that emitted a
+            proposal. Optional — if omitted, the apply step walks recent
+            sessions on this workspace and picks the most recent reflect run.
+      required: []
 
 agents:
   task-router:
@@ -976,12 +978,16 @@ jobs:
           type: action
           code: |
             export default function prepare_apply(context, event) {
-              var sid = event.data && event.data.reflection_session_id;
-              if (!sid || typeof sid !== 'string') {
-                throw new Error('Missing required input: reflection_session_id');
-              }
+              // Optional reflection_session_id — if omitted, the
+              // skill-publisher agent walks recent sessions itself and
+              // picks the most recent reflect-on-last-run with
+              // skill_update_proposed=true. This makes the signal safe
+              // to fire periodically from cron without an explicit ID
+              // (e.g., from the autopilot's apply-approved-grilled-xylem
+              // backlog task).
+              var sid = (event.data && event.data.reflection_session_id) || null;
               return {
-                task: 'Apply reflection from session ' + sid,
+                task: sid ? ('Apply reflection from session ' + sid) : 'Apply latest approved reflection',
                 config: {
                   reflection_session_id: sid,
                 },

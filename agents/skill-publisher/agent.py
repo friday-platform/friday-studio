@@ -118,7 +118,7 @@ def _publish_skill(ctx: AgentContext, new_skill_md: str) -> dict[str, Any]:
 
 @agent(
     id="skill-publisher",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "Deterministic skill publisher for the FAST self-modification loop. "
         "Reads a completed reflection session, verifies confidence threshold, "
@@ -135,9 +135,51 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     config = ctx.config or {}
     session_id = config.get("reflection_session_id")
     threshold = float(config.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD))
+    target_workspace = config.get("workspace_id", "grilled_xylem")
 
+    # If no session_id provided, walk recent sessions on the target workspace
+    # and find the most recent reflect-on-last-run with skill_update_proposed=true.
+    # This makes the signal safe to fire periodically without an explicit ID.
     if not session_id or not isinstance(session_id, str):
-        return err("missing required config field: reflection_session_id (string)")
+        ctx.stream.progress(
+            f"no reflection_session_id provided; walking recent sessions on {target_workspace}"
+        )
+        try:
+            url = f"{_platform_url(ctx)}/api/sessions?workspaceId={target_workspace}&limit=20"
+            resp = ctx.http.fetch(url, method="GET", timeout_ms=10000)
+            if resp.status != 200:
+                return err(f"could not list sessions on {target_workspace}: HTTP {resp.status}")
+            data = resp.json()
+            sessions = data.get("sessions") if isinstance(data, dict) else data
+            if not isinstance(sessions, list):
+                return err("sessions list response not an array")
+            # Find the first reflect-on-last-run with skill_update_proposed=true
+            for s in sessions:
+                if not isinstance(s, dict):
+                    continue
+                if s.get("jobName") != "reflect-on-last-run":
+                    continue
+                if s.get("status") != "completed":
+                    continue
+                # Probe the session to check skill_update_proposed
+                try:
+                    probe = _fetch_reflection(ctx, s.get("sessionId") or s.get("id"))
+                    if probe.get("skill_update_proposed"):
+                        session_id = s.get("sessionId") or s.get("id")
+                        break
+                except Exception:
+                    continue
+            if not session_id:
+                return ok({
+                    "applied": False,
+                    "rationale": (
+                        f"no reflect-on-last-run session on {target_workspace} "
+                        "with skill_update_proposed=true; nothing to apply"
+                    ),
+                    "summary": "no-op: no eligible reflection found",
+                })
+        except Exception as exc:
+            return err(f"failed walking sessions: {exc}")
 
     ctx.stream.progress(f"fetching reflection session {session_id}")
     try:
