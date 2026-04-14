@@ -37,7 +37,7 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401
 
 AUTHORING_MODEL = "anthropic:claude-haiku-4-5"
 AUTHORING_MAX_TOKENS = 8192
-PUBLISH_CONFIDENCE_GATE = 0.9
+PUBLISH_GATE = 0.9
 
 SKILL_NAMESPACE = "tempest"
 SKILL_NAME = "fast-self-modification"
@@ -152,7 +152,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
 
     # --- Confidence gate ---
     confidence = float(reflection_result.get("confidence", 0.0))
-    if confidence < PUBLISH_CONFIDENCE_GATE:
+    if confidence < PUBLISH_GATE:
         return ok({
             "proposed_skill_md": None,
             "change_summary": None,
@@ -161,7 +161,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
             "target_skill_namespace": SKILL_NAMESPACE,
             "target_skill_name": SKILL_NAME,
             "skipped": True,
-            "reason": f"confidence {confidence:.2f} below gate {PUBLISH_CONFIDENCE_GATE}",
+            "reason": f"confidence {confidence:.2f} below gate {PUBLISH_GATE}",
         })
 
     # --- Validate new_failure_mode ---
