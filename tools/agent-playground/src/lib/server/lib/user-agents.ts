@@ -6,18 +6,23 @@
  */
 
 import { join } from "node:path";
+import process from "node:process";
 import type { AgentSummary } from "@atlas/core/agent-loader";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 
-const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
+function resolveAgentSourceDir(): string {
+  return process.env.AGENT_SOURCE_DIR ?? join(getAtlasHome(), "agents");
+}
 
 /** List user-built agents from disk. Re-scans on every call (no caching). */
 export function listUserAgents(): Promise<AgentSummary[]> {
+  const adapter = new UserAdapter(resolveAgentSourceDir());
   return adapter.listAgents();
 }
 
 /** Check if a user agent exists by ID */
 export function userAgentExists(id: string): Promise<boolean> {
+  const adapter = new UserAdapter(resolveAgentSourceDir());
   return adapter.exists(id);
 }
