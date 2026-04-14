@@ -216,7 +216,6 @@
     "npm:vite@^7.3.1": "7.3.2_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
     "npm:vite@^7.3.2": "7.3.2_@types+node@25.5.2_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
     "npm:vitest@^4.1.0": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
-    "npm:vitest@^4.1.2": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:vitest@^4.1.4": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.5.2_@vitest+coverage-v8@4.1.0__vitest@4.1.2___@opentelemetry+api@1.9.1___@types+node@25.5.2___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4___tsx@4.21.0___yaml@2.8.3__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:ws@^8.20.0": "8.20.0",
     "npm:xstate@^5.28.0": "5.30.0",
@@ -8785,7 +8784,7 @@
             "npm:nanoid@5.1.7",
             "npm:oauth4webapi@3.8.5",
             "npm:postgres@3.4.7",
-            "npm:vitest@^4.1.2",
+            "npm:vitest@^4.1.4",
             "npm:zod@4.3.6"
           ]
         }
