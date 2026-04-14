@@ -1144,24 +1144,56 @@ autopilot loop is what actually replaces the operator.
    load-bearing inside `mild_almond`'s `audit-orphans` job; runs
    deterministically in <500ms.
 
-**What's NOT yet wired (the remaining loop gap):**
+**Phase 1a.5 STATUS as of 2026-04-14 mid-crank — autopilot v1 LIVE:**
 
-- **`autopilot-dispatcher`** — takes a planner plan-output and
-  actually fires the target signal. Until this lands, the operator
-  still reads the plan-output and manually POSTs the next signal.
-  **This is the biggest remaining overwatch function.**
-- **Chain `skill-author` → `skill-publisher`** behind the confidence
-  gate inside `cross-session-reflect`. Without this, high-confidence
-  recurring patterns surface but don't auto-publish.
-- **Cron trigger on `autopilot-tick`** — currently HTTP-only,
-  operator-triggered. Final step of replacing operator as overwatch.
+- ✅ **Cron trigger** — `autopilot-tick-cron` fires every 5 minutes UTC
+  (was 1 min; reduced to prevent treadmill, see below).
+- ✅ **Inline planner+dispatch** — the planner agent does the dispatch
+  itself via `ctx.http.fetch` after picking the task. This is a
+  workaround for a daemon bug (#29 below) where the second user agent
+  in an FSM has its agentContext stripped of `http`/`stream` bindings.
+  The dedicated `autopilot-dispatcher` v2.0.0 (fire-and-poll) is built
+  but unused until the daemon bug is fixed.
+- ✅ **Skip-recent cooldown** — planner queries
+  `/api/sessions?workspaceId=X` and skips a task if its target signal
+  appears in the top-N recent sessions (n_window = cooldown_s/60,
+  default cooldown 1800s = 30 min). Position-based heuristic since
+  WASM Python sandbox lacks `datetime` and `calendar` modules. Stops
+  the cron-driven treadmill where the same highest-priority task
+  fires every tick.
+- ✅ **Skill-author chain** — `cross-session-reflect` job has FSM
+  steps `step_reflect → step_author → step_publish → completed`,
+  gated by `guard_skill_warranted` (skill_update_warranted=true AND
+  confidence>=0.9). Both step_author and step_publish are SKIPPED
+  cleanly when the gate fails. Verified end-to-end with a 15-session
+  scan that returned skill_update_warranted=false.
+- ⏸️ **Real backlog mechanism** — backlog still embedded inline in
+  `prepare_plan` code action with one task. The `MdNarrativeCorpus`-
+  backed daemon route exists in source (`apps/atlasd/routes/memory/get.ts`)
+  but won't surface until friday-starter image rebuilds (same
+  constraint as the user-agents 404 fix).
 
-**Load-bearing agent count:** 7/10 (task-router, reflector,
-skill-publisher, autopilot-planner, orphan-agent-auditor,
-multi-session-reflector, skill-author wired for consumption). Three
-documented exceptions: `session-summarizer` + `reflection-aggregator`
-are library-style agents called from other agents; `workspace-creator`
-is a forward-looking primitive with no consumer yet.
+**Load-bearing user agents (post-cooldown-fix):** 8/11 wired into FSMs
+(task-router, reflector, skill-publisher, autopilot-planner,
+autopilot-dispatcher, orphan-agent-auditor, multi-session-reflector,
+skill-author). Three documented exceptions: `session-summarizer` +
+`reflection-aggregator` are library-style agents (now formally
+excluded by orphan-auditor v1.2's `library_agents` config field);
+`workspace-creator` is a forward-looking primitive with no consumer
+yet by design.
+
+**Open daemon bug surfaced by autopilot work (#29 in the operator's
+todo, not yet enshrined as a parity-plan open question):** when an
+FSM has TWO consecutive user-agent steps, the second invocation
+crashes with `Cannot read properties of undefined (reading streamEmit
+or httpFetch)`. Stack trace originates in
+`packages/fsm-engine/fsm-engine.ts` somewhere in the agent action
+execution path. The first user agent gets a properly-bound
+agentContext; the second gets undefined bindings. Reproduced reliably
+with the autopilot's original `step_plan → step_dispatch` FSM
+(planner → dispatcher). Workaround in place: collapse to one user-
+agent step (planner does dispatch inline). Real fix needs a
+fsm-engine.ts patch — a self-mod task is in flight to investigate.
 
 ### Phase 2 — Emergent skill authoring
 
