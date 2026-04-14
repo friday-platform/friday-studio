@@ -632,8 +632,14 @@ export class CodeAgentExecutor {
         durationMs,
       };
     } finally {
-      // Clean up global bindings
-      delete (globalThis as Record<string, unknown>).__fridayCapabilities;
+      // Don't delete globalThis.__fridayCapabilities — bindHostFunctions
+      // overwrites it on the next invocation, which is sufficient reset
+      // semantics for sequential calls. Deleting it created a race in
+      // chained FSM steps where the second user agent in an FSM saw
+      // undefined __fridayCapabilities and crashed with
+      // "Cannot read properties of undefined (reading 'streamEmit')".
+      // Reproduced reliably in mild_almond's autopilot-tick FSM with
+      // step_plan (planner) → step_dispatch (dispatcher).
       this.executionAbortController = null;
     }
   }
