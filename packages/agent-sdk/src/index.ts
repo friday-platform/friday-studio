@@ -2,7 +2,9 @@ export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
 export { createAgent } from "./create-agent.ts";
 export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
 export { createFailTool, FailInputSchema } from "./fail-tool.ts";
+export * from "./memory-adapter.ts";
 export type {
+  AtlasDataEvent,
   AtlasDataEvents,
   AtlasUIMessage,
   AtlasUIMessageChunk,
@@ -10,8 +12,14 @@ export type {
   MessageMetadata,
 } from "./messages.ts";
 export {
+  AtlasDataEventSchema,
   AtlasDataEventSchemas,
+  MemoryRollbackEventSchema,
+  MemoryWriteEventSchema,
   MessageMetadataSchema,
+  ScratchpadWriteEventSchema,
+  SkillRollbackEventSchema,
+  SkillWriteEventSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
 export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
@@ -29,6 +37,11 @@ export type {
   AgentPayloadSuccess,
 } from "./result.ts";
 export { err, ok } from "./result.ts";
+// Schema boundary
+export type { SchemaBoundaryConfig } from "./schema-boundary.ts";
+export { withSchemaBoundary } from "./schema-boundary.ts";
+export * from "./scratchpad-adapter.ts";
+export * from "./skill-adapter.ts";
 export type {
   AgentContext,
   AgentEnvironmentConfig,

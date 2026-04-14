@@ -35,8 +35,6 @@ export const AtlasDataEventSchemas = {
   "agent-start": z.object({ agentId: z.string(), task: z.string() }),
   "agent-finish": z.object({ agentId: z.string(), duration: z.number() }),
   "agent-error": z.object({ agentId: z.string(), duration: z.number(), error: z.string() }),
-  // FSM events: key without "data-" prefix since DataUIMessageChunk adds "data-" prefix
-  // Result: type "fsm-state-transition" → DataUIMessageChunk type "data-fsm-state-transition"
   "fsm-state-transition": z.object({
     sessionId: z.string(),
     workspaceId: z.string(),
@@ -88,27 +86,107 @@ export const AtlasDataEventSchemas = {
     artifactId: z.string().optional(),
     artifactLabel: z.string().optional(),
   }),
-  "credential-linked": z.object({
-    provider: z.string(), // e.g., 'google-calendar'
-    displayName: z.string(), // e.g., 'Google Calendar'
-  }),
-  intent: z.object({
-    content: z.string(), // e.g., 'Connecting to Notion', 'Creating plan'
-  }),
+  "credential-linked": z.object({ provider: z.string(), displayName: z.string() }),
+  intent: z.object({ content: z.string() }),
   "artifact-attached": z.object({
-    artifactIds: z.array(z.string()), // UUIDs of attached artifacts
-    filenames: z.array(z.string()), // Original filenames for display
-    mimeTypes: z.array(z.string()).optional(), // MIME types of attached artifacts
+    artifactIds: z.array(z.string()),
+    filenames: z.array(z.string()),
+    mimeTypes: z.array(z.string()).optional(),
   }),
   /** Forwarded tool call from an inner (sub-agent) execution */
   "inner-tool-call": z.object({
-    toolName: z.string(), // e.g., "search_pages"
+    toolName: z.string(),
     status: z.enum(["started", "completed", "failed"]),
-    input: z.string().optional(), // Tool input/args as JSON string
-    result: z.string().optional(), // Tool output as JSON string
+    input: z.string().optional(),
+    result: z.string().optional(),
   }),
   "action-summary": z.object({ summary: z.string() }),
+  // Adapter write events — leapfrog #3 (observable mutations)
+  "memory-write": z.object({
+    workspaceId: z.string(),
+    corpus: z.string(),
+    entryId: z.string(),
+    kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+    at: z.string(),
+  }),
+  "memory-rollback": z.object({
+    workspaceId: z.string(),
+    corpus: z.string(),
+    toVersion: z.string(),
+    at: z.string(),
+  }),
+  "scratchpad-write": z.object({
+    sessionKey: z.string(),
+    chunkId: z.string(),
+    kind: z.string(),
+    at: z.string(),
+  }),
+  "skill-write": z.object({
+    workspaceId: z.string(),
+    name: z.string(),
+    version: z.string(),
+    at: z.string(),
+  }),
+  "skill-rollback": z.object({
+    workspaceId: z.string(),
+    name: z.string(),
+    toVersion: z.string(),
+    at: z.string(),
+  }),
 };
+
+// ── Standalone event schemas with type discriminant (leapfrog #3) ───────────
+
+export const MemoryWriteEventSchema = z.object({
+  type: z.literal("memory-write"),
+  workspaceId: z.string(),
+  corpus: z.string(),
+  entryId: z.string(),
+  kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+  at: z.string(),
+});
+
+export const MemoryRollbackEventSchema = z.object({
+  type: z.literal("memory-rollback"),
+  workspaceId: z.string(),
+  corpus: z.string(),
+  toVersion: z.string(),
+  at: z.string(),
+});
+
+export const ScratchpadWriteEventSchema = z.object({
+  type: z.literal("scratchpad-write"),
+  sessionKey: z.string(),
+  chunkId: z.string(),
+  kind: z.string(),
+  at: z.string(),
+});
+
+export const SkillWriteEventSchema = z.object({
+  type: z.literal("skill-write"),
+  workspaceId: z.string(),
+  name: z.string(),
+  version: z.string(),
+  at: z.string(),
+});
+
+export const SkillRollbackEventSchema = z.object({
+  type: z.literal("skill-rollback"),
+  workspaceId: z.string(),
+  name: z.string(),
+  toVersion: z.string(),
+  at: z.string(),
+});
+
+export const AtlasDataEventSchema = z.discriminatedUnion("type", [
+  MemoryWriteEventSchema,
+  MemoryRollbackEventSchema,
+  ScratchpadWriteEventSchema,
+  SkillWriteEventSchema,
+  SkillRollbackEventSchema,
+]);
+
+export type AtlasDataEvent = z.infer<typeof AtlasDataEventSchema>;
 
 /**
  * Atlas data events - consolidated session and user message events.
@@ -126,8 +204,6 @@ export type AtlasDataEvents = {
   "user-message": z.infer<(typeof AtlasDataEventSchemas)["user-message"]>;
   "tool-progress": z.infer<(typeof AtlasDataEventSchemas)["tool-progress"]>;
   "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
-  // FSM events: keys match schema keys (without data- prefix)
-  // DataUIMessageChunk adds "data-" prefix → final type is "data-fsm-state-transition"
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
@@ -135,6 +211,11 @@ export type AtlasDataEvents = {
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;
   "action-summary": z.infer<(typeof AtlasDataEventSchemas)["action-summary"]>;
+  "memory-write": z.infer<(typeof AtlasDataEventSchemas)["memory-write"]>;
+  "memory-rollback": z.infer<(typeof AtlasDataEventSchemas)["memory-rollback"]>;
+  "scratchpad-write": z.infer<(typeof AtlasDataEventSchemas)["scratchpad-write"]>;
+  "skill-write": z.infer<(typeof AtlasDataEventSchemas)["skill-write"]>;
+  "skill-rollback": z.infer<(typeof AtlasDataEventSchemas)["skill-rollback"]>;
 };
 
 /**
