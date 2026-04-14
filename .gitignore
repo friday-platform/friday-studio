@@ -20,6 +20,7 @@
 !/agents/reflection-aggregator/
 !/agents/workspace-creator/
 !/agents/multi-session-reflector/
+!/agents/autopilot-planner/
 
 # Deno
 .deno/

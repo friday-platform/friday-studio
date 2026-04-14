@@ -118,7 +118,12 @@ jobs:
           type: action
           code: |
             export default function prepare_plan(context, event) {
-              var backlogUrl = (event.data && event.data.backlog_url) || '';
+              // Default backlog source: the committed file on declaw branch.
+              // The daemon has no /api/files/raw endpoint, so we serve via
+              // GitHub raw content. Operator can override via signal payload
+              // backlog_url for testing against another branch or fork.
+              var defaultUrl = 'https://raw.githubusercontent.com/tempestteam/atlas/declaw/docs/plans/autopilot-backlog.json';
+              var backlogUrl = (event.data && event.data.backlog_url) || defaultUrl;
               return {
                 task: 'Autopilot tick: pick next backlog task',
                 config: {
