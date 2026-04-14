@@ -59,12 +59,21 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 def execute(prompt, ctx):
     cfg = ctx.config or {}
 
-    backlog_url = cfg.get("backlog_url", BACKLOG_URL_DEFAULT)
-
-    try:
-        data = _http_get_json(ctx, backlog_url)
-    except RuntimeError as exc:
-        return err(f"Failed to fetch backlog: {exc}")
+    inline_json = cfg.get("backlog_json")
+    if isinstance(inline_json, str) and inline_json:
+        import json as _json
+        try:
+            data = _json.loads(inline_json)
+        except _json.JSONDecodeError as exc:
+            return err(f"backlog_json is not valid JSON: {exc}")
+    elif isinstance(inline_json, dict):
+        data = inline_json
+    else:
+        backlog_url = cfg.get("backlog_url", BACKLOG_URL_DEFAULT)
+        try:
+            data = _http_get_json(ctx, backlog_url)
+        except RuntimeError as exc:
+            return err(f"Failed to fetch backlog: {exc}")
 
     if not isinstance(data, dict):
         return err("Backlog JSON root must be an object")
