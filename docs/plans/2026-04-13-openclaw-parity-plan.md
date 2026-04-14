@@ -1070,6 +1070,99 @@ boundary + streaming + `md`/`inmemory` backends) and 1b
 (`sqlite-rag`/`sqlite-ttl`/`sqlite` + bucketlist migration +
 `friday inspect`). Both stay on the critical path.
 
+#### Phase 1a — Delivery status (as of 2026-04-14 mid-crank)
+
+Overnight FAST-on-FAST crank delivered most of Phase 1a before the
+scope pivot (see next section). Status against the 10-item Phase 1
+list above:
+
+- ✅ **#1 Interfaces** — `2d7aa73f9`. MemoryAdapter + 4 corpus types,
+  ScratchpadAdapter, SkillAdapter landed in `@atlas/agent-sdk/src/`.
+- ✅ **#5 Schema boundary helper** — `2d7aa73f9`. `withSchemaBoundary`
+  utility wraps every adapter write. First consumer is MdNarrativeCorpus.
+- ✅ **md narrative backend (#2)** — `a7cef9dce`. `MdNarrativeCorpus`
+  in `packages/adapters-md/` with `append()` + 3 vitest tests.
+  Versioning (leapfrog #2) deferred per reviewer accepted scope.
+- ✅ **inmemory scratchpad (#2)** — `68c3ff019`. `InMemoryScratchpadAdapter`
+  in `packages/adapters-memory/`, `append`/`read`/`clear` implemented,
+  `promote` throws NotImplementedError. 4 vitest tests.
+- ✅ **md skill backend (#2)** — `b9f5b57fd`. `MdSkillAdapter` in
+  `packages/adapters-md/`, `list`/`get`/`create`/`update`/`invalidate`
+  implemented with YAML frontmatter + markdown body storage. 5 vitest
+  tests. `history`/`rollback` throw NotImplementedError (versioning
+  deferred — same pattern as scratchpad `promote`).
+- 🔄 **Streaming event emission (#4)** — deferred per accepted scope.
+- ⏭️ **MdMemoryAdapter facade (between #2 and #6)** — in flight on
+  grilled_xylem but **deprioritized** per scope pivot.
+- ⏸️ **Session bootstrap injection (#6)** — blocked on MdMemoryAdapter
+  facade. Not doing until the autopilot loop is closed.
+- ⏸️ **JSON-RPC schema + in-guest SDK (#7)** — Phase 1b.
+- ⏸️ **Platform tools (#8), migrations (#9), friday inspect (#10)** — Phase 1b.
+
+**Phase 1a Score:** 5/10 items delivered, 1 deferred, 3 blocked, 1
+out-of-scope-per-pivot. Remaining work is NOT the top priority — see
+next section.
+
+### Phase 1a.5 — Autopilot loop (delivered out-of-plan)
+
+**Pivot rationale (user directive 2026-04-14):** "full adapter suite
+is less important than an OpenClaw-but-better autonomous loop." Every
+minute the operator sits in front of FAST polling sessions and
+dispatching the next task, the "autonomous" framing is a lie. The
+autopilot loop is what actually replaces the operator.
+
+**What landed:**
+
+1. **10 custom Python WASM agents** (Tier-5 SDK authorship) under
+   `agents/`. Hand-bootstrapped `reflector` + `skill-publisher`;
+   FAST-authored via `frozen_nutella` (agent-author workspace):
+   `task-router`, `session-summarizer`, `reflection-aggregator`,
+   `workspace-creator`, `multi-session-reflector`, `autopilot-planner`,
+   `orphan-agent-auditor`, `skill-author`. Whitelist in `.gitignore`
+   for durability. Commit refs: `ea916c234`, `4125a52de`, `95adab279`,
+   `5b6952bbc`, `b508bb7be`.
+
+2. **`autopilot` workspace** at `workspaces/autopilot/workspace.yml`
+   (registered as `mild_almond`). 3 jobs currently wired:
+   - `autopilot-tick` — calls `autopilot-planner`, emits next action.
+     Proven end-to-end via session `b5901242`.
+   - `audit-orphans` — calls `orphan-agent-auditor`, emits list of
+     unwired user agents. Proven via session `f334aa64`: 6 referenced
+     / 3 orphans after exclusion filter.
+   - `cross-session-reflect` — calls `multi-session-reflector` against
+     a target workspace. Proven via session `71a3eab0` against
+     grilled_xylem's last 5 sessions.
+
+3. **`task-router` routing gate** wired into `grilled_xylem`'s
+   `execute-self-mod-task` FSM as `step_route`. Short quick-fix
+   briefs skip `step_research` and go straight to `step_implement`.
+   Proven end-to-end via session `e23fbb7b` (commit `783f74aa6`).
+
+4. **Cross-artifact integration check** (`orphan-agent-auditor`) —
+   closes the structural failure mode identified mid-crank where
+   FAST-authored agents accumulated without any FSM consumer. Now
+   load-bearing inside `mild_almond`'s `audit-orphans` job; runs
+   deterministically in <500ms.
+
+**What's NOT yet wired (the remaining loop gap):**
+
+- **`autopilot-dispatcher`** — takes a planner plan-output and
+  actually fires the target signal. Until this lands, the operator
+  still reads the plan-output and manually POSTs the next signal.
+  **This is the biggest remaining overwatch function.**
+- **Chain `skill-author` → `skill-publisher`** behind the confidence
+  gate inside `cross-session-reflect`. Without this, high-confidence
+  recurring patterns surface but don't auto-publish.
+- **Cron trigger on `autopilot-tick`** — currently HTTP-only,
+  operator-triggered. Final step of replacing operator as overwatch.
+
+**Load-bearing agent count:** 7/10 (task-router, reflector,
+skill-publisher, autopilot-planner, orphan-agent-auditor,
+multi-session-reflector, skill-author wired for consumption). Three
+documented exceptions: `session-summarizer` + `reflection-aggregator`
+are library-style agents called from other agents; `workspace-creator`
+is a forward-looking primitive with no consumer yet.
+
 ### Phase 2 — Emergent skill authoring
 
 **Goal:** Todoist-in-a-fresh-workspace demo. Parity target + Phase 1's

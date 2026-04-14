@@ -1,0 +1,852 @@
+version: '1.0'
+workspace:
+  name: Parity Plan Exec
+  description: >-
+    Uses FAST to execute the OpenClaw parity plan against the atlas monorepo mounted at
+    /workspace/atlas. Orchestrates architect → coder (claude-code) → reviewer with data contracts
+    between steps. Triggered per-task via HTTP signal.
+skills:
+  - name: '@tempest/parity-plan-context'
+signals:
+  run-task:
+    description: >-
+      Execute a specific task from the parity plan. Pass task_id, task_brief, and optionally
+      target_files. The architect produces a design memo, coder implements via Claude Code, reviewer
+      compares against the memo and CLAUDE.md.
+    title: Run parity-plan task
+    schema:
+      type: object
+      properties:
+        task_id:
+          type: string
+          title: Task ID
+          description: >-
+            Slug for the task, e.g. "phase1-interfaces", "phase1-schema-boundary",
+            "phase1-md-narrative".
+        task_brief:
+          type: string
+          title: Task brief
+          description: >-
+            Prose description of what to build. The architect expands this into a design memo after
+            reading the plan docs.
+        target_files:
+          type: array
+          items:
+            type: string
+          title: Target files
+          description: >-
+            Expected files to create/modify. Advisory — the architect can add more after reading the
+            code.
+      required:
+        - task_id
+        - task_brief
+    provider: http
+    config:
+      path: /webhooks/parity-task
+jobs:
+  execute-task:
+    description: >-
+      Architect produces design memo → coder implements → reviewer verifies. Each step has a data
+      contract on its output; the FSM cannot advance until the contract is fulfilled.
+    title: Execute parity plan task
+    triggers:
+      - signal: run-task
+    fsm:
+      id: parity-task-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            run-task:
+              target: step_route
+
+        step_route:
+          entry:
+            - type: code
+              function: prepare_route
+            - type: agent
+              agentId: task-router
+              outputTo: route-output
+              outputType: routing-result
+            - type: emit
+              event: ROUTED
+          'on':
+            ROUTED:
+              - target: step_implement
+                guards:
+                  - guard_route_quick_fix
+              - target: step_research
+                guards:
+                  - guard_route_full_fsm
+
+        step_research:
+          entry:
+            - type: code
+              function: prepare_research
+            - type: agent
+              agentId: architect
+              outputTo: memo-output
+              outputType: design-memo-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement
+              guards:
+                - guard_memo_done
+        step_implement:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: coder
+              outputTo: impl-output
+              outputType: coder-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review
+              guards:
+                - guard_impl_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: reviewer
+              outputTo: review-output
+              outputType: review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_review_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+
+        prepare_route:
+          type: action
+          code: |
+            export default function prepare_route(context, event) {
+              var taskId = event.data && event.data.task_id;
+              var brief = event.data && event.data.task_brief;
+              var targets = (event.data && event.data.target_files) || [];
+              if (!taskId || typeof taskId !== 'string') {
+                throw new Error('Missing required input: task_id');
+              }
+              if (!brief || typeof brief !== 'string') {
+                throw new Error('Missing required input: task_brief');
+              }
+              context.setResult('task-input', {
+                taskId: taskId,
+                brief: brief,
+                targets: targets,
+              });
+              return {
+                task: 'Route ' + taskId + ': quick-fix vs full-fsm',
+                config: {
+                  task_brief: brief,
+                  target_files: targets,
+                },
+              };
+            }
+
+        guard_route_quick_fix:
+          type: guard
+          code: |
+            export default function guard_route_quick_fix(context, event) {
+              var r = context.results['route-output'];
+              return r !== undefined && r && r.route === 'quick-fix';
+            }
+
+        guard_route_full_fsm:
+          type: guard
+          code: |
+            export default function guard_route_full_fsm(context, event) {
+              var r = context.results['route-output'];
+              return r !== undefined && r && r.route === 'full-fsm';
+            }
+
+        prepare_research:
+          type: action
+          code: |
+            export default function prepare_research(context, event) {
+              // Called via ROUTED event from step_route, so event.data does
+              // NOT carry the original signal payload. Pull from task-input
+              // which prepare_route already stashed.
+              var task = context.results['task-input'];
+              if (!task) throw new Error('Task input not found (prepare_route should have stashed it)');
+              return {
+                task: 'Design memo for ' + task.taskId + ': ' + task.brief,
+                config: {
+                  task_id: task.taskId,
+                  task_brief: task.brief,
+                  target_files: task.targets,
+                  repo_root: '/workspace/atlas',
+                },
+              };
+            }
+        guard_memo_done:
+          type: guard
+          code: |
+            export default function guard_memo_done(context, event) {
+              return context.results['memo-output'] !== undefined;
+            }
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              var memo = context.results['memo-output'];
+              var task = context.results['task-input'];
+              if (!task) throw new Error('Task input not found');
+              // Quick-fix path bypasses architect — memo is undefined.
+              var quickFix = memo === undefined;
+              return {
+                task: quickFix
+                  ? 'Implement ' + task.taskId + ' (quick-fix path, no memo): ' + task.brief
+                  : 'Implement ' + task.taskId + ' per design memo',
+                config: {
+                  workDir: '/workspace/atlas',
+                  task_id: task.taskId,
+                  memo: memo || null,
+                  task_brief: task.brief,
+                  target_files: task.targets,
+                  quick_fix: quickFix,
+                },
+              };
+            }
+        guard_impl_done:
+          type: guard
+          code: |
+            export default function guard_impl_done(context, event) {
+              return context.results['impl-output'] !== undefined;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var memo = context.results['memo-output'];
+              var impl = context.results['impl-output'];
+              var task = context.results['task-input'];
+              if (!impl || !task) {
+                throw new Error('Missing impl or task input');
+              }
+              // Quick-fix path: memo is undefined (architect skipped).
+              return {
+                task: 'Review ' + task.taskId + (memo ? ' against memo' : ' (quick-fix, no memo)'),
+                config: {
+                  workDir: '/workspace/atlas',
+                  task_id: task.taskId,
+                  memo: memo || null,
+                  changes: impl,
+                  quick_fix: memo === undefined,
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              return context.results['review-output'] !== undefined;
+            }
+      documentTypes:
+        routing-result:
+          type: object
+          properties:
+            route:
+              type: string
+              enum: [quick-fix, full-fsm]
+            rationale:
+              type: string
+            estimated_files_changed:
+              type: integer
+          required:
+            - route
+            - rationale
+
+        design-memo-result:
+          type: object
+          properties:
+            plan_citations:
+              type: array
+              description: >-
+                Verbatim quotes from the parity plan establishing the interface shapes this memo
+                references. REQUIRED and must be non-empty. Every key_type in files_to_create must
+                appear verbatim in one of these quotes.
+              items:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    description: 'Relative path, e.g. "docs/plans/2026-04-13-openclaw-parity-plan.md"'
+                  line_start:
+                    type: integer
+                  line_end:
+                    type: integer
+                  verbatim:
+                    type: string
+                    description: 'Exact text block from the plan, preserving whitespace'
+                required:
+                  - file
+                  - verbatim
+              minItems: 1
+            files_to_create:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  purpose:
+                    type: string
+                  key_types:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - path
+                  - purpose
+            files_to_modify:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  changes:
+                    type: string
+                required:
+                  - path
+                  - changes
+            zod_schemas_needed:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  shape:
+                    type: string
+            tests_needed:
+              type: array
+              items:
+                type: string
+            integration_notes:
+              type: string
+          required:
+            - plan_citations
+            - files_to_create
+            - integration_notes
+        coder-result:
+          type: object
+          properties:
+            files_written:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  lines_added:
+                    type: integer
+                  lines_removed:
+                    type: integer
+                required:
+                  - path
+            tests_added:
+              type: array
+              items:
+                type: string
+            deno_check_passed:
+              type: boolean
+            deno_lint_passed:
+              type: boolean
+            summary:
+              type: string
+          required:
+            - files_written
+            - deno_check_passed
+            - summary
+        review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum:
+                - APPROVE
+                - NEEDS_CHANGES
+                - BLOCK
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                    enum:
+                      - CRITICAL
+                      - WARNING
+                      - SUGGESTION
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                  description:
+                    type: string
+                  plan_line:
+                    type: string
+                    description: >-
+                      Citation for what this finding violates. Either a plan line range (e.g.
+                      "parity-plan.md:423-460") or a CLAUDE.md line citation. Required for all
+                      findings — a finding without a citation is invalid.
+                required:
+                  - severity
+                  - description
+                  - plan_line
+            summary:
+              type: string
+          required:
+            - verdict
+            - summary
+      tools: {}
+agents:
+  task-router:
+    type: user
+    agent: task-router
+    description: >-
+      Deterministic quick-fix vs full-fsm routing gate. Added 2026-04-14
+      to bring parity-plan-exec in line with fast-self-mod's loop
+      improvements. Single-file brief with a fix/rename/remove/rewrite
+      verb and <800 chars skips the architect entirely.
+    prompt: |
+      You are the task router. Return {route, rationale,
+      estimated_files_changed} per the deterministic routing rules.
+
+  architect:
+    description: Produces design memos citing the authoritative interface declarations embedded in this prompt.
+    type: llm
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      prompt: >
+        You are the architect for the OpenClaw parity plan execution.
+
+
+        ## HARD RULE — no invention
+
+
+        The authoritative interface declarations are inlined below
+
+        under "§ AUTHORITATIVE INTERFACE DECLARATIONS". For any task
+
+        touching memory, scratchpad, or skill adapters, your
+
+        files_to_create MUST use those exact declarations verbatim.
+
+        Do not paraphrase, rename, reshape, or simplify.
+
+
+        Your plan_citations array MUST quote the relevant blocks
+
+        verbatim (use the exact text between the ```ts fences). If
+
+        plan_citations is empty or paraphrased, your memo is
+
+        structurally invalid.
+
+
+        ## Citation format
+
+
+        Each plan_citation is:
+          {
+            "file": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+            "line_start": 582,
+            "line_end": 634,
+            "verbatim": "<exact copy of the code block, including newlines>"
+          }
+
+        ## files_to_create
+
+
+        Every `key_types` entry must appear verbatim in a
+
+        plan_citation. Your `purpose` field must cite which plan
+
+        section the interface comes from.
+
+
+        For the supporting types that are referenced but not fully
+
+        declared in the main interface block (CorpusOf, NarrativeEntry,
+
+        DocBatch, etc.), use the placeholder declarations from the
+
+        "Supporting types" block below.
+
+
+        ## § AUTHORITATIVE INTERFACE DECLARATIONS (plan lines 582-686)
+
+
+        These come verbatim from
+
+        `docs/plans/2026-04-13-openclaw-parity-plan.md`. They are the
+
+        source of truth.
+
+
+        ### MemoryAdapter + corpus sub-interfaces
+
+        (plan lines 582-634)
+
+
+        ```ts
+
+        // packages/agent-sdk/src/memory-adapter.ts
+
+
+        export interface MemoryAdapter {
+          /** Open or create a named corpus. Backend resolved per-corpus from config. */
+          corpus<K extends CorpusKind>(
+            workspaceId: string,
+            name: string,
+            kind: K,
+          ): Promise<CorpusOf<K>>;
+
+          /** Enumerate corpora registered in this workspace. */
+          list(workspaceId: string): Promise<CorpusMetadata[]>;
+
+          /** Bootstrap block injected into agent system prompt at session start.
+           *  A *view* over one or more narrative corpora. */
+          bootstrap(workspaceId: string, agentId: string): Promise<string>;
+
+          /** Versioned history — leapfrog dimension #2. */
+          history(workspaceId: string, filter?: HistoryFilter): Promise<HistoryEntry[]>;
+          rollback(workspaceId: string, corpus: string, toVersion: string): Promise<void>;
+        }
+
+
+        export type CorpusKind = "narrative" | "retrieval" | "dedup" | "kv";
+
+
+        export interface NarrativeCorpus {
+          append(entry: NarrativeEntry): Promise<NarrativeEntry>;
+          read(opts?: { since?: string; limit?: number }): Promise<NarrativeEntry[]>;
+          search(query: string, opts?: SearchOpts): Promise<NarrativeEntry[]>;
+          forget(id: string): Promise<void>;
+          render(): Promise<string>;
+        }
+
+
+        export interface RetrievalCorpus {
+          ingest(docs: DocBatch, opts?: IngestOpts): Promise<IngestResult>;
+          query(q: RetrievalQuery, opts?: RetrievalOpts): Promise<Hit[]>;
+          stats(): Promise<RetrievalStats>;
+          reset(): Promise<void>;
+        }
+
+
+        export interface DedupCorpus {
+          append(namespace: string, entry: DedupEntry, ttlHours?: number): Promise<void>;
+          filter(namespace: string, field: string, values: unknown[]): Promise<unknown[]>;
+          clear(namespace: string): Promise<void>;
+        }
+
+
+        export interface KVCorpus {
+          get<T = unknown>(key: string): Promise<T | undefined>;
+          set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
+          delete(key: string): Promise<void>;
+          list(prefix?: string): Promise<string[]>;
+        }
+
+        ```
+
+
+        ### Supporting types (use verbatim — same file)
+
+
+        These are referenced by the interfaces above but not fully
+
+        declared in the plan. The coder must include these in
+
+        memory-adapter.ts as placeholder aliases:
+
+
+        ```ts
+
+        export type CorpusOf<K extends CorpusKind> =
+          K extends "narrative" ? NarrativeCorpus :
+          K extends "retrieval" ? RetrievalCorpus :
+          K extends "dedup" ? DedupCorpus :
+          K extends "kv" ? KVCorpus :
+          never;
+
+        export interface CorpusMetadata {
+          name: string;
+          kind: CorpusKind;
+          workspaceId: string;
+        }
+
+
+        export interface NarrativeEntry {
+          id: string;
+          text: string;
+          author?: string;
+          createdAt: string;
+          metadata?: Record<string, unknown>;
+        }
+
+
+        export interface SearchOpts { limit?: number; }
+
+        export interface DocBatch { docs: Array<{ id: string; text: string; metadata?:
+        Record<string, unknown> }>; }
+
+        export interface IngestOpts { chunker?: string; embedder?: string; }
+
+        export interface IngestResult { ingested: number; skipped: number; }
+
+        export interface RetrievalQuery { text: string; topK?: number; }
+
+        export interface RetrievalOpts { filter?: Record<string, unknown>; }
+
+        export interface Hit { id: string; score: number; text: string; metadata?: Record<string,
+        unknown>; }
+
+        export interface RetrievalStats { count: number; sizeBytes: number; }
+
+        export interface DedupEntry { [field: string]: unknown; }
+
+        export interface HistoryFilter { corpus?: string; since?: string; limit?: number; }
+
+        export interface HistoryEntry { version: string; corpus: string; at: string; summary:
+        string; }
+
+        ```
+
+
+        ### ScratchpadAdapter
+
+        (plan lines 653-667)
+
+
+        ```ts
+
+        // packages/agent-sdk/src/scratchpad-adapter.ts
+
+
+        import type { NarrativeEntry } from "./memory-adapter.ts";
+
+
+        export interface ScratchpadChunk {
+          id: string;
+          kind: string;
+          body: string;
+          createdAt: string;
+        }
+
+
+        export interface ScratchpadAdapter {
+          append(sessionKey: string, chunk: ScratchpadChunk): Promise<void>;
+          read(sessionKey: string, opts?: { since?: string }): Promise<ScratchpadChunk[]>;
+          clear(sessionKey: string): Promise<void>;
+          /** Promote a chunk into a narrative corpus. Agent-gated by config. */
+          promote(
+            sessionKey: string,
+            chunkId: string,
+            target: { workspaceId: string; corpus: string },
+          ): Promise<NarrativeEntry>;
+        }
+
+        ```
+
+
+        ### SkillAdapter
+
+        (plan lines 673-686)
+
+
+        ```ts
+
+        // packages/agent-sdk/src/skill-adapter.ts
+
+
+        import type { AgentSkill } from "./types.ts";
+
+
+        export interface SkillMetadata {
+          name: string;
+          description: string;
+          version: string;
+        }
+
+
+        export interface ResolvedSkill extends AgentSkill {
+          version: string;
+        }
+
+
+        export interface SkillDraft {
+          name: string;
+          description: string;
+          instructions: string;
+          referenceFiles?: Record<string, string>;
+        }
+
+
+        export interface SkillVersion {
+          version: string;
+          createdAt: string;
+          summary: string;
+        }
+
+
+        export interface SkillAdapter {
+          list(workspaceId: string, agentId?: string): Promise<SkillMetadata[]>;
+          get(workspaceId: string, name: string): Promise<ResolvedSkill | undefined>;
+          create(workspaceId: string, draft: SkillDraft): Promise<ResolvedSkill>;
+          update(workspaceId: string, name: string, patch: Partial<SkillDraft>): Promise<ResolvedSkill>;
+          /** Versioned history — leapfrog dimension #2. */
+          history(workspaceId: string, name: string): Promise<SkillVersion[]>;
+          rollback(workspaceId: string, name: string, toVersion: string): Promise<ResolvedSkill>;
+          invalidate(workspaceId: string): void;
+        }
+
+        ```
+
+
+        ## § END AUTHORITATIVE INTERFACE DECLARATIONS
+
+
+        ## Output
+
+
+        Structured JSON conforming to the design-memo-result data
+
+        contract. plan_citations must be non-empty and contain the
+
+        relevant verbatim blocks. files_to_create must list the
+
+        three adapter files (and index.ts modification). Every
+
+        key_types entry must appear in a plan_citation.
+      temperature: 0.3
+  coder:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Writes code in the atlas repo at /workspace/atlas per the design memo. Uses Claude Code's full
+      toolchain: file edits, deno check, deno lint, test execution.
+    prompt: |
+      You are the coder for the parity plan execution. The atlas
+      monorepo is mounted at /workspace/atlas (this is your workDir).
+
+      Your input contains a design memo from the architect with
+      specific files to create/modify, type signatures, and tests.
+
+      Rules:
+      1. Follow the memo exactly. Do not invent files not in the memo.
+      2. Follow CLAUDE.md conventions: Deno, Zod v4, @atlas/logger,
+         node:* builtins (not Deno APIs), static imports, no `any`,
+         no `as` assertions (except `as const` on string literals),
+         no `!` non-null assertions.
+      3. Run `deno check` on files you create or modify.
+      4. Run `deno lint` on files you create or modify.
+      5. If `deno check` or lint fails, fix and retry before reporting.
+
+      Report your work as structured JSON conforming to the
+      coder-result contract. Include:
+      - files_written (with line counts)
+      - tests_added (if any)
+      - deno_check_passed, deno_lint_passed
+      - summary (2-3 sentences)
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reviews coder output against the plan directly via real filesystem access. Uses claude-code
+      bundled agent for fs_* tool capability.
+    prompt: |
+      You are the reviewer for the parity plan execution. The atlas
+      monorepo is mounted at /workspace/atlas. Use your fs tools to
+      read files directly.
+
+      ## Review protocol
+
+      1. Read /workspace/atlas/docs/plans/2026-04-13-openclaw-parity-plan.md
+         — scroll to the section for this task. For memory/skill/
+         scratchpad tasks, lines 582-693 contain the verbatim
+         interface declarations that are the source of truth.
+
+      2. Read each file the coder wrote (paths listed in
+         impl-output.files_written). Compare line-by-line against
+         the plan's declarations.
+
+      3. Read /workspace/atlas/CLAUDE.md for convention rules.
+
+      4. Run `deno check` and `deno lint` on the coder's files.
+         Record the results.
+
+      ## Drift categories
+
+      For each file the coder wrote, check for:
+      - Missing fields / methods / parameters compared to the plan
+      - Wrong parameter types or order
+      - Extra methods that aren't in the plan
+      - Wrong return types
+      - Different abstraction (e.g. plan says storage, coder wrote
+        lifecycle)
+      - Zod v4 violations (z.record needs 2 args, no as casts,
+        strictObject for required shapes)
+      - CLAUDE.md hard-rule violations (no any, no !, no Deno APIs,
+        static imports)
+
+      ## Verdict rules
+
+      - APPROVE: interfaces match the plan's declarations, CLAUDE.md
+        conventions followed, deno check/lint pass. Minor supporting-
+        type field naming differences are OK if the plan did not
+        specify them verbatim.
+      - NEEDS_CHANGES: minor drift fixable in one pass (missing field,
+        wrong optional vs required, lint warnings).
+      - BLOCK: fundamental drift — wrong abstraction, wrong parameter
+        shapes, missing methods on a main interface. Architect needs
+        to re-engage.
+
+      ## Failure mode you MUST catch
+
+      If the coder's files look "plausible" but the main interface
+      declarations don't appear in the plan verbatim, that's BLOCK.
+      Do not approve plausible-looking drift.
+
+      ## Citation requirement
+
+      Every finding MUST include a plan_line field citing the line
+      in docs/plans/2026-04-13-openclaw-parity-plan.md (format:
+      "parity-plan.md:582-634") or a CLAUDE.md line. A finding
+      without a citation is invalid — the data contract will reject
+      your output.
+
+      ## Output
+
+      Structured JSON per review-result contract. If all checks
+      pass, return APPROVE with a brief summary and an empty
+      findings array.
+    env:
+      ANTHROPIC_API_KEY: from_environment
