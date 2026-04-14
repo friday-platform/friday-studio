@@ -21,6 +21,7 @@
 !/agents/workspace-creator/
 !/agents/multi-session-reflector/
 !/agents/autopilot-planner/
+!/agents/orphan-agent-auditor/
 
 # Deno
 .deno/

@@ -52,6 +52,20 @@ signals:
           description: >-
             v1 ignores this. Reserved for v2 batch-dispatch.
 
+  audit-orphans:
+    provider: http
+    title: Audit orphan agents
+    description: >-
+      Run the orphan-agent-auditor against the live registry and emit
+      the list of user agents not wired into any FSM. Operator runs
+      this to catch the structural failure mode where authoring runs
+      ahead of integration.
+    config:
+      path: /webhooks/audit-orphans
+    schema:
+      type: object
+      properties: {}
+
 agents:
   planner:
     type: user
@@ -73,6 +87,23 @@ agents:
       Output action='execute' with target_workspace_id +
       target_signal_id + signal_payload, OR action='idle' if no
       eligible task exists.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
+  orphan-auditor:
+    type: user
+    agent: orphan-agent-auditor
+    description: >-
+      Custom Python WASM agent. Audits the registry vs all loaded
+      workspace configs, returns the list of user agents with no
+      FSM consumer. The cross-artifact integration check that the
+      single-session reflector cannot do. Closes the orphan-agent
+      failure mode that produced 4+ unwired agents tonight.
+    prompt: |
+      You are the orphan-agent auditor. List user agents from
+      /api/agents, scan workspace.config.agents in every workspace
+      via /api/workspaces and /api/workspaces/{id}, return the
+      agents not referenced anywhere as orphans.
     env:
       ANTHROPIC_API_KEY: from_environment
 
@@ -197,4 +228,88 @@ jobs:
             - action
             - rationale
 
+      tools: {}
+
+  audit-orphans:
+    title: Audit orphan agents
+    description: >-
+      Run the orphan-agent-auditor and emit the list of unwired user
+      agents. The cross-artifact integration check.
+    triggers:
+      - signal: audit-orphans
+    fsm:
+      id: audit-orphans-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            audit-orphans:
+              target: step_audit
+        step_audit:
+          entry:
+            - type: code
+              function: prepare_audit
+            - type: agent
+              agentId: orphan-auditor
+              outputTo: audit-output
+              outputType: orphan-audit-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_audit_done
+        completed:
+          type: final
+      functions:
+        prepare_audit:
+          type: action
+          code: |
+            export default function prepare_audit(context, event) {
+              return {
+                task: 'Audit orphan agents across all workspaces',
+                config: {
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_audit_done:
+          type: guard
+          code: |
+            export default function guard_audit_done(context, event) {
+              return context.results['audit-output'] !== undefined;
+            }
+      documentTypes:
+        orphan-audit-result:
+          type: object
+          properties:
+            total_user_agents: { type: integer }
+            referenced_count: { type: integer }
+            orphan_count: { type: integer }
+            orphans:
+              type: array
+              items:
+                type: object
+                properties:
+                  agent_id: { type: string }
+                  version: { type: string }
+                required: [agent_id]
+            referenced:
+              type: array
+              items:
+                type: object
+                properties:
+                  agent_id: { type: string }
+                  workspaces:
+                    type: array
+                    items: { type: string }
+                required: [agent_id]
+            rationale: { type: string }
+          required:
+            - total_user_agents
+            - referenced_count
+            - orphan_count
+            - orphans
+            - rationale
       tools: {}
