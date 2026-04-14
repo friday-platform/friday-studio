@@ -48,6 +48,54 @@ def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, An
     return {"tasks": tasks}
 
 
+_LAST_FIRED_DIAG: dict[str, Any] = {}
+
+
+def _fired_within(ctx: Any, platform_url: str, workspace_id: str, signal_id: str, cooldown_s: int) -> bool:
+    """Return True if signal_id was the target of any of the last N sessions.
+
+    WASM Python sandbox lacks `datetime` and `calendar` so we can't do real
+    time-window math. Position-based heuristic instead: query the recent
+    sessions list, which the daemon sorts most-recent-first; if the
+    target signal appears in the top N entries, treat as 'recently fired'.
+    N derives from cooldown_s assuming ~1 session per minute (cooldown_s/60),
+    capped at 20.
+    """
+    diag: dict[str, Any] = {"workspace_id": workspace_id, "signal_id": signal_id, "cooldown_s": cooldown_s}
+    _LAST_FIRED_DIAG.clear()
+    _LAST_FIRED_DIAG.update(diag)
+
+    n_window = max(1, min(20, cooldown_s // 60))
+    _LAST_FIRED_DIAG["n_window"] = n_window
+
+    try:
+        url = f"{platform_url}/api/sessions?workspaceId={workspace_id}&limit={n_window + 5}"
+        resp = ctx.http.fetch(url, method="GET", timeout_ms=5000)
+        if resp.status != 200:
+            _LAST_FIRED_DIAG["error"] = f"GET {resp.status}"
+            return False
+        data = json.loads(resp.body or "{}")
+        sessions = data.get("sessions") if isinstance(data, dict) else data
+        if not isinstance(sessions, list):
+            _LAST_FIRED_DIAG["error"] = "sessions not a list"
+            return False
+        _LAST_FIRED_DIAG["session_count"] = len(sessions)
+
+        # Walk the top-N most-recent sessions
+        for idx, s in enumerate(sessions[:n_window]):
+            if not isinstance(s, dict):
+                continue
+            if s.get("jobName") == signal_id or s.get("signalId") == signal_id:
+                _LAST_FIRED_DIAG["matched_at_position"] = idx
+                _LAST_FIRED_DIAG["matched_session_id"] = s.get("sessionId") or s.get("id")
+                return True
+        _LAST_FIRED_DIAG["matched_at_position"] = -1
+        return False
+    except Exception as exc:  # noqa: BLE001 — be defensive, fail open
+        _LAST_FIRED_DIAG["exception"] = str(exc)[:200]
+        return False
+
+
 def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> list[dict[str, Any]]:
     """Return pending, unblocked tasks sorted by priority desc then created_at asc."""
     eligible = [
@@ -135,7 +183,39 @@ def execute(prompt, ctx):
             "rationale": "no eligible tasks",
         })
 
-    task = eligible[0]
+    # ── Skip-recent filter ──────────────────────────────────────────
+    # Walk eligible tasks and pick the first that hasn't fired in the
+    # cooldown window. Default cooldown 600s. Stops the cron-driven
+    # treadmill where the same highest-priority task fires every tick.
+    cooldown_s = int(cfg.get("cooldown_s", 600))
+    platform_url = cfg.get("platformUrl", PLATFORM_URL_DEFAULT)
+    chosen_task = None
+    skip_reasons: list[str] = []
+    for candidate in eligible:
+        cand_payload = candidate.get("payload") or {}
+        cand_ws = cand_payload.get("workspace_id")
+        cand_sig = cand_payload.get("signal_id")
+        if not cand_ws or not cand_sig:
+            chosen_task = candidate
+            break
+        if _fired_within(ctx, platform_url, cand_ws, cand_sig, cooldown_s):
+            skip_reasons.append(f"{candidate.get('id')} (fired in last {cooldown_s}s)")
+            continue
+        chosen_task = candidate
+        break
+
+    if chosen_task is None:
+        return ok({
+            "action": "idle",
+            "task_id": None,
+            "target_workspace_id": None,
+            "target_signal_id": None,
+            "signal_payload": None,
+            "task_kind": None,
+            "rationale": "all eligible tasks in cooldown: " + "; ".join(skip_reasons),
+        })
+
+    task = chosen_task
     payload = task.get("payload") or {}
 
     target_workspace_id = payload.get("workspace_id")
@@ -184,8 +264,10 @@ def execute(prompt, ctx):
         "task_kind": task.get("kind"),
         "fired_status": fire_status,
         "fired_session_id": fire_session_id,
+        "fired_diag": dict(_LAST_FIRED_DIAG),
         "rationale": (
             f"Selected and fired task '{task.get('id')}' (priority={task.get('priority', 0)}, "
-            f"kind={task.get('kind')}). Fire status: {fire_status}."
+            f"kind={task.get('kind')}). Fire status: {fire_status}. "
+            f"Cooldown diag: {dict(_LAST_FIRED_DIAG)}"
         ),
     })

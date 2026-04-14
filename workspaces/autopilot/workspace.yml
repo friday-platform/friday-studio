@@ -56,13 +56,13 @@ signals:
     provider: schedule
     title: Autopilot tick (scheduled)
     description: >-
-      Cron-driven autopilot iteration. Fires every minute. Replaces the
-      operator (me) sitting in front of FAST and manually firing
-      autopilot-tick. The job is the same — just a different trigger.
-      Tight cadence intentional: the loop should be visibly cranking, not
-      napping. Lower if/when the cost is observable.
+      Cron-driven autopilot iteration. Currently ~5 min cadence — was
+      every minute but that just spun the same task repeatedly because
+      the planner doesn't know what's already in flight. Once the planner
+      gains "skip-recent" logic and the backlog is stateful, this can
+      tighten back to 1 min. Treadmill prevention > visible cadence.
     config:
-      schedule: '* * * * *'
+      schedule: '*/5 * * * *'
       timezone: UTC
 
   audit-orphans:
@@ -266,6 +266,9 @@ jobs:
               // Initial backlog: trigger reflect-on-last-run on grilled_xylem
               // periodically so the reflector keeps thinking about recent
               // sessions. Cheap, safe, exercises the existing loop.
+              // Single task with long cooldown — only grilled_xylem has
+              // a reflect-on-last-run signal. Adding more variety means
+              // adding more workspaces with reflect signals (Phase 1b).
               var defaultBacklog = JSON.stringify({
                 tasks: [
                   {
@@ -278,7 +281,8 @@ jobs:
                     created_at: '2026-04-14T16:30:00Z',
                     payload: {
                       workspace_id: 'grilled_xylem',
-                      signal_id: 'reflect-on-last-run'
+                      signal_id: 'reflect-on-last-run',
+                      cooldown_s: 1800
                     }
                   }
                 ]
@@ -289,6 +293,10 @@ jobs:
                 config: {
                   backlog_json: backlogJson,
                   platformUrl: 'http://localhost:8080',
+                  // 30 min cooldown — the planner skips a task if its target
+                  // signal fired within the last cooldown_s seconds. Stops
+                  // the cron-driven treadmill.
+                  cooldown_s: 1800,
                 },
               };
             }
