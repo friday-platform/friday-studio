@@ -1,0 +1,171 @@
+version: '1.0'
+workspace:
+  name: FAST Autopilot
+  description: >-
+    The control loop that's meant to replace the human (or Claude session)
+    sitting in front of FAST as overwatch. v1 is a planner-only pipeline:
+    a cron tick fires autopilot-planner, which reads a backlog and emits
+    the next task to dispatch. v2 adds a dispatcher step that actually
+    fires the chosen signal at the chosen workspace and polls until done.
+    v3 adds a reflect step that runs reflector + multi-session-reflector
+    after each completion. v4 adds skill-author + skill-publisher chained
+    behind a confidence gate.
+
+# Why this workspace exists:
+#   I (the operator) have been polling /api/sessions, drafting briefs,
+#   choosing which workspace to fire which signal at, and committing
+#   results all night. Every one of those is a function the loop should
+#   own. This workspace is the bootstrap — the minimum viable shape of
+#   "what should the loop do without a human in it."
+#
+# The planner is intentionally pure (no side effects, no LLM, no HTTP
+# state mutation). It just READS the backlog and DECIDES. Dispatching
+# is a separate concern in a future v2 step. Splitting these means the
+# planner can be unit-tested in isolation and re-run cheaply.
+#
+# The backlog is a tracked file in atlas at
+# docs/plans/autopilot-backlog.json. It's a simple JSON list of tasks
+# with status, priority, kind, payload. Adding tasks to the backlog is
+# a separate concern — humans, or a future task-discoverer agent.
+
+skills: []
+
+signals:
+  autopilot-tick:
+    provider: http
+    title: Autopilot tick
+    description: >-
+      Manually fire one autopilot iteration. v1 calls the planner only.
+      In v2+ this triggers the full plan → dispatch → reflect cycle.
+    config:
+      path: /webhooks/autopilot-tick
+    schema:
+      type: object
+      properties:
+        backlog_url:
+          type: string
+          description: >-
+            Optional override for the backlog source URL. Defaults to the
+            atlas-mounted backlog file.
+        max_iterations:
+          type: integer
+          description: >-
+            v1 ignores this. Reserved for v2 batch-dispatch.
+
+agents:
+  planner:
+    type: user
+    agent: autopilot-planner
+    description: >-
+      Custom Python WASM agent. Reads the backlog, picks the next
+      eligible task, returns a structured plan. No LLM. No HTTP
+      mutation. Replaces the "what should I work on next" function
+      that I (the operator) have been performing manually.
+    prompt: |
+      You are the autopilot planner. Read your config, fetch the
+      backlog, pick the next eligible task, and emit a structured
+      action.
+
+      Pure deterministic. NO LLM. Filter by status==pending, skip
+      blocked tasks, sort by priority desc + created_at asc, take
+      the first.
+
+      Output action='execute' with target_workspace_id +
+      target_signal_id + signal_payload, OR action='idle' if no
+      eligible task exists.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+
+jobs:
+  autopilot-tick:
+    title: Autopilot iteration
+    description: >-
+      v1: call the planner, emit the chosen action as a structured
+      output. The operator (or a future dispatcher) reads the output
+      and acts on it. v2 will add a dispatch step.
+    triggers:
+      - signal: autopilot-tick
+    fsm:
+      id: autopilot-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            autopilot-tick:
+              target: step_plan
+
+        step_plan:
+          entry:
+            - type: code
+              function: prepare_plan
+            - type: agent
+              agentId: planner
+              outputTo: plan-output
+              outputType: plan-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_plan_done
+
+        completed:
+          type: final
+
+      functions:
+        prepare_plan:
+          type: action
+          code: |
+            export default function prepare_plan(context, event) {
+              var backlogUrl = (event.data && event.data.backlog_url) || '';
+              return {
+                task: 'Autopilot tick: pick next backlog task',
+                config: {
+                  backlog_url: backlogUrl,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+
+        guard_plan_done:
+          type: guard
+          code: |
+            export default function guard_plan_done(context, event) {
+              return context.results['plan-output'] !== undefined;
+            }
+
+      documentTypes:
+        plan-result:
+          type: object
+          properties:
+            action:
+              type: string
+              enum: [execute, idle]
+            task_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            target_workspace_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            target_signal_id:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            signal_payload:
+              anyOf:
+                - { type: object }
+                - { type: 'null' }
+            task_kind:
+              anyOf:
+                - { type: string }
+                - { type: 'null' }
+            rationale:
+              type: string
+          required:
+            - action
+            - rationale
+
+      tools: {}
