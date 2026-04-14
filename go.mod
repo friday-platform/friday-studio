@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/bigquery v1.76.0
 	cloud.google.com/go/profiler v0.6.0
-	cloud.google.com/go/secretmanager v1.18.0
+	cloud.google.com/go/secretmanager v1.19.0
 	cloud.google.com/go/storage v1.62.1
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/ggicci/httpin v0.20.3
