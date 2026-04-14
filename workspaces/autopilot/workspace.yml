@@ -35,8 +35,8 @@ signals:
     provider: http
     title: Autopilot tick
     description: >-
-      Manually fire one autopilot iteration. v1 calls the planner only.
-      In v2+ this triggers the full plan → dispatch → reflect cycle.
+      Manually fire one autopilot iteration via HTTP. The cron-driven
+      counterpart is autopilot-tick-cron — both feed the same job.
     config:
       path: /webhooks/autopilot-tick
     schema:
@@ -51,6 +51,17 @@ signals:
           type: integer
           description: >-
             v1 ignores this. Reserved for v2 batch-dispatch.
+
+  autopilot-tick-cron:
+    provider: schedule
+    title: Autopilot tick (scheduled)
+    description: >-
+      Cron-driven autopilot iteration. Fires every 15 minutes. Replaces
+      the operator (me) sitting in front of FAST and manually firing
+      autopilot-tick. The job is the same — just a different trigger.
+    config:
+      schedule: '*/15 * * * *'
+      timezone: UTC
 
   audit-orphans:
     provider: http
@@ -188,6 +199,7 @@ jobs:
       and acts on it. v2 will add a dispatch step.
     triggers:
       - signal: autopilot-tick
+      - signal: autopilot-tick-cron
     fsm:
       id: autopilot-pipeline
       initial: idle
@@ -195,6 +207,8 @@ jobs:
         idle:
           'on':
             autopilot-tick:
+              target: step_plan
+            autopilot-tick-cron:
               target: step_plan
 
         step_plan:
