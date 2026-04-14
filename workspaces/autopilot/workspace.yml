@@ -216,35 +216,15 @@ jobs:
           type: action
           code: |
             export default function prepare_plan(context, event) {
-              // v1 backlog: embedded inline. The atlas repo is private so
-              // github raw URLs 404 without auth, and the daemon doesn't
-              // expose /api/files/raw. Future v2 either adds that endpoint
-              // or fetches via authenticated git clone in a code action
-              // that has shell access. For now, the operator edits this
-              // workspace.yml to add tasks; docs/plans/autopilot-backlog.json
-              // is the human-edited mirror they sync from.
-              //
-              // The signal payload's `backlog_json` field overrides this
-              // (operator can pass a different backlog at trigger time).
-              var defaultBacklog = JSON.stringify({
-                tasks: [
-                  {
-                    id: 'demo-author-orphan-auditor',
-                    title: 'Author orphan-agent-auditor (highest priority)',
-                    status: 'pending',
-                    priority: 90,
-                    kind: 'agent-author',
-                    blocked_by: [],
-                    created_at: '2026-04-14T06:18:00Z',
-                    payload: {
-                      workspace_id: 'frozen_nutella',
-                      signal_id: 'author-agent',
-                      agent_id: 'orphan-agent-auditor',
-                      agent_brief: 'Custom Python WASM agent. Lists user agents from GET /api/agents (filter type=user), GET /api/workspaces for all loaded workspaces, GET /api/workspaces/{id} for parsed config, scans config.agents and config.jobs.*.fsm for `agent: <id>` references, returns list of orphans (registered user agents with no consumer FSM reference). Pure deterministic, HTTP only, no LLM. Mirror agents/skill-publisher/agent.py for HTTP-only pattern. Closes the cross-artifact integration gap.'
-                    }
-                  }
-                ]
-              });
+              // v1 default backlog is INTENTIONALLY EMPTY. Earlier versions
+              // embedded a demo task that was already done, causing each
+              // autopilot-tick to re-author it. The right answer is to
+              // either (a) pass backlog_json explicitly via the signal
+              // payload at trigger time, or (b) wait for v2 backlog
+              // mechanism (daemon-fetchable file or a runtime task store).
+              // Until then: an empty backlog → planner returns action='idle'
+              // → dispatcher no-ops. Safe default.
+              var defaultBacklog = JSON.stringify({ tasks: [] });
               var backlogJson = (event.data && event.data.backlog_json) || defaultBacklog;
               return {
                 task: 'Autopilot tick: pick next backlog task',

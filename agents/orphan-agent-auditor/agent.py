@@ -83,13 +83,34 @@ def _scan_agent_references(ws_config: dict[str, Any]) -> set[str]:
     return refs
 
 
+def _scan_fsm_references(ws_config: dict[str, Any]) -> set[str]:
+    """Scan workspace config.jobs.*.fsm states for agent references."""
+    refs: set[str] = set()
+    jobs_section = ws_config.get("jobs", {})
+    if not isinstance(jobs_section, dict):
+        return refs
+    for _job_key, job in jobs_section.items():
+        if not isinstance(job, dict):
+            continue
+        fsm = job.get("fsm", {})
+        if not isinstance(fsm, dict):
+            continue
+        for _state_key, state in fsm.items():
+            if not isinstance(state, dict):
+                continue
+            agent_id = state.get("agent")
+            if isinstance(agent_id, str) and agent_id:
+                refs.add(agent_id)
+    return refs
+
+
 # ---------------------------------------------------------------------------
 # Agent handler
 # ---------------------------------------------------------------------------
 
 @agent(
     id="orphan-agent-auditor",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "Cross-artifact integration auditor. Pure HTTP, no LLM. "
         "Fetches all registered agents and workspace configs, then "
@@ -107,7 +128,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     config = ctx.config or {}
 
     # 1. Fetch all registered agents.
-    # /api/agents returns {agents: [...]}.
+    ctx.stream.progress("fetching registered agents")
     agents_resp = _http_get_json(ctx, "/api/agents?limit=500")
     if isinstance(agents_resp, list):
         all_agents: list[dict[str, Any]] = agents_resp
@@ -119,16 +140,18 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     user_agent_map: dict[str, dict[str, Any]] = {
         a["id"]: a for a in user_agents if "id" in a
     }
+    ctx.stream.progress(f"identified {len(user_agent_map)} user agent(s)")
 
     # 3. Fetch all workspace IDs.
-    # /api/workspaces returns a raw list, not a {workspaces: [...]} envelope.
+    ctx.stream.progress("fetching workspace configs")
     ws_resp = _http_get_json(ctx, "/api/workspaces")
     if isinstance(ws_resp, list):
         workspaces: list[dict[str, Any]] = ws_resp
     else:
         workspaces = ws_resp.get("workspaces", [])
 
-    # 4-5. For each workspace, scan config.agents for user-type references
+    # 4-5. For each workspace, scan config.agents and config.jobs.*.fsm
+    ctx.stream.progress(f"scanning {len(workspaces)} workspace(s) for agent references")
     referenced: dict[str, list[str]] = {}  # agent_id -> [workspace_ids]
     for ws in workspaces:
         ws_id = ws.get("id")
@@ -139,12 +162,13 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
         except RuntimeError:
             continue
         ws_config = ws_detail.get("config", ws_detail)
-        refs = _scan_agent_references(ws_config)
+        refs = _scan_agent_references(ws_config) | _scan_fsm_references(ws_config)
         for ref_id in refs:
             if ref_id in user_agent_map:
                 referenced.setdefault(ref_id, []).append(ws_id)
 
     # 6. Compute orphans
+    ctx.stream.progress("computing orphan results")
     referenced_ids = set(referenced.keys())
     orphan_ids = set(user_agent_map.keys()) - referenced_ids
 
