@@ -63,7 +63,7 @@ import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
-import { memoryNarrativeRoutes } from "../routes/memory/get.ts";
+import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionsRoutes } from "../routes/sessions/index.ts";

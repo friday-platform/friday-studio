@@ -1,6 +1,7 @@
 ---
 name: writing-friday-agents
-description: Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging componentize-py or WASM build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says "write a Python function that does X" inside `packages/python/examples/`, an `agents/` directory, or any Friday agent project. Friday agents compile to WebAssembly and run in a sandbox with no pip, no threads, no filesystem, and no direct network — authoring patterns are non-obvious. Consult this skill before writing code.
+description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging componentize-py or WASM build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says \"write a Python function that does X\" inside `packages/python/examples/`, an `agents/` directory, or any Friday agent project. Friday agents compile to WebAssembly and run in a sandbox with no pip, no threads, no filesystem, and no direct network — authoring patterns are non-obvious. Consult this skill before writing code."
+user-invocable: false
 ---
 
 # Writing Friday agents

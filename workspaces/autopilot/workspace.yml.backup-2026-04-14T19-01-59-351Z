@@ -1,0 +1,1033 @@
+version: '1.0'
+workspace:
+  name: FAST Autopilot
+  description: >-
+    The control loop that's meant to replace the human (or Claude session) sitting in front of FAST
+    as overwatch. v1 is a planner-only pipeline: a cron tick fires autopilot-planner, which reads a
+    backlog and emits the next task to dispatch. v2 adds a dispatcher step that actually fires the
+    chosen signal at the chosen workspace and polls until done. v3 adds a reflect step that runs
+    reflector + multi-session-reflector after each completion. v4 adds skill-author +
+    skill-publisher chained behind a confidence gate.
+skills: []
+signals:
+  autopilot-tick:
+    description: >-
+      Manually fire one autopilot iteration via HTTP. The cron-driven counterpart is
+      autopilot-tick-cron — both feed the same job.
+    title: Autopilot tick
+    schema:
+      type: object
+      properties:
+        backlog_url:
+          type: string
+          description: >-
+            Optional override for the backlog source URL. Defaults to the atlas-mounted backlog
+            file.
+        max_iterations:
+          type: integer
+          description: v1 ignores this. Reserved for v2 batch-dispatch.
+    provider: http
+    config:
+      path: /webhooks/autopilot-tick
+  autopilot-tick-cron:
+    description: >-
+      Cron-driven autopilot iteration. Currently ~5 min cadence — was every minute but that just
+      spun the same task repeatedly because the planner doesn't know what's already in flight. Once
+      the planner gains "skip-recent" logic and the backlog is stateful, this can tighten back to 1
+      min. Treadmill prevention > visible cadence.
+    title: Autopilot tick (scheduled)
+    provider: schedule
+    config:
+      schedule: '*/5 * * * *'
+      timezone: UTC
+  audit-orphans:
+    description: >-
+      Run the orphan-agent-auditor against the live registry and emit the list of user agents not
+      wired into any FSM. Operator runs this to catch the structural failure mode where authoring
+      runs ahead of integration.
+    title: Audit orphan agents
+    schema:
+      type: object
+      properties: {}
+    provider: http
+    config:
+      path: /webhooks/audit-orphans
+  cross-session-reflect:
+    description: >-
+      Run the multi-session-reflector against a target workspace's recent N completed sessions.
+      Surfaces recurring failure patterns that a single-session reflector cannot see.
+    title: Cross-session reflect
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Target workspace whose sessions to scan. Defaults to grilled_xylem.
+        'n':
+          type: integer
+          description: How many recent completed sessions to scan. Default 10.
+    provider: http
+    config:
+      path: /webhooks/cross-session-reflect
+jobs:
+  autopilot-tick:
+    description: >-
+      v1: call the planner, emit the chosen action as a structured output. The operator (or a future
+      dispatcher) reads the output and acts on it. v2 will add a dispatch step.
+    title: Autopilot iteration
+    triggers:
+      - signal: autopilot-tick
+      - signal: autopilot-tick-cron
+    fsm:
+      id: autopilot-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            autopilot-tick:
+              target: step_plan
+            autopilot-tick-cron:
+              target: step_plan
+        step_plan:
+          entry:
+            - type: code
+              function: prepare_plan
+            - type: agent
+              agentId: planner
+              outputTo: plan-output
+              outputType: plan-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_plan_done
+        completed:
+          type: final
+      functions:
+        prepare_plan:
+          type: action
+          code: |
+            export default function prepare_plan(context, event) {
+              // Backlog seeded by /tmp/seed_backlog.py — parity plan tasks
+              // targeting grilled_xylem (the FAST Self-Modification Loop).
+              // Edit this code action OR pass backlog_json via signal data
+              // to override.
+              //
+              // The autopilot planner picks the highest-priority unblocked
+              // pending task whose target signal hasn't fired in cooldown_s.
+              // Mark a task status:'completed' to take it out of rotation.
+              //
+              // Do NOT add tasks that target mild_almond — recursive autopilot
+              // dispatch breaks the outer FSM stream context.
+              var defaultBacklog = JSON.stringify({
+                tasks: [
+                  {
+                    "id": "phase1a-streaming-events",
+                    "title": "Phase 1a: extend AtlasDataEvents with memory/scratchpad/skill stream event types",
+                    "status": "pending",
+                    "priority": 100,
+                    "kind": "phase1a",
+                    "blocked_by": [],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1a-streaming-events",
+                            "task_brief": "Extend AtlasDataEvents in packages/agent-sdk/src/messages.ts with typed event types for memory.narrative.append, memory.retrieval.ingest, memory.dedup.append, memory.kv.set, scratchpad.append, skill.create. Pure schema addition; no runtime behavior. Each event type carries workspaceId, corpus name (for memory events), payload summary, and version pointer. Update Zod schemas in AtlasDataEventSchemas accordingly.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "The design: three adapters, corpus-based memory, one agent-facing surface",
+                            "target_files": [
+                                    "packages/agent-sdk/src/messages.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1a-memory-http-routes",
+                    "title": "Phase 1a: implement /api/memory/{wsId}/narrative/{corpus} HTTP routes",
+                    "status": "pending",
+                    "priority": 100,
+                    "kind": "phase1a",
+                    "blocked_by": [],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1a-memory-http-routes",
+                            "task_brief": "Wire the MemoryAdapter narrative corpus methods to HTTP routes in the atlasd Hono app. GET /api/memory/{wsId}/narrative/{name} returns NarrativeEntry[]. POST /api/memory/{wsId}/narrative/{name} appends. DELETE /api/memory/{wsId}/narrative/{name}/{entryId} forgets. The routes resolve the configured MemoryAdapter for the workspace and call its corpus(...) method. UNBLOCKS the autopilot planner reading from corpus instead of the inline backlog. High priority \u2014 every other autonomous loop depends on this.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "apps/atlasd/routes/memory.ts",
+                                    "apps/atlasd/routes/index.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1a-bootstrap-injection",
+                    "title": "Phase 1a: wire MemoryAdapter.bootstrap into workspace runtime",
+                    "status": "pending",
+                    "priority": 95,
+                    "kind": "phase1a",
+                    "blocked_by": [],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1a-bootstrap-injection",
+                            "task_brief": "In packages/workspace/src/runtime.ts, before each agent invocation, call memoryAdapter.bootstrap(workspaceId, agentId) and prepend the returned string to the agent's system prompt. Feature-flagged via ATLAS_MEMORY_BOOTSTRAP env var (default off). Empty bootstrap returns empty string and is a no-op.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "packages/workspace/src/runtime.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1a-platform-tools",
+                    "title": "Phase 1a: add memory_narrative_* / memory_retrieval_* / memory_dedup_* / memory_kv_* / scratchpad_* / skill_list / skill_get platform tools",
+                    "status": "pending",
+                    "priority": 95,
+                    "kind": "phase1a",
+                    "blocked_by": [],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1a-platform-tools",
+                            "task_brief": "Add platform MCP tools wrapping the new memory/scratchpad/skill adapters. Each is a thin wrapper that resolves the adapter for the workspace, calls the typed method, returns the result. Same pattern as createResourceReadTool. Update PLATFORM_TOOL_NAMES in packages/agent-sdk/src/platform-tools.ts. Read-only for Phase 1a \u2014 no skill_create yet (that is Phase 2).",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "packages/mcp-server/src/tools/memory.ts",
+                                    "packages/mcp-server/src/tools/scratchpad.ts",
+                                    "packages/mcp-server/src/tools/skills.ts",
+                                    "packages/agent-sdk/src/platform-tools.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1b-sqlite-rag",
+                    "title": "Phase 1b: build sqlite-rag RetrievalCorpus backend",
+                    "status": "pending",
+                    "priority": 80,
+                    "kind": "phase1b",
+                    "blocked_by": [
+                            "phase1a-streaming-events",
+                            "phase1a-memory-http-routes"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1b-sqlite-rag",
+                            "task_brief": "New package packages/adapters-sqlite/src/sqlite-rag-corpus.ts implementing RetrievalCorpus interface with FTS5 + vector embedding columns. Lift the existing schema from packages/bundled-agents/src/knowledge/corpus.ts (line 43 onwards) into the adapter. Embedding provider is pluggable via IngestOpts. This is the bucketlist canary backend.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "packages/adapters-sqlite/deno.json",
+                                    "packages/adapters-sqlite/src/sqlite-rag-corpus.ts",
+                                    "packages/adapters-sqlite/src/sqlite-rag-corpus.test.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1b-sqlite-ttl-kv",
+                    "title": "Phase 1b: build sqlite-ttl DedupCorpus + sqlite KVCorpus backends",
+                    "status": "pending",
+                    "priority": 80,
+                    "kind": "phase1b",
+                    "blocked_by": [
+                            "phase1a-streaming-events"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1b-sqlite-ttl-kv",
+                            "task_brief": "In packages/adapters-sqlite/, add sqlite-ttl-corpus.ts implementing DedupCorpus with TTL'd set membership (matches state_append semantics) and sqlite-kv-corpus.ts implementing KVCorpus with optional TTL. These are the migration targets for the bucketlist processed-tickets pattern and any state_lookup callers.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "packages/adapters-sqlite/src/sqlite-ttl-corpus.ts",
+                                    "packages/adapters-sqlite/src/sqlite-ttl-corpus.test.ts",
+                                    "packages/adapters-sqlite/src/sqlite-kv-corpus.ts",
+                                    "packages/adapters-sqlite/src/sqlite-kv-corpus.test.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1b-bucketlist-dedup-migration",
+                    "title": "Phase 1b: migrate examples/bucketlist-cs processed-tickets to memory_dedup_*",
+                    "status": "pending",
+                    "priority": 70,
+                    "kind": "phase1b",
+                    "blocked_by": [
+                            "phase1b-sqlite-ttl-kv",
+                            "phase1a-platform-tools"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1b-bucketlist-dedup-migration",
+                            "task_brief": "In examples/bucketlist-cs/workspace.yml, replace context.stateAppend / context.stateFilter calls in pick_next_ticket and record_and_advance functions with memory_dedup_* platform tool calls. Behavior must be identical: TTL preserved, dedup namespace preserved. Existing bucketlist integration tests must pass on the migrated path.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Case 3: dedup state (bucketlist-cs processed-tickets)",
+                            "target_files": [
+                                    "examples/bucketlist-cs/workspace.yml"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1b-knowledge-retrieval-migration",
+                    "title": "Phase 1b: migrate packages/bundled-agents/src/knowledge to memory_retrieval_*",
+                    "status": "pending",
+                    "priority": 70,
+                    "kind": "phase1b",
+                    "blocked_by": [
+                            "phase1b-sqlite-rag",
+                            "phase1a-platform-tools"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1b-knowledge-retrieval-migration",
+                            "task_brief": "Refactor packages/bundled-agents/src/knowledge/agent.ts to call ctx.memory.corpus('kb','retrieval').ingest/query instead of owning its own SQLite schema in corpus.ts. The corpus.ts/embed.ts/search.ts/rerank.ts logic moves into the sqlite-rag backend. Bucketlist canary: existing knowledge corpus tests must pass with identical retrieval quality.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Case 2: retrieval corpus (bucketlist-cs as representative)",
+                            "target_files": [
+                                    "packages/bundled-agents/src/knowledge/agent.ts",
+                                    "packages/bundled-agents/src/knowledge/corpus.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase1b-friday-inspect-cli",
+                    "title": "Phase 1b: friday inspect CLI \u2014 aggregate activity ledger + corpus history",
+                    "status": "pending",
+                    "priority": 65,
+                    "kind": "phase1b",
+                    "blocked_by": [
+                            "phase1a-memory-http-routes"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase1b-friday-inspect-cli",
+                            "task_brief": "New CLI subcommand `atlas inspect` that aggregates activity-ledger records and corpus history into a human-readable timeline per workspace. Supports --workspace, --since <duration>, --corpus <name>, --show-history. Reads from the daemon via /api/sessions and /api/memory routes. This is leapfrog dimension #3 (observable mutations) as a user-facing surface.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 1 \u2014 Adapter foundation + state-surface consolidation",
+                            "target_files": [
+                                    "apps/atlas-cli/src/commands/inspect.ts",
+                                    "apps/atlas-cli/src/cli.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase2-skill-create",
+                    "title": "Phase 2: implement skill_create platform tool + SkillAdapter.create",
+                    "status": "pending",
+                    "priority": 50,
+                    "kind": "phase2",
+                    "blocked_by": [
+                            "phase1a-platform-tools"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase2-skill-create",
+                            "task_brief": "Add SkillAdapter.create() implementation to MdSkillAdapter (writes a new SKILL.md + scripts/ dir under the workspace's skills/). Add skill_create platform tool that wraps it with Zod validation on SkillDraft. Every create returns a versioned ResolvedSkill. SkillAdapter.invalidate fires an fs-watch-signal so the next session resolves the new skill. Read-only MdSkillAdapter from Phase 1a is the foundation.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 2 \u2014 Emergent skill authoring",
+                            "target_files": [
+                                    "packages/adapters-md/src/md-skill-adapter.ts",
+                                    "packages/mcp-server/src/tools/skills.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase2-skill-author-fsm",
+                    "title": "Phase 2: bundled skill-author FSM workflow",
+                    "status": "pending",
+                    "priority": 45,
+                    "kind": "phase2",
+                    "blocked_by": [
+                            "phase2-skill-create"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase2-skill-author-fsm",
+                            "task_brief": "Bundled FSM-driven skill that orchestrates understand \u2192 plan \u2192 scaffold \u2192 validate \u2192 eval \u2192 publish for new skill creation. Each state is an agent action with a data contract on its output. Guards gate transitions on schema validity + (Phase 5) eval results. Ships in packages/skills/ as a default-loaded skill. Backbone of leapfrog #5 (FSM orchestration over self-modification).",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 2 \u2014 Emergent skill authoring",
+                            "target_files": [
+                                    "packages/skills/skill-author/SKILL.md",
+                                    "packages/skills/skill-author/workflow.yml"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase4-signal-create",
+                    "title": "Phase 4: scoped signal_create platform tool + hot reload",
+                    "status": "pending",
+                    "priority": 40,
+                    "kind": "phase4",
+                    "blocked_by": [
+                            "phase1a-platform-tools"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase4-signal-create",
+                            "task_brief": "Add signal_create / signal_delete platform tools (NOT a generic config-patch tool). Each scoped to its own Zod schema. Wires through applyMutation pipeline + new reloadSignals() hook on CronManager and Hono route registry. Lets agents create durable cron/webhook signals from chat without a daemon restart.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 4 \u2014 Signal graduation",
+                            "target_files": [
+                                    "packages/mcp-server/src/tools/signals.ts",
+                                    "packages/cron/src/manager.ts",
+                                    "packages/signals/src/providers/http.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase4-standing-orders",
+                    "title": "Phase 4: standing orders section in narrative memory + bootstrap surface",
+                    "status": "pending",
+                    "priority": 40,
+                    "kind": "phase4",
+                    "blocked_by": [
+                            "phase1a-bootstrap-injection"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase4-standing-orders",
+                            "task_brief": "Add a standing-orders tagged section convention to the narrative corpus (append with metadata.section = 'standing-orders'). Bootstrap injection (from phase1a-bootstrap-injection) surfaces standing-orders entries into the agent system prompt verbatim. This is OpenClaw's intent-vs-schedule separation, reusing Phase 1a primitives.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 4 \u2014 Signal graduation",
+                            "target_files": [
+                                    "packages/adapters-md/src/md-narrative-corpus.ts",
+                                    "packages/workspace/src/runtime.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase5-session-reflector",
+                    "title": "Phase 5: session-reflector bundled agent replacing SessionAISummary",
+                    "status": "pending",
+                    "priority": 30,
+                    "kind": "phase5",
+                    "blocked_by": [
+                            "phase1a-platform-tools"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase5-session-reflector",
+                            "task_brief": "Replace apps/atlasd/src/session-summarizer.ts (write-only) with a session-reflector bundled agent. After each session, a cheap model reads the transcript and proposes memory_narrative_append + skill_update calls. All proposals go through the schema boundary. Confidence above threshold auto-applies; below threshold queues for review.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 5 \u2014 Reinforcement loop",
+                            "target_files": [
+                                    "packages/bundled-agents/src/session-reflector/agent.ts",
+                                    "apps/atlasd/src/session-reflector.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase5-consolidation-job",
+                    "title": "Phase 5: scheduled consolidation job promoting daily memory entries",
+                    "status": "pending",
+                    "priority": 30,
+                    "kind": "phase5",
+                    "blocked_by": [
+                            "phase5-session-reflector"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase5-consolidation-job",
+                            "task_brief": "Cron-triggered job that reads recent narrative memory entries and applies a 6-signal weighted promotion formula (frequency .24, relevance .30, diversity .15, recency .15, consolidation .10, richness .06) to promote stable patterns from daily notes into MEMORY.md. Versioned via MemoryAdapter.history; rollback on regression.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 5 \u2014 Reinforcement loop",
+                            "target_files": [
+                                    "packages/bundled-agents/src/consolidator/agent.ts",
+                                    "packages/cron/src/jobs/consolidate.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase8-tier6-staging",
+                    "title": "Phase 8: tier-6 propose-and-wait staging area for source-mod workspaces",
+                    "status": "pending",
+                    "priority": 20,
+                    "kind": "phase8",
+                    "blocked_by": [
+                            "phase2-skill-author-fsm",
+                            "phase5-session-reflector"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase8-tier6-staging",
+                            "task_brief": "Implement the staging area primitive for tier-6 source modification: every source.write call from a dev-tier agent lands in a staging area (git worktree per session), not the real filesystem. friday review approve / request-change applies or rejects the staged writes. The dev walkthrough's full demo depends on this. Start with the git-worktree implementation; overlay-fs and virtual-fs alternatives are follow-ons.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 8 \u2014 Tier-6 source modification (Friday builds Friday)",
+                            "target_files": [
+                                    "packages/tier-6-staging/deno.json",
+                                    "packages/tier-6-staging/src/git-worktree-staging.ts"
+                            ]
+                    }
+            },
+                  {
+                    "id": "phase3-fridayhub-stub",
+                    "title": "Phase 3: FridayHub registry stub (deferred per user direction)",
+                    "status": "pending",
+                    "priority": 10,
+                    "kind": "phase3",
+                    "blocked_by": [
+                            "phase2-skill-create"
+                    ],
+                    "created_at": "2026-04-14T18:45:00Z",
+                    "match_job_name": "execute-self-mod-task",
+                    "payload": {
+                            "workspace_id": "grilled_xylem",
+                            "signal_id": "run-self-mod-task",
+                            "task_id": "phase3-fridayhub-stub",
+                            "task_brief": "Bare scaffold for FridayHub: a friday skills search/install/publish CLI that talks to a GitHub-backed index repo. Schema validation on publish AND install. Reproducibility check via env hash. Conformance test kit in a sandboxed microVM at install time. This is a stub \u2014 the full trust model is later. User directive: ship Phase 1+2+5+8 first, FridayHub later.",
+                            "plan_path": "docs/plans/2026-04-13-openclaw-parity-plan.md",
+                            "plan_section": "Phase 3 \u2014 FridayHub (the registry, done right)",
+                            "target_files": [
+                                    "apps/friday-hub/deno.json",
+                                    "apps/atlas-cli/src/commands/skills.ts"
+                            ]
+                    }
+            }
+                ]
+              });
+              var backlogJson = (event.data && event.data.backlog_json) || defaultBacklog;
+              return {
+                task: 'Autopilot tick: pick next backlog task (17 total)',
+                config: {
+                  backlog_json: backlogJson,
+                  platformUrl: 'http://localhost:8080',
+                  cooldown_s: 1800,
+                },
+              };
+            }
+        guard_plan_done:
+          type: guard
+          code: |
+            export default function guard_plan_done(context, event) {
+              return context.results['plan-output'] !== undefined;
+            }
+        prepare_dispatch:
+          type: action
+          code: |
+            export default function prepare_dispatch(context, event) {
+              var plan = context.results['plan-output'];
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Dispatch: ' + (plan.task_id || '(idle)'),
+                config: {
+                  action: plan.action,
+                  target_workspace_id: plan.target_workspace_id,
+                  target_signal_id: plan.target_signal_id,
+                  signal_payload: plan.signal_payload,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_dispatch_done:
+          type: guard
+          code: |
+            export default function guard_dispatch_done(context, event) {
+              return context.results['dispatch-output'] !== undefined;
+            }
+      documentTypes:
+        dispatch-result:
+          type: object
+          properties:
+            dispatched:
+              type: boolean
+            action:
+              anyOf:
+                - type: string
+                - type: 'null'
+            target_workspace_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            target_signal_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            session_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            rationale:
+              anyOf:
+                - type: string
+                - type: 'null'
+          required:
+            - dispatched
+        plan-result:
+          type: object
+          properties:
+            action:
+              type: string
+              enum:
+                - execute
+                - idle
+            task_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            target_workspace_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            target_signal_id:
+              anyOf:
+                - type: string
+                - type: 'null'
+            signal_payload:
+              anyOf:
+                - type: object
+                - type: 'null'
+            task_kind:
+              anyOf:
+                - type: string
+                - type: 'null'
+            rationale:
+              type: string
+          required:
+            - action
+            - rationale
+      tools: {}
+  audit-orphans:
+    description: >-
+      Run the orphan-agent-auditor and emit the list of unwired user agents. The cross-artifact
+      integration check.
+    title: Audit orphan agents
+    triggers:
+      - signal: audit-orphans
+    fsm:
+      id: audit-orphans-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            audit-orphans:
+              target: step_audit
+        step_audit:
+          entry:
+            - type: code
+              function: prepare_audit
+            - type: agent
+              agentId: orphan-auditor
+              outputTo: audit-output
+              outputType: orphan-audit-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_audit_done
+        completed:
+          type: final
+      functions:
+        prepare_audit:
+          type: action
+          code: |
+            export default function prepare_audit(context, event) {
+              // Exclude bundled atlas agents (they're globally available
+              // and don't need FSM consumers) and library-style user agents
+              // (called by other agents, not by FSMs directly).
+              return {
+                task: 'Audit orphan agents across all workspaces',
+                config: {
+                  platformUrl: 'http://localhost:8080',
+                  // Restrict to known user-built agents so we don't flag
+                  // bundled atlas agents (claude-code, slack, etc.) as orphans.
+                  user_agent_ids: [
+                    'autopilot-dispatcher',
+                    'autopilot-planner',
+                    'multi-session-reflector',
+                    'orphan-agent-auditor',
+                    'reflection-aggregator',
+                    'reflector',
+                    'session-summarizer',
+                    'skill-author',
+                    'skill-publisher',
+                    'task-router',
+                    'workspace-creator'
+                  ],
+                  // Library agents are called from inside other agents,
+                  // not directly from FSMs. orphan-agent-auditor v1.2+
+                  // honors this field and excludes them from the orphan
+                  // count (still surfaced under library_orphans_excluded
+                  // in the result for transparency).
+                  library_agents: [
+                    'session-summarizer',
+                    'reflection-aggregator'
+                  ]
+                },
+              };
+            }
+        guard_audit_done:
+          type: guard
+          code: |
+            export default function guard_audit_done(context, event) {
+              return context.results['audit-output'] !== undefined;
+            }
+      documentTypes:
+        orphan-audit-result:
+          type: object
+          properties:
+            total_user_agents:
+              type: integer
+            referenced_count:
+              type: integer
+            orphan_count:
+              type: integer
+            orphans:
+              type: array
+              items:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  version:
+                    type: string
+                required:
+                  - agent_id
+            referenced:
+              type: array
+              items:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  workspaces:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - agent_id
+            rationale:
+              type: string
+          required:
+            - total_user_agents
+            - referenced_count
+            - orphan_count
+            - orphans
+            - rationale
+      tools: {}
+  cross-session-reflect:
+    description: >-
+      Run multi-session-reflector against a target workspace to surface recurring failure patterns.
+      v2 chains into skill-author + skill-publisher behind a confidence gate (>= 0.9).
+    title: Cross-session reflect
+    triggers:
+      - signal: cross-session-reflect
+    fsm:
+      id: cross-session-reflect-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            cross-session-reflect:
+              target: step_reflect
+        step_reflect:
+          entry:
+            - type: code
+              function: prepare_reflect
+            - type: agent
+              agentId: cross-session-reflector
+              outputTo: reflect-output
+              outputType: cross-session-reflect-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              - target: step_author
+                guards:
+                  - guard_reflect_done
+                  - guard_skill_warranted
+              - target: completed
+                guards:
+                  - guard_reflect_done
+        step_author:
+          entry:
+            - type: code
+              function: prepare_author
+            - type: agent
+              agentId: skill-author
+              outputTo: author-output
+              outputType: skill-author-result
+            - type: emit
+              event: AUTHOR_DONE
+          'on':
+            AUTHOR_DONE:
+              - target: step_publish
+                guards:
+                  - guard_author_done
+                  - guard_publish_ready
+              - target: completed
+                guards:
+                  - guard_author_done
+        step_publish:
+          entry:
+            - type: code
+              function: prepare_publish
+            - type: agent
+              agentId: skill-publisher
+              outputTo: publish-output
+              outputType: skill-publisher-result
+            - type: emit
+              event: PUBLISH_DONE
+          'on':
+            PUBLISH_DONE:
+              target: completed
+        completed:
+          type: final
+      functions:
+        prepare_reflect:
+          type: action
+          code: |
+            export default function prepare_reflect(context, event) {
+              var wsId = (event.data && event.data.workspace_id) || 'grilled_xylem';
+              var n = (event.data && event.data.n) || 10;
+              return {
+                task: 'Cross-session reflect on ' + wsId,
+                config: {
+                  workspace_id: wsId,
+                  n: n,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_reflect_done:
+          type: guard
+          code: |
+            export default function guard_reflect_done(context, event) {
+              return context.results['reflect-output'] !== undefined;
+            }
+        guard_skill_warranted:
+          type: guard
+          code: |
+            export default function guard_skill_warranted(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect || !reflect.judgment) return false;
+              return reflect.judgment.skill_update_warranted === true &&
+                     reflect.judgment.confidence >= 0.9;
+            }
+        prepare_author:
+          type: action
+          code: |
+            export default function prepare_author(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect) throw new Error('Reflect output not found');
+              return {
+                task: 'Author skill update based on cross-session judgment',
+                config: {
+                  judgment: reflect.judgment,
+                  current_skill_md: '',
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_author_done:
+          type: guard
+          code: |
+            export default function guard_author_done(context, event) {
+              return context.results['author-output'] !== undefined;
+            }
+        guard_publish_ready:
+          type: guard
+          code: |
+            export default function guard_publish_ready(context, event) {
+              var author = context.results['author-output'];
+              return author != null && author.proposed_skill_md != null;
+            }
+        prepare_publish:
+          type: action
+          code: |
+            export default function prepare_publish(context, event) {
+              var author = context.results['author-output'];
+              if (!author) throw new Error('Author output not found');
+              return {
+                task: 'Publish proposed skill update',
+                config: {
+                  proposed_skill_md: author.proposed_skill_md,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+      documentTypes:
+        cross-session-reflect-result:
+          type: object
+          properties:
+            workspace_id:
+              type: string
+            n_sessions_scanned:
+              type: integer
+            judgment:
+              type: object
+              properties:
+                matches_known_pattern:
+                  type: boolean
+                skill_update_warranted:
+                  type: boolean
+                confidence:
+                  type: number
+                rationale:
+                  type: string
+            summary:
+              type: string
+          required:
+            - workspace_id
+            - judgment
+        skill-author-result:
+          type: object
+          properties:
+            proposed_skill_md:
+              anyOf:
+                - type: string
+                - type: 'null'
+            rationale:
+              anyOf:
+                - type: string
+                - type: 'null'
+          required: []
+        skill-publisher-result:
+          type: object
+          properties:
+            published:
+              type: boolean
+            skill_name:
+              anyOf:
+                - type: string
+                - type: 'null'
+            version:
+              anyOf:
+                - type: string
+                - type: 'null'
+            rationale:
+              anyOf:
+                - type: string
+                - type: 'null'
+          required:
+            - published
+      tools: {}
+agents:
+  planner:
+    description: >-
+      Custom Python WASM agent. Reads the backlog, picks the next eligible task, returns a
+      structured plan. No LLM. No HTTP mutation. Replaces the "what should I work on next" function
+      that I (the operator) have been performing manually.
+    type: user
+    agent: autopilot-planner
+    prompt: |
+      You are the autopilot planner. Read your config, fetch the
+      backlog, pick the next eligible task, and emit a structured
+      action.
+
+      Pure deterministic. NO LLM. Filter by status==pending, skip
+      blocked tasks, sort by priority desc + created_at asc, take
+      the first.
+
+      Output action='execute' with target_workspace_id +
+      target_signal_id + signal_payload, OR action='idle' if no
+      eligible task exists.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  orphan-auditor:
+    description: >-
+      Custom Python WASM agent. Audits the registry vs all loaded workspace configs, returns the
+      list of user agents with no FSM consumer. The cross-artifact integration check that the
+      single-session reflector cannot do. Closes the orphan-agent failure mode that produced 4+
+      unwired agents tonight.
+    type: user
+    agent: orphan-agent-auditor
+    prompt: |
+      You are the orphan-agent auditor. List user agents from
+      /api/agents, scan workspace.config.agents in every workspace
+      via /api/workspaces and /api/workspaces/{id}, return the
+      agents not referenced anywhere as orphans.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  dispatcher:
+    description: >-
+      Custom Python WASM agent. Takes a planner plan-output and fires the target signal at the
+      target workspace via HTTP POST. Blocks until the downstream FSM returns. Closes the autopilot
+      loop — without this, planner output is inert metadata.
+    type: user
+    agent: autopilot-dispatcher
+    prompt: |
+      You are the autopilot dispatcher. Read your config, short-circuit
+      on action=='idle', otherwise POST to
+      /api/workspaces/{target_workspace_id}/signals/{target_signal_id}
+      with the signal payload. Return dispatched=true with session_id
+      on 2xx; dispatched=false on idle; err on 4xx/5xx.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  cross-session-reflector:
+    description: >-
+      Custom Python WASM agent. Cross-session reflector — reads the last N completed sessions for a
+      workspace, computes structural signals, asks claude-haiku for a single recurring-pattern
+      judgment. Companion to the single-session reflector. Wired here so the agent isn't orphaned.
+    type: user
+    agent: multi-session-reflector
+    prompt: |
+      You are the cross-session reflector. Read your config
+      (workspace_id, n) and emit a reflection-result-multi.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-author:
+    description: >-
+      Custom Python WASM agent. Takes a high-confidence reflection proposal + current SKILL.md and
+      produces a complete replacement SKILL.md with a new failure-mode row added. Single LLM call,
+      strict structured output, gated on confidence >= 0.9.
+    type: user
+    agent: skill-author
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-publisher:
+    description: >-
+      Custom Python WASM agent. Pure mechanical multipart upload of a new SKILL.md to
+      /api/skills/@tempest/{name}/upload. Records previous_version for rollback. No LLM call.
+    type: user
+    agent: skill-publisher
+    env:
+      ANTHROPIC_API_KEY: from_environment

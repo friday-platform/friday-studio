@@ -14,6 +14,7 @@ import type {
   AtlasUIMessageChunk,
   LinkCredentialRef,
   MCPServerConfig,
+  MemoryAdapter,
 } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -225,6 +226,8 @@ interface WorkspaceRuntimeOptions {
   hasPendingRevision?: boolean;
   /** Activity storage adapter for creating activity feed items */
   activityStorage?: ActivityStorageAdapter;
+  /** Memory adapter for bootstrap injection (feature-flagged via ATLAS_MEMORY_BOOTSTRAP) */
+  memoryAdapter?: MemoryAdapter;
 }
 
 interface FSMJob {
@@ -1185,6 +1188,22 @@ export class WorkspaceRuntime {
 
     const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
 
+    // Bootstrap memory injection (feature-flagged)
+    let bootstrapBlock = "";
+    if (process.env.ATLAS_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+      try {
+        bootstrapBlock = await this.options.memoryAdapter.bootstrap(this.workspace.id, agentId);
+      } catch (err) {
+        logger.warn("Memory bootstrap failed, continuing without it", {
+          agentId,
+          workspaceId: this.workspace.id,
+          error: stringifyError(err),
+        });
+      }
+    }
+
+    const finalPrompt = bootstrapBlock ? `${bootstrapBlock}\n\n${prompt}` : prompt;
+
     // Use streamId from signal data (e.g. chatId for conversations), fall back to sessionId
     const streamId =
       typeof signal.data?.streamId === "string" ? signal.data.streamId : signal._context?.sessionId;
@@ -1243,7 +1262,7 @@ export class WorkspaceRuntime {
         // User (code) agents bypass the MCP orchestrator — execute directly via WASM
         const agentResult =
           agentConfig?.type === "user"
-            ? await this.executeCodeAgent(agentConfig.agent, prompt, {
+            ? await this.executeCodeAgent(agentConfig.agent, finalPrompt, {
                 sessionId,
                 workspaceId,
                 streamId,
@@ -1253,7 +1272,7 @@ export class WorkspaceRuntime {
                 datetime,
                 agentEnv: agentConfig.env,
               })
-            : await this.orchestrator.executeAgent(runtimeAgentId, prompt, {
+            : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
                 workspaceId,
                 streamId,

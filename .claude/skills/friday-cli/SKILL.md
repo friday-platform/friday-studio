@@ -1,7 +1,7 @@
 ---
 name: friday-cli
-description: Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `localhost:8080`, `deno task atlas`, curl-ing the daemon, or automating Friday itself.
-compatibility: Requires a running Friday daemon. Start with `deno task atlas daemon start --detached`.
+description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `localhost:8080`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
+user-invocable: false
 ---
 
 # Friday CLI & HTTP
