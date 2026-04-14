@@ -22,6 +22,7 @@
 !/agents/multi-session-reflector/
 !/agents/autopilot-planner/
 !/agents/orphan-agent-auditor/
+!/agents/skill-author/
 
 # Deno
 .deno/
