@@ -21,6 +21,8 @@
 
   interface SchemaField {
     name: string;
+    /** Full dotted path from schema root, unique per field across nesting. */
+    path: string;
     type: string;
     required: boolean;
     depth: number;
@@ -33,13 +35,14 @@
     const parsed = JsonSchemaObjectShape.safeParse(schema);
     if (!parsed.success || !parsed.data.properties) return [];
     const requiredSet = new Set<string>(parsed.data.required ?? []);
-    return flattenProperties(parsed.data.properties, requiredSet, 0);
+    return flattenProperties(parsed.data.properties, requiredSet, 0, "");
   }
 
   function flattenProperties(
     props: Record<string, unknown>,
     requiredSet: Set<string>,
     depth: number,
+    parentPath: string,
   ): SchemaField[] {
     const fields: SchemaField[] = [];
     for (const [name, rawDef] of Object.entries(props)) {
@@ -49,9 +52,11 @@
       const type = def?.type ?? "unknown";
       const isArrayOfObjects =
         type === "array" && def?.items !== undefined && def.items.type === "object";
+      const path = parentPath ? `${parentPath}.${name}` : name;
 
       fields.push({
         name,
+        path,
         type: formatType(def),
         required: requiredSet.has(name),
         depth,
@@ -61,7 +66,7 @@
       // Nested object properties
       if (type === "object" && def?.properties) {
         const nestedRequired = new Set<string>(def.required ?? []);
-        fields.push(...flattenProperties(def.properties, nestedRequired, depth + 1));
+        fields.push(...flattenProperties(def.properties, nestedRequired, depth + 1, path));
       }
 
       // Array of objects — show item properties nested
@@ -69,7 +74,9 @@
         const itemsParsed = JsonSchemaObjectShape.safeParse(def.items);
         if (itemsParsed.success && itemsParsed.data.properties) {
           const nestedRequired = new Set<string>(itemsParsed.data.required ?? []);
-          fields.push(...flattenProperties(itemsParsed.data.properties, nestedRequired, depth + 1));
+          fields.push(
+            ...flattenProperties(itemsParsed.data.properties, nestedRequired, depth + 1, `${path}[]`),
+          );
         }
       }
     }
@@ -113,7 +120,7 @@
 
   {#if fields.length > 0}
     <div class="field-list">
-      {#each fields as field (field.name + field.depth)}
+      {#each fields as field (field.path)}
         <div
           class="field-row"
           class:optional={!field.required}
