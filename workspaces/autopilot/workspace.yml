@@ -266,9 +266,11 @@ jobs:
               // Initial backlog: trigger reflect-on-last-run on grilled_xylem
               // periodically so the reflector keeps thinking about recent
               // sessions. Cheap, safe, exercises the existing loop.
-              // Single task with long cooldown — only grilled_xylem has
-              // a reflect-on-last-run signal. Adding more variety means
-              // adding more workspaces with reflect signals (Phase 1b).
+              // Two cheap tasks. The planner picks the highest-priority
+              // not-on-cooldown task and fires it. With cooldown_s=1800
+              // (top-level config), each task fires at most once per 30 min,
+              // which means the loop alternates roughly: reflect, idle,
+              // idle, ..., apply-check, idle, idle.
               var defaultBacklog = JSON.stringify({
                 tasks: [
                   {
@@ -281,8 +283,23 @@ jobs:
                     created_at: '2026-04-14T16:30:00Z',
                     payload: {
                       workspace_id: 'grilled_xylem',
-                      signal_id: 'reflect-on-last-run',
-                      cooldown_s: 1800
+                      signal_id: 'reflect-on-last-run'
+                    }
+                  },
+                  {
+                    id: 'apply-approved-grilled-xylem',
+                    title: 'Try to apply latest approved reflection on grilled_xylem',
+                    status: 'pending',
+                    priority: 40,
+                    kind: 'reflect',
+                    blocked_by: [],
+                    created_at: '2026-04-14T16:30:00Z',
+                    payload: {
+                      workspace_id: 'grilled_xylem',
+                      signal_id: 'apply-approved-reflection',
+                      // No reflection_session_id — the apply agent will
+                      // walk recent reflect sessions itself or return idle
+                      // if no high-confidence proposal is available.
                     }
                   }
                 ]
