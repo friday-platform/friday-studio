@@ -66,9 +66,18 @@ export async function publishDirtyDrafts(
       }
     }
   } catch (error) {
-    logger.warn("Auto-publish failed for workspace", {
-      workspaceId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    // Connection-refused on the ledger service is the common local-dev case
+    // (friday-starter doesn't run a Ledger). Demote to debug so it doesn't
+    // dominate the log stream every agent turn.
+    const isLocalNoLedger =
+      message.includes("Connection refused") ||
+      message.includes("ECONNREFUSED") ||
+      message.includes("tcp connect error");
+    if (isLocalNoLedger) {
+      logger.debug("Auto-publish skipped (no ledger service)", { workspaceId });
+    } else {
+      logger.warn("Auto-publish failed for workspace", { workspaceId, error: message });
+    }
   }
 }
