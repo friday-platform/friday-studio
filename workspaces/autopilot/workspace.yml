@@ -411,12 +411,14 @@ jobs:
                   // Restrict to known user-built agents so we don't flag
                   // bundled atlas agents (claude-code, slack, etc.) as orphans.
                   user_agent_ids: [
+                    'autopilot-dispatcher',
                     'autopilot-planner',
                     'multi-session-reflector',
                     'orphan-agent-auditor',
                     'reflection-aggregator',
                     'reflector',
                     'session-summarizer',
+                    'skill-author',
                     'skill-publisher',
                     'task-router',
                     'workspace-creator'
