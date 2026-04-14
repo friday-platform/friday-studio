@@ -347,6 +347,10 @@ export interface AgentRegistry {
 
   getAgent(id: string): Promise<AtlasAgent | undefined>;
 
+  getUserAgentSummary(
+    id: string,
+  ): { id: string; displayName?: string; description?: string; version?: string } | undefined;
+
   registerAgent(agent: AtlasAgent): Promise<void>;
 
   /** Reload the registry, re-scanning all adapters for new/removed agents */

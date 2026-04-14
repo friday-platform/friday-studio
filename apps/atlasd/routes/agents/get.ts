@@ -58,7 +58,20 @@ getAgent.get(
       const registry = c.get("app").getAgentRegistry();
       const agent = await registry.getAgent(id);
       if (!agent) {
-        return c.json({ error: "Agent not found" }, 404);
+        // Fallback: user agents (Python WASM) are not AtlasAgent instances.
+        // registry.getAgent() explicitly returns undefined for them (see registry.ts:122-131).
+        // Check getUserAgentSummary before giving up.
+        const summary = registry.getUserAgentSummary(id);
+        if (!summary) {
+          return c.json({ error: "Agent not found" }, 404);
+        }
+        return c.json({
+          id: summary.id,
+          displayName: summary.displayName,
+          description: summary.description ?? "",
+          version: summary.version ?? "0.0.0",
+          expertise: { examples: [] },
+        });
       }
 
       const { metadata } = agent;
