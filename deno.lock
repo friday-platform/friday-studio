@@ -141,7 +141,8 @@
     "npm:eslint@^10.2.0": "10.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^22.0.1": "22.0.1",
-    "npm:globals@^17.4.0": "17.4.0",
+    "npm:globals@^17.4.0": "17.5.0",
+    "npm:globals@^17.5.0": "17.5.0",
     "npm:gsap@^3.15.0": "3.15.0",
     "npm:gunshi@~0.29.3": "0.29.3",
     "npm:hono-openapi@^1.3.0": "1.3.0_@hono+standard-validator@0.2.2__hono@4.12.12_hono@4.12.12",
@@ -5692,8 +5693,8 @@
     "globals@16.5.0": {
       "integrity": "sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ=="
     },
-    "globals@17.4.0": {
-      "integrity": "sha512-hjrNztw/VajQwOLsMNT1cbJiH2muO3OROCHnbehc8eY5JyD2gqz4AcMHPqgaOR59DjgUjYAYLeH699g/eWi2jw=="
+    "globals@17.5.0": {
+      "integrity": "sha512-qoV+HK2yFl/366t2/Cb3+xxPUo5BuMynomoDmiaZBIdbs+0pYbjfZU+twLhGKp4uCZ/+NbtpVepH5bGCxRyy2g=="
     },
     "globalyzer@0.1.0": {
       "integrity": "sha512-40oNTM9UfG6aBmuKxk/giHn5nQ8RVz/SS4Ir6zgzOv9/qC3kKZ9v4etGTcJbEl/NyVQH7FGU7d+X1egr57Md2Q=="
@@ -8700,7 +8701,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.17.0",
             "npm:eslint@^10.2.0",
-            "npm:globals@^17.4.0",
+            "npm:globals@^17.5.0",
             "npm:gsap@^3.15.0",
             "npm:prettier-plugin-svelte@^3.5.1",
             "npm:prettier@^3.8.2",
