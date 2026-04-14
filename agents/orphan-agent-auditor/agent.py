@@ -84,7 +84,42 @@ def _scan_agent_references(ws_config: dict[str, Any]) -> set[str]:
 
 
 def _scan_fsm_references(ws_config: dict[str, Any]) -> set[str]:
-    """Scan workspace config.jobs.*.fsm states for agent references."""
+    """Scan FSM entry actions for agent references, resolving alias to user-agent-id.
+
+    Workspace structure:
+      agents:
+        planner:                     # workspace-local alias
+          type: user
+          agent: autopilot-planner   # actual user agent id
+      jobs:
+        autopilot-tick:
+          fsm:
+            states:
+              step_plan:
+                entry:
+                  - type: agent
+                    agentId: planner # references the alias
+
+    Returns the set of user-agent-ids that are actually used in FSM entry actions
+    (after resolving the alias indirection). This is the TIGHTEST definition of
+    'referenced': agents that are both declared in agents: AND referenced in
+    FSM steps.
+
+    NOTE: _scan_agent_references uses a LOOSER definition (declared in agents:,
+    regardless of FSM use). The orphan-auditor unions both, so the looser one
+    wins. _scan_fsm_references is here for transparency / future tighter
+    enforcement.
+    """
+    # Build alias → user-agent-id map from config.agents
+    alias_map: dict[str, str] = {}
+    agents_section = ws_config.get("agents", {})
+    if isinstance(agents_section, dict):
+        for alias, entry in agents_section.items():
+            if isinstance(entry, dict) and entry.get("type") == "user":
+                user_agent_id = entry.get("agent")
+                if isinstance(user_agent_id, str) and user_agent_id:
+                    alias_map[alias] = user_agent_id
+
     refs: set[str] = set()
     jobs_section = ws_config.get("jobs", {})
     if not isinstance(jobs_section, dict):
@@ -95,12 +130,24 @@ def _scan_fsm_references(ws_config: dict[str, Any]) -> set[str]:
         fsm = job.get("fsm", {})
         if not isinstance(fsm, dict):
             continue
-        for _state_key, state in fsm.items():
+        states = fsm.get("states", {})
+        if not isinstance(states, dict):
+            continue
+        for _state_name, state in states.items():
             if not isinstance(state, dict):
                 continue
-            agent_id = state.get("agent")
-            if isinstance(agent_id, str) and agent_id:
-                refs.add(agent_id)
+            entry = state.get("entry", [])
+            if not isinstance(entry, list):
+                continue
+            for action in entry:
+                if not isinstance(action, dict):
+                    continue
+                if action.get("type") == "agent":
+                    alias_or_id = action.get("agentId")
+                    if isinstance(alias_or_id, str) and alias_or_id:
+                        # Resolve alias to user-agent-id, or pass through if no alias
+                        resolved = alias_map.get(alias_or_id, alias_or_id)
+                        refs.add(resolved)
     return refs
 
 
@@ -110,7 +157,7 @@ def _scan_fsm_references(ws_config: dict[str, Any]) -> set[str]:
 
 @agent(
     id="orphan-agent-auditor",
-    version="1.2.0",
+    version="1.3.0",
     description=(
         "Cross-artifact integration auditor. Pure HTTP, no LLM. "
         "Fetches all registered agents and workspace configs, then "
