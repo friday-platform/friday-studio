@@ -83,24 +83,31 @@ def _poll_session(
     max_duration_s: int,
     poll_interval_s: int,
 ) -> dict:
-    """Poll a session until terminal status or deadline. Returns final session data."""
+    """Poll a session until terminal status or deadline. Returns final session data.
+
+    NOTE: time.sleep() is not supported in the WASM Python sandbox (no thread
+    to block). We rely on the natural HTTP roundtrip cadence (~50-200ms per
+    request) plus a max-iterations cap to bound work. poll_interval_s is
+    interpreted as a soft hint — actual cadence is whatever ctx.http.fetch
+    returns at. max_iterations = max_duration_s / max(1, poll_interval_s) gives
+    a rough cap.
+    """
     deadline = time.time() + max_duration_s
+    max_iterations = max(10, max_duration_s // max(1, poll_interval_s))
     iteration = 0
 
-    while True:
+    while iteration < max_iterations:
         iteration += 1
         try:
             data = _http_get_json(ctx, f"/api/sessions/{session_id}")
         except (HttpError, json.JSONDecodeError) as exc:
-            ctx.stream.progress(f"poll #{iteration}: error querying session — {exc}")
-            # Transient error — keep polling until deadline
+            pass  # stream progress disabled (WASM/FSM bug)
             if time.time() >= deadline:
                 return {"status": "timeout", "error": f"poll deadline exceeded after transient errors: {exc}"}
-            time.sleep(poll_interval_s)
             continue
 
         status = data.get("status", "unknown")
-        ctx.stream.progress(f"poll #{iteration}: session {session_id} status={status}")
+        pass  # stream progress disabled (WASM/FSM bug)
 
         if status in TERMINAL_STATUSES:
             return data
@@ -108,7 +115,7 @@ def _poll_session(
         if time.time() >= deadline:
             return {"status": "timeout", "error": f"poll deadline exceeded after {iteration} iterations"}
 
-        time.sleep(poll_interval_s)
+    return {"status": "timeout", "error": f"max iterations ({max_iterations}) exceeded"}
 
 
 @agent(
@@ -170,7 +177,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
         # We can't perfectly distinguish timeout vs other errors from HttpError,
         # so we treat all HttpErrors as potential timeouts and try to discover.
         fire_timed_out = True
-        ctx.stream.progress(f"fire phase: POST timed out or failed ({exc_str[:200]}), switching to poll mode")
+        pass  # stream progress disabled (WASM/FSM bug)
 
     if not fire_timed_out:
         # POST returned a response — check it
@@ -184,7 +191,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
                 return err(f"signal dispatch returned 200 but body is not JSON: {body_text[:500]}")
 
             session_id = data.get("sessionId")
-            ctx.stream.progress(f"signal completed synchronously: sessionId={session_id}, duration={duration_ms}ms")
+            pass  # stream progress disabled (WASM/FSM bug)
 
             return ok({
                 "dispatched": True,
@@ -207,7 +214,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
 
     # ── Phase 2: Discover ──────────────────────────────────────────
     # Find the active session spawned by our POST.
-    ctx.stream.progress(f"discover phase: querying sessions for workspace '{target_workspace_id}'")
+    pass  # stream progress disabled (WASM/FSM bug)
 
     session_id = None
     try:
@@ -215,9 +222,9 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     except (HttpError, json.JSONDecodeError):
         pass
 
-    # Retry once after 2s — race between session creation and our query
+    # Retry once — race between session creation and our query.
+    # No sleep (WASM Python can't); rely on the natural HTTP roundtrip.
     if not session_id:
-        time.sleep(2)
         try:
             session_id = _find_active_session(ctx, target_workspace_id)
         except (HttpError, json.JSONDecodeError):
@@ -252,16 +259,16 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
             f"after POST to signal '{target_signal_id}' timed out"
         )
 
-    ctx.stream.progress(f"discovered session: {session_id}")
+    pass  # stream progress disabled (WASM/FSM bug)
 
     # ── Phase 3: Poll ──────────────────────────────────────────────
-    ctx.stream.progress(f"poll phase: polling session {session_id} every {poll_interval_s}s (max {max_poll_duration_s}s)")
+    pass  # stream progress disabled (WASM/FSM bug)
 
     final_data = _poll_session(ctx, session_id, max_poll_duration_s, poll_interval_s)
     duration_ms = int((time.time() - t_start) * 1000)
     final_status = final_data.get("status", "unknown")
 
-    ctx.stream.progress(f"session {session_id} reached terminal status: {final_status} ({duration_ms}ms total)")
+    pass  # stream progress disabled (WASM/FSM bug)
 
     return ok({
         "dispatched": True,

@@ -56,11 +56,13 @@ signals:
     provider: schedule
     title: Autopilot tick (scheduled)
     description: >-
-      Cron-driven autopilot iteration. Fires every 15 minutes. Replaces
-      the operator (me) sitting in front of FAST and manually firing
+      Cron-driven autopilot iteration. Fires every minute. Replaces the
+      operator (me) sitting in front of FAST and manually firing
       autopilot-tick. The job is the same — just a different trigger.
+      Tight cadence intentional: the loop should be visibly cranking, not
+      napping. Lower if/when the cost is observable.
     config:
-      schedule: '*/15 * * * *'
+      schedule: '* * * * *'
       timezone: UTC
 
   audit-orphans:
@@ -223,25 +225,17 @@ jobs:
               event: ADVANCE
           'on':
             ADVANCE:
-              target: step_dispatch
+              target: completed
               guards:
                 - guard_plan_done
 
-        step_dispatch:
-          entry:
-            - type: code
-              function: prepare_dispatch
-            - type: agent
-              agentId: dispatcher
-              outputTo: dispatch-output
-              outputType: dispatch-result
-            - type: emit
-              event: DISPATCHED
-          'on':
-            DISPATCHED:
-              target: completed
-              guards:
-                - guard_dispatch_done
+        # NOTE: step_dispatch was removed in commit-pending. The daemon has
+        # a structural bug where the SECOND user agent invoked in an FSM
+        # has its agentContext stripped of http+stream bindings (first
+        # user agent works fine, second crashes with 'undefined httpFetch').
+        # Workaround: planner agent now does the dispatch inline via its
+        # own ctx.http.fetch in a single FSM step. Re-introduce step_dispatch
+        # once the daemon bug is fixed.
 
         completed:
           type: final
@@ -251,15 +245,44 @@ jobs:
           type: action
           code: |
             export default function prepare_plan(context, event) {
-              // v1 default backlog is INTENTIONALLY EMPTY. Earlier versions
-              // embedded a demo task that was already done, causing each
-              // autopilot-tick to re-author it. The right answer is to
-              // either (a) pass backlog_json explicitly via the signal
-              // payload at trigger time, or (b) wait for v2 backlog
-              // mechanism (daemon-fetchable file or a runtime task store).
-              // Until then: an empty backlog → planner returns action='idle'
-              // → dispatcher no-ops. Safe default.
-              var defaultBacklog = JSON.stringify({ tasks: [] });
+              // The planner reads the backlog from ctx.config.backlog_json
+              // (inline string) or backlog_url (HTTP fetch). The narrative
+              // corpus endpoint at /api/memory/{ws}/narrative/{name} is the
+              // intended v2 source — but that route is daemon-side new code
+              // that won't go live until the friday-starter image rebuilds.
+              // Until then: an inline default with real follow-up work so the
+              // loop has something to do.
+              //
+              // Mark a task status:done to take it out of rotation. Operator
+              // edits this code action to add new tasks until the corpus
+              // route lands.
+              // CRITICAL: do NOT target mild_almond from this backlog — the
+              // autopilot dispatcher running INSIDE mild_almond's autopilot-tick
+              // FSM cannot recursively fire mild_almond signals (concurrent
+              // session creation on the same workspace invalidates the outer
+              // FSM's stream context, causing 'undefined streamEmit'). Target
+              // OTHER workspaces only.
+              //
+              // Initial backlog: trigger reflect-on-last-run on grilled_xylem
+              // periodically so the reflector keeps thinking about recent
+              // sessions. Cheap, safe, exercises the existing loop.
+              var defaultBacklog = JSON.stringify({
+                tasks: [
+                  {
+                    id: 'reflect-grilled-xylem-recent',
+                    title: 'Reflect on grilled_xylem most recent session',
+                    status: 'pending',
+                    priority: 50,
+                    kind: 'reflect',
+                    blocked_by: [],
+                    created_at: '2026-04-14T16:30:00Z',
+                    payload: {
+                      workspace_id: 'grilled_xylem',
+                      signal_id: 'reflect-on-last-run'
+                    }
+                  }
+                ]
+              });
               var backlogJson = (event.data && event.data.backlog_json) || defaultBacklog;
               return {
                 task: 'Autopilot tick: pick next backlog task',

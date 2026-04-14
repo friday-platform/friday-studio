@@ -63,6 +63,7 @@ import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
+import { memoryNarrativeRoutes } from "../routes/memory/get.ts";
 import reportRoutes from "../routes/report.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionsRoutes } from "../routes/sessions/index.ts";
@@ -730,6 +731,7 @@ export class AtlasDaemon {
     this.app.route("/api/jobs", jobsRoutes);
     this.app.route("/api/skills", skillsRoutes);
     this.app.route("/api/report", reportRoutes);
+    this.app.route("/api/memory", memoryNarrativeRoutes);
 
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));

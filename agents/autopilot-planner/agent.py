@@ -7,6 +7,7 @@ componentize-py compiles this module. It must:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from friday_agent_sdk import agent, err, ok
@@ -16,7 +17,7 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py nee
 # is available in the WASM stdlib sandbox. Extension preserved for operator
 # backwards-compat with renamed .json files.
 BACKLOG_URL_DEFAULT = (
-    "http://localhost:8080/api/files/raw?path=/workspace/atlas/docs/plans/autopilot-backlog.yaml"
+    "http://localhost:8080/api/memory/mild_almond/narrative/autopilot-backlog"
 )
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
 
@@ -27,6 +28,24 @@ def _http_get_json(ctx: Any, url: str) -> dict[str, Any]:
     if resp.status != 200:
         raise RuntimeError(f"GET {url} → HTTP {resp.status}")
     return resp.json()
+
+
+def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Map a NarrativeEntry[] response from the corpus endpoint to {tasks: [...]}."""
+    tasks: list[dict[str, Any]] = []
+    for entry in entries:
+        meta = entry.get("metadata") or {}
+        tasks.append({
+            "id": entry.get("id", ""),
+            "title": entry.get("text", ""),
+            "status": meta.get("status", "pending"),
+            "priority": meta.get("priority", 0),
+            "kind": meta.get("kind"),
+            "blocked_by": meta.get("blocked_by", []),
+            "created_at": entry.get("createdAt", ""),
+            "payload": meta.get("payload", {}),
+        })
+    return {"tasks": tasks}
 
 
 def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> list[dict[str, Any]]:
@@ -71,9 +90,18 @@ def execute(prompt, ctx):
     else:
         backlog_url = cfg.get("backlog_url", BACKLOG_URL_DEFAULT)
         try:
-            data = _http_get_json(ctx, backlog_url)
+            raw_data = _http_get_json(ctx, backlog_url)
         except RuntimeError as exc:
             return err(f"Failed to fetch backlog: {exc}")
+
+        # Support NarrativeEntry[] from corpus endpoint (list at root)
+        # as well as legacy {tasks: [...]} format (dict at root).
+        if isinstance(raw_data, list):
+            data = _narrative_entries_to_backlog(raw_data)
+        elif isinstance(raw_data, dict):
+            data = raw_data
+        else:
+            return err("Backlog JSON root must be an object or array")
 
     if not isinstance(data, dict):
         return err("Backlog JSON root must be an object")
@@ -118,6 +146,35 @@ def execute(prompt, ctx):
     if not target_signal_id:
         return err(f"Task '{task.get('id')}' payload missing 'signal_id'")
 
+    # ── Inline dispatch ─────────────────────────────────────────────
+    # Workaround for daemon bug: when an FSM step invokes a SECOND user
+    # agent (e.g. dispatcher after planner), the agentContext is missing
+    # http/stream bindings. Until the daemon is fixed, the planner does
+    # the dispatch itself in the same FSM step. POST with a short timeout
+    # and return immediately — fire-and-forget. Polling is dropped; the
+    # daemon's session list will reflect the work asynchronously.
+    fire_url = f"{cfg.get('platformUrl', PLATFORM_URL_DEFAULT)}/api/workspaces/{target_workspace_id}/signals/{target_signal_id}"
+    fire_payload = {"payload": payload}
+    fire_status: int | str = "fired"
+    fire_session_id: str | None = None
+    try:
+        body = json.dumps(fire_payload)
+        resp = ctx.http.fetch(
+            fire_url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=body,
+            timeout_ms=5000,
+        )
+        fire_status = resp.status
+        if resp.status == 200 and resp.body:
+            try:
+                fire_session_id = json.loads(resp.body).get("sessionId")
+            except json.JSONDecodeError:
+                pass
+    except Exception as exc:  # noqa: BLE001 — host fetch may raise opaque errors
+        fire_status = f"fetch-error: {str(exc)[:160]}"
+
     return ok({
         "action": "execute",
         "task_id": task.get("id"),
@@ -125,8 +182,10 @@ def execute(prompt, ctx):
         "target_signal_id": target_signal_id,
         "signal_payload": payload,
         "task_kind": task.get("kind"),
+        "fired_status": fire_status,
+        "fired_session_id": fire_session_id,
         "rationale": (
-            f"Selecting task '{task.get('id')}' (priority={task.get('priority', 0)}, "
-            f"kind={task.get('kind')}, title={task.get('title', '')!r})."
+            f"Selected and fired task '{task.get('id')}' (priority={task.get('priority', 0)}, "
+            f"kind={task.get('kind')}). Fire status: {fire_status}."
         ),
     })
