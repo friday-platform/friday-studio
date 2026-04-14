@@ -36,7 +36,7 @@ function toOptionalConfigEntry(field: BundledAgentConfigField) {
  * Used by the agent selector UI and execute route.
  */
 export const agentsRoute = new Hono().get("/", async (c) => {
-  const agents = bundledAgents.flatMap((agent) => {
+  const bundled = bundledAgents.flatMap((agent) => {
     const entry = bundledAgentsRegistry[agent.metadata.id];
     if (!entry) return [];
 
@@ -47,6 +47,7 @@ export const agentsRoute = new Hono().get("/", async (c) => {
       summary: entry.summary ?? "",
       constraints: agent.metadata.constraints ?? "",
       version: entry.version,
+      source: "bundled" as const,
       examples: entry.examples,
       inputSchema: entry.inputJsonSchema ?? null,
       outputSchema: entry.outputJsonSchema ?? null,
@@ -55,23 +56,25 @@ export const agentsRoute = new Hono().get("/", async (c) => {
     };
   });
 
-  // Append user agents discovered from ~/.atlas/agents/
+  // Discover user agents from ~/.atlas/agents/
   const userAgents = await listUserAgents();
-  for (const ua of userAgents) {
-    agents.push({
-      id: ua.id,
-      displayName: ua.displayName ?? ua.id,
-      description: ua.description ?? "",
-      summary: "",
-      constraints: "",
-      version: ua.version ?? "0.0.0",
-      examples: [],
-      inputSchema: null,
-      outputSchema: null,
-      requiredConfig: [],
-      optionalConfig: [],
-    });
-  }
+  const emptyExamples: string[] = [];
+  const emptyRequired: ReturnType<typeof toRequiredConfigEntry>[] = [];
+  const emptyOptional: ReturnType<typeof toOptionalConfigEntry>[] = [];
+  const user = userAgents.map((ua) => ({
+    id: ua.id,
+    displayName: ua.displayName ?? ua.id,
+    description: ua.description ?? "",
+    summary: "",
+    constraints: "",
+    version: ua.version ?? "0.0.0",
+    source: "user" as const,
+    examples: emptyExamples,
+    inputSchema: null,
+    outputSchema: null,
+    requiredConfig: emptyRequired,
+    optionalConfig: emptyOptional,
+  }));
 
-  return c.json({ agents });
+  return c.json({ agents: [...bundled, ...user] });
 });

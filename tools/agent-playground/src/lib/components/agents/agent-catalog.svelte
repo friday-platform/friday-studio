@@ -160,11 +160,15 @@
     rowElements = new Array(filteredAgents.length);
   });
 
-  const resultCount = $derived(
-    searchQuery.trim()
-      ? `${filteredAgents.length} result${filteredAgents.length !== 1 ? "s" : ""}`
-      : `${agents.length} bundled agents`,
-  );
+  const resultCount = $derived.by(() => {
+    if (searchQuery.trim()) {
+      return `${filteredAgents.length} result${filteredAgents.length !== 1 ? "s" : ""}`;
+    }
+    const bundledCount = agents.filter((a) => a.source === "bundled").length;
+    const userCount = agents.filter((a) => a.source === "user").length;
+    if (userCount === 0) return `${bundledCount} bundled agents`;
+    return `${bundledCount} bundled + ${userCount} user agents`;
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

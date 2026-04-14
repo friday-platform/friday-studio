@@ -83,7 +83,11 @@
 
     <span class="agent-name">{agent.displayName}</span>
 
-    <InlineBadge variant="success">BUILT-IN</InlineBadge>
+    {#if agent.source === "user"}
+      <InlineBadge variant="info">USER</InlineBadge>
+    {:else}
+      <InlineBadge variant="success">BUILT-IN</InlineBadge>
+    {/if}
 
     {#if agent.description}
       <span class="description-truncated">{agent.description}</span>
