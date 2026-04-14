@@ -1691,6 +1691,46 @@ invariants cannot.**
     (memory/skill edits in user workspaces) but probably needs to
     be 0.95+ for dev-tier patches (production code). Threshold
     should be tier-scoped config, not global.
+18. **Global skill leakage into every claude-code sandbox.**
+    Observed in tonight's overnight run: published skills appear
+    in every claude-code agent's sandbox regardless of workspace
+    `skills:` declaration. The workspace-level skill list is
+    advisory, not enforced. This is the global-propagation
+    property the self-mod loop depends on, but it also means
+    workspace-scoped skill isolation does not exist today.
+    **Phase 3 FridayHub trust model needs real workspace tiers
+    (workspace > project > managed > bundled), not a single
+    global tier.** Until that ships, expect every published
+    skill to appear in every claude-code agent's context, and
+    keep the global skill list small + curated. **Bumping this
+    to a load-bearing Phase 3 prerequisite.**
+19. **Quick-fix signal path for tier-1 trivial tasks.** Tonight's
+    `fix-schema-boundary-as-cast` task ran the full architect →
+    coder → reviewer FSM with claude-code + opus + effort=high
+    on a 2-character diff. ~10 min wall time, significant token
+    cost, for a trivial deterministic change. **Proposed addition
+    to the Phase 5 reinforcement loop:** a "quick-fix" signal
+    that skips the architect, runs coder with inline instructions
+    instead of a memo, and runs reviewer on just the touched
+    files. Trigger heuristic: `target_files.length === 1` AND
+    task_brief contains a "fix" / "remove" / "rename" verb. The
+    full FSM stays the default; quick-fix is opt-in via a
+    different signal name. Reflector should auto-detect when a
+    task would have qualified for quick-fix and propose the
+    routing change as a skill update. **Discovered via overnight
+    crank session 8c916a7c on grilled_xylem.**
+20. **Reflector cross-session memory needs persistent narrative
+    corpus.** The overnight loop's reflector currently sees only
+    one session at a time (the `session_id` passed to
+    `reflect-on-last-run`). Pattern detection across sessions
+    (e.g. "this failure mode appeared in 3 of the last 5 runs")
+    needs the reflector to read prior reflection outputs from a
+    durable store. **MdNarrativeCorpus (Phase 1a task 4) becomes
+    a load-bearing dependency of the autonomous reflector**, not
+    just a parity-plan adapter requirement. The reflector reads
+    its own past proposals via `ctx.memory.corpus("reflections",
+    "narrative").read()` to avoid re-proposing things it already
+    proposed and got rejected.
 
 ---
 
