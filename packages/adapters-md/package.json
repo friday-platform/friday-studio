@@ -1,0 +1,10 @@
+{
+  "name": "@atlas/adapters-md",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts",
+  "dependencies": { "zod": "^4.3.5" },
+  "devDependencies": { "vitest": "^4.1.0" }
+}
