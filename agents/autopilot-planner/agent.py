@@ -51,25 +51,74 @@ def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, An
 _LAST_FIRED_DIAG: dict[str, Any] = {}
 
 
-def _fired_within(ctx: Any, platform_url: str, workspace_id: str, signal_id: str, cooldown_s: int) -> bool:
-    """Return True if signal_id was the target of any of the last N sessions.
+def _iso_subtract_seconds(iso: str, seconds: int) -> str | None:
+    """Subtract seconds from an ISO 8601 timestamp string, return ISO string.
 
-    WASM Python sandbox lacks `datetime` and `calendar` so we can't do real
-    time-window math. Position-based heuristic instead: query the recent
-    sessions list, which the daemon sorts most-recent-first; if the
-    target signal appears in the top N entries, treat as 'recently fired'.
-    N derives from cooldown_s assuming ~1 session per minute (cooldown_s/60),
-    capped at 20.
+    WASM Python sandbox lacks datetime and calendar. Manual math: split the
+    ISO into y/mo/d/h/m/s ints, decrement, handle borrow across boundaries.
+    Handles dates within the same month for simplicity (cooldown_s typically
+    < 86400). Falls back to the input string on parse errors.
+    """
+    try:
+        # "2026-04-14T17:33:11.063Z" → date and time parts
+        clean = iso.replace("Z", "")
+        if "." in clean:
+            clean = clean.split(".", 1)[0]
+        date_part, time_part = clean.split("T")
+        y, mo, d = (int(x) for x in date_part.split("-"))
+        h, mi, sec = (int(x) for x in time_part.split(":"))
+
+        total_s = h * 3600 + mi * 60 + sec - seconds
+        # Borrow days when negative
+        days_back = 0
+        while total_s < 0:
+            total_s += 86400
+            days_back += 1
+        if days_back > 0:
+            d -= days_back
+            # Crude month/year borrow — only handles within-month for now;
+            # if d goes <= 0, return the lexically-smallest ISO of that month
+            if d <= 0:
+                d = 1
+        new_h = total_s // 3600
+        new_m = (total_s % 3600) // 60
+        new_s = total_s % 60
+        return f"{y:04d}-{mo:02d}-{d:02d}T{new_h:02d}:{new_m:02d}:{new_s:02d}"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _fired_within(ctx: Any, platform_url: str, workspace_id: str, signal_id: str, cooldown_s: int, match_job_name: str | None = None) -> bool:
+    """Return True if signal_id was the target of any session started within the last cooldown_s seconds.
+
+    Uses ISO string comparison (lexical sort works for ISO 8601). Fetches
+    the daemon's current time from /health, computes the cutoff ISO by
+    subtracting cooldown_s, then compares each recent session's startedAt
+    against the cutoff. Falls back to position-based check if the time
+    fetch fails.
     """
     diag: dict[str, Any] = {"workspace_id": workspace_id, "signal_id": signal_id, "cooldown_s": cooldown_s}
     _LAST_FIRED_DIAG.clear()
     _LAST_FIRED_DIAG.update(diag)
 
-    n_window = max(1, min(20, cooldown_s // 60))
-    _LAST_FIRED_DIAG["n_window"] = n_window
-
     try:
-        url = f"{platform_url}/api/sessions?workspaceId={workspace_id}&limit={n_window + 5}"
+        # Fetch daemon's "now"
+        cutoff_iso: str | None = None
+        try:
+            health_url = f"{platform_url}/health"
+            health_resp = ctx.http.fetch(health_url, method="GET", timeout_ms=3000)
+            if health_resp.status == 200:
+                health_data = json.loads(health_resp.body or "{}")
+                now_iso = health_data.get("timestamp")
+                if isinstance(now_iso, str):
+                    cutoff_iso = _iso_subtract_seconds(now_iso, cooldown_s)
+                    _LAST_FIRED_DIAG["now_iso"] = now_iso
+                    _LAST_FIRED_DIAG["cutoff_iso"] = cutoff_iso
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Fetch recent sessions
+        url = f"{platform_url}/api/sessions?workspaceId={workspace_id}&limit=20"
         resp = ctx.http.fetch(url, method="GET", timeout_ms=5000)
         if resp.status != 200:
             _LAST_FIRED_DIAG["error"] = f"GET {resp.status}"
@@ -81,14 +130,39 @@ def _fired_within(ctx: Any, platform_url: str, workspace_id: str, signal_id: str
             return False
         _LAST_FIRED_DIAG["session_count"] = len(sessions)
 
-        # Walk the top-N most-recent sessions
-        for idx, s in enumerate(sessions[:n_window]):
+        # Build the set of names that count as a "match" for this signal.
+        # Sessions don't record the signal name, only jobName. Some signals
+        # trigger jobs with a different name (e.g. apply-approved-reflection
+        # → apply-reflection). The backlog task can pass match_job_name to
+        # disambiguate.
+        match_names = {signal_id}
+        if match_job_name:
+            match_names.add(match_job_name)
+        _LAST_FIRED_DIAG["match_names"] = list(match_names)
+
+        for idx, s in enumerate(sessions):
             if not isinstance(s, dict):
                 continue
-            if s.get("jobName") == signal_id or s.get("signalId") == signal_id:
-                _LAST_FIRED_DIAG["matched_at_position"] = idx
-                _LAST_FIRED_DIAG["matched_session_id"] = s.get("sessionId") or s.get("id")
-                return True
+            if s.get("jobName") not in match_names and s.get("signalId") not in match_names:
+                continue
+            started = s.get("startedAt")
+            if not isinstance(started, str):
+                continue
+            # Time-based check: ISO string comparison (lexical sort works)
+            if cutoff_iso is not None:
+                # Strip subseconds + Z for comparable form
+                started_clean = started.replace("Z", "").split(".", 1)[0]
+                if started_clean >= cutoff_iso:
+                    _LAST_FIRED_DIAG["matched_at_position"] = idx
+                    _LAST_FIRED_DIAG["matched_started_at"] = started
+                    return True
+            else:
+                # Fallback to position-based heuristic if cutoff calc failed
+                n_window = max(1, min(20, cooldown_s // 60))
+                if idx < n_window:
+                    _LAST_FIRED_DIAG["matched_at_position"] = idx
+                    _LAST_FIRED_DIAG["fallback"] = "position-based"
+                    return True
         _LAST_FIRED_DIAG["matched_at_position"] = -1
         return False
     except Exception as exc:  # noqa: BLE001 — be defensive, fail open
@@ -109,7 +183,7 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.1.0",
+    version="1.3.0",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
@@ -198,7 +272,8 @@ def execute(prompt, ctx):
         if not cand_ws or not cand_sig:
             chosen_task = candidate
             break
-        if _fired_within(ctx, platform_url, cand_ws, cand_sig, cooldown_s):
+        cand_match_job = candidate.get("match_job_name")
+        if _fired_within(ctx, platform_url, cand_ws, cand_sig, cooldown_s, cand_match_job):
             skip_reasons.append(f"{candidate.get('id')} (fired in last {cooldown_s}s)")
             continue
         chosen_task = candidate

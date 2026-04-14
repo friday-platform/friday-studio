@@ -294,11 +294,16 @@ jobs:
                     kind: 'reflect',
                     blocked_by: [],
                     created_at: '2026-04-14T16:30:00Z',
+                    // The apply-approved-reflection signal triggers the
+                    // apply-reflection job. Sessions record jobName, not
+                    // signal name. match_job_name tells the planner what
+                    // to look for in the cooldown check.
+                    match_job_name: 'apply-reflection',
                     payload: {
                       workspace_id: 'grilled_xylem',
                       signal_id: 'apply-approved-reflection',
-                      // No reflection_session_id — the apply agent will
-                      // walk recent reflect sessions itself or return idle
+                      // No reflection_session_id — the apply agent walks
+                      // recent reflect sessions itself or returns idle
                       // if no high-confidence proposal is available.
                     }
                   }
