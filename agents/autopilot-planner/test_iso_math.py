@@ -12,8 +12,20 @@ import sys
 from pathlib import Path
 
 
-def _iso_subtract_seconds(iso: str, seconds: int):
-    """Mirror of agents/autopilot-planner/agent.py:_iso_subtract_seconds."""
+def _is_leap(year):
+    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+
+
+def _days_in_month(year, month):
+    if month == 2:
+        return 29 if _is_leap(year) else 28
+    if month in (4, 6, 9, 11):
+        return 30
+    return 31
+
+
+def _iso_subtract_seconds(iso, seconds):
+    """Mirror of agents/autopilot-planner/agent.py:_iso_subtract_seconds (post-fix)."""
     try:
         clean = iso.replace("Z", "")
         if "." in clean:
@@ -23,14 +35,16 @@ def _iso_subtract_seconds(iso: str, seconds: int):
         h, mi, sec = (int(x) for x in time_part.split(":"))
 
         total_s = h * 3600 + mi * 60 + sec - seconds
-        days_back = 0
         while total_s < 0:
             total_s += 86400
-            days_back += 1
-        if days_back > 0:
-            d -= days_back
+            d -= 1
             if d <= 0:
-                d = 1
+                mo -= 1
+                if mo <= 0:
+                    mo = 12
+                    y -= 1
+                d = _days_in_month(y, mo)
+
         new_h = total_s // 3600
         new_m = (total_s % 3600) // 60
         new_s = total_s % 60
@@ -57,8 +71,10 @@ def assert_lex_order(label, a, b):
 def assert_drift_check():
     src = (Path(__file__).parent / "agent.py").read_text()
     assert "def _iso_subtract_seconds" in src, "helper not in agent.py"
+    assert "def _is_leap" in src, "_is_leap helper missing"
+    assert "def _days_in_month" in src, "_days_in_month helper missing"
     assert "total_s = h * 3600 + mi * 60 + sec - seconds" in src, "math drift"
-    print("PASS: agent.py helper signature + math match test")
+    print("PASS: agent.py helpers + math match test")
 
 
 def main():
@@ -106,11 +122,46 @@ def main():
     assert_lex_order("recent session within cutoff", cutoff, started_a)
     assert_lex_order("old session outside cutoff", started_b, cutoff)
 
+    # Month boundary: 1 day back from May 1 → April 30
+    assert_eq(
+        "month boundary may→apr",
+        _iso_subtract_seconds("2026-05-01T12:00:00Z", 86400),
+        "2026-04-30T12:00:00",
+    )
+
+    # Month boundary: 1 day back from March 1, 2026 (non-leap) → Feb 28
+    assert_eq(
+        "non-leap feb",
+        _iso_subtract_seconds("2026-03-01T12:00:00Z", 86400),
+        "2026-02-28T12:00:00",
+    )
+
+    # Month boundary: 1 day back from March 1, 2024 (leap) → Feb 29
+    assert_eq(
+        "leap feb",
+        _iso_subtract_seconds("2024-03-01T12:00:00Z", 86400),
+        "2024-02-29T12:00:00",
+    )
+
+    # Year boundary: 1 day back from Jan 1 → Dec 31 prior year
+    assert_eq(
+        "year boundary",
+        _iso_subtract_seconds("2026-01-01T12:00:00Z", 86400),
+        "2025-12-31T12:00:00",
+    )
+
+    # Multi-day back across month boundary
+    assert_eq(
+        "5 days back from may 3 → apr 28",
+        _iso_subtract_seconds("2026-05-03T00:00:00Z", 5 * 86400),
+        "2026-04-28T00:00:00",
+    )
+
     # Bad input falls back to None
     assert_eq("garbage input", _iso_subtract_seconds("not-iso", 60), None)
     assert_eq("empty input", _iso_subtract_seconds("", 60), None)
 
-    print("\n10/10 passed")
+    print("\n15/15 passed")
 
 
 if __name__ == "__main__":

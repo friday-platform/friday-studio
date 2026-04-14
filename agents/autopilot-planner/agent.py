@@ -51,13 +51,24 @@ def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, An
 _LAST_FIRED_DIAG: dict[str, Any] = {}
 
 
+def _is_leap(year: int) -> bool:
+    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+
+
+def _days_in_month(year: int, month: int) -> int:
+    if month == 2:
+        return 29 if _is_leap(year) else 28
+    if month in (4, 6, 9, 11):
+        return 30
+    return 31
+
+
 def _iso_subtract_seconds(iso: str, seconds: int) -> str | None:
     """Subtract seconds from an ISO 8601 timestamp string, return ISO string.
 
     WASM Python sandbox lacks datetime and calendar. Manual math: split the
-    ISO into y/mo/d/h/m/s ints, decrement, handle borrow across boundaries.
-    Handles dates within the same month for simplicity (cooldown_s typically
-    < 86400). Falls back to the input string on parse errors.
+    ISO into y/mo/d/h/m/s ints, decrement, handle borrow across day/month/year
+    boundaries (with leap-year support). Returns None on parse errors.
     """
     try:
         # "2026-04-14T17:33:11.063Z" → date and time parts
@@ -69,17 +80,17 @@ def _iso_subtract_seconds(iso: str, seconds: int) -> str | None:
         h, mi, sec = (int(x) for x in time_part.split(":"))
 
         total_s = h * 3600 + mi * 60 + sec - seconds
-        # Borrow days when negative
-        days_back = 0
+        # Borrow days when negative — walk back through months/years properly
         while total_s < 0:
             total_s += 86400
-            days_back += 1
-        if days_back > 0:
-            d -= days_back
-            # Crude month/year borrow — only handles within-month for now;
-            # if d goes <= 0, return the lexically-smallest ISO of that month
+            d -= 1
             if d <= 0:
-                d = 1
+                mo -= 1
+                if mo <= 0:
+                    mo = 12
+                    y -= 1
+                d = _days_in_month(y, mo)
+
         new_h = total_s // 3600
         new_m = (total_s % 3600) // 60
         new_s = total_s % 60
@@ -183,7 +194,7 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.3.0",
+    version="1.3.1",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
