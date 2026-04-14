@@ -1,8 +1,11 @@
 # Personal Assistant Walkthrough — Target UX
 
 **Date:** 2026-04-13
-**Status:** Vision doc (companion to openclaw-parity-plan v5)
-**Assumes:** Phases 1–5 of `2026-04-13-openclaw-parity-plan.md` have shipped
+**Status:** Vision doc (companion to openclaw-parity-plan v6)
+**Assumes:** Phases 1–5 of `2026-04-13-openclaw-parity-plan.md` have shipped.
+Terminology follows the parity plan: `friday` is the post-rename CLI
+(today's `atlas`), "space" is user-facing for what the YAML calls
+`workspace.yml`, FAST = Friday Agent Studio & Toolkit.
 
 ---
 
@@ -41,10 +44,19 @@ First boot pulls the base OCI images (`friday/base`,
 sandbox is working, and prints:
 
 ```
-Friday daemon running at http://localhost:8080
-Runtime: microsandbox v0.x (hypervisor isolation verified ✓)
-Workspaces: 0
-Skills (bundled): 47
+================================================================
+  Friday Platform is ready!
+
+  Friday Studio:       http://localhost:15200
+  Daemon API:          http://localhost:18080
+  PTY Server:          http://localhost:17681
+  Webhook Tunnel:      http://localhost:19090
+  Link Service:        http://localhost:13100
+
+  Runtime: microsandbox v0.x (hypervisor isolation verified ✓)
+  Spaces: 0
+  Skills (bundled): 47
+================================================================
 ```
 
 The "hypervisor isolation verified" line runs a self-test microVM that
@@ -53,13 +65,20 @@ as a startup assertion.**
 
 ---
 
-## Step 1 — Create a workspace
+## Step 1 — Create a space
+
+Two equivalent ways: CLI or Studio drag-drop.
 
 ```bash
 friday workspace new my-assistant
 ```
 
-Scaffolds `~/.friday/workspaces/my-assistant/`:
+Or: open `http://localhost:15200` and drag a `workspace.yml` onto
+the **Add Space** drop zone. The Studio is the primary UI for most
+FAST users — most of the steps below have a Studio equivalent, not
+called out explicitly unless it matters.
+
+Either path scaffolds `~/.friday/workspaces/my-assistant/`:
 
 ```
 workspace.yml          # declarative config (agents, signals, jobs)
@@ -69,8 +88,10 @@ skills/                # workspace-local skills, starts empty
 .friday/               # state: sessions, cron, adapter history — not agent-writable
 ```
 
-Minimal default `workspace.yml` — one conversational agent, no signals,
-nothing fancy. No YAML editing required to get started.
+Minimal default `workspace.yml` — one conversational agent, no
+signals, nothing fancy. No YAML editing required to get started.
+(If you prefer to see the config, click **Edit configuration** in
+the Studio — structured YAML with syntax highlighting.)
 
 ---
 

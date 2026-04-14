@@ -1,9 +1,13 @@
 # Building Friday with Friday — Dev Walkthrough
 
 **Date:** 2026-04-13
-**Status:** Vision doc (companion to openclaw-parity-plan v5)
-**Assumes:** Phases 1–5 of `2026-04-13-openclaw-parity-plan.md` have shipped
+**Status:** Vision doc (companion to openclaw-parity-plan v6)
+**Assumes:** Phases 1–5 *and Phase 8* of
+`2026-04-13-openclaw-parity-plan.md` have shipped
 **Companion to:** `2026-04-13-personal-assistant-walkthrough.md`
+**Terminology:** follows parity plan — `friday` is the post-rename
+CLI (today's `atlas`), "space" is user-facing for workspace.yml,
+FAST = Friday Agent Studio & Toolkit.
 
 ---
 

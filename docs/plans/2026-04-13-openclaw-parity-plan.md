@@ -1,9 +1,50 @@
 # Friday → OpenClaw Parity + Reliability Leapfrog
 
 **Date:** 2026-04-13
-**Status:** Draft (v5 — microsandbox runtime, JSON-RPC transport)
-**Supersedes:** v4 (WASM-centric), v3 (bucketlist-anchored), v2 (narrow
-MemoryAdapter), v1 (cwd sketch)
+**Status:** Draft (v6 — FAST docs reconciled, `friday` CLI rename)
+**Supersedes:** v5 (microsandbox runtime + RPC transport), v4 (WASM-
+centric), v3 (bucketlist-anchored), v2 (narrow MemoryAdapter), v1 (cwd
+sketch)
+
+## Terminology used in this plan
+
+- **FAST** — Friday Agent Studio & Toolkit. The shipped product.
+- **Friday** — the brand; the CLI post-rename (see below).
+- **Space** — user-visible name for a workspace. The YAML file is
+  still `workspace.yml` and the API still uses `/api/workspaces/{id}`
+  for legacy reasons, but in user-facing prose and CLI help text the
+  term is "space." This plan uses "space" in prose and "workspace.yml"
+  for the file.
+- **`friday` CLI** — the current CLI binary is `atlas`. **The rename
+  to `friday` is explicitly deferred to after material work lands.**
+  Phases 1, 2, 4, 5, and 8 all ship under the `atlas` binary; the
+  rename is a late-phase marketing-and-branding cut, not
+  infrastructure. Every `friday ...` command in the companion
+  walkthroughs is aspirational; they read correctly against the
+  current `atlas` binary with a global find-and-replace. The
+  rename is a one-day change whenever you're ready to ship publicly
+  under the Friday brand. Do not block any Phase 1 work on it.
+- **Studio UI** — parallel track, explicitly **not** blocking.
+  Studio upgrades for the new Phase 1 primitives (memory views,
+  skill browser updates, `friday inspect` equivalents) are leapfrog
+  material — a high-quality UI is what makes the whole story
+  *accessible* — but they proceed in parallel with the adapter
+  work, not ahead of it. Don't gate Phase 1 ship on Studio work
+  and don't gate Studio work on Phase 1 ship.
+- **FridayHub (Phase 3) is deferred.** Phases 1 and 2 plus Phase 8
+  are the critical path. Phase 3 is important but not tonight's
+  problem; revisit when Phases 1+2 are shipping and the skill
+  format has had time to settle under real use.
+- **Studio** — the local web dashboard on port 15200. Drag-drop
+  space loading, Agent Tester, Job Inspector (DAG + waterfall),
+  Skills browser, PTY terminal. Not covered by today's parity
+  conversation but referenced throughout the walkthroughs.
+- **Daemon** — core backend on port 18080. Everything else talks to
+  it.
+- **Link** — credential service on port 13100. Backs
+  `LinkCredentialRef`.
+- **Webhook tunnel** — Cloudflare tunnel on port 19090. Ships
+  with FAST; not a future feature.
 
 ---
 
@@ -11,7 +52,7 @@ MemoryAdapter), v1 (cwd sketch)
 
 Every interface, backend, phase split, and hierarchy in this doc is a
 **proposed option**, not a prescription. Where a call is genuinely load-
-bearing (adapter contract versioning, WIT interface shape, state-surface
+bearing (adapter contract versioning, JSON-RPC schema shape, state-surface
 deprecation order, bucketlist-cs migration as a Phase 1 canary) it's
 called out explicitly; everything else is movable. The goal is to name
 the shape of the decision space clearly enough that we can argue
@@ -87,7 +128,8 @@ onboarding path.
 - **No versioning / rollback.** Latest file wins. "Undo the last three
   skill edits" is `git reset` — if the user remembered to `git init`.
 - **No multi-agent orchestration.** Standing Orders + cron is the
-  control-flow vocabulary. No branching, no guards, no typed handoffs.
+  control-flow vocabulary. No branching, no guards, no data contracts
+  between steps.
 - **Filesystem-only containment.** `tools.deny: ["gateway"]` is a
   convention, not a type. Prompt injection that gets the agent to
   write outside its cwd is catastrophic.
@@ -123,14 +165,23 @@ custom-agent-platform master plan
 `PostgresAgentStorageAdapter` as designed extensions. Friday is not
 retrofitting the adapter pattern; it's built on it.
 
-### FSM engine with typed handoffs
+### FSM engine with data-contract-gated progression
 
 `@atlas/fsm-engine` runs multi-step workflows with states, guards,
-code actions, agent actions, and typed document handoffs
-(`outputTo` / `outputType`). Bucketlist-cs chains `knowledge` →
-`hubspot` → `synthesizer` → `knowledge` → `hubspot` across five FSM
-states with guards and retries. OpenClaw's automation layer — cron +
-standing orders — cannot express this.
+code actions, agent actions, and **data contracts** — JSON schemas
+enforced at step boundaries. Per the FAST docs: *"agents must
+fulfill a contract to move from step to step."* A step cannot
+advance until its output parses against the next step's input
+schema. This is stronger than typed handoffs; it's *schema-gated
+progression* — invalid output blocks the pipeline, it doesn't
+cascade downstream as garbage.
+
+Bucketlist-cs chains `knowledge` → `hubspot` → `synthesizer` →
+`knowledge` → `hubspot` across five FSM states with guards, retries,
+and data contracts between every step. OpenClaw's automation layer
+— cron + standing orders — cannot express any of this. OpenClaw has
+no equivalent of "the pipeline blocks if the agent returned malformed
+output," which is the single most common mode real workflows fail in.
 
 ### ResourceToolkit with draft → publish versioning
 
@@ -215,14 +266,72 @@ the system.
 tool calls, tool results, thinking, usage. Sessions are durable;
 activity is queryable. OpenClaw's equivalent is JSONL session files.
 
-### Multi-agent workflows are already real
+### Multi-agent workflows are already real, and plural
 
 `examples/bucketlist-cs/workspace.yml` defines four agents
 (`knowledge`, `hubspot`, `synthesizer`, plus bundled) across three
 jobs. The `auto-answer-new-tickets` job runs
 `hubspot → synthesizer → knowledge → hubspot` with guards and
-iteration. This is existing production-shape code, not a future
-promise.
+iteration.
+
+But bucketlist isn't the only existence proof. FAST **ships with
+four starter spaces** that are real, working, complete workflows:
+
+- Bitbucket pull request code review
+- GitHub pull request code review
+- Jira bug fix (clones repo, runs Claude Code, opens PR, comments)
+- Jira labeled bug fix (auto-finds `ai-fix` labeled tickets,
+  claims, fixes, PRs, transitions to Done)
+
+Each starter has its own multi-agent FSM with data-contract
+handoffs. OpenClaw has no starter spaces of this complexity because
+it lacks the orchestration substrate to express them. The starters
+are the existence proof that the multi-agent story isn't a future
+promise — it's a product feature users run today.
+
+### Studio (the visual dashboard)
+
+FAST ships with a local web dashboard (port 15200, `http://
+localhost:15200`) that is the primary UI for most users. Features:
+
+- **Drag-drop space loading.** Drop a `workspace.yml` onto the
+  dashboard to add a space. No CLI needed for the common case.
+- **Agent Tester.** Select any agent (built-in or custom), provide
+  inputs, pick a model, see the result — used for testing prompts
+  and choosing models before wiring into jobs.
+- **Job Inspector.** DAG visualization of the FSM plus a waterfall
+  timeline of a run. You can see every agent step, duration,
+  input/output, data contract validation status. This is already
+  leapfrog #3 (observability) with a rendered UI.
+- **Skills browser.** Navigate, edit, upload, publish skills. Drag
+  a skill folder onto the page to publish.
+- **PTY server (port 17681).** Browser-based terminal. You can run
+  CLI commands from inside the Studio without a separate terminal.
+
+OpenClaw has no visual dashboard at all. The gap between "git diff
+~/.openclaw/workspace" and "a DAG visualization of your workflow
+execution with per-step input/output and data contract validation"
+is categorical, not marginal.
+
+### Webhook tunnel (Cloudflare-backed, ships at port 19090)
+
+FAST ships with a built-in Cloudflare tunnel that creates a public
+URL on startup. External services (GitHub, Bitbucket, Jira) send
+webhooks to `https://{tunnel-domain}/hook/{provider}/{workspaceId}/
+{signalId}`, the tunnel HMAC-verifies and forwards to the daemon,
+the daemon routes to the correct space's signal handler.
+
+Provider transformations (`github` / `bitbucket` / `jira` / `raw`)
+normalize incoming payloads so your FSM receives clean typed input
+(`{pr_url: ...}`, `{issue_key: ..., project_key: ...}`) instead of
+raw webhook bodies. Customizable via `webhook-mappings.yml`.
+
+OpenClaw users fight ngrok, eat public IPs, or give up on external
+webhooks entirely. FAST users get a public URL for free on startup.
+This is Phase 7 territory in my plan — chat-channel signals — but
+the tunnel infrastructure is *already here*, so Phase 7 is adding
+channels on top of an existing surface, not building the surface
+from scratch.
 
 ---
 
@@ -407,7 +516,7 @@ containment entirely — there's one layer and it's conventional.
   escalate into host compromise. Layer 2 failure is bounded by the
   daemon's own sandbox.
 
-### 5. Multi-agent orchestration with typed handoffs
+### 5. Multi-agent orchestration with data-contract-gated progression
 
 **Claim:** Friday ships emergent capability inside an FSM, not as a
 flat prompt loop. A `skill-author` workflow is five agents, three
@@ -715,6 +824,39 @@ If `sqlite-rag` can host bucketlist's workload with identical eval
 quality, the adapter contract is right. If it can't, we iterate
 before shipping.
 
+### Case 2b: multi-agent starter spaces (PR review / Jira bugfix)
+
+**Use case:** FAST already ships four multi-agent starter spaces
+(Bitbucket PR review, GitHub PR review, Jira bug fix, Jira labeled
+bug fix). Each is a real workflow users run today: clone repo →
+run Claude Code → open PR → comment → transition ticket. Multi-
+agent FSM with data contracts between every step.
+
+**What this demonstrates without requiring any plan work:**
+- Leapfrog #5 (multi-agent orchestration) is live in production,
+  not a future capability
+- Data contracts enforce schema-gated progression today — already
+  matches the Phase 1 engineering commitment on FSM output schemas
+- Credentials flow through Link via `LinkCredentialRef`, agents
+  never see raw tokens (leapfrog #4 foundation already in place)
+
+**What migrates to adapter-backed form in Phase 1:**
+- Skills attached to agents (`@tempest/pr-code-review` etc.)
+  become `SkillAdapter.get(...)` calls; the resolution path goes
+  through the adapter, same result, better audit trail.
+- Any ticket-dedup state (e.g. "already processed PR #123") moves
+  from `state_*` to `memory_dedup_*`.
+- Activity ledger becomes the source of truth for "what did the
+  agent do on this run," accessible via `friday inspect`.
+
+**Why this case matters for the plan:** the five real workflows
+(bucketlist-cs + four starters) collectively prove Friday's
+orchestration primitives are production-ready. The parity plan is
+not rebuilding the orchestration story — it's adding memory,
+skills, and emergent capability *on top of* a multi-agent
+substrate that already works. OpenClaw has nothing equivalent to
+any one of these workflows, let alone five.
+
 ### Case 3: dedup state (bucketlist-cs processed-tickets)
 
 **Use case:** cron-driven ticket processing needs TTL'd
@@ -766,10 +908,24 @@ runtime removes every blocker. A browser skill declares a base OCI
 image with Chromium + Playwright (or uses a Friday-provided
 `chromium-playwright` base). The agent process, running inside its
 own microVM, spawns Chromium as a normal subprocess — no host
-capability gymnastics, no CDP-over-WIT bridging, no persistent-
+capability gymnastics, no CDP-over-RPC bridging, no persistent-
 helper lifecycle adapter. Cookie jar lives in the microVM's
 `/home/agent/.config/chromium`; survives across turns within a
 session; is destroyed on microVM teardown.
+
+**This also resolves two limitations the FAST SDK docs explicitly
+call out as active constraints today.** From
+`sdk/how-agents-work.mdx`: *"External packages (NumPy, Pydantic,
+etc.) are not supported — use `ctx.llm`, `ctx.http`, `ctx.tools`
+for external capabilities."* And from
+`sdk/python-reference/llm-capability.mdx`: *"No streaming responses
+— Full response returned as string (WASI 0.3 will enable streaming
+in late 2026)."* Both are WASM sandbox constraints. The move to
+microsandbox microVMs + JSON-RPC transport erases both in one
+change: native deps work because the guest is a real Linux
+userland, and LLM streaming works because JSON-RPC natively
+carries streams. The SDK docs needing to describe workarounds for
+"no native deps" becomes a historical note.
 
 **What OpenClaw can't match:**
 - The browser runs inside a hardware-isolated microVM, not a
@@ -803,21 +959,22 @@ the fs tool can't reach it." Friday's rule is stronger — it's
 
 1. **Adapter boundary = capability boundary.** `SkillAdapter.create`
    can write to the skill store. It cannot touch agent credentials,
-   MCP server configs, or signal policy. WASM agents have no ambient
-   filesystem; LLM agents reach durable state only through typed
-   platform tools.
+   MCP server configs, or signal policy. Agent processes running
+   inside microsandbox microVMs have no ambient filesystem; LLM
+   agents reach durable state only through typed platform tools.
 2. **Zod at every boundary.** Every adapter write parses its input
    through a schema before committing. Invalid inputs are typed
    errors, not partial state.
 3. **Link credential scoping.** `LinkCredentialRefSchema` +
    `token_env`: agents never see raw secrets, even when authoring a
    new skill that references one. A leaked prompt can't leak a token.
-4. **Sandbox-by-default for user code.** WASM agents run inside a
-   component boundary. Script-scoped skill helpers (Phase 2.5) run
-   under Deno permissions, default-deny, user opt-in per permission
-   per skill.
+4. **Sandbox-by-default for user code.** Agent processes run inside
+   hardware-isolated microVMs with capability declarations (network
+   allowlist, filesystem mounts, subprocess allowlist) enforced at
+   the hypervisor layer. Default-deny; skills opt into specific
+   capabilities per-skill.
 5. **No `/elevated` escape hatch.** Friday doesn't need one —
-   everything runs inside either WASM or an MCP tool boundary
+   everything runs inside either a microVM or an MCP tool boundary
    already. Elevated shell is out-of-scope until/unless a workspace
    opts in via `host.bash.enabled`.
 6. **Versioned rollback as the fail-safe.** Even if a bad skill
@@ -878,6 +1035,15 @@ observability, containment) and migrate existing state surfaces.
    and `friday-agent-sdk`. Transport: JSON-RPC 2.0 over unix socket
    exposed into the microsandbox guest; stdio fallback for non-Linux
    local dev.
+   - **Reconcile with existing `ctx.config.skills`.** The current
+     `AgentContext` already has `config.skills` — a list of
+     workspace skills the FSM pre-resolves at session start (from
+     `sdk/python-reference/agent-context.mdx`). Phase 1's new
+     `ctx.skills` capability wrapper must coexist: `ctx.config.skills`
+     remains the pre-resolved list at session start; `ctx.skills.list()`
+     returns the live merged view (pre-resolved + any authored
+     mid-session via Phase 2's `ctx.skills.create(...)`). Don't
+     break the existing field.
 8. **Platform tools** (read-mostly for Phase 1):
    `memory_corpus_*`, `memory_narrative_*`, `memory_retrieval_*`,
    `memory_dedup_*`, `memory_kv_*`, `scratchpad_*`, `skill_list`,
@@ -909,16 +1075,34 @@ boundary + streaming + `md`/`inmemory` backends) and 1b
 **Goal:** Todoist-in-a-fresh-workspace demo. Parity target + Phase 1's
 leapfrog dimensions exercised end-to-end.
 
+**Context: the pattern already exists externally.** FAST ships with
+a `writing-friday-python-agents` skill (per `core-concepts/
+agents.mdx`) that you install in Claude Code to have Claude Code
+write Friday agents for you. That's the emergent-capability loop
+running *outside* FAST today — a coding agent in a different tool
+writes code for FAST based on installed skill guidance. Phase 2
+pulls that loop *inside* FAST with stronger guarantees (FSM
+orchestration, data contracts, versioned output, adapter
+validation). **Phase 2 isn't inventing a new capability — it's
+productizing an existing external pattern under Friday's primitive
+guarantees.** That's the strongest possible framing: the market has
+validated the loop; we're making it first-class.
+
 1. `skill_create` platform tool + `ctx.skills.create` host function.
 2. `MdSkillAdapter.create` writes skill directory with scripts,
    references, assets. Every write is versioned.
 3. **`skill-author` FSM workflow** — the leapfrog #5 piece.
    Five-state workflow: understand → plan → scaffold → validate →
-   publish. Each state is an agent action with typed handoff; guards
-   gate on schema validity and (Phase 5) eval results. This is not
-   a prompt loop, it's an FSM.
+   publish. Each state is an agent action with a data contract on
+   its output; guards gate on schema validity and (Phase 5) eval
+   results. This is not a prompt loop, it's an FSM.
 4. `SkillAdapter.invalidate` wired through `fs-watch-signal`. Next
    session's system prompt resolves the new skill automatically.
+   **This fixes the current "iteration = restart" pain** documented
+   in `sdk/how-agents-work.mdx`: *"Rebuild on restart — changes
+   take effect when you restart the platform."* Phase 1's file-
+   watcher integration replaces daemon restart with hot reload for
+   the skill surface.
 5. **Eval:** fresh workspace, `friday prompt "help me triage my
    Todoist tasks"`, next session has `todoist` in
    `<available_skills>`. Drop-test automated in `tools/evals/`.
@@ -927,7 +1111,8 @@ leapfrog dimensions exercised end-to-end.
 
 **Context:** v4 of this plan had a whole phase called "script-scoped
 skills with process lifecycles" to handle persistent-helper
-processes (browsers, LSPs) that WASM agents couldn't spawn directly.
+processes (browsers, LSPs) that the previous WASM-component agent
+runtime couldn't spawn directly.
 That phase mostly **collapses** under the microsandbox runtime —
 agents are already processes inside microVMs, so helpers are just
 subprocesses of the agent, managed by the guest OS, not a new
@@ -939,6 +1124,19 @@ hosts, a filesystem quota for the cookie jar, and the ability to
 spawn a child process. A skill that only writes markdown needs none
 of those. The trust model needs these intents to be declared so
 FridayHub (Phase 3) can validate them at install time.
+
+**This is an additive schema extension to today's skill format.**
+Current skills are `SKILL.md` + `references/` — no capabilities
+block, no base image, no signing. Phase 2.5 adds an optional
+`capabilities` frontmatter section; skills that omit it get a
+default-deny policy (no network, no subprocess, no filesystem
+writes outside their own sandbox dir). Existing skills in the
+`@tempest/` namespace (like `@tempest/pr-code-review`,
+`@tempest/cs-response-guidelines`) continue to work unchanged and
+run under the default-deny policy, which is appropriate for
+prompt-only skills. Skills that currently need host capabilities
+(none in `@tempest/` today) would need to declare them on first
+migration.
 
 1. `SkillDraft` gains a `capabilities` field:
    ```yaml
@@ -1354,7 +1552,8 @@ verifiable.
 4. Existing `examples/bucketlist-cs/` evals pass on migrated
    adapter-backed path with identical retrieval quality (Phase 1
    canary).
-5. WASM code agents can call `ctx.memory.corpus(...)` and
+5. Code agents (running inside microsandbox microVMs) can call
+   `ctx.memory.corpus(...)` and
    `ctx.skills.create(...)` via host capabilities.
 
 ### Leapfrog (every Phase 1 delivery is assertion-backed)
