@@ -1,12 +1,11 @@
 import type { ScratchpadAdapter, ScratchpadChunk } from "@atlas/agent-sdk";
-import { stringify as yamlStringify } from "@std/yaml";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@atlas/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { type ApplyFindingDeps, applyFinding, type Finding } from "../improvement-policy.ts";
+import { applyFinding } from "../improvement-policy.ts";
 
 function makeScratchpad(): ScratchpadAdapter {
   return {
@@ -19,108 +18,124 @@ function makeScratchpad(): ScratchpadAdapter {
   };
 }
 
-function makeFinding(overrides?: Partial<Finding>): Finding {
-  return {
-    workspaceId: "ws-test",
-    sessionKey: "session-1",
-    proposedConfig: { version: "1.0", workspace: { name: "Updated" } },
-    ...overrides,
-  };
-}
-
-function makeDeps(overrides?: Partial<ApplyFindingDeps>): ApplyFindingDeps {
-  return { scratchpad: makeScratchpad(), daemonBaseUrl: "http://localhost:8080", ...overrides };
-}
-
 describe("applyFinding", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
   describe("surface mode", () => {
-    it("calls ScratchpadAdapter.append with kind='proposed-config' and YAML body", async () => {
-      const deps = makeDeps();
-      const finding = makeFinding();
+    it("calls scratchpad.append with kind='proposed-config' and does NOT call fetch", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const scratchpad = makeScratchpad();
+      const proposedConfig = { version: "1.0", workspace: { name: "Updated" } };
 
-      await applyFinding({ improvement: "surface" }, finding, deps);
+      const result = await applyFinding({
+        workspaceId: "ws-test",
+        cfg: { improvement: "surface" },
+        proposedConfig,
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
 
-      expect(deps.scratchpad.append).toHaveBeenCalledOnce();
-      expect(deps.scratchpad.append).toHaveBeenCalledWith(
-        "session-1",
-        expect.objectContaining({
-          kind: "proposed-config",
-          body: yamlStringify(finding.proposedConfig),
-        }),
+      expect(result).toEqual({ mode: "surface", result: "surfaced" });
+      expect(scratchpad.append).toHaveBeenCalledOnce();
+      expect(scratchpad.append).toHaveBeenCalledWith(
+        "ws-test/notes",
+        expect.objectContaining({ kind: "proposed-config" }),
       );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it("returned chunk body is valid JSON of proposedConfig", async () => {
+      const scratchpad = makeScratchpad();
+      const proposedConfig = { version: "1.0", workspace: { name: "Test" } };
+
+      await applyFinding({
+        workspaceId: "ws-test",
+        cfg: { improvement: "surface" },
+        proposedConfig,
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
+
+      const appendMock = scratchpad.append as ReturnType<typeof vi.fn>;
+      const chunk = appendMock.mock.calls[0]?.[1] as ScratchpadChunk;
+      expect(JSON.parse(chunk.body)).toEqual(proposedConfig);
     });
 
     it("writes a ScratchpadChunk with valid createdAt ISO timestamp", async () => {
-      const deps = makeDeps();
-      await applyFinding({ improvement: "surface" }, makeFinding(), deps);
+      const scratchpad = makeScratchpad();
 
-      const appendMock = deps.scratchpad.append as ReturnType<typeof vi.fn>;
+      await applyFinding({
+        workspaceId: "ws-test",
+        cfg: { improvement: "surface" },
+        proposedConfig: { version: "1.0" },
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
+
+      const appendMock = scratchpad.append as ReturnType<typeof vi.fn>;
       const chunk = appendMock.mock.calls[0]?.[1] as ScratchpadChunk;
       expect(chunk.createdAt).toBeDefined();
       expect(new Date(chunk.createdAt).toISOString()).toBe(chunk.createdAt);
     });
 
     it("defaults to surface when no improvement flag is set", async () => {
-      const deps = makeDeps();
-      await applyFinding({}, makeFinding(), deps);
-      expect(deps.scratchpad.append).toHaveBeenCalledOnce();
-    });
+      const scratchpad = makeScratchpad();
 
-    it("does not make any HTTP request", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch");
-      const deps = makeDeps();
+      const result = await applyFinding({
+        workspaceId: "ws-test",
+        cfg: {},
+        proposedConfig: { version: "1.0" },
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
 
-      await applyFinding({ improvement: "surface" }, makeFinding(), deps);
-
-      expect(fetchSpy).not.toHaveBeenCalled();
-      fetchSpy.mockRestore();
+      expect(result).toEqual({ mode: "surface", result: "surfaced" });
+      expect(scratchpad.append).toHaveBeenCalledOnce();
     });
   });
 
   describe("auto mode", () => {
-    it("POSTs to /api/workspaces/:id/update with backup=true", async () => {
+    it("calls POST /api/workspaces/:id/update?backup=true with full config body", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-      const deps = makeDeps();
-      const finding = makeFinding({ workspaceId: "ws-auto" });
+      const scratchpad = makeScratchpad();
+      const proposedConfig = { version: "1.0", workspace: { name: "Auto" } };
 
-      await applyFinding({ improvement: "auto" }, finding, deps);
+      const result = await applyFinding({
+        workspaceId: "ws-auto",
+        cfg: { improvement: "auto" },
+        proposedConfig,
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
 
+      expect(result).toEqual({ mode: "auto", result: "applied" });
       expect(fetchSpy).toHaveBeenCalledOnce();
       expect(fetchSpy).toHaveBeenCalledWith(
-        "http://localhost:8080/api/workspaces/ws-auto/update",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ config: finding.proposedConfig, backup: true }),
-        }),
+        "http://localhost:8080/api/workspaces/ws-auto/update?backup=true",
+        expect.objectContaining({ method: "POST", body: JSON.stringify(proposedConfig) }),
       );
+      expect(scratchpad.append).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
     });
 
-    it("does not call ScratchpadAdapter", async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
-      const deps = makeDeps();
-
-      await applyFinding({ improvement: "auto" }, makeFinding(), deps);
-
-      expect(deps.scratchpad.append).not.toHaveBeenCalled();
-      vi.mocked(globalThis.fetch).mockRestore();
-    });
-
-    it("throws on HTTP error", async () => {
+    it("throws when daemon returns non-2xx", async () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Not found", { status: 404 }));
-      const deps = makeDeps();
+      const scratchpad = makeScratchpad();
 
-      await expect(applyFinding({ improvement: "auto" }, makeFinding(), deps)).rejects.toThrow(
-        "Auto-mode update failed (404)",
-      );
+      await expect(
+        applyFinding({
+          workspaceId: "ws-test",
+          cfg: { improvement: "auto" },
+          proposedConfig: { version: "1.0" },
+          scratchpad,
+          daemonBaseUrl: "http://localhost:8080",
+        }),
+      ).rejects.toThrow("Daemon update failed: 404");
 
       vi.mocked(globalThis.fetch).mockRestore();
     });
@@ -131,17 +146,20 @@ describe("applyFinding", () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(new Response("{}", { status: 200 }));
-      const deps = makeDeps();
-      const finding = makeFinding({ jobId: "scan-job" });
+      const scratchpad = makeScratchpad();
 
-      await applyFinding(
-        { improvement: "surface", jobs: { "scan-job": { improvement: "auto" } } },
-        finding,
-        deps,
-      );
+      const result = await applyFinding({
+        workspaceId: "ws-test",
+        jobId: "scan-job",
+        cfg: { improvement: "surface", jobs: { "scan-job": { improvement: "auto" } } },
+        proposedConfig: { version: "1.0" },
+        scratchpad,
+        daemonBaseUrl: "http://localhost:8080",
+      });
 
+      expect(result).toEqual({ mode: "auto", result: "applied" });
       expect(fetchSpy).toHaveBeenCalledOnce();
-      expect(deps.scratchpad.append).not.toHaveBeenCalled();
+      expect(scratchpad.append).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
     });
   });

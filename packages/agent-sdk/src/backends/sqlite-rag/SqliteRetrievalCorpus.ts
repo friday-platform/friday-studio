@@ -1,7 +1,9 @@
-import { Database } from "@db/sqlite";
+import type { Database } from "@db/sqlite";
 import { z } from "zod";
 import type {
   DocBatch,
+  HistoryEntry,
+  HistoryFilter,
   Hit,
   IngestOpts,
   IngestResult,
@@ -10,70 +12,63 @@ import type {
   RetrievalQuery,
   RetrievalStats,
 } from "../../memory-adapter.ts";
+import { getChunker } from "./chunker.ts";
 
-export const SqliteRagConfigSchema = z.object({
-  dbPath: z.string(),
-  vectorDimension: z.number().int().positive().optional().default(1536),
-});
+export const SqliteRagConfigSchema = z.object({ dbPath: z.string() });
 
 export interface SqliteRagConfig {
   dbPath: string;
-  vectorDimension?: number;
-  embedFn?: (text: string) => Promise<number[]>;
-  chunkFn?: (text: string) => string[];
 }
 
 const MetadataSchema = z.record(z.string(), z.unknown());
 
 const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS docs (
-  pk          INTEGER PRIMARY KEY,
-  id          TEXT NOT NULL UNIQUE,
-  text        TEXT NOT NULL,
-  metadata    TEXT,
-  chunk_index INTEGER NOT NULL DEFAULT 0,
-  embedding   BLOB,
-  created_at  TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS corpus_meta (
+  workspace_id TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  kind         TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, name)
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(
+CREATE TABLE IF NOT EXISTS chunks (
+  pk           INTEGER PRIMARY KEY,
+  id           TEXT NOT NULL UNIQUE,
+  corpus       TEXT NOT NULL,
+  doc_id       TEXT NOT NULL,
+  chunk_index  INTEGER NOT NULL DEFAULT 0,
+  text         TEXT NOT NULL,
+  metadata     TEXT,
+  created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_corpus ON chunks(corpus);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(corpus, doc_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   text,
-  content='docs',
+  content='chunks',
   content_rowid='pk'
 );
 
-CREATE TRIGGER IF NOT EXISTS docs_ai AFTER INSERT ON docs BEGIN
-  INSERT INTO docs_fts(rowid, text) VALUES (new.pk, new.text);
+CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+  INSERT INTO chunks_fts(rowid, text) VALUES (new.pk, new.text);
 END;
 
-CREATE TRIGGER IF NOT EXISTS docs_ad AFTER DELETE ON docs BEGIN
-  INSERT INTO docs_fts(docs_fts, rowid, text) VALUES ('delete', old.pk, old.text);
+CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.pk, old.text);
 END;
+
+CREATE TABLE IF NOT EXISTS corpus_history (
+  version TEXT NOT NULL,
+  corpus  TEXT NOT NULL,
+  at      TEXT NOT NULL,
+  summary TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_corpus ON corpus_history(corpus);
+CREATE INDEX IF NOT EXISTS idx_history_at ON corpus_history(at);
 `;
-
-function embeddingToBlob(embedding: number[]): Uint8Array {
-  const f32 = new Float32Array(embedding);
-  return new Uint8Array(f32.buffer);
-}
-
-function blobToFloat32(blob: Uint8Array): Float32Array {
-  return new Float32Array(blob.buffer, blob.byteOffset, blob.byteLength / 4);
-}
-
-function cosineSimilarity(a: number[], b: Float32Array): number {
-  const n = a.length;
-  let dot = 0;
-  let magA = 0;
-  let magB = 0;
-  for (let i = 0; i < n; i++) {
-    const ai = a[i] ?? 0;
-    const bi = b[i] ?? 0;
-    dot += ai * bi;
-    magA += ai * ai;
-    magB += bi * bi;
-  }
-  return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
 
 function sanitizeFtsQuery(query: string): string | null {
   const sanitized = query
@@ -88,58 +83,71 @@ function sanitizeFtsQuery(query: string): string | null {
 }
 
 export class SqliteRetrievalCorpus implements RetrievalCorpus {
-  private db: Database;
-  private embedFn: ((text: string) => Promise<number[]>) | undefined;
-  private chunkFn: ((text: string) => string[]) | undefined;
+  private initialized = false;
 
-  constructor(config: SqliteRagConfig) {
-    this.db = new Database(config.dbPath);
-    this.db.exec("PRAGMA journal_mode=WAL");
-    this.db.exec("PRAGMA busy_timeout=5000");
+  constructor(
+    private db: Database,
+    readonly workspaceId: string,
+    readonly name: string,
+  ) {}
+
+  private ensureInit(): void {
+    if (this.initialized) return;
     this.db.exec(SCHEMA_SQL);
-    this.embedFn = config.embedFn;
-    this.chunkFn = config.chunkFn;
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO corpus_meta (workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(this.workspaceId, this.name, "retrieval", new Date().toISOString());
+    this.initialized = true;
   }
 
-  async ingest(docs: DocBatch, _opts?: IngestOpts): Promise<IngestResult> {
+  private appendHistory(summary: string): void {
+    const version = crypto.randomUUID();
+    this.db
+      .prepare("INSERT INTO corpus_history (version, corpus, at, summary) VALUES (?, ?, ?, ?)")
+      .run(version, this.name, new Date().toISOString(), summary);
+  }
+
+  // deno-lint-ignore require-await
+  async ingest(docs: DocBatch, opts?: IngestOpts): Promise<IngestResult> {
+    this.ensureInit();
+    const chunker = getChunker(opts);
     let ingested = 0;
     let skipped = 0;
 
     this.db.exec("BEGIN TRANSACTION");
     try {
-      const checkStmt = this.db.prepare("SELECT 1 FROM docs WHERE id = ?");
-      const insertStmt = this.db.prepare(
-        "INSERT INTO docs (id, text, metadata, chunk_index, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      );
-
       for (const doc of docs.docs) {
-        const existing = checkStmt.get<Record<string, number>>(doc.id);
+        const existing = this.db
+          .prepare("SELECT 1 FROM chunks WHERE corpus = ? AND doc_id = ?")
+          .get<Record<string, number>>(this.name, doc.id);
+
         if (existing) {
           skipped++;
           continue;
         }
 
-        const chunks = this.chunkFn ? this.chunkFn(doc.text) : [doc.text];
+        const textChunks = chunker(doc.text);
         const metadataJson = doc.metadata ? JSON.stringify(doc.metadata) : null;
         const now = new Date().toISOString();
 
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i] ?? doc.text;
-          const chunkId = chunks.length > 1 ? `${doc.id}#${i}` : doc.id;
-          let embeddingBlob: Uint8Array | null = null;
-
-          if (this.embedFn) {
-            const vec = await this.embedFn(chunk);
-            embeddingBlob = embeddingToBlob(vec);
-          }
-
-          insertStmt.run(chunkId, chunk, metadataJson, i, embeddingBlob, now);
+        for (let i = 0; i < textChunks.length; i++) {
+          const chunk = textChunks[i] ?? doc.text;
+          const chunkId = textChunks.length > 1 ? `${doc.id}#${i}` : doc.id;
+          this.db
+            .prepare(
+              "INSERT INTO chunks (id, corpus, doc_id, chunk_index, text, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(chunkId, this.name, doc.id, i, chunk, metadataJson, now);
         }
         ingested++;
       }
 
-      checkStmt.finalize?.();
-      insertStmt.finalize?.();
+      if (ingested > 0) {
+        this.appendHistory(`Ingested ${ingested} docs (${skipped} skipped)`);
+      }
+
       this.db.exec("COMMIT");
     } catch (e) {
       this.db.exec("ROLLBACK");
@@ -149,43 +157,31 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     return { ingested, skipped };
   }
 
+  // deno-lint-ignore require-await
   async query(q: RetrievalQuery, opts?: RetrievalOpts): Promise<Hit[]> {
+    this.ensureInit();
     const topK = q.topK ?? 5;
-    let candidates: Array<{ id: string; text: string; metadata: string | null; score: number }>;
 
-    if (this.embedFn) {
-      const queryVec = await this.embedFn(q.text);
-      const rows = this.db
-        .prepare("SELECT id, text, metadata, embedding FROM docs WHERE embedding IS NOT NULL")
-        .all<{ id: string; text: string; metadata: string | null; embedding: Uint8Array }>();
+    const ftsQuery = sanitizeFtsQuery(q.text);
+    if (!ftsQuery) return [];
 
-      candidates = rows.map((row) => ({
-        id: row.id,
-        text: row.text,
-        metadata: row.metadata,
-        score: cosineSimilarity(queryVec, blobToFloat32(row.embedding)),
-      }));
-      candidates.sort((a, b) => b.score - a.score);
-    } else {
-      const ftsQuery = sanitizeFtsQuery(q.text);
-      if (!ftsQuery) return [];
+    const rawRows = this.db
+      .prepare(
+        `SELECT c.id, c.text, c.metadata, bm25(chunks_fts) as score
+         FROM chunks_fts
+         JOIN chunks c ON chunks_fts.rowid = c.pk
+         WHERE chunks_fts MATCH ?
+         AND c.corpus = ?
+         ORDER BY score
+         LIMIT ?`,
+      )
+      .all<{ id: string; text: string; metadata: string | null; score: number }>(
+        ftsQuery,
+        this.name,
+        topK * 2,
+      );
 
-      const rawRows = this.db
-        .prepare(
-          `SELECT d.id, d.text, d.metadata, bm25(docs_fts) as score
-           FROM docs_fts
-           JOIN docs d ON docs_fts.rowid = d.pk
-           WHERE docs_fts MATCH ?
-           ORDER BY score
-           LIMIT ?`,
-        )
-        .all<{ id: string; text: string; metadata: string | null; score: number }>(
-          ftsQuery,
-          topK * 2,
-        );
-
-      candidates = rawRows.map((c) => ({ ...c, score: -c.score }));
-    }
+    let candidates = rawRows.map((c) => ({ ...c, score: -c.score }));
 
     if (opts?.filter) {
       const filter = opts.filter;
@@ -210,19 +206,46 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     });
   }
 
-  stats(): Promise<RetrievalStats> {
+  // deno-lint-ignore require-await
+  async stats(): Promise<RetrievalStats> {
+    this.ensureInit();
     const row = this.db
-      .prepare("SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(text)), 0) as sizeBytes FROM docs")
-      .get<{ count: number; sizeBytes: number }>();
-    return Promise.resolve({ count: row?.count ?? 0, sizeBytes: row?.sizeBytes ?? 0 });
+      .prepare(
+        "SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(text)), 0) as sizeBytes FROM chunks WHERE corpus = ?",
+      )
+      .get<{ count: number; sizeBytes: number }>(this.name);
+    return { count: row?.count ?? 0, sizeBytes: row?.sizeBytes ?? 0 };
   }
 
-  reset(): Promise<void> {
-    this.db.exec("DELETE FROM docs");
-    return Promise.resolve();
+  // deno-lint-ignore require-await
+  async reset(): Promise<void> {
+    this.ensureInit();
+    this.db.prepare("DELETE FROM chunks WHERE corpus = ?").run(this.name);
+    this.db.exec("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')");
+    this.appendHistory("Corpus reset");
   }
 
-  close(): void {
-    this.db.close();
+  getHistory(filter?: HistoryFilter): HistoryEntry[] {
+    this.ensureInit();
+    let sql = "SELECT version, corpus, at, summary FROM corpus_history WHERE corpus = ?";
+    const params: (string | number)[] = [this.name];
+
+    if (filter?.since) {
+      sql += " AND at > ?";
+      params.push(filter.since);
+    }
+
+    sql += " ORDER BY rowid DESC";
+
+    if (filter?.limit) {
+      sql += " LIMIT ?";
+      params.push(filter.limit);
+    }
+
+    return this.db.prepare(sql).all<HistoryEntry>(...params);
+  }
+
+  static create(db: Database, workspaceId: string, name: string): SqliteRetrievalCorpus {
+    return new SqliteRetrievalCorpus(db, workspaceId, name);
   }
 }

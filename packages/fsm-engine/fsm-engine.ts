@@ -799,7 +799,7 @@ export class FSMEngine {
 
     const pendingResults = new Map<string, Record<string, unknown>>(this._results);
     const pendingEvents: EmittedEvent[] = [];
-    const pendingSignals: Signal[] = [];
+    const pendingSignals: SignalWithContext[] = [];
     let pendingState = this._currentState;
 
     try {

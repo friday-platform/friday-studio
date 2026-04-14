@@ -1,40 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
-  ImprovementPolicySchema,
-  resolveImprovementPolicy,
+  ImprovementModeSchema,
+  resolveImprovementMode,
   type WorkspaceImprovementConfig,
 } from "../config-schema.ts";
 
-describe("ImprovementPolicySchema", () => {
+describe("ImprovementModeSchema", () => {
   it("accepts 'surface'", () => {
-    expect(ImprovementPolicySchema.parse("surface")).toBe("surface");
+    expect(ImprovementModeSchema.parse("surface")).toBe("surface");
   });
 
   it("accepts 'auto'", () => {
-    expect(ImprovementPolicySchema.parse("auto")).toBe("auto");
+    expect(ImprovementModeSchema.parse("auto")).toBe("auto");
   });
 
   it("rejects invalid enum values", () => {
-    expect(() => ImprovementPolicySchema.parse("manual")).toThrow();
-    expect(() => ImprovementPolicySchema.parse("")).toThrow();
-    expect(() => ImprovementPolicySchema.parse(42)).toThrow();
+    expect(() => ImprovementModeSchema.parse("manual")).toThrow();
+    expect(() => ImprovementModeSchema.parse("")).toThrow();
+    expect(() => ImprovementModeSchema.parse(42)).toThrow();
   });
 });
 
-describe("resolveImprovementPolicy", () => {
+describe("resolveImprovementMode", () => {
   it("defaults to 'surface' when neither workspace nor job flag is set", () => {
     const config: WorkspaceImprovementConfig = {};
-    expect(resolveImprovementPolicy(config)).toBe("surface");
+    expect(resolveImprovementMode(config)).toBe("surface");
   });
 
   it("defaults to 'surface' when config has no improvement and jobId is provided", () => {
     const config: WorkspaceImprovementConfig = {};
-    expect(resolveImprovementPolicy(config, "some-job")).toBe("surface");
+    expect(resolveImprovementMode(config, "some-job")).toBe("surface");
   });
 
   it("uses workspace flag when no job flag is set", () => {
     const config: WorkspaceImprovementConfig = { improvement: "auto" };
-    expect(resolveImprovementPolicy(config)).toBe("auto");
+    expect(resolveImprovementMode(config)).toBe("auto");
   });
 
   it("uses workspace flag when jobId is provided but job has no override", () => {
@@ -42,7 +42,7 @@ describe("resolveImprovementPolicy", () => {
       improvement: "auto",
       jobs: { "other-job": { improvement: "surface" } },
     };
-    expect(resolveImprovementPolicy(config, "missing-job")).toBe("auto");
+    expect(resolveImprovementMode(config, "missing-job")).toBe("auto");
   });
 
   it("job flag wins over workspace flag", () => {
@@ -50,12 +50,12 @@ describe("resolveImprovementPolicy", () => {
       improvement: "auto",
       jobs: { "my-job": { improvement: "surface" } },
     };
-    expect(resolveImprovementPolicy(config, "my-job")).toBe("surface");
+    expect(resolveImprovementMode(config, "my-job")).toBe("surface");
   });
 
   it("job flag wins even when workspace has no flag", () => {
     const config: WorkspaceImprovementConfig = { jobs: { "my-job": { improvement: "auto" } } };
-    expect(resolveImprovementPolicy(config, "my-job")).toBe("auto");
+    expect(resolveImprovementMode(config, "my-job")).toBe("auto");
   });
 
   it("falls back through full chain: job → workspace → default", () => {
@@ -64,9 +64,9 @@ describe("resolveImprovementPolicy", () => {
       jobs: { "with-override": { improvement: "surface" }, "without-override": {} },
     };
 
-    expect(resolveImprovementPolicy(config, "with-override")).toBe("surface");
-    expect(resolveImprovementPolicy(config, "without-override")).toBe("auto");
-    expect(resolveImprovementPolicy(config, "nonexistent")).toBe("auto");
-    expect(resolveImprovementPolicy(config)).toBe("auto");
+    expect(resolveImprovementMode(config, "with-override")).toBe("surface");
+    expect(resolveImprovementMode(config, "without-override")).toBe("auto");
+    expect(resolveImprovementMode(config, "nonexistent")).toBe("auto");
+    expect(resolveImprovementMode(config)).toBe("auto");
   });
 });

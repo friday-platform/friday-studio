@@ -157,6 +157,34 @@ signals:
           description: Optional list of job IDs to scope the review.
       required:
         - targetWorkspaceId
+  review-requested:
+    provider: http
+    title: Review requested (alias)
+    description: >-
+      Alias trigger for review-target-workspace. Accepts the same payload as
+      review-target-workspace-run. Added for parity plan signal naming convention.
+    config:
+      path: /webhooks/review-requested
+    schema:
+      type: object
+      properties:
+        targetWorkspaceId:
+          type: string
+          description: Target workspace whose sessions and config to review.
+        sessionLimit:
+          type: integer
+          description: How many recent sessions to analyze. Default 20.
+      required:
+        - targetWorkspaceId
+  review-requested-cron:
+    provider: schedule
+    title: Review target workspace (scheduled)
+    description: >-
+      Cron-driven workspace review. Fires every 4 hours to review the
+      default target workspace for drift, prompt issues, and FSM smells.
+    config:
+      schedule: '0 */4 * * *'
+      timezone: UTC
 agents:
   status-watcher:
     type: user
@@ -1449,6 +1477,24 @@ jobs:
       read jobs.<id>.improvement instead of the workspace-level default.
     triggers:
       - signal: review-target-workspace-run
+      - signal: review-requested
+      - signal: review-requested-cron
+    inputs:
+      targetWorkspaceId:
+        type: string
+        required: true
+      sessionLimit:
+        type: number
+        default: 20
+    outputs:
+      corpus: notes
+      entryKind: finding
+    improvement_key_convention:
+      scoped: "jobs.{target_job_id}.improvement"
+      default: "workspace.improvement"
+    scope_exclusions:
+      - skills
+      - source
     fsm:
       id: review-target-workspace-pipeline
       initial: idle
@@ -1456,6 +1502,10 @@ jobs:
         idle:
           'on':
             review-target-workspace-run:
+              target: step_review
+            review-requested:
+              target: step_review
+            review-requested-cron:
               target: step_review
         step_review:
           entry:

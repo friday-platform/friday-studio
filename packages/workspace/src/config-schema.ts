@@ -2,8 +2,8 @@ import { z } from "zod";
 
 // ── Improvement policy ────────────────────────────────────────────────────────
 
-export const ImprovementPolicySchema = z.enum(["surface", "auto"]);
-export type ImprovementPolicy = z.infer<typeof ImprovementPolicySchema>;
+export const ImprovementModeSchema = z.enum(["surface", "auto"]);
+export type ImprovementMode = z.infer<typeof ImprovementModeSchema>;
 
 // ── Memory mount schemas ──────────────────────────────────────────────────────
 
@@ -71,40 +71,40 @@ export function parseMemoryMountSource(source: string): {
   };
 }
 
-const DEFAULT_POLICY: ImprovementPolicy = "surface";
+const DEFAULT_MODE: ImprovementMode = "surface";
 
 // ── Job / workspace config schemas (Zod) ─────────────────────────────────────
 
 export const JobImprovementConfigSchema = z.object({
-  improvement: ImprovementPolicySchema.optional(),
+  improvement: ImprovementModeSchema.optional(),
 });
 
 export type JobImprovementConfig = z.infer<typeof JobImprovementConfigSchema>;
 
 export const WorkspaceImprovementConfigSchema = z.object({
-  improvement: ImprovementPolicySchema.optional(),
+  improvement: ImprovementModeSchema.optional(),
   jobs: z.record(z.string(), JobImprovementConfigSchema).optional(),
 });
 
 export type WorkspaceImprovementConfig = z.infer<typeof WorkspaceImprovementConfigSchema>;
 
-export const ImprovementPolicyRequestSchema = z.object({
+export const ImprovementModeRequestSchema = z.object({
   workspaceId: z.string(),
   jobId: z.string().optional(),
   newFullConfig: WorkspaceImprovementConfigSchema,
 });
 
-export type ImprovementPolicyRequest = z.infer<typeof ImprovementPolicyRequestSchema>;
+export type ImprovementModeRequest = z.infer<typeof ImprovementModeRequestSchema>;
 
 // ── Resolution helper ────────────────────────────────────────────────────────
 
-export function resolveImprovementPolicy(
+export function resolveImprovementMode(
   config: WorkspaceImprovementConfig,
   jobId?: string,
-): ImprovementPolicy {
+): ImprovementMode {
   if (jobId) {
     const jobPolicy = config.jobs?.[jobId]?.improvement;
     if (jobPolicy) return jobPolicy;
   }
-  return config.improvement ?? DEFAULT_POLICY;
+  return config.improvement ?? DEFAULT_MODE;
 }

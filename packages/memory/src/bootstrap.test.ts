@@ -7,12 +7,13 @@ import type {
   NarrativeEntry,
 } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
-import type { MountConfig } from "./bootstrap.ts";
+import type { MountConfig, RenderedMount } from "./bootstrap.ts";
 import {
-  applyMountFilter,
+  applyFilter,
   buildBootstrapBlock,
-  DEFAULT_PER_MOUNT_MAX_BYTES,
-  renderMountSection,
+  DEFAULT_MOUNT_MAX_BYTES,
+  DEFAULT_TOTAL_MAX_BYTES,
+  renderMounts,
   resolveBootstrap,
   sortByPriorityDesc,
   truncateToBytes,
@@ -28,57 +29,96 @@ function entry(overrides: Partial<NarrativeEntry> & { text: string }): Narrative
   };
 }
 
-// ── applyMountFilter ─────────────────────────────────────────────────────────
+// ── applyFilter ─────────────────────────────────────────────────────────────
 
-describe("applyMountFilter", () => {
-  it("equality filter on metadata.status", () => {
+describe("applyFilter", () => {
+  it("exact-match field returns only matching entries (e.g. status='pending' excludes status='done')", () => {
     const entries = [
       entry({ text: "a", metadata: { status: "pending" } }),
       entry({ text: "b", metadata: { status: "done" } }),
       entry({ text: "c", metadata: { status: "pending" } }),
     ];
-    const result = applyMountFilter(entries, { status: "pending" });
+    const result = applyFilter(entries, { status: "pending" });
     expect(result).toHaveLength(2);
     expect(result.map((e) => e.text)).toEqual(["a", "c"]);
   });
 
-  it("priority_min threshold (inclusive)", () => {
+  it("_min suffix (priority_min:90) excludes entries with metadata.priority < 90", () => {
     const entries = [
       entry({ text: "low", metadata: { priority: 50 } }),
       entry({ text: "exact", metadata: { priority: 90 } }),
       entry({ text: "high", metadata: { priority: 95 } }),
     ];
-    const result = applyMountFilter(entries, { priority_min: 90 });
+    const result = applyFilter(entries, { priority_min: 90 });
     expect(result).toHaveLength(2);
     expect(result.map((e) => e.text)).toEqual(["exact", "high"]);
   });
 
-  it("multiple predicates are ANDed", () => {
+  it("_max suffix (priority_max:50) excludes entries with metadata.priority > 50", () => {
     const entries = [
-      entry({ text: "match", metadata: { status: "pending", priority: 95 } }),
-      entry({ text: "wrong status", metadata: { status: "done", priority: 95 } }),
-      entry({ text: "low prio", metadata: { status: "pending", priority: 50 } }),
+      entry({ text: "low", metadata: { priority: 30 } }),
+      entry({ text: "exact", metadata: { priority: 50 } }),
+      entry({ text: "high", metadata: { priority: 95 } }),
     ];
-    const result = applyMountFilter(entries, { status: "pending", priority_min: 90 });
-    expect(result).toHaveLength(1);
-    expect(result[0]?.text).toBe("match");
+    const result = applyFilter(entries, { priority_max: 50 });
+    expect(result).toHaveLength(2);
+    expect(result.map((e) => e.text)).toEqual(["low", "exact"]);
   });
 
-  it("entries missing metadata are excluded when filter has predicates", () => {
+  it("unknown filter key does not reject entries (permissive policy)", () => {
+    const entries = [
+      entry({ text: "a", metadata: { status: "pending" } }),
+      entry({ text: "b", metadata: { priority: 50 } }),
+    ];
+    const result = applyFilter(entries, { nonexistent_field: "value" });
+    expect(result).toHaveLength(2);
+  });
+
+  it("entry with no metadata object is excluded when filter has exact-match keys", () => {
     const entries = [
       entry({ text: "no-meta" }),
       entry({ text: "has-meta", metadata: { status: "pending" } }),
     ];
-    const result = applyMountFilter(entries, { status: "pending" });
+    const result = applyFilter(entries, { status: "pending" });
     expect(result).toHaveLength(1);
     expect(result[0]?.text).toBe("has-meta");
   });
 });
 
-// ── sortByPriorityDesc ───────────────────────────────────────────────────────
+// ── truncateToBytes ──────────────────────────────────────────────────────────
+
+describe("truncateToBytes", () => {
+  it("drops tail entries when accumulated byte length would exceed mountMaxBytes", () => {
+    const longText = "x".repeat(500);
+    const entries = [
+      entry({ text: longText }),
+      entry({ text: longText }),
+      entry({ text: longText }),
+    ];
+    const result = truncateToBytes(entries, 600);
+    expect(result.length).toBeLessThan(3);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("never truncates mid-entry", () => {
+    const entries = [entry({ text: "short" }), entry({ text: "x".repeat(1000) })];
+    const result = truncateToBytes(entries, 100);
+    for (const e of result) {
+      expect(e.text).toBe("short");
+    }
+  });
+
+  it("returns all entries when total is under cap", () => {
+    const entries = [entry({ text: "short" }), entry({ text: "also short" })];
+    const result = truncateToBytes(entries, DEFAULT_MOUNT_MAX_BYTES);
+    expect(result).toHaveLength(2);
+  });
+});
+
+// ── sortByPriorityDesc ──────────────────────────────────────────────────────
 
 describe("sortByPriorityDesc", () => {
-  it("entries with numeric metadata.priority are ordered high→low", () => {
+  it("entries with higher metadata.priority appear first", () => {
     const entries = [
       entry({ text: "low", metadata: { priority: 10 } }),
       entry({ text: "high", metadata: { priority: 99 } }),
@@ -88,7 +128,7 @@ describe("sortByPriorityDesc", () => {
     expect(sorted.map((e) => e.text)).toEqual(["high", "mid", "low"]);
   });
 
-  it("entries missing priority sort after entries with priority (treated as 0)", () => {
+  it("entries with no metadata.priority treated as priority 0", () => {
     const entries = [
       entry({ text: "no-prio" }),
       entry({ text: "has-prio", metadata: { priority: 5 } }),
@@ -96,70 +136,43 @@ describe("sortByPriorityDesc", () => {
     ];
     const sorted = sortByPriorityDesc(entries);
     expect(sorted[0]?.text).toBe("has-prio");
-    expect(sorted.slice(1).map((e) => e.text)).toEqual(
-      expect.arrayContaining(["no-prio", "also-no-prio"]),
-    );
   });
 });
 
-// ── truncateToBytes ──────────────────────────────────────────────────────────
+// ── renderMounts ────────────────────────────────────────────────────────────
 
-describe("truncateToBytes", () => {
-  it("entries truncated at per-mount byte cap; omitted count is accurate", () => {
-    const longText = "x".repeat(500);
-    const entries = [
-      entry({ text: longText, createdAt: "2026-04-14T00:00:00Z" }),
-      entry({ text: longText, createdAt: "2026-04-14T00:00:00Z" }),
-      entry({ text: longText, createdAt: "2026-04-14T00:00:00Z" }),
+describe("renderMounts", () => {
+  it("produces one ## section per mount with bullet entries", () => {
+    const mounts: RenderedMount[] = [
+      {
+        name: "tasks",
+        entries: [entry({ text: "Task A" }), entry({ text: "Task B" })],
+        bytesUsed: 100,
+      },
+      { name: "notes", entries: [entry({ text: "Note 1" })], bytesUsed: 50 },
     ];
-    const { kept, omitted } = truncateToBytes(entries, 600);
-    expect(kept.length).toBeLessThan(3);
-    expect(omitted).toBe(3 - kept.length);
-    expect(kept.length + omitted).toBe(3);
+    const result = renderMounts(mounts);
+    expect(result).toContain("## tasks");
+    expect(result).toContain("- Task A");
+    expect(result).toContain("- Task B");
+    expect(result).toContain("## notes");
+    expect(result).toContain("- Note 1");
+    const sectionCount = (result.match(/^## /gm) ?? []).length;
+    expect(sectionCount).toBe(2);
   });
 
-  it("no truncation when total size is under cap", () => {
-    const entries = [
-      entry({ text: "short", createdAt: "2026-04-14T00:00:00Z" }),
-      entry({ text: "also short", createdAt: "2026-04-14T00:00:00Z" }),
+  it("omits mounts with zero entries after filtering", () => {
+    const mounts: RenderedMount[] = [
+      { name: "populated", entries: [entry({ text: "visible" })], bytesUsed: 50 },
+      { name: "empty", entries: [], bytesUsed: 0 },
     ];
-    const { kept, omitted } = truncateToBytes(entries, DEFAULT_PER_MOUNT_MAX_BYTES);
-    expect(kept).toHaveLength(2);
-    expect(omitted).toBe(0);
+    const result = renderMounts(mounts);
+    expect(result).toContain("## populated");
+    expect(result).not.toContain("## empty");
   });
 });
 
-// ── renderMountSection ───────────────────────────────────────────────────────
-
-describe("renderMountSection", () => {
-  it("produces markdown h2 header with mount name", () => {
-    const result = renderMountSection("Open Tickets", [], 0);
-    expect(result).toMatch(/^## Open Tickets/);
-  });
-
-  it("each entry rendered as bullet with date and text", () => {
-    const entries = [
-      entry({
-        text: "Ticket #42: Payment gateway timeout",
-        createdAt: "2026-04-14T12:00:00Z",
-        metadata: { priority: 95 },
-      }),
-    ];
-    const result = renderMountSection("Tickets", entries, 0);
-    expect(result).toContain("- [2026-04-14] Ticket #42: Payment gateway timeout (priority: 95)");
-  });
-
-  it("omit comment appended only when omitted > 0", () => {
-    const entries = [entry({ text: "test" })];
-    const withoutOmit = renderMountSection("A", entries, 0);
-    expect(withoutOmit).not.toContain("<!-- ");
-
-    const withOmit = renderMountSection("A", entries, 3);
-    expect(withOmit).toContain("<!-- 3 entries omitted (cap reached) -->");
-  });
-});
-
-// ── buildBootstrapBlock ──────────────────────────────────────────────────────
+// ── buildBootstrapBlock ─────────────────────────────────────────────────────
 
 // TS cannot narrow conditional CorpusOf<K> from runtime check (microsoft/TypeScript#33014)
 function mockAdapter(corpora: Record<string, NarrativeEntry[]>): MemoryAdapter {
@@ -184,62 +197,29 @@ function mockAdapter(corpora: Record<string, NarrativeEntry[]>): MemoryAdapter {
 }
 
 describe("buildBootstrapBlock", () => {
-  it("integrates filter + sort + cap + render for multiple mounts", async () => {
-    const adapter = mockAdapter({
-      tickets: [
-        entry({
-          text: "Ticket A",
-          metadata: { status: "pending", priority: 95 },
-          createdAt: "2026-04-14T00:00:00Z",
-        }),
-        entry({
-          text: "Ticket B",
-          metadata: { status: "done", priority: 80 },
-          createdAt: "2026-04-13T00:00:00Z",
-        }),
-      ],
-      logs: [entry({ text: "Log entry 1", createdAt: "2026-04-14T00:00:00Z" })],
-    });
-
-    const mounts: MountConfig[] = [
-      { name: "Open Tickets", corpus: "tickets", filter: { status: "pending" } },
-      { name: "Logs", corpus: "logs" },
-    ];
-
-    const result = await buildBootstrapBlock("ws-1", "agent-1", adapter, mounts);
-    expect(result).toContain("## Open Tickets");
-    expect(result).toContain("Ticket A");
-    expect(result).not.toContain("Ticket B");
-    expect(result).toContain("## Logs");
-    expect(result).toContain("Log entry 1");
-  });
-
-  it("total cap of 32 KB enforced across mounts", async () => {
+  it("total output is capped at DEFAULT_TOTAL_MAX_BYTES (32 KB)", async () => {
     const bigText = "x".repeat(2000);
-    const bigEntries = Array.from({ length: 20 }, (_, i) =>
-      entry({ text: `${bigText}-${i}`, createdAt: "2026-04-14T00:00:00Z" }),
-    );
+    const bigEntries = Array.from({ length: 20 }, (_, i) => entry({ text: `${bigText}-${i}` }));
 
     const adapter = mockAdapter({ c1: bigEntries, c2: bigEntries, c3: bigEntries });
 
     const mounts: MountConfig[] = [
-      { name: "Mount1", corpus: "c1", bootstrap: { maxBytes: 20000 } },
-      { name: "Mount2", corpus: "c2", bootstrap: { maxBytes: 20000 } },
-      { name: "Mount3", corpus: "c3", bootstrap: { maxBytes: 20000 } },
+      { corpus: "c1", kind: "narrative", bootstrap: { maxBytes: 20000 } },
+      { corpus: "c2", kind: "narrative", bootstrap: { maxBytes: 20000 } },
+      { corpus: "c3", kind: "narrative", bootstrap: { maxBytes: 20000 } },
     ];
 
-    const result = await buildBootstrapBlock("ws-1", "agent-1", adapter, mounts, {
-      totalMaxBytes: 32768,
+    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts, {
+      totalMaxBytes: DEFAULT_TOTAL_MAX_BYTES,
     });
     const encoder = new TextEncoder();
-    expect(encoder.encode(result).byteLength).toBeLessThanOrEqual(32768);
+    expect(encoder.encode(result).byteLength).toBeLessThanOrEqual(DEFAULT_TOTAL_MAX_BYTES);
   });
 
-  it("per-mount bootstrap.maxBytes overrides DEFAULT_PER_MOUNT_MAX_BYTES", async () => {
+  it("per-mount cap uses mount.bootstrap.maxBytes when provided", async () => {
     const entries = Array.from({ length: 50 }, (_, i) =>
       entry({
         text: `Entry ${i} with some text padding to increase size`,
-        createdAt: "2026-04-14T00:00:00Z",
         metadata: { priority: 50 - i },
       }),
     );
@@ -247,34 +227,74 @@ describe("buildBootstrapBlock", () => {
     const adapter = mockAdapter({ corpus1: entries });
 
     const smallCap: MountConfig[] = [
-      { name: "Small", corpus: "corpus1", bootstrap: { maxBytes: 256 } },
+      { corpus: "corpus1", kind: "narrative", bootstrap: { maxBytes: 256 } },
     ];
-    const defaultCap: MountConfig[] = [{ name: "Default", corpus: "corpus1" }];
+    const defaultCap: MountConfig[] = [{ corpus: "corpus1", kind: "narrative" }];
 
-    const smallResult = await buildBootstrapBlock("ws-1", "agent-1", adapter, smallCap);
-    const defaultResult = await buildBootstrapBlock("ws-1", "agent-1", adapter, defaultCap);
+    const smallResult = await buildBootstrapBlock(adapter, "ws-1", "agent-1", smallCap);
+    const defaultResult = await buildBootstrapBlock(adapter, "ws-1", "agent-1", defaultCap);
 
     const smallBullets = smallResult.split("\n").filter((l) => l.startsWith("- "));
     const defaultBullets = defaultResult.split("\n").filter((l) => l.startsWith("- "));
     expect(smallBullets.length).toBeLessThan(defaultBullets.length);
   });
 
-  it("empty mount (no entries after filter) produces empty section", async () => {
+  it("per-mount cap falls back to DEFAULT_MOUNT_MAX_BYTES (8 KB) when not configured", async () => {
+    const entries = Array.from({ length: 200 }, (_, i) =>
+      entry({ text: `Entry ${i} ${"padding ".repeat(20)}`, metadata: { priority: 200 - i } }),
+    );
+
+    const adapter = mockAdapter({ corpus1: entries });
+    const mounts: MountConfig[] = [{ corpus: "corpus1", kind: "narrative" }];
+
+    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+    const encoder = new TextEncoder();
+    const bulletBytes = encoder.encode(bullets.map((b) => b + "\n").join("")).byteLength;
+    expect(bulletBytes).toBeLessThanOrEqual(DEFAULT_MOUNT_MAX_BYTES);
+  });
+
+  it("returns empty string when all mounts have zero filtered entries", async () => {
     const adapter = mockAdapter({
       empty: [entry({ text: "done item", metadata: { status: "done" } })],
     });
 
     const mounts: MountConfig[] = [
-      { name: "Empty", corpus: "empty", filter: { status: "pending" } },
+      { corpus: "empty", kind: "narrative", filter: { status: "pending" } },
     ];
 
-    const result = await buildBootstrapBlock("ws-1", "agent-1", adapter, mounts);
-    expect(result).toContain("## Empty");
-    expect(result).not.toContain("- [");
+    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    expect(result).toBe("");
   });
 });
 
-// ── resolveBootstrap ────────────────────────────────────────────────────────
+// ── integration ─────────────────────────────────────────────────────────────
+
+describe("integration", () => {
+  it("agent with filter={status:'pending',priority_min:90} sees only pending entries with priority>=90", async () => {
+    const adapter = mockAdapter({
+      tasks: [
+        entry({ text: "High-prio pending", metadata: { status: "pending", priority: 95 } }),
+        entry({ text: "Low-prio pending", metadata: { status: "pending", priority: 50 } }),
+        entry({ text: "High-prio done", metadata: { status: "done", priority: 99 } }),
+        entry({ text: "No metadata" }),
+      ],
+    });
+
+    const mounts: MountConfig[] = [
+      { corpus: "tasks", kind: "narrative", filter: { status: "pending", priority_min: 90 } },
+    ];
+
+    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    expect(result).toContain("High-prio pending");
+    expect(result).not.toContain("Low-prio pending");
+    expect(result).not.toContain("High-prio done");
+    expect(result).not.toContain("No metadata");
+    expect(result).toContain("## tasks");
+  });
+});
+
+// ── resolveBootstrap (legacy) ───────────────────────────────────────────────
 
 function mockResolveAdapter(
   corpora: CorpusMetadata[],

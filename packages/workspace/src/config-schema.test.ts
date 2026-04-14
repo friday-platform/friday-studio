@@ -1,30 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
-  ImprovementPolicyRequestSchema,
-  ImprovementPolicySchema,
+  ImprovementModeRequestSchema,
+  ImprovementModeSchema,
   JobImprovementConfigSchema,
-  resolveImprovementPolicy,
+  resolveImprovementMode,
   type WorkspaceImprovementConfig,
   WorkspaceImprovementConfigSchema,
 } from "./config-schema.ts";
 
-describe("ImprovementPolicySchema", () => {
+describe("ImprovementModeSchema", () => {
   it("accepts 'surface'", () => {
-    expect(ImprovementPolicySchema.parse("surface")).toBe("surface");
+    expect(ImprovementModeSchema.parse("surface")).toBe("surface");
   });
 
   it("accepts 'auto'", () => {
-    expect(ImprovementPolicySchema.parse("auto")).toBe("auto");
+    expect(ImprovementModeSchema.parse("auto")).toBe("auto");
   });
 
   it("rejects other strings", () => {
-    expect(() => ImprovementPolicySchema.parse("manual")).toThrow();
-    expect(() => ImprovementPolicySchema.parse("")).toThrow();
+    expect(() => ImprovementModeSchema.parse("manual")).toThrow();
+    expect(() => ImprovementModeSchema.parse("")).toThrow();
+  });
+
+  it("rejects non-string values", () => {
+    expect(() => ImprovementModeSchema.parse(42)).toThrow();
   });
 });
 
 describe("JobImprovementConfigSchema", () => {
-  it("parses job with per-job improvement override", () => {
+  it("parses job with improvement: 'auto'", () => {
     const result = JobImprovementConfigSchema.parse({ improvement: "auto" });
     expect(result.improvement).toBe("auto");
   });
@@ -41,6 +45,12 @@ describe("WorkspaceImprovementConfigSchema", () => {
     expect(result.improvement).toBe("auto");
   });
 
+  it("parses with improvement omitted (defaults undefined, resolves to surface)", () => {
+    const result = WorkspaceImprovementConfigSchema.parse({});
+    expect(result.improvement).toBeUndefined();
+    expect(resolveImprovementMode(result)).toBe("surface");
+  });
+
   it("parses config with jobs containing improvement overrides", () => {
     const result = WorkspaceImprovementConfigSchema.parse({
       improvement: "surface",
@@ -49,17 +59,11 @@ describe("WorkspaceImprovementConfigSchema", () => {
     expect(result.improvement).toBe("surface");
     expect(result.jobs?.["nightly-scan"]?.improvement).toBe("auto");
   });
-
-  it("allows omitting all fields", () => {
-    const result = WorkspaceImprovementConfigSchema.parse({});
-    expect(result.improvement).toBeUndefined();
-    expect(result.jobs).toBeUndefined();
-  });
 });
 
-describe("ImprovementPolicyRequestSchema", () => {
+describe("ImprovementModeRequestSchema", () => {
   it("parses a full request", () => {
-    const result = ImprovementPolicyRequestSchema.parse({
+    const result = ImprovementModeRequestSchema.parse({
       workspaceId: "ws-1",
       jobId: "scan",
       newFullConfig: { improvement: "auto" },
@@ -70,33 +74,33 @@ describe("ImprovementPolicyRequestSchema", () => {
   });
 
   it("allows omitting jobId", () => {
-    const result = ImprovementPolicyRequestSchema.parse({ workspaceId: "ws-2", newFullConfig: {} });
+    const result = ImprovementModeRequestSchema.parse({ workspaceId: "ws-2", newFullConfig: {} });
     expect(result.jobId).toBeUndefined();
   });
 });
 
-describe("resolveImprovementPolicy", () => {
-  it("returns 'surface' when both workspace and job fields are absent", () => {
+describe("resolveImprovementMode", () => {
+  it("returns 'surface' when no flags set anywhere", () => {
     const cfg: WorkspaceImprovementConfig = {};
-    expect(resolveImprovementPolicy(cfg)).toBe("surface");
+    expect(resolveImprovementMode(cfg)).toBe("surface");
   });
 
-  it("returns workspace-level value when job field absent", () => {
+  it("returns workspace-level flag when job has none", () => {
     const cfg: WorkspaceImprovementConfig = { improvement: "auto" };
-    expect(resolveImprovementPolicy(cfg)).toBe("auto");
+    expect(resolveImprovementMode(cfg)).toBe("auto");
   });
 
-  it("returns job-level value when set, overriding workspace-level", () => {
+  it("returns job-level flag when set, ignoring workspace flag", () => {
     const cfg: WorkspaceImprovementConfig = {
       improvement: "surface",
       jobs: { "my-job": { improvement: "auto" } },
     };
-    expect(resolveImprovementPolicy(cfg, "my-job")).toBe("auto");
+    expect(resolveImprovementMode(cfg, "my-job")).toBe("auto");
   });
 
-  it("returns 'surface' default when workspace field is 'surface' and job is absent", () => {
+  it("correctly handles jobId that does not exist in cfg.jobs", () => {
     const cfg: WorkspaceImprovementConfig = { improvement: "surface" };
-    expect(resolveImprovementPolicy(cfg, "nonexistent")).toBe("surface");
+    expect(resolveImprovementMode(cfg, "nonexistent")).toBe("surface");
   });
 
   it("unknown jobId falls back to workspace flag then 'surface'", () => {
@@ -104,12 +108,12 @@ describe("resolveImprovementPolicy", () => {
       improvement: "auto",
       jobs: { "known-job": { improvement: "surface" } },
     };
-    expect(resolveImprovementPolicy(cfg, "unknown-job")).toBe("auto");
-    expect(resolveImprovementPolicy(cfg)).toBe("auto");
+    expect(resolveImprovementMode(cfg, "unknown-job")).toBe("auto");
+    expect(resolveImprovementMode(cfg)).toBe("auto");
   });
 
   it("falls back to 'surface' when workspace is undefined and job has no override", () => {
     const cfg: WorkspaceImprovementConfig = { jobs: { "my-job": {} } };
-    expect(resolveImprovementPolicy(cfg, "my-job")).toBe("surface");
+    expect(resolveImprovementMode(cfg, "my-job")).toBe("surface");
   });
 });
