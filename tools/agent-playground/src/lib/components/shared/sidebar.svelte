@@ -20,6 +20,8 @@
   type NavItem = { label: string; href: string };
 
   const toolLinks: NavItem[] = [
+    { label: "Memory", href: "/memory" },
+    { label: "Improvements", href: "/improvements" },
     { label: "Agent Tester", href: "/agents/built-in" },
     { label: "Job Inspector", href: "/inspector" },
     { label: "Skills", href: "/skills" },

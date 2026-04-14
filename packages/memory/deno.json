@@ -1,0 +1,6 @@
+{
+  "name": "@atlas/memory",
+  "version": "0.1.0",
+  "exports": "./src/bootstrap.ts",
+  "imports": { "@atlas/agent-sdk": "../agent-sdk/src/index.ts" }
+}

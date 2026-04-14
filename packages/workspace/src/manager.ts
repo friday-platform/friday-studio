@@ -104,6 +104,18 @@ export class WorkspaceManager {
   private fileWatcher: WorkspaceConfigWatcher | null = null;
   private onRuntimeInvalidate?: RuntimeInvalidateCallback;
 
+  /**
+   * Pending watcher events for workspaces that had active sessions when the
+   * config file changed on disk. Keyed by workspaceId. Re-applied by
+   * processPendingWatcherChange when the daemon detects the workspace has
+   * gone idle. Prevents the FAST self-modification failure mode where a
+   * config edit mid-session kills the running session via runtime tear-down.
+   */
+  private pendingWatcherChanges = new Map<
+    string,
+    { filePath: string } | { oldPath: string; newPath?: string }
+  >();
+
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
   }
@@ -799,6 +811,33 @@ export class WorkspaceManager {
       return;
     }
 
+    // Active-session guard. If the workspace has a running runtime with active
+    // sessions OR in-flight orchestrator executions, defer the reload by
+    // stashing the change in pendingWatcherChanges. AtlasDaemon calls
+    // processPendingWatcherChange after sessions complete (see
+    // atlas-daemon.ts session-complete handler) to re-apply the change at a
+    // safe moment. Prevents the FAST self-modification failure mode.
+    const runtime = this.runtimes.get(workspaceId);
+    if (runtime) {
+      const sessions = runtime.getSessions();
+      const hasActiveSessions = sessions.some(
+        (s: { session: { status: string } }) => s.session.status === "active",
+      );
+      let hasActiveExecutions = false;
+      if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
+        const orchestrator = runtime.getOrchestrator();
+        hasActiveExecutions = orchestrator.hasActiveExecutions();
+      }
+      if (hasActiveSessions || hasActiveExecutions) {
+        logger.info("deferring workspace config reload until active sessions complete", {
+          workspaceId,
+          change,
+        });
+        this.pendingWatcherChanges.set(workspaceId, change);
+        return;
+      }
+    }
+
     if ("filePath" in change) {
       logger.debug("processing filePath change", { workspaceId, filePath: change.filePath });
       await this.handleWorkspaceConfigChange(workspace, change.filePath);
@@ -818,6 +857,40 @@ export class WorkspaceManager {
       return;
     }
     await this.adoptRenamedWorkspace(workspaceId, workspace, newPath);
+  }
+
+  /**
+   * Re-apply a deferred watcher change. Called by AtlasDaemon when a session
+   * completes and the workspace is observed idle. No-op if no deferred change
+   * exists. Should be called AFTER the session-complete handler has confirmed
+   * !hasActiveSessions && !hasActiveExecutions.
+   */
+  async processPendingWatcherChange(workspaceId: string): Promise<void> {
+    const change = this.pendingWatcherChanges.get(workspaceId);
+    if (!change) return;
+
+    // Re-check active sessions; another session may have started since the
+    // defer. If still busy, leave the change pending.
+    const runtime = this.runtimes.get(workspaceId);
+    if (runtime) {
+      const sessions = runtime.getSessions();
+      const hasActiveSessions = sessions.some(
+        (s: { session: { status: string } }) => s.session.status === "active",
+      );
+      let hasActiveExecutions = false;
+      if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
+        const orchestrator = runtime.getOrchestrator();
+        hasActiveExecutions = orchestrator.hasActiveExecutions();
+      }
+      if (hasActiveSessions || hasActiveExecutions) {
+        logger.debug("pending watcher change still blocked by active sessions", { workspaceId });
+        return;
+      }
+    }
+
+    this.pendingWatcherChanges.delete(workspaceId);
+    logger.info("re-applying deferred workspace config change", { workspaceId, change });
+    await this.handleWatcherChange(workspaceId, change);
   }
 
   /**

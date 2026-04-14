@@ -11,6 +11,7 @@ export type { FsmStep } from "./job-queries.ts";
 export type { IntegrationPreflight, IntegrationStatus } from "./integration-queries.ts";
 export { sessionQueries } from "./session-queries.ts";
 export { skillQueries } from "./skill-queries.ts";
+export { memoryQueries } from "./memory-queries.ts";
 export { AGENT_TYPE_LABELS, useDeleteWorkspace, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "./workspace-queries.ts";
 export type {
   JobSummary,

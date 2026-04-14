@@ -1111,6 +1111,88 @@ minute the operator sits in front of FAST polling sessions and
 dispatching the next task, the "autonomous" framing is a lie. The
 autopilot loop is what actually replaces the operator.
 
+**Reframe (2026-04-14, user directive):** The autopilot is not "many
+specialist workspaces with a coordinator." It's **one supervisory
+workspace** — `FAST Loop` (`thick_endive`) — running **many jobs**
+that each identify a potential self-improvement to some target
+workspace and either:
+
+1. **SURFACE** the improvement for review (e.g. `reflect-on-last-run`
+   drops a proposed `SKILL.md` but does not publish), or
+2. **AUTO-APPLY** the improvement (e.g. `apply-approved-reflection`
+   publishes the skill, the dispatcher fires a signal at a target
+   workspace).
+
+Each target workspace will eventually declare its own policy via a
+top-level `improvements:` block in `workspace.yml`, e.g.:
+
+```yaml
+improvements:
+  skill_update: surface       # human reviews via Studio inbox
+  signal_patch: auto_apply    # kernel can mutate signals freely
+  agent_replace: surface
+  source_mod: surface
+```
+
+The kernel reads this at dispatch time and routes accordingly. Default
+is `surface` for everything when the block is absent. This makes the
+"autonomous" framing precise: workspaces opt in to autonomy
+per-action-class, not all-or-nothing.
+
+**Architecture (corrected):**
+
+```
+                    +-----------------------------+
+                    |     FAST Loop (kernel)      |
+                    |     thick_endive            |
+                    |                             |
+                    | jobs:                       |
+                    |  - autopilot-tick           |
+                    |  - reflect-on-last-run      |
+                    |  - cross-session-reflect    |
+                    |  - apply-reflection         |
+                    |  - author-agent             |
+                    |                             |
+                    | corpora (kernel-owned):     |
+                    |  - autopilot-backlog (rw)   |
+                    |  - reflections (rw)         |
+                    |  - improvements (rw)        |
+                    +-----+-----------------+-----+
+                          |                 |
+              dispatch    |                 |  observe + reflect
+              (per target |                 |  (any session, any ws)
+              policy)     v                 |
+                +---------+---------+       |
+                |                   |       |
+                v                   v       |
+   +------------+------+   +--------+-------+----+   ...
+   |  FAST Improvements |  |  any other         |
+   |  (Source)          |  |  userland          |
+   |  braised_biscuit   |  |  workspace         |
+   |                    |  |                    |
+   |  improvements:     |  |  improvements:     |
+   |   skill: surface   |  |   skill: auto      |
+   |   signal: auto     |  |   signal: surface  |
+   |                    |  |                    |
+   |  mounts:           |  |  mounts:           |
+   |   - autopilot-     |  |   - reflections    |
+   |     backlog (ro)   |  |     (ro)           |
+   +--------------------+  +--------------------+
+
+           ^                            ^
+           |                            |
+           +-------+ corpus mounts +----+
+                       (read-only,
+                        bootstrap-injected
+                        on runtime load)
+```
+
+The kernel is the one workspace that sees cross-workspace state.
+Userland workspaces are leaf nodes that consume mounted corpora and
+declare their improvement-acceptance policy. Every supervisory action
+is a corpus append on the kernel; every fan-out is a mount on the
+receiving side. There is no point-to-point messaging.
+
 **What landed:**
 
 1. **10 custom Python WASM agents** (Tier-5 SDK authorship) under
@@ -1194,6 +1276,72 @@ with the autopilot's original `step_plan → step_dispatch` FSM
 (planner → dispatcher). Workaround in place: collapse to one user-
 agent step (planner does dispatch inline). Real fix needs a
 fsm-engine.ts patch — a self-mod task is in flight to investigate.
+
+**Kernel must-lands for autonomous operation (priority order, mirrors
+the `autopilot-backlog` corpus on `thick_endive`):**
+
+1. **`kernel-watcher-suppress`** — push the three source mods
+   (`packages/workspace/src/manager.ts` `pendingWatcherChanges`,
+   `apps/atlasd/src/atlas-daemon.ts` `processPendingWatcherChange`
+   wiring, `apps/atlasd/routes/workspaces/schemas.ts` `force` flag)
+   to the running daemon. A config `/update` currently kills in-flight
+   sessions because `WorkspaceConfigWatcher` reloads on self-writes
+   AND the route explicitly calls `destroyWorkspaceRuntime()`. Without
+   this, any cron tick is a Russian-roulette session killer.
+2. **`kernel-active-session-guard`** — `routes/workspaces/index.ts`
+   `/update` returns `409 Conflict` when the workspace has active
+   sessions or executions, with `force=true` override. Already coded;
+   needs daemon restart to land.
+3. **`kernel-per-task-cooldown`** — `autopilot-planner` v1.4.0
+   tracks last-dispatch timestamp per `task_id`, not per `signal_id`.
+   v1.3.1's per-signal cooldown locks out *all* parity tasks after
+   one fires, because they all dispatch through the same target signal.
+4. **`kernel-status-update-mechanism`** — planner appends status
+   updates to the `autopilot-backlog` corpus when dispatching
+   (`in_progress`) and when the target session completes
+   (`completed | blocked`). Closes the loop so the kernel can mark
+   its own work done without a human poking the corpus by hand.
+5. **`kernel-second-agent-context`** — fix the daemon bug at
+   `packages/fsm-engine/fsm-engine.ts` where the second user-agent
+   step in an FSM gets `agentContext` stripped of `httpFetch` /
+   `streamEmit`. Blocks splitting `step_plan → step_dispatch` into
+   two FSM steps and forces planners to do dispatch inline.
+6. **`kernel-corpus-append-reflector`** — reflector outputs as
+   appends to a `reflections` narrative corpus on the kernel,
+   instead of skill-publish-only. Mounts make these readable by
+   every workspace. Closes the learning→dispatch loop without
+   going through skill versioning for every observation.
+7. **`kernel-improvement-action-config`** — the `improvements:`
+   block in target workspace.yml (see Architecture diagram above).
+   Schema:
+   ```yaml
+   improvements:
+     skill_update: surface | auto_apply
+     signal_patch: surface | auto_apply
+     agent_replace: surface | auto_apply
+     source_mod: surface | auto_apply
+   ```
+   Defaults to `surface` for everything. Required for any
+   auto-apply to be safe.
+8. **`kernel-improvement-lifecycle-endpoints`** — daemon HTTP
+   surface for the improvement lifecycle:
+   `POST /api/improvements` (kernel proposes),
+   `GET /api/improvements?workspace=&status=` (list per target),
+   `POST /api/improvements/:id/approve|reject|rollback`. Backed by
+   an `improvements` narrative corpus on the kernel. Status
+   transitions are corpus appends — same pattern as the backlog.
+9. **`studio-improvement-inbox-ui`** — Studio inbox listing
+   pending improvements per workspace, rendering proposed diffs
+   (skill md / signal patch / source patch), with accept / reject
+   / rollback buttons. The human-in-the-loop surface for
+   surface-mode actions.
+10. **`kernel-cron-resume`** — re-enable the
+    `autopilot-tick-cron` schedule signal once 1–9 land. Verify
+    one full cron tick succeeds without killing in-flight sessions.
+
+These ten items are the priority `90+` band of the autopilot
+backlog. Until they land, the loop runs by manual `/webhooks/
+autopilot-tick` fires and a human watches `GET /api/sessions`.
 
 ### Phase 2 — Emergent skill authoring
 

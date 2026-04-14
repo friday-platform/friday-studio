@@ -1,0 +1,1553 @@
+version: '1.0'
+workspace:
+  name: FAST Loop
+  description: >-
+    The FAST kernel — the single supervisory workspace. Many jobs, one purpose: identify potential self-improvements in any target workspace and either SURFACE them (human-gated) or AUTO-APPLY them (per the target's declared policy). Owns the autopilot-backlog corpus, the cross-session reflector, the skill author/publisher pipeline, and the agent author pipeline. Target workspaces declare which improvement actions they accept in which mode via their workspace.yml `improvements:` block.
+# Why this workspace exists:
+#   FAST has ONE supervisory workspace — this one. It runs many jobs,
+#   each of which identifies a potential self-improvement to some target
+#   workspace and either:
+#     1) SURFACES it for review (e.g. reflect-on-last-run drops a
+#        proposed SKILL.md but does not publish), or
+#     2) AUTO-APPLIES it (e.g. apply-approved-reflection publishes the
+#        skill, dispatcher fires a signal at a target workspace).
+#
+# Each target workspace will eventually declare its own policy for which
+# improvements it accepts in surface vs. auto-apply mode (see backlog:
+# kernel-improvement-action-config). The kernel reads that policy and
+# routes accordingly.
+#
+# The planner is intentionally pure (READ backlog → DECIDE next action).
+# Dispatch goes through the dispatcher agent. Reflection feeds back into
+# the same backlog corpus that drives planning, closing the loop.
+#
+# The backlog is the autopilot-backlog narrative corpus on this same
+# workspace. Target workspaces mount it (read-only) for context, and the
+# kernel appends task status as work completes. This is the corpus-as-bus
+# pattern — every supervisory action is a corpus append, every action's
+# fan-out is a mount on the receiving side.
+corpus_mounts:
+  - workspace: thick_endive
+    corpus: reflections
+    kind: narrative
+    mode: read
+skills:
+  - name: '@tempest/fast-self-modification'
+signals:
+  autopilot-tick:
+    provider: http
+    title: Autopilot tick
+    description: >-
+      Manually fire one autopilot iteration via HTTP. The cron-driven counterpart is autopilot-tick-cron — both feed the same job.
+    config:
+      path: /webhooks/autopilot-tick
+    schema:
+      type: object
+      properties:
+        backlog_url:
+          type: string
+          description: >-
+            Optional override for the backlog source URL. Defaults to the atlas-mounted backlog file.
+        max_iterations:
+          type: integer
+          description: >-
+            v1 ignores this. Reserved for v2 batch-dispatch.
+  autopilot-tick-cron:
+    provider: schedule
+    title: Autopilot tick (scheduled)
+    description: >-
+      Cron-driven autopilot iteration. Re-enabled 2026-04-14 after watcher-suppress (manager.ts) + active-session-guard (route 409) + per-task cooldown (planner v1.4.0) all landed. Fires every 2 minutes — gives long-running source-mod sessions time to finish before the next pick. Per-task cooldown defaults to 600s so the same task won't re-fire within 10 minutes.
+    config:
+      schedule: '*/2 * * * *'
+      timezone: UTC
+  cross-session-reflect:
+    provider: http
+    title: Cross-session reflect
+    description: >-
+      Run the multi-session-reflector against a target workspace's recent N completed sessions. Surfaces recurring failure patterns that a single-session reflector cannot see.
+    config:
+      path: /webhooks/cross-session-reflect
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Target workspace whose sessions to scan. Defaults to grilled_xylem.
+        n:
+          type: integer
+          description: How many recent completed sessions to scan. Default 10.
+  reflect-on-last-run:
+    provider: http
+    title: Reflect on the last run
+    description: >-
+      Reads a completed session's architect memo, coder output, and reviewer findings. If a new failure pattern is detected, emits a full replacement SKILL.md in reflection-output. Does NOT publish — the apply-approved-reflection signal is the separate human-gated publish step.
+    config:
+      path: /webhooks/reflect-on-last-run
+    schema:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Session to reflect on. If omitted, uses most recent completed.
+      required: []
+  apply-approved-reflection:
+    provider: http
+    title: Apply an approved reflection to the self-mod skill
+    description: >-
+      Takes a prior reflection session ID, reads its reflection-output, verifies the reflector's confidence >= 0.9, and publishes the proposed new SKILL.md content as a new version of @tempest/fast-self-modification via the daemon skill upload endpoint. Records the previous version for rollback.
+    config:
+      path: /webhooks/apply-approved-reflection
+    schema:
+      type: object
+      properties:
+        reflection_session_id:
+          type: string
+          description: >-
+            Session ID of a completed reflect-on-last-run run that emitted a proposal. Optional — if omitted, the apply step walks recent sessions on this workspace and picks the most recent reflect run.
+      required: []
+  author-agent:
+    description: >-
+      Architect reads SDK examples + the brief, coder writes agents/<agent_id>/agent.py, reviewer cross-references the file against canonical patterns and componentize-py constraints. Daemon auto-build happens on next platform restart.
+    title: Author a new Python WASM agent
+    schema:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          title: Agent ID
+          description: 'snake-case id, becomes the directory name.'
+        agent_brief:
+          type: string
+          title: Agent brief
+          description: >-
+            What the agent does, in prose. The architect reads this plus canonical examples and produces a design memo.
+        example_to_match:
+          type: string
+          title: Example to model after
+          description: >-
+            Optional. Path under /Users/kenneth/tempest/agent-sdk/packages/python/examples/ of the closest canonical example. If omitted the architect picks the nearest match.
+      required:
+        - agent_id
+        - agent_brief
+    provider: http
+    config:
+      path: /webhooks/author-agent
+  review-target-workspace-run:
+    provider: http
+    title: Review target workspace
+    description: >-
+      Trigger a reviewer agent against a target workspace. Reads recent sessions,
+      detects workspace.yml drift, agent prompt issues, and FSM smells. Writes
+      findings to the target workspace's notes corpus.
+    config:
+      path: /webhooks/review-target-workspace-run
+    schema:
+      type: object
+      properties:
+        targetWorkspaceId:
+          type: string
+          description: Target workspace whose sessions and config to review.
+        sessionLimit:
+          type: integer
+          description: How many recent sessions to analyze. Default 10.
+        jobIds:
+          type: array
+          items:
+            type: string
+          description: Optional list of job IDs to scope the review.
+      required:
+        - targetWorkspaceId
+agents:
+  status-watcher:
+    type: user
+    agent: autopilot-status-watcher
+    description: >-
+      Custom Python WASM agent. Reads dispatch-log corpus, fetches each dispatched session's status, and appends completion entries to the autopilot-backlog corpus when the target session has finished. Closes the loop without modifying the planner. Runs as step_observe before step_plan in the autopilot-tick FSM.
+    prompt: |
+      You are the autopilot status watcher. Read your config, fetch the
+      dispatch-log narrative corpus on the kernel workspace, then for each
+      unique task_id whose latest dispatch has a session_id, fetch the
+      session and (if completed/failed) append a completion entry to the
+      autopilot-backlog corpus. No LLM. Pure observation.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  planner:
+    type: user
+    agent: autopilot-planner
+    description: >-
+      Custom Python WASM agent. Reads the backlog, picks the next eligible task, returns a structured plan. No LLM. No HTTP mutation. Replaces the "what should I work on next" function that I (the operator) have been performing manually.
+    prompt: |
+      You are the autopilot planner. Read your config, fetch the
+      backlog, pick the next eligible task, and emit a structured
+      action.
+
+      Pure deterministic. NO LLM. Filter by status==pending, skip
+      blocked tasks, sort by priority desc + created_at asc, take
+      the first.
+
+      Output action='execute' with target_workspace_id +
+      target_signal_id + signal_payload, OR action='idle' if no
+      eligible task exists.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  dispatcher:
+    type: user
+    agent: autopilot-dispatcher
+    description: >-
+      Custom Python WASM agent. Takes a planner plan-output and fires the target signal at the target workspace via HTTP POST. Blocks until the downstream FSM returns. Closes the autopilot loop — without this, planner output is inert metadata.
+    prompt: |
+      You are the autopilot dispatcher. Read your config, short-circuit
+      on action=='idle', otherwise POST to
+      /api/workspaces/{target_workspace_id}/signals/{target_signal_id}
+      with the signal payload. Return dispatched=true with session_id
+      on 2xx; dispatched=false on idle; err on 4xx/5xx.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  cross-session-reflector:
+    type: user
+    agent: multi-session-reflector
+    description: >-
+      Custom Python WASM agent. Cross-session reflector — reads the last N completed sessions for a workspace, computes structural signals, asks claude-haiku for a single recurring-pattern judgment. Companion to the single-session reflector. Wired here so the agent isn't orphaned.
+    prompt: |
+      You are the cross-session reflector. Read your config
+      (workspace_id, n) and emit a reflection-result-multi.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-author:
+    type: user
+    agent: skill-author
+    description: >-
+      Custom Python WASM agent. Takes a high-confidence reflection proposal + current SKILL.md and produces a complete replacement SKILL.md with a new failure-mode row added. Single LLM call, strict structured output, gated on confidence >= 0.9.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-publisher:
+    type: user
+    agent: skill-publisher
+    description: >-
+      Custom Python WASM agent. Pure mechanical multipart upload of a new SKILL.md to /api/skills/@tempest/{name}/upload. Records previous_version for rollback. No LLM call.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  reflector:
+    type: user
+    agent: reflector
+    description: >-
+      Custom Python WASM agent (Tier-5 SDK authorship). Reads a completed session via daemon HTTP, computes structural signals deterministically, and uses a single focused ctx.llm.generate_object call (claude-haiku) for the new-pattern judgment. Replaces the previous claude-code reflector — ~10x cheaper and more reliable. Does NOT publish; emits a structured proposal that apply-approved-reflection consumes.
+    prompt: |
+      You are the reflector for the FAST self-modification loop.
+      Your job is to learn from completed sessions and propose
+      updates to @tempest/fast-self-modification.
+
+      The FAST daemon is reachable at {platformUrl} (provided in
+      your config). The atlas monorepo is at /Users/kenneth/tempest/atlas
+      (target_repo, provided in config).
+
+      ## Protocol
+
+      1. Read the session you are reflecting on. If config has
+         a session_id, fetch it via:
+         GET {platformUrl}/api/sessions/{session_id}
+         Otherwise query the most recent completed session on
+         a workspace.
+      2. Read the current @tempest/fast-self-modification skill:
+         GET {platformUrl}/api/skills/@tempest/fast-self-modification
+         (or equivalent) — extract the current SKILL.md and
+         version number.
+      3. Analyze the session's agentBlocks:
+         - step_research: did architect produce real plan_citations?
+         - step_implement: did coder report deno_check_passed +
+           deno_lint_passed? Any files_to_modify missed?
+         - step_review: verdict + findings. Any findings flag a
+           failure mode not already in the skill's table?
+
+      ## Decide: is a skill update warranted?
+
+      A skill update is warranted when:
+      - A new failure mode appeared that isn't in the
+        "Failure-mode → structural-fix mapping" table
+      - Or an existing rule was violated in a way that suggests
+        the rule's wording is unclear
+      - Or a pattern was observed across 2+ sessions that deserves
+        a new Rule in the "Five rules" section
+
+      A skill update is NOT warranted for single-run anomalies or
+      for cases where existing rules already cover the situation.
+
+      ## Output: the reflection-result contract
+
+      If an update is warranted, produce:
+
+      {
+        "outcome": "APPROVE|NEEDS_CHANGES|BLOCK|TIMEOUT",
+        "matches_known_failure": false,
+        "new_failure_mode": {
+          "symptom": "<short observed pattern>",
+          "root_cause": "<mechanistic explanation>",
+          "structural_fix": "<contract/agent-type/FSM change>"
+        },
+        "skill_update_proposed": true,
+        "new_skill_md": "<COMPLETE replacement SKILL.md text, including frontmatter>",
+        "diff_summary": "<2-4 sentence human-readable diff summary>",
+        "confidence": <0.0-1.0 float>,
+        "current_skill_version": <integer from GET skills API>,
+        "summary": "<one-line summary for the ledger>"
+      }
+
+      If no update warranted:
+
+      {
+        "outcome": "APPROVE|NEEDS_CHANGES|BLOCK|TIMEOUT",
+        "matches_known_failure": true|false,
+        "known_failure_row": "<row name if matched, else null>",
+        "skill_update_proposed": false,
+        "summary": "<one-line summary>"
+      }
+
+      ## Rules
+
+      - Do not propose prompt rewrites. Propose contract, agent-
+        type, or FSM-state changes.
+      - confidence < 0.9 means "surface for human review, do not
+        auto-apply." >= 0.9 means "strong proposal, human should
+        fast-track."
+      - Never publish the skill yourself. Emit new_skill_md in the
+        output. A separate human-gated signal
+        (apply-approved-reflection) handles publishing.
+      - When emitting new_skill_md, include the ENTIRE file content
+        including frontmatter. Partial content will fail the
+        skill-updater step.
+      - Keep the five-rules structure intact. Add rows to the
+        failure-mode table by extension, not rewrite.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-updater:
+    type: user
+    agent: skill-publisher
+    description: >-
+      Custom Python WASM agent (Tier-5 SDK authorship). Pure mechanical: GET reflection session, verify confidence threshold, GET current skill metadata for previous_version, POST new content via multipart upload. Sub-second runtime vs the prior claude-code agent's multi-minute latency. No LLM calls.
+    prompt: |
+      You are the skill-updater for the FAST self-modification
+      loop. Your input contains a reflection output with a
+      proposed new SKILL.md and confidence score.
+
+      The FAST daemon is reachable at {platformUrl}.
+
+      ## Protocol
+
+      1. Verify confidence >= 0.9 in the reflection input. If not,
+         return applied=false with rationale "below threshold".
+      2. Fetch current skill metadata:
+         curl -s {platformUrl}/api/skills | jq for
+         namespace=tempest, name=fast-self-modification.
+         Record latest_version as previous_version.
+      3. Write the reflection's new_skill_md to /tmp/new-skill.md
+         inside your sandbox.
+      4. Tar the content:
+         tar czf /tmp/skill.tar.gz -C /tmp new-skill.md
+         (ensure the tar contains a file named SKILL.md — if the
+         daemon expects that exact name, rename before taring)
+      5. Upload:
+         curl -s -X POST {platformUrl}/api/skills/@tempest/fast-self-modification/upload \
+           -F "archive=@/tmp/skill.tar.gz" \
+           -F "skillMd=@/tmp/new-skill.md"
+      6. Parse the response. Expect JSON with a .published.version
+         field. Record as new_version.
+      7. Construct the rollback_command:
+         A shell command that would re-publish the previous version
+         (requires fetching the previous version's content, which
+         is an open question — for now, log it as a TODO string).
+
+      ## Output contract (skill-apply-result)
+
+      {
+        "applied": true|false,
+        "new_version": <integer>,
+        "previous_version": <integer>,
+        "skill_namespace": "tempest",
+        "skill_name": "fast-self-modification",
+        "rollback_command": "<shell command or 'TODO'>",
+        "confidence_observed": <float>,
+        "confidence_threshold": 0.9,
+        "rationale": "<why applied or why not>",
+        "summary": "<one line>"
+      }
+
+      ## Rules
+
+      - NEVER publish if confidence < 0.9. Return applied=false
+        with rationale "below threshold".
+      - NEVER skip the previous_version fetch. Rollback requires it.
+      - If the upload fails, do not retry — return applied=false
+        with the curl error in rationale.
+      - The daemon may reject upload on schema violation. Surface
+        the error, do not swallow it.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  workspace-reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reviews a target workspace for drift, prompt quality, and FSM smells.
+      Reads recent session history and the workspace's workspace.yml, produces
+      structured WorkspaceFinding entries. Does NOT touch skills or source code.
+    prompt: |
+      You are a workspace reviewer agent for the FAST self-modification loop.
+      Your job: inspect a target workspace and produce structured findings about
+      workspace.yml drift, agent prompt issues, and FSM smells.
+
+      ## Protocol
+
+      1. Read your config: targetWorkspaceId, sessionLimit, jobIds, platformUrl.
+      2. Fetch the target workspace's workspace.yml via:
+         GET {platformUrl}/api/workspaces/{targetWorkspaceId}
+      3. Fetch recent session history:
+         GET {platformUrl}/api/sessions?workspaceId={targetWorkspaceId}&limit={sessionLimit}
+      4. Analyze for three categories of issues:
+         - **drift**: workspace.yml references agents, signals, or jobs that
+           don't match actual session behavior
+         - **prompt**: agent prompts that produce repeated failures or
+           under-specified output contracts
+         - **fsm**: state machines with dead states, missing guards, or
+           transitions that never fire based on session evidence
+      5. If jobIds is provided, scope analysis to only those jobs.
+
+      ## Output contract (review-findings-result)
+
+      Return structured JSON with:
+      - targetWorkspaceId: string
+      - findings: array of WorkspaceFinding objects
+      - appendedCount: number of findings written to corpus
+      - ranAt: ISO-8601 timestamp
+
+      Each WorkspaceFinding has:
+      - id: UUID
+      - category: "drift" | "prompt" | "fsm"
+      - severity: "info" | "warn" | "error"
+      - summary: <= 120 chars
+      - detail: markdown prose
+      - target_job_id: optional, set when finding is scoped to a specific job
+      - createdAt: ISO-8601
+
+      ## Rules
+
+      - Do NOT inspect skills or source code. Scope: workspace.yml, sessions.
+      - Do NOT write to the kernel's corpora. Only the target workspace's
+        notes corpus receives findings.
+      - Set target_job_id when the finding is scoped to a specific job.
+        Omit it for workspace-level findings.
+      - Severity guide: info = observation, warn = likely issue, error =
+        definitely broken based on session evidence.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  architect:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reads canonical Python agent examples + the brief, produces a design memo with verbatim citations from the SDK examples.
+    prompt: |
+      You are the architect for a Python WASM agent authoring task.
+      Your job: produce a design memo for a new agent at
+      /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+
+      ## Required reading (every task)
+
+      1. Read at least one canonical example from
+         /Users/kenneth/tempest/agent-sdk/packages/python/examples/. Default to
+         llm-http-agent if no example_to_match is given. The example
+         shows the canonical patterns:
+         - `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+           — required for componentize-py to find the Agent class
+         - `@agent(...)` decorator with id, version, description
+         - `def execute(prompt, ctx)` handler
+         - `ctx.llm.generate()`, `ctx.http.fetch()`, `ctx.tools.call()`
+         - Return `ok({...})` or `err("message")`
+      2. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+         for ctx.* method signatures (ctx.llm, ctx.http, ctx.tools,
+         ctx.stream).
+      3. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_decorator.py
+         for the @agent decorator field list.
+      4. If the brief mentions structured output: ctx.llm.generate_object
+         needs a JSON schema with `additionalProperties: false` on
+         every object level (strict mode requirement).
+      5. Read any existing agent at /Users/kenneth/tempest/atlas/agents/<agent_id>/
+         if updating instead of creating.
+
+      ## Hard rules from real failures
+
+      - MUST import Agent from _bridge or componentize-py errors with
+        "module 'agent' has no attribute 'Agent'"
+      - MUST use `ctx.llm.generate_object` with JSON schemas that
+        have `additionalProperties: false` on every object — strict
+        mode requirement of the LLM provider
+      - When proposing nullable fields in output: `additionalProperties:
+        false` AND the field stays in `required` (provider strict mode),
+        type expressed as `{"type": ["null", "string"]}` is REJECTED
+        by the LLM provider — use `anyOf: [{type: string}, {type: null}]`
+        when calling generate_object
+      - Async handlers are not supported — handlers are sync functions
+        that may call `ctx.http.fetch()` (which suspends via JSPI under
+        the hood)
+      - No external Python packages — only stdlib + friday_agent_sdk
+        are available inside the WASM sandbox
+
+      ## Output
+
+      Structured JSON design-memo-result with required plan_citations
+      pointing at concrete example files (with line numbers), a single
+      file_to_create entry for the new agent.py, and integration_notes
+      describing how the agent fits into the broader FAST loop.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  coder:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Writes the agent.py file per the architect's design memo. Workdir is /Users/kenneth/tempest/atlas. Agents auto-build on next daemon restart, so the coder does not run a build itself.
+    prompt: |
+      You are the coder for a Python WASM agent authoring task.
+      Your input contains a design memo with file_to_create
+      pointing at /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+
+      Rules:
+      1. Create the directory if missing.
+      2. Write the agent.py file exactly per the memo.
+      3. The file MUST contain `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+      4. The file MUST contain `from friday_agent_sdk import agent, ok, err`
+         (and any other types from friday_agent_sdk needed)
+      5. The file MUST have an `@agent(...)` decorator on the handler
+         function, with id matching the directory name.
+      6. The handler signature MUST be `def execute(prompt, ctx)` — sync,
+         not async.
+      7. The handler MUST return `ok({...})` or `err("message")`.
+      8. JSON schemas passed to `ctx.llm.generate_object` MUST have
+         `additionalProperties: false` on every object level.
+      9. No external Python packages — stdlib + friday_agent_sdk only.
+
+      You do NOT need to run a build. The daemon auto-builds on next
+      restart. Report the file path + a brief explanation in the
+      coder-result.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Cross-references the coder's agent.py against canonical SDK example patterns and componentize-py constraints. Catches common build-blocking mistakes before next restart.
+    prompt: |
+      You are the reviewer for a Python WASM agent authoring task.
+      The agent.py is at /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+
+      ## Review protocol
+
+      1. Read the coder's agent.py.
+      2. Read at least one canonical example from
+         /Users/kenneth/tempest/agent-sdk/packages/python/examples/.
+      3. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+         for ctx.* method signatures.
+      4. Cross-reference for build-blocking patterns:
+
+         CRITICAL — would fail componentize-py build:
+         - Missing `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+         - `async def execute(...)` (must be sync)
+         - Importing external Python packages (numpy, requests, etc.)
+         - JSON schema for ctx.llm.generate_object missing
+           `additionalProperties: false` on any object level
+
+         CRITICAL — would fail at runtime:
+         - Handler doesn't return ok() or err()
+         - @agent decorator missing required fields (id, version, description)
+         - ctx.llm.generate without explicit model parameter when no
+           agent llm config is set
+         - ctx.http.fetch with a relative URL (must be absolute)
+
+         WARNING:
+         - Agent id in @agent doesn't match directory name
+         - Long inline JSON schemas instead of module-level constants
+         - Missing input/output schemas in @agent decorator
+         - Using ctx.config without falling back to defaults
+
+      5. Verdict:
+         - APPROVE: no CRITICAL findings; agent will build and run
+         - NEEDS_CHANGES: minor issues coder can fix in one pass
+         - BLOCK: fundamental issue, architect should re-engage
+
+      6. Findings MUST cite a plan_line — either a path under
+         /Users/kenneth/tempest/agent-sdk/packages/python/examples/ for pattern
+         deviations, or _types.py / _decorator.py line for SDK shape
+         issues.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+jobs:
+  autopilot-tick:
+    title: Supervise — pick next backlog task and dispatch
+    description: >-
+      Kernel/supervisor pulse. Reads the autopilot-backlog corpus, asks the planner to pick the next pending task respecting per-task cooldown and blocked_by, then dispatches at the target workspace's signal. This is how the FAST kernel moves work along across every other workspace without a human in the loop.
+    triggers:
+      - signal: autopilot-tick
+      - signal: autopilot-tick-cron
+    fsm:
+      id: autopilot-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            autopilot-tick:
+              target: step_observe
+            autopilot-tick-cron:
+              target: step_observe
+        step_observe:
+          entry:
+            - type: code
+              function: prepare_observe
+            - type: agent
+              agentId: status-watcher
+              outputTo: observe-output
+              outputType: observe-result
+            - type: emit
+              event: OBSERVED
+          'on':
+            OBSERVED:
+              target: step_plan
+              guards:
+                - guard_observe_done
+        step_plan:
+          entry:
+            - type: code
+              function: prepare_plan
+            - type: agent
+              agentId: planner
+              outputTo: plan-output
+              outputType: plan-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_plan_done
+        # Planner does the dispatch inline. Splitting plan/dispatch into two
+        # FSM steps hit a daemon bug where the second user agent in an FSM
+        # has its agentContext stripped of http+stream bindings. Re-add
+        # step_dispatch once that's fixed (see backlog: kernel-second-agent-context).
+        completed:
+          type: final
+      functions:
+        prepare_observe:
+          type: action
+          code: |
+            export default function prepare_observe(context, event) {
+              return {
+                task: "Observe completed dispatches",
+                config: {
+                  platformUrl: "http://localhost:8080",
+                  kernel_workspace_id: "thick_endive",
+                  dispatch_log_corpus: "dispatch-log",
+                  backlog_corpus: "autopilot-backlog",
+                },
+              };
+            }
+        guard_observe_done:
+          type: guard
+          code: |
+            export default function guard_observe_done(context, event) {
+              return context.results['observe-output'] !== undefined;
+            }
+        prepare_plan:
+          type: action
+          code: |
+            export default function prepare_plan(context, event) {
+              // Backlog lives in the autopilot-backlog narrative corpus on this
+              // workspace. Edited via POST /api/memory/{ws}/narrative/autopilot-backlog
+              // not by editing this code action. Each entry is a NarrativeEntry whose
+              // metadata contains status, priority, kind, blocked_by, and payload
+              // (workspace_id + signal_id + task-specific fields).
+              //
+              // Override backlog_json from event.data for one-shot ticks.
+              var override = (event.data && event.data.backlog_json) || null;
+              return {
+                task: "Autopilot tick: pick next backlog task from corpus",
+                config: {
+                  backlog_json: override,
+                  backlog_url: "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog",
+                  platformUrl: "http://localhost:8080",
+                  // 30-min per-TASK cooldown (planner v1.4.0 tracks per-task via
+                  // the dispatch-log narrative corpus). 1800s gives long-running
+                  // claude-code FSM dispatches plenty of time to finish before
+                  // the same task could be picked again. Operator marks tasks
+                  // completed by POSTing a new corpus entry with same id +
+                  // metadata.status: completed.
+                  cooldown_s: 1800
+                }
+              };
+            }
+        guard_plan_done:
+          type: guard
+          code: |
+            export default function guard_plan_done(context, event) {
+              return context.results['plan-output'] !== undefined;
+            }
+        prepare_dispatch:
+          type: action
+          code: |
+            export default function prepare_dispatch(context, event) {
+              var plan = context.results['plan-output'];
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Dispatch: ' + (plan.task_id || '(idle)'),
+                config: {
+                  action: plan.action,
+                  target_workspace_id: plan.target_workspace_id,
+                  target_signal_id: plan.target_signal_id,
+                  signal_payload: plan.signal_payload,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_dispatch_done:
+          type: guard
+          code: |
+            export default function guard_dispatch_done(context, event) {
+              return context.results['dispatch-output'] !== undefined;
+            }
+      documentTypes:
+        observe-result:
+          type: object
+          properties:
+            observed_dispatches: {type: integer}
+            already_completed: {type: integer}
+            newly_closed: {type: integer}
+            closed_tasks:
+              type: array
+              items: {type: string}
+            skipped:
+              type: array
+              items: {type: string}
+            observations:
+              type: array
+              items:
+                type: object
+                properties:
+                  task_id: {type: string}
+                  session_id: {type: string}
+                  session_status: {type: string}
+                  marked: {type: string}
+            rationale: {type: string}
+          required:
+            - observed_dispatches
+            - newly_closed
+            - rationale
+        dispatch-result:
+          type: object
+          properties:
+            dispatched: {type: boolean}
+            action:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            target_workspace_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            target_signal_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            session_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            rationale:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+          required:
+            - dispatched
+        plan-result:
+          type: object
+          properties:
+            action:
+              type: string
+              enum: [execute, idle]
+            task_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            target_workspace_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            target_signal_id:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            signal_payload:
+              anyOf:
+                - {type: object}
+                - {type: 'null'}
+            task_kind:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            rationale:
+              type: string
+          required:
+            - action
+            - rationale
+      tools: {}
+  cross-session-reflect:
+    title: Supervise — find recurring failure patterns across a workspace
+    description: >-
+      Kernel/supervisor pattern detector. Scans recent completed sessions on a target workspace, asks the multi-session reflector to identify recurring failure modes, and (above a 0.9 confidence gate) chains into skill-author → skill-publisher to evolve the meta-skill. This is how the FAST kernel turns aggregate observation into shared learning across all workspaces.
+    triggers:
+      - signal: cross-session-reflect
+    fsm:
+      id: cross-session-reflect-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            cross-session-reflect:
+              target: step_reflect
+        step_reflect:
+          entry:
+            - type: code
+              function: prepare_reflect
+            - type: agent
+              agentId: cross-session-reflector
+              outputTo: reflect-output
+              outputType: cross-session-reflect-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              - target: step_author
+                guards:
+                  - guard_reflect_done
+                  - guard_skill_warranted
+              - target: completed
+                guards:
+                  - guard_reflect_done
+        step_author:
+          entry:
+            - type: code
+              function: prepare_author
+            - type: agent
+              agentId: skill-author
+              outputTo: author-output
+              outputType: skill-author-result
+            - type: emit
+              event: AUTHOR_DONE
+          'on':
+            AUTHOR_DONE:
+              - target: step_publish
+                guards:
+                  - guard_author_done
+                  - guard_publish_ready
+              - target: completed
+                guards:
+                  - guard_author_done
+        step_publish:
+          entry:
+            - type: code
+              function: prepare_publish
+            - type: agent
+              agentId: skill-publisher
+              outputTo: publish-output
+              outputType: skill-publisher-result
+            - type: emit
+              event: PUBLISH_DONE
+          'on':
+            PUBLISH_DONE:
+              target: completed
+        completed:
+          type: final
+      functions:
+        prepare_reflect:
+          type: action
+          code: |
+            export default function prepare_reflect(context, event) {
+              var wsId = (event.data && event.data.workspace_id) || 'grilled_xylem';
+              var n = (event.data && event.data.n) || 10;
+              return {
+                task: 'Cross-session reflect on ' + wsId,
+                config: {
+                  workspace_id: wsId,
+                  n: n,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_reflect_done:
+          type: guard
+          code: |
+            export default function guard_reflect_done(context, event) {
+              return context.results['reflect-output'] !== undefined;
+            }
+        guard_skill_warranted:
+          type: guard
+          code: |
+            export default function guard_skill_warranted(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect || !reflect.judgment) return false;
+              return reflect.judgment.skill_update_warranted === true &&
+                     reflect.judgment.confidence >= 0.9;
+            }
+        prepare_author:
+          type: action
+          code: |
+            export default function prepare_author(context, event) {
+              var reflect = context.results['reflect-output'];
+              if (!reflect) throw new Error('Reflect output not found');
+              return {
+                task: 'Author skill update based on cross-session judgment',
+                config: {
+                  judgment: reflect.judgment,
+                  current_skill_md: '',
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_author_done:
+          type: guard
+          code: |
+            export default function guard_author_done(context, event) {
+              return context.results['author-output'] !== undefined;
+            }
+        guard_publish_ready:
+          type: guard
+          code: |
+            export default function guard_publish_ready(context, event) {
+              var author = context.results['author-output'];
+              return author != null && author.proposed_skill_md != null;
+            }
+        prepare_publish:
+          type: action
+          code: |
+            export default function prepare_publish(context, event) {
+              var author = context.results['author-output'];
+              if (!author) throw new Error('Author output not found');
+              return {
+                task: 'Publish proposed skill update',
+                config: {
+                  proposed_skill_md: author.proposed_skill_md,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+      documentTypes:
+        cross-session-reflect-result:
+          type: object
+          properties:
+            workspace_id: {type: string}
+            n_sessions_scanned: {type: integer}
+            judgment:
+              type: object
+              properties:
+                matches_known_pattern: {type: boolean}
+                skill_update_warranted: {type: boolean}
+                confidence: {type: number}
+                rationale: {type: string}
+            summary: {type: string}
+          required:
+            - workspace_id
+            - judgment
+        skill-author-result:
+          type: object
+          properties:
+            proposed_skill_md:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            rationale:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+          required: []
+        skill-publisher-result:
+          type: object
+          properties:
+            published: {type: boolean}
+            skill_name:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            version:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+            rationale:
+              anyOf:
+                - {type: string}
+                - {type: 'null'}
+          required:
+            - published
+      tools: {}
+  reflect-on-last-run:
+    title: Supervise — observe a recent session and propose an improvement
+    description: >-
+      Kernel/supervisor single-session reflector. Reads any completed session in any workspace, identifies whether it surfaced a new failure pattern, and proposes an updated SKILL.md when warranted. Does NOT publish — that's gated through apply-approved-reflection. This is how the FAST kernel learns from one-off events without waiting for a pattern to recur.
+    triggers:
+      - signal: reflect-on-last-run
+    fsm:
+      id: reflect-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            reflect-on-last-run:
+              target: step_reflect
+        step_reflect:
+          entry:
+            - type: code
+              function: prepare_reflect
+            - type: agent
+              agentId: reflector
+              outputTo: reflection-output
+              outputType: reflection-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_reflect_done
+        completed:
+          type: final
+      functions:
+        prepare_reflect:
+          type: action
+          code: |
+            export default function prepare_reflect(context, event) {
+              var sid = event.data && event.data.session_id;
+              // Reflector agent reads session via its own tools;
+              // we just pass the optional session id along.
+              return {
+                task: 'Reflect on session ' + (sid || 'latest'),
+                config: {
+                  session_id: sid || null,
+                },
+              };
+            }
+        guard_reflect_done:
+          type: guard
+          code: |
+            export default function guard_reflect_done(context, event) {
+              return context.results['reflection-output'] !== undefined;
+            }
+      documentTypes:
+        reflection-result:
+          type: object
+          properties:
+            outcome:
+              type: string
+              enum: [APPROVE, NEEDS_CHANGES, BLOCK, TIMEOUT]
+            matches_known_failure:
+              type: boolean
+            known_failure_row:
+              anyOf:
+                - {type: string}
+                - {type: "null"}
+              description: >-
+                Name of the matched failure-mode row, or null if no match. Always present even on no-update outcomes.
+            new_failure_mode:
+              anyOf:
+                - type: object
+                  properties:
+                    symptom: {type: string}
+                    root_cause: {type: string}
+                    structural_fix: {type: string}
+                - {type: "null"}
+              description: >-
+                Structured proposal for a new failure-mode table row, or null when no new pattern is warranted.
+            skill_update_proposed:
+              type: boolean
+            new_skill_md:
+              anyOf:
+                - {type: string}
+                - {type: "null"}
+              description: Full replacement SKILL.md, or null on no-update.
+            diff_summary:
+              anyOf:
+                - {type: string}
+                - {type: "null"}
+            confidence:
+              anyOf:
+                - {type: number}
+                - {type: "null"}
+            current_skill_version:
+              anyOf:
+                - {type: integer}
+                - {type: "null"}
+            session_summary:
+              type: object
+              description: Structural facts about the analyzed session.
+            rationale:
+              anyOf:
+                - {type: string}
+                - {type: "null"}
+            summary:
+              type: string
+          required:
+            - outcome
+            - matches_known_failure
+            - skill_update_proposed
+            - summary
+      tools: {}
+  apply-reflection:
+    title: Supervise — apply an approved reflection across workspaces
+    description: >-
+      Kernel/supervisor publish step. Takes a completed reflection session, verifies confidence >= 0.9, and publishes the proposed SKILL.md as a new version with rollback metadata. Every workspace that mounts the meta-skill picks up the update on next runtime load. This is how the FAST kernel propagates a single learning to the entire fleet.
+    triggers:
+      - signal: apply-approved-reflection
+    fsm:
+      id: apply-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            apply-approved-reflection:
+              target: step_apply
+        step_apply:
+          entry:
+            - type: code
+              function: prepare_apply
+            - type: agent
+              agentId: skill-updater
+              outputTo: apply-output
+              outputType: skill-apply-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_apply_done
+        completed:
+          type: final
+      functions:
+        prepare_apply:
+          type: action
+          code: |
+            export default function prepare_apply(context, event) {
+              // Optional reflection_session_id — if omitted, the
+              // skill-publisher agent walks recent sessions itself and
+              // picks the most recent reflect-on-last-run with
+              // skill_update_proposed=true. This makes the signal safe
+              // to fire periodically from cron without an explicit ID
+              // (e.g., from the autopilot's apply-approved-grilled-xylem
+              // backlog task).
+              var sid = (event.data && event.data.reflection_session_id) || null;
+              return {
+                task: sid ? ('Apply reflection from session ' + sid) : 'Apply latest approved reflection',
+                config: {
+                  reflection_session_id: sid,
+                },
+              };
+            }
+        guard_apply_done:
+          type: guard
+          code: |
+            export default function guard_apply_done(context, event) {
+              return context.results['apply-output'] !== undefined;
+            }
+      documentTypes:
+        skill-apply-result:
+          type: object
+          properties:
+            applied:
+              type: boolean
+            new_version:
+              type: integer
+            previous_version:
+              type: integer
+            skill_namespace:
+              type: string
+            skill_name:
+              type: string
+            rollback_command:
+              type: string
+            confidence_observed:
+              type: number
+            confidence_threshold:
+              type: number
+            rationale:
+              type: string
+            summary:
+              type: string
+          required:
+            - applied
+            - rationale
+            - summary
+      tools: {}
+  author-agent:
+    description: >-
+      Kernel/supervisor capability provisioner. Architect → coder → reviewer pipeline that authors new Python WASM agents the rest of the fleet can use. Daemon auto-build picks them up on next restart. This is how the FAST kernel grows the platform's surface area without a human writing agent.py.
+    title: Supervise — author a new Python WASM agent
+    triggers:
+      - signal: author-agent
+    fsm:
+      id: agent-author-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            author-agent:
+              target: step_research
+        step_research:
+          entry:
+            - type: code
+              function: prepare_research
+            - type: agent
+              agentId: architect
+              outputTo: memo-output
+              outputType: design-memo-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement
+              guards:
+                - guard_memo_done
+        step_implement:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: coder
+              outputTo: impl-output
+              outputType: coder-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review
+              guards:
+                - guard_impl_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: reviewer
+              outputTo: review-output
+              outputType: review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_review_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+        prepare_research:
+          type: action
+          code: |
+            export default function prepare_research(context, event) {
+              var agentId = event.data && event.data.agent_id;
+              var brief = event.data && event.data.agent_brief;
+              var example = (event.data && event.data.example_to_match) || '';
+
+              if (!agentId || typeof agentId !== 'string') {
+                throw new Error('Missing required input: agent_id');
+              }
+              if (!brief || typeof brief !== 'string') {
+                throw new Error('Missing required input: agent_brief');
+              }
+
+              context.setResult('task-input', {
+                agentId: agentId,
+                brief: brief,
+                example: example,
+              });
+
+              return {
+                task: 'Design memo for agent ' + agentId + ': ' + brief,
+                config: {
+                  agent_id: agentId,
+                  agent_brief: brief,
+                  example_to_match: example,
+                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + agentId,
+                  examples_root: '/Users/kenneth/tempest/agent-sdk/packages/python/examples',
+                  sdk_root: '/Users/kenneth/tempest/atlas/packages/sdk-python',
+                },
+              };
+            }
+        guard_memo_done:
+          type: guard
+          code: |
+            export default function guard_memo_done(context, event) {
+              return context.results['memo-output'] !== undefined;
+            }
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              var memo = context.results['memo-output'];
+              var task = context.results['task-input'];
+              if (!memo) throw new Error('Memo not found');
+              if (!task) throw new Error('Task input not found');
+              return {
+                task: 'Implement agent ' + task.agentId,
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  agent_id: task.agentId,
+                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + task.agentId,
+                  memo: memo,
+                },
+              };
+            }
+        guard_impl_done:
+          type: guard
+          code: |
+            export default function guard_impl_done(context, event) {
+              return context.results['impl-output'] !== undefined;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var memo = context.results['memo-output'];
+              var impl = context.results['impl-output'];
+              var task = context.results['task-input'];
+              if (!memo || !impl || !task) {
+                throw new Error('Missing memo, impl, or task input');
+              }
+              return {
+                task: 'Review agent ' + task.agentId,
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  agent_id: task.agentId,
+                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + task.agentId,
+                  memo: memo,
+                  changes: impl,
+                  examples_root: '/Users/kenneth/tempest/agent-sdk/packages/python/examples',
+                  sdk_root: '/Users/kenneth/tempest/atlas/packages/sdk-python',
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              return context.results['review-output'] !== undefined;
+            }
+      documentTypes:
+        design-memo-result:
+          type: object
+          properties:
+            plan_citations:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  file:
+                    type: string
+                  line_start:
+                    type: integer
+                  line_end:
+                    type: integer
+                  verbatim:
+                    type: string
+                required:
+                  - file
+                  - verbatim
+            files_to_create:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  purpose:
+                    type: string
+                  key_types:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - path
+                  - purpose
+            integration_notes:
+              type: string
+          required:
+            - plan_citations
+            - files_to_create
+            - integration_notes
+        coder-result:
+          type: object
+          properties:
+            files_written:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  lines_added:
+                    type: integer
+                required:
+                  - path
+            summary:
+              type: string
+          required:
+            - files_written
+            - summary
+        review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum:
+                - APPROVE
+                - NEEDS_CHANGES
+                - BLOCK
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                    enum:
+                      - CRITICAL
+                      - WARNING
+                      - SUGGESTION
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                  description:
+                    type: string
+                  plan_line:
+                    type: string
+                required:
+                  - severity
+                  - description
+                  - plan_line
+            summary:
+              type: string
+          required:
+            - verdict
+            - summary
+      tools: {}
+  review-target-workspace:
+    title: Supervise — review a target workspace for drift, prompt, and FSM issues
+    description: >-
+      Reviewer agent that inspects a target workspace for workspace.yml drift,
+      agent prompt issues, and FSM smells. Each finding is appended as a
+      NarrativeEntry to the target workspace's notes corpus (never the kernel's).
+      Findings optionally include target_job_id so the downstream apply job can
+      read jobs.<id>.improvement instead of the workspace-level default.
+    triggers:
+      - signal: review-target-workspace-run
+    fsm:
+      id: review-target-workspace-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            review-target-workspace-run:
+              target: step_review
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: workspace-reviewer
+              outputTo: review-findings-output
+              outputType: review-findings-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_review_done
+        completed:
+          type: final
+      functions:
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var targetWsId = (event.data && event.data.targetWorkspaceId) || '';
+              var sessionLimit = (event.data && event.data.sessionLimit) || 10;
+              var jobIds = (event.data && event.data.jobIds) || null;
+
+              if (!targetWsId) {
+                throw new Error('Missing required input: targetWorkspaceId');
+              }
+
+              return {
+                task: 'Review workspace ' + targetWsId + ' for drift, prompt issues, and FSM smells',
+                config: {
+                  targetWorkspaceId: targetWsId,
+                  sessionLimit: sessionLimit,
+                  jobIds: jobIds,
+                  platformUrl: 'http://localhost:8080',
+                  corpusName: 'notes',
+                  corpusKind: 'narrative',
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              return context.results['review-findings-output'] !== undefined;
+            }
+      documentTypes:
+        review-findings-result:
+          type: object
+          properties:
+            targetWorkspaceId:
+              type: string
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  category:
+                    type: string
+                    enum: [drift, prompt, fsm]
+                  severity:
+                    type: string
+                    enum: [info, warn, error]
+                  summary:
+                    type: string
+                  detail:
+                    type: string
+                  target_job_id:
+                    anyOf:
+                      - {type: string}
+                      - {type: 'null'}
+                  createdAt:
+                    type: string
+                required:
+                  - id
+                  - category
+                  - severity
+                  - summary
+                  - detail
+                  - createdAt
+            appendedCount:
+              type: integer
+            ranAt:
+              type: string
+          required:
+            - targetWorkspaceId
+            - findings
+            - appendedCount
+            - ranAt
+      tools: {}

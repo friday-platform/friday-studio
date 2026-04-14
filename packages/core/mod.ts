@@ -50,6 +50,19 @@ export type {
   RequiredConfigField,
 } from "./src/mcp-registry/schemas.ts";
 export type {
+  MountConsumer,
+  MountSource,
+  MountStorage,
+} from "./src/mount-registry/mod.ts";
+// Mount Registry
+export {
+  CorpusKindSchema,
+  deriveSourceId,
+  MountConsumerSchema,
+  MountRegistry,
+  MountSourceSchema,
+} from "./src/mount-registry/mod.ts";
+export type {
   AgentExecutionContext,
   AgentOrchestratorConfig,
   IAgentOrchestrator,

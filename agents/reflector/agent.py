@@ -47,6 +47,9 @@ from friday_agent_sdk import AgentContext, agent, err, ok
 # Re-export the WIT bridge Agent class so componentize-py finds it.
 from friday_agent_sdk._bridge import Agent  # noqa: F401
 
+from corpus_appender import CorpusAppender
+from reflection_schema import ReflectionEntry
+
 
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
 SKILL_NAMESPACE = "tempest"
@@ -285,9 +288,55 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
     return "APPROVE"  # session completed but no explicit verdict — assume clean
 
 
+KERNEL_WORKSPACE_ID = "thick_endive"
+
+
+def _append_to_corpus(
+    *,
+    ctx: AgentContext,
+    session_summary: dict[str, Any],
+    outcome: str,
+    rationale: str,
+    update_warranted: bool,
+) -> None:
+    """Append a reflection entry to the thick_endive reflections corpus.
+
+    Non-blocking: failures are logged but never raise.
+    """
+    finding_type = "SKILL_GAP" if update_warranted else "INFO"
+    severity = "MEDIUM" if update_warranted else "LOW"
+    proposed_action = rationale if update_warranted else "none"
+
+    session_id = session_summary.get("session_id", "")
+    workspace_id = session_summary.get("workspace_id", "")
+
+    try:
+        entry = ReflectionEntry(
+            text=f"{outcome}: {rationale}" if rationale else outcome,
+            target_workspace_id=workspace_id,
+            target_session_id=session_id,
+            finding_type=finding_type,
+            severity=severity,
+            proposed_action=proposed_action,
+            session_id=session_id,
+            run_id=session_id,
+            step_index=0,
+        )
+        appender = CorpusAppender(
+            platform_url=_platform_url(ctx),
+            http=ctx.http,
+        )
+        appender.append_reflection(
+            workspace_id=KERNEL_WORKSPACE_ID,
+            entry=entry,
+        )
+    except Exception:
+        pass
+
+
 @agent(
     id="reflector",
-    version="1.2.0",
+    version="1.3.0",
     description=(
         "Deterministic session reader + focused LLM judgment for the FAST "
         "self-modification loop. Reads a completed session via daemon HTTP, "
@@ -345,10 +394,15 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     rationale = str(judgment.get("rationale", ""))
     new_failure_mode = judgment.get("new_failure_mode")
 
-    # The reflector ONLY judges. Producing the full new SKILL.md is a
-    # separate concern — for now, emit the proposal metadata; a follow-up
-    # `skill-author` agent (or a human) does the actual SKILL.md edit and
-    # passes it to skill-publisher.
+    ctx.stream.progress("appending reflection to corpus")
+    _append_to_corpus(
+        ctx=ctx,
+        session_summary=session_summary,
+        outcome=outcome,
+        rationale=rationale,
+        update_warranted=update_warranted,
+    )
+
     return ok(
         {
             "outcome": outcome,

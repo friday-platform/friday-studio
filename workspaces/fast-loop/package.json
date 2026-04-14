@@ -1,0 +1,7 @@
+{
+  "name": "@atlas/fast-loop-jobs",
+  "version": "0.0.1",
+  "type": "module",
+  "dependencies": { "zod": "^4.3.5" },
+  "devDependencies": { "vitest": "^4.1.0" }
+}

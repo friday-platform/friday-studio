@@ -12,9 +12,11 @@ import type {
   AgentResult,
   AgentSkill,
   AtlasUIMessageChunk,
+  CorpusMountBinding,
   LinkCredentialRef,
   MCPServerConfig,
   MemoryAdapter,
+  NarrativeCorpus,
 } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -95,11 +97,15 @@ import type {
 import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
 import { createBashTool } from "./bash-tool.ts";
 import { CodeAgentExecutor } from "./code-agent-executor.ts";
+import type { MemoryMount } from "./config-schema.ts";
 import {
   type ImproverAgentInput,
   type ImproverAgentResult,
   runImprovementLoop,
 } from "./improvement-loop.ts";
+import { MountSourceNotFoundError } from "./mount-errors.ts";
+import { mountRegistry } from "./mount-registry.ts";
+import { MountedCorpusBinding } from "./mounted-corpus-binding.ts";
 
 /**
  * Classify an error to determine session status.
@@ -228,6 +234,8 @@ interface WorkspaceRuntimeOptions {
   activityStorage?: ActivityStorageAdapter;
   /** Memory adapter for bootstrap injection (feature-flagged via ATLAS_MEMORY_BOOTSTRAP) */
   memoryAdapter?: MemoryAdapter;
+  /** Parsed memory.mounts from workspace config — resolved at initialize time */
+  memoryMounts?: MemoryMount[];
 }
 
 interface FSMJob {
@@ -300,6 +308,9 @@ export class WorkspaceRuntime {
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
   private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
+
+  // Resolved corpus mount bindings, keyed by mount name
+  private mountBindings = new Map<string, MountedCorpusBinding>();
 
   // Track emitted jobs to prevent duplicate analytics events on hot-reload
   private emittedJobs = new Set<string>();
@@ -495,13 +506,107 @@ export class WorkspaceRuntime {
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
 
+    // Resolve memory mounts — fail loud if any source corpus is missing
+    if (this.options.memoryMounts && this.options.memoryMounts.length > 0) {
+      await this.resolveMounts(this.options.memoryMounts);
+    }
+
     this.initialized = true;
 
     logger.info("Runtime initialized", {
       workspaceId: this.workspace.id,
       jobCount: this.jobs.size,
       jobs: Array.from(this.jobs.keys()),
+      mountCount: this.mountBindings.size,
     });
+  }
+
+  private async resolveMounts(mounts: MemoryMount[]): Promise<void> {
+    const adapter = this.options.memoryAdapter;
+    if (!adapter) {
+      throw new Error("memoryMounts requires memoryAdapter in WorkspaceRuntimeOptions");
+    }
+
+    for (const mount of mounts) {
+      const sourceId = mount.source;
+      const sourceParts = sourceId.split("/");
+      const sourceWsId = sourceParts[0];
+      const corpusKind = sourceParts[1];
+      const corpusName = sourceParts[2];
+
+      if (!sourceWsId || !corpusKind || !corpusName) {
+        throw new MountSourceNotFoundError(
+          sourceId,
+          `Mount '${mount.name}': invalid source format '${mount.source}' — ` +
+            `expected '{workspaceId}/{kind}/{corpusName}'`,
+        );
+      }
+
+      if (corpusKind !== "narrative") {
+        throw new MountSourceNotFoundError(
+          sourceId,
+          `Mount '${mount.name}': only narrative corpora are supported for mounts, got '${corpusKind}'`,
+        );
+      }
+
+      mountRegistry.registerSource(sourceId, () =>
+        adapter.corpus(sourceWsId, corpusName, "narrative"),
+      );
+      mountRegistry.addConsumer(sourceId, this.workspace.id);
+
+      let resolvedCorpus: NarrativeCorpus;
+      try {
+        resolvedCorpus = await adapter.corpus(sourceWsId, corpusName, "narrative");
+      } catch {
+        throw new MountSourceNotFoundError(
+          sourceId,
+          `Mount '${mount.name}': source corpus '${mount.source}' not found — ` +
+            `check memory.mounts[].source in workspace config`,
+        );
+      }
+
+      const binding = new MountedCorpusBinding({
+        name: mount.name,
+        source: mount.source,
+        mode: mount.mode,
+        scope: mount.scope,
+        scopeTarget: mount.scopeTarget,
+        read: (filter) => resolvedCorpus.read(filter),
+        append: (entry) => resolvedCorpus.append(entry),
+      });
+
+      this.mountBindings.set(mount.name, binding);
+
+      logger.debug("Resolved mount binding", {
+        workspaceId: this.workspace.id,
+        mount: mount.name,
+        source: mount.source,
+        mode: mount.mode,
+        scope: mount.scope,
+      });
+    }
+  }
+
+  getMountsForAgent(agentId: string, jobName?: string): Record<string, CorpusMountBinding> {
+    const result: Record<string, CorpusMountBinding> = {};
+    for (const binding of this.mountBindings.values()) {
+      switch (binding.scope) {
+        case "workspace":
+          result[binding.name] = binding;
+          break;
+        case "job":
+          if (jobName && binding.scopeTarget === jobName) {
+            result[binding.name] = binding;
+          }
+          break;
+        case "agent":
+          if (binding.scopeTarget === agentId) {
+            result[binding.name] = binding;
+          }
+          break;
+      }
+    }
+    return result;
   }
 
   private async discoverFSMFiles(workspacePath: string): Promise<string[]> {

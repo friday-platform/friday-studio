@@ -38,13 +38,13 @@ export const IngestOptsSchema = z.object({
 });
 
 export const IngestResultSchema = z.object({
-  ingested: z.number().int(),
-  skipped: z.number().int(),
+  ingested: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
 });
 
 export const RetrievalQuerySchema = z.object({
   text: z.string(),
-  topK: z.number().int().optional(),
+  topK: z.number().int().positive().optional(),
 });
 
 export const RetrievalOptsSchema = z.object({
@@ -59,9 +59,11 @@ export const HitSchema = z.object({
 });
 
 export const RetrievalStatsSchema = z.object({
-  count: z.number().int(),
-  sizeBytes: z.number().int(),
+  count: z.number().int().nonnegative(),
+  sizeBytes: z.number().nonnegative(),
 });
+
+export const DedupEntrySchema = z.record(z.string(), z.unknown());
 
 export const HistoryFilterSchema = z.object({
   corpus: z.string().optional(),
@@ -80,6 +82,30 @@ export const CorpusMetadataSchema = z.object({
   name: z.string(),
   kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
   workspaceId: z.string(),
+});
+
+export const StatusMetadataSchema = z.object({
+  status: z.enum(["in_progress", "completed", "blocked"]),
+  task_id: z.string().optional(),
+  dispatched_session_id: z.string().optional(),
+});
+
+// ── Reflection-specific schemas (for corpus entries written by the reflector) ─
+
+export const ReflectionMetadataSchema = z.object({
+  target_workspace_id: z.string(),
+  target_session_id: z.string(),
+  finding_type: z.enum(["SKILL_GAP", "PROCESS_DRIFT", "ANOMALY", "INFO"]),
+  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
+  proposed_action: z.string(),
+});
+
+export const ReflectionNarrativeEntrySchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().min(1),
+  author: z.literal("reflector"),
+  createdAt: z.string().datetime(),
+  metadata: ReflectionMetadataSchema,
 });
 
 // ── TypeScript types (authoritative — verbatim from plan) ───────────────────

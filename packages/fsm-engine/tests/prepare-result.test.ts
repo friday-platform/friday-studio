@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePrepareResult } from "../fsm-engine.ts";
-import type { AgentAction, Context, FSMDefinition } from "../types.ts";
+import type { AgentAction, Context, FSMDefinition, SignalWithContext } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
 
 describe("parsePrepareResult", () => {
@@ -377,5 +377,275 @@ describe("Engine: code action return values as context.input", () => {
     // Verify other context fields still present
     expect(capturedContext).toHaveProperty("documents");
     expect(capturedContext).toHaveProperty("state");
+  });
+
+  it("second agent in same action sequence preserves prepare context", async () => {
+    const capturedContexts: { agentId: string; ctx: Context }[] = [];
+
+    const fsm: FSMDefinition = {
+      id: "two-agent-sequence",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                { type: "code", function: "prepare" },
+                { type: "agent", agentId: "planner", outputTo: "plan_result" },
+                { type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      functions: {
+        prepare: {
+          type: "action",
+          code: `export default function prepare() { return { task: "Plan and dispatch", config: { workDir: "/workspace/atlas", stream: true } }; }`,
+        },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: (action: AgentAction, ctx: Context) => {
+        capturedContexts.push({ agentId: action.agentId, ctx });
+        return Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { response: `${action.agentId} done` },
+          durationMs: 0,
+        });
+      },
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" });
+
+    expect(capturedContexts).toHaveLength(2);
+
+    const plannerCtx = capturedContexts.find((c) => c.agentId === "planner");
+    const dispatcherCtx = capturedContexts.find((c) => c.agentId === "dispatcher");
+
+    expect(plannerCtx).toBeDefined();
+    expect(dispatcherCtx).toBeDefined();
+
+    expect(plannerCtx?.ctx.input).toMatchObject({
+      task: "Plan and dispatch",
+      config: { workDir: "/workspace/atlas", stream: true },
+    });
+
+    expect(dispatcherCtx?.ctx.input).toMatchObject({
+      task: "Plan and dispatch",
+      config: { workDir: "/workspace/atlas", stream: true },
+    });
+  });
+
+  it("second agent sees first agent results but keeps prepare input", async () => {
+    const capturedContexts: { agentId: string; ctx: Context }[] = [];
+
+    const fsm: FSMDefinition = {
+      id: "two-agent-results",
+      initial: "idle",
+      states: {
+        idle: {
+          on: {
+            START: {
+              target: "done",
+              actions: [
+                { type: "code", function: "prepare" },
+                { type: "agent", agentId: "planner", outputTo: "plan_result" },
+                { type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+      functions: {
+        prepare: {
+          type: "action",
+          code: `export default function prepare() { return { task: "Execute pipeline", config: { httpEndpoint: "http://localhost:8080" } }; }`,
+        },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: (action: AgentAction, ctx: Context) => {
+        capturedContexts.push({ agentId: action.agentId, ctx });
+        return Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { summary: `${action.agentId} completed` },
+          durationMs: 0,
+        });
+      },
+    });
+    await engine.initialize();
+
+    await engine.signal({ type: "START" });
+
+    expect(capturedContexts).toHaveLength(2);
+
+    const dispatcherCtx = capturedContexts[1];
+    expect(dispatcherCtx?.agentId).toBe("dispatcher");
+    expect(dispatcherCtx?.ctx.input?.config).toMatchObject({
+      httpEndpoint: "http://localhost:8080",
+    });
+    expect(dispatcherCtx?.ctx.results).toHaveProperty("plan_result");
+    expect(dispatcherCtx?.ctx.results.plan_result).toMatchObject({ summary: "planner completed" });
+  });
+
+  it("cascaded signal preserves trigger data across separate FSM states", async () => {
+    const capturedSignals: { agentId: string; signal: SignalWithContext }[] = [];
+
+    const fsm: FSMDefinition = {
+      id: "two-state-agents",
+      initial: "idle",
+      states: {
+        idle: { on: { trigger: { target: "step_plan" } } },
+        step_plan: {
+          entry: [
+            { type: "code", function: "prepare_plan" },
+            { type: "agent", agentId: "planner", outputTo: "plan_result" },
+            { type: "emit", event: "ADVANCE" },
+          ],
+          on: { ADVANCE: { target: "step_dispatch" } },
+        },
+        step_dispatch: {
+          entry: [
+            { type: "code", function: "prepare_dispatch" },
+            { type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" },
+          ],
+          type: "final",
+        },
+      },
+      functions: {
+        prepare_plan: {
+          type: "action",
+          code: `export default function prepare_plan() { return { task: "Plan the work" }; }`,
+        },
+        prepare_dispatch: {
+          type: "action",
+          code: `export default function prepare_dispatch(context) {
+            var plan = context.results['plan_result'];
+            return { task: "Dispatch: " + (plan ? plan.summary : "no plan"), config: { workDir: "/ws" } };
+          }`,
+        },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: (action: AgentAction, _ctx: Context, signal: SignalWithContext) => {
+        capturedSignals.push({ agentId: action.agentId, signal });
+        return Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { summary: `${action.agentId} done` },
+          durationMs: 0,
+        });
+      },
+    });
+    await engine.initialize();
+
+    const streamEvents: unknown[] = [];
+    await engine.signal(
+      { type: "trigger", data: { streamId: "chat-123", datetime: { tz: "America/Los_Angeles" } } },
+      {
+        sessionId: "sess-1",
+        workspaceId: "ws-1",
+        onStreamEvent: (chunk) => streamEvents.push(chunk),
+      },
+    );
+
+    expect(capturedSignals).toHaveLength(2);
+
+    const plannerSig = capturedSignals.find((c) => c.agentId === "planner");
+    const dispatcherSig = capturedSignals.find((c) => c.agentId === "dispatcher");
+
+    expect(plannerSig?.signal.data).toMatchObject({
+      streamId: "chat-123",
+      datetime: { tz: "America/Los_Angeles" },
+    });
+
+    expect(dispatcherSig?.signal.data).toMatchObject({
+      streamId: "chat-123",
+      datetime: { tz: "America/Los_Angeles" },
+    });
+
+    expect(dispatcherSig?.signal._context?.sessionId).toBe("sess-1");
+    expect(dispatcherSig?.signal._context?.onStreamEvent).toBeDefined();
+  });
+
+  it("emit action with explicit data overrides parent signal data", async () => {
+    const capturedSignals: { agentId: string; signal: SignalWithContext }[] = [];
+
+    const fsm: FSMDefinition = {
+      id: "emit-override",
+      initial: "idle",
+      states: {
+        idle: { on: { trigger: { target: "step_a" } } },
+        step_a: {
+          entry: [{ type: "emit", event: "NEXT", data: { custom: "override" } }],
+          on: { NEXT: { target: "step_b" } },
+        },
+        step_b: {
+          entry: [{ type: "agent", agentId: "worker", outputTo: "result" }],
+          type: "final",
+        },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: (action: AgentAction, _ctx: Context, signal: SignalWithContext) => {
+        capturedSignals.push({ agentId: action.agentId, signal });
+        return Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { done: true },
+          durationMs: 0,
+        });
+      },
+    });
+    await engine.initialize();
+
+    await engine.signal(
+      { type: "trigger", data: { streamId: "orig-stream" } },
+      { sessionId: "s1", workspaceId: "w1" },
+    );
+
+    expect(capturedSignals).toHaveLength(1);
+    const workerSig = capturedSignals[0];
+    expect(workerSig?.signal.data).toMatchObject({ custom: "override" });
+    expect(workerSig?.signal.data).not.toHaveProperty("streamId");
   });
 });

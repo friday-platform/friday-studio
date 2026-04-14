@@ -1039,8 +1039,10 @@ export class FSMEngine {
           hasData: !!s.data,
         });
         // Cascaded signals inherit parent's context (including onEvent callback)
+        // and fall back to parent's data when the emitted signal has none, so
+        // session-scoped fields (streamId, datetime) survive across FSM states.
         const cascadedSignal: SignalWithContext = sig._context
-          ? { ...s, _context: sig._context }
+          ? { ...s, data: s.data ?? sig.data, _context: sig._context }
           : s;
         signals.push(cascadedSignal);
         return Promise.resolve();
@@ -1678,7 +1680,11 @@ export class FSMEngine {
         throw error;
       }
 
-      return codeActionResult;
+      // Code actions produce new prepareResults (or clear them by returning
+      // null). Non-code actions (agent, llm, emit) pass through the incoming
+      // prepareResult so subsequent actions in the same entry sequence still
+      // receive the prepare context (input.config with workDir, streaming, etc.).
+      return action.type === "code" ? codeActionResult : prepareResult;
     }; // end executeInSpan
 
     return await withOtelSpan("fsm.action", otelAttrs, executeInSpan);

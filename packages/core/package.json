@@ -26,7 +26,8 @@
     "./agent-loader": "./src/agent-loader/index.ts",
     "./agent-loader/user-adapter": "./src/agent-loader/adapters/user-adapter.ts",
     "./errors/missing-environment": "./src/errors/missing-environment-error.ts",
-    "./errors/workspace-not-found": "./src/errors/workspace-not-found-error.ts"
+    "./errors/workspace-not-found": "./src/errors/workspace-not-found-error.ts",
+    "./mount-registry": "./src/mount-registry/mod.ts"
   },
   "main": "./mod.ts",
   "dependencies": {

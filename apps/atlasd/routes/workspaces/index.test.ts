@@ -137,6 +137,146 @@ describe("POST /workspaces/:workspaceId/update validation", () => {
 });
 
 // =============================================================================
+// POST /workspaces/:workspaceId/update — active-session guard
+// =============================================================================
+
+function makeSession(id: string, status: string) {
+  return { id, jobName: "test", signalId: "sig", startedAt: new Date(), session: { id, status } };
+}
+
+function createTestAppWithRuntime(options: {
+  sessions?: ReturnType<typeof makeSession>[];
+  orchestratorActiveExecutions?: boolean;
+  includeOrchestrator?: boolean;
+}) {
+  const {
+    sessions = [],
+    orchestratorActiveExecutions = false,
+    includeOrchestrator = false,
+  } = options;
+
+  const mockRuntime: Record<string, unknown> = { getSessions: vi.fn().mockReturnValue(sessions) };
+  if (includeOrchestrator) {
+    mockRuntime.getOrchestrator = vi
+      .fn()
+      .mockReturnValue({
+        hasActiveExecutions: vi.fn().mockReturnValue(orchestratorActiveExecutions),
+      });
+  }
+
+  const mockWorkspace = {
+    id: "ws-test",
+    path: "/tmp/ws-test",
+    status: "idle",
+    metadata: {},
+    name: "Test Workspace",
+  };
+
+  const mockWorkspaceManager = {
+    find: vi.fn().mockResolvedValue(mockWorkspace),
+    list: vi.fn().mockResolvedValue([]),
+    getWorkspaceConfig: vi.fn().mockResolvedValue(null),
+    registerWorkspace: vi.fn(),
+    deleteWorkspace: vi.fn(),
+  } as unknown as WorkspaceManager;
+
+  const mockContext: AppContext = {
+    runtimes: new Map(),
+    startTime: Date.now(),
+    sseClients: new Map(),
+    sseStreams: new Map(),
+    getWorkspaceManager: () => mockWorkspaceManager,
+    getOrCreateWorkspaceRuntime: vi.fn(),
+    resetIdleTimeout: vi.fn(),
+    getWorkspaceRuntime: vi.fn().mockReturnValue(mockRuntime),
+    destroyWorkspaceRuntime: vi.fn(),
+    getLibraryStorage: vi.fn(),
+    getAgentRegistry: vi.fn(),
+    getOrCreateChatSdkInstance: vi.fn(),
+    evictChatSdkInstance: vi.fn(),
+    getLedgerAdapter: vi.fn(),
+    getActivityAdapter: vi.fn(),
+    daemon: {
+      getWorkspaceManager: () => mockWorkspaceManager,
+      runtimes: new Map(),
+    } as unknown as AppContext["daemon"],
+    streamRegistry: {} as AppContext["streamRegistry"],
+    sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+  };
+
+  const app = new Hono<AppVariables>();
+  app.use("*", async (c, next) => {
+    c.set("app", mockContext);
+    await next();
+  });
+  app.route("/workspaces", workspacesRoutes);
+
+  return { app };
+}
+
+describe("POST /workspaces/:workspaceId/update — session guard", () => {
+  test("returns 409 when active session exists and force is absent", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [makeSession("sess-abc", "active")] });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
+    expect(res.status).toBe(409);
+  });
+
+  test("returns 409 when active session exists and force is false", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [makeSession("sess-abc", "active")] });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {}, force: false });
+    expect(res.status).toBe(409);
+  });
+
+  test("returns 409 when orchestrator.hasActiveExecutions() is true and force is absent", async () => {
+    const { app } = createTestAppWithRuntime({
+      sessions: [],
+      includeOrchestrator: true,
+      orchestratorActiveExecutions: true,
+    });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
+    expect(res.status).toBe(409);
+  });
+
+  test("409 response body contains expected fields", async () => {
+    const { app } = createTestAppWithRuntime({
+      sessions: [makeSession("sess-xyz", "active"), makeSession("sess-def", "active")],
+    });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: false,
+      error: expect.stringContaining("force=true"),
+      activeSessionIds: expect.arrayContaining(["sess-xyz", "sess-def"]),
+      hasActiveExecutions: false,
+    });
+  });
+
+  test("proceeds past guard when force=true even if active sessions exist", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [makeSession("sess-abc", "active")] });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {}, force: true });
+    expect(res.status).not.toBe(409);
+  });
+
+  test("proceeds normally when no active sessions and hasActiveExecutions=false", async () => {
+    const { app } = createTestAppWithRuntime({
+      sessions: [makeSession("sess-abc", "completed")],
+      includeOrchestrator: true,
+      orchestratorActiveExecutions: false,
+    });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
+    expect(res.status).not.toBe(409);
+  });
+
+  test("proceeds normally when orchestrator is not available and no active sessions", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [], includeOrchestrator: false });
+    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
+    expect(res.status).not.toBe(409);
+  });
+});
+
+// =============================================================================
 // formatJobName
 // =============================================================================
 

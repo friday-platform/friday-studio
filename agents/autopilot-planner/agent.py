@@ -17,7 +17,10 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py nee
 # is available in the WASM stdlib sandbox. Extension preserved for operator
 # backwards-compat with renamed .json files.
 BACKLOG_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/mild_almond/narrative/autopilot-backlog"
+    "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog"
+)
+DISPATCH_LOG_URL_DEFAULT = (
+    "http://localhost:8080/api/memory/thick_endive/narrative/dispatch-log"
 )
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
 
@@ -46,9 +49,6 @@ def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, An
             "payload": meta.get("payload", {}),
         })
     return {"tasks": tasks}
-
-
-_LAST_FIRED_DIAG: dict[str, Any] = {}
 
 
 def _is_leap(year: int) -> bool:
@@ -99,86 +99,85 @@ def _iso_subtract_seconds(iso: str, seconds: int) -> str | None:
         return None
 
 
-def _fired_within(ctx: Any, platform_url: str, workspace_id: str, signal_id: str, cooldown_s: int, match_job_name: str | None = None) -> bool:
-    """Return True if signal_id was the target of any session started within the last cooldown_s seconds.
-
-    Uses ISO string comparison (lexical sort works for ISO 8601). Fetches
-    the daemon's current time from /health, computes the cutoff ISO by
-    subtracting cooldown_s, then compares each recent session's startedAt
-    against the cutoff. Falls back to position-based check if the time
-    fetch fails.
-    """
-    diag: dict[str, Any] = {"workspace_id": workspace_id, "signal_id": signal_id, "cooldown_s": cooldown_s}
-    _LAST_FIRED_DIAG.clear()
-    _LAST_FIRED_DIAG.update(diag)
-
+def _now_iso(ctx: Any, platform_url: str) -> str | None:
+    """Fetch the daemon's current ISO timestamp from /health."""
     try:
-        # Fetch daemon's "now"
-        cutoff_iso: str | None = None
-        try:
-            health_url = f"{platform_url}/health"
-            health_resp = ctx.http.fetch(health_url, method="GET", timeout_ms=3000)
-            if health_resp.status == 200:
-                health_data = json.loads(health_resp.body or "{}")
-                now_iso = health_data.get("timestamp")
-                if isinstance(now_iso, str):
-                    cutoff_iso = _iso_subtract_seconds(now_iso, cooldown_s)
-                    _LAST_FIRED_DIAG["now_iso"] = now_iso
-                    _LAST_FIRED_DIAG["cutoff_iso"] = cutoff_iso
-        except Exception:  # noqa: BLE001
-            pass
-
-        # Fetch recent sessions
-        url = f"{platform_url}/api/sessions?workspaceId={workspace_id}&limit=20"
-        resp = ctx.http.fetch(url, method="GET", timeout_ms=5000)
+        resp = ctx.http.fetch(f"{platform_url}/health", method="GET", timeout_ms=3000)
         if resp.status != 200:
-            _LAST_FIRED_DIAG["error"] = f"GET {resp.status}"
-            return False
+            return None
         data = json.loads(resp.body or "{}")
-        sessions = data.get("sessions") if isinstance(data, dict) else data
-        if not isinstance(sessions, list):
-            _LAST_FIRED_DIAG["error"] = "sessions not a list"
-            return False
-        _LAST_FIRED_DIAG["session_count"] = len(sessions)
+        ts = data.get("timestamp")
+        return ts if isinstance(ts, str) else None
+    except Exception:  # noqa: BLE001
+        return None
 
-        # Build the set of names that count as a "match" for this signal.
-        # Sessions don't record the signal name, only jobName. Some signals
-        # trigger jobs with a different name (e.g. apply-approved-reflection
-        # → apply-reflection). The backlog task can pass match_job_name to
-        # disambiguate.
-        match_names = {signal_id}
-        if match_job_name:
-            match_names.add(match_job_name)
-        _LAST_FIRED_DIAG["match_names"] = list(match_names)
 
-        for idx, s in enumerate(sessions):
-            if not isinstance(s, dict):
-                continue
-            if s.get("jobName") not in match_names and s.get("signalId") not in match_names:
-                continue
-            started = s.get("startedAt")
-            if not isinstance(started, str):
-                continue
-            # Time-based check: ISO string comparison (lexical sort works)
-            if cutoff_iso is not None:
-                # Strip subseconds + Z for comparable form
-                started_clean = started.replace("Z", "").split(".", 1)[0]
-                if started_clean >= cutoff_iso:
-                    _LAST_FIRED_DIAG["matched_at_position"] = idx
-                    _LAST_FIRED_DIAG["matched_started_at"] = started
-                    return True
-            else:
-                # Fallback to position-based heuristic if cutoff calc failed
-                n_window = max(1, min(20, cooldown_s // 60))
-                if idx < n_window:
-                    _LAST_FIRED_DIAG["matched_at_position"] = idx
-                    _LAST_FIRED_DIAG["fallback"] = "position-based"
-                    return True
-        _LAST_FIRED_DIAG["matched_at_position"] = -1
+def _last_dispatch_iso(ctx: Any, dispatch_log_url: str, task_id: str) -> str | None:
+    """Return ISO string of the most recent dispatch for this task_id, or None.
+
+    Reads the dispatch-log narrative corpus on the kernel workspace, filters
+    entries where id == task_id, returns the max createdAt. Per-task tracking
+    means cooldown is applied to THIS task, not to the signal it fires.
+    """
+    try:
+        resp = ctx.http.fetch(dispatch_log_url, method="GET", timeout_ms=3000)
+        if resp.status != 200:
+            return None
+        entries = json.loads(resp.body or "[]")
+        if not isinstance(entries, list):
+            return None
+        candidates = [e for e in entries if isinstance(e, dict) and e.get("id") == task_id]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
+        return candidates[0].get("createdAt")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _within_cooldown(now_iso: str | None, last_iso: str | None, cooldown_s: int) -> bool:
+    """ISO-string comparison cooldown check. Returns True if last_iso is within cooldown_s of now_iso."""
+    if not last_iso or not now_iso:
         return False
-    except Exception as exc:  # noqa: BLE001 — be defensive, fail open
-        _LAST_FIRED_DIAG["exception"] = str(exc)[:200]
+    cutoff = _iso_subtract_seconds(now_iso, cooldown_s)
+    if not cutoff:
         return False
+    last_clean = last_iso.replace("Z", "").split(".", 1)[0]
+    return last_clean >= cutoff
+
+
+def _log_dispatch(
+    ctx: Any,
+    dispatch_log_url: str,
+    task_id: str,
+    target_workspace_id: str,
+    target_signal_id: str,
+    session_id: str | None,
+    now_iso: str | None,
+) -> None:
+    """POST a dispatch record to the dispatch-log corpus. Best-effort; never raises."""
+    try:
+        body = json.dumps({
+            "id": task_id,
+            "text": f"Dispatched {task_id} → {target_workspace_id}/{target_signal_id} session={session_id or '?'}",
+            "createdAt": now_iso,
+            "metadata": {
+                "task_id": task_id,
+                "target_workspace_id": target_workspace_id,
+                "target_signal_id": target_signal_id,
+                "session_id": session_id,
+                "dispatched_at": now_iso,
+            },
+        })
+        ctx.http.fetch(
+            dispatch_log_url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=body,
+            timeout_ms=5000,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> list[dict[str, Any]]:
@@ -194,13 +193,15 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.3.1",
+    version="1.4.0",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
-        "and dependency resolution, and returns the next task to execute. "
-        "No LLM call — this is a router, not a reasoner. Consumed by the "
-        "autopilot workspace's autopilot-tick FSM as its first step."
+        "and dependency resolution, returns the next task to execute, fires "
+        "the target signal inline, and logs the dispatch to a per-task "
+        "dispatch-log corpus. v1.4.0: per-TASK cooldown (was per-signal in "
+        "v1.3.x) — fixes the lockout where one task firing locked all tasks "
+        "sharing the same target signal."
     ),
     summary="Selects the next pending backlog task to execute; returns idle when none are eligible.",
     examples=[
@@ -268,24 +269,32 @@ def execute(prompt, ctx):
             "rationale": "no eligible tasks",
         })
 
-    # ── Skip-recent filter ──────────────────────────────────────────
-    # Walk eligible tasks and pick the first that hasn't fired in the
-    # cooldown window. Default cooldown 600s. Stops the cron-driven
-    # treadmill where the same highest-priority task fires every tick.
+    # ── Per-task cooldown filter ────────────────────────────────────
+    # v1.4.0: track last dispatch per TASK_ID via the dispatch-log
+    # narrative corpus on the kernel workspace. v1.3.x's per-signal
+    # cooldown locked out every task sharing a target signal after
+    # one fired — useless for parity work where many tasks share
+    # braised_biscuit/run-task. Default cooldown 600s.
     cooldown_s = int(cfg.get("cooldown_s", 600))
     platform_url = cfg.get("platformUrl", PLATFORM_URL_DEFAULT)
+    dispatch_log_url = cfg.get("dispatch_log_url", DISPATCH_LOG_URL_DEFAULT)
+    now_iso = _now_iso(ctx, platform_url)
+
     chosen_task = None
     skip_reasons: list[str] = []
     for candidate in eligible:
+        cand_id = candidate.get("id")
         cand_payload = candidate.get("payload") or {}
         cand_ws = cand_payload.get("workspace_id")
         cand_sig = cand_payload.get("signal_id")
-        if not cand_ws or not cand_sig:
-            chosen_task = candidate
-            break
-        cand_match_job = candidate.get("match_job_name")
-        if _fired_within(ctx, platform_url, cand_ws, cand_sig, cooldown_s, cand_match_job):
-            skip_reasons.append(f"{candidate.get('id')} (fired in last {cooldown_s}s)")
+        if not cand_id or not cand_ws or not cand_sig:
+            # Tasks missing dispatch info aren't eligible to fire — skip rather
+            # than crash the whole tick; the operator can backfill the payload.
+            skip_reasons.append(f"{cand_id or '?'} (missing id/workspace_id/signal_id)")
+            continue
+        last_iso = _last_dispatch_iso(ctx, dispatch_log_url, cand_id)
+        if _within_cooldown(now_iso, last_iso, cooldown_s):
+            skip_reasons.append(f"{cand_id} (last dispatch {last_iso})")
             continue
         chosen_task = candidate
         break
@@ -319,6 +328,13 @@ def execute(prompt, ctx):
     # the dispatch itself in the same FSM step. POST with a short timeout
     # and return immediately — fire-and-forget. Polling is dropped; the
     # daemon's session list will reflect the work asynchronously.
+    # Daemon's signal POST blocks until the FSM completes, which can take
+    # minutes for claude-code targets. We use a SHORT timeout (1500ms) and
+    # ALWAYS log to dispatch-log on the abort — the dispatch went through
+    # on the daemon side; we just can't see the response. The cooldown
+    # mechanism cares about "did we already try this task", not "did it
+    # succeed". A genuine failure (4xx, missing workspace) at most causes
+    # a re-dispatch a cooldown period later.
     fire_url = f"{cfg.get('platformUrl', PLATFORM_URL_DEFAULT)}/api/workspaces/{target_workspace_id}/signals/{target_signal_id}"
     fire_payload = {"payload": payload}
     fire_status: int | str = "fired"
@@ -330,7 +346,7 @@ def execute(prompt, ctx):
             method="POST",
             headers={"Content-Type": "application/json"},
             body=body,
-            timeout_ms=5000,
+            timeout_ms=1500,
         )
         fire_status = resp.status
         if resp.status == 200 and resp.body:
@@ -341,6 +357,18 @@ def execute(prompt, ctx):
     except Exception as exc:  # noqa: BLE001 — host fetch may raise opaque errors
         fire_status = f"fetch-error: {str(exc)[:160]}"
 
+    # Log dispatch unconditionally — see comment above. The dispatch-log
+    # is the cooldown source of truth, not the daemon response.
+    _log_dispatch(
+        ctx,
+        dispatch_log_url,
+        task.get("id"),
+        target_workspace_id,
+        target_signal_id,
+        fire_session_id,
+        now_iso,
+    )
+
     return ok({
         "action": "execute",
         "task_id": task.get("id"),
@@ -350,10 +378,9 @@ def execute(prompt, ctx):
         "task_kind": task.get("kind"),
         "fired_status": fire_status,
         "fired_session_id": fire_session_id,
-        "fired_diag": dict(_LAST_FIRED_DIAG),
         "rationale": (
             f"Selected and fired task '{task.get('id')}' (priority={task.get('priority', 0)}, "
             f"kind={task.get('kind')}). Fire status: {fire_status}. "
-            f"Cooldown diag: {dict(_LAST_FIRED_DIAG)}"
+            f"Skipped: {len(skip_reasons)} ({'; '.join(skip_reasons[:3])}{'...' if len(skip_reasons) > 3 else ''})."
         ),
     })

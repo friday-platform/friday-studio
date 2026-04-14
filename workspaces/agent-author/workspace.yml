@@ -1,0 +1,448 @@
+version: '1.0'
+workspace:
+  name: FAST Agent Author
+  description: >-
+    Architect → coder → reviewer pipeline specialized for authoring Python WASM agents in
+    /workspace/atlas/agents/. Reads canonical examples from
+    /workspace/agent-sdk/packages/python/examples/ as plan source. All three agents are claude-code
+    with fs access to both the SDK source and the example agents. Daemon auto-builds new agents on
+    next restart via AGENT_SOURCE_DIR.
+skills:
+  - name: '@tempest/fast-self-modification'
+signals:
+  author-agent:
+    description: >-
+      Architect reads SDK examples + the brief, coder writes agents/<agent_id>/agent.py, reviewer
+      cross-references the file against canonical patterns and componentize-py constraints. Daemon
+      auto-build happens on next platform restart.
+    title: Author a new Python WASM agent
+    schema:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          title: Agent ID
+          description: 'snake-case id, becomes the directory name.'
+        agent_brief:
+          type: string
+          title: Agent brief
+          description: >-
+            What the agent does, in prose. The architect reads this plus canonical examples and
+            produces a design memo.
+        example_to_match:
+          type: string
+          title: Example to model after
+          description: >-
+            Optional. Path under /workspace/agent-sdk/packages/python/examples/ of the closest
+            canonical example. If omitted the architect picks the nearest match.
+      required:
+        - agent_id
+        - agent_brief
+    provider: http
+    config:
+      path: /webhooks/author-agent
+jobs:
+  author-agent:
+    description: >-
+      Architect → coder → reviewer pipeline for new agents. Daemon auto-build picks them up on next
+      restart.
+    title: Author a Python WASM agent
+    triggers:
+      - signal: author-agent
+    fsm:
+      id: agent-author-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            author-agent:
+              target: step_research
+        step_research:
+          entry:
+            - type: code
+              function: prepare_research
+            - type: agent
+              agentId: architect
+              outputTo: memo-output
+              outputType: design-memo-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement
+              guards:
+                - guard_memo_done
+        step_implement:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: coder
+              outputTo: impl-output
+              outputType: coder-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review
+              guards:
+                - guard_impl_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: reviewer
+              outputTo: review-output
+              outputType: review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_review_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+        prepare_research:
+          type: action
+          code: |
+            export default function prepare_research(context, event) {
+              var agentId = event.data && event.data.agent_id;
+              var brief = event.data && event.data.agent_brief;
+              var example = (event.data && event.data.example_to_match) || '';
+
+              if (!agentId || typeof agentId !== 'string') {
+                throw new Error('Missing required input: agent_id');
+              }
+              if (!brief || typeof brief !== 'string') {
+                throw new Error('Missing required input: agent_brief');
+              }
+
+              context.setResult('task-input', {
+                agentId: agentId,
+                brief: brief,
+                example: example,
+              });
+
+              return {
+                task: 'Design memo for agent ' + agentId + ': ' + brief,
+                config: {
+                  agent_id: agentId,
+                  agent_brief: brief,
+                  example_to_match: example,
+                  agent_dir: '/workspace/atlas/agents/' + agentId,
+                  examples_root: '/workspace/agent-sdk/packages/python/examples',
+                  sdk_root: '/workspace/atlas/packages/sdk-python',
+                },
+              };
+            }
+        guard_memo_done:
+          type: guard
+          code: |
+            export default function guard_memo_done(context, event) {
+              return context.results['memo-output'] !== undefined;
+            }
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              var memo = context.results['memo-output'];
+              var task = context.results['task-input'];
+              if (!memo) throw new Error('Memo not found');
+              if (!task) throw new Error('Task input not found');
+              return {
+                task: 'Implement agent ' + task.agentId,
+                config: {
+                  workDir: '/workspace/atlas',
+                  agent_id: task.agentId,
+                  agent_dir: '/workspace/atlas/agents/' + task.agentId,
+                  memo: memo,
+                },
+              };
+            }
+        guard_impl_done:
+          type: guard
+          code: |
+            export default function guard_impl_done(context, event) {
+              return context.results['impl-output'] !== undefined;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var memo = context.results['memo-output'];
+              var impl = context.results['impl-output'];
+              var task = context.results['task-input'];
+              if (!memo || !impl || !task) {
+                throw new Error('Missing memo, impl, or task input');
+              }
+              return {
+                task: 'Review agent ' + task.agentId,
+                config: {
+                  workDir: '/workspace/atlas',
+                  agent_id: task.agentId,
+                  agent_dir: '/workspace/atlas/agents/' + task.agentId,
+                  memo: memo,
+                  changes: impl,
+                  examples_root: '/workspace/agent-sdk/packages/python/examples',
+                  sdk_root: '/workspace/atlas/packages/sdk-python',
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              return context.results['review-output'] !== undefined;
+            }
+      documentTypes:
+        design-memo-result:
+          type: object
+          properties:
+            plan_citations:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  file:
+                    type: string
+                  line_start:
+                    type: integer
+                  line_end:
+                    type: integer
+                  verbatim:
+                    type: string
+                required:
+                  - file
+                  - verbatim
+            files_to_create:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  purpose:
+                    type: string
+                  key_types:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - path
+                  - purpose
+            integration_notes:
+              type: string
+          required:
+            - plan_citations
+            - files_to_create
+            - integration_notes
+        coder-result:
+          type: object
+          properties:
+            files_written:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  lines_added:
+                    type: integer
+                required:
+                  - path
+            summary:
+              type: string
+          required:
+            - files_written
+            - summary
+        review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum:
+                - APPROVE
+                - NEEDS_CHANGES
+                - BLOCK
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                    enum:
+                      - CRITICAL
+                      - WARNING
+                      - SUGGESTION
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                  description:
+                    type: string
+                  plan_line:
+                    type: string
+                required:
+                  - severity
+                  - description
+                  - plan_line
+            summary:
+              type: string
+          required:
+            - verdict
+            - summary
+      tools: {}
+agents:
+  architect:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reads canonical Python agent examples + the brief, produces a design memo with verbatim
+      citations from the SDK examples.
+    prompt: |
+      You are the architect for a Python WASM agent authoring task.
+      Your job: produce a design memo for a new agent at
+      /workspace/atlas/agents/<agent_id>/agent.py.
+
+      ## Required reading (every task)
+
+      1. Read at least one canonical example from
+         /workspace/agent-sdk/packages/python/examples/. Default to
+         llm-http-agent if no example_to_match is given. The example
+         shows the canonical patterns:
+         - `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+           — required for componentize-py to find the Agent class
+         - `@agent(...)` decorator with id, version, description
+         - `def execute(prompt, ctx)` handler
+         - `ctx.llm.generate()`, `ctx.http.fetch()`, `ctx.tools.call()`
+         - Return `ok({...})` or `err("message")`
+      2. Read /workspace/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+         for ctx.* method signatures (ctx.llm, ctx.http, ctx.tools,
+         ctx.stream).
+      3. Read /workspace/atlas/packages/sdk-python/friday_agent_sdk/_decorator.py
+         for the @agent decorator field list.
+      4. If the brief mentions structured output: ctx.llm.generate_object
+         needs a JSON schema with `additionalProperties: false` on
+         every object level (strict mode requirement).
+      5. Read any existing agent at /workspace/atlas/agents/<agent_id>/
+         if updating instead of creating.
+
+      ## Hard rules from real failures
+
+      - MUST import Agent from _bridge or componentize-py errors with
+        "module 'agent' has no attribute 'Agent'"
+      - MUST use `ctx.llm.generate_object` with JSON schemas that
+        have `additionalProperties: false` on every object — strict
+        mode requirement of the LLM provider
+      - When proposing nullable fields in output: `additionalProperties:
+        false` AND the field stays in `required` (provider strict mode),
+        type expressed as `{"type": ["null", "string"]}` is REJECTED
+        by the LLM provider — use `anyOf: [{type: string}, {type: null}]`
+        when calling generate_object
+      - Async handlers are not supported — handlers are sync functions
+        that may call `ctx.http.fetch()` (which suspends via JSPI under
+        the hood)
+      - No external Python packages — only stdlib + friday_agent_sdk
+        are available inside the WASM sandbox
+
+      ## Output
+
+      Structured JSON design-memo-result with required plan_citations
+      pointing at concrete example files (with line numbers), a single
+      file_to_create entry for the new agent.py, and integration_notes
+      describing how the agent fits into the broader FAST loop.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  coder:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Writes the agent.py file per the architect's design memo. Workdir is /workspace/atlas. Agents
+      auto-build on next daemon restart, so the coder does not run a build itself.
+    prompt: |
+      You are the coder for a Python WASM agent authoring task.
+      Your input contains a design memo with file_to_create
+      pointing at /workspace/atlas/agents/<agent_id>/agent.py.
+
+      Rules:
+      1. Create the directory if missing.
+      2. Write the agent.py file exactly per the memo.
+      3. The file MUST contain `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+      4. The file MUST contain `from friday_agent_sdk import agent, ok, err`
+         (and any other types from friday_agent_sdk needed)
+      5. The file MUST have an `@agent(...)` decorator on the handler
+         function, with id matching the directory name.
+      6. The handler signature MUST be `def execute(prompt, ctx)` — sync,
+         not async.
+      7. The handler MUST return `ok({...})` or `err("message")`.
+      8. JSON schemas passed to `ctx.llm.generate_object` MUST have
+         `additionalProperties: false` on every object level.
+      9. No external Python packages — stdlib + friday_agent_sdk only.
+
+      You do NOT need to run a build. The daemon auto-builds on next
+      restart. Report the file path + a brief explanation in the
+      coder-result.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Cross-references the coder's agent.py against canonical SDK example patterns and
+      componentize-py constraints. Catches common build-blocking mistakes before next restart.
+    prompt: |
+      You are the reviewer for a Python WASM agent authoring task.
+      The agent.py is at /workspace/atlas/agents/<agent_id>/agent.py.
+
+      ## Review protocol
+
+      1. Read the coder's agent.py.
+      2. Read at least one canonical example from
+         /workspace/agent-sdk/packages/python/examples/.
+      3. Read /workspace/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+         for ctx.* method signatures.
+      4. Cross-reference for build-blocking patterns:
+
+         CRITICAL — would fail componentize-py build:
+         - Missing `from friday_agent_sdk._bridge import Agent  # noqa: F401`
+         - `async def execute(...)` (must be sync)
+         - Importing external Python packages (numpy, requests, etc.)
+         - JSON schema for ctx.llm.generate_object missing
+           `additionalProperties: false` on any object level
+
+         CRITICAL — would fail at runtime:
+         - Handler doesn't return ok() or err()
+         - @agent decorator missing required fields (id, version, description)
+         - ctx.llm.generate without explicit model parameter when no
+           agent llm config is set
+         - ctx.http.fetch with a relative URL (must be absolute)
+
+         WARNING:
+         - Agent id in @agent doesn't match directory name
+         - Long inline JSON schemas instead of module-level constants
+         - Missing input/output schemas in @agent decorator
+         - Using ctx.config without falling back to defaults
+
+      5. Verdict:
+         - APPROVE: no CRITICAL findings; agent will build and run
+         - NEEDS_CHANGES: minor issues coder can fix in one pass
+         - BLOCK: fundamental issue, architect should re-engage
+
+      6. Findings MUST cite a plan_line — either a path under
+         /workspace/agent-sdk/packages/python/examples/ for pattern
+         deviations, or _types.py / _decorator.py line for SDK shape
+         issues.
+    env:
+      ANTHROPIC_API_KEY: from_environment

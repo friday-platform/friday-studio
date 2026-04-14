@@ -1,8 +1,10 @@
 import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
+import type { MemoryAdapter, NarrativeEntry } from "./memory-adapter.ts";
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
 import type { AgentPayload } from "./result.ts";
+import type { ScratchpadAdapter } from "./scratchpad-adapter.ts";
 
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
 
@@ -276,6 +278,22 @@ export interface AgentSkill {
   referenceFiles?: Record<string, string>;
 }
 
+export interface CorpusMountBinding {
+  readonly name: string;
+  readonly source: string;
+  readonly mode: "ro" | "rw";
+  readonly scope: "workspace" | "job" | "agent";
+  readonly scopeTarget?: string;
+  read(filter?: { since?: string; limit?: number }): Promise<NarrativeEntry[]>;
+  append(entry: NarrativeEntry): Promise<NarrativeEntry>;
+}
+
+export interface AgentMemoryContext {
+  mounts: Record<string, CorpusMountBinding>;
+  adapter?: MemoryAdapter;
+  scratchpad?: ScratchpadAdapter;
+}
+
 /** Built by AtlasAgentsMCPServer before agent.execute() */
 export interface AgentContext {
   tools: AtlasTools;
@@ -290,6 +308,7 @@ export interface AgentContext {
   logger: Logger;
   abortSignal?: AbortSignal;
   telemetry?: AgentTelemetryConfig;
+  memory?: AgentMemoryContext;
 }
 
 /** Returns AgentPayload<TOutput> via ok()/err(). Execution layer adds metadata. */

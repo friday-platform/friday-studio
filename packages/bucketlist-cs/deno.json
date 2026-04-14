@@ -1,0 +1,6 @@
+{
+  "name": "@atlas/bucketlist-cs",
+  "version": "0.1.0",
+  "exports": "./mod.ts",
+  "imports": { "@atlas/agent-sdk": "../agent-sdk/src/index.ts" }
+}

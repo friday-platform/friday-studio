@@ -1,8 +1,20 @@
 export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
+// SQLite-backed corpora are NOT re-exported from the top-level barrel —
+// they pull `@db/sqlite` (FFI) which can't run in the browser. The web
+// client and playground transitively import this package via
+// @atlas/skills/schemas → @atlas/config → here, so any runtime sqlite
+// import would leak FFI into the browser bundle. Same gotcha CLAUDE.md
+// flags for @atlas/core.
+//
+// Consumers needing the sqlite backends import them from the subpath:
+//   import { SqliteRetrievalCorpus } from "@atlas/agent-sdk/backends";
+export type { SqliteRagConfig } from "./backends/index.ts";
 export { createAgent } from "./create-agent.ts";
 export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
 export { createFailTool, FailInputSchema } from "./fail-tool.ts";
 export * from "./memory-adapter.ts";
+export * from "./memory-scope.ts";
+export * from "./memory-scope-model.ts";
 export type {
   AtlasDataEvent,
   AtlasDataEvents,
@@ -22,7 +34,7 @@ export {
   SkillWriteEventSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
-export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
+export { createPlatformTools, PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export type { ResourceToolkit } from "./resource-toolkit.ts";
 export {
   createResourceLinkRefTool,
@@ -51,6 +63,7 @@ export type {
   AgentHandler,
   AgentLLMConfig,
   AgentMCPServerConfig,
+  AgentMemoryContext,
   AgentMetadata,
   AgentRegistry,
   AgentResult,
@@ -63,6 +76,7 @@ export type {
   AtlasAgentConfig,
   AtlasTool,
   AtlasTools,
+  CorpusMountBinding,
   CreateAgentConfig,
   LinkCredentialRef,
   LogContext,

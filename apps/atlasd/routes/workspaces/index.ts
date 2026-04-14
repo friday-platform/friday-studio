@@ -974,13 +974,50 @@ const workspacesRoutes = daemonFactory
     async (c) => {
       try {
         const { workspaceId } = c.req.valid("param");
-        const { config, backup } = c.req.valid("json");
+        const { config, backup, force } = c.req.valid("json");
 
         const ctx = c.get("app");
         const manager = ctx.getWorkspaceManager();
         const workspace = await manager.find({ id: workspaceId });
         if (!workspace) {
           return c.json({ success: false, error: `Workspace not found: ${workspaceId}` }, 400);
+        }
+
+        // Active-session guard. Refuse to destroy a runtime mid-session unless
+        // the caller explicitly passes force=true. Matches the failure mode
+        // documented in the FAST self-modification skill: operator edits
+        // workspace.yml while a session is running, runtime tears down,
+        // session dies with "MCP error -32000: Connection closed".
+        if (!force) {
+          const currentRuntime = ctx.getWorkspaceRuntime(workspaceId);
+          if (currentRuntime) {
+            const sessions = currentRuntime.getSessions();
+            const activeSessions = sessions.filter(
+              (s: { session: { status: string; id: string } }) => s.session.status === "active",
+            );
+            let hasActiveExecutions = false;
+            if (
+              "getOrchestrator" in currentRuntime &&
+              typeof currentRuntime.getOrchestrator === "function"
+            ) {
+              const orchestrator = currentRuntime.getOrchestrator();
+              hasActiveExecutions = orchestrator.hasActiveExecutions();
+            }
+            if (activeSessions.length > 0 || hasActiveExecutions) {
+              return c.json(
+                {
+                  success: false,
+                  error:
+                    "Workspace has active sessions or executions. Pass force=true to override.",
+                  activeSessionIds: activeSessions.map(
+                    (s: { session: { id: string } }) => s.session.id,
+                  ),
+                  hasActiveExecutions,
+                },
+                409,
+              );
+            }
+          }
         }
 
         const validationResult = WorkspaceConfigSchema.safeParse(config);

@@ -1,0 +1,104 @@
+# COMPREHENSIVE_ATLAS_EXAMPLE.yml
+#
+# Annotated workspace.yml demonstrating all available options including
+# the kernel self-improvement policy fields.
+#
+# Improvement policy controls how the FAST kernel applies findings to
+# this workspace's config. Resolution order:
+#   1. jobs.<name>.improvement  (per-job override)
+#   2. workspace-level improvement  (workspace default)
+#   3. "surface"                   (hardcoded fallback)
+
+version: '1.0'
+
+workspace:
+  name: Example Workspace
+  description: >-
+    A fully annotated example showing all workspace.yml options including
+    the improvement policy at both workspace and job levels.
+
+# Workspace-wide improvement policy.
+# "auto"    — FAST kernel applies config changes atomically via
+#             POST /api/workspaces/:id/update with backup=true.
+# "surface" — FAST kernel writes proposed config to scratchpad for
+#             human or elevated-agent review. No live mutation.
+improvement: auto
+
+skills:
+  - name: '@tempest/fast-self-modification'
+
+signals:
+  on-demand:
+    provider: http
+    title: On-demand trigger
+    description: Manually fire via HTTP POST.
+    config:
+      path: /webhooks/on-demand
+    schema:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: Task description for the agent.
+
+  nightly-cron:
+    provider: schedule
+    title: Nightly scan
+    description: Runs once per night at 02:00 UTC.
+    config:
+      schedule: '0 2 * * *'
+
+jobs:
+  on-demand-task:
+    name: on-demand-task
+    description: Responds to ad-hoc HTTP triggers.
+    title: On-demand Task
+    triggers:
+      - signal: on-demand
+    execution:
+      strategy: sequential
+      agents:
+        - id: worker
+    config:
+      timeout: 10m
+      max_steps: 15
+
+  nightly-scan:
+    name: nightly-scan
+    description: Scans for workspace drift and proposes fixes.
+    title: Nightly Scan
+    triggers:
+      - signal: nightly-cron
+    execution:
+      strategy: sequential
+      agents:
+        - id: scanner
+
+    # Per-job improvement override.
+    # This job uses "surface" even though the workspace default is "auto",
+    # because nightly scans should be reviewed before applying.
+    improvement: surface
+
+    config:
+      timeout: 30m
+      max_steps: 20
+
+agents:
+  worker:
+    type: llm
+    name: Worker Agent
+    description: Handles on-demand tasks.
+    config:
+      model: claude-sonnet-4-5-20250514
+      prompt: >-
+        You are a task worker. Execute the requested task and report results.
+
+  scanner:
+    type: llm
+    name: Scanner Agent
+    description: Scans for workspace configuration drift.
+    config:
+      model: claude-sonnet-4-5-20250514
+      prompt: >-
+        You are a workspace scanner. Identify configuration drift and
+        propose fixes as structured output.

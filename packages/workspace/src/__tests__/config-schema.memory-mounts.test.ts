@@ -1,0 +1,261 @@
+import { describe, expect, it } from "vitest";
+import {
+  CorpusKindSchema,
+  type MemoryConfig,
+  MemoryConfigSchema,
+  type MemoryMount,
+  MemoryMountSchema,
+  MemoryMountSourceSchema,
+  parseMemoryMountSource,
+} from "../config-schema.ts";
+
+function validMount(overrides: Partial<MemoryMount> = {}): Record<string, unknown> {
+  return {
+    name: "backlog",
+    source: "_global/narrative/autopilot-backlog",
+    scope: "workspace",
+    ...overrides,
+  };
+}
+
+describe("MemoryMountSchema", () => {
+  describe("source validation", () => {
+    it("accepts _global/narrative/autopilot-backlog", () => {
+      const result = MemoryMountSchema.parse(validMount());
+      expect(result.source).toBe("_global/narrative/autopilot-backlog");
+    });
+
+    it("accepts thick_endive/narrative/autopilot-backlog", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ source: "thick_endive/narrative/autopilot-backlog" }),
+      );
+      expect(result.source).toBe("thick_endive/narrative/autopilot-backlog");
+    });
+
+    it("accepts _global/kv/shared-flags", () => {
+      const result = MemoryMountSchema.parse(validMount({ source: "_global/kv/shared-flags" }));
+      expect(result.source).toBe("_global/kv/shared-flags");
+    });
+
+    it("accepts all four corpus kinds", () => {
+      for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
+        const result = MemoryMountSchema.parse(validMount({ source: `ws_1/${kind}/corpus-name` }));
+        expect(result.source).toBe(`ws_1/${kind}/corpus-name`);
+      }
+    });
+
+    it("rejects invalid kind e.g. ws/unknown/corpus", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ source: "ws/unknown/corpus" }))).toThrow();
+    });
+
+    it("rejects source with unsupported kind 'vector'", () => {
+      expect(() => MemoryMountSourceSchema.parse("ws/vector/corpus")).toThrow();
+    });
+
+    it("rejects 'bad//corpus'", () => {
+      expect(() => MemoryMountSourceSchema.parse("bad//corpus")).toThrow();
+    });
+
+    it("rejects source missing corpus name", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ source: "ws/narrative/" }))).toThrow();
+    });
+
+    it("rejects source with extra segments", () => {
+      expect(() =>
+        MemoryMountSchema.parse(validMount({ source: "ws/narrative/corpus/extra" })),
+      ).toThrow();
+    });
+
+    it("rejects empty source", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ source: "" }))).toThrow();
+    });
+  });
+
+  describe("mode", () => {
+    it("defaults to 'ro' when omitted", () => {
+      const result = MemoryMountSchema.parse(validMount());
+      expect(result.mode).toBe("ro");
+    });
+
+    it("accepts 'rw' without error", () => {
+      const result = MemoryMountSchema.parse(validMount({ mode: "rw" }));
+      expect(result.mode).toBe("rw");
+    });
+
+    it("accepts 'ro' explicitly", () => {
+      const result = MemoryMountSchema.parse(validMount({ mode: "ro" }));
+      expect(result.mode).toBe("ro");
+    });
+
+    it("rejects invalid mode", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ mode: "rw+" as "rw" }))).toThrow();
+    });
+  });
+
+  describe("scopeTarget enforcement", () => {
+    it("scope='workspace' with no scopeTarget accepts", () => {
+      const result = MemoryMountSchema.parse(validMount({ scope: "workspace" }));
+      expect(result.scope).toBe("workspace");
+      expect(result.scopeTarget).toBeUndefined();
+    });
+
+    it("scope='job' with scopeTarget set parses successfully", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ scope: "job", scopeTarget: "process-signals" }),
+      );
+      expect(result.scope).toBe("job");
+      expect(result.scopeTarget).toBe("process-signals");
+    });
+
+    it("scope='job' with no scopeTarget rejects", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ scope: "job" }))).toThrow(/scopeTarget/);
+    });
+
+    it("scope='agent' with missing scopeTarget is rejected with descriptive ZodError", () => {
+      const result = MemoryMountSchema.safeParse(validMount({ scope: "agent" }));
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const scopeTargetIssue = result.error.issues.find((issue) =>
+          issue.path.includes("scopeTarget"),
+        );
+        expect(scopeTargetIssue).toBeDefined();
+        expect(scopeTargetIssue?.message).toContain("agent");
+      }
+    });
+
+    it("scope='agent' with scopeTarget='agent-123' accepts", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ scope: "agent", scopeTarget: "agent-123" }),
+      );
+      expect(result.scopeTarget).toBe("agent-123");
+    });
+
+    it("scope='job' with empty scopeTarget rejects", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ scope: "job", scopeTarget: "" }))).toThrow(
+        /scopeTarget/,
+      );
+    });
+  });
+
+  describe("filter", () => {
+    it("accepts valid filter with since as ISO datetime", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ filter: { since: "2026-01-01T00:00:00Z" } }),
+      );
+      expect(result.filter?.since).toBe("2026-01-01T00:00:00Z");
+    });
+
+    it("accepts since with timezone offset", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ filter: { since: "2026-01-01T00:00:00+05:00" } }),
+      );
+      expect(result.filter?.since).toBe("2026-01-01T00:00:00+05:00");
+    });
+
+    it("rejects filter.since with a non-ISO string", () => {
+      expect(() =>
+        MemoryMountSchema.parse(validMount({ filter: { since: "not-a-date" } })),
+      ).toThrow();
+    });
+
+    it("accepts filter with status string", () => {
+      const result = MemoryMountSchema.parse(validMount({ filter: { status: "open" } }));
+      expect(result.filter?.status).toBe("open");
+    });
+
+    it("accepts filter with status array", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ filter: { status: ["open", "in_progress"] } }),
+      );
+      expect(result.filter?.status).toEqual(["open", "in_progress"]);
+    });
+
+    it("accepts filter with priority_min", () => {
+      const result = MemoryMountSchema.parse(validMount({ filter: { priority_min: 3 } }));
+      expect(result.filter?.priority_min).toBe(3);
+    });
+
+    it("accepts undefined filter", () => {
+      const result = MemoryMountSchema.parse(validMount());
+      expect(result.filter).toBeUndefined();
+    });
+  });
+
+  describe("required fields", () => {
+    it("rejects missing name", () => {
+      const { name: _, ...noName } = validMount();
+      expect(() => MemoryMountSchema.parse(noName)).toThrow();
+    });
+
+    it("rejects empty name", () => {
+      expect(() => MemoryMountSchema.parse(validMount({ name: "" }))).toThrow();
+    });
+
+    it("rejects missing source", () => {
+      const { source: _, ...noSource } = validMount();
+      expect(() => MemoryMountSchema.parse(noSource)).toThrow();
+    });
+
+    it("rejects missing scope", () => {
+      const { scope: _, ...noScope } = validMount();
+      expect(() => MemoryMountSchema.parse(noScope)).toThrow();
+    });
+  });
+});
+
+describe("MemoryConfigSchema", () => {
+  it("mounts defaults to [] when memory block is omitted (empty object)", () => {
+    const result: MemoryConfig = MemoryConfigSchema.parse({});
+    expect(result.mounts).toEqual([]);
+    expect(result.shareable).toBeUndefined();
+  });
+
+  it("accepts full config with mounts and shareable record", () => {
+    const result = MemoryConfigSchema.parse({
+      mounts: [validMount()],
+      shareable: { "autopilot-backlog": ["ws-abc"] },
+    });
+    expect(result.mounts).toHaveLength(1);
+    expect(result.shareable?.["autopilot-backlog"]).toEqual(["ws-abc"]);
+  });
+
+  it("shareable record with wildcard '*' parses successfully", () => {
+    const result = MemoryConfigSchema.parse({
+      shareable: { "shared-corpus": ["*"], "limited-corpus": ["ws-1", "ws-2"] },
+    });
+    expect(result.shareable?.["shared-corpus"]).toEqual(["*"]);
+    expect(result.shareable?.["limited-corpus"]).toEqual(["ws-1", "ws-2"]);
+  });
+});
+
+describe("CorpusKindSchema", () => {
+  it("accepts all four kinds", () => {
+    for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
+      expect(CorpusKindSchema.parse(kind)).toBe(kind);
+    }
+  });
+
+  it("rejects unknown kind", () => {
+    expect(() => CorpusKindSchema.parse("vector")).toThrow();
+  });
+});
+
+describe("parseMemoryMountSource", () => {
+  it("parses a valid source string into parts", () => {
+    const result = parseMemoryMountSource("thick_endive/narrative/autopilot-backlog");
+    expect(result.workspaceId).toBe("thick_endive");
+    expect(result.kind).toBe("narrative");
+    expect(result.corpusName).toBe("autopilot-backlog");
+  });
+
+  it("parses _global source", () => {
+    const result = parseMemoryMountSource("_global/kv/shared-flags");
+    expect(result.workspaceId).toBe("_global");
+    expect(result.kind).toBe("kv");
+    expect(result.corpusName).toBe("shared-flags");
+  });
+
+  it("throws on invalid source string", () => {
+    expect(() => parseMemoryMountSource("bad//corpus")).toThrow();
+  });
+});

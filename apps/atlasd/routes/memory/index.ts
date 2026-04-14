@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { MdNarrativeCorpus } from "@atlas/adapters-md";
 import { NarrativeEntrySchema } from "@atlas/agent-sdk";
@@ -32,6 +33,63 @@ function resolveCorpus(workspaceId: string, corpusName: string): MdNarrativeCorp
 }
 
 const memoryNarrativeRoutes = daemonFactory.createApp();
+
+const KNOWN_KINDS = ["narrative", "retrieval", "dedup", "kv"] as const;
+
+async function safeReaddir(dir: string): Promise<string[]> {
+  try {
+    return await readdir(dir);
+  } catch {
+    return [];
+  }
+}
+
+async function isDir(p: string): Promise<boolean> {
+  try {
+    return (await stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// GET / — list workspace IDs that have any memory corpus on disk.
+// Backed by ~/.atlas/memory/ — every immediate subdirectory is treated as a
+// workspaceId. Empty array if the memory root doesn't exist yet.
+memoryNarrativeRoutes.get("/", async (c) => {
+  const root = path.join(getAtlasHome(), "memory");
+  const entries = await safeReaddir(root);
+  const workspaces: string[] = [];
+  for (const name of entries) {
+    if (name.startsWith(".")) continue;
+    if (await isDir(path.join(root, name))) workspaces.push(name);
+  }
+  return c.json(workspaces);
+});
+
+// GET /:workspaceId — list corpora for a workspace.
+// Returns [{workspaceId, name, kind}] for every corpus directory under
+// ~/.atlas/memory/{workspaceId}/{kind}/{name}. Used by the playground memory
+// viewer for discovery.
+memoryNarrativeRoutes.get(
+  "/:workspaceId",
+  validator("param", z.object({ workspaceId: z.string() })),
+  async (c) => {
+    const { workspaceId } = c.req.valid("param");
+    const wsRoot = path.join(getAtlasHome(), "memory", workspaceId);
+    const corpora: { workspaceId: string; name: string; kind: string }[] = [];
+    for (const kind of KNOWN_KINDS) {
+      const kindDir = path.join(wsRoot, kind);
+      const names = await safeReaddir(kindDir);
+      for (const name of names) {
+        if (name.startsWith(".")) continue;
+        if (await isDir(path.join(kindDir, name))) {
+          corpora.push({ workspaceId, name, kind });
+        }
+      }
+    }
+    return c.json(corpora);
+  },
+);
 
 // GET /:workspaceId/narrative/:corpusName — read entries
 memoryNarrativeRoutes.get(

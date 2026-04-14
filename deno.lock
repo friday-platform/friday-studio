@@ -104,6 +104,7 @@
     "npm:@sveltejs/adapter-auto@^7.0.1": "7.0.1_@sveltejs+kit@2.57.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.3___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4__svelte@5.55.3__typescript@5.9.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3",
     "npm:@sveltejs/adapter-node@^5.5.4": "5.5.4_@sveltejs+kit@2.57.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.3___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4__svelte@5.55.3__typescript@5.9.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3",
     "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.57.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.3___vite@7.3.2____@types+node@25.5.2____tsx@4.21.0____yaml@2.8.3____picomatch@4.0.4__svelte@5.55.3__typescript@5.9.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3",
+    "npm:@sveltejs/kit@*": "2.57.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3_typescript@5.9.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:@sveltejs/kit@^2.55.0": "2.57.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3_typescript@5.9.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:@sveltejs/kit@^2.57.1": "2.57.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.3__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4_svelte@5.55.3_typescript@5.9.3_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4",
     "npm:@sveltejs/package@^2.5.7": "2.5.7_svelte@5.55.3",
@@ -155,6 +156,7 @@
     "npm:jose@6.2.2": "6.2.2",
     "npm:jose@^6.1.3": "6.2.2",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
+    "npm:js-yaml@4.1.0": "4.1.0",
     "npm:jsonrepair@^3.13.3": "3.13.3",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@5.88.0": "5.88.0_@types+node@25.5.2_typescript@5.9.3",
@@ -2974,7 +2976,7 @@
         "colorette@1.4.0",
         "https-proxy-agent@7.0.6",
         "js-levenshtein",
-        "js-yaml",
+        "js-yaml@4.1.1",
         "minimatch@5.1.9",
         "pluralize",
         "yaml-ast-parser"
@@ -6121,6 +6123,13 @@
     "js-tokens@4.0.0": {
       "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="
     },
+    "js-yaml@4.1.0": {
+      "integrity": "sha512-wpxZs9NoxZaJESJGIZTyDEaYpl0FKSA+FB9aJiyemKhMwkxQg63h4T1KJgUGHpTqPDNRcmmYLugrRjJlBtWvRA==",
+      "dependencies": [
+        "argparse"
+      ],
+      "bin": true
+    },
     "js-yaml@4.1.1": {
       "integrity": "sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==",
       "dependencies": [
@@ -8995,8 +9004,12 @@
         }
       },
       "packages/agent-sdk": {
+        "dependencies": [
+          "jsr:@db/sqlite@0.13"
+        ],
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/db__sqlite@0.12",
             "npm:@opentelemetry/api@^1.9.1",
             "npm:ai@^6.0.158",
             "npm:jsonrepair@^3.13.3",
@@ -9012,6 +9025,14 @@
             "npm:@opentelemetry/exporter-logs-otlp-http@0.214",
             "npm:@opentelemetry/sdk-logs@0.214",
             "npm:vitest@^4.1.0"
+          ]
+        }
+      },
+      "packages/bucketlist-cs": {
+        "packageJson": {
+          "dependencies": [
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
           ]
         }
       },
@@ -9107,6 +9128,14 @@
           ]
         }
       },
+      "packages/friday-cli": {
+        "packageJson": {
+          "dependencies": [
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
+          ]
+        }
+      },
       "packages/fs-watch": {
         "packageJson": {
           "dependencies": [
@@ -9192,6 +9221,14 @@
             "npm:minimatch@^10.2.4",
             "npm:papaparse@^5.5.3",
             "npm:turndown@7.2.2",
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
+          ]
+        }
+      },
+      "packages/memory": {
+        "packageJson": {
+          "dependencies": [
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -9405,6 +9442,14 @@
             "npm:node-pty@1",
             "npm:tsx@^4.19.0",
             "npm:ws@^8.20.0"
+          ]
+        }
+      },
+      "workspaces/fast-loop": {
+        "packageJson": {
+          "dependencies": [
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
           ]
         }
       }

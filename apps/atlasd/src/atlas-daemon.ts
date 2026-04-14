@@ -1133,6 +1133,19 @@ export class AtlasDaemon {
                 }
 
                 if (!hasActiveSessions && !hasActiveExecutions) {
+                  // Apply any deferred workspace.yml changes BEFORE destroying
+                  // the runtime — handleWorkspaceConfigChange itself will
+                  // tear it down and re-load from the (now updated) config.
+                  // Order matters: if we destroyed first, processPending
+                  // would see no runtime and fall through.
+                  try {
+                    await mgr.processPendingWatcherChange(workspaceId);
+                  } catch (err) {
+                    logger.warn("Failed to process pending watcher change", {
+                      workspaceId,
+                      error: err,
+                    });
+                  }
                   await this.destroyWorkspaceRuntime(workspaceId);
                 } else {
                   // Still active sessions or agent executions; let idle timeout handle cleanup

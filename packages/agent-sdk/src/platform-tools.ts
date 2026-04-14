@@ -1,3 +1,10 @@
+import { createMemoryDedupTools } from "./platform-tools/memory-dedup-tools.ts";
+import { createMemoryKVTools } from "./platform-tools/memory-kv-tools.ts";
+import { createMemoryNarrativeTools } from "./platform-tools/memory-narrative-tools.ts";
+import { createMemoryRetrievalTools } from "./platform-tools/memory-retrieval-tools.ts";
+import { createScratchpadTools } from "./platform-tools/scratchpad-tools.ts";
+import type { AgentContext } from "./types.ts";
+
 /**
  * All platform tool names registered by the atlas-platform MCP server.
  * Used to distinguish platform tools (subject to filtering) from external
@@ -56,4 +63,33 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "csv",
   "system_version",
   "webfetch",
+  // Memory — narrative
+  "memory_narrative_append",
+  "memory_narrative_read",
+  "memory_narrative_search",
+  "memory_narrative_forget",
+  // Memory — retrieval
+  "memory_retrieval_ingest",
+  "memory_retrieval_query",
+  // Memory — dedup
+  "memory_dedup_append",
+  "memory_dedup_filter",
+  // Memory — KV
+  "memory_kv_get",
+  "memory_kv_set",
+  "memory_kv_delete",
+  // Scratchpad
+  "scratchpad_append",
+  "scratchpad_read",
+  "scratchpad_clear",
 ]);
+
+export function createPlatformTools(ctx: AgentContext) {
+  return {
+    ...createMemoryNarrativeTools(ctx),
+    ...createMemoryRetrievalTools(ctx),
+    ...createMemoryDedupTools(ctx),
+    ...createMemoryKVTools(ctx),
+    ...createScratchpadTools(ctx),
+  };
+}

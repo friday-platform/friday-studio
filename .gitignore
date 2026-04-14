@@ -24,6 +24,11 @@
 !/agents/orphan-agent-auditor/
 !/agents/skill-author/
 !/agents/autopilot-dispatcher/
+!/agents/autopilot-status-watcher/
+
+# Python build artifacts (componentize-py compiles wasm; pycache is dev-only)
+__pycache__/
+*.pyc
 
 # Deno
 .deno/

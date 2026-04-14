@@ -21,6 +21,16 @@ export const addWorkspaceBatchSchema = z.object({
 export const updateWorkspaceConfigSchema = z.object({
   config: z.record(z.string(), z.unknown()),
   backup: z.boolean().optional(),
+  /**
+   * If true, destroy the active runtime even if there are in-flight sessions.
+   * Default false: an update against a workspace with active sessions returns
+   * 409 Conflict listing the blocking session ids. The caller (operator or
+   * autopilot) must explicitly cancel the sessions or pass force to override.
+   *
+   * This invariant prevents the "self-modification loop kills its own running
+   * sessions" failure mode where an operator edits workspace.yml mid-task.
+   */
+  force: z.boolean().optional(),
 });
 
 export const createWorkspaceFromConfigSchema = z

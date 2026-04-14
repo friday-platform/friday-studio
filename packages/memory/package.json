@@ -1,0 +1,9 @@
+{
+  "name": "@atlas/memory",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/bootstrap.ts" },
+  "main": "./src/bootstrap.ts",
+  "dependencies": { "zod": "^4.3.5" },
+  "devDependencies": { "vitest": "^4.1.0" }
+}
