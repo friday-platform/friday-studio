@@ -8,9 +8,16 @@
 .atlas/
 .local-dev/
 
-# User agent development (keep the README, ignore agent subdirectories)
+# User agent development (keep the README, ignore agent subdirectories
+# except the curated set of FAST-built / hand-bootstrapped Python agents
+# that are checked in as canonical examples).
 /agents/*/
 !/agents/README.md
+!/agents/skill-publisher/
+!/agents/reflector/
+!/agents/task-router/
+!/agents/session-summarizer/
+!/agents/reflection-aggregator/
 
 # Deno
 .deno/
