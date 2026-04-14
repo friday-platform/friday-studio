@@ -31,8 +31,8 @@
     "npm:@ai-sdk/anthropic@^3.0.69": "3.0.69_zod@4.3.6",
     "npm:@ai-sdk/fireworks@2.0.42": "2.0.42_zod@4.3.6",
     "npm:@ai-sdk/google@^3.0.53": "3.0.59_zod@4.3.6",
-    "npm:@ai-sdk/groq@3.0.33": "3.0.33_zod@4.3.6",
-    "npm:@ai-sdk/groq@^3.0.33": "3.0.33_zod@4.3.6",
+    "npm:@ai-sdk/groq@3.0.35": "3.0.35_zod@4.3.6",
+    "npm:@ai-sdk/groq@^3.0.35": "3.0.35_zod@4.3.6",
     "npm:@ai-sdk/mcp@^1.0.36": "1.0.36_zod@4.3.6",
     "npm:@ai-sdk/openai@^3.0.48": "3.0.51_zod@4.3.6",
     "npm:@ai-sdk/provider@^3.0.8": "3.0.8",
@@ -364,11 +364,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/groq@3.0.33_zod@4.3.6": {
-      "integrity": "sha512-LtVQt3ZSz0mY/CQYxt8y+qtCoEIfXxn4DZB3jWV75GJU3uOtNc6DqI4qUuj6ZDQF+zJcMmmKHvfCeDY5m4fQtw==",
+    "@ai-sdk/groq@3.0.35_zod@4.3.6": {
+      "integrity": "sha512-LXoPwSKaqXst9LyLN2J7gK8n7RldQLbP2zsnBYxXcOsXKrtceksqtbsmGXujvab2TM9FisquAw/ZG2hTbD5vnQ==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@4.0.22_zod@4.3.6",
+        "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
         "zod"
       ]
     },
@@ -399,15 +399,6 @@
     },
     "@ai-sdk/provider-utils@4.0.21_zod@4.3.6": {
       "integrity": "sha512-MtFUYI1/8mgDvRmaBDjbLJPFFrMG777AvSgyIFQtZHIMzm88R/12vYBBpnk7pfiWLFE1DSZzY4WDYzGbKAcmiw==",
-      "dependencies": [
-        "@ai-sdk/provider",
-        "@standard-schema/spec",
-        "eventsource-parser",
-        "zod"
-      ]
-    },
-    "@ai-sdk/provider-utils@4.0.22_zod@4.3.6": {
-      "integrity": "sha512-B2OTFcRw/Pdka9ZTjpXv6T6qZ6RruRuLokyb8HwW+aoW9ndJ3YasA3/mVswyJw7VMBF8ofXgqvcrCt9KYvFifg==",
       "dependencies": [
         "@ai-sdk/provider",
         "@standard-schema/spec",
@@ -8897,7 +8888,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/fireworks@2.0.42",
-            "npm:@ai-sdk/groq@3.0.33",
+            "npm:@ai-sdk/groq@3.0.35",
             "npm:@ai-sdk/provider@^3.0.8",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.79",
             "npm:@chat-adapter/slack@4.25.0",
@@ -9015,7 +9006,7 @@
           "dependencies": [
             "npm:@ai-sdk/anthropic@^3.0.69",
             "npm:@ai-sdk/google@^3.0.53",
-            "npm:@ai-sdk/groq@^3.0.33",
+            "npm:@ai-sdk/groq@^3.0.35",
             "npm:@ai-sdk/openai@^3.0.48",
             "npm:@ai-sdk/provider@^3.0.8",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.92",
