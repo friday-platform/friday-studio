@@ -110,7 +110,7 @@ def _scan_fsm_references(ws_config: dict[str, Any]) -> set[str]:
 
 @agent(
     id="orphan-agent-auditor",
-    version="1.1.0",
+    version="1.2.0",
     description=(
         "Cross-artifact integration auditor. Pure HTTP, no LLM. "
         "Fetches all registered agents and workspace configs, then "
@@ -167,10 +167,16 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
             if ref_id in user_agent_map:
                 referenced.setdefault(ref_id, []).append(ws_id)
 
-    # 6. Compute orphans
+    # 6. Compute orphans, excluding library agents (called from inside other
+    # agents, not from FSMs directly — they legitimately have no consumer FSM
+    # reference and shouldn't be flagged as orphans).
+    library_agent_ids: set[str] = set(config.get("library_agents", []) or [])
+
     ctx.stream.progress("computing orphan results")
     referenced_ids = set(referenced.keys())
-    orphan_ids = set(user_agent_map.keys()) - referenced_ids
+    raw_orphan_ids = set(user_agent_map.keys()) - referenced_ids
+    orphan_ids = raw_orphan_ids - library_agent_ids
+    library_orphans = sorted(raw_orphan_ids & library_agent_ids)
 
     orphans = [
         {"agent_id": aid, "version": user_agent_map[aid].get("version", "unknown")}
@@ -184,15 +190,23 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     total = len(user_agent_map)
     ref_count = len(referenced_ids)
 
+    rationale_parts = [
+        f"Scanned {len(workspaces)} workspace(s) and found {total} user agent(s).",
+        f"{ref_count} are referenced in at least one workspace config;",
+        f"{len(orphans)} are orphans.",
+    ]
+    if library_orphans:
+        rationale_parts.append(
+            f"Excluded {len(library_orphans)} library agent(s) from orphan count: "
+            + ", ".join(library_orphans)
+        )
+
     return ok({
         "total_user_agents": total,
         "referenced_count": ref_count,
         "orphan_count": len(orphans),
         "orphans": orphans,
         "referenced": referenced_list,
-        "rationale": (
-            f"Scanned {len(workspaces)} workspace(s) and found "
-            f"{total} user agent(s). {ref_count} are referenced in "
-            f"at least one workspace config; {len(orphans)} are orphans."
-        ),
+        "library_orphans_excluded": library_orphans,
+        "rationale": " ".join(rationale_parts),
     })

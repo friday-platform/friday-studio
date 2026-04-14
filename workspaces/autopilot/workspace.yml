@@ -455,10 +455,10 @@ jobs:
                     'workspace-creator'
                   ],
                   // Library agents are called from inside other agents,
-                  // not directly from FSMs. They legitimately have no
-                  // FSM consumer so we exclude them from the orphan set.
-                  // (Note: orphan-agent-auditor v1 doesn't honor this
-                  // field yet — TODO bake it into the algorithm in v2.)
+                  // not directly from FSMs. orphan-agent-auditor v1.2+
+                  // honors this field and excludes them from the orphan
+                  // count (still surfaced under library_orphans_excluded
+                  // in the result for transparency).
                   library_agents: [
                     'session-summarizer',
                     'reflection-aggregator'
