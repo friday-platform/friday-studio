@@ -19,6 +19,7 @@
 !/agents/session-summarizer/
 !/agents/reflection-aggregator/
 !/agents/workspace-creator/
+!/agents/multi-session-reflector/
 
 # Deno
 .deno/
