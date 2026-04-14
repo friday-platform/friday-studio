@@ -18,6 +18,7 @@
 !/agents/task-router/
 !/agents/session-summarizer/
 !/agents/reflection-aggregator/
+!/agents/workspace-creator/
 
 # Deno
 .deno/
