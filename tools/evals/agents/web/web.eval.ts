@@ -342,30 +342,10 @@ function scoreToolSelection(
 }
 
 // ---------------------------------------------------------------------------
-// Browser cases (6 ported from browser.eval.ts)
+// Browser cases (ported from browser.eval.ts, dynamic pages only)
 // ---------------------------------------------------------------------------
 
 const browserCases: BrowserCase[] = [
-  {
-    id: "wikipedia/extract-info",
-    name: "wikipedia - extract specific fact",
-    input:
-      "Go to the Wikipedia page for 'Haskell (programming language)' and tell me what year it was first released",
-    category: "browser",
-    expectedOutput:
-      "The agent navigated to the Wikipedia page for Haskell (programming language) and reported that Haskell first appeared in 1990.",
-    minSteps: 3,
-  },
-  {
-    id: "wikipedia/follow-links",
-    name: "wikipedia - multi-page navigation via links",
-    input:
-      "Go to the Wikipedia page for 'Python (programming language)', find the link to its original creator, navigate to their page, and tell me their birth year",
-    category: "browser",
-    expectedOutput:
-      "The agent navigated to Python's Wikipedia page, found the link to Guido van Rossum (the original creator), navigated to his page, and reported his birth year as 1956.",
-    minSteps: 5,
-  },
   {
     id: "hackernews/read-front-page",
     name: "hacker news - read dynamic list page",
@@ -388,7 +368,7 @@ const browserCases: BrowserCase[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Search cases (3 ported from research.eval.ts)
+// Search cases (ported from research.eval.ts + coverage extensions)
 // ---------------------------------------------------------------------------
 
 const searchCases: SearchCase[] = [
@@ -467,6 +447,45 @@ const searchCases: SearchCase[] = [
       "Replit",
       "Socket",
     ],
+  },
+  {
+    id: "technical-lookup-zod-v4",
+    name: "search - technical API lookup (Zod v4 breaking changes)",
+    input:
+      "What are the breaking changes in Zod v4 compared to Zod v3? Focus on API-level changes a TypeScript developer would need to adapt their code for.",
+    category: "search",
+    relevancy: `The research should:
+1. Identify that Zod v4 was released with breaking API changes
+2. List specific API-level differences from v3 (e.g. z.record signature, error customization, string format validators)
+3. Reference the official Zod documentation or changelog
+4. Include citations with links`,
+    entities: ["Zod", "v4", "v3"],
+  },
+  {
+    id: "entity-disambiguation-mercury",
+    name: "search - entity disambiguation (Mercury)",
+    input:
+      "Tell me about Mercury the fintech banking company used by startups. I'm not asking about the planet, the element, or the rock band.",
+    category: "search",
+    relevancy: `The research should:
+1. Correctly identify Mercury as the banking/fintech company (mercury.com) for startups and businesses
+2. Not confuse it with the planet, chemical element, or Queen's band Mercury
+3. Cover what the company does (banking services, target customers)
+4. Include citations with links to mercury.com or reputable sources`,
+    entities: ["Mercury", "banking", "startup"],
+  },
+  {
+    id: "obscure-hallucination-bait",
+    name: "search - obscure lookup resistant to hallucination",
+    input:
+      "Who wrote the paper 'Attention Is All You Need' and in what year was it published? Also list the institutional affiliations of the authors at the time of publication.",
+    category: "search",
+    relevancy: `The research should:
+1. Identify the paper was published in 2017
+2. Name the authors (Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin) or at least several of them
+3. Mention Google Brain and/or Google Research and/or University of Toronto as institutional affiliations
+4. Include a citation (arXiv link or Google Scholar link)`,
+    entities: ["Attention Is All You Need", "2017", "Google"],
   },
 ];
 
