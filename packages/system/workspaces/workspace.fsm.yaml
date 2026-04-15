@@ -1,3 +1,8 @@
+# LEGACY — quarantined as of chat-unify (Phase 6).
+# This FSM powers the atlas-conversation workspace, which is superseded by
+# the 'user' workspace. No user-facing surface fires these transitions.
+# Do NOT add features. Will be removed after the Phase 9 cleanup audit.
+
 fsm:
   id: atlas-conversation
   initial: idle
