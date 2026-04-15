@@ -134,7 +134,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each filtered as entry (entry.id + entry.createdAt)}
+          {#each filtered as entry, i (i + ":" + entry.id + ":" + entry.createdAt)}
             {@const meta = parseEntryMeta(entry)}
             <tr class={statusClass(meta.status)}>
               <td class="cell-id"><code>{entry.id}</code></td>
