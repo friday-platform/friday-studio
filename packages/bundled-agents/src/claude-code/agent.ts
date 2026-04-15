@@ -513,6 +513,12 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
                 turns: message.num_turns,
                 hasStructuredOutput: structuredOutput != null,
               });
+              // The SDK's "result" message is the documented terminal event.
+              // Without this break the for-await loop keeps waiting for stream
+              // close, which the SDK doesn't always emit — producing a 10-min
+              // stall until withMessageTimeout fires. See docs/learnings/ for
+              // the session that triggered this fix.
+              break;
             } else {
               // Error types: error_max_turns, error_during_execution, etc.
               logger.error("Execution failed", { subtype: message.subtype });
