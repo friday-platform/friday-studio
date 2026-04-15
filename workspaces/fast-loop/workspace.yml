@@ -41,7 +41,7 @@ memory:
       strategy: narrative
   mounts:
     - name: reflections
-      source: thick_endive/narrative/reflections
+      source: salted_granola/narrative/reflections
       mode: ro
       scope: workspace
 skills:
@@ -85,7 +85,7 @@ signals:
       properties:
         workspace_id:
           type: string
-          description: Target workspace whose sessions to scan. Defaults to grilled_xylem.
+          description: Target workspace whose sessions to scan. Defaults to artisan_ink.
         n:
           type: integer
           description: How many recent completed sessions to scan. Default 10.
@@ -286,6 +286,43 @@ signals:
       required:
         - targetWorkspaceId
         - additions
+  decompose-plan:
+    provider: http
+    title: Decompose a plan into backlog tasks
+    description: >-
+      Accepts a plan path, default target, and optional scope/dry_run. Runs
+      an FSM that reads the plan via a claude-code agent, decomposes it into
+      a structured task batch, validates integrity, and appends each task to
+      autopilot-backlog.
+    config:
+      path: /webhooks/decompose-plan
+    schema:
+      type: object
+      properties:
+        plan_path:
+          type: string
+          description: Path to the plan document relative to atlas repo root.
+        scope:
+          type: string
+          description: Optional section/phase slice within the plan.
+        default_target:
+          type: object
+          properties:
+            workspace_id:
+              type: string
+              description: Target workspace for decomposed tasks.
+            signal_id:
+              type: string
+              description: Target signal for decomposed tasks.
+          required:
+            - workspace_id
+            - signal_id
+        dry_run:
+          type: boolean
+          description: If true, log but do not POST to backlog.
+      required:
+        - plan_path
+        - default_target
 agents:
   status-watcher:
     type: user
@@ -1003,6 +1040,95 @@ agents:
       - If the CLI fails, set published=false and version=0
     env:
       ANTHROPIC_API_KEY: from_environment
+  plan-decomposer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reads a plan document, decomposes it into a batch of autopilot-backlog
+      tasks following .claude/skills/creating-tasks/SKILL.md conventions.
+      Verifies starting points exist via filesystem access. Emits JSON
+      matching DecomposerResultSchema.
+    prompt: |
+      You are the plan decomposer for the FAST Loop kernel.
+      The atlas monorepo is at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw.
+
+      ## Required reading (every invocation)
+
+      Before decomposing, read these files:
+      1. The plan document at the path given in `plan_path` from your input
+         config. If `scope` is provided, focus on that section of the plan.
+      2. `.claude/skills/creating-tasks/SKILL.md` — task shape, tracer bullet
+         identification, and cross-task integrity discipline.
+      3. `.claude/skills/implementing-tasks/SKILL.md` — single-teammate-per-task
+         sizing discipline.
+      4. `docs/plans/2026-04-15-decompose-plan-design.md` — full design context
+         for this decomposition pipeline.
+
+      ## Workflow
+
+      1. Read the plan at `plan_path`. If `scope` is set, focus on that section.
+      2. Identify the abstractions, files, and modules mentioned in the plan.
+      3. Identify a tracer bullet — the smallest vertical slice that proves the
+         architecture end-to-end.
+      4. Decompose the remaining work into dependent tasks, each sized for a
+         single teammate (one agent session).
+      5. For each task, verify that `target_files` and starting point file paths
+         actually exist in the repo using grep/glob. Remove or correct any that
+         don't resolve.
+      6. Assign routing per task.
+
+      ## Task brief template
+
+      Each task's `task_brief` field must be a markdown string containing these
+      sections:
+
+      - `## Context` — what this task is about and where it fits.
+      - `## Outcome` — what the world looks like after this task lands.
+      - `## Why This Task` — why it matters / what it unblocks.
+      - `## Acceptance Criteria` — checkboxes (`- [ ] ...`) with concrete,
+        verifiable conditions.
+      - `## Interface Contracts` (optional) — type signatures, schemas, or API
+        shapes this task must honor.
+      - `## Starting Points` — concrete file paths the implementer should read
+        first.
+      - `## Design Reference` — pointer to the plan section or design doc.
+
+      ## Routing guidance
+
+      Use `default_target` from input config unless the task content clearly
+      belongs to a different signal:
+      - Agent authoring tasks (new Python WASM agent) → override to `author-agent`
+        signal.
+      - Workspace extension tasks (new signal, new cron) → override to
+        `extend-workspace` signal.
+      When overriding, include a `## Routing Rationale` section in the task_brief
+      explaining why.
+
+      ## Retry context
+
+      If `feedback` is present in your input config, this is a retry after an
+      integrity check failure. The feedback describes the specific violations
+      found. Fix the violations and re-emit a corrected batch. If `is_retry` is
+      true, pay extra attention to the feedback.
+
+      ## Hard rules
+
+      - Respond with a SINGLE JSON object matching `DecomposerResultSchema`.
+        No prose before or after. No markdown fences.
+      - `batch_id` format: `dp-<plan-basename>-<YYYYMMDD-HHMM>-<short-sha>`
+        where plan-basename is the filename without extension, and short-sha is
+        the first 7 chars of the plan file content hash.
+      - For multi-task batches: exactly ONE task must have `is_tracer: true`,
+        its `subject` must be prefixed with "Tracer Bullet:", and its
+        `blocked_by` must be empty.
+      - All `blocked_by` entries must reference `task_id`s within the same
+        batch. No cycles allowed.
+      - Every task must have a non-empty `subject` and a `task_brief` that
+        contains `## Acceptance Criteria` and `## Starting Points` sections
+        with non-empty content.
+      - `task_id` must be lowercase kebab-case matching `^[a-z][a-z0-9-]*$`.
+    env:
+      ANTHROPIC_API_KEY: from_environment
 jobs:
   autopilot-tick:
     title: Supervise — pick next backlog task and dispatch
@@ -1066,7 +1192,7 @@ jobs:
                 task: "Observe completed dispatches",
                 config: {
                   platformUrl: "http://localhost:8080",
-                  kernel_workspace_id: "thick_endive",
+                  kernel_workspace_id: "salted_granola",
                   dispatch_log_memory: "dispatch-log",
                   backlog_memory: "autopilot-backlog",
                 },
@@ -1094,7 +1220,7 @@ jobs:
                 task: "Autopilot tick: pick next backlog task from memory",
                 config: {
                   backlog_json: override,
-                  backlog_url: "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog",
+                  backlog_url: "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog",
                   platformUrl: "http://localhost:8080",
                   // 5-min per-TASK cooldown. Was 1800s (30 min) as a band-aid
                   // for pre-planner-v1.6.0 dedupe bug that re-dispatched completed
@@ -1293,7 +1419,7 @@ jobs:
           type: action
           code: |
             export default function prepare_reflect(context, event) {
-              var wsId = (event.data && event.data.workspace_id) || 'grilled_xylem';
+              var wsId = (event.data && event.data.workspace_id) || 'artisan_ink';
               var n = (event.data && event.data.n) || 10;
               return {
                 task: 'Cross-session reflect on ' + wsId,
@@ -1412,7 +1538,7 @@ jobs:
   reflect-on-last-run:
     title: Supervise — observe a recent session and propose an improvement
     description: >-
-      Kernel/supervisor single-session reflector. Reads any completed session in any workspace, identifies whether it surfaced a new failure pattern, and proposes an updated SKILL.md when warranted. Does NOT publish — that's gated through apply-approved-reflection. Every reflection (regardless of whether a skill update is proposed) is appended to the thick_endive/narrative/reflections memory for cross-session pattern detection. This is how the FAST kernel learns from one-off events without waiting for a pattern to recur.
+      Kernel/supervisor single-session reflector. Reads any completed session in any workspace, identifies whether it surfaced a new failure pattern, and proposes an updated SKILL.md when warranted. Does NOT publish — that's gated through apply-approved-reflection. Every reflection (regardless of whether a skill update is proposed) is appended to the salted_granola/narrative/reflections memory for cross-session pattern detection. This is how the FAST kernel learns from one-off events without waiting for a pattern to recur.
     triggers:
       - signal: reflect-on-last-run
     fsm:
@@ -2561,3 +2687,363 @@ jobs:
             - created
             - summary
       tools: {}
+  decompose-plan:
+    title: Decompose — break a plan into backlog tasks
+    description: >-
+      Decomposes a plan into backlog tasks with integrity checking, single retry,
+      and diagnostic emission. FSM: prepare → decompose → integrity → apply (clean)
+      or retry_prepare → decompose (retry) or diagnostic (retries exhausted).
+    entrypoint: jobs/decompose-plan/job.ts
+    triggers:
+      - signal: decompose-plan
+    fsm:
+      id: decompose-plan-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            decompose-plan:
+              target: prepare
+        prepare:
+          entry:
+            - type: code
+              function: prepare_decompose
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: decompose
+              guards:
+                - guard_prepare_done
+        decompose:
+          entry:
+            - type: code
+              function: prepare_agent_decompose
+            - type: agent
+              agentId: plan-decomposer
+              outputTo: decomposer-output
+              outputType: decomposer-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: integrity
+              guards:
+                - guard_decompose_done
+        integrity:
+          entry:
+            - type: code
+              function: integrity_check
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              - target: apply
+                guards:
+                  - guard_integrity_clean
+              - target: retry_prepare
+                guards:
+                  - guard_retry_allowed
+              - target: diagnostic
+        retry_prepare:
+          entry:
+            - type: code
+              function: retry_decompose
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: decompose
+        diagnostic:
+          entry:
+            - type: code
+              function: emit_diagnostic_task
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_diagnostic_done
+        apply:
+          entry:
+            - type: code
+              function: apply_to_backlog
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_apply_done
+        completed:
+          type: final
+      functions:
+        prepare_decompose:
+          type: action-io
+          code: |
+            export default async function prepare_decompose(context, event) {
+              var data = event.data || {};
+              var plan_path = data.plan_path;
+              var default_target = data.default_target;
+              if (typeof plan_path !== 'string' || !plan_path) {
+                throw new Error('decompose-plan: missing or invalid plan_path (string required)');
+              }
+              if (!default_target || typeof default_target !== 'object') {
+                throw new Error('decompose-plan: missing or invalid default_target (object required)');
+              }
+              if (typeof default_target.workspace_id !== 'string' || !default_target.workspace_id) {
+                throw new Error('decompose-plan: missing or invalid default_target.workspace_id');
+              }
+              if (typeof default_target.signal_id !== 'string' || !default_target.signal_id) {
+                throw new Error('decompose-plan: missing or invalid default_target.signal_id');
+              }
+              var mod = await import('./jobs/decompose-plan/job.ts');
+              var repoRoot = context.workDir || '.';
+              var sha = await mod.resolvePlanSha(plan_path, repoRoot);
+              var batch_id = mod.buildBatchId(plan_path, sha, new Date());
+              context.setResult('task-input', {
+                plan_path: plan_path,
+                scope: data.scope || null,
+                default_target: {
+                  workspace_id: default_target.workspace_id,
+                  signal_id: default_target.signal_id,
+                },
+                dry_run: !!data.dry_run,
+                batch_id: batch_id,
+                plan_sha: sha,
+                plan_ref: {
+                  path: plan_path,
+                  sha: sha,
+                },
+              });
+            }
+        prepare_agent_decompose:
+          type: action
+          code: |
+            export default function prepare_agent_decompose(context, event) {
+              var input = context.results['task-input'];
+              if (!input) throw new Error('task-input not found');
+              var feedback = context.results['decomposer-feedback'] || null;
+              var retryCounter = context.results['retry-counter'];
+              var isRetry = retryCounter && retryCounter.count > 0;
+              return {
+                task: 'Decompose plan at ' + input.plan_path
+                  + (input.scope ? ' (scope: ' + input.scope + ')' : ''),
+                config: {
+                  plan_path: input.plan_path,
+                  scope: input.scope || null,
+                  default_target: input.default_target,
+                  feedback: feedback,
+                  is_retry: isRetry || false,
+                },
+              };
+            }
+        apply_to_backlog:
+          type: action-io
+          code: |
+            export default async function apply_to_backlog(context, event) {
+              var batch = context.results['decomposer-output'];
+              var input = context.results['task-input'];
+              var kernelBatchId = input.batch_id || batch.batch_id;
+              var kernelSha = input.plan_sha || (batch.plan_ref && batch.plan_ref.sha);
+              if (input.dry_run) {
+                var mod = await import('./jobs/decompose-plan/job.ts');
+                var dryResult = await mod.postDryRunBatch(
+                  'http://localhost:8080/api/memory/salted_granola/narrative/dry-run-decompositions',
+                  batch,
+                  input.default_target
+                );
+                context.setResult('apply-output', {
+                  applied: dryResult.task_count,
+                  batch_id: kernelBatchId,
+                  task_ids: batch.tasks.map(function(t) { return t.task_id; }),
+                  dry_run: true,
+                });
+                return;
+              }
+              var applied_task_ids = [];
+              for (var i = 0; i < batch.tasks.length; i++) {
+                var task = batch.tasks[i];
+                var body = {
+                  id: task.task_id,
+                  text: task.subject,
+                  metadata: {
+                    status: 'pending',
+                    priority: task.priority,
+                    kind: task.is_tracer ? 'tracer-bullet' : 'decomposed-task',
+                    blocked_by: task.blocked_by,
+                    match_job_name: 'execute-task',
+                    auto_apply: true,
+                    discovered_by: 'decompose-plan',
+                    discovered_session: context.sessionId || ('decompose-plan-' + Date.now()),
+                    batch_id: kernelBatchId,
+                    plan_ref: {
+                      path: batch.plan_ref.path,
+                      section: task.plan_section,
+                      sha: kernelSha,
+                    },
+                    payload: {
+                      workspace_id: task.target_workspace_id || batch.default_target.workspace_id,
+                      signal_id: task.target_signal_id || batch.default_target.signal_id,
+                      task_id: task.task_id,
+                      task_brief: task.task_brief,
+                      target_files: task.target_files,
+                    },
+                  },
+                };
+                var resp = await fetch(
+                  'http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  }
+                );
+                if (!resp.ok) {
+                  var errText = await resp.text();
+                  throw new Error(
+                    'Failed to POST task ' + task.task_id + ' to backlog: ' + resp.status + ' ' + errText
+                  );
+                }
+                applied_task_ids.push(task.task_id);
+              }
+              context.setResult('apply-output', {
+                applied: applied_task_ids.length,
+                batch_id: kernelBatchId,
+                task_ids: applied_task_ids,
+                dry_run: input.dry_run || false,
+              });
+            }
+        guard_prepare_done:
+          type: guard
+          code: |
+            export default function guard_prepare_done(context, event) {
+              return context.results['task-input'] !== undefined;
+            }
+        guard_decompose_done:
+          type: guard
+          code: |
+            export default function guard_decompose_done(context, event) {
+              return context.results['decomposer-output'] !== undefined;
+            }
+        guard_apply_done:
+          type: guard
+          code: |
+            export default function guard_apply_done(context, event) {
+              return context.results['apply-output'] !== undefined;
+            }
+        integrity_check:
+          type: action-io
+          code: |
+            export default async function integrity_check(context, event) {
+              var mod = await import('./jobs/decompose-plan/job.ts');
+              var batch = context.results['decomposer-output'];
+              var repoRoot = context.workDir || '.';
+              var findings = mod.runIntegrityCheck(batch, repoRoot);
+              context.setResult('integrity-output', { findings: findings, clean: findings.length === 0 });
+            }
+        retry_decompose:
+          type: action
+          code: |
+            export default function retry_decompose(context, event) {
+              var current = context.results['retry-counter'];
+              var count = (current && current.count) ? current.count + 1 : 1;
+              context.setResult('retry-counter', { count: count });
+              var findings = context.results['integrity-output'].findings;
+              var feedback = '## Integrity Violations (retry ' + count + ')\n\n';
+              for (var i = 0; i < findings.length; i++) {
+                var f = findings[i];
+                feedback += '- **' + f.rule + '**' + (f.task_id ? ' (task: ' + f.task_id + ')' : '') + ': ' + f.detail + '\n';
+              }
+              context.setResult('decomposer-feedback', feedback);
+              context.setResult('decomposer-output', undefined);
+              context.setResult('integrity-output', undefined);
+            }
+        emit_diagnostic_task:
+          type: action-io
+          code: |
+            export default async function emit_diagnostic_task(context, event) {
+              var mod = await import('./jobs/decompose-plan/job.ts');
+              var findings = context.results['integrity-output'].findings;
+              var batch = context.results['decomposer-output'];
+              var batchId = batch ? batch.batch_id : 'unknown';
+              var sessionId = context.sessionId || ('decompose-plan-' + Date.now());
+              var result = await mod.emitDiagnosticTask(
+                'http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog',
+                sessionId, findings, batchId
+              );
+              context.setResult('diagnostic-output', result);
+            }
+        guard_integrity_clean:
+          type: guard
+          code: |
+            export default function guard_integrity_clean(context, event) {
+              var r = context.results['integrity-output'];
+              return r !== undefined && r.clean === true;
+            }
+        guard_retry_allowed:
+          type: guard
+          code: |
+            export default function guard_retry_allowed(context, event) {
+              var r = context.results['integrity-output'];
+              if (!r || r.clean) return false;
+              var counter = context.results['retry-counter'];
+              var count = (counter && counter.count) ? counter.count : 0;
+              return count < 1;
+            }
+        guard_diagnostic_done:
+          type: guard
+          code: |
+            export default function guard_diagnostic_done(context, event) {
+              return context.results['diagnostic-output'] !== undefined;
+            }
+      tools: {}
+      documentTypes:
+        decomposer-result:
+          # Canonical Zod: jobs/decompose-plan/schemas.ts › DecomposerResultSchema
+          type: object
+          properties:
+            batch_id: {type: string}
+            plan_ref:
+              type: object
+              properties:
+                path: {type: string}
+                scope: {type: string}
+                sha: {type: string}
+              required: [path, sha]
+            default_target:
+              type: object
+              properties:
+                workspace_id: {type: string}
+                signal_id: {type: string}
+              required: [workspace_id, signal_id]
+            tasks:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  task_id: {type: string, pattern: "^[a-z][a-z0-9-]*$"}
+                  subject: {type: string, minLength: 1}
+                  task_brief: {type: string, minLength: 1}
+                  target_files:
+                    type: array
+                    items: {type: string}
+                  blocked_by:
+                    type: array
+                    items: {type: string}
+                  priority: {type: integer}
+                  is_tracer: {type: boolean}
+                  target_workspace_id: {type: string}
+                  target_signal_id: {type: string}
+                  plan_section: {type: string}
+                required:
+                  - task_id
+                  - subject
+                  - task_brief
+                  - target_files
+                  - blocked_by
+                  - priority
+                  - is_tracer
+          required: [batch_id, plan_ref, default_target, tasks]
