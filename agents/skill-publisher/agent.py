@@ -135,7 +135,7 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
     config = ctx.config or {}
     session_id = config.get("reflection_session_id")
     threshold = float(config.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD))
-    target_workspace = config.get("workspace_id", "grilled_xylem")
+    target_workspace = config.get("workspace_id", "artisan_ink")
 
     # If no session_id provided, walk recent sessions on the target workspace
     # and find the most recent reflect-on-last-run with skill_update_proposed=true.

@@ -1,6 +1,6 @@
 """reflector: deterministic session reader + focused LLM judgment for self-mod.
 
-Replaces the claude-code-based reflector in grilled_xylem with a hybrid
+Replaces the claude-code-based reflector in artisan_ink with a hybrid
 agent: deterministic Python for the mechanical parts (fetching sessions,
 parsing block structure, computing structural signals) plus a single
 focused ctx.llm.generate_object call for the "is this a new pattern that
@@ -288,9 +288,9 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
     return "APPROVE"  # session completed but no explicit verdict — assume clean
 
 
-KERNEL_WORKSPACE_ID = "thick_endive"
+KERNEL_WORKSPACE_ID = "salted_granola"
 BACKLOG_CORPUS_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog"
+    "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog"
 )
 
 
@@ -302,7 +302,7 @@ def _append_to_corpus(
     rationale: str,
     update_warranted: bool,
 ) -> None:
-    """Append a reflection entry to the thick_endive reflections corpus.
+    """Append a reflection entry to the salted_granola reflections corpus.
 
     Non-blocking: failures are logged but never raise.
     """
@@ -402,13 +402,13 @@ def _post_discovery_task(
     summary="Reads sessions, judges new failure patterns, proposes skill updates.",
     examples=[
         "Reflect on session abc-123",
-        "Reflect on the latest grilled_xylem run",
+        "Reflect on the latest artisan_ink run",
     ],
 )
 def execute(prompt: str, ctx: AgentContext) -> Any:
     config = ctx.config or {}
     session_id = config.get("session_id")
-    workspace_id = config.get("workspace_id", "grilled_xylem")
+    workspace_id = config.get("workspace_id", "artisan_ink")
 
     ctx.stream.progress("fetching session")
     try:

@@ -11,7 +11,7 @@ import {
 export type { ImprovementEntry } from "./types.ts";
 
 const PROXY_BASE = "/api/daemon";
-const BACKLOG_WORKSPACE = "thick_endive";
+const BACKLOG_WORKSPACE = "salted_granola";
 const BACKLOG_MEMORY = "autopilot-backlog";
 
 export const ImprovementFindingMetaSchema = z.object({
