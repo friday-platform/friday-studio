@@ -1,3 +1,4 @@
+import process from "node:process";
 import type {
   CorpusMetadata,
   HistoryEntry,
@@ -8,18 +9,20 @@ import type {
   SkillMetadata,
   SkillVersion,
 } from "@atlas/agent-sdk";
-import { z } from "zod";
+import type { YargsInstance } from "../utils/yargs.ts";
 
-export const InspectCommandArgsSchema = z.object({
-  workspace: z.string().optional(),
-  kind: z.enum(["memory", "skills", "scratchpad"]),
-  json: z.boolean().optional(),
-  history: z.boolean().optional(),
-  since: z.string().optional(),
-  session: z.string().optional(),
-});
+export const command = "inspect";
+export const desc = "Inspect workspace memory, skills, and scratchpad";
+export const aliases = ["insp"];
 
-export type InspectCommandArgs = z.infer<typeof InspectCommandArgsSchema>;
+export interface InspectArgs {
+  kind: "memory" | "skills" | "scratchpad";
+  workspace?: string;
+  json?: boolean;
+  history?: boolean;
+  since?: string;
+  session?: string;
+}
 
 export interface InspectDeps {
   memory: MemoryAdapter;
@@ -29,6 +32,24 @@ export interface InspectDeps {
 
 export interface InspectResult {
   output: string;
+}
+
+export function builder(y: YargsInstance) {
+  return y
+    .option("kind", {
+      type: "string",
+      choices: ["memory", "skills", "scratchpad"] as const,
+      demandOption: true,
+      describe: "What to inspect",
+    })
+    .option("workspace", { type: "string", describe: "Workspace ID (defaults to 'default')" })
+    .option("json", { type: "boolean", describe: "Output as JSON", default: false })
+    .option("history", { type: "boolean", describe: "Show version history", default: false })
+    .option("since", { type: "string", describe: "Filter entries since timestamp" })
+    .option("session", {
+      type: "string",
+      describe: "Session key for scratchpad (defaults to 'default')",
+    });
 }
 
 function formatTable(headers: string[], rows: string[][]): string {
@@ -67,7 +88,7 @@ function formatTable(headers: string[], rows: string[][]): string {
   return lines.join("\n");
 }
 
-async function inspectMemory(deps: InspectDeps, args: InspectCommandArgs): Promise<InspectResult> {
+async function inspectMemory(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
   const workspaceId = args.workspace ?? "default";
 
   if (args.history) {
@@ -95,7 +116,7 @@ async function inspectMemory(deps: InspectDeps, args: InspectCommandArgs): Promi
   return { output: formatTable(headers, rows) };
 }
 
-async function inspectSkills(deps: InspectDeps, args: InspectCommandArgs): Promise<InspectResult> {
+async function inspectSkills(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
   const workspaceId = args.workspace ?? "default";
 
   if (args.history) {
@@ -130,10 +151,7 @@ async function inspectSkills(deps: InspectDeps, args: InspectCommandArgs): Promi
   return { output: formatTable(headers, rows) };
 }
 
-async function inspectScratchpad(
-  deps: InspectDeps,
-  args: InspectCommandArgs,
-): Promise<InspectResult> {
+async function inspectScratchpad(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
   const sessionKey = args.session ?? "default";
   const chunks = await deps.scratchpad.read(sessionKey, { since: args.since });
 
@@ -157,18 +175,20 @@ async function inspectScratchpad(
   return { output: formatTable(headers, rows) };
 }
 
-export function inspectCommand(
-  deps: InspectDeps,
-  args: InspectCommandArgs,
-): Promise<InspectResult> {
-  const parsed = InspectCommandArgsSchema.parse(args);
-
-  switch (parsed.kind) {
+export function inspectCommand(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
+  switch (args.kind) {
     case "memory":
-      return inspectMemory(deps, parsed);
+      return inspectMemory(deps, args);
     case "skills":
-      return inspectSkills(deps, parsed);
+      return inspectSkills(deps, args);
     case "scratchpad":
-      return inspectScratchpad(deps, parsed);
+      return inspectScratchpad(deps, args);
   }
 }
+
+export const handler = (_argv: InspectArgs): void => {
+  console.error(
+    "Inspect adapters are not yet wired. Run `atlas daemon start` first or ensure backends are configured.",
+  );
+  process.exit(1);
+};

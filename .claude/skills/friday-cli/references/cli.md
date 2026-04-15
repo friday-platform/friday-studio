@@ -294,7 +294,7 @@ When you need any of these, drop to `curl` / `fetch` — see `references/http.md
 2. **Workspace config partial updates** — `PUT/PATCH /api/workspaces/:id/config/signals/:id`, `/agents/:id`, `/credentials/:path`
 3. **Resource upload / link** — `POST /api/workspaces/:id/resources/upload`, `.../link`
 4. **Activity feed** — `/api/activity/*`
-5. **Memory narrative corpus reads** — `GET /api/memory/:workspaceId/narrative/:corpus`
+5. **Memory narrative reads** — `GET /api/memory/:workspaceId/narrative/:memoryName`
 6. **MCP registry mutations** — `POST /api/mcp-registry`
 7. **Direct chat-storage RPC** — `/api/chat-storage/*`
 8. **User profile / photo** — `/api/me`, `/api/user`

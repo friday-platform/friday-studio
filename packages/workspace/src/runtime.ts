@@ -15,6 +15,7 @@ import {
   type AtlasUIMessageChunk,
   buildResolvedWorkspaceMemory,
   type CorpusMountBinding,
+  GLOBAL_WORKSPACE_ID,
   type LinkCredentialRef,
   type MCPServerConfig,
   type MemoryAdapter,
@@ -552,25 +553,34 @@ export class WorkspaceRuntime {
       throw new Error("memoryMounts requires memoryAdapter in WorkspaceRuntimeOptions");
     }
 
+    // TODO(phase-1b): Enforce shareable validation before resolving each mount.
+    // Currently any workspace can mount another workspace's corpus without the
+    // source having declared it via memory.shareable.list / allowedWorkspaces.
+    // When a getWorkspaceConfig(wsId) callback is available on
+    // WorkspaceRuntimeOptions, verify the mounted corpus name is in
+    // shareable.list and the consumer is in allowedWorkspaces (or absent = all).
+    // If no shareable block exists on the source, allow the mount (backward-compat).
+    // See: design memo for memory-three-scope-model task.
+
     for (const mount of mounts) {
       const sourceId = mount.source;
       const sourceParts = sourceId.split("/");
       const sourceWsId = sourceParts[0];
       const corpusKind = sourceParts[1];
-      const corpusName = sourceParts[2];
+      const memoryName = sourceParts[2];
 
-      if (!sourceWsId || !corpusKind || !corpusName) {
+      if (!sourceWsId || !corpusKind || !memoryName) {
         throw new MountSourceNotFoundError(
           sourceId,
           `Mount '${mount.name}': invalid source format '${mount.source}' — ` +
-            `expected '{workspaceId}/{kind}/{corpusName}'`,
+            `expected '{workspaceId}/{kind}/{memoryName}'`,
         );
       }
 
       if (corpusKind !== "narrative") {
         throw new MountSourceNotFoundError(
           sourceId,
-          `Mount '${mount.name}': only narrative corpora are supported for mounts, got '${corpusKind}'`,
+          `Mount '${mount.name}': only narrative memories are supported for mounts, got '${corpusKind}'`,
         );
       }
 
@@ -579,17 +589,17 @@ export class WorkspaceRuntime {
       }
 
       mountRegistry.registerSource(sourceId, () =>
-        adapter.corpus(sourceWsId, corpusName, "narrative"),
+        adapter.corpus(sourceWsId, memoryName, "narrative"),
       );
       mountRegistry.addConsumer(sourceId, this.workspace.id);
 
       let resolvedCorpus: NarrativeCorpus;
       try {
-        resolvedCorpus = await adapter.corpus(sourceWsId, corpusName, "narrative");
+        resolvedCorpus = await adapter.corpus(sourceWsId, memoryName, "narrative");
       } catch {
         throw new MountSourceNotFoundError(
           sourceId,
-          `Mount '${mount.name}': source corpus '${mount.source}' not found — ` +
+          `Mount '${mount.name}': source memory '${mount.source}' not found — ` +
             `check memory.mounts[].source in workspace config`,
         );
       }
@@ -1286,6 +1296,52 @@ export class WorkspaceRuntime {
     return activeSession.session;
   }
 
+  private async loadStandingOrders(): Promise<string> {
+    const adapter = this.options.memoryAdapter;
+    if (!adapter) return "";
+
+    const STANDING_ORDERS_NAME = "standing-orders";
+    const parts: string[] = [];
+
+    try {
+      const globalMemory = await adapter.corpus(
+        GLOBAL_WORKSPACE_ID,
+        STANDING_ORDERS_NAME,
+        "narrative",
+      );
+      parts.push(await globalMemory.render());
+    } catch {
+      // Global level missing or unreadable — skip silently
+    }
+
+    try {
+      const wsMemory = await adapter.corpus(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
+      parts.push(await wsMemory.render());
+    } catch {
+      // Workspace level missing or unreadable — skip silently
+    }
+
+    for (const mount of this._resolvedMemory?.mounts ?? []) {
+      if (
+        mount.sourceCorpusName === STANDING_ORDERS_NAME &&
+        mount.sourceCorpusKind === "narrative"
+      ) {
+        try {
+          const mountedMemory = await adapter.corpus(
+            mount.sourceWorkspaceId,
+            mount.sourceCorpusName,
+            "narrative",
+          );
+          parts.push(await mountedMemory.render());
+        } catch {
+          // Mounted level missing or unreadable — skip silently
+        }
+      }
+    }
+
+    return parts.filter(Boolean).join("\n\n");
+  }
+
   /** Agent executor callback — bridges FSMEngine to AgentOrchestrator. */
   private async executeAgent(
     action: AgentAction,
@@ -1322,6 +1378,19 @@ export class WorkspaceRuntime {
 
     const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
 
+    let standingOrdersBlock = "";
+    if (process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+      try {
+        standingOrdersBlock = await this.loadStandingOrders();
+      } catch (err) {
+        logger.warn("Standing orders bootstrap failed, continuing without it", {
+          agentId,
+          workspaceId: this.workspace.id,
+          error: stringifyError(err),
+        });
+      }
+    }
+
     // Bootstrap memory injection (feature-flagged)
     let bootstrapBlock = "";
     if (process.env.ATLAS_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter) {
@@ -1336,7 +1405,7 @@ export class WorkspaceRuntime {
       }
     }
 
-    const finalPrompt = bootstrapBlock ? `${bootstrapBlock}\n\n${prompt}` : prompt;
+    const finalPrompt = [standingOrdersBlock, bootstrapBlock, prompt].filter(Boolean).join("\n\n");
 
     // Use streamId from signal data (e.g. chatId for conversations), fall back to sessionId
     const streamId =

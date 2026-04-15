@@ -9,7 +9,7 @@ export type BootstrapScope = MountScope;
 
 export interface MountBinding {
   scope: MountScope;
-  corpusName: string;
+  memoryName: string;
 }
 
 export interface BootstrapContext {
@@ -25,7 +25,7 @@ export interface BootstrapOpts {
 
 export const MountBindingSchema = z.object({
   scope: z.enum(["workspace", "job", "agent"]),
-  corpusName: z.string().min(1),
+  memoryName: z.string().min(1),
 });
 
 export const BootstrapContextSchema = z.object({

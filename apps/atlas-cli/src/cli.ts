@@ -41,6 +41,8 @@ const LEGACY_COMMANDS = new Set([
   "lib",
   "artifacts",
   "artifact",
+  "inspect",
+  "insp",
 ]);
 
 const argv = process.argv.slice(2);

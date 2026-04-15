@@ -118,7 +118,7 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export function parseMemoryMountSource(source: string): {
   workspaceId: string;
   kind: z.infer<typeof CorpusKindSchema>;
-  corpusName: string;
+  memoryName: string;
 } {
   const match = SOURCE_RE.exec(source);
   if (!match) {
@@ -127,7 +127,7 @@ export function parseMemoryMountSource(source: string): {
   return {
     workspaceId: match[1] ?? "",
     kind: CorpusKindSchema.parse(match[2]),
-    corpusName: match[3] ?? "",
+    memoryName: match[3] ?? "",
   };
 }
 

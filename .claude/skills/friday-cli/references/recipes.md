@@ -91,7 +91,7 @@ curl -N http://localhost:8080/api/sessions/$SESSION/stream \
   -H 'Accept: text/event-stream'
 ```
 
-## Read memory narrative corpus (autopilot backlog pattern)
+## Read narrative memory (autopilot backlog pattern)
 
 ```bash
 curl -s "http://localhost:8080/api/memory/$WS_ID/narrative/autopilot-backlog?since=24h&limit=50" | jq
@@ -227,7 +227,7 @@ Final line is literal `data: [DONE]`, not JSON.
 5. Fix workspace.yml or agent prompt → partial-update endpoint.
 6. Re-fire signal.
 7. Once stable, attach cron signal (`provider: cron` with schedule), or let
-   autopilot-tick-cron pick it up from backlog narrative corpus.
+   autopilot-tick-cron pick it up from backlog narrative memory.
 
 Full loop without CLI restarts. Every mutation is either reversible (sessions,
 chats) or gated (partial-config writes destroy runtime but preserve yaml).

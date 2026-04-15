@@ -24,6 +24,18 @@ KERNEL_WS_DEFAULT = "thick_endive"
 DISPATCH_LOG_DEFAULT = "dispatch-log"
 BACKLOG_DEFAULT = "autopilot-backlog"
 
+REFLECTOR_SIGNAL = "reflect-on-last-run"
+REFLECTOR_TARGET_WS = "thick_endive"
+DURATION_THRESHOLD_MS = 300_000
+
+_REFLECTOR_SKIP_JOBS = frozenset({
+    "reflect-on-last-run",
+    "apply-reflection",
+    "audit-orphans",
+    "cross-session-reflect",
+    "autopilot-tick",
+})
+
 
 def _http_get_json(ctx: Any, url: str) -> Any | None:
     """Fetch a URL and return parsed JSON, or None on error."""
@@ -99,6 +111,75 @@ def _fire_post_session_validator(
         return None
 
 
+def _iso_to_ms(iso: str) -> int | None:
+    """Parse ISO 8601 to approximate ms for duration comparison."""
+    try:
+        s = iso.replace("Z", "").split("+")[0].split(".")[0]
+        parts = s.split("T")
+        if len(parts) != 2:
+            return None
+        ymd = parts[0].split("-")
+        hms = parts[1].split(":")
+        if len(ymd) != 3 or len(hms) < 2:
+            return None
+        y, mo, d = int(ymd[0]), int(ymd[1]), int(ymd[2])
+        h, mi = int(hms[0]), int(hms[1])
+        sec = int(hms[2]) if len(hms) > 2 else 0
+        days = y * 365 + y // 4 + mo * 30 + d
+        return ((days * 24 + h) * 60 + mi) * 60000 + sec * 1000
+    except (ValueError, IndexError):
+        return None
+
+
+def _compute_duration_ms(session_data: dict[str, Any]) -> int | None:
+    """Compute session duration in ms from durationMs field or timestamps."""
+    dur = session_data.get("durationMs")
+    if isinstance(dur, (int, float)):
+        return int(dur)
+    started = session_data.get("startedAt", "")
+    completed = session_data.get("completedAt", "")
+    if not started or not completed:
+        return None
+    start_ms = _iso_to_ms(started)
+    end_ms = _iso_to_ms(completed)
+    if start_ms is None or end_ms is None:
+        return None
+    return end_ms - start_ms
+
+
+def _should_fire_reflector(
+    session_data: dict[str, Any],
+    entry_metadata: dict[str, Any],
+    threshold_ms: int = DURATION_THRESHOLD_MS,
+) -> bool:
+    """Decide whether a completed/failed session warrants reflection."""
+    job_name = session_data.get("jobName") or entry_metadata.get("jobName", "")
+    if job_name in _REFLECTOR_SKIP_JOBS:
+        return False
+    if session_data.get("status") == "failed":
+        return True
+    duration = _compute_duration_ms(session_data)
+    if duration is not None and duration > threshold_ms:
+        return True
+    return False
+
+
+def _fire_reflector(ctx: Any, platform_url: str, session_id: str) -> int | str:
+    """Fire the reflect-on-last-run signal. Fire-and-forget with short timeout."""
+    url = f"{platform_url}/api/workspaces/{REFLECTOR_TARGET_WS}/signals/{REFLECTOR_SIGNAL}"
+    try:
+        resp = ctx.http.fetch(
+            url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"payload": {"session_id": session_id}}),
+            timeout_ms=1500,
+        )
+        return resp.status
+    except Exception as exc:  # noqa: BLE001
+        return f"err: {str(exc)[:120]}"
+
+
 def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Return {id: latest-entry-by-createdAt} from a list of NarrativeEntry dicts."""
     latest: dict[str, dict[str, Any]] = {}
@@ -116,7 +197,7 @@ def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 @agent(
     id="autopilot-status-watcher",
-    version="1.2.0",
+    version="1.3.0",
     description=(
         "Closes the loop on autopilot dispatches. Reads the dispatch-log "
         "narrative memory, fetches each dispatched session's status, and "
@@ -163,6 +244,9 @@ def execute(prompt, ctx):
     observations: list[dict[str, Any]] = []
     closed: list[str] = []
     skipped: list[str] = []
+    fired_reflector_sessions: set[str] = set()
+    reflector_fired_list: list[str] = []
+    reflector_threshold = cfg.get("reflector_duration_threshold_ms", DURATION_THRESHOLD_MS)
 
     # Cache of target_workspace_id -> recent sessions list, fetched once per tick.
     target_sessions_cache: dict[str, list[dict[str, Any]]] = {}
@@ -260,6 +344,11 @@ def execute(prompt, ctx):
                 "post_status": post_status,
             })
             closed.append(f"{task_id}->blocked")
+            if session_id and session_id not in fired_reflector_sessions and _should_fire_reflector(session_data, meta, reflector_threshold):
+                _fire_reflector(ctx, platform_url, session_id)
+                fired_reflector_sessions.add(session_id)
+                reflector_fired_list.append(session_id)
+                observations[-1]["reflector_fired"] = True
             continue
 
         changed = _extract_changed_files(session_data)
@@ -283,6 +372,11 @@ def execute(prompt, ctx):
                     "validator_result": validator_result,
                 })
                 closed.append(f"{task_id}->validated")
+                if session_id and session_id not in fired_reflector_sessions and _should_fire_reflector(session_data, meta, reflector_threshold):
+                    _fire_reflector(ctx, platform_url, session_id)
+                    fired_reflector_sessions.add(session_id)
+                    reflector_fired_list.append(session_id)
+                    observations[-1]["reflector_fired"] = True
                 continue
 
         completion_body = {
@@ -307,6 +401,11 @@ def execute(prompt, ctx):
             "post_status": post_status,
         })
         closed.append(f"{task_id}->completed")
+        if session_id and session_id not in fired_reflector_sessions and _should_fire_reflector(session_data, meta, reflector_threshold):
+            _fire_reflector(ctx, platform_url, session_id)
+            fired_reflector_sessions.add(session_id)
+            reflector_fired_list.append(session_id)
+            observations[-1]["reflector_fired"] = True
 
     return ok({
         "observed_dispatches": len(dispatch_latest),
@@ -315,6 +414,7 @@ def execute(prompt, ctx):
         "closed_tasks": closed,
         "skipped": skipped[:10],  # cap noise
         "observations": observations,
+        "reflector_fired": reflector_fired_list,
         "rationale": (
             f"Watched {len(dispatch_latest)} dispatched tasks; "
             f"{len(already_completed)} already done; "

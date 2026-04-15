@@ -17,7 +17,7 @@ the only option for many CRUD ops on workspace internals).
 the common "trigger + stream" workflow. Shell-friendly.
 
 **HTTP** — anything the CLI doesn't cover: partial workspace config updates
-(signals/agents/credentials), resource uploads, memory corpus reads, activity
+(signals/agents/credentials), resource uploads, memory reads, activity
 tracking, MCP registry mutations, chat-storage RPC, library CRUD beyond what
 `atlas library` exposes. Also the only way to get proper SSE streams with full
 control over headers.
@@ -149,11 +149,11 @@ partial-config endpoints. Do not `DELETE /api/workspaces/:id` followed by a
 `POST /api/workspaces/create`.
 
 **Why:**
-- Delete + recreate loses runtime state (sessions, chats, memory corpus entries,
+- Delete + recreate loses runtime state (sessions, chats, memory entries,
   scratchpad notes).
 - The new workspace gets a different runtime ID (random, e.g.
   `grilled_xylem` → `fuzzy_plum`). Anything hardcoded against the old ID
-  (autopilot cron targets, cross-workspace references, memory corpus paths)
+  (autopilot cron targets, cross-workspace references, memory paths)
   silently breaks.
 - Active sessions are terminated.
 
@@ -227,7 +227,7 @@ The autopilot/self-modification loop uses this surface heavily. See
 - Author a skill, publish it, assign it to a workspace
 - Generate a workspace.yml from a template, create it, fire a smoke-test signal
 - Update a single signal's cron schedule without rewriting workspace.yml
-- Read the memory narrative corpus to pick up an autopilot backlog item
+- Read narrative memory to pick up an autopilot backlog item
 - Build and register a Python WASM agent
 
 **For authoring Python WASM agents** (agent.py, `@agent` decorator, `ctx.llm` /

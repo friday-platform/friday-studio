@@ -238,6 +238,54 @@ signals:
         - taskPriority
         - workspaceId
         - dispatcherWorkspaceId
+  author-skill:
+    provider: http
+    title: Author a new skill
+    description: >-
+      Fire to author a new skill via the planner → scaffolder → reviewer → publisher FSM pipeline.
+    config:
+      path: /webhooks/author-skill
+    schema:
+      type: object
+      properties:
+        request:
+          type: string
+          description: Natural-language description of the skill to create.
+        targetNamespace:
+          type: string
+          description: 'Skill namespace — defaults to @tempest.'
+      required:
+        - request
+  extend-workspace:
+    provider: http
+    title: Extend a workspace with new signals
+    description: >-
+      Kernel-mediated workspace extension. Receives a payload specifying a target
+      workspace and signal additions, then runs a validate → review → apply FSM
+      pipeline. The kernel is the only caller of the mutation API — agents request
+      extension but never directly mutate workspace config.
+    config:
+      path: /webhooks/extend-workspace
+    schema:
+      type: object
+      properties:
+        targetWorkspaceId:
+          type: string
+          description: ID of the workspace to extend with new signals.
+        additions:
+          type: object
+          properties:
+            signals:
+              type: object
+              description: >-
+                Record of signalId → signal config to add. Each signal must
+                conform to WorkspaceSignalConfigSchema (provider: http or schedule).
+          description: >-
+            Additions to apply. MVP supports signals only — agents and jobs
+            are reserved for future phases.
+      required:
+        - targetWorkspaceId
+        - additions
 agents:
   status-watcher:
     type: user
@@ -463,6 +511,133 @@ agents:
         the error, do not swallow it.
     env:
       ANTHROPIC_API_KEY: from_environment
+  extend-validator:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Validates proposed signal additions against the target workspace's existing
+      config. Checks provider types (http/schedule only), duplicate signal IDs,
+      and schema conformance. Returns a validate-result with resolved signals.
+    prompt: |
+      You are the extend-workspace validator. Your job: validate proposed signal
+      additions against a target workspace's existing configuration.
+
+      ## Input (from config)
+
+      - targetWorkspaceId: the workspace to extend
+      - additions: { signals: Record<signalId, SignalConfig> }
+      - platformUrl: daemon base URL
+
+      ## Protocol
+
+      1. Fetch the target workspace config:
+         curl -s {platformUrl}/api/workspaces/{targetWorkspaceId}
+      2. For each signal in additions.signals:
+         a. Provider must be 'http' or 'schedule' — reject webhook/websocket/fs-watch/slack
+         b. HTTP signals must have config.path
+         c. Schedule signals must have config.schedule
+         d. Signal ID must not already exist on the target workspace
+         e. All signals must have a description
+      3. Collect issues as strings. If any issue exists, valid=false.
+
+      ## Output contract: validate-result
+
+      {
+        "valid": boolean,
+        "issues": string[],
+        "resolvedSignals": { [signalId]: SignalConfig }
+      }
+
+      resolvedSignals contains only the signals that passed validation.
+      If valid=false, resolvedSignals may be empty or contain the subset
+      that passed.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  extend-reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Cross-references proposed signals against the target workspace's existing
+      signals and job triggers. Checks for naming conflicts, cron schedule sanity,
+      HTTP path collisions, and orphaned signals.
+    prompt: |
+      You are the extend-workspace reviewer. Your job: review validated signal
+      additions for safety and conflicts before they are applied.
+
+      ## Input (from config)
+
+      - targetWorkspaceId: the workspace being extended
+      - resolvedSignals: validated signals from the validator step
+      - platformUrl: daemon base URL
+
+      ## Protocol
+
+      1. Fetch the target workspace config:
+         curl -s {platformUrl}/api/workspaces/{targetWorkspaceId}
+      2. For each signal in resolvedSignals, check:
+         a. Signal ID naming: no collisions with existing signal IDs
+         b. HTTP path: no collisions with existing signal paths
+         c. Schedule sanity: cron not sub-minute (no */N where N<1 for minutes),
+            timezone is valid (UTC or IANA timezone)
+         d. Orphaned signal: check if any job in the target workspace references
+            this signal ID in its triggers — warn if no job will consume it
+      3. Severity levels:
+         - CRITICAL → BLOCK (duplicate path, duplicate ID)
+         - WARNING → NEEDS_CHANGES (orphaned signal, unusual schedule)
+         - INFO → APPROVE (all clear)
+
+      ## Output contract: review-result
+
+      {
+        "verdict": "APPROVE" | "NEEDS_CHANGES" | "BLOCK",
+        "findings": [{ "severity": string, "description": string, "plan_line": string }],
+        "summary": string
+      }
+
+      BLOCK if any CRITICAL finding. NEEDS_CHANGES if any WARNING.
+      APPROVE only when all findings are INFO or no findings.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  extend-applier:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Applies validated and reviewed signal additions to the target workspace by
+      calling POST /api/workspaces/:id/config/signals for each signal. Reports
+      per-signal success/failure.
+    prompt: |
+      You are the extend-workspace applier. Your job: apply approved signal
+      additions to the target workspace via the daemon's signal creation API.
+
+      ## Input (from config)
+
+      - targetWorkspaceId: the workspace to extend
+      - resolvedSignals: approved signals from the validator
+      - platformUrl: daemon base URL
+
+      ## Protocol
+
+      For each signal in resolvedSignals:
+      1. Construct a POST body matching CreateSignalInputSchema:
+         { "signalId": "<key>", "signal": <SignalConfig> }
+      2. POST to {platformUrl}/api/workspaces/{targetWorkspaceId}/config/signals
+         with Content-Type: application/json
+      3. Record success (2xx) or failure (4xx/5xx with error message)
+
+      ## Output contract: apply-result
+
+      {
+        "applied": boolean,
+        "created": string[],
+        "errors": string[],
+        "summary": string
+      }
+
+      applied=true only if ALL signals were created successfully.
+      created lists signal IDs that were created.
+      errors lists "signalId: error message" for failures.
+    env:
+      ANTHROPIC_API_KEY: from_environment
   workspace-reviewer:
     type: atlas
     agent: claude-code
@@ -655,6 +830,177 @@ agents:
          /Users/kenneth/tempest/agent-sdk/packages/python/examples/ for pattern
          deviations, or _types.py / _decorator.py line for SDK shape
          issues.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-planner:
+    type: llm
+    description: >-
+      Architect-role LLM agent that takes a user's natural-language request and produces a skill plan: name, description, instructions outline, and reference files needed. Pure structured output from inline prompt — no filesystem access required.
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-5-20250514
+      prompt: |
+        You are a skill architect for the FAST platform. Your job is to take a
+        natural-language request and produce a structured skill plan.
+
+        A skill in FAST is a bundle of instructions (SKILL.md) and optional
+        reference files that get injected into an agent's system prompt to give
+        it domain-specific knowledge and behavioral guidance.
+
+        ## Input
+
+        You will receive a request describing what skill to create and
+        optionally a target namespace.
+
+        ## Output contract: skill-plan-result
+
+        Return structured JSON with exactly these fields:
+        - name: snake-case skill name (e.g. "todoist_triage", "github_pr_review")
+        - description: under 1024 characters. Concise description of what the
+          skill teaches an agent to do.
+        - instructions_outline: markdown outline of the SKILL.md instructions
+          section. Use ## headers for major sections, bullet points for details.
+        - reference_files_needed: array of filenames (e.g. ["api-reference.md",
+          "examples.md"]) that the skill should include as reference material.
+
+        ## Rules
+
+        - name must be snake_case, no hyphens, no spaces
+        - description must be under 1024 characters (hard limit)
+        - instructions_outline should be actionable guidance, not documentation
+        - reference_files_needed should list files the scaffolder will populate
+        - Keep the plan focused — one skill does one thing well
+  skill-scaffolder:
+    type: llm
+    description: >-
+      Expands a skill plan into full SKILL.md content and reference file contents. Pure structured output from inline prompt — no filesystem access required.
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-5-20250514
+      prompt: |
+        You are a skill scaffolder for the FAST platform. Your job is to expand
+        a skill plan into complete file contents ready for publishing.
+
+        ## Input
+
+        You will receive a skill plan with: name, description,
+        instructions_outline, and reference_files_needed.
+
+        ## Output contract: skill-scaffold-result
+
+        Return structured JSON with exactly these fields:
+        - name: the skill name from the plan (unchanged)
+        - instructions_md: complete SKILL.md file content including YAML
+          frontmatter and the full instructions body. Frontmatter format:
+
+          ```
+          ---
+          name: <skill-name>
+          description: <description from plan>
+          ---
+
+          # <Skill Title>
+
+          <full instructions body expanded from the outline>
+          ```
+
+        - reference_files: object mapping filename → file content for each
+          reference file listed in the plan.
+
+        ## Rules
+
+        - instructions_md must include valid YAML frontmatter with name and
+          description fields
+        - The instructions body should expand the outline into actionable
+          guidance an agent can follow
+        - Reference files should contain concrete examples, API shapes, or
+          domain knowledge the agent needs
+        - Keep instructions focused on what the agent should DO, not background
+        - Use markdown formatting: headers, code blocks, bullet points
+  skill-reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reads the scaffold output, validates structure (frontmatter, references, instructions format), and checks for quality issues. Must be claude-code for filesystem access to validate file references.
+    prompt: |
+      You are the skill reviewer for the FAST skill-author pipeline.
+      Your job: validate a scaffolded skill before it gets published.
+
+      ## Input
+
+      Your config contains:
+      - scaffold: the skill-scaffold-result with instructions_md and
+        reference_files
+      - plan: the original skill-plan-result
+
+      ## Review checklist
+
+      1. instructions_md has valid YAML frontmatter with name and
+         description fields
+      2. description in frontmatter is under 1024 characters
+      3. name in frontmatter matches the plan name
+      4. Every reference file listed in the plan appears in
+         reference_files map
+      5. instructions_md body is non-empty and contains actionable
+         guidance (not just headers)
+      6. No placeholder text like "TODO", "TBD", or "fill in later"
+      7. Markdown is well-formed (no unclosed code blocks, valid
+         headers)
+
+      ## Output contract: skill-review-result
+
+      Return structured JSON with:
+      - verdict: "APPROVE" or "BLOCK"
+      - findings: array of objects with:
+        - severity: "CRITICAL" | "WARNING" | "SUGGESTION"
+        - description: what the issue is
+        - plan_line: source citation (e.g. "plan.name" or
+          "scaffold.instructions_md:frontmatter")
+
+      BLOCK if any CRITICAL finding exists. Otherwise APPROVE.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  skill-publisher-cc:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Writes scaffold output to a temp directory and shells out to `deno task atlas skill publish <tmpdir>`. Returns the version number from the CLI output. Must be claude-code for shell access.
+    prompt: |
+      You are the skill publisher for the FAST skill-author pipeline.
+      Your job: take a validated scaffold and publish it via the CLI.
+
+      ## Input
+
+      Your config contains:
+      - scaffold: the skill-scaffold-result with name, instructions_md,
+        and reference_files
+      - plan: the skill-plan-result with name and targetNamespace
+
+      ## Protocol
+
+      1. Create a temp directory under /tmp for the skill files
+      2. Write scaffold.instructions_md to <tmpdir>/SKILL.md
+      3. If scaffold.reference_files has entries, create a
+         <tmpdir>/references/ directory and write each file there
+      4. Run: deno task atlas skill publish <tmpdir>
+         (from /Users/kenneth/tempest/atlas as working directory)
+      5. Parse the CLI output for the version number
+
+      ## Output contract: skill-publish-result
+
+      Return structured JSON with:
+      - published: true if CLI succeeded, false otherwise
+      - version: integer version number from CLI output
+      - namespace: the target namespace (from plan)
+      - name: the skill name
+
+      ## Rules
+
+      - Always use /Users/kenneth/tempest/atlas as working directory
+        for deno task commands
+      - Do not modify the scaffold content — publish exactly what was
+        reviewed
+      - If the CLI fails, set published=false and version=0
     env:
       ANTHROPIC_API_KEY: from_environment
 jobs:
@@ -1741,4 +2087,476 @@ jobs:
             - validated
             - results
             - discoveriesAppended
+      tools: {}
+  author-skill:
+    description: >-
+      Skill authoring pipeline. Planner → scaffolder → reviewer → publisher FSM
+      that authors new skills via the existing skill publish CLI. The agent never
+      touches SkillAdapter.create directly — every creation flows through FSM
+      data-contract gates and the existing publish API.
+    title: Supervise — author a new skill
+    entrypoint: jobs/author-skill/job.ts
+    triggers:
+      - signal: author-skill
+    fsm:
+      id: skill-author-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            author-skill:
+              target: step_plan
+        step_plan:
+          entry:
+            - type: code
+              function: prepare_plan
+            - type: agent
+              agentId: skill-planner
+              outputTo: plan-output
+              outputType: skill-plan-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_scaffold
+              guards:
+                - guard_plan_done
+        step_scaffold:
+          entry:
+            - type: code
+              function: prepare_scaffold
+            - type: agent
+              agentId: skill-scaffolder
+              outputTo: scaffold-output
+              outputType: skill-scaffold-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review
+              guards:
+                - guard_scaffold_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: skill-reviewer
+              outputTo: review-output
+              outputType: skill-review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_publish
+              guards:
+                - guard_review_approved
+        step_publish:
+          entry:
+            - type: code
+              function: prepare_publish
+            - type: agent
+              agentId: skill-publisher-cc
+              outputTo: publish-output
+              outputType: skill-publish-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_publish_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+        prepare_plan:
+          type: action
+          code: |
+            export default function prepare_plan(context, event) {
+              var request = event.data && event.data.request;
+              var targetNamespace = (event.data && event.data.targetNamespace) || '@tempest';
+
+              if (!request || typeof request !== 'string') {
+                throw new Error('Missing required input: request');
+              }
+
+              return {
+                task: 'Design a skill plan for: ' + request,
+                config: {
+                  request: request,
+                  targetNamespace: targetNamespace,
+                },
+              };
+            }
+        guard_plan_done:
+          type: guard
+          code: |
+            export default function guard_plan_done(context, event) {
+              return context.results['plan-output'] !== undefined;
+            }
+        prepare_scaffold:
+          type: action
+          code: |
+            export default function prepare_scaffold(context, event) {
+              var plan = context.results['plan-output'];
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Scaffold skill "' + plan.name + '" from plan',
+                config: {
+                  plan: plan,
+                },
+              };
+            }
+        guard_scaffold_done:
+          type: guard
+          code: |
+            export default function guard_scaffold_done(context, event) {
+              return context.results['scaffold-output'] !== undefined;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var scaffold = context.results['scaffold-output'];
+              var plan = context.results['plan-output'];
+              if (!scaffold) throw new Error('Scaffold output not found');
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Review skill "' + scaffold.name + '" scaffold',
+                config: {
+                  scaffold: scaffold,
+                  plan: plan,
+                },
+              };
+            }
+        guard_review_approved:
+          type: guard
+          code: |
+            export default function guard_review_approved(context, event) {
+              var review = context.results['review-output'];
+              if (!review) return false;
+              return review.verdict === 'APPROVE';
+            }
+        prepare_publish:
+          type: action
+          code: |
+            export default function prepare_publish(context, event) {
+              var scaffold = context.results['scaffold-output'];
+              var plan = context.results['plan-output'];
+              if (!scaffold) throw new Error('Scaffold output not found');
+              if (!plan) throw new Error('Plan output not found');
+              return {
+                task: 'Publish skill "' + scaffold.name + '" via CLI',
+                config: {
+                  scaffold: scaffold,
+                  plan: plan,
+                },
+              };
+            }
+        guard_publish_done:
+          type: guard
+          code: |
+            export default function guard_publish_done(context, event) {
+              return context.results['publish-output'] !== undefined;
+            }
+      documentTypes:
+        skill-plan-result:
+          type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+              maxLength: 1024
+            instructions_outline:
+              type: string
+            reference_files_needed:
+              type: array
+              items:
+                type: string
+          required:
+            - name
+            - description
+            - instructions_outline
+            - reference_files_needed
+        skill-scaffold-result:
+          type: object
+          properties:
+            name:
+              type: string
+            instructions_md:
+              type: string
+            reference_files:
+              type: object
+              additionalProperties:
+                type: string
+          required:
+            - name
+            - instructions_md
+            - reference_files
+        skill-review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum:
+                - APPROVE
+                - BLOCK
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                    enum:
+                      - CRITICAL
+                      - WARNING
+                      - SUGGESTION
+                  description:
+                    type: string
+                  plan_line:
+                    type: string
+                required:
+                  - severity
+                  - description
+                  - plan_line
+          required:
+            - verdict
+            - findings
+        skill-publish-result:
+          type: object
+          properties:
+            published:
+              type: boolean
+            version:
+              type: integer
+            namespace:
+              type: string
+            name:
+              type: string
+          required:
+            - published
+            - version
+            - namespace
+            - name
+      tools: {}
+  extend-workspace:
+    title: Supervise — extend a workspace with new signals
+    description: >-
+      Kernel-mediated workspace extension pipeline. Validates proposed signal
+      additions against the target workspace schema, reviews for conflicts and
+      safety, then applies via the daemon's existing POST /config/signals route.
+      Agents request extension but the kernel is the only mutation caller.
+    triggers:
+      - signal: extend-workspace
+    fsm:
+      id: extend-workspace-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            extend-workspace:
+              target: step_validate
+        step_validate:
+          entry:
+            - type: code
+              function: prepare_validate
+            - type: agent
+              agentId: extend-validator
+              outputTo: validate-output
+              outputType: validate-result
+            - type: emit
+              event: VALIDATED
+          'on':
+            VALIDATED:
+              target: step_review
+              guards:
+                - guard_validate_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: extend-reviewer
+              outputTo: review-output
+              outputType: review-result
+            - type: emit
+              event: REVIEWED
+          'on':
+            REVIEWED:
+              target: step_apply
+              guards:
+                - guard_review_done
+        step_apply:
+          entry:
+            - type: code
+              function: prepare_apply
+            - type: agent
+              agentId: extend-applier
+              outputTo: apply-output
+              outputType: apply-result
+            - type: emit
+              event: APPLIED
+          'on':
+            APPLIED:
+              target: completed
+              guards:
+                - guard_apply_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {}
+        prepare_validate:
+          type: action
+          code: |
+            export default function prepare_validate(context, event) {
+              var targetWorkspaceId = event.data && event.data.targetWorkspaceId;
+              var additions = event.data && event.data.additions;
+
+              if (!targetWorkspaceId || typeof targetWorkspaceId !== 'string') {
+                throw new Error('Missing required input: targetWorkspaceId');
+              }
+              if (!additions || typeof additions !== 'object') {
+                throw new Error('Missing required input: additions');
+              }
+              if (additions.agents || additions.jobs) {
+                throw new Error('Agent/job additions not yet supported — only signals are accepted in MVP');
+              }
+              if (!additions.signals || Object.keys(additions.signals).length === 0) {
+                throw new Error('At least one signal addition required');
+              }
+
+              context.setResult('extend-input', {
+                targetWorkspaceId: targetWorkspaceId,
+                additions: additions,
+              });
+
+              return {
+                task: 'Validate signal additions for workspace ' + targetWorkspaceId,
+                config: {
+                  targetWorkspaceId: targetWorkspaceId,
+                  additions: additions,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_validate_done:
+          type: guard
+          code: |
+            export default function guard_validate_done(context, event) {
+              var output = context.results['validate-output'];
+              return output !== undefined && output.valid === true;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var validateOutput = context.results['validate-output'];
+              var extendInput = context.results['extend-input'];
+              if (!validateOutput) throw new Error('Validate output not found');
+              if (!extendInput) throw new Error('Extend input not found');
+              return {
+                task: 'Review signal additions for workspace ' + extendInput.targetWorkspaceId,
+                config: {
+                  targetWorkspaceId: extendInput.targetWorkspaceId,
+                  resolvedSignals: validateOutput.resolvedSignals,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              var output = context.results['review-output'];
+              return output !== undefined && output.verdict === 'APPROVE';
+            }
+        prepare_apply:
+          type: action
+          code: |
+            export default function prepare_apply(context, event) {
+              var validateOutput = context.results['validate-output'];
+              var extendInput = context.results['extend-input'];
+              if (!validateOutput) throw new Error('Validate output not found');
+              if (!extendInput) throw new Error('Extend input not found');
+              return {
+                task: 'Apply signal additions to workspace ' + extendInput.targetWorkspaceId,
+                config: {
+                  targetWorkspaceId: extendInput.targetWorkspaceId,
+                  resolvedSignals: validateOutput.resolvedSignals,
+                  platformUrl: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_apply_done:
+          type: guard
+          code: |
+            export default function guard_apply_done(context, event) {
+              return context.results['apply-output'] !== undefined;
+            }
+      documentTypes:
+        validate-result:
+          type: object
+          properties:
+            valid: {type: boolean}
+            issues:
+              type: array
+              items: {type: string}
+            resolvedSignals:
+              type: object
+          required:
+            - valid
+            - issues
+            - resolvedSignals
+        review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum: [APPROVE, NEEDS_CHANGES, BLOCK]
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity: {type: string}
+                  description: {type: string}
+                  plan_line: {type: string}
+                required:
+                  - severity
+                  - description
+                  - plan_line
+            summary: {type: string}
+          required:
+            - verdict
+            - summary
+        apply-result:
+          type: object
+          properties:
+            applied: {type: boolean}
+            created:
+              type: array
+              items: {type: string}
+            errors:
+              type: array
+              items: {type: string}
+            summary: {type: string}
+          required:
+            - applied
+            - created
+            - summary
       tools: {}

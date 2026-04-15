@@ -282,14 +282,14 @@ describe("parseMemoryMountSource", () => {
     const result = parseMemoryMountSource("thick_endive/narrative/autopilot-backlog");
     expect(result.workspaceId).toBe("thick_endive");
     expect(result.kind).toBe("narrative");
-    expect(result.corpusName).toBe("autopilot-backlog");
+    expect(result.memoryName).toBe("autopilot-backlog");
   });
 
   it("parses _global source", () => {
     const result = parseMemoryMountSource("_global/kv/shared-flags");
     expect(result.workspaceId).toBe("_global");
     expect(result.kind).toBe("kv");
-    expect(result.corpusName).toBe("shared-flags");
+    expect(result.memoryName).toBe("shared-flags");
   });
 
   it("throws on invalid source string", () => {

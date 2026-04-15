@@ -54,6 +54,19 @@ export function resolveMemoryBasePath(workspaceId: string): string {
   return `memory/${workspaceId}/`;
 }
 
+// ── Canonical scope list + access policy ──────────────────────────────────
+
+export const ALL_SCOPES = ["global", "workspace", "mounted"] as const;
+
+export const SCOPE_ACCESS_RULES: Record<
+  MemoryScope,
+  { read: "any" | "kernel" | "owner"; write: "any" | "kernel" | "owner"; bootstrap: boolean }
+> = {
+  global: { read: "any", write: "kernel", bootstrap: true },
+  workspace: { read: "owner", write: "owner", bootstrap: true },
+  mounted: { read: "any", write: "owner", bootstrap: true },
+} as const;
+
 // ── Scope descriptors ─────────────────────────────────────────────────────
 
 export type MemoryScopeDescriptor =

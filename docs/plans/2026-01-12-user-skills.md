@@ -21,7 +21,7 @@ New package providing the full skills stack: Zod schemas, storage interface, two
 
 ### `packages/system/agents/skill-distiller/` — Skill Distiller Agent
 
-LLM-powered agent that distills corpus material (artifacts) into skill definitions. Uses `generateObject` with Claude Sonnet. Saves output as a `skill-draft` artifact for user review before promotion. Supports revision of existing drafts via `draftArtifactId`.
+LLM-powered agent that distills source material (artifacts) into skill definitions. Uses `generateObject` with Claude Sonnet. Saves output as a `skill-draft` artifact for user review before promotion. Supports revision of existing drafts via `draftArtifactId`.
 
 ### `packages/system/agents/conversation/tools/create-skill.ts` — Draft Promotion
 

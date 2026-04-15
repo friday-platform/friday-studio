@@ -246,8 +246,8 @@ You answer. Next state:
 
 ```
 [skill.author.fsm] state: plan
-  plan: dedup corpus for logged items + narrative entry for budget cap
-       + retrieval corpus for historical weeks
+  plan: dedup memory for logged items + narrative entry for budget cap
+       + retrieval memory for historical weeks
 [skill.author.fsm] state: scaffold
   [skill.create] draft validated
   [skill.create] @local/grocery-budget v1.0.0 (unpublished)
@@ -298,7 +298,7 @@ Two writes, both adapter-mediated:
   patch) registered a new cron with Zod-validated schema. The daemon
   hot-reloads the cron manager without a restart.
 - A narrative memory entry in the `standing-orders` section — OpenClaw's
-  Standing Orders pattern, as a tagged section of the narrative corpus.
+  Standing Orders pattern, as a tagged section of the narrative memory.
 
 Next Friday at 4pm, the cron fires. The agent reads its own standing
 orders at session start and knows what to do, because bootstrap
@@ -554,7 +554,7 @@ by the sum of the individual demonstrations, not any single one.
 
 - **Ledger-backed skills** (Phase 6 cloud profile) — multi-user shared
   skill library. Not needed for personal-assistant demo.
-- **`pg-vector` retrieval corpus** for a huge personal document index.
+- **`pg-vector` retrieval memory** for a huge personal document index.
   Possible, not required.
 - **Slack/Discord signal handlers** (Phase 7). Walkthrough uses CLI +
   HTTP because those are universal.
@@ -575,7 +575,7 @@ walkthrough work end-to-end?* Specifically:
 
 - **Phase 1 review:** do Steps 1, 2, 3, 9 (the persona/memory/inspect
   arc) still hold? Does `friday memory show` render the narrative
-  corpus byte-identically to `cat MEMORY.md`?
+  memory byte-identically to `cat MEMORY.md`?
 - **Phase 2 review:** does Step 6 (`skill-author` FSM) run end-to-end
   against a real LLM without manual intervention?
 - **Phase 3 review:** does Step 4 (`friday skills install`) actually

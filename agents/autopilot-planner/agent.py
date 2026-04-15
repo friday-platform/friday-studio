@@ -34,9 +34,26 @@ def _http_get_json(ctx: Any, url: str) -> dict[str, Any]:
 
 
 def _narrative_entries_to_backlog(entries: list[dict[str, Any]]) -> dict[str, Any]:
-    """Map a NarrativeEntry[] response from the corpus endpoint to {tasks: [...]}."""
-    tasks: list[dict[str, Any]] = []
+    """Map a NarrativeEntry[] response from the corpus endpoint to {tasks: [...]}.
+
+    The narrative corpus is append-only, so a single task_id can have multiple
+    entries reflecting its status transitions (pending → completed, etc).
+    Dedupe by id keeping the latest createdAt so a `completed` entry shadows
+    an earlier `pending` one. Without this dedupe the planner re-dispatches
+    completed tasks forever because the stale pending entry still satisfies
+    the eligibility filter.
+    """
+    latest_by_id: dict[str, dict[str, Any]] = {}
     for entry in entries:
+        eid = entry.get("id", "")
+        if not eid:
+            continue
+        prior = latest_by_id.get(eid)
+        if prior is None or entry.get("createdAt", "") > prior.get("createdAt", ""):
+            latest_by_id[eid] = entry
+
+    tasks: list[dict[str, Any]] = []
+    for entry in latest_by_id.values():
         meta = entry.get("metadata") or {}
         tasks.append({
             "id": entry.get("id", ""),
@@ -194,15 +211,17 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.5.0",
+    version="1.6.0",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
         "and dependency resolution, returns the next task to execute, fires "
         "the target signal inline, and logs the dispatch to a per-task "
-        "dispatch-log corpus. v1.5.0: skips tasks with auto_apply=false "
-        "(surface-only, human-gated). v1.4.0: per-TASK cooldown (was "
-        "per-signal in v1.3.x)."
+        "dispatch-log corpus. v1.6.0: dedupes narrative-corpus entries by "
+        "task_id so completed entries shadow earlier pending ones — fixes "
+        "a bug where 189 of 232 sessions were re-dispatching already-done "
+        "tasks. v1.5.0: skips tasks with auto_apply=false (surface-only, "
+        "human-gated). v1.4.0: per-TASK cooldown (was per-signal in v1.3.x)."
     ),
     summary="Selects the next pending backlog task to execute; returns idle when none are eligible.",
     examples=[

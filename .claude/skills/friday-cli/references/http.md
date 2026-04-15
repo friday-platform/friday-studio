@@ -187,7 +187,7 @@ Mount: `/api/activity`. Auth required.
 
 ## Memory
 
-- `GET /api/memory/:workspaceId/narrative/:corpus?since=&limit=`
+- `GET /api/memory/:workspaceId/narrative/:memoryName?since=&limit=`
   Returns `NarrativeEntry[]`. Empty on failure (warn-logged).
 
 ## User / me

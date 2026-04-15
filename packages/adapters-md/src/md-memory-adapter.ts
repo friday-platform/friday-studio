@@ -4,8 +4,8 @@
  * Routes corpus() to MdNarrativeCorpus for the 'narrative' kind.
  * Retrieval, dedup, and kv backends are deferred to Phase 1b.
  *
- * Storage layout: {root}/memory/{workspaceId}/narrative/{corpusName}/
- * Each corpus gets its own directory; MdNarrativeCorpus writes MEMORY.md inside it.
+ * Storage layout: {root}/memory/{workspaceId}/narrative/{memoryName}/
+ * Each memory gets its own directory; MdNarrativeCorpus writes MEMORY.md inside it.
  *
  * From parity plan v6, lines 585-603:
  * > MemoryAdapter — corpus-typed memory with swappable backends.
