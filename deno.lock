@@ -27,6 +27,7 @@
     "jsr:@std/testing@1": "1.0.16",
     "jsr:@std/testing@^1.0.16": "1.0.16",
     "jsr:@std/text@1": "1.0.17",
+    "jsr:@std/yaml@*": "1.0.11",
     "jsr:@std/yaml@1": "1.0.11",
     "npm:@ai-sdk/anthropic@^3.0.69": "3.0.69_zod@4.3.6",
     "npm:@ai-sdk/fireworks@2.0.46": "2.0.46_zod@4.3.6",

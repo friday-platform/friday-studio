@@ -66,7 +66,7 @@ export const StateDefinitionSchema = z.object({
 });
 
 export const FunctionDefinitionSchema = z.object({
-  type: z.enum(["guard", "action"]),
+  type: z.enum(["guard", "action", "action-io"]),
   code: z.string(),
 });
 

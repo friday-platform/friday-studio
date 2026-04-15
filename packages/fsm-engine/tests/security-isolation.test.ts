@@ -457,3 +457,47 @@ describe.skipIf(!isDenoRuntime)("Legitimate Operations - All Allowed", () => {
     expect(result.spread).toHaveLength(4);
   });
 });
+
+/**
+ * ============================================================================
+ * action-io: Privileged executor grants net/read/env to opt-in functions
+ * ============================================================================
+ * Verifies that WorkerExecutor with permissions: { net: true } allows fetch(),
+ * while the default executor (no permissions) still blocks it. This is the
+ * contract that makes `type: action-io` in workspace.yml safe and opt-in.
+ */
+describe.skipIf(!isDenoRuntime)("action-io: privileged executor allows network", () => {
+  const ioExecutor = new WorkerExecutor({
+    timeout: 10000,
+    functionType: "action",
+    permissions: { net: true },
+  });
+
+  it("privileged executor can fetch localhost without NotCapable", async () => {
+    // This is the exact pattern apply_to_backlog uses. The fetch will fail
+    // with a connection error (no server listening) but must NOT throw
+    // NotCapable — that's the permission error we're fixing.
+    const code = `
+      export default async () => {
+        try {
+          await fetch('http://127.0.0.1:1/ping');
+        } catch (e) {
+          // Connection refused is expected (no server) — but NOT "Requires net access"
+          if (e.name === 'NotCapable') throw e;
+          return 'network-permitted';
+        }
+      }
+    `;
+    const result = await ioExecutor.execute(code, "ioFetch", ctx, sig);
+    expect(result).toBe("network-permitted");
+  });
+
+  it("default executor still blocks fetch (regression)", async () => {
+    const code = `
+      export default async () => {
+        await fetch('http://127.0.0.1:1/ping');
+      }
+    `;
+    await expect(executor.execute(code, "blockedFetch", ctx, sig)).rejects.toThrow();
+  });
+});

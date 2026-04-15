@@ -413,6 +413,7 @@ export class FSMEngine {
   private _emittedEvents: EmittedEvent[] = [];
   private _guardFunctions = new Map<string, string>(); // Store CODE, not compiled fn
   private _actionFunctions = new Map<string, string>(); // Store CODE, not compiled fn
+  private _ioActionFunctions = new Map<string, string>(); // action-io: runs via _toolExecutor (net, read, env)
   private _guardExecutor: CodeExecutor;
   private _actionExecutor: CodeExecutor;
   private _toolExecutor: CodeExecutor;
@@ -498,6 +499,8 @@ export class FSMEngine {
 
           if (func.type === "guard") {
             this._guardFunctions.set(name, validatedCode);
+          } else if (func.type === "action-io") {
+            this._ioActionFunctions.set(name, validatedCode);
           } else {
             this._actionFunctions.set(name, validatedCode);
           }
@@ -1087,7 +1090,11 @@ export class FSMEngine {
       try {
         switch (action.type) {
           case "code": {
-            const actionCode = this._actionFunctions.get(action.function);
+            // action-io functions run via _toolExecutor (net, read, env; 180s timeout)
+            const isIoAction = this._ioActionFunctions.has(action.function);
+            const actionCode = isIoAction
+              ? this._ioActionFunctions.get(action.function)
+              : this._actionFunctions.get(action.function);
             if (!actionCode) {
               throw new Error(`Action function "${action.function}" not found`);
             }
@@ -1096,6 +1103,7 @@ export class FSMEngine {
               function: action.function,
               state: currentState,
               signalType: sig.type,
+              io: isIoAction,
             });
 
             // Pre-load state cache so code actions can use context.stateFilter()
@@ -1103,13 +1111,9 @@ export class FSMEngine {
             // Update the snapshot so the worker receives the cache
             context.results = Object.fromEntries(resultsMap);
 
+            const executor = isIoAction ? this._toolExecutor : this._actionExecutor;
             try {
-              const returnValue = await this._actionExecutor.execute(
-                actionCode,
-                action.function,
-                context,
-                sig,
-              );
+              const returnValue = await executor.execute(actionCode, action.function, context, sig);
               codeActionResult = parsePrepareResult(returnValue);
 
               // Process any stateAppend mutations from the code action

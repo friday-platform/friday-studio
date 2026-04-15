@@ -92,7 +92,7 @@ export interface AgentAction {
 }
 
 export interface FunctionDefinition {
-  type: "guard" | "action";
+  type: "guard" | "action" | "action-io";
   code: string;
 }
 
