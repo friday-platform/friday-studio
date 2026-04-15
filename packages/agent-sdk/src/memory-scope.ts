@@ -73,3 +73,11 @@ export type MemoryScopeDescriptor =
   | { scope: "global"; kernelOnly: boolean }
   | { scope: "workspace"; ownerId: string }
   | { scope: "mounted"; source: string; mode: MountMode };
+
+// ── Well-known corpus names ──────────────────────────────────────────────────
+
+export const USER_PROFILE_CORPUS = "user-profile" as const;
+
+export type UserProfileEntryType = "user-name" | "name-declined";
+
+export const USER_PROFILE_ENTRY_TYPES = ["user-name", "name-declined"] as const;

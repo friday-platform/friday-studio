@@ -24,7 +24,7 @@ export function builder(y: YargsInstance) {
     .option("workspace", {
       type: "string",
       alias: "w",
-      describe: "Workspace ID or name for workspace-scoped chat",
+      describe: "Add workspace as foreground context (layered on top of user workspace)",
     });
 }
 
@@ -118,10 +118,14 @@ export const handler = async (argv: PromptArgs): Promise<void> => {
   const messageId = nanoid(8);
   const daemonUrl = getAtlasDaemonUrl();
 
-  const body = {
+  const body: Record<string, unknown> = {
     id: chatId,
     message: { id: messageId, role: "user", parts: [{ type: "text", text: argv.message }] },
   };
+
+  if (argv.workspace) {
+    body.foreground_workspace_ids = [argv.workspace];
+  }
 
   // Set up abort controller for Ctrl+C handling
   const abortController = new AbortController();
@@ -132,9 +136,7 @@ export const handler = async (argv: PromptArgs): Promise<void> => {
   Deno.addSignalListener("SIGINT", handleAbort);
 
   try {
-    const chatUrl = argv.workspace
-      ? `${daemonUrl}/api/workspaces/${encodeURIComponent(argv.workspace)}/chat`
-      : `${daemonUrl}/api/chat`;
+    const chatUrl = `${daemonUrl}/api/workspaces/user/chat`;
 
     const response = await fetch(chatUrl, {
       method: "POST",

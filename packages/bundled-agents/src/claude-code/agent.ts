@@ -285,9 +285,22 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
       prompt,
       { logger, abortSignal, stream, session, env, config, outputSchema, skills },
     ) => {
+      // FAST_DEVELOPMENT=true lets local dev runs fall back to the operator's
+      // Claude Code subscription (~/.claude) instead of requiring a Link-managed
+      // ANTHROPIC_API_KEY. Also disables the sandbox so the Claude CLI child
+      // can read the credential file outside the work dir. Never enable this
+      // in production — it gives the child full read access to $HOME.
+      const useSubscriptionAuth = process.env.FAST_DEVELOPMENT === "true";
       const apiKey = env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        return err("ANTHROPIC_API_KEY not set. Connect Anthropic in Link.");
+      if (!apiKey && !useSubscriptionAuth) {
+        return err(
+          "ANTHROPIC_API_KEY not set. Connect Anthropic in Link, or export FAST_DEVELOPMENT=true to use local ~/.claude subscription auth.",
+        );
+      }
+      if (useSubscriptionAuth) {
+        logger.info(
+          "FAST_DEVELOPMENT=true — using local ~/.claude subscription auth, sandbox disabled",
+        );
       }
 
       const ghToken = env.GH_TOKEN ?? "";
@@ -419,21 +432,32 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
             settings: { attribution: { commit: "", pr: "" }, includeCoAuthoredBy: false },
             settingSources: ["project"],
             maxTurns: 500,
-            sandbox: sandboxOptions,
+            sandbox: useSubscriptionAuth ? { enabled: false } : sandboxOptions,
             abortController: controller,
             // Stream partial assistant messages (token-level deltas) during LLM generation.
             // Each stream_event resets the activity tracker, eliminating the blind spot where
             // the SDK is alive but silent during extended thinking.
             includePartialMessages: true,
             env: (() => {
-              const env: Record<string, string | undefined> = {
+              const childEnv: Record<string, string | undefined> = {
                 ...process.env,
-                ANTHROPIC_API_KEY: apiKey,
                 GH_TOKEN: ghToken,
               };
+              // FAST_DEVELOPMENT forces the Claude CLI child to use local
+              // ~/.claude OAuth even when the daemon itself has an
+              // ANTHROPIC_API_KEY (used by generateObject / smallLLM / other
+              // agents that run in-process). We selectively scrub the key
+              // from the child env without affecting the parent daemon.
+              if (useSubscriptionAuth) {
+                delete childEnv.ANTHROPIC_API_KEY;
+              } else if (apiKey) {
+                childEnv.ANTHROPIC_API_KEY = apiKey;
+              } else {
+                delete childEnv.ANTHROPIC_API_KEY;
+              }
               // Strip CLAUDECODE to allow nested Claude Code execution (e.g. daemon running inside Claude Code)
-              delete env.CLAUDECODE;
-              return env;
+              delete childEnv.CLAUDECODE;
+              return childEnv;
             })(),
             stderr: (data) => {
               activity.lastActivityMs = Date.now();
