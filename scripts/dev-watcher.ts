@@ -84,6 +84,26 @@ const SESSIONS_URL = "http://localhost:8080/api/sessions?limit=100";
 const IDLE_POLL_MS = 2000;
 const MAX_WAIT_MS = 30 * 60 * 1000; // 30 min — FAST sessions can legitimately run 20+ min
 const SHUTDOWN_GRACE_MS = 10_000;
+const UNEXPECTED_EXIT_RESPAWN_DELAY_MS = 1_000;
+const WATCH_RECONNECT_DELAY_MS = 1_000;
+const CRASH_LOOP_WINDOW_MS = 60_000;
+const CRASH_LOOP_MAX_RESPAWNS = 5;
+
+// ─── Supervisor state ────────────────────────────────────────────────────────
+// Module-level so spawnDaemon's on("exit") closure can coordinate with the
+// rest of the watcher without re-wiring the handler for every spawn.
+let currentDaemon: ChildProcess | null = null;
+let shuttingDown = false;
+// Set true before any intentional SIGTERM (killDaemon). The exit handler uses
+// this to distinguish triggerRestart-driven exits (don't auto-respawn — the
+// caller will handle it) from crashes/external kills (auto-respawn).
+let expectedExit = false;
+// CLI args the daemon was originally spawned with. Set once in main() before
+// the first spawn so the on("exit") auto-respawn path can re-spawn with the
+// same args.
+let daemonArgs: readonly string[] = [];
+// Sliding window of recent respawn timestamps for crash-loop detection.
+const recentRespawnsAt: number[] = [];
 
 function log(msg: string): void {
   console.log(`[dev-watcher] ${msg}`);
@@ -116,7 +136,41 @@ function resolveWatchPaths(): string[] {
   return resolved;
 }
 
-function spawnDaemon(extraArgs: readonly string[]): ChildProcess {
+/**
+ * Spawn the daemon child and wire its lifecycle into the supervisor.
+ *
+ * The exit handler distinguishes three cases:
+ *
+ *   1. `shuttingDown` — whole process is tearing down. Do nothing.
+ *   2. `expectedExit` — triggerRestart or shutdown asked for this exit via
+ *      killDaemon. The caller will either spawn a replacement itself or exit
+ *      the process. Don't respawn.
+ *   3. Everything else — crash, external SIGTERM, OOM. This is the case the
+ *      old version silently logged and ignored, leaving the dev pipeline with
+ *      no running daemon. Now we auto-respawn after a 1s delay, with crash-
+ *      loop protection: if we've respawned more than CRASH_LOOP_MAX_RESPAWNS
+ *      times within CRASH_LOOP_WINDOW_MS, we give up and exit the watcher so
+ *      the operator notices instead of burning CPU.
+ */
+function spawnDaemon(): ChildProcess {
+  // Crash-loop guard: prune old timestamps, then check the window.
+  const now = Date.now();
+  while (recentRespawnsAt.length > 0) {
+    const first = recentRespawnsAt[0];
+    if (first === undefined || first >= now - CRASH_LOOP_WINDOW_MS) break;
+    recentRespawnsAt.shift();
+  }
+  if (recentRespawnsAt.length >= CRASH_LOOP_MAX_RESPAWNS) {
+    warn(
+      `daemon crash loop: ${recentRespawnsAt.length} respawns in the last ${
+        CRASH_LOOP_WINDOW_MS / 1000
+      }s — giving up. Fix the daemon and re-run \`deno task dev\`.`,
+    );
+    shuttingDown = true;
+    process.exit(1);
+  }
+  recentRespawnsAt.push(now);
+
   const denoArgs = [
     "run",
     "-q",
@@ -126,16 +180,48 @@ function spawnDaemon(extraArgs: readonly string[]): ChildProcess {
     "--unstable-raw-imports",
     "--env-file",
     "apps/atlas-cli/src/otel-bootstrap.ts",
-    ...extraArgs,
+    ...daemonArgs,
   ];
   log(`spawning daemon: deno ${denoArgs.join(" ")}`);
   const child = spawn("deno", denoArgs, { stdio: "inherit", env: process.env, cwd: REPO_ROOT });
+
   child.on("exit", (code, signal) => {
-    log(`daemon child exited (code=${code ?? "?"}, signal=${signal ?? "?"})`);
+    if (shuttingDown) {
+      log(`daemon child exited during shutdown (code=${code ?? "?"}, signal=${signal ?? "?"})`);
+      return;
+    }
+    if (expectedExit) {
+      log(`daemon child exited as expected (code=${code ?? "?"}, signal=${signal ?? "?"})`);
+      expectedExit = false;
+      return;
+    }
+    // Identity check: if currentDaemon already points somewhere else, a
+    // triggerRestart respawn beat us here and this handler is a stale
+    // callback from the previous child. Nothing to do.
+    if (currentDaemon !== child) {
+      log(
+        `daemon child exited (code=${code ?? "?"}, signal=${signal ?? "?"}) — already superseded`,
+      );
+      return;
+    }
+    warn(
+      `daemon child exited unexpectedly (code=${code ?? "?"}, signal=${
+        signal ?? "?"
+      }) — auto-respawning in ${UNEXPECTED_EXIT_RESPAWN_DELAY_MS}ms`,
+    );
+    setTimeout(() => {
+      // Re-check both conditions before respawning — state may have changed
+      // during the 1s delay (e.g. a manual triggerRestart landed in between).
+      if (shuttingDown) return;
+      if (currentDaemon !== child) return;
+      currentDaemon = spawnDaemon();
+    }, UNEXPECTED_EXIT_RESPAWN_DELAY_MS);
   });
+
   child.on("error", (err) => {
     warn(`daemon child error: ${err.message}`);
   });
+
   return child;
 }
 
@@ -235,8 +321,17 @@ async function waitForIdle(): Promise<void> {
   warn(`max wait (${Math.round(MAX_WAIT_MS / 60_000)} min) exceeded — forcing restart anyway`);
 }
 
+/**
+ * Send SIGTERM to the daemon child and wait up to SHUTDOWN_GRACE_MS for it
+ * to exit cleanly, then escalate to SIGKILL.
+ *
+ * Sets `expectedExit = true` before SIGTERM so the child's exit handler
+ * knows this is an intentional kill and does NOT auto-respawn. The caller
+ * (triggerRestart or shutdown) owns the post-kill lifecycle.
+ */
 async function killDaemon(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.killed) return;
+  expectedExit = true;
   child.kill("SIGTERM");
   const deadline = Date.now() + SHUTDOWN_GRACE_MS;
   while (Date.now() < deadline) {
@@ -248,17 +343,21 @@ async function killDaemon(child: ChildProcess): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const extraArgs = Deno.args.length > 0 ? Deno.args : ["daemon", "start"];
-  let daemon = spawnDaemon(extraArgs);
+  daemonArgs = Deno.args.length > 0 ? Deno.args : ["daemon", "start"];
+  currentDaemon = spawnDaemon();
+
   let restartInProgress = false;
   // Deno's setTimeout returns number; node's returns NodeJS.Timeout. Using the
   // runtime-agnostic ReturnType keeps this file portable across both typecheckers.
   let pendingRestart: ReturnType<typeof setTimeout> | null = null;
 
   const shutdown = async (signal: string): Promise<void> => {
+    shuttingDown = true;
     log(`received ${signal}, shutting down daemon child`);
     if (pendingRestart !== null) clearTimeout(pendingRestart);
-    await killDaemon(daemon);
+    if (currentDaemon !== null) {
+      await killDaemon(currentDaemon);
+    }
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
@@ -274,12 +373,22 @@ async function main(): Promise<void> {
     restartInProgress = true;
     const startedAt = Date.now();
     try {
+      // If the daemon died between events (crash mid-wait, auto-respawn
+      // pending), just spawn fresh — waitForIdle would return null forever
+      // against a missing daemon.
+      if (currentDaemon === null || currentDaemon.exitCode !== null) {
+        log(
+          `file change: ${path.relative(REPO_ROOT, changedPath)} — no daemon running, spawning fresh`,
+        );
+        currentDaemon = spawnDaemon();
+        return;
+      }
       log(`file change: ${path.relative(REPO_ROOT, changedPath)} — waiting for daemon idle`);
       await waitForIdle();
       const waitedMs = Date.now() - startedAt;
       log(`daemon idle after ${Math.round(waitedMs / 1000)}s — SIGTERM + respawn`);
-      await killDaemon(daemon);
-      daemon = spawnDaemon(extraArgs);
+      await killDaemon(currentDaemon);
+      currentDaemon = spawnDaemon();
     } finally {
       restartInProgress = false;
     }
@@ -292,20 +401,44 @@ async function main(): Promise<void> {
   }
   log(`watching ${watchPaths.length} target(s): ${WATCH_TARGETS.join(", ")}`);
 
-  const watcher = Deno.watchFs(watchPaths, { recursive: true });
-  for await (const event of watcher) {
-    if (event.kind !== "modify" && event.kind !== "create" && event.kind !== "remove") {
-      continue;
+  // Watch loop with retry-on-error. Deno.watchFs can raise I/O errors (e.g.
+  // on macOS when a watched directory is renamed/deleted by git rebase) and
+  // its async iterator can complete silently. The old version ran the
+  // iterator once and bailed out of main() on any exit, leaving dev-watcher
+  // as a zombie process with no fs events. Now we reconnect on any exit.
+  let watchAttempt = 0;
+  while (!shuttingDown) {
+    watchAttempt += 1;
+    if (watchAttempt > 1) {
+      log(`reconnecting filesystem watcher (attempt ${watchAttempt})`);
     }
-    const firstPath = event.paths[0];
-    if (firstPath === undefined || firstPath.length === 0) continue;
-    if (shouldIgnore(firstPath)) continue;
+    try {
+      const watcher = Deno.watchFs(watchPaths, { recursive: true });
+      for await (const event of watcher) {
+        if (event.kind !== "modify" && event.kind !== "create" && event.kind !== "remove") {
+          continue;
+        }
+        const firstPath = event.paths[0];
+        if (firstPath === undefined || firstPath.length === 0) continue;
+        if (shouldIgnore(firstPath)) continue;
 
-    if (pendingRestart !== null) clearTimeout(pendingRestart);
-    pendingRestart = setTimeout(() => {
-      pendingRestart = null;
-      void triggerRestart(firstPath);
-    }, DEBOUNCE_MS);
+        if (pendingRestart !== null) clearTimeout(pendingRestart);
+        pendingRestart = setTimeout(() => {
+          pendingRestart = null;
+          void triggerRestart(firstPath);
+        }, DEBOUNCE_MS);
+      }
+      if (!shuttingDown) {
+        warn(
+          `filesystem watcher iterator completed unexpectedly — reconnecting in ${WATCH_RECONNECT_DELAY_MS}ms`,
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      warn(`filesystem watcher error: ${message} — reconnecting in ${WATCH_RECONNECT_DELAY_MS}ms`);
+    }
+    if (shuttingDown) break;
+    await sleep(WATCH_RECONNECT_DELAY_MS);
   }
 }
 
