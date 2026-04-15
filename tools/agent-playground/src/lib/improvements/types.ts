@@ -58,16 +58,25 @@ export type ApplyActionRequest = z.infer<typeof ApplyActionRequestSchema>;
 
 export type ApplyAction = "accept" | "reject" | "dismiss" | "rollback";
 
-export interface ImprovementFinding {
-  chunk: ScratchpadChunk;
-  body: ImprovementFindingBody;
+export interface ImprovementEntry {
+  id: string;
+  text: string;
+  author: string | undefined;
+  createdAt: string;
   workspaceId: string;
+  targetJobId: string;
+  beforeYaml: string | undefined;
+  proposedFullConfig: string | undefined;
+  body: string;
+  metadata: Record<string, unknown>;
+  improvementType: ImprovementType | undefined;
+  status: string | undefined;
+  source: "notes" | "lifecycle";
 }
 
 export interface FindingGroup {
-  workspaceId: string;
-  jobId: string;
-  findings: ImprovementFinding[];
+  targetJobId: string;
+  findings: ImprovementEntry[];
 }
 
 export interface WorkspaceGroup {

@@ -3,8 +3,12 @@ import { fetchNarrativeCorpus, type NarrativeEntry } from "../api/memory.ts";
 import {
   ImprovementTypeSchema,
   LifecycleImprovementSchema,
-  type ImprovementType,
+  type FindingGroup,
+  type ImprovementEntry,
+  type WorkspaceGroup,
 } from "./types.ts";
+
+export type { ImprovementEntry } from "./types.ts";
 
 const PROXY_BASE = "/api/daemon";
 const BACKLOG_WORKSPACE = "thick_endive";
@@ -17,30 +21,10 @@ export const ImprovementFindingMetaSchema = z.object({
   before_yaml: z.string().optional(),
   improvement_type: ImprovementTypeSchema.optional(),
   status: z.string().optional(),
+  proposed_full_config: z.string().optional(),
 });
 
 export type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
-
-export interface ImprovementEntry {
-  id: string;
-  text: string;
-  author: string | undefined;
-  createdAt: string;
-  workspaceId: string;
-  targetJobId: string;
-  beforeYaml: string | undefined;
-  body: string;
-  metadata: Record<string, unknown>;
-  improvementType: ImprovementType | undefined;
-  status: string | undefined;
-  source: "notes" | "lifecycle";
-}
-
-export interface ImprovementGroup {
-  workspaceId: string;
-  targetJobId: string;
-  findings: ImprovementEntry[];
-}
 
 const BacklogPayloadSchema = z.object({
   workspace_id: z.string(),
@@ -59,7 +43,7 @@ const WORKSPACE_GROUP_KEY = "__workspace__";
 
 export async function loadImprovements(
   workspaceIds: string[],
-): Promise<ImprovementGroup[]> {
+): Promise<WorkspaceGroup[]> {
   const allEntries: ImprovementEntry[] = [];
 
   const settled = await Promise.allSettled([
@@ -82,7 +66,7 @@ export async function loadImprovements(
     }
   }
 
-  return groupByWorkspaceAndJob([...seen.values()]);
+  return groupByWorkspace([...seen.values()]);
 }
 
 async function loadLifecycleFindings(
@@ -105,6 +89,7 @@ async function loadLifecycleFindings(
       workspaceId: item.workspaceId,
       targetJobId: item.target_job_id ?? WORKSPACE_GROUP_KEY,
       beforeYaml: undefined,
+      proposedFullConfig: undefined,
       body: item.diff,
       metadata: {},
       improvementType: item.type,
@@ -138,6 +123,7 @@ async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
       workspaceId: parsed.data.payload.workspace_id,
       targetJobId: parsed.data.payload.signal_id,
       beforeYaml: undefined,
+      proposedFullConfig: undefined,
       body: parsed.data.payload.task_brief,
       metadata: entry.metadata ?? {},
       improvementType: undefined,
@@ -205,6 +191,7 @@ async function loadWorkspaceFindings(
       workspaceId,
       targetJobId: meta.data.target_job_id ?? WORKSPACE_GROUP_KEY,
       beforeYaml: meta.data.before_yaml,
+      proposedFullConfig: meta.data.proposed_full_config,
       body: entry.text,
       metadata: entry.metadata ?? {},
       improvementType: meta.data.improvement_type,
@@ -232,14 +219,14 @@ async function fetchWorkspaceLevelFlag(
   }
 }
 
-function groupByWorkspaceAndJob(entries: ImprovementEntry[]): ImprovementGroup[] {
-  const map = new Map<string, Map<string, ImprovementEntry[]>>();
+function groupByWorkspace(entries: ImprovementEntry[]): WorkspaceGroup[] {
+  const wsMap = new Map<string, Map<string, ImprovementEntry[]>>();
 
   for (const entry of entries) {
-    let jobMap = map.get(entry.workspaceId);
+    let jobMap = wsMap.get(entry.workspaceId);
     if (!jobMap) {
       jobMap = new Map();
-      map.set(entry.workspaceId, jobMap);
+      wsMap.set(entry.workspaceId, jobMap);
     }
     let list = jobMap.get(entry.targetJobId);
     if (!list) {
@@ -249,16 +236,15 @@ function groupByWorkspaceAndJob(entries: ImprovementEntry[]): ImprovementGroup[]
     list.push(entry);
   }
 
-  const groups: ImprovementGroup[] = [];
-  for (const [workspaceId, jobMap] of map) {
+  const groups: WorkspaceGroup[] = [];
+  for (const [workspaceId, jobMap] of wsMap) {
+    const jobs: FindingGroup[] = [];
     for (const [targetJobId, findings] of jobMap) {
-      groups.push({ workspaceId, targetJobId, findings });
+      jobs.push({ targetJobId, findings });
     }
+    jobs.sort((a, b) => a.targetJobId.localeCompare(b.targetJobId));
+    groups.push({ workspaceId, jobs });
   }
 
-  return groups.sort((a, b) => {
-    const wsCmp = a.workspaceId.localeCompare(b.workspaceId);
-    if (wsCmp !== 0) return wsCmp;
-    return a.targetJobId.localeCompare(b.targetJobId);
-  });
+  return groups.sort((a, b) => a.workspaceId.localeCompare(b.workspaceId));
 }
