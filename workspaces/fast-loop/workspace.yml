@@ -1096,13 +1096,14 @@ jobs:
                   backlog_json: override,
                   backlog_url: "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog",
                   platformUrl: "http://localhost:8080",
-                  // 30-min per-TASK cooldown (planner v1.4.0 tracks per-task via
-                  // the dispatch-log narrative memory). 1800s gives long-running
-                  // claude-code FSM dispatches plenty of time to finish before
-                  // the same task could be picked again. Operator marks tasks
-                  // completed by POSTing a new memory entry with same id +
-                  // metadata.status: completed.
-                  cooldown_s: 1800
+                  // 5-min per-TASK cooldown. Was 1800s (30 min) as a band-aid
+                  // for pre-planner-v1.6.0 dedupe bug that re-dispatched completed
+                  // tasks forever. With v1.6.0's latest-by-id dedupe, completed
+                  // tasks are filtered by status before cooldown is consulted, so
+                  // cooldown only gates retry of still-pending tasks. 300s gives
+                  // fast recovery from interrupted sessions (MCP -32000, daemon
+                  // restart) without hammering genuinely-stuck tasks.
+                  cooldown_s: 300
                 }
               };
             }
