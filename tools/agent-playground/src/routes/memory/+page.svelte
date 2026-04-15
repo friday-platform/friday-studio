@@ -14,7 +14,7 @@
 <div class="memory-root">
   <header class="page-header">
     <h1>Memory</h1>
-    <p class="subtitle">Browse workspace memory corpora</p>
+    <p class="subtitle">Browse workspace memories</p>
   </header>
 
   {#if workspacesQuery.isLoading}
@@ -25,7 +25,7 @@
       <button class="dismiss" onclick={() => workspacesQuery.refetch()}>Retry</button>
     </div>
   {:else if workspaces.length === 0}
-    <div class="empty">No workspaces with memory corpora found.</div>
+    <div class="empty">No workspaces with memories found.</div>
   {:else}
     <ul class="workspace-list">
       {#each workspaces as ws (ws)}

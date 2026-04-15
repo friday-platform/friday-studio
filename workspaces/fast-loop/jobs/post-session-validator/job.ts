@@ -1,5 +1,4 @@
 import process from "node:process";
-import type { MemoryAdapter, NarrativeCorpus } from "@atlas/agent-sdk";
 import { z } from "zod";
 import { appendDiscoveryAsTask } from "../../../../packages/memory/src/discovery-to-task.ts";
 import { validateAgentBuild } from "./validators/agent-build.ts";
@@ -33,10 +32,6 @@ export const ValidatorDiscoverySchema = z.object({
   auto_apply: z.literal(false),
 });
 
-export interface PostSessionValidatorDeps {
-  memoryAdapter: MemoryAdapter;
-}
-
 export interface PostSessionValidatorResult {
   validated: boolean;
   results: ValidationResult[];
@@ -64,19 +59,36 @@ function buildDiscoveryBrief(
   ].join("\n");
 }
 
+async function appendToBacklog(
+  backlogUrl: string,
+  entry: {
+    id: string;
+    text: string;
+    author?: string;
+    createdAt: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const res = await fetch(backlogUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) {
+    throw new Error(`POST ${backlogUrl} failed: HTTP ${res.status}`);
+  }
+}
+
 export async function runPostSessionValidator(
-  deps: PostSessionValidatorDeps,
   signalPayload?: unknown,
+  platformUrl?: string,
 ): Promise<PostSessionValidatorResult> {
   const input = PostSessionValidatorInputSchema.parse(signalPayload);
+  const baseUrl = platformUrl ?? process.env["PLATFORM_URL"] ?? "http://localhost:8080";
+  const backlogUrl = `${baseUrl}/api/memory/${input.dispatcherWorkspaceId}/narrative/autopilot-backlog`;
 
   if (input.changedFiles.length === 0) {
-    const backlog: NarrativeCorpus = await deps.memoryAdapter.corpus(
-      input.dispatcherWorkspaceId,
-      "autopilot-backlog",
-      "narrative",
-    );
-    await backlog.append({
+    await appendToBacklog(backlogUrl, {
       id: crypto.randomUUID(),
       text: `task:${input.taskId}`,
       author: "post-session-validator",
@@ -87,14 +99,13 @@ export async function runPostSessionValidator(
   }
 
   const results: ValidationResult[] = [];
-  const platformUrl = process.env["PLATFORM_URL"] ?? "http://localhost:8080";
 
   // VALIDATE — run validators in sequence
   results.push(await validateTypecheck());
   results.push(await validateLint(input.changedFiles));
   results.push(
     await validateWorkspaceYml(input.changedFiles, {
-      platformUrl,
+      platformUrl: baseUrl,
       dispatcherWorkspaceId: input.dispatcherWorkspaceId,
     }),
   );
@@ -104,9 +115,7 @@ export async function runPostSessionValidator(
   const allPass = failures.length === 0;
 
   // ROUTE_FAILURES — create discovery tasks for each failure
-  const corpusBaseUrl =
-    process.env["CORPUS_BASE_URL"] ??
-    `${platformUrl}/api/memory/${input.dispatcherWorkspaceId}/narrative/autopilot-backlog`;
+  const corpusBaseUrl = process.env["CORPUS_BASE_URL"] ?? backlogUrl;
 
   let discoveriesAppended = 0;
   for (const failure of failures) {
@@ -130,22 +139,16 @@ export async function runPostSessionValidator(
   }
 
   // MARK_OUTCOME — append validated/blocked to autopilot-backlog
-  const backlog: NarrativeCorpus = await deps.memoryAdapter.corpus(
-    input.dispatcherWorkspaceId,
-    "autopilot-backlog",
-    "narrative",
-  );
-
   if (allPass) {
-    await backlog.append({
+    await appendToBacklog(backlogUrl, {
       id: crypto.randomUUID(),
       text: `task:${input.taskId}`,
       author: "post-session-validator",
       createdAt: new Date().toISOString(),
-      metadata: { validated: true, sessionId: input.sessionId },
+      metadata: { validated: true, status: "completed", sessionId: input.sessionId },
     });
   } else {
-    await backlog.append({
+    await appendToBacklog(backlogUrl, {
       id: crypto.randomUUID(),
       text: `task:${input.taskId}`,
       author: "post-session-validator",

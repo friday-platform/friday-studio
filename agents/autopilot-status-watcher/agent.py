@@ -89,7 +89,7 @@ def _fire_post_session_validator(
             method="POST",
             headers={"Content-Type": "application/json"},
             body=json.dumps({"payload": payload}),
-            timeout_ms=180000,
+            timeout_ms=480000,
         )
         if resp.status == 200:
             body = json.loads(resp.body or "null")
@@ -116,11 +116,11 @@ def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 @agent(
     id="autopilot-status-watcher",
-    version="1.0.0",
+    version="1.2.0",
     description=(
         "Closes the loop on autopilot dispatches. Reads the dispatch-log "
-        "narrative corpus, fetches each dispatched session's status, and "
-        "appends completion entries to the autopilot-backlog corpus so the "
+        "narrative memory, fetches each dispatched session's status, and "
+        "appends completion entries to the autopilot-backlog memory so the "
         "planner stops re-picking finished tasks. No LLM call — pure "
         "observation. Runs as step_observe before step_plan in the kernel's "
         "autopilot-tick FSM."
@@ -135,8 +135,8 @@ def execute(prompt, ctx):
     cfg = ctx.config or {}
     platform_url = cfg.get("platformUrl", PLATFORM_URL_DEFAULT)
     kernel_ws = cfg.get("kernel_workspace_id", KERNEL_WS_DEFAULT)
-    dispatch_log = cfg.get("dispatch_log_corpus", DISPATCH_LOG_DEFAULT)
-    backlog = cfg.get("backlog_corpus", BACKLOG_DEFAULT)
+    dispatch_log = cfg.get("dispatch_log_memory", DISPATCH_LOG_DEFAULT)
+    backlog = cfg.get("backlog_memory", BACKLOG_DEFAULT)
 
     dispatch_log_url = f"{platform_url}/api/memory/{kernel_ws}/narrative/{dispatch_log}"
     backlog_url = f"{platform_url}/api/memory/{kernel_ws}/narrative/{backlog}"
@@ -154,7 +154,7 @@ def execute(prompt, ctx):
     already_completed: set[str] = {
         eid for eid, e in backlog_latest.items()
         if isinstance(e.get("metadata"), dict)
-        and e["metadata"].get("status") == "completed"
+        and (e["metadata"].get("status") == "completed" or e["metadata"].get("validated") is True)
     }
 
     # 3. For each unique dispatched task that isn't already completed,
@@ -234,15 +234,64 @@ def execute(prompt, ctx):
             skipped.append(f"{task_id}({status})")
             continue
 
-        # 5. Session is done — append completion to backlog.
-        new_status = "completed" if status == "completed" else "blocked"
+        # 5. Session is done — route through validator or mark directly.
+        existing_meta = (backlog_latest.get(task_id, {}).get("metadata") or {})
+
+        if status == "failed":
+            completion_body = {
+                "id": task_id,
+                "text": f"{task_id} [auto-blocked via session {session_id[:8]} at {entry.get('createdAt', '?')}]",
+                "metadata": {
+                    "status": "blocked",
+                    "kind": existing_meta.get("kind", "auto"),
+                    "priority": existing_meta.get("priority", 0),
+                    "auto_marked": True,
+                    "source_session_id": session_id,
+                    "source_session_status": status,
+                    "target_workspace_id": target_ws,
+                },
+            }
+            post_status = _post_json(ctx, backlog_url, completion_body)
+            observations.append({
+                "task_id": task_id,
+                "session_id": session_id,
+                "session_status": status,
+                "marked": "blocked",
+                "post_status": post_status,
+            })
+            closed.append(f"{task_id}->blocked")
+            continue
+
+        changed = _extract_changed_files(session_data)
+        if changed:
+            validator_payload = {
+                "sessionId": session_id,
+                "changedFiles": changed,
+                "taskId": task_id,
+                "taskBrief": existing_meta.get("payload", {}).get("task_brief", ""),
+                "taskPriority": existing_meta.get("priority", 50),
+                "workspaceId": target_ws,
+                "dispatcherWorkspaceId": kernel_ws,
+            }
+            validator_result = _fire_post_session_validator(ctx, platform_url, kernel_ws, validator_payload)
+            if validator_result is not None:
+                observations.append({
+                    "task_id": task_id,
+                    "session_id": session_id,
+                    "session_status": status,
+                    "marked": "delegated-to-validator",
+                    "validator_result": validator_result,
+                })
+                closed.append(f"{task_id}->validated")
+                continue
+
         completion_body = {
             "id": task_id,
-            "text": f"{task_id} [auto-{new_status} via session {session_id[:8]} at {entry.get('createdAt', '?')}]",
+            "text": f"{task_id} [auto-completed via session {session_id[:8]} at {entry.get('createdAt', '?')}]",
             "metadata": {
-                "status": new_status,
-                "kind": (backlog_latest.get(task_id, {}).get("metadata") or {}).get("kind", "auto"),
-                "priority": (backlog_latest.get(task_id, {}).get("metadata") or {}).get("priority", 0),
+                "status": "completed",
+                "kind": existing_meta.get("kind", "auto"),
+                "priority": existing_meta.get("priority", 0),
                 "auto_marked": True,
                 "source_session_id": session_id,
                 "source_session_status": status,
@@ -254,10 +303,10 @@ def execute(prompt, ctx):
             "task_id": task_id,
             "session_id": session_id,
             "session_status": status,
-            "marked": new_status,
+            "marked": "completed",
             "post_status": post_status,
         })
-        closed.append(f"{task_id}->{new_status}")
+        closed.append(f"{task_id}->completed")
 
     return ok({
         "observed_dispatches": len(dispatch_latest),

@@ -452,11 +452,11 @@ B" are one command away.
 **Contrast:** OpenClaw's history is `git log` if the user remembered
 to `git init`. Dreaming consolidations have no audit trail.
 
-**Engineering commitment:** `SkillAdapter`, `MemoryAdapter` corpora,
+**Engineering commitment:** `SkillAdapter`, `MemoryAdapter` memories,
 and workspace config mutations all record versions. Reference
 backends use ResourceToolkit (free versioning); the `md` reference
 backend uses a hidden `.history/` dir with timestamped snapshots.
-`friday history --corpus kb --since 2h` returns a structured log.
+`friday history --memory kb --since 2h` returns a structured log.
 
 ### 3. Observable mutations
 
@@ -557,17 +557,22 @@ writes are gated by the same schema boundary as agent writes.
 
 ## The design
 
+> NOTE: The TypeScript types (NarrativeCorpus, CorpusKind, etc.) are internal
+> storage-strategy identifiers. The user-facing model uses memory with type
+> (short_term | long_term | scratchpad) and level (global | workspace | mounted).
+> See memory.own schema in workspace.ts.
+
 The design exists to unlock the six leapfrog dimensions on top of
 parity with OpenClaw's file-based model. Interfaces are in
 `@atlas/agent-sdk` alongside existing adapter infrastructure.
 
-### MemoryAdapter — corpus-typed with swappable backends
+### MemoryAdapter — type-routed with swappable backends
 
 OpenClaw treats memory as one thing: markdown files in a dir. Real
 workloads have at least four shapes, proven by existing Friday code:
 
 - **Narrative memory** — OpenClaw `MEMORY.md`, persona, standing orders
-- **Retrieval corpus** — RAG over large document collections
+- **Retrieval memory** — RAG over large document collections
   (bucketlist `knowledge`)
 - **Dedup state** — TTL'd set membership (bucketlist
   `processed-tickets` via `state_append`)
@@ -576,7 +581,7 @@ workloads have at least four shapes, proven by existing Friday code:
 
 A single flat interface fails all four by being too generic. Four
 sibling adapters costs 4× config and docs surface. The compromise:
-a thin `MemoryAdapter` *router* that hands out kind-typed `Corpus`
+a thin `MemoryAdapter` *router* that hands out kind-typed memory
 handles.
 
 ```ts
@@ -603,7 +608,11 @@ export interface MemoryAdapter {
 }
 
 export type CorpusKind = "narrative" | "retrieval" | "dedup" | "kv";
+```
 
+> NOTE: The TypeScript types CorpusKind, NarrativeCorpus, RetrievalCorpus, DedupCorpus, KVCorpus are internal storage-strategy types under the memory umbrella. They are not renamed — user-facing config uses type: short_term | long_term | scratchpad.
+
+```ts
 export interface NarrativeCorpus {
   append(entry: NarrativeEntry): Promise<NarrativeEntry>;
   read(opts?: { since?: string; limit?: number }): Promise<NarrativeEntry[]>;
@@ -633,7 +642,7 @@ export interface KVCorpus {
 }
 ```
 
-Every corpus write emits a typed `AtlasDataEvent` on the stream
+Every memory write emits a typed `AtlasDataEvent` on the stream
 (leapfrog #3) and records a version (leapfrog #2). Every input is
 Zod-validated (leapfrog #1).
 
@@ -643,7 +652,7 @@ Zod-validated (leapfrog #1).
 |---|---|---|
 | Single flat `MemoryAdapter` with `kind` on every call | Simpler type surface | Every backend no-ops half the methods; silent failures |
 | Four sibling adapters as peers of `SkillAdapter` | Type-strongest | 4× registration/config/docs surface; harder to answer "what memory does this workspace have" |
-| `Corpus` only, no router | Cleaner — agents grab by `(wsId, name)` | Loses `bootstrap` / `history` view; we need a router anyway |
+| `Memory handle` only, no router | Cleaner — agents grab by `(wsId, name)` | Loses `bootstrap` / `history` view; we need a router anyway |
 | Keep `state_*`/`library_*`/`artifacts_*` as-is, add narrative only | Smallest diff | Perpetuates fragmentation; bucketlist can't benefit |
 
 Open for debate — the leading alternative (four sibling adapters) is
@@ -666,7 +675,7 @@ export interface ScratchpadAdapter {
 }
 ```
 
-Homogeneous access pattern; no corpus split needed. Default backend
+Homogeneous access pattern; no type split needed. Default backend
 is an in-memory ring buffer — ephemeral scratchpad should never hit
 disk in the common case. Opt-in `md` backend for debuggability.
 
@@ -784,7 +793,7 @@ one — the hardest single case — but not the only one.
 writes to narrative memory, next session the preference is in the
 system prompt bootstrap.
 
-**Backend:** `md` narrative corpus, root at
+**Backend:** `md` narrative memory, root at
 `~/.friday/workspaces/<id>/MEMORY.md` + `memory/YYYY-MM-DD.md`.
 
 **What OpenClaw can't match:**
@@ -795,7 +804,7 @@ system prompt bootstrap.
 - `memory_narrative_append` is the *only* way to touch narrative
   memory — no ambient filesystem write (leapfrog #4)
 
-### Case 2: retrieval corpus (bucketlist-cs as representative)
+### Case 2: retrieval memory (bucketlist-cs as representative)
 
 **Use case:** CS agent indexes a knowledge base from CSV/PDF/TXT,
 answers queries with hybrid RAG + citations.
@@ -812,7 +821,7 @@ var. Works; not reusable.
   BLOB column, and hybrid retrieval logic *move into* the
   `sqlite-rag` backend — same logic, new home. The knowledge agent
   shrinks to the synthesis prompt plus glue.
-- Embedding provider and reranker become corpus config
+- Embedding provider and reranker become memory config
   (`embedder: "fireworks"`, `reranker: "groq"`), not pinned code.
 - Every ingest is a versioned operation; a failed batch can be
   rolled back cleanly instead of leaving half-indexed rows.
@@ -1011,7 +1020,7 @@ coverage to unlock leapfrog dimensions 1-4 (validation, versioning,
 observability, containment) and migrate existing state surfaces.
 
 1. **Interfaces** in `@atlas/agent-sdk`: `MemoryAdapter` + four
-   corpus types, `ScratchpadAdapter`, `SkillAdapter`.
+   memory storage types, `ScratchpadAdapter`, `SkillAdapter`.
 2. **Backends** — minimum set to unblock parity + canary migration:
    - `md` narrative (OpenClaw parity + debuggability)
    - `sqlite-rag` retrieval (bucketlist canary)
@@ -1030,7 +1039,7 @@ observability, containment) and migrate existing state surfaces.
 6. **Session bootstrap injection.** `packages/workspace/src/runtime.ts`
    calls `MemoryAdapter.bootstrap(workspaceId, agentId)` and prepends
    the result to the agent's system prompt, feature-flagged.
-7. **JSON-RPC schema + in-guest SDK** for `ctx.memory` (corpus-typed),
+7. **JSON-RPC schema + in-guest SDK** for `ctx.memory` (memory-typed),
    `ctx.scratchpad`, `ctx.skills`. Shared Zod schemas between daemon
    and `friday-agent-sdk`. Transport: JSON-RPC 2.0 over unix socket
    exposed into the microsandbox guest; stdio fallback for non-Linux
@@ -1056,7 +1065,7 @@ observability, containment) and migrate existing state surfaces.
      `memory_retrieval_*`. Existing knowledge evals must pass with
      identical quality.
 10. **`friday inspect` CLI** — first version. Aggregates
-    activity-ledger records + corpus history into a human-readable
+    activity-ledger records + memory history into a human-readable
     timeline per workspace. Leapfrog #3, user-facing.
 
 **What Phase 1 does NOT do:** agent-authored skill creation
@@ -1076,7 +1085,7 @@ Overnight FAST-on-FAST crank delivered most of Phase 1a before the
 scope pivot (see next section). Status against the 10-item Phase 1
 list above:
 
-- ✅ **#1 Interfaces** — `2d7aa73f9`. MemoryAdapter + 4 corpus types,
+- ✅ **#1 Interfaces** — `2d7aa73f9`. MemoryAdapter + 4 memory storage types,
   ScratchpadAdapter, SkillAdapter landed in `@atlas/agent-sdk/src/`.
 - ✅ **#5 Schema boundary helper** — `2d7aa73f9`. `withSchemaBoundary`
   utility wraps every adapter write. First consumer is MdNarrativeCorpus.
@@ -1153,7 +1162,7 @@ per-action-class, not all-or-nothing.
                     |  - apply-reflection         |
                     |  - author-agent             |
                     |                             |
-                    | corpora (kernel-owned):     |
+                    | memories (kernel-owned):    |
                     |  - autopilot-backlog (rw)   |
                     |  - reflections (rw)         |
                     |  - improvements (rw)        |
@@ -1181,16 +1190,16 @@ per-action-class, not all-or-nothing.
 
            ^                            ^
            |                            |
-           +-------+ corpus mounts +----+
+           +-------+ memory mounts +----+
                        (read-only,
                         bootstrap-injected
                         on runtime load)
 ```
 
 The kernel is the one workspace that sees cross-workspace state.
-Userland workspaces are leaf nodes that consume mounted corpora and
+Userland workspaces are leaf nodes that consume mounted memories and
 declare their improvement-acceptance policy. Every supervisory action
-is a corpus append on the kernel; every fan-out is a mount on the
+is a memory append on the kernel; every fan-out is a mount on the
 receiving side. There is no point-to-point messaging.
 
 **What landed:**
@@ -1278,7 +1287,7 @@ agent step (planner does dispatch inline). Real fix needs a
 fsm-engine.ts patch — a self-mod task is in flight to investigate.
 
 **Kernel must-lands for autonomous operation (priority order, mirrors
-the `autopilot-backlog` corpus on `thick_endive`):**
+the `autopilot-backlog` memory on `thick_endive`):**
 
 1. **`kernel-watcher-suppress`** — push the three source mods
    (`packages/workspace/src/manager.ts` `pendingWatcherChanges`,
@@ -1297,17 +1306,17 @@ the `autopilot-backlog` corpus on `thick_endive`):**
    v1.3.1's per-signal cooldown locks out *all* parity tasks after
    one fires, because they all dispatch through the same target signal.
 4. **`kernel-status-update-mechanism`** — planner appends status
-   updates to the `autopilot-backlog` corpus when dispatching
+   updates to the `autopilot-backlog` memory when dispatching
    (`in_progress`) and when the target session completes
    (`completed | blocked`). Closes the loop so the kernel can mark
-   its own work done without a human poking the corpus by hand.
+   its own work done without a human poking the memory by hand.
 5. **`kernel-second-agent-context`** — fix the daemon bug at
    `packages/fsm-engine/fsm-engine.ts` where the second user-agent
    step in an FSM gets `agentContext` stripped of `httpFetch` /
    `streamEmit`. Blocks splitting `step_plan → step_dispatch` into
    two FSM steps and forces planners to do dispatch inline.
-6. **`kernel-corpus-append-reflector`** — reflector outputs as
-   appends to a `reflections` narrative corpus on the kernel,
+6. **`kernel-memory-append-reflector`** — reflector outputs as
+   appends to a `reflections` narrative memory on the kernel,
    instead of skill-publish-only. Mounts make these readable by
    every workspace. Closes the learning→dispatch loop without
    going through skill versioning for every observation.
@@ -1328,8 +1337,8 @@ the `autopilot-backlog` corpus on `thick_endive`):**
    `POST /api/improvements` (kernel proposes),
    `GET /api/improvements?workspace=&status=` (list per target),
    `POST /api/improvements/:id/approve|reject|rollback`. Backed by
-   an `improvements` narrative corpus on the kernel. Status
-   transitions are corpus appends — same pattern as the backlog.
+   an `improvements` narrative memory on the kernel. Status
+   transitions are memory appends — same pattern as the backlog.
 9. **`studio-improvement-inbox-ui`** — Studio inbox listing
    pending improvements per workspace, rendering proposed diffs
    (skill md / signal patch / source patch), with accept / reject
@@ -1544,9 +1553,9 @@ deployment.
    - **Cloud:** `pg` narrative + `pg-vector` retrieval + `kv`
      dedup + `ledger` skills. Multi-user, concurrent-write-safe,
      versioned via Ledger.
-   - **Hybrid:** per-corpus backend choice. Narrative memory stays
-     local; retrieval corpus lives in cloud. The adapter router
-     hands out corpora individually so this composes cleanly.
+   - **Hybrid:** per-memory backend choice. Narrative memory stays
+     local; retrieval memory lives in cloud. The adapter router
+     hands out memories individually so this composes cleanly.
 
 ### Phase 7 — Broader signal surface
 
@@ -1833,7 +1842,7 @@ verifiable.
 
 6. **Schema validation:** conformance test asserts every adapter
    rejects malformed inputs atomically (backend state unchanged on
-   failure). Every backend. Every corpus kind.
+   failure). Every backend. Every memory kind.
 7. **Versioning + rollback:** conformance test asserts
    `history(...)` returns a complete audit trail and
    `rollback(...)` restores prior state byte-identical to the
@@ -1894,8 +1903,8 @@ invariants cannot.**
    existing `getAtlasHome()/agents/` tree owned by the master plan?
    We should not fork the "where does agent state live on disk"
    question.
-2. **Corpus split vs. sibling adapters.** The plan proposes a thin
-   `MemoryAdapter` router + four corpus sub-interfaces. The leading
+2. **Memory-type split vs. sibling adapters.** The plan proposes a thin
+   `MemoryAdapter` router + four memory sub-interfaces. The leading
    alternative is four sibling adapters. Router is ergonomically
    cleaner; siblings are type-strongest. Which cost do we prefer?
 3. **Memory tool count.** ~20 memory/skill tools in the agent's
@@ -1993,7 +2002,7 @@ invariants cannot.**
     routing change as a skill update. **Discovered via overnight
     crank session 8c916a7c on grilled_xylem.**
 20. **Reflector cross-session memory needs persistent narrative
-    corpus.** The overnight loop's reflector currently sees only
+    memory.** The overnight loop's reflector currently sees only
     one session at a time (the `session_id` passed to
     `reflect-on-last-run`). Pattern detection across sessions
     (e.g. "this failure mode appeared in 3 of the last 5 runs")

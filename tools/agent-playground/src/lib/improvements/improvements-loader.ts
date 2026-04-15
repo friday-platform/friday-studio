@@ -1,15 +1,22 @@
 import { z } from "zod";
 import { fetchNarrativeCorpus, type NarrativeEntry } from "../api/memory.ts";
+import {
+  ImprovementTypeSchema,
+  LifecycleImprovementSchema,
+  type ImprovementType,
+} from "./types.ts";
 
 const PROXY_BASE = "/api/daemon";
 const BACKLOG_WORKSPACE = "thick_endive";
-const BACKLOG_CORPUS = "autopilot-backlog";
+const BACKLOG_MEMORY = "autopilot-backlog";
 
 export const ImprovementFindingMetaSchema = z.object({
   kind: z.literal("improvement-finding"),
   target_job_id: z.string().optional(),
   improvement_flag: z.enum(["surface", "auto"]).optional(),
   before_yaml: z.string().optional(),
+  improvement_type: ImprovementTypeSchema.optional(),
+  status: z.string().optional(),
 });
 
 export type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
@@ -24,6 +31,9 @@ export interface ImprovementEntry {
   beforeYaml: string | undefined;
   body: string;
   metadata: Record<string, unknown>;
+  improvementType: ImprovementType | undefined;
+  status: string | undefined;
+  source: "notes" | "lifecycle";
 }
 
 export interface ImprovementGroup {
@@ -54,6 +64,7 @@ export async function loadImprovements(
 
   const settled = await Promise.allSettled([
     ...workspaceIds.map((wsId) => loadWorkspaceFindings(wsId)),
+    ...workspaceIds.map((wsId) => loadLifecycleFindings(wsId)),
     loadBacklogFindings(),
   ]);
 
@@ -63,22 +74,52 @@ export async function loadImprovements(
     }
   }
 
-  const seen = new Set<string>();
-  const deduped: ImprovementEntry[] = [];
+  const seen = new Map<string, ImprovementEntry>();
   for (const entry of allEntries) {
-    if (!seen.has(entry.id)) {
-      seen.add(entry.id);
-      deduped.push(entry);
+    const existing = seen.get(entry.id);
+    if (!existing || entry.source === "lifecycle") {
+      seen.set(entry.id, entry);
     }
   }
 
-  return groupByWorkspaceAndJob(deduped);
+  return groupByWorkspaceAndJob([...seen.values()]);
+}
+
+async function loadLifecycleFindings(
+  workspaceId: string,
+): Promise<ImprovementEntry[]> {
+  try {
+    const res = await globalThis.fetch(
+      `${PROXY_BASE}/api/improvements?workspace=${encodeURIComponent(workspaceId)}&status=pending`,
+    );
+    if (!res.ok) return [];
+    const data: unknown = await res.json();
+    const parsed = z.array(LifecycleImprovementSchema).safeParse(data);
+    if (!parsed.success) return [];
+
+    return parsed.data.map((item) => ({
+      id: item.id,
+      text: item.rationale ?? "",
+      author: undefined,
+      createdAt: item.createdAt,
+      workspaceId: item.workspaceId,
+      targetJobId: item.target_job_id ?? WORKSPACE_GROUP_KEY,
+      beforeYaml: undefined,
+      body: item.diff,
+      metadata: {},
+      improvementType: item.type,
+      status: item.status,
+      source: "lifecycle" as const,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
   let entries: NarrativeEntry[];
   try {
-    entries = await fetchNarrativeCorpus(BACKLOG_WORKSPACE, BACKLOG_CORPUS);
+    entries = await fetchNarrativeCorpus(BACKLOG_WORKSPACE, BACKLOG_MEMORY);
   } catch {
     return [];
   }
@@ -99,6 +140,9 @@ async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
       beforeYaml: undefined,
       body: parsed.data.payload.task_brief,
       metadata: entry.metadata ?? {},
+      improvementType: undefined,
+      status: undefined,
+      source: "notes",
     });
   }
 
@@ -106,7 +150,7 @@ async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
 }
 
 export async function acceptBacklogEntry(entryId: string): Promise<void> {
-  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_CORPUS)}`;
+  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_MEMORY)}`;
   await globalThis.fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -120,7 +164,7 @@ export async function acceptBacklogEntry(entryId: string): Promise<void> {
 }
 
 export async function rejectBacklogEntry(entryId: string): Promise<void> {
-  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_CORPUS)}`;
+  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_MEMORY)}`;
   await globalThis.fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -163,6 +207,9 @@ async function loadWorkspaceFindings(
       beforeYaml: meta.data.before_yaml,
       body: entry.text,
       metadata: entry.metadata ?? {},
+      improvementType: meta.data.improvement_type,
+      status: meta.data.status,
+      source: "notes",
     });
   }
 

@@ -8,11 +8,16 @@ import type {
 } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { type ParsedWorkspaceConfig, reviewWorkspaceConfig } from "../agents/workspace-reviewer.ts";
-import { type ReviewJobDeps, runReviewJob } from "./review-target-workspace.ts";
+import {
+  type AppendDiscoveryFn,
+  type ReviewJobDeps,
+  runReviewJob,
+} from "./review-target-workspace.ts";
 import {
   type ReviewFinding,
   ReviewFindingSchema,
   ReviewJobInputSchema,
+  ReviewJobResultSchema,
 } from "./review-target-workspace.types.ts";
 
 function makeSession(overrides: Partial<NarrativeEntry> = {}): NarrativeEntry {
@@ -25,7 +30,13 @@ function makeSession(overrides: Partial<NarrativeEntry> = {}): NarrativeEntry {
 }
 
 function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
-  return { text: "Test finding", category: "workspace-drift", severity: "warn", ...overrides };
+  return {
+    category: "drift",
+    severity: "warn",
+    summary: "Test finding",
+    detail: "Detailed description of the test finding",
+    ...overrides,
+  };
 }
 
 function createMockNarrativeCorpus(
@@ -63,18 +74,23 @@ function createMockKVCorpus(data: Record<string, unknown> = {}): KVCorpus {
 function createMockAdapter(options: {
   sessions?: NarrativeEntry[];
   workspaceYml?: string;
-  notesCorpus?: NarrativeCorpus & { appended: NarrativeEntry[] };
+  improvementPolicy?: string;
+  notesMemory?: NarrativeCorpus & { appended: NarrativeEntry[] };
 }): MemoryAdapter & { corpusFn: ReturnType<typeof vi.fn> } {
   const sessionsCorpus = createMockNarrativeCorpus(options.sessions ?? []);
-  const kvCorpus = createMockKVCorpus({ "workspace.yml": options.workspaceYml ?? "{}" });
-  const notesCorpus = options.notesCorpus ?? createMockNarrativeCorpus();
+  const kvData: Record<string, unknown> = { "workspace.yml": options.workspaceYml ?? "{}" };
+  if (options.improvementPolicy !== undefined) {
+    kvData["improvement"] = options.improvementPolicy;
+  }
+  const kvCorpus = createMockKVCorpus(kvData);
+  const notesMemory = options.notesMemory ?? createMockNarrativeCorpus();
 
   const corpusFn = vi
     .fn<(_ws: string, name: string, kind: string) => Promise<unknown>>()
     .mockImplementation((_ws, name, kind) => {
       if (name === "sessions" && kind === "narrative") return Promise.resolve(sessionsCorpus);
       if (name === "config" && kind === "kv") return Promise.resolve(kvCorpus);
-      if (name === "notes" && kind === "narrative") return Promise.resolve(notesCorpus);
+      if (name === "notes" && kind === "narrative") return Promise.resolve(notesMemory);
       return Promise.reject(new Error(`Unexpected corpus: ${name}/${kind}`));
     });
 
@@ -90,6 +106,12 @@ function createMockAdapter(options: {
 
 function stubReviewAgent(findings: ReviewFinding[]): ReviewJobDeps["reviewAgent"] {
   return vi.fn<ReviewJobDeps["reviewAgent"]>().mockResolvedValue(findings);
+}
+
+function stubAppendDiscovery(): AppendDiscoveryFn & ReturnType<typeof vi.fn> {
+  return vi
+    .fn<AppendDiscoveryFn>()
+    .mockResolvedValue({ id: "task-1", createdAt: new Date().toISOString() });
 }
 
 // ── Unit: ReviewJobInputSchema ───────────────────────────────────────────────
@@ -111,16 +133,20 @@ describe("ReviewJobInputSchema", () => {
       ReviewJobInputSchema.parse({ targetWorkspaceId: "ws-456", sessionLimit: 0 }),
     ).toThrow();
   });
+
+  it("accepts optional jobIds", () => {
+    const result = ReviewJobInputSchema.parse({
+      targetWorkspaceId: "ws-789",
+      jobIds: ["job-1", "job-2"],
+    });
+    expect(result.jobIds).toEqual(["job-1", "job-2"]);
+  });
 });
 
-// ── Unit: ReviewFindingSchema ────────────────────────────────────────────────
+// ── Unit: ReviewFindingSchema — matches workspace.yml document type ─────────
 
 describe("ReviewFindingSchema", () => {
-  it.each([
-    "workspace-drift",
-    "agent-prompt",
-    "fsm-smell",
-  ] as const)("accepts category %s", (category) => {
+  it.each(["drift", "prompt", "fsm"] as const)("accepts category %s", (category) => {
     const result = ReviewFindingSchema.parse(makeFinding({ category }));
     expect(result.category).toBe(category);
   });
@@ -130,14 +156,59 @@ describe("ReviewFindingSchema", () => {
     expect(result.severity).toBe(severity);
   });
 
-  it("accepts optional targetJobId", () => {
-    const result = ReviewFindingSchema.parse(makeFinding({ targetJobId: "job-1" }));
-    expect(result.targetJobId).toBe("job-1");
+  it("rejects old-style hyphenated categories", () => {
+    expect(() =>
+      ReviewFindingSchema.parse(makeFinding({ category: "workspace-drift" as "drift" })),
+    ).toThrow();
   });
 
-  it("targetJobId is undefined when absent", () => {
+  it("rejects old-style low/medium/high severities", () => {
+    expect(() =>
+      ReviewFindingSchema.parse(makeFinding({ severity: "medium" as "warn" })),
+    ).toThrow();
+  });
+
+  it("requires summary and detail fields", () => {
+    expect(() => ReviewFindingSchema.parse({ category: "drift", severity: "warn" })).toThrow();
+  });
+
+  it("accepts nullable target_job_id", () => {
+    const result = ReviewFindingSchema.parse(makeFinding({ target_job_id: null }));
+    expect(result.target_job_id).toBeNull();
+  });
+
+  it("accepts string target_job_id", () => {
+    const result = ReviewFindingSchema.parse(makeFinding({ target_job_id: "job-1" }));
+    expect(result.target_job_id).toBe("job-1");
+  });
+
+  it("target_job_id is undefined when absent", () => {
     const result = ReviewFindingSchema.parse(makeFinding());
-    expect(result.targetJobId).toBeUndefined();
+    expect(result.target_job_id).toBeUndefined();
+  });
+});
+
+// ── Unit: ReviewJobResultSchema — matches workspace.yml review-findings-result
+
+describe("ReviewJobResultSchema", () => {
+  it("validates a complete result", () => {
+    const result = ReviewJobResultSchema.parse({
+      targetWorkspaceId: "ws-1",
+      findings: [
+        {
+          id: "f-1",
+          category: "drift",
+          severity: "warn",
+          summary: "s",
+          detail: "d",
+          target_job_id: null,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      appendedCount: 1,
+      ranAt: "2026-01-01T00:00:00Z",
+    });
+    expect(result.findings).toHaveLength(1);
   });
 });
 
@@ -145,10 +216,10 @@ describe("ReviewFindingSchema", () => {
 
 describe("runReviewJob corpus routing", () => {
   it("calls corpus('notes','narrative') on TARGET workspace id, not kernel", async () => {
-    const notesCorpus = createMockNarrativeCorpus();
+    const notesMemory = createMockNarrativeCorpus();
     const adapter = createMockAdapter({
       workspaceYml: JSON.stringify({ agents: {} }),
-      notesCorpus,
+      notesMemory,
     });
     const findings = [makeFinding()];
     const deps: ReviewJobDeps = { memoryAdapter: adapter, reviewAgent: stubReviewAgent(findings) };
@@ -164,34 +235,34 @@ describe("runReviewJob corpus routing", () => {
   });
 });
 
-// ── Unit: job — findings with targetJobId → metadata.target_job_id set ──────
+// ── Unit: job — findings with target_job_id → metadata.target_job_id set ────
 
 describe("runReviewJob target_job_id metadata", () => {
-  it("sets metadata.target_job_id when targetJobId is present", async () => {
-    const notesCorpus = createMockNarrativeCorpus();
+  it("sets metadata.target_job_id when target_job_id is present", async () => {
+    const notesMemory = createMockNarrativeCorpus();
     const adapter = createMockAdapter({
       workspaceYml: JSON.stringify({ agents: {} }),
-      notesCorpus,
+      notesMemory,
     });
     const deps: ReviewJobDeps = {
       memoryAdapter: adapter,
-      reviewAgent: stubReviewAgent([makeFinding({ targetJobId: "my-job" })]),
+      reviewAgent: stubReviewAgent([makeFinding({ target_job_id: "my-job" })]),
     };
 
     await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
 
-    const first = notesCorpus.appended[0];
+    const first = notesMemory.appended[0];
     expect(first).toBeDefined();
     if (first) {
       expect(first.metadata?.target_job_id).toBe("my-job");
     }
   });
 
-  it("sets metadata.target_job_id to null when targetJobId is absent", async () => {
-    const notesCorpus = createMockNarrativeCorpus();
+  it("sets metadata.target_job_id to null when target_job_id is absent", async () => {
+    const notesMemory = createMockNarrativeCorpus();
     const adapter = createMockAdapter({
       workspaceYml: JSON.stringify({ agents: {} }),
-      notesCorpus,
+      notesMemory,
     });
     const deps: ReviewJobDeps = {
       memoryAdapter: adapter,
@@ -200,7 +271,7 @@ describe("runReviewJob target_job_id metadata", () => {
 
     await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
 
-    const first = notesCorpus.appended[0];
+    const first = notesMemory.appended[0];
     expect(first).toBeDefined();
     if (first) {
       expect(first.metadata?.target_job_id).toBeNull();
@@ -211,30 +282,30 @@ describe("runReviewJob target_job_id metadata", () => {
 // ── Unit: workspace-reviewer — workspace.yml with removed agent → drift ─────
 
 describe("workspace-reviewer agent", () => {
-  it("returns workspace-drift when session references a removed agent", () => {
+  it("returns drift when session references a removed agent", () => {
     const sessions = [makeSession({ metadata: { agentId: "old-agent" } })];
     const config: ParsedWorkspaceConfig = { agents: { "current-agent": { prompt: "You are..." } } };
 
     const findings = reviewWorkspaceConfig(sessions, config);
 
-    expect(findings.some((f) => f.category === "workspace-drift")).toBe(true);
-    const drift = findings.find((f) => f.category === "workspace-drift");
-    expect(drift?.text).toContain("old-agent");
+    expect(findings.some((f) => f.category === "drift")).toBe(true);
+    const drift = findings.find((f) => f.category === "drift");
+    expect(drift?.summary).toContain("old-agent");
   });
 
-  it("returns agent-prompt when agent has no system-prompt stanza", () => {
+  it("returns prompt when agent has no system-prompt stanza", () => {
     const config: ParsedWorkspaceConfig = {
       agents: { "no-prompt-agent": { type: "atlas", description: "does stuff" } },
     };
 
     const findings = reviewWorkspaceConfig([], config);
 
-    expect(findings.some((f) => f.category === "agent-prompt")).toBe(true);
-    const prompt = findings.find((f) => f.category === "agent-prompt");
-    expect(prompt?.text).toContain("no-prompt-agent");
+    expect(findings.some((f) => f.category === "prompt")).toBe(true);
+    const prompt = findings.find((f) => f.category === "prompt");
+    expect(prompt?.summary).toContain("no-prompt-agent");
   });
 
-  it("returns fsm-smell when FSM has unreachable state", () => {
+  it("returns fsm when FSM has unreachable state", () => {
     const config: ParsedWorkspaceConfig = {
       agents: {},
       fsm: {
@@ -250,8 +321,8 @@ describe("workspace-reviewer agent", () => {
 
     const findings = reviewWorkspaceConfig([], config);
 
-    expect(findings.some((f) => f.category === "fsm-smell")).toBe(true);
-    const smell = findings.find((f) => f.category === "fsm-smell" && f.text.includes("orphaned"));
+    expect(findings.some((f) => f.category === "fsm")).toBe(true);
+    const smell = findings.find((f) => f.category === "fsm" && f.summary.includes("orphaned"));
     expect(smell).toBeDefined();
   });
 
@@ -267,9 +338,144 @@ describe("workspace-reviewer agent", () => {
     const findings = reviewWorkspaceConfig(sessions, config);
 
     for (const finding of findings) {
-      expect(finding.text.toLowerCase()).not.toContain("skill");
-      expect(finding.text.toLowerCase()).not.toContain("source");
+      expect(finding.summary.toLowerCase()).not.toContain("skill");
+      expect(finding.summary.toLowerCase()).not.toContain("source");
     }
+  });
+});
+
+// ── Discovery-to-task routing ───────────────────────────────────────────────
+
+describe("discovery-to-task routing", () => {
+  it("calls appendDiscovery for findings with severity=warn (priority 50)", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "warn", category: "drift" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledTimes(1);
+    expect(appendDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priority: 50,
+        kind: "drift",
+        target_workspace_id: "target-ws",
+        auto_apply: false,
+      }),
+    );
+  });
+
+  it("calls appendDiscovery for findings with severity=error (priority 70)", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "error", category: "fsm" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: 70, kind: "fsm" }),
+    );
+  });
+
+  it("skips appendDiscovery for info-severity findings", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "info" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).not.toHaveBeenCalled();
+  });
+
+  it("uses target_job_id as target_signal_id when present", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "warn", target_job_id: "my-job" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ target_signal_id: "my-job" }),
+    );
+  });
+
+  it("uses category as target_signal_id when target_job_id is absent", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "warn", category: "prompt" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ target_signal_id: "prompt" }),
+    );
+  });
+
+  it("respects improvement policy from KV corpus", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({
+      workspaceYml: JSON.stringify({ agents: {} }),
+      improvementPolicy: "auto",
+    });
+    const findings = [makeFinding({ severity: "error" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledWith(expect.objectContaining({ auto_apply: true }));
+  });
+
+  it("defaults improvement policy to surface (auto_apply=false)", async () => {
+    const appendDiscovery = stubAppendDiscovery();
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "warn" })];
+    const deps: ReviewJobDeps = {
+      memoryAdapter: adapter,
+      reviewAgent: stubReviewAgent(findings),
+      appendDiscovery,
+    };
+
+    await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(appendDiscovery).toHaveBeenCalledWith(expect.objectContaining({ auto_apply: false }));
+  });
+
+  it("does not call appendDiscovery when not provided in deps", async () => {
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ severity: "error" })];
+    const deps: ReviewJobDeps = { memoryAdapter: adapter, reviewAgent: stubReviewAgent(findings) };
+
+    const result = await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+    expect(result.appendedCount).toBe(1);
   });
 });
 
@@ -277,24 +483,37 @@ describe("workspace-reviewer agent", () => {
 
 describe("integration: full job run", () => {
   it("produces findings in target corpus within timeout", async () => {
-    const notesCorpus = createMockNarrativeCorpus();
+    const notesMemory = createMockNarrativeCorpus();
     const adapter = createMockAdapter({
       sessions: [makeSession()],
       workspaceYml: JSON.stringify({ agents: {} }),
-      notesCorpus,
+      notesMemory,
     });
     const findings = [
-      makeFinding({ category: "workspace-drift" }),
-      makeFinding({ category: "agent-prompt" }),
-      makeFinding({ category: "fsm-smell" }),
+      makeFinding({ category: "drift" }),
+      makeFinding({ category: "prompt" }),
+      makeFinding({ category: "fsm" }),
     ];
     const deps: ReviewJobDeps = { memoryAdapter: adapter, reviewAgent: stubReviewAgent(findings) };
 
     const result = await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
 
     expect(result.appendedCount).toBe(3);
-    expect(notesCorpus.appended).toHaveLength(3);
+    expect(notesMemory.appended).toHaveLength(3);
     expect(adapter.corpusFn).toHaveBeenCalledWith("target-ws", "notes", "narrative");
+  });
+
+  it("returns result matching ReviewJobResultSchema", async () => {
+    const adapter = createMockAdapter({ workspaceYml: JSON.stringify({ agents: {} }) });
+    const findings = [makeFinding({ target_job_id: "j1" })];
+    const deps: ReviewJobDeps = { memoryAdapter: adapter, reviewAgent: stubReviewAgent(findings) };
+
+    const result = await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
+
+    expect(() => ReviewJobResultSchema.parse(result)).not.toThrow();
+    expect(result.targetWorkspaceId).toBe("target-ws");
+    expect(result.findings[0]?.target_job_id).toBe("j1");
+    expect(result.ranAt).toBeTruthy();
   });
 
   it("cron and signal trigger produce identical finding writes", async () => {
@@ -306,7 +525,7 @@ describe("integration: full job run", () => {
       {
         memoryAdapter: createMockAdapter({
           workspaceYml: JSON.stringify({ agents: {} }),
-          notesCorpus: cronCorpus,
+          notesMemory: cronCorpus,
         }),
         reviewAgent: stubReviewAgent(findings),
       },
@@ -318,7 +537,7 @@ describe("integration: full job run", () => {
       {
         memoryAdapter: createMockAdapter({
           workspaceYml: JSON.stringify({ agents: {} }),
-          notesCorpus: signalCorpus,
+          notesMemory: signalCorpus,
         }),
         reviewAgent: stubReviewAgent(findings),
       },
@@ -332,26 +551,26 @@ describe("integration: full job run", () => {
   });
 });
 
-// ── Contract: targetJobId → downstream apply job resolution ──────────────────
+// ── Contract: target_job_id → downstream apply job resolution ────────────────
 
 describe("contract: downstream apply job key convention", () => {
-  it("findings with targetJobId can be filtered from corpus by metadata", async () => {
-    const notesCorpus = createMockNarrativeCorpus();
+  it("findings with target_job_id can be filtered from corpus by metadata", async () => {
+    const notesMemory = createMockNarrativeCorpus();
     const adapter = createMockAdapter({
       workspaceYml: JSON.stringify({ agents: {} }),
-      notesCorpus,
+      notesMemory,
     });
     const findings = [
-      makeFinding({ targetJobId: "job-alpha" }),
+      makeFinding({ target_job_id: "job-alpha" }),
       makeFinding(),
-      makeFinding({ targetJobId: "job-beta" }),
+      makeFinding({ target_job_id: "job-beta" }),
     ];
     const deps: ReviewJobDeps = { memoryAdapter: adapter, reviewAgent: stubReviewAgent(findings) };
 
     await runReviewJob(deps, { targetWorkspaceId: "target-ws" });
 
-    const jobAlpha = notesCorpus.appended.filter((e) => e.metadata?.target_job_id === "job-alpha");
-    const workspaceLevel = notesCorpus.appended.filter((e) => e.metadata?.target_job_id === null);
+    const jobAlpha = notesMemory.appended.filter((e) => e.metadata?.target_job_id === "job-alpha");
+    const workspaceLevel = notesMemory.appended.filter((e) => e.metadata?.target_job_id === null);
     expect(jobAlpha).toHaveLength(1);
     expect(workspaceLevel).toHaveLength(1);
   });

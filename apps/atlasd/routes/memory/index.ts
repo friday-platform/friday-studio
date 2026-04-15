@@ -19,17 +19,17 @@ const AppendBodySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const NarrativeParamsSchema = z.object({ workspaceId: z.string(), corpusName: z.string() });
+const NarrativeParamsSchema = z.object({ workspaceId: z.string(), memoryName: z.string() });
 
 const ForgetParamsSchema = z.object({
   workspaceId: z.string(),
-  corpusName: z.string(),
+  memoryName: z.string(),
   entryId: z.string(),
 });
 
-function resolveCorpus(workspaceId: string, corpusName: string): MdNarrativeCorpus {
-  const corpusPath = path.join(getAtlasHome(), "memory", workspaceId, "narrative", corpusName);
-  return new MdNarrativeCorpus({ workspaceRoot: corpusPath });
+function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeCorpus {
+  const memoryPath = path.join(getAtlasHome(), "memory", workspaceId, "narrative", memoryName);
+  return new MdNarrativeCorpus({ workspaceRoot: memoryPath });
 }
 
 const memoryNarrativeRoutes = daemonFactory.createApp();
@@ -52,7 +52,7 @@ async function isDir(p: string): Promise<boolean> {
   }
 }
 
-// GET / — list workspace IDs that have any memory corpus on disk.
+// GET / — list workspace IDs that have any memory on disk.
 // Backed by ~/.atlas/memory/ — every immediate subdirectory is treated as a
 // workspaceId. Empty array if the memory root doesn't exist yet.
 memoryNarrativeRoutes.get("/", async (c) => {
@@ -66,8 +66,8 @@ memoryNarrativeRoutes.get("/", async (c) => {
   return c.json(workspaces);
 });
 
-// GET /:workspaceId — list corpora for a workspace.
-// Returns [{workspaceId, name, kind}] for every corpus directory under
+// GET /:workspaceId — list memories for a workspace.
+// Returns [{workspaceId, name, kind}] for every memory directory under
 // ~/.atlas/memory/{workspaceId}/{kind}/{name}. Used by the playground memory
 // viewer for discovery.
 memoryNarrativeRoutes.get(
@@ -76,41 +76,41 @@ memoryNarrativeRoutes.get(
   async (c) => {
     const { workspaceId } = c.req.valid("param");
     const wsRoot = path.join(getAtlasHome(), "memory", workspaceId);
-    const corpora: { workspaceId: string; name: string; kind: string }[] = [];
+    const memories: { workspaceId: string; name: string; kind: string }[] = [];
     for (const kind of KNOWN_KINDS) {
       const kindDir = path.join(wsRoot, kind);
       const names = await safeReaddir(kindDir);
       for (const name of names) {
         if (name.startsWith(".")) continue;
         if (await isDir(path.join(kindDir, name))) {
-          corpora.push({ workspaceId, name, kind });
+          memories.push({ workspaceId, name, kind });
         }
       }
     }
-    return c.json(corpora);
+    return c.json(memories);
   },
 );
 
-// GET /:workspaceId/narrative/:corpusName — read entries
+// GET /:workspaceId/narrative/:memoryName — read narrative entries
 memoryNarrativeRoutes.get(
-  "/:workspaceId/narrative/:corpusName",
+  "/:workspaceId/narrative/:memoryName",
   validator("param", NarrativeParamsSchema),
   validator(
     "query",
     z.object({ since: z.string().optional(), limit: z.coerce.number().optional() }),
   ),
   async (c) => {
-    const { workspaceId, corpusName } = c.req.valid("param");
+    const { workspaceId, memoryName } = c.req.valid("param");
     const { since, limit } = c.req.valid("query");
 
     try {
-      const corpus = resolveCorpus(workspaceId, corpusName);
+      const corpus = resolveMemory(workspaceId, memoryName);
       const entries = await corpus.read({ since, limit });
       return c.json(entries);
     } catch (error: unknown) {
       logger.warn("memory narrative read failed, returning empty", {
         workspaceId,
-        corpusName,
+        memoryName,
         error,
       });
       return c.json([]);
@@ -118,13 +118,13 @@ memoryNarrativeRoutes.get(
   },
 );
 
-// POST /:workspaceId/narrative/:corpusName — append entry
+// POST /:workspaceId/narrative/:memoryName — append entry
 memoryNarrativeRoutes.post(
-  "/:workspaceId/narrative/:corpusName",
+  "/:workspaceId/narrative/:memoryName",
   validator("param", NarrativeParamsSchema),
   validator("json", AppendBodySchema),
   async (c) => {
-    const { workspaceId, corpusName } = c.req.valid("param");
+    const { workspaceId, memoryName } = c.req.valid("param");
     const body = c.req.valid("json");
 
     const entry = NarrativeEntrySchema.parse({
@@ -136,25 +136,25 @@ memoryNarrativeRoutes.post(
     });
 
     try {
-      const corpus = resolveCorpus(workspaceId, corpusName);
+      const corpus = resolveMemory(workspaceId, memoryName);
       const appended = await corpus.append(entry);
       return c.json(appended);
     } catch (error: unknown) {
-      logger.error("memory narrative append failed", { workspaceId, corpusName, error });
+      logger.error("memory narrative append failed", { workspaceId, memoryName, error });
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
 );
 
-// DELETE /:workspaceId/narrative/:corpusName/:entryId — forget entry
+// DELETE /:workspaceId/narrative/:memoryName/:entryId — forget entry
 memoryNarrativeRoutes.delete(
-  "/:workspaceId/narrative/:corpusName/:entryId",
+  "/:workspaceId/narrative/:memoryName/:entryId",
   validator("param", ForgetParamsSchema),
   async (c) => {
-    const { workspaceId, corpusName, entryId } = c.req.valid("param");
+    const { workspaceId, memoryName, entryId } = c.req.valid("param");
 
     try {
-      const corpus = resolveCorpus(workspaceId, corpusName);
+      const corpus = resolveMemory(workspaceId, memoryName);
       await corpus.forget(entryId);
       return c.json({ success: true });
     } catch (error: unknown) {
@@ -162,7 +162,7 @@ memoryNarrativeRoutes.delete(
       if (message.includes("not implemented")) {
         return c.json({ error: "forget not implemented" }, 501);
       }
-      logger.error("memory narrative forget failed", { workspaceId, corpusName, entryId, error });
+      logger.error("memory narrative forget failed", { workspaceId, memoryName, entryId, error });
       return c.json({ error: stringifyError(error) }, 500);
     }
   },

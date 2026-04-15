@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMEvent } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
@@ -444,6 +445,203 @@ describe("FSM Engine - Core Mechanics", () => {
       // All events should have the same session ID from parent context
       transitionEvents.forEach((event) => {
         expect(event.data.sessionId).toEqual("cascade-session");
+      });
+    });
+
+    it("should merge parent signal data into cascaded signals that have their own data", async () => {
+      const onStreamEvent = vi.fn();
+      const onEvent = vi.fn();
+
+      const capturedSignals: Array<{
+        agentId: string;
+        type: string;
+        data?: Record<string, unknown>;
+        hasContext: boolean;
+        contextSessionId?: string;
+        contextWorkspaceId?: string;
+        hasOnStreamEvent: boolean;
+        hasOnEvent: boolean;
+      }> = [];
+
+      const fsm: FSMDefinition = {
+        id: "cascade-data-merge",
+        initial: "idle",
+        states: {
+          idle: { on: { TRIGGER: { target: "step_plan" } } },
+          step_plan: {
+            entry: [{ type: "agent", agentId: "planner", outputTo: "plan_result" }],
+            on: { PLAN_COMPLETE: { target: "step_dispatch" } },
+          },
+          step_dispatch: {
+            entry: [{ type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" }],
+            on: { DISPATCH_COMPLETE: { target: "done" } },
+          },
+          done: { type: "final" },
+        },
+      };
+
+      const store = new InMemoryDocumentStore();
+      const scope = { workspaceId: "test", sessionId: "test-session" };
+
+      const engine = new FSMEngine(fsm, {
+        documentStore: store,
+        scope,
+        agentExecutor: async (action, ctx, signal) => {
+          capturedSignals.push({
+            agentId: action.agentId,
+            type: signal.type,
+            data: signal.data ? { ...signal.data } : undefined,
+            hasContext: !!signal._context,
+            contextSessionId: signal._context?.sessionId,
+            contextWorkspaceId: signal._context?.workspaceId,
+            hasOnStreamEvent: typeof signal._context?.onStreamEvent === "function",
+            hasOnEvent: typeof signal._context?.onEvent === "function",
+          });
+
+          if (action.agentId === "planner") {
+            await ctx.emit?.({ type: "PLAN_COMPLETE", data: { planResult: "some-plan-output" } });
+          } else if (action.agentId === "dispatcher") {
+            await ctx.emit?.({ type: "DISPATCH_COMPLETE" });
+          }
+
+          return {
+            ok: true as const,
+            agentId: action.agentId,
+            timestamp: new Date().toISOString(),
+            input: "",
+            data: { done: true },
+            durationMs: 10,
+          };
+        },
+      });
+      await engine.initialize();
+
+      await engine.signal(
+        {
+          type: "TRIGGER",
+          data: {
+            streamId: "chat-123",
+            datetime: { timezone: "UTC", timestamp: "2026-04-14T00:00:00Z" },
+          },
+        },
+        { sessionId: "sess-1", workspaceId: "ws-1", onEvent, onStreamEvent },
+      );
+
+      expect(capturedSignals).toHaveLength(2);
+
+      // Planner receives the original TRIGGER signal with session data
+      const plannerSig = capturedSignals[0];
+      expect(plannerSig?.agentId).toEqual("planner");
+      expect(plannerSig?.data?.streamId).toEqual("chat-123");
+      expect(plannerSig?.data?.datetime).toEqual({
+        timezone: "UTC",
+        timestamp: "2026-04-14T00:00:00Z",
+      });
+      expect(plannerSig?.hasContext).toBe(true);
+      expect(plannerSig?.contextSessionId).toEqual("sess-1");
+      expect(plannerSig?.contextWorkspaceId).toEqual("ws-1");
+      expect(plannerSig?.hasOnStreamEvent).toBe(true);
+      expect(plannerSig?.hasOnEvent).toBe(true);
+
+      // Dispatcher receives the cascaded PLAN_COMPLETE signal with BOTH
+      // the emitted data AND the parent's session-scoped fields merged in.
+      // Critically, _context (onStreamEvent, onEvent) must also propagate —
+      // the workspace runtime reads these to wire up streaming and event callbacks.
+      const dispatcherSig = capturedSignals[1];
+      expect(dispatcherSig?.agentId).toEqual("dispatcher");
+      expect(dispatcherSig?.type).toEqual("PLAN_COMPLETE");
+      expect(dispatcherSig?.data?.planResult).toEqual("some-plan-output");
+      expect(dispatcherSig?.data?.streamId).toEqual("chat-123");
+      expect(dispatcherSig?.data?.datetime).toEqual({
+        timezone: "UTC",
+        timestamp: "2026-04-14T00:00:00Z",
+      });
+      expect(dispatcherSig?.hasContext).toBe(true);
+      expect(dispatcherSig?.contextSessionId).toEqual("sess-1");
+      expect(dispatcherSig?.contextWorkspaceId).toEqual("ws-1");
+      expect(dispatcherSig?.hasOnStreamEvent).toBe(true);
+      expect(dispatcherSig?.hasOnEvent).toBe(true);
+    });
+
+    it("should persist prepareResult across cascaded states via __lastPrepare", async () => {
+      const capturedInputs: Array<{ agentId: string; input: Record<string, unknown> | undefined }> =
+        [];
+
+      const fsm: FSMDefinition = {
+        id: "prepare-persist",
+        initial: "idle",
+        states: {
+          idle: { on: { TRIGGER: { target: "step_plan" } } },
+          step_plan: {
+            entry: [{ type: "agent", agentId: "planner", outputTo: "plan_result" }],
+            on: { PLAN_DONE: { target: "step_dispatch" } },
+          },
+          step_dispatch: {
+            entry: [{ type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" }],
+            on: { DISPATCH_DONE: { target: "done" } },
+          },
+          done: { type: "final" },
+        },
+      };
+
+      const store = new InMemoryDocumentStore();
+      const scope = { workspaceId: "test", sessionId: "test-session" };
+
+      const engine = new FSMEngine(fsm, {
+        documentStore: store,
+        scope,
+        agentExecutor: async (action, ctx, _signal) => {
+          capturedInputs.push({
+            agentId: action.agentId,
+            input: ctx.input as Record<string, unknown> | undefined,
+          });
+
+          if (action.agentId === "planner") {
+            await ctx.emit?.({ type: "PLAN_DONE" });
+          } else if (action.agentId === "dispatcher") {
+            await ctx.emit?.({ type: "DISPATCH_DONE" });
+          }
+
+          return {
+            ok: true as const,
+            agentId: action.agentId,
+            timestamp: new Date().toISOString(),
+            input: "",
+            data: { done: true },
+            durationMs: 10,
+          };
+        },
+      });
+      await engine.initialize();
+
+      // Pre-seed __lastPrepare to simulate a code action's config output
+      // from a prior state (e.g. prepare_plan returning workDir + platformUrl).
+      engine.context.setResult?.("__lastPrepare", {
+        config: { workDir: "/workspace/atlas", platformUrl: "http://localhost:8080" },
+      });
+
+      await engine.signal({ type: "TRIGGER" });
+
+      expect(capturedInputs).toHaveLength(2);
+
+      // Planner receives input.config from the pre-seeded __lastPrepare
+      const plannerInput = capturedInputs[0];
+      expect(plannerInput?.agentId).toEqual("planner");
+      expect(plannerInput?.input).toBeDefined();
+      expect((plannerInput?.input as Record<string, unknown>)?.config).toEqual({
+        workDir: "/workspace/atlas",
+        platformUrl: "http://localhost:8080",
+      });
+
+      // Dispatcher also receives input.config — the write side persisted
+      // __lastPrepare after step_plan, and the read side picked it up
+      // when step_dispatch's executeActions started.
+      const dispatcherInput = capturedInputs[1];
+      expect(dispatcherInput?.agentId).toEqual("dispatcher");
+      expect(dispatcherInput?.input).toBeDefined();
+      expect((dispatcherInput?.input as Record<string, unknown>)?.config).toEqual({
+        workDir: "/workspace/atlas",
+        platformUrl: "http://localhost:8080",
       });
     });
   });

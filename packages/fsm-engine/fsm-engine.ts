@@ -939,7 +939,14 @@ export class FSMEngine {
     }
 
     try {
-      let prepareResult: PrepareResult | undefined;
+      // Seed prepareResult from the previous state's stored value so agent
+      // actions in a cascaded state inherit config (e.g. platformUrl, workDir)
+      // without needing their own code action. A code action in this state
+      // overrides the stored value naturally via its return value.
+      const storedPrepare = results?.get("__lastPrepare");
+      let prepareResult: PrepareResult | undefined = storedPrepare
+        ? parsePrepareResult(storedPrepare)
+        : undefined;
       for (const action of actions) {
         prepareResult = await this.executeAction(
           action,
@@ -981,6 +988,12 @@ export class FSMEngine {
             prepareResult = { ...prepareResult, artifactRefs: collectedRefs };
           }
         }
+      }
+
+      // Persist prepareResult so subsequent states inherit config
+      // (e.g. platformUrl, workDir) without needing their own code action.
+      if (prepareResult && results) {
+        results.set("__lastPrepare", { ...prepareResult });
       }
     } finally {
       this._recursionDepth--;
@@ -1039,10 +1052,10 @@ export class FSMEngine {
           hasData: !!s.data,
         });
         // Cascaded signals inherit parent's context (including onEvent callback)
-        // and fall back to parent's data when the emitted signal has none, so
-        // session-scoped fields (streamId, datetime) survive across FSM states.
+        // and merge parent's data as a base layer so session-scoped fields
+        // (streamId, datetime) survive even when the emitted signal has its own data.
         const cascadedSignal: SignalWithContext = sig._context
-          ? { ...s, data: s.data ?? sig.data, _context: sig._context }
+          ? { ...s, data: { ...sig.data, ...s.data }, _context: sig._context }
           : s;
         signals.push(cascadedSignal);
         return Promise.resolve();

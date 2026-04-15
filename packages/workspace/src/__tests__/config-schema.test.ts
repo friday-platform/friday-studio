@@ -27,18 +27,16 @@ describe("ImprovementModeSchema", () => {
 });
 
 describe("WorkspaceConfigSchema — new keys", () => {
-  it("accepts corpus_mounts and job-level output keys", () => {
+  it("accepts memory.own and job-level output keys", () => {
     const fixture = {
       version: "1.0",
       workspace: { name: "test-workspace" },
-      corpus_mounts: [
-        { workspace: "thick_endive", corpus: "reflections", kind: "narrative", mode: "read" },
-      ],
+      memory: { own: [{ name: "notes", type: "long_term", strategy: "narrative" }] },
       jobs: {
         "review-target-workspace": {
           description: "Review target workspace for improvements",
           fsm: { states: {}, initial: "idle" },
-          outputs: { corpus: "notes", entryKind: "finding" },
+          outputs: { memory: "notes", entryKind: "finding" },
           improvement_key_convention: {
             scoped: "jobs.{target_job_id}.improvement",
             default: "workspace.improvement",
@@ -51,51 +49,24 @@ describe("WorkspaceConfigSchema — new keys", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts corpus_mounts with all four kinds", () => {
-    for (const kind of ["narrative", "retrieval", "dedup", "kv"] as const) {
-      const fixture = {
-        version: "1.0",
-        workspace: { name: "test" },
-        corpus_mounts: [{ workspace: "ws", corpus: "c", kind, mode: "read" as const }],
-      };
-      const result = WorkspaceConfigSchema.safeParse(fixture);
-      expect(result.success).toBe(true);
-    }
-  });
-
-  it("accepts corpus_mounts with all three modes", () => {
-    for (const mode of ["read", "write", "read_write"] as const) {
-      const fixture = {
-        version: "1.0",
-        workspace: { name: "test" },
-        corpus_mounts: [{ workspace: "ws", corpus: "c", kind: "narrative" as const, mode }],
-      };
-      const result = WorkspaceConfigSchema.safeParse(fixture);
-      expect(result.success).toBe(true);
-    }
-  });
-
-  it("defaults corpus_mounts mode to read when omitted", () => {
+  it("rejects legacy corpus_mounts key (strictObject enforcement)", () => {
     const fixture = {
       version: "1.0",
       workspace: { name: "test" },
-      corpus_mounts: [{ workspace: "ws", corpus: "c", kind: "narrative" }],
+      corpus_mounts: [{ workspace: "ws", corpus: "c", kind: "narrative", mode: "read" }],
     };
     const result = WorkspaceConfigSchema.safeParse(fixture);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.corpus_mounts?.[0]?.mode).toBe("read");
-    }
+    expect(result.success).toBe(false);
   });
 
-  it("accepts job with outputs {corpus, entryKind}", () => {
+  it("accepts job with outputs {memory, entryKind}", () => {
     const fixture = {
       version: "1.0",
       workspace: { name: "test" },
       jobs: {
         "my-job": {
           fsm: { states: {}, initial: "idle" },
-          outputs: { corpus: "notes", entryKind: "finding" },
+          outputs: { memory: "notes", entryKind: "finding" },
         },
       },
     };
@@ -127,6 +98,36 @@ describe("WorkspaceConfigSchema — new keys", () => {
       workspace: { name: "test" },
       jobs: {
         "my-job": { fsm: { states: {}, initial: "idle" }, scope_exclusions: ["skills", "source"] },
+      },
+    };
+    const result = WorkspaceConfigSchema.safeParse(fixture);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts combined fixture with outputs+improvement_key_convention+scope_exclusions matching fast-loop workspace.yml", () => {
+    const fixture = {
+      version: "1.0",
+      workspace: { name: "fast-loop" },
+      memory: {
+        mounts: [
+          {
+            name: "reflections",
+            source: "thick_endive/narrative/reflections",
+            mode: "ro",
+            scope: "workspace",
+          },
+        ],
+      },
+      jobs: {
+        "review-target-workspace": {
+          fsm: { states: {}, initial: "idle" },
+          outputs: { memory: "notes", entryKind: "finding" },
+          improvement_key_convention: {
+            scoped: "jobs.{target_job_id}.improvement",
+            default: "workspace.improvement",
+          },
+          scope_exclusions: ["skills", "source"],
+        },
       },
     };
     const result = WorkspaceConfigSchema.safeParse(fixture);

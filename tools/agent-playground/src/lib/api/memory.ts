@@ -41,12 +41,12 @@ export const KNOWN_WORKSPACES: string[] = (() => {
 })();
 
 /**
- * Fallback corpora to surface when the daemon's list-corpora endpoint
+ * Fallback memories to surface when the daemon's list-memories endpoint
  * (GET /api/memory/{wsId}) doesn't exist. Each entry is a (workspaceId,
- * corpusName, kind) tuple of corpora we know exist by convention. Lets the
- * viewer drill into known corpora before the daemon gains a discovery API.
+ * memoryName, kind) tuple of memories we know exist by convention. Lets the
+ * viewer drill into known memories before the daemon gains a discovery API.
  */
-const KNOWN_CORPORA: ReadonlyArray<{
+const KNOWN_MEMORIES: ReadonlyArray<{
   workspaceId: string;
   name: string;
   kind: CorpusMetadata["kind"];
@@ -88,7 +88,7 @@ export async function fetchWorkspacesWithMemory(): Promise<string[]> {
   }
 }
 
-export async function fetchCorpora(
+export async function fetchMemories(
   workspaceId: string,
 ): Promise<CorpusMetadata[]> {
   try {
@@ -96,9 +96,9 @@ export async function fetchCorpora(
       `${PROXY_BASE}/api/memory/${encodeURIComponent(workspaceId)}`,
     );
     if (!res.ok) {
-      // List-corpora endpoint missing — fall back to KNOWN_CORPORA so the
-      // user can still drill into corpora we know exist by convention.
-      return KNOWN_CORPORA.filter((c) => c.workspaceId === workspaceId).map((c) => ({
+      // List-memories endpoint missing — fall back to KNOWN_MEMORIES so the
+      // user can still drill into memories we know exist by convention.
+      return KNOWN_MEMORIES.filter((c) => c.workspaceId === workspaceId).map((c) => ({
         workspaceId: c.workspaceId,
         name: c.name,
         kind: c.kind,
@@ -107,7 +107,7 @@ export async function fetchCorpora(
     const data: unknown = await res.json();
     return CorpusListResponseSchema.parse(data);
   } catch {
-    return KNOWN_CORPORA.filter((c) => c.workspaceId === workspaceId).map((c) => ({
+    return KNOWN_MEMORIES.filter((c) => c.workspaceId === workspaceId).map((c) => ({
       workspaceId: c.workspaceId,
       name: c.name,
       kind: c.kind,
@@ -117,14 +117,14 @@ export async function fetchCorpora(
 
 export async function fetchNarrativeCorpus(
   workspaceId: string,
-  corpusName: string,
+  memoryName: string,
 ): Promise<NarrativeEntry[]> {
   const res = await globalThis.fetch(
-    `${PROXY_BASE}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(corpusName)}`,
+    `${PROXY_BASE}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}`,
   );
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch corpus ${corpusName}: ${res.status}`,
+      `Failed to fetch memory ${memoryName}: ${res.status}`,
     );
   }
   const data: unknown = await res.json();

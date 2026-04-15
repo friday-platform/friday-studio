@@ -120,6 +120,7 @@ const AgentSessionDataSchema = z.object({
       timezoneOffset: z.string(),
     })
     .optional(),
+  memoryContextKey: z.string().optional(),
 });
 
 /**

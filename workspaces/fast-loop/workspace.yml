@@ -1,6 +1,6 @@
 # The FAST kernel operates a fully closed self-extending loop:
-# corpus → plan → dispatch → observe → DISCOVER → corpus.
-# Jobs read the autopilot-backlog corpus, the planner selects eligible tasks,
+# memory → plan → dispatch → observe → DISCOVER → memory.
+# Jobs read the autopilot-backlog memory, the planner selects eligible tasks,
 # the dispatcher fires signals, the status-watcher observes completions and marks
 # tasks done. Reviewer, reflector, and cross-session-reflector jobs now DISCOVER
 # new findings and append them back to autopilot-backlog as pending tasks via
@@ -10,7 +10,7 @@ version: '1.0'
 workspace:
   name: FAST Loop
   description: >-
-    The FAST kernel — the single supervisory workspace. Many jobs, one purpose: identify potential self-improvements in any target workspace and either SURFACE them (human-gated) or AUTO-APPLY them (per the target's declared policy). Owns the autopilot-backlog corpus, the cross-session reflector, the skill author/publisher pipeline, and the agent author pipeline. Target workspaces declare which improvement actions they accept in which mode via their workspace.yml `improvements:` block.
+    The FAST kernel — the single supervisory workspace. Many jobs, one purpose: identify potential self-improvements in any target workspace and either SURFACE them (human-gated) or AUTO-APPLY them (per the target's declared policy). Owns the autopilot-backlog memory, the cross-session reflector, the skill author/publisher pipeline, and the agent author pipeline. Target workspaces declare which improvement actions they accept in which mode via their workspace.yml `improvements:` block.
 # Why this workspace exists:
 #   FAST has ONE supervisory workspace — this one. It runs many jobs,
 #   each of which identifies a potential self-improvement to some target
@@ -27,18 +27,23 @@ workspace:
 #
 # The planner is intentionally pure (READ backlog → DECIDE next action).
 # Dispatch goes through the dispatcher agent. Reflection feeds back into
-# the same backlog corpus that drives planning, closing the loop.
+# the same backlog memory that drives planning, closing the loop.
 #
-# The backlog is the autopilot-backlog narrative corpus on this same
+# The backlog is the autopilot-backlog narrative memory on this same
 # workspace. Target workspaces mount it (read-only) for context, and the
-# kernel appends task status as work completes. This is the corpus-as-bus
-# pattern — every supervisory action is a corpus append, every action's
-# fan-out is a mount on the receiving side.
-corpus_mounts:
-  - workspace: thick_endive
-    corpus: reflections
-    kind: narrative
-    mode: read
+# kernel appends task status as work completes. This is the memory-as-bus
+# pattern — every supervisory action is a memory append, every action's
+# fan-out is a memory mount on the receiving side.
+memory:
+  own:
+    - name: reflections
+      type: long_term
+      strategy: narrative
+  mounts:
+    - name: reflections
+      source: thick_endive/narrative/reflections
+      mode: ro
+      scope: workspace
 skills:
   - name: '@tempest/fast-self-modification'
 signals:
@@ -146,7 +151,7 @@ signals:
     description: >-
       Trigger a reviewer agent against a target workspace. Reads recent sessions,
       detects workspace.yml drift, agent prompt issues, and FSM smells. Writes
-      findings to the target workspace's notes corpus.
+      findings to the target workspace's notes memory.
     config:
       path: /webhooks/review-target-workspace-run
     schema:
@@ -191,23 +196,60 @@ signals:
       Cron-driven workspace review. Every 15 minutes — surfaces drift /
       prompt issues / FSM smells fast enough to feel like a live signal.
       Currently config-only review (session-reader points at a hypothetical
-      narrative/sessions corpus that no producer writes to; switch to
+      narrative/sessions memory that no producer writes to; switch to
       /api/sessions or land a session-summarizer to enable session review).
     config:
       schedule: '*/15 * * * *'
       timezone: UTC
+  post-session-validate:
+    provider: http
+    title: Post-session validation gate
+    description: >-
+      Fires after a dispatched session completes. Runs typecheck, lint,
+      workspace-yml, and agent-build validators against the session's changed
+      files. Failures become discovery tasks; successes mark the original task
+      validated.
+    config:
+      path: /webhooks/post-session-validate
+    schema:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        changedFiles:
+          type: array
+          items:
+            type: string
+        taskId:
+          type: string
+        taskBrief:
+          type: string
+        taskPriority:
+          type: number
+        workspaceId:
+          type: string
+        dispatcherWorkspaceId:
+          type: string
+      required:
+        - sessionId
+        - changedFiles
+        - taskId
+        - taskBrief
+        - taskPriority
+        - workspaceId
+        - dispatcherWorkspaceId
 agents:
   status-watcher:
     type: user
     agent: autopilot-status-watcher
     description: >-
-      Custom Python WASM agent. Reads dispatch-log corpus, fetches each dispatched session's status, and appends completion entries to the autopilot-backlog corpus when the target session has finished. Closes the loop without modifying the planner. Runs as step_observe before step_plan in the autopilot-tick FSM.
+      Custom Python WASM agent. Reads dispatch-log memory, fetches each dispatched session's status, and appends completion entries to the autopilot-backlog memory when the target session has finished. Closes the loop without modifying the planner. Runs as step_observe before step_plan in the autopilot-tick FSM.
     prompt: |
       You are the autopilot status watcher. Read your config, fetch the
-      dispatch-log narrative corpus on the kernel workspace, then for each
+      dispatch-log narrative memory on the kernel workspace, then for each
       unique task_id whose latest dispatch has a session_id, fetch the
       session and (if completed/failed) append a completion entry to the
-      autopilot-backlog corpus. No LLM. Pure observation.
+      autopilot-backlog memory. No LLM. Pure observation.
     env:
       ANTHROPIC_API_KEY: from_environment
   planner:
@@ -454,7 +496,7 @@ agents:
       Return structured JSON with:
       - targetWorkspaceId: string
       - findings: array of WorkspaceFinding objects
-      - appendedCount: number of findings written to corpus
+      - appendedCount: number of findings written to memory
       - ranAt: ISO-8601 timestamp
 
       Each WorkspaceFinding has:
@@ -469,8 +511,8 @@ agents:
       ## Rules
 
       - Do NOT inspect skills or source code. Scope: workspace.yml, sessions.
-      - Do NOT write to the kernel's corpora. Only the target workspace's
-        notes corpus receives findings.
+      - Do NOT write to the kernel's memories. Only the target workspace's
+        notes memory receives findings.
       - Set target_job_id when the finding is scoped to a specific job.
         Omit it for workspace-level findings.
       - Severity guide: info = observation, warn = likely issue, error =
@@ -619,7 +661,7 @@ jobs:
   autopilot-tick:
     title: Supervise — pick next backlog task and dispatch
     description: >-
-      Kernel/supervisor pulse. Reads the autopilot-backlog corpus, asks the planner to pick the next pending task respecting per-task cooldown and blocked_by, then dispatches at the target workspace's signal. This is how the FAST kernel moves work along across every other workspace without a human in the loop.
+      Kernel/supervisor pulse. Reads the autopilot-backlog memory, asks the planner to pick the next pending task respecting per-task cooldown and blocked_by, then dispatches at the target workspace's signal. This is how the FAST kernel moves work along across every other workspace without a human in the loop.
     triggers:
       - signal: autopilot-tick
       - signal: autopilot-tick-cron
@@ -679,8 +721,8 @@ jobs:
                 config: {
                   platformUrl: "http://localhost:8080",
                   kernel_workspace_id: "thick_endive",
-                  dispatch_log_corpus: "dispatch-log",
-                  backlog_corpus: "autopilot-backlog",
+                  dispatch_log_memory: "dispatch-log",
+                  backlog_memory: "autopilot-backlog",
                 },
               };
             }
@@ -694,7 +736,7 @@ jobs:
           type: action
           code: |
             export default function prepare_plan(context, event) {
-              // Backlog lives in the autopilot-backlog narrative corpus on this
+              // Backlog lives in the autopilot-backlog narrative memory on this
               // workspace. Edited via POST /api/memory/{ws}/narrative/autopilot-backlog
               // not by editing this code action. Each entry is a NarrativeEntry whose
               // metadata contains status, priority, kind, blocked_by, and payload
@@ -703,16 +745,16 @@ jobs:
               // Override backlog_json from event.data for one-shot ticks.
               var override = (event.data && event.data.backlog_json) || null;
               return {
-                task: "Autopilot tick: pick next backlog task from corpus",
+                task: "Autopilot tick: pick next backlog task from memory",
                 config: {
                   backlog_json: override,
                   backlog_url: "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog",
                   platformUrl: "http://localhost:8080",
                   // 30-min per-TASK cooldown (planner v1.4.0 tracks per-task via
-                  // the dispatch-log narrative corpus). 1800s gives long-running
+                  // the dispatch-log narrative memory). 1800s gives long-running
                   // claude-code FSM dispatches plenty of time to finish before
                   // the same task could be picked again. Operator marks tasks
-                  // completed by POSTing a new corpus entry with same id +
+                  // completed by POSTing a new memory entry with same id +
                   // metadata.status: completed.
                   cooldown_s: 1800
                 }
@@ -1023,7 +1065,7 @@ jobs:
   reflect-on-last-run:
     title: Supervise — observe a recent session and propose an improvement
     description: >-
-      Kernel/supervisor single-session reflector. Reads any completed session in any workspace, identifies whether it surfaced a new failure pattern, and proposes an updated SKILL.md when warranted. Does NOT publish — that's gated through apply-approved-reflection. This is how the FAST kernel learns from one-off events without waiting for a pattern to recur.
+      Kernel/supervisor single-session reflector. Reads any completed session in any workspace, identifies whether it surfaced a new failure pattern, and proposes an updated SKILL.md when warranted. Does NOT publish — that's gated through apply-approved-reflection. Every reflection (regardless of whether a skill update is proposed) is appended to the thick_endive/narrative/reflections memory for cross-session pattern detection. This is how the FAST kernel learns from one-off events without waiting for a pattern to recur.
     triggers:
       - signal: reflect-on-last-run
     fsm:
@@ -1483,10 +1525,10 @@ jobs:
     description: >-
       Reviewer agent that inspects a target workspace for workspace.yml drift,
       agent prompt issues, and FSM smells. Each finding is appended as a
-      NarrativeEntry to the target workspace's notes corpus (never the kernel's).
+      NarrativeEntry to the target workspace's notes memory (never the kernel's).
       Findings optionally include target_job_id so the downstream apply job can
       read jobs.<id>.improvement instead of the workspace-level default.
-    entrypoint: jobs/review-target-workspace/job.ts
+    entrypoint: jobs/review-target-workspace.ts
     triggers:
       - signal: review-target-workspace-run
       - signal: review-requested
@@ -1494,7 +1536,7 @@ jobs:
     config:
       targetWorkspaceId: ""
       sessionLimit: 20
-      notesCorpus: notes
+      notesMemory: notes
     inputs:
       targetWorkspaceId:
         type: string
@@ -1503,7 +1545,7 @@ jobs:
         type: number
         default: 20
     outputs:
-      corpus: notes
+      memory: notes
       entryKind: finding
     improvement_key_convention:
       scoped: "jobs.{target_job_id}.improvement"
@@ -1560,8 +1602,8 @@ jobs:
                   sessionLimit: sessionLimit,
                   jobIds: jobIds,
                   platformUrl: 'http://localhost:8080',
-                  corpusName: 'notes',
-                  corpusKind: 'narrative',
+                  memoryName: 'notes',
+                  memoryKind: 'narrative',
                 },
               };
             }
@@ -1616,4 +1658,80 @@ jobs:
             - findings
             - appendedCount
             - ranAt
+      tools: {}
+  post-session-validator:
+    title: Validate — verify dispatched session output against downstream consumers
+    description: >-
+      Post-session validation gate. Runs typecheck, lint, workspace-yml, and
+      agent-build validators against changed files from a completed session.
+      Failures are routed as discovery tasks via the discovery-to-task protocol;
+      successes mark the original task validated in autopilot-backlog.
+    entrypoint: jobs/post-session-validator/job.ts
+    triggers:
+      - signal: post-session-validate
+    fsm:
+      id: post-session-validator-pipeline
+      initial: idle
+      states:
+        idle:
+          'on':
+            post-session-validate:
+              target: step_validate
+        step_validate:
+          entry:
+            - type: code
+              function: prepare_validate
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_validate_done
+        completed:
+          type: final
+      functions:
+        prepare_validate:
+          type: action
+          code: |
+            export default async function prepare_validate(context, event) {
+              var mod = await import('./jobs/post-session-validator/job.ts');
+              var result = await mod.runPostSessionValidator(event.data);
+              context.results = context.results || {};
+              context.results['validate-output'] = result;
+              return result;
+            }
+        guard_validate_done:
+          type: guard
+          code: |
+            export default function guard_validate_done(context, event) {
+              return context.results && context.results['validate-output'] !== undefined;
+            }
+      documentTypes:
+        post-session-validator-result:
+          type: object
+          properties:
+            validated:
+              type: boolean
+            results:
+              type: array
+              items:
+                type: object
+                properties:
+                  validator:
+                    type: string
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                required:
+                  - validator
+                  - ok
+                  - message
+            discoveriesAppended:
+              type: integer
+          required:
+            - validated
+            - results
+            - discoveriesAppended
       tools: {}

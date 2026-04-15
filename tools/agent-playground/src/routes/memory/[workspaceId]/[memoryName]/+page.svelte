@@ -5,11 +5,11 @@
   import { memoryQueries } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? "");
-  const corpusName = $derived(page.params.corpusName ?? "");
+  const memoryName = $derived(page.params.memoryName ?? "");
 
   const entriesQuery = createQuery(() => ({
-    ...memoryQueries.narrativeEntries(workspaceId, corpusName),
-    enabled: workspaceId.length > 0 && corpusName.length > 0,
+    ...memoryQueries.narrativeEntries(workspaceId, memoryName),
+    enabled: workspaceId.length > 0 && memoryName.length > 0,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   }));
@@ -37,18 +37,18 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="corpus-detail">
+<div class="memory-detail">
   <header class="page-header">
     <nav class="breadcrumb">
       <a href="/memory">Memory</a>
       <span class="sep">/</span>
       <a href="/memory/{encodeURIComponent(workspaceId)}">{workspaceId}</a>
       <span class="sep">/</span>
-      <span>{corpusName}</span>
+      <span>{memoryName}</span>
     </nav>
 
     <div class="title-row">
-      <h1>{corpusName}</h1>
+      <h1>{memoryName}</h1>
       {#if entriesQuery.isFetching}
         <span class="live-dot" title="Refreshing…"></span>
         <span class="live-label">Live</span>
@@ -77,7 +77,7 @@
 </div>
 
 <style>
-  .corpus-detail {
+  .memory-detail {
     display: flex;
     flex-direction: column;
     block-size: 100%;

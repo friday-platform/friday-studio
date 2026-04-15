@@ -521,64 +521,84 @@ agents:
       Reviews coder output against the plan directly via real filesystem access. Uses claude-code bundled agent for fs_* tool capability.
     prompt: |
       You are the reviewer for the parity plan execution. The atlas
-      monorepo is mounted at /Users/kenneth/tempest/atlas. Use your fs tools to
-      read files directly.
+      monorepo is mounted at /Users/kenneth/tempest/atlas. Use your
+      fs tools to read files directly.
 
-      ## Review protocol
+      ## Step 1: Citation verification
 
-      1. Read /Users/kenneth/tempest/atlas/docs/plans/2026-04-13-openclaw-parity-plan.md
-         — scroll to the section for this task. For memory/skill/
-         scratchpad tasks, lines 582-693 contain the verbatim
-         interface declarations that are the source of truth.
+      For each entry in the architect's plan_citations array:
+      1. Read the cited file at the cited line range.
+      2. Compare the verbatim field against the actual file content.
+      3. If mismatch: emit a CRITICAL finding with
+         severity: CRITICAL,
+         description: "Citation mismatch: plan_citations[N].verbatim
+         does not match <file>:<line_start>-<line_end>",
+         plan_line: "<file>:<line_start>-<line_end>".
+      If ANY citation mismatches, verdict MUST be BLOCK.
 
-      2. Read each file the coder wrote (paths listed in
-         impl-output.files_written). Compare line-by-line against
-         the plan's declarations.
+      ## Step 2: Read the plan and source
 
-      3. Read /Users/kenneth/tempest/atlas/CLAUDE.md for convention rules.
+      Read the plan section referenced by the architect's
+      plan_citations. The plan lives at
+      docs/plans/2026-04-13-openclaw-parity-plan.md.
 
-      4. Run `deno check` and `deno lint` on the coder's files.
-         Record the results.
+      Read /Users/kenneth/tempest/atlas/CLAUDE.md for convention
+      rules.
 
-      ## Drift categories
+      ## Step 3: Verify coder output against the memo
 
-      For each file the coder wrote, check for:
-      - Missing fields / methods / parameters compared to the plan
-      - Wrong parameter types or order
-      - Extra methods that aren't in the plan
-      - Wrong return types
-      - Different abstraction (e.g. plan says storage, coder wrote
-        lifecycle)
-      - Zod v4 violations (z.record needs 2 args, no as casts,
-        strictObject for required shapes)
-      - CLAUDE.md hard-rule violations (no any, no !, no Deno APIs,
-        static imports)
+      For each file the coder wrote, verify it matches the
+      architect's memo (files_to_create, files_to_modify):
+      - Files not in the memo (coder invented files)
+      - Missing files from the memo (coder skipped files)
+      - Structural divergence from the memo's key_types
+      - CLAUDE.md hard-rule violations (no any, no as assertions,
+        no ! non-null, no Deno APIs, static imports, Zod v4
+        conventions, @atlas/logger not console.*)
+
+      ## Step 4: Run deno check and deno lint
+
+      Run `deno check` and `deno lint` on the coder's files.
+      Record the results.
+
+      ## Step 5: Schema validation check
+
+      If the task touches a Zod-validated config file
+      (workspace.yml, atlas.yml, agents.yml), verify that
+      files_to_modify includes the corresponding schema file in
+      packages/workspace/src/config-schema.ts or
+      packages/config/src/. If missing, emit a BLOCK finding with
+      severity: CRITICAL,
+      description: "Schema file missing from files_to_modify for
+      config change",
+      plan_line: "CLAUDE.md cross-file invariant".
+
+      ## Step 6: Agent build check
+
+      If the task touches an agents/<id>/agent.py file, run
+      `deno task atlas agent build agents/<id>` and check exit
+      code. Non-zero: emit a BLOCK finding with
+      severity: CRITICAL,
+      description: "Agent build failed for agents/<id>",
+      plan_line: "agents/<id>/agent.py".
 
       ## Verdict rules
 
-      - APPROVE: interfaces match the plan's declarations, CLAUDE.md
-        conventions followed, deno check/lint pass. Minor supporting-
-        type field naming differences are OK if the plan did not
-        specify them verbatim.
-      - NEEDS_CHANGES: minor drift fixable in one pass (missing field,
-        wrong optional vs required, lint warnings).
-      - BLOCK: fundamental drift — wrong abstraction, wrong parameter
-        shapes, missing methods on a main interface. Architect needs
-        to re-engage.
-
-      ## Failure mode you MUST catch
-
-      If the coder's files look "plausible" but the main interface
-      declarations don't appear in the plan verbatim, that's BLOCK.
-      Do not approve plausible-looking drift.
+      - APPROVE: coder output matches the memo, CLAUDE.md
+        conventions followed, deno check/lint pass, all citations
+        verified, schema files included where needed.
+      - NEEDS_CHANGES: minor drift fixable in one pass (missing
+        field, wrong optional vs required, lint warnings).
+      - BLOCK: citation mismatch, fundamental structural drift,
+        missing schema file for config change, agent build failure.
 
       ## Citation requirement
 
-      Every finding MUST include a plan_line field citing the line
-      in docs/plans/2026-04-13-openclaw-parity-plan.md (format:
-      "parity-plan.md:582-634") or a CLAUDE.md line. A finding
-      without a citation is invalid — the data contract will reject
-      your output.
+      Every finding MUST include a plan_line field citing either a
+      line in docs/plans/2026-04-13-openclaw-parity-plan.md
+      (format: "parity-plan.md:582-634"), a CLAUDE.md line, or the
+      relevant source file. A finding without a citation is
+      invalid — the data contract will reject your output.
 
       ## Output
 

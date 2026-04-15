@@ -391,7 +391,7 @@ def _post_discovery_task(
 
 @agent(
     id="reflector",
-    version="1.3.0",
+    version="1.4.0",
     description=(
         "Deterministic session reader + focused LLM judgment for the FAST "
         "self-modification loop. Reads a completed session via daemon HTTP, "

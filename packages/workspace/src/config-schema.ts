@@ -1,3 +1,18 @@
+import {
+  CorpusKindSchema,
+  type MemoryConfig,
+  MemoryConfigSchema,
+  type MemoryMount,
+  MemoryMountSchema,
+  MemoryMountSourceSchema,
+  MemoryOwnEntrySchema,
+  MemoryShareableSchema,
+  MemoryStrategySchema,
+  MemoryTypeSchema,
+  type MountFilter,
+  MountFilterSchema,
+  parseMemoryMountSource,
+} from "@atlas/config";
 import { z } from "zod";
 
 // ── Improvement policy ────────────────────────────────────────────────────────
@@ -5,78 +20,25 @@ import { z } from "zod";
 export const ImprovementModeSchema = z.enum(["surface", "auto"]);
 export type ImprovementMode = z.infer<typeof ImprovementModeSchema>;
 
-// ── Memory mount schemas ──────────────────────────────────────────────────────
+// ── Memory mount schemas (re-exported from @atlas/config) ────────────────────
 
-export const CorpusKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
-
-const SOURCE_RE =
-  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative|retrieval|dedup|kv)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
-
-export const MemoryMountSourceSchema = z
-  .string()
-  .regex(SOURCE_RE, {
-    message:
-      'memory.mounts[].source must be "{wsId|_global}/{kind}/{corpusName}" ' +
-      '— e.g. "thick_endive/narrative/autopilot-backlog"',
-  });
-
-export const MountFilterSchema = z.object({
-  status: z.union([z.string(), z.array(z.string())]).optional(),
-  priority_min: z.number().int().optional(),
-  kind: z.union([z.string(), z.array(z.string())]).optional(),
-  since: z.string().datetime({ offset: true }).optional(),
-});
-
-export const MemoryMountSchema = z
-  .object({
-    name: z.string().min(1),
-    source: MemoryMountSourceSchema,
-    mode: z.enum(["ro", "rw"]).default("ro"),
-    scope: z.enum(["workspace", "job", "agent"]),
-    scopeTarget: z.string().optional(),
-    filter: MountFilterSchema.optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.scope !== "workspace" && !val.scopeTarget) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["scopeTarget"],
-        message: `scopeTarget is required when scope is "${val.scope}"`,
-      });
-    }
-  });
-
-export type MemoryMount = z.infer<typeof MemoryMountSchema>;
-
-export const MemoryShareableSchema = z.object({
-  corpora: z.array(z.string()).optional(),
-  allowedWorkspaces: z.array(z.string()).optional(),
-});
+export {
+  CorpusKindSchema,
+  type MemoryConfig,
+  MemoryConfigSchema,
+  type MemoryMount,
+  MemoryMountSchema,
+  MemoryMountSourceSchema,
+  MemoryOwnEntrySchema,
+  MemoryShareableSchema,
+  MemoryStrategySchema,
+  MemoryTypeSchema,
+  type MountFilter,
+  MountFilterSchema,
+  parseMemoryMountSource,
+};
 
 export type MemoryShareable = z.infer<typeof MemoryShareableSchema>;
-
-export const MemoryConfigSchema = z.object({
-  mounts: z.array(MemoryMountSchema).optional().default([]),
-  shareable: MemoryShareableSchema.optional(),
-});
-
-export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
-
-export function parseMemoryMountSource(source: string): {
-  workspaceId: string;
-  kind: z.infer<typeof CorpusKindSchema>;
-  corpusName: string;
-} {
-  const match = SOURCE_RE.exec(source);
-  if (!match) {
-    throw new Error(`Invalid memory mount source: ${source}`);
-  }
-  return {
-    workspaceId: match[1] ?? "",
-    kind: CorpusKindSchema.parse(match[2]),
-    corpusName: match[3] ?? "",
-  };
-}
 
 export const ImprovementProposalChunkSchema = z.object({
   id: z.string(),

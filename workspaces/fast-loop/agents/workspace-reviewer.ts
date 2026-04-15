@@ -40,12 +40,14 @@ function detectWorkspaceDrift(
   for (const session of sessions) {
     const agentId = session.metadata?.agentId;
     if (typeof agentId === "string" && !configAgentIds.has(agentId)) {
+      const targetJobId =
+        typeof session.metadata?.jobId === "string" ? session.metadata.jobId : undefined;
       findings.push({
-        text: `Agent "${agentId}" referenced in session but missing from workspace.yml`,
-        category: "workspace-drift",
+        category: "drift",
         severity: "warn",
-        targetJobId:
-          typeof session.metadata?.jobId === "string" ? session.metadata.jobId : undefined,
+        summary: `Agent "${agentId}" referenced in session but missing from workspace.yml`,
+        detail: `Session ${session.id} references agent "${agentId}" which is not declared in the workspace configuration.`,
+        target_job_id: targetJobId ?? null,
       });
     }
   }
@@ -60,9 +62,10 @@ function detectAgentPromptIssues(config: ParsedWorkspaceConfig): ReviewFinding[]
   for (const [agentId, agent] of Object.entries(agents)) {
     if (!agent.prompt) {
       findings.push({
-        text: `Agent "${agentId}" has no system-prompt stanza in workspace.yml`,
-        category: "agent-prompt",
+        category: "prompt",
         severity: "warn",
+        summary: `Agent "${agentId}" has no system-prompt stanza in workspace.yml`,
+        detail: `Agent "${agentId}" is declared but missing a prompt field. This may cause unpredictable behavior.`,
       });
     }
   }
@@ -99,9 +102,10 @@ function detectFsmSmells(config: ParsedWorkspaceConfig): ReviewFinding[] {
   for (const stateId of stateIds) {
     if (!reachable.has(stateId) && stateId !== initial) {
       findings.push({
-        text: `State "${stateId}" is unreachable from initial state`,
-        category: "fsm-smell",
+        category: "fsm",
         severity: "warn",
+        summary: `State "${stateId}" is unreachable from initial state`,
+        detail: `FSM state "${stateId}" cannot be reached from the initial state "${initial ?? "(none)"}". This may indicate dead configuration.`,
       });
     }
   }
@@ -110,9 +114,10 @@ function detectFsmSmells(config: ParsedWorkspaceConfig): ReviewFinding[] {
     const hasTransitions = state.transitions && Object.keys(state.transitions).length > 0;
     if (!hasTransitions && !state.terminal) {
       findings.push({
-        text: `State "${stateId}" has no outbound transitions and is not terminal`,
-        category: "fsm-smell",
+        category: "fsm",
         severity: "warn",
+        summary: `State "${stateId}" has no outbound transitions and is not terminal`,
+        detail: `FSM state "${stateId}" has no transitions and is not marked as terminal. Sessions entering this state will be stuck.`,
       });
     }
   }

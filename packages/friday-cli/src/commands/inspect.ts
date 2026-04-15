@@ -78,20 +78,20 @@ async function inspectMemory(deps: InspectDeps, args: InspectCommandArgs): Promi
     if (entries.length === 0) {
       return { output: "No history entries found." };
     }
-    const headers = ["VERSION", "CORPUS", "AT", "SUMMARY"];
+    const headers = ["VERSION", "MEMORY", "AT", "SUMMARY"];
     const rows = entries.map((e: HistoryEntry) => [e.version, e.corpus, e.at, e.summary]);
     return { output: formatTable(headers, rows) };
   }
 
-  const corpora = await deps.memory.list(workspaceId);
+  const memories = await deps.memory.list(workspaceId);
   if (args.json) {
-    return { output: JSON.stringify(corpora, null, 2) };
+    return { output: JSON.stringify(memories, null, 2) };
   }
-  if (corpora.length === 0) {
-    return { output: "No corpora found." };
+  if (memories.length === 0) {
+    return { output: "No memories found." };
   }
   const headers = ["NAME", "KIND", "WORKSPACE"];
-  const rows = corpora.map((c: CorpusMetadata) => [c.name, c.kind, c.workspaceId]);
+  const rows = memories.map((c: CorpusMetadata) => [c.name, c.kind, c.workspaceId]);
   return { output: formatTable(headers, rows) };
 }
 

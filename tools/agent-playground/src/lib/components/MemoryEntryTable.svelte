@@ -11,7 +11,7 @@
 
   // Backlog-style fields get dedicated columns when ANY entry carries them.
   // Other metadata keys collapse into a generic Metadata column (so the
-  // dispatch-log corpus, the future improvements corpus, etc. all render
+  // dispatch-log memory, the future improvements memory, etc. all render
   // useful columns instead of looking blank).
   const TYPED_KEYS = new Set([
     "status",

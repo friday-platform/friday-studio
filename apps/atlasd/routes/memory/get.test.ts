@@ -13,7 +13,7 @@ vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => mockAtlasHome 
 
 const EntryArraySchema = z.array(NarrativeEntrySchema);
 
-describe("GET /api/memory/:workspaceId/narrative/:corpusName", () => {
+describe("GET /api/memory/:workspaceId/narrative/:memoryName", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -26,10 +26,10 @@ describe("GET /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 
   it("returns 200 + NarrativeEntry[] for a populated corpus", async () => {
-    const corpusDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
-    await fs.mkdir(corpusDir, { recursive: true });
+    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
+    await fs.mkdir(memoryDir, { recursive: true });
 
-    const corpus = new MdNarrativeCorpus({ workspaceRoot: corpusDir });
+    const corpus = new MdNarrativeCorpus({ workspaceRoot: memoryDir });
     await corpus.append({ id: "e1", text: "task one", createdAt: "2026-04-14T00:00:00Z" });
 
     const res = await memoryNarrativeRoutes.request("/ws1/narrative/backlog");
@@ -52,10 +52,10 @@ describe("GET /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 
   it("forwards since and limit query params to read()", async () => {
-    const corpusDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
-    await fs.mkdir(corpusDir, { recursive: true });
+    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
+    await fs.mkdir(memoryDir, { recursive: true });
 
-    const corpus = new MdNarrativeCorpus({ workspaceRoot: corpusDir });
+    const corpus = new MdNarrativeCorpus({ workspaceRoot: memoryDir });
     await corpus.append({ id: "e1", text: "old", createdAt: "2026-04-14T00:00:00Z" });
     await corpus.append({ id: "e2", text: "new", createdAt: "2026-04-14T12:00:00Z" });
 
@@ -71,7 +71,7 @@ describe("GET /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 });
 
-describe("POST /api/memory/:workspaceId/narrative/:corpusName", () => {
+describe("POST /api/memory/:workspaceId/narrative/:memoryName", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -84,8 +84,8 @@ describe("POST /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 
   it("appends entry with generated id and createdAt when only text provided", async () => {
-    const corpusDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(corpusDir, { recursive: true });
+    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
+    await fs.mkdir(memoryDir, { recursive: true });
 
     const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes", {
       method: "POST",
@@ -101,8 +101,8 @@ describe("POST /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 
   it("preserves supplied id and createdAt", async () => {
-    const corpusDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(corpusDir, { recursive: true });
+    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
+    await fs.mkdir(memoryDir, { recursive: true });
 
     const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes", {
       method: "POST",
@@ -131,7 +131,7 @@ describe("POST /api/memory/:workspaceId/narrative/:corpusName", () => {
   });
 });
 
-describe("DELETE /api/memory/:workspaceId/narrative/:corpusName/:entryId", () => {
+describe("DELETE /api/memory/:workspaceId/narrative/:memoryName/:entryId", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -144,8 +144,8 @@ describe("DELETE /api/memory/:workspaceId/narrative/:corpusName/:entryId", () =>
   });
 
   it("returns 501 since MdNarrativeCorpus.forget() is not implemented", async () => {
-    const corpusDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(corpusDir, { recursive: true });
+    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
+    await fs.mkdir(memoryDir, { recursive: true });
 
     const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes/some-id", {
       method: "DELETE",

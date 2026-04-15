@@ -6,6 +6,9 @@ import {
   type MemoryMount,
   MemoryMountSchema,
   MemoryMountSourceSchema,
+  MemoryOwnEntrySchema,
+  MemoryStrategySchema,
+  MemoryTypeSchema,
   parseMemoryMountSource,
 } from "../config-schema.ts";
 
@@ -238,11 +241,11 @@ describe("MemoryConfigSchema", () => {
 
   it("Integration: memory.shareable allow-list parses alongside mounts", () => {
     const result = MemoryConfigSchema.parse({
-      shareable: { corpora: ["autopilot-backlog"], allowedWorkspaces: ["ws-abc"] },
+      shareable: { list: ["autopilot-backlog"], allowedWorkspaces: ["ws-abc"] },
       mounts: [validMount()],
     });
     expect(result.mounts).toHaveLength(1);
-    expect(result.shareable?.corpora).toEqual(["autopilot-backlog"]);
+    expect(result.shareable?.list).toEqual(["autopilot-backlog"]);
     expect(result.shareable?.allowedWorkspaces).toEqual(["ws-abc"]);
   });
 
@@ -253,11 +256,11 @@ describe("MemoryConfigSchema", () => {
     expect(result.shareable?.allowedWorkspaces).toEqual(["ws-1", "ws-2", "ws-3"]);
   });
 
-  it("shareable with corpora and wildcard allowedWorkspaces parses", () => {
+  it("shareable with list entries and wildcard allowedWorkspaces parses", () => {
     const result = MemoryConfigSchema.parse({
-      shareable: { corpora: ["shared-corpus", "limited-corpus"], allowedWorkspaces: ["*"] },
+      shareable: { list: ["shared-corpus", "limited-corpus"], allowedWorkspaces: ["*"] },
     });
-    expect(result.shareable?.corpora).toEqual(["shared-corpus", "limited-corpus"]);
+    expect(result.shareable?.list).toEqual(["shared-corpus", "limited-corpus"]);
     expect(result.shareable?.allowedWorkspaces).toEqual(["*"]);
   });
 });
@@ -291,5 +294,69 @@ describe("parseMemoryMountSource", () => {
 
   it("throws on invalid source string", () => {
     expect(() => parseMemoryMountSource("bad//corpus")).toThrow();
+  });
+});
+
+describe("MemoryTypeSchema", () => {
+  it.each(["short_term", "long_term", "scratchpad"] as const)("accepts %s", (type) => {
+    expect(MemoryTypeSchema.parse(type)).toBe(type);
+  });
+
+  it("rejects invalid type", () => {
+    expect(() => MemoryTypeSchema.parse("ephemeral")).toThrow();
+  });
+});
+
+describe("MemoryStrategySchema", () => {
+  it.each(["narrative", "retrieval", "dedup", "kv"] as const)("accepts %s", (strategy) => {
+    expect(MemoryStrategySchema.parse(strategy)).toBe(strategy);
+  });
+
+  it("rejects invalid strategy", () => {
+    expect(() => MemoryStrategySchema.parse("vector")).toThrow();
+  });
+});
+
+describe("MemoryOwnEntrySchema", () => {
+  it("accepts entry with type and optional strategy", () => {
+    const result = MemoryOwnEntrySchema.parse({ name: "notes", type: "long_term" });
+    expect(result.name).toBe("notes");
+    expect(result.type).toBe("long_term");
+    expect(result.strategy).toBeUndefined();
+  });
+
+  it("accepts entry with strategy", () => {
+    const result = MemoryOwnEntrySchema.parse({
+      name: "vocab",
+      type: "long_term",
+      strategy: "narrative",
+    });
+    expect(result.strategy).toBe("narrative");
+  });
+
+  it("rejects empty name", () => {
+    expect(() => MemoryOwnEntrySchema.parse({ name: "", type: "long_term" })).toThrow();
+  });
+
+  it("rejects invalid type", () => {
+    expect(() => MemoryOwnEntrySchema.parse({ name: "x", type: "invalid" })).toThrow();
+  });
+});
+
+describe("MemoryConfigSchema — own field", () => {
+  it("own defaults to [] when omitted", () => {
+    const result = MemoryConfigSchema.parse({});
+    expect(result.own).toEqual([]);
+  });
+
+  it("accepts own entries alongside mounts and shareable.list", () => {
+    const result = MemoryConfigSchema.parse({
+      own: [{ name: "notes", type: "long_term", strategy: "narrative" }],
+      mounts: [validMount()],
+      shareable: { list: ["notes"], allowedWorkspaces: ["ws-1"] },
+    });
+    expect(result.own).toHaveLength(1);
+    expect(result.mounts).toHaveLength(1);
+    expect(result.shareable?.list).toEqual(["notes"]);
   });
 });

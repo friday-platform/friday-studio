@@ -88,7 +88,12 @@ export type JobExecution = z.infer<typeof JobExecutionSchema>;
 // JOB CONFIGURATION
 // ==============================================================================
 
-export const JobConfigSchema = z.strictObject({
+// JobConfigSchema — typed fields validate strictly, but user-defined
+// per-job config keys (e.g. targetWorkspaceId for a review job,
+// notesMemory for an inbox job) are passed through unmodified via
+// .loose(). The job's entrypoint reads them via context.config.<key>.
+// .strictObject() rejects extras; .looseObject() preserves them.
+export const JobConfigSchema = z.looseObject({
   timeout: DurationSchema.optional(),
   max_steps: z.coerce
     .number()
@@ -113,6 +118,12 @@ export const JobSpecificationSchema = z
   .strictObject({
     name: MCPToolNameSchema.optional().describe("MCP-compliant job name"),
     description: z.string().optional(),
+    entrypoint: z
+      .string()
+      .optional()
+      .describe(
+        "Optional TypeScript entry point file for FSM-based jobs that ship their own .ts implementation. Relative to the workspace root.",
+      ),
     title: z
       .string()
       .optional()
@@ -156,8 +167,8 @@ export const JobSpecificationSchema = z
     // Job configuration
     config: JobConfigSchema.optional(),
 
-    // Corpus output declaration — where a job's findings are written
-    outputs: z.object({ corpus: z.string(), entryKind: z.string() }).optional(),
+    // Memory output declaration — where a job's findings are written
+    outputs: z.object({ memory: z.string(), entryKind: z.string() }).optional(),
 
     // Improvement key convention — which YAML path the downstream applier reads
     improvement_key_convention: z.object({ scoped: z.string(), default: z.string() }).optional(),

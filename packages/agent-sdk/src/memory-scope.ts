@@ -4,54 +4,59 @@
  * Canonical source for the memory scope taxonomy:
  *   1. GLOBAL  — synthetic workspace id "_global", write-gated to kernel
  *   2. PER-WORKSPACE — owned by exactly one workspace at ~/.atlas/memory/{wsId}/
- *   3. MOUNTED — runtime alias resolved by MountRegistry from workspace.yml mounts
+ *   3. MOUNTED — runtime alias resolved from workspace.yml memory.mounts[]
  *
  * The MemoryAdapter interface is scope-agnostic at the call site. The
  * workspaceId parameter is the scope discriminator:
  *   - "_global"      → GLOBAL scope, write-gated
- *   - "<real-slug>"  → PER-WORKSPACE or MOUNTED (MountRegistry resolves)
+ *   - "<real-slug>"  → PER-WORKSPACE or MOUNTED (resolved at runtime init)
  *
- * From the OpenClaw parity plan v6, three-scope design memo.
+ * Zod validation for mounts lives in @atlas/config (MemoryMountSchema,
+ * MemoryConfigSchema). This file declares pure TS types only.
  */
-
-import { z } from "zod";
-
-// ── Zod schemas ─────────────────────────────────────────────────────────────
-
-export const MountDeclarationSchema = z.object({
-  alias: z.string().min(1),
-  sourceWorkspaceId: z.string().min(1),
-  sourceCorpus: z.string().min(1),
-  mode: z.enum(["read", "read-write"]),
-});
-
-export const WorkspaceMemoryConfigSchema = z.object({
-  mounts: z.array(MountDeclarationSchema).optional().default([]),
-});
 
 // ── TypeScript types ────────────────────────────────────────────────────────
 
 export type MemoryScope = "global" | "workspace" | "mounted";
 
-export type MountMode = "read" | "read-write";
+export type MemoryScopeKind = MemoryScope;
+
+export type MountMode = "ro" | "rw";
+
+export interface MountFilter {
+  status?: string | string[];
+  priority_min?: number;
+  kind?: string | string[];
+  since?: string;
+}
 
 export interface MountDeclaration {
-  alias: string;
-  sourceWorkspaceId: string;
-  sourceCorpus: string;
+  name: string;
+  source: string;
   mode: MountMode;
+  scope: "workspace" | "job" | "agent";
+  scopeTarget?: string;
+  filter?: MountFilter;
 }
 
-export interface MountRegistryEntry {
-  consumerWorkspaceId: string;
-  mount: MountDeclaration;
-  resolvedAt: string;
+// ── Global scope constants ─────────────────────────────────────────────────
+
+export const GLOBAL_WORKSPACE_ID = "_global" as const;
+
+export const GLOBAL_MEMORY_BASE_PATH = "memory/_global/" as const;
+
+export function isGlobalScope(workspaceId: string): workspaceId is typeof GLOBAL_WORKSPACE_ID {
+  return workspaceId === GLOBAL_WORKSPACE_ID;
 }
 
-export interface MountRegistry {
-  resolve(consumerWorkspaceId: string, alias: string): MountRegistryEntry | undefined;
-  listByConsumer(consumerWorkspaceId: string): MountRegistryEntry[];
-  listBySource(sourceWorkspaceId: string, sourceCorpus: string): MountRegistryEntry[];
-  register(consumerWorkspaceId: string, mounts: MountDeclaration[]): Promise<void>;
-  deregister(consumerWorkspaceId: string): void;
+export function resolveMemoryBasePath(workspaceId: string): string {
+  if (isGlobalScope(workspaceId)) return GLOBAL_MEMORY_BASE_PATH;
+  return `memory/${workspaceId}/`;
 }
+
+// ── Scope descriptors ─────────────────────────────────────────────────────
+
+export type MemoryScopeDescriptor =
+  | { scope: "global"; kernelOnly: boolean }
+  | { scope: "workspace"; ownerId: string }
+  | { scope: "mounted"; source: string; mode: MountMode };

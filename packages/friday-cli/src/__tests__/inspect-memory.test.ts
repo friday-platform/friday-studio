@@ -49,8 +49,8 @@ function createDeps(overrides?: Partial<InspectDeps>): InspectDeps {
 }
 
 describe("inspect --kind memory", () => {
-  it("renders table rows for two corpora", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("renders table rows for two memories", async () => {
+    const memories: CorpusMetadata[] = [
       { name: "session-log", kind: "narrative", workspaceId: "ws-1" },
       { name: "docs-index", kind: "retrieval", workspaceId: "ws-1" },
     ];
@@ -59,7 +59,7 @@ describe("inspect --kind memory", () => {
         corpus: unusedCorpus,
         list: vi
           .fn<(workspaceId: string) => Promise<CorpusMetadata[]>>()
-          .mockResolvedValue(corpora),
+          .mockResolvedValue(memories),
         bootstrap: vi
           .fn<(workspaceId: string, agentId: string) => Promise<string>>()
           .mockResolvedValue(""),
@@ -85,11 +85,11 @@ describe("inspect --kind memory", () => {
     expect(deps.memory.list).toHaveBeenCalledWith("my-ws");
   });
 
-  it("returns empty message when no corpora", async () => {
+  it("returns empty message when no memories", async () => {
     const deps = createDeps();
     const result = await inspectCommand(deps, { kind: "memory" });
 
-    expect(result.output).toBe("No corpora found.");
+    expect(result.output).toBe("No memories found.");
   });
 
   it("defaults workspace to 'default'", async () => {

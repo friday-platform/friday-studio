@@ -24,15 +24,21 @@ workspace:
 #             human or elevated-agent review. No live mutation.
 improvement: auto
 
-# Cross-workspace corpus mounts — expose corpora from other workspaces as
+# Cross-workspace memory mounts — expose memories from other workspaces as
 # read (or read_write) sources for agents in this workspace.
-# kind: narrative | retrieval | dedup | kv
-# mode: read (default) | write | read_write
-corpus_mounts:
-  - workspace: thick_endive
-    corpus: reflections
-    kind: narrative
-    mode: read
+memory:
+  own:
+    - name: instance-vocabulary
+      type: long_term
+      strategy: narrative
+  mounts:
+    - name: reflections
+      source: thick_endive/narrative/reflections
+      mode: ro
+      scope: workspace
+  shareable:
+    list: [notes, reflections]
+    allowedWorkspaces: [thick_endive]
 
 skills:
   - name: '@tempest/fast-self-modification'
@@ -93,10 +99,10 @@ jobs:
       timeout: 30m
       max_steps: 20
 
-  # Example FSM-based review job demonstrating job-level corpus output keys.
+  # Example FSM-based review job demonstrating job-level memory output keys.
   review-findings:
     name: review-findings
-    description: Reviews workspace state and writes findings to a corpus.
+    description: Reviews workspace state and writes findings to memory.
     title: Review Findings
     triggers:
       - signal: nightly-cron
@@ -106,7 +112,7 @@ jobs:
 
     # Declares where this job's findings are written.
     outputs:
-      corpus: notes
+      memory: notes
       entryKind: finding
 
     # Declares which YAML path the downstream improvement applier reads.

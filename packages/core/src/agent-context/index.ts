@@ -1,5 +1,6 @@
 import type {
   AgentContext,
+  AgentMemoryContext,
   AgentSessionData,
   AgentSkill,
   AtlasAgent,
@@ -25,6 +26,7 @@ import {
   hasUnusableCredentialCause,
   resolveSlackAppByWorkspace,
 } from "../mcp-registry/credential-resolver.ts";
+import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
@@ -190,6 +192,12 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         }
       }
 
+      // Resolve memory context: prefer overrides, then registry lookup via memoryContextKey
+      let memory: AgentMemoryContext | undefined = overrides?.memory;
+      if (!memory && sessionData.memoryContextKey) {
+        memory = takeMountContext(sessionData.memoryContextKey);
+      }
+
       const context: AgentContext = {
         env: envContext,
         session: sessionData,
@@ -201,8 +209,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           agentId: agent.metadata.id,
           streamId: sessionData.streamId,
         }),
-        // Spread overrides to include abortSignal and other overrides
         ...overrides,
+        ...(memory ? { memory } : {}),
         // Tools should be last to ensure they're available unless explicitly overridden
         tools: overrides?.tools || allTools,
       };

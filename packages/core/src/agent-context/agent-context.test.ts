@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
 import { LinkCredentialNotFoundError } from "../mcp-registry/credential-resolver.ts";
+import { clearMountContextRegistry, setMountContext } from "../mount-context-registry.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
 // Mock createMCPTools — default returns empty tools with noop dispose
@@ -660,5 +661,124 @@ describe("buildAgentContext MCP dispose lifecycle", () => {
     // After awaiting, dispose should have completed
     await result;
     expect(disposeResolved).toBe(true);
+  });
+});
+
+describe("buildAgentContext memory mount resolution", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockWarn.mockClear();
+    mockDispose.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = mockWorkspaceConfigFetch();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+    clearMountContextRegistry();
+  });
+
+  it("resolves memory from registry when memoryContextKey is in session data", async () => {
+    const mockMount = {
+      name: "backlog",
+      source: "_global/narrative/backlog",
+      mode: "ro" as const,
+      scope: "workspace" as const,
+      read: vi.fn().mockResolvedValue([]),
+      append: vi.fn(),
+    };
+
+    const memoryCtx = { mounts: { backlog: mockMount } };
+    const key = "sess-1:test-agent";
+    setMountContext(key, memoryCtx);
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      { ...createTestSessionData("ws-mem"), memoryContextKey: key },
+      "test prompt",
+    );
+
+    expect(context.memory).toBeDefined();
+    expect(context.memory?.mounts.backlog).toBe(mockMount);
+  });
+
+  it("takeMountContext removes the entry after consumption", async () => {
+    const memoryCtx = { mounts: {} };
+    const key = "sess-2:test-agent";
+    setMountContext(key, memoryCtx);
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    await buildAgentContext(
+      createTestAgent(),
+      { ...createTestSessionData("ws-consume"), memoryContextKey: key },
+      "test",
+    );
+
+    // Second take should return undefined (already consumed)
+    const { takeMountContext: take } = await import("../mount-context-registry.ts");
+    expect(take(key)).toBeUndefined();
+  });
+
+  it("overrides.memory takes precedence over registry", async () => {
+    const registryCtx = { mounts: { fromRegistry: {} as never } };
+    const overrideCtx = { mounts: { fromOverride: {} as never } };
+    const key = "sess-3:test-agent";
+    setMountContext(key, registryCtx);
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      { ...createTestSessionData("ws-override"), memoryContextKey: key },
+      "test",
+      { memory: overrideCtx },
+    );
+
+    expect(context.memory).toBe(overrideCtx);
+  });
+
+  it("memory is undefined when no registry entry and no override", async () => {
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-no-mem"),
+      "test",
+    );
+
+    expect(context.memory).toBeUndefined();
+  });
+
+  it("mount binding read/append closures remain callable through context", async () => {
+    const mockEntries = [{ id: "1", text: "test entry", createdAt: "2026-04-14T00:00:00Z" }];
+    const mockMount = {
+      name: "persona",
+      source: "ws1/narrative/persona",
+      mode: "rw" as const,
+      scope: "workspace" as const,
+      read: vi.fn().mockResolvedValue(mockEntries),
+      append: vi.fn().mockImplementation((entry: unknown) => Promise.resolve(entry)),
+    };
+
+    const key = "sess-4:test-agent";
+    setMountContext(key, { mounts: { persona: mockMount } });
+
+    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      { ...createTestSessionData("ws-closures"), memoryContextKey: key },
+      "test",
+    );
+
+    const mount = context.memory?.mounts.persona;
+    expect(mount).toBeDefined();
+
+    const entries = await mount?.read();
+    expect(entries).toEqual(mockEntries);
+    expect(mockMount.read).toHaveBeenCalled();
   });
 });

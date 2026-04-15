@@ -5,19 +5,19 @@
 
   const workspaceId = $derived(page.params.workspaceId ?? "");
 
-  const corporaQuery = createQuery(() => ({
-    ...memoryQueries.corpora(workspaceId),
+  const memoriesQuery = createQuery(() => ({
+    ...memoryQueries.memories(workspaceId),
     enabled: workspaceId.length > 0,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   }));
 
-  const narrativeCorpora = $derived(
-    (corporaQuery.data ?? []).filter((c) => c.kind === "narrative"),
+  const narrativeMemories = $derived(
+    (memoriesQuery.data ?? []).filter((c) => c.kind === "narrative"),
   );
 </script>
 
-<div class="corpus-list">
+<div class="memory-list">
   <header class="page-header">
     <nav class="breadcrumb">
       <a href="/memory">Memory</a>
@@ -25,28 +25,28 @@
       <span>{workspaceId}</span>
     </nav>
     <h1>{workspaceId}</h1>
-    <p class="subtitle">Narrative corpora in this workspace</p>
+    <p class="subtitle">Narrative memories in this workspace</p>
   </header>
 
-  {#if corporaQuery.isLoading}
-    <div class="loading">Loading corpora…</div>
-  {:else if corporaQuery.error}
+  {#if memoriesQuery.isLoading}
+    <div class="loading">Loading memories…</div>
+  {:else if memoriesQuery.error}
     <div class="error-banner">
-      <span>Failed to load corpora: {corporaQuery.error.message}</span>
-      <button class="dismiss" onclick={() => corporaQuery.refetch()}>Retry</button>
+      <span>Failed to load memories: {memoriesQuery.error.message}</span>
+      <button class="dismiss" onclick={() => memoriesQuery.refetch()}>Retry</button>
     </div>
-  {:else if narrativeCorpora.length === 0}
-    <div class="empty">No narrative corpora found in {workspaceId}.</div>
+  {:else if narrativeMemories.length === 0}
+    <div class="empty">No narrative memories found in {workspaceId}.</div>
   {:else}
     <ul class="card-list">
-      {#each narrativeCorpora as corpus (corpus.name)}
+      {#each narrativeMemories as memory (memory.name)}
         <li>
           <a
-            href="/memory/{encodeURIComponent(workspaceId)}/{encodeURIComponent(corpus.name)}"
-            class="corpus-card"
+            href="/memory/{encodeURIComponent(workspaceId)}/{encodeURIComponent(memory.name)}"
+            class="memory-card"
           >
-            <span class="corpus-name">{corpus.name}</span>
-            <span class="corpus-kind">{corpus.kind}</span>
+            <span class="memory-name">{memory.name}</span>
+            <span class="memory-kind">{memory.kind}</span>
           </a>
         </li>
       {/each}
@@ -55,7 +55,7 @@
 </div>
 
 <style>
-  .corpus-list {
+  .memory-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-6);
@@ -139,7 +139,7 @@
     gap: var(--size-2);
   }
 
-  .corpus-card {
+  .memory-card {
     align-items: center;
     background: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
@@ -157,13 +157,13 @@
     }
   }
 
-  .corpus-name {
+  .memory-name {
     font-family: var(--font-mono);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
   }
 
-  .corpus-kind {
+  .memory-kind {
     background: var(--color-surface-3);
     border-radius: var(--radius-1);
     color: color-mix(in srgb, var(--color-text), transparent 30%);

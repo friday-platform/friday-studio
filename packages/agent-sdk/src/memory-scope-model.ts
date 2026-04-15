@@ -1,19 +1,8 @@
 /**
  * Three-Scope Memory Model — Compatibility Re-exports
  *
- * Canonical types live in memory-scope.ts. This file re-exports them
- * and provides backward-compat aliases for code written against the
- * previous iteration.
+ * Canonical types live in memory-scope.ts. This file provides the
+ * MemoryScopeKind alias for backward compatibility.
  */
 
-export {
-  type MemoryScope,
-  type MountDeclaration,
-  MountDeclarationSchema,
-  type MountMode,
-  type MountRegistry,
-  type MountRegistryEntry,
-  WorkspaceMemoryConfigSchema,
-} from "./memory-scope.ts";
-
-export type MemoryScopeKind = "global" | "workspace" | "mounted";
+export type { MemoryScopeKind } from "./memory-scope.ts";

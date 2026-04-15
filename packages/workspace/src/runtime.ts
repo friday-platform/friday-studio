@@ -8,15 +8,18 @@ import process from "node:process";
 import type { ActivityStorageAdapter } from "@atlas/activity";
 import { generateSessionActivityTitle } from "@atlas/activity/title-generator";
 import { kebabToSentenceCase } from "@atlas/activity/titles";
-import type {
-  AgentResult,
-  AgentSkill,
-  AtlasUIMessageChunk,
-  CorpusMountBinding,
-  LinkCredentialRef,
-  MCPServerConfig,
-  MemoryAdapter,
-  NarrativeCorpus,
+import {
+  type AgentMemoryContext,
+  type AgentResult,
+  type AgentSkill,
+  type AtlasUIMessageChunk,
+  buildResolvedWorkspaceMemory,
+  type CorpusMountBinding,
+  type LinkCredentialRef,
+  type MCPServerConfig,
+  type MemoryAdapter,
+  type NarrativeCorpus,
+  type ResolvedWorkspaceMemory,
 } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -51,6 +54,11 @@ import {
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
+import {
+  mountContextKey,
+  setMountContext,
+  takeMountContext,
+} from "@atlas/core/mount-context-registry";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -98,6 +106,7 @@ import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
 import { createBashTool } from "./bash-tool.ts";
 import { CodeAgentExecutor } from "./code-agent-executor.ts";
 import type { MemoryMount } from "./config-schema.ts";
+import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import {
   type ImproverAgentInput,
   type ImproverAgentResult,
@@ -236,6 +245,8 @@ interface WorkspaceRuntimeOptions {
   memoryAdapter?: MemoryAdapter;
   /** Parsed memory.mounts from workspace config — resolved at initialize time */
   memoryMounts?: MemoryMount[];
+  /** Kernel workspace ID — only this workspace may hold rw mounts against _global */
+  kernelWorkspaceId?: string;
 }
 
 interface FSMJob {
@@ -312,6 +323,9 @@ export class WorkspaceRuntime {
   // Resolved corpus mount bindings, keyed by mount name
   private mountBindings = new Map<string, MountedCorpusBinding>();
 
+  // Fully-resolved memory surface (own + mounts + global access), built after initialize()
+  private _resolvedMemory: ResolvedWorkspaceMemory | undefined;
+
   // Track emitted jobs to prevent duplicate analytics events on hot-reload
   private emittedJobs = new Set<string>();
 
@@ -352,6 +366,10 @@ export class WorkspaceRuntime {
 
   get workspaceId(): string {
     return this.workspace.id;
+  }
+
+  get resolvedMemory(): ResolvedWorkspaceMemory | undefined {
+    return this._resolvedMemory;
   }
 
   /** Discover and load all FSM definitions. */
@@ -511,6 +529,13 @@ export class WorkspaceRuntime {
       await this.resolveMounts(this.options.memoryMounts);
     }
 
+    this._resolvedMemory = buildResolvedWorkspaceMemory({
+      workspaceId: this.workspace.id,
+      ownEntries: this.config.workspace.memory?.own ?? [],
+      mountDeclarations: this.options.memoryMounts ?? [],
+      kernelWorkspaceId: this.options.kernelWorkspaceId,
+    });
+
     this.initialized = true;
 
     logger.info("Runtime initialized", {
@@ -547,6 +572,10 @@ export class WorkspaceRuntime {
           sourceId,
           `Mount '${mount.name}': only narrative corpora are supported for mounts, got '${corpusKind}'`,
         );
+      }
+
+      if (isGlobalWriteAttempt(sourceWsId, mount.mode)) {
+        assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
       }
 
       mountRegistry.registerSource(sourceId, () =>
@@ -1354,6 +1383,24 @@ export class WorkspaceRuntime {
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
 
+    // Resolve memory mounts scoped to this agent
+    const agentMounts = this.getMountsForAgent(agentId, job.name);
+    const mountNames = Object.keys(agentMounts);
+    const ctxKey = mountContextKey(sessionId, agentId);
+    if (mountNames.length > 0) {
+      logger.debug("Resolved mounts for agent", {
+        agentId,
+        jobName: job.name,
+        mountCount: mountNames.length,
+        mountNames,
+      });
+      const memoryContext: AgentMemoryContext = {
+        mounts: agentMounts,
+        adapter: this.options.memoryAdapter,
+      };
+      setMountContext(ctxKey, memoryContext);
+    }
+
     // Execute agent via orchestrator or CodeAgentExecutor
     const result = await withOtelSpan(
       "agent.execute",
@@ -1382,6 +1429,7 @@ export class WorkspaceRuntime {
                 workspaceId,
                 streamId,
                 datetime,
+                memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
                 // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
                 // keeping the FSM onEvent callback clean (FSMEvent types only)
                 onStreamEvent: signal._context?.onStreamEvent,
@@ -1405,6 +1453,9 @@ export class WorkspaceRuntime {
         return agentResult;
       },
     );
+
+    // Ensure mount context cleanup if it wasn't consumed by buildAgentContext
+    takeMountContext(ctxKey);
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
 
@@ -1873,6 +1924,8 @@ export class WorkspaceRuntime {
 
     this.sessions.clear();
     this.jobs.clear();
+    this.mountBindings.clear();
+    mountRegistry.clear();
     this.initialized = false;
   }
 

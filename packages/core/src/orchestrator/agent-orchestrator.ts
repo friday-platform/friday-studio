@@ -58,6 +58,8 @@ export interface AgentExecutionContext {
   config?: Record<string, unknown>;
   /** JSON Schema for structured output from FSM documentTypes */
   outputSchema?: Record<string, unknown>;
+  /** Process-local key for looking up pre-built AgentMemoryContext from the mount context registry */
+  memoryContextKey?: string;
 }
 
 export interface AgentOrchestratorConfig {
@@ -312,6 +314,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           userId: context.userId,
           streamId: context.streamId,
           datetime: context.datetime,
+          memoryContextKey: context.memoryContextKey,
         },
         outputSchema: context.outputSchema,
         config: context.config,

@@ -258,6 +258,7 @@ export const AgentSessionDataSchema = z.object({
       timezoneOffset: z.string(),
     })
     .optional(),
+  memoryContextKey: z.string().optional(),
 });
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;

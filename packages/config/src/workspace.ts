@@ -45,6 +45,93 @@ const ConfigResourceDeclarationSchema = z.union([
 ]);
 
 // ==============================================================================
+// MEMORY SCHEMAS
+// ==============================================================================
+
+export const MemoryTypeSchema = z.enum(["short_term", "long_term", "scratchpad"]);
+
+export const MemoryStrategySchema = z.enum(["narrative", "retrieval", "dedup", "kv"]).optional();
+
+export const CorpusKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
+
+export const MemoryOwnEntrySchema = z.object({
+  name: z.string().min(1),
+  type: MemoryTypeSchema,
+  strategy: MemoryStrategySchema,
+});
+
+// _global is GLOBAL_WORKSPACE_ID from @atlas/agent-sdk/memory-scope
+const SOURCE_RE =
+  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative|retrieval|dedup|kv)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
+
+export const MemoryMountSourceSchema = z
+  .string()
+  .regex(SOURCE_RE, {
+    message:
+      'memory.mounts[].source must be "{wsId|_global}/{kind}/{memoryName}" ' +
+      '— e.g. "thick_endive/narrative/autopilot-backlog"',
+  });
+
+export const MountFilterSchema = z.object({
+  status: z.union([z.string(), z.array(z.string())]).optional(),
+  priority_min: z.number().int().optional(),
+  kind: z.union([z.string(), z.array(z.string())]).optional(),
+  since: z.string().datetime({ offset: true }).optional(),
+});
+
+export type MountFilter = z.infer<typeof MountFilterSchema>;
+
+export const MemoryMountSchema = z
+  .object({
+    name: z.string().min(1),
+    source: MemoryMountSourceSchema,
+    mode: z.enum(["ro", "rw"]).default("ro"),
+    scope: z.enum(["workspace", "job", "agent"]),
+    scopeTarget: z.string().optional(),
+    filter: MountFilterSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.scope !== "workspace" && !val.scopeTarget) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scopeTarget"],
+        message: `scopeTarget is required when scope is "${val.scope}"`,
+      });
+    }
+  });
+
+export type MemoryMount = z.infer<typeof MemoryMountSchema>;
+
+export const MemoryShareableSchema = z.object({
+  list: z.array(z.string()).optional(),
+  allowedWorkspaces: z.array(z.string()).optional(),
+});
+
+export const MemoryConfigSchema = z.object({
+  own: z.array(MemoryOwnEntrySchema).optional().default([]),
+  mounts: z.array(MemoryMountSchema).optional().default([]),
+  shareable: MemoryShareableSchema.optional(),
+});
+
+export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+
+export function parseMemoryMountSource(source: string): {
+  workspaceId: string;
+  kind: z.infer<typeof CorpusKindSchema>;
+  corpusName: string;
+} {
+  const match = SOURCE_RE.exec(source);
+  if (!match) {
+    throw new Error(`Invalid memory mount source: ${source}`);
+  }
+  return {
+    workspaceId: match[1] ?? "",
+    kind: CorpusKindSchema.parse(match[2]),
+    corpusName: match[3] ?? "",
+  };
+}
+
+// ==============================================================================
 // WORKSPACE CONFIGURATION (workspace.yml)
 // ==============================================================================
 
@@ -67,39 +154,7 @@ export const WorkspaceConfigSchema = z.strictObject({
       "Workspace-wide improvement policy. 'auto' applies config changes atomically; " +
         "'surface' writes proposals to scratchpad for review. Defaults to 'surface'.",
     ),
-  corpus_mounts: z
-    .array(
-      z.object({
-        workspace: z.string(),
-        corpus: z.string(),
-        kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
-        mode: z.enum(["read", "write", "read_write"]).default("read"),
-      }),
-    )
-    .optional(),
-  memory: z
-    .object({
-      mounts: z
-        .array(
-          z.object({
-            name: z.string(),
-            source: z.string(),
-            mode: z.enum(["ro", "rw"]).default("ro"),
-            scope: z.enum(["workspace", "job", "agent"]),
-            scopeTarget: z.string().optional(),
-            filter: z.record(z.string(), z.unknown()).optional(),
-          }),
-        )
-        .optional()
-        .default([]),
-      shareable: z
-        .object({
-          corpora: z.array(z.string()).optional(),
-          allowedWorkspaces: z.array(z.string()).optional(),
-        })
-        .optional(),
-    })
-    .optional(),
+  memory: MemoryConfigSchema.optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
