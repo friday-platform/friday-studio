@@ -60,6 +60,46 @@ export const WorkspaceConfigSchema = z.strictObject({
   resources: z.array(ConfigResourceDeclarationSchema).optional(),
   notifications: NotificationConfigSchema.optional(),
   federation: FederationConfigSchema.optional(),
+  improvement: z
+    .enum(["surface", "auto"])
+    .optional()
+    .describe(
+      "Workspace-wide improvement policy. 'auto' applies config changes atomically; " +
+        "'surface' writes proposals to scratchpad for review. Defaults to 'surface'.",
+    ),
+  corpus_mounts: z
+    .array(
+      z.object({
+        workspace: z.string(),
+        corpus: z.string(),
+        kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+        mode: z.enum(["read", "write", "read_write"]).default("read"),
+      }),
+    )
+    .optional(),
+  memory: z
+    .object({
+      mounts: z
+        .array(
+          z.object({
+            name: z.string(),
+            source: z.string(),
+            mode: z.enum(["ro", "rw"]).default("ro"),
+            scope: z.enum(["workspace", "job", "agent"]),
+            scopeTarget: z.string().optional(),
+            filter: z.record(z.string(), z.unknown()).optional(),
+          }),
+        )
+        .optional()
+        .default([]),
+      shareable: z
+        .object({
+          corpora: z.array(z.string()).optional(),
+          allowedWorkspaces: z.array(z.string()).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

@@ -158,6 +158,12 @@ describe("MemoryMountSchema", () => {
       ).toThrow();
     });
 
+    it("rejects filter.since bare date '2026-01-01' (no time component)", () => {
+      expect(() =>
+        MemoryMountSchema.parse(validMount({ filter: { since: "2026-01-01" } })),
+      ).toThrow();
+    });
+
     it("accepts filter with status string", () => {
       const result = MemoryMountSchema.parse(validMount({ filter: { status: "open" } }));
       expect(result.filter?.status).toBe("open");
@@ -170,9 +176,19 @@ describe("MemoryMountSchema", () => {
       expect(result.filter?.status).toEqual(["open", "in_progress"]);
     });
 
-    it("accepts filter with priority_min", () => {
+    it("accepts filter with priority_min integer", () => {
       const result = MemoryMountSchema.parse(validMount({ filter: { priority_min: 3 } }));
       expect(result.filter?.priority_min).toBe(3);
+    });
+
+    it("accepts filter with kind string scalar", () => {
+      const result = MemoryMountSchema.parse(validMount({ filter: { kind: "task" } }));
+      expect(result.filter?.kind).toBe("task");
+    });
+
+    it("accepts filter with kind string array", () => {
+      const result = MemoryMountSchema.parse(validMount({ filter: { kind: ["task", "note"] } }));
+      expect(result.filter?.kind).toEqual(["task", "note"]);
     });
 
     it("accepts undefined filter", () => {
@@ -204,27 +220,45 @@ describe("MemoryMountSchema", () => {
 });
 
 describe("MemoryConfigSchema", () => {
-  it("mounts defaults to [] when memory block is omitted (empty object)", () => {
+  it("mounts defaults to [] when memory key is omitted", () => {
     const result: MemoryConfig = MemoryConfigSchema.parse({});
     expect(result.mounts).toEqual([]);
     expect(result.shareable).toBeUndefined();
   });
 
-  it("accepts full config with mounts and shareable record", () => {
+  it("Integration: accepts full config with mounts array — mode defaults to 'ro'", () => {
     const result = MemoryConfigSchema.parse({
-      mounts: [validMount()],
-      shareable: { "autopilot-backlog": ["ws-abc"] },
+      mounts: [
+        { name: "backlog", source: "_global/narrative/autopilot-backlog", scope: "workspace" },
+      ],
     });
     expect(result.mounts).toHaveLength(1);
-    expect(result.shareable?.["autopilot-backlog"]).toEqual(["ws-abc"]);
+    expect(result.mounts[0]?.mode).toBe("ro");
   });
 
-  it("shareable record with wildcard '*' parses successfully", () => {
+  it("Integration: memory.shareable allow-list parses alongside mounts", () => {
     const result = MemoryConfigSchema.parse({
-      shareable: { "shared-corpus": ["*"], "limited-corpus": ["ws-1", "ws-2"] },
+      shareable: { corpora: ["autopilot-backlog"], allowedWorkspaces: ["ws-abc"] },
+      mounts: [validMount()],
     });
-    expect(result.shareable?.["shared-corpus"]).toEqual(["*"]);
-    expect(result.shareable?.["limited-corpus"]).toEqual(["ws-1", "ws-2"]);
+    expect(result.mounts).toHaveLength(1);
+    expect(result.shareable?.corpora).toEqual(["autopilot-backlog"]);
+    expect(result.shareable?.allowedWorkspaces).toEqual(["ws-abc"]);
+  });
+
+  it("memory.shareable.allowedWorkspaces list parses as string array", () => {
+    const result = MemoryConfigSchema.parse({
+      shareable: { allowedWorkspaces: ["ws-1", "ws-2", "ws-3"] },
+    });
+    expect(result.shareable?.allowedWorkspaces).toEqual(["ws-1", "ws-2", "ws-3"]);
+  });
+
+  it("shareable with corpora and wildcard allowedWorkspaces parses", () => {
+    const result = MemoryConfigSchema.parse({
+      shareable: { corpora: ["shared-corpus", "limited-corpus"], allowedWorkspaces: ["*"] },
+    });
+    expect(result.shareable?.corpora).toEqual(["shared-corpus", "limited-corpus"]);
+    expect(result.shareable?.allowedWorkspaces).toEqual(["*"]);
   });
 });
 

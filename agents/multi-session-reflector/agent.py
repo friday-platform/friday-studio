@@ -20,6 +20,9 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401
 
 
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
+BACKLOG_CORPUS_URL_DEFAULT = (
+    "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog"
+)
 SKILL_NAMESPACE = "tempest"
 SKILL_NAME = "fast-self-modification"
 JUDGMENT_MODEL = "anthropic:claude-haiku-4-5"
@@ -259,6 +262,62 @@ def _build_judgment_prompt(aggregate: dict[str, Any], skill_instructions: str) -
 
 
 # ---------------------------------------------------------------------------
+# Discovery-to-task helper (same pattern as reflector/agent.py)
+# ---------------------------------------------------------------------------
+
+def _post_discovery_task(
+    ctx: AgentContext,
+    discovery: dict[str, Any],
+) -> None:
+    """POST a discovery-task to the autopilot-backlog corpus. Best-effort."""
+    corpus_url = (
+        ctx.config.get("backlog_corpus_url", BACKLOG_CORPUS_URL_DEFAULT)
+        if ctx.config
+        else BACKLOG_CORPUS_URL_DEFAULT
+    )
+
+    title_slug = discovery["title"].lower()
+    for ch in " /\\:*?\"<>|":
+        title_slug = title_slug.replace(ch, "-")
+    title_slug = title_slug.strip("-")[:60]
+
+    entry_id = f"auto-{discovery['kind']}-{title_slug}"
+    payload = json.dumps({
+        "id": entry_id,
+        "text": discovery["title"],
+        "createdAt": "",
+        "metadata": {
+            "status": "pending",
+            "priority": discovery.get("priority", 50),
+            "kind": discovery["kind"],
+            "blocked_by": [],
+            "match_job_name": "execute-task",
+            "auto_apply": discovery.get("auto_apply", False),
+            "discovered_by": discovery["discovered_by"],
+            "discovered_session": discovery["discovered_session"],
+            "payload": {
+                "workspace_id": discovery["target_workspace_id"],
+                "signal_id": discovery["target_signal_id"],
+                "task_id": entry_id,
+                "task_brief": discovery["brief"],
+                "target_files": discovery.get("target_files", []),
+            },
+        },
+    })
+
+    try:
+        ctx.http.fetch(
+            corpus_url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=payload,
+            timeout_ms=5000,
+        )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Agent entry point
 # ---------------------------------------------------------------------------
 
@@ -315,6 +374,24 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
         return err(f"LLM judgment failed: {exc}")
 
     judgment = resp.object if resp.object else {}
+
+    if judgment.get("skill_update_warranted") is True:
+        new_mode = judgment.get("new_failure_mode")
+        failure_label = ""
+        if isinstance(new_mode, dict):
+            failure_label = new_mode.get("symptom", "unknown")
+        _post_discovery_task(ctx, {
+            "discovered_by": "multi-session-reflector",
+            "discovered_session": sessions[0].get("sessionId", "") if sessions else "",
+            "target_workspace_id": workspace_id,
+            "target_signal_id": "fast-self-modification-update",
+            "title": f"Update @tempest/fast-self-modification: {failure_label}",
+            "brief": judgment.get("rationale", ""),
+            "target_files": [],
+            "priority": 60,
+            "kind": "reflector",
+            "auto_apply": False,
+        })
 
     return ok({
         "workspace_id": workspace_id,

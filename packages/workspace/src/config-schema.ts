@@ -20,9 +20,9 @@ export const MemoryMountSourceSchema = z
       '— e.g. "thick_endive/narrative/autopilot-backlog"',
   });
 
-export const MemoryMountFilterSchema = z.object({
+export const MountFilterSchema = z.object({
   status: z.union([z.string(), z.array(z.string())]).optional(),
-  priority_min: z.number().optional(),
+  priority_min: z.number().int().optional(),
   kind: z.union([z.string(), z.array(z.string())]).optional(),
   since: z.string().datetime({ offset: true }).optional(),
 });
@@ -34,7 +34,7 @@ export const MemoryMountSchema = z
     mode: z.enum(["ro", "rw"]).default("ro"),
     scope: z.enum(["workspace", "job", "agent"]),
     scopeTarget: z.string().optional(),
-    filter: MemoryMountFilterSchema.optional(),
+    filter: MountFilterSchema.optional(),
   })
   .superRefine((val, ctx) => {
     if (val.scope !== "workspace" && !val.scopeTarget) {
@@ -48,9 +48,16 @@ export const MemoryMountSchema = z
 
 export type MemoryMount = z.infer<typeof MemoryMountSchema>;
 
+export const MemoryShareableSchema = z.object({
+  corpora: z.array(z.string()).optional(),
+  allowedWorkspaces: z.array(z.string()).optional(),
+});
+
+export type MemoryShareable = z.infer<typeof MemoryShareableSchema>;
+
 export const MemoryConfigSchema = z.object({
-  mounts: z.array(MemoryMountSchema).default([]),
-  shareable: z.record(z.string(), z.array(z.string())).optional(),
+  mounts: z.array(MemoryMountSchema).optional().default([]),
+  shareable: MemoryShareableSchema.optional(),
 });
 
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
@@ -70,6 +77,15 @@ export function parseMemoryMountSource(source: string): {
     corpusName: match[3] ?? "",
   };
 }
+
+export const ImprovementProposalChunkSchema = z.object({
+  id: z.string(),
+  kind: z.literal("improvement-proposal"),
+  body: z.string(),
+  createdAt: z.string(),
+});
+
+export type ImprovementProposalChunk = z.infer<typeof ImprovementProposalChunkSchema>;
 
 const DEFAULT_MODE: ImprovementMode = "surface";
 

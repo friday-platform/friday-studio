@@ -181,10 +181,11 @@ def _log_dispatch(
 
 
 def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> list[dict[str, Any]]:
-    """Return pending, unblocked tasks sorted by priority desc then created_at asc."""
+    """Return pending, unblocked, auto-apply-eligible tasks sorted by priority desc then created_at asc."""
     eligible = [
         t for t in tasks
         if t.get("status") == "pending"
+        and (t.get("metadata", {}).get("auto_apply") is not False)
         and all(dep in completed_ids for dep in t.get("blocked_by", []))
     ]
     eligible.sort(key=lambda t: (-t.get("priority", 0), t.get("created_at", "")))
@@ -193,15 +194,15 @@ def _filter_eligible(tasks: list[dict[str, Any]], completed_ids: set[str]) -> li
 
 @agent(
     id="autopilot-planner",
-    version="1.4.0",
+    version="1.5.0",
     description=(
         "Deterministic backlog planner for the FAST autopilot loop. "
         "Fetches a JSON backlog, filters and sorts pending tasks by priority "
         "and dependency resolution, returns the next task to execute, fires "
         "the target signal inline, and logs the dispatch to a per-task "
-        "dispatch-log corpus. v1.4.0: per-TASK cooldown (was per-signal in "
-        "v1.3.x) — fixes the lockout where one task firing locked all tasks "
-        "sharing the same target signal."
+        "dispatch-log corpus. v1.5.0: skips tasks with auto_apply=false "
+        "(surface-only, human-gated). v1.4.0: per-TASK cooldown (was "
+        "per-signal in v1.3.x)."
     ),
     summary="Selects the next pending backlog task to execute; returns idle when none are eligible.",
     examples=[

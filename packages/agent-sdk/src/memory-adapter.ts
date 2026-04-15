@@ -16,7 +16,7 @@ export const NarrativeEntrySchema = z.object({
   id: z.string(),
   text: z.string(),
   author: z.string().optional(),
-  createdAt: z.string(),
+  createdAt: z.string().datetime(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -68,7 +68,7 @@ export const DedupEntrySchema = z.record(z.string(), z.unknown());
 export const HistoryFilterSchema = z.object({
   corpus: z.string().optional(),
   since: z.string().optional(),
-  limit: z.number().int().optional(),
+  limit: z.number().int().positive().optional(),
 });
 
 export const HistoryEntrySchema = z.object({
@@ -79,9 +79,9 @@ export const HistoryEntrySchema = z.object({
 });
 
 export const CorpusMetadataSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
-  workspaceId: z.string(),
+  workspaceId: z.string().min(1),
 });
 
 export const StatusMetadataSchema = z.object({

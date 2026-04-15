@@ -155,6 +155,18 @@ export const JobSpecificationSchema = z
 
     // Job configuration
     config: JobConfigSchema.optional(),
+
+    // Corpus output declaration — where a job's findings are written
+    outputs: z.object({ corpus: z.string(), entryKind: z.string() }).optional(),
+
+    // Improvement key convention — which YAML path the downstream applier reads
+    improvement_key_convention: z.object({ scoped: z.string(), default: z.string() }).optional(),
+
+    // Classes of changes the job is NOT allowed to propose findings about
+    scope_exclusions: z.array(z.string()).optional(),
+
+    // Per-job improvement policy override (absent = inherit from workspace level)
+    improvement: z.enum(["surface", "auto"]).optional(),
   })
   .refine(
     (data) => {

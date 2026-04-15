@@ -1,3 +1,11 @@
+# The FAST kernel operates a fully closed self-extending loop:
+# corpus → plan → dispatch → observe → DISCOVER → corpus.
+# Jobs read the autopilot-backlog corpus, the planner selects eligible tasks,
+# the dispatcher fires signals, the status-watcher observes completions and marks
+# tasks done. Reviewer, reflector, and cross-session-reflector jobs now DISCOVER
+# new findings and append them back to autopilot-backlog as pending tasks via
+# the discovery-to-task helper, closing the loop without human authoring for
+# auto_apply tasks and surfacing surface-policy tasks to the Studio inbox.
 version: '1.0'
 workspace:
   name: FAST Loop
@@ -180,10 +188,13 @@ signals:
     provider: schedule
     title: Review target workspace (scheduled)
     description: >-
-      Cron-driven workspace review. Fires every 4 hours to review the
-      default target workspace for drift, prompt issues, and FSM smells.
+      Cron-driven workspace review. Every 15 minutes — surfaces drift /
+      prompt issues / FSM smells fast enough to feel like a live signal.
+      Currently config-only review (session-reader points at a hypothetical
+      narrative/sessions corpus that no producer writes to; switch to
+      /api/sessions or land a session-summarizer to enable session review).
     config:
-      schedule: '0 */4 * * *'
+      schedule: '*/15 * * * *'
       timezone: UTC
 agents:
   status-watcher:
@@ -1475,10 +1486,15 @@ jobs:
       NarrativeEntry to the target workspace's notes corpus (never the kernel's).
       Findings optionally include target_job_id so the downstream apply job can
       read jobs.<id>.improvement instead of the workspace-level default.
+    entrypoint: jobs/review-target-workspace/job.ts
     triggers:
       - signal: review-target-workspace-run
       - signal: review-requested
       - signal: review-requested-cron
+    config:
+      targetWorkspaceId: ""
+      sessionLimit: 20
+      notesCorpus: notes
     inputs:
       targetWorkspaceId:
         type: string

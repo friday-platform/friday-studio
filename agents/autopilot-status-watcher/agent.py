@@ -51,6 +51,54 @@ def _post_json(ctx: Any, url: str, body: dict[str, Any]) -> int | str:
         return f"err: {str(exc)[:120]}"
 
 
+def _extract_changed_files(session_data: dict[str, Any]) -> list[str]:
+    """Extract file paths from session agentBlocks tool calls."""
+    files: set[str] = set()
+    for block in session_data.get("agentBlocks", []):
+        if not isinstance(block, dict):
+            continue
+        for tc in block.get("toolCalls", []):
+            if not isinstance(tc, dict):
+                continue
+            tool_name = tc.get("toolName", "")
+            args = tc.get("args") or {}
+            if not isinstance(args, dict):
+                continue
+            if tool_name in ("write_file", "Write", "fs_write"):
+                fpath = args.get("file_path") or args.get("path") or ""
+                if fpath:
+                    files.add(fpath)
+            elif tool_name in ("str_replace_editor", "Edit", "fs_edit"):
+                fpath = args.get("path") or args.get("file_path") or ""
+                if fpath:
+                    files.add(fpath)
+    return sorted(files)
+
+
+def _fire_post_session_validator(
+    ctx: Any,
+    platform_url: str,
+    kernel_ws: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Fire the post-session-validator signal and return the result, or None on error."""
+    url = f"{platform_url}/api/workspaces/{kernel_ws}/signals/post-session-validate"
+    try:
+        resp = ctx.http.fetch(
+            url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"payload": payload}),
+            timeout_ms=180000,
+        )
+        if resp.status == 200:
+            body = json.loads(resp.body or "null")
+            return body if isinstance(body, dict) else None
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Return {id: latest-entry-by-createdAt} from a list of NarrativeEntry dicts."""
     latest: dict[str, dict[str, Any]] = {}

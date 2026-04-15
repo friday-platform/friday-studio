@@ -289,6 +289,9 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
 
 
 KERNEL_WORKSPACE_ID = "thick_endive"
+BACKLOG_CORPUS_URL_DEFAULT = (
+    "http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog"
+)
 
 
 def _append_to_corpus(
@@ -329,6 +332,58 @@ def _append_to_corpus(
         appender.append_reflection(
             workspace_id=KERNEL_WORKSPACE_ID,
             entry=entry,
+        )
+    except Exception:
+        pass
+
+
+def _post_discovery_task(
+    ctx: AgentContext,
+    discovery: dict[str, Any],
+) -> None:
+    """POST a discovery-task to the autopilot-backlog corpus. Best-effort."""
+    corpus_url = (
+        ctx.config.get("backlog_corpus_url", BACKLOG_CORPUS_URL_DEFAULT)
+        if ctx.config
+        else BACKLOG_CORPUS_URL_DEFAULT
+    )
+
+    title_slug = discovery["title"].lower()
+    for ch in " /\\:*?\"<>|":
+        title_slug = title_slug.replace(ch, "-")
+    title_slug = title_slug.strip("-")[:60]
+
+    entry_id = f"auto-{discovery['kind']}-{title_slug}"
+    payload = json.dumps({
+        "id": entry_id,
+        "text": discovery["title"],
+        "createdAt": "",
+        "metadata": {
+            "status": "pending",
+            "priority": discovery.get("priority", 50),
+            "kind": discovery["kind"],
+            "blocked_by": [],
+            "match_job_name": "execute-task",
+            "auto_apply": discovery.get("auto_apply", False),
+            "discovered_by": discovery["discovered_by"],
+            "discovered_session": discovery["discovered_session"],
+            "payload": {
+                "workspace_id": discovery["target_workspace_id"],
+                "signal_id": discovery["target_signal_id"],
+                "task_id": entry_id,
+                "task_brief": discovery["brief"],
+                "target_files": discovery.get("target_files", []),
+            },
+        },
+    })
+
+    try:
+        ctx.http.fetch(
+            corpus_url,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=payload,
+            timeout_ms=5000,
         )
     except Exception:
         pass
@@ -402,6 +457,23 @@ def execute(prompt: str, ctx: AgentContext) -> Any:
         rationale=rationale,
         update_warranted=update_warranted,
     )
+
+    if update_warranted and confidence >= 0.9:
+        failure_label = ""
+        if isinstance(new_failure_mode, dict):
+            failure_label = new_failure_mode.get("symptom", "unknown")
+        _post_discovery_task(ctx, {
+            "discovered_by": "reflector",
+            "discovered_session": session_summary.get("session_id", ""),
+            "target_workspace_id": session_summary.get("workspace_id", ""),
+            "target_signal_id": "fast-self-modification-update",
+            "title": f"Update @tempest/fast-self-modification: {failure_label}",
+            "brief": rationale,
+            "target_files": [],
+            "priority": 60,
+            "kind": "reflector",
+            "auto_apply": False,
+        })
 
     return ok(
         {

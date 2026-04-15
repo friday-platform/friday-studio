@@ -1542,6 +1542,10 @@ export class FSMEngine {
               agentId: action.agentId,
               state: currentState,
               outputTo: action.outputTo,
+              hasSignalContext: !!sig._context,
+              hasOnStreamEvent: !!sig._context?.onStreamEvent,
+              hasPrepareInput: !!prepareResult,
+              resultKeys: Object.keys(Object.fromEntries(resultsMap)),
             });
 
             // Build context for agent execution

@@ -32,7 +32,7 @@ async function postAction(action: FindingAction): Promise<ApplyResponse> {
   return ApplyResponseSchema.parse(data);
 }
 
-export async function acceptFinding(
+export function acceptFinding(
   findingId: string,
   workspaceId: string,
   patch: string,
@@ -45,7 +45,7 @@ export async function acceptFinding(
   });
 }
 
-export async function rejectFinding(
+export function rejectFinding(
   findingId: string,
   workspaceId: string,
 ): Promise<ApplyResponse> {
@@ -56,7 +56,7 @@ export async function rejectFinding(
   });
 }
 
-export async function dismissFinding(
+export function dismissFinding(
   findingId: string,
   workspaceId: string,
 ): Promise<ApplyResponse> {

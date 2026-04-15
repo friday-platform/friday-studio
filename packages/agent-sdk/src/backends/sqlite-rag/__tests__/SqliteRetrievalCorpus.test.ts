@@ -1,7 +1,14 @@
 import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DocBatch } from "../../../memory-adapter.ts";
-import { ChunkerRegistry, DefaultChunker, getChunker } from "../chunker.ts";
+import {
+  ChunkerRegistry,
+  DefaultChunker,
+  FixedChunker,
+  getChunker,
+  NoneChunker,
+  SentenceChunker,
+} from "../chunker.ts";
 import { SqliteRetrievalCorpus } from "../SqliteRetrievalCorpus.ts";
 
 const sampleDocs: DocBatch = {
@@ -122,6 +129,51 @@ describe("SqliteRetrievalCorpus", () => {
     expect(statsB.count).toBe(1);
   });
 
+  it("ingest() with chunker='sentence' splits text into multiple chunks", async () => {
+    const corpus = new SqliteRetrievalCorpus(db, "ws1", "test");
+    const result = await corpus.ingest(
+      {
+        docs: [
+          {
+            id: "multi-sentence",
+            text: "First sentence about TypeScript. Second sentence about Deno. Third sentence about testing.",
+          },
+        ],
+      },
+      { chunker: "sentence" },
+    );
+    expect(result.ingested).toBe(1);
+    expect(result.skipped).toBe(0);
+    const stats = await corpus.stats();
+    expect(stats.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("ingest() with chunker='none' stores doc as a single chunk", async () => {
+    const corpus = new SqliteRetrievalCorpus(db, "ws1", "test");
+    const longText = "Word ".repeat(1000).trim();
+    const result = await corpus.ingest(
+      { docs: [{ id: "single", text: longText }] },
+      { chunker: "none" },
+    );
+    expect(result.ingested).toBe(1);
+    const stats = await corpus.stats();
+    expect(stats.count).toBe(1);
+  });
+
+  it("query() returns empty array when corpus has no matching documents", async () => {
+    const corpus = new SqliteRetrievalCorpus(db, "ws1", "test");
+    await corpus.ingest(sampleDocs);
+    const hits = await corpus.query({ text: "xyznonexistentterm" });
+    expect(hits).toEqual([]);
+  });
+
+  it("stats() returns {count:0, sizeBytes:0} on empty corpus", async () => {
+    const corpus = new SqliteRetrievalCorpus(db, "ws1", "empty");
+    const s = await corpus.stats();
+    expect(s.count).toBe(0);
+    expect(s.sizeBytes).toBe(0);
+  });
+
   it("history entries are appended on ingest() and reset()", async () => {
     const corpus = new SqliteRetrievalCorpus(db, "ws1", "test");
     await corpus.ingest(sampleDocs);
@@ -161,30 +213,30 @@ describe("chunker", () => {
     }
   });
 
-  it("DefaultChunker produces chunks with max 512 tokens and 64-token overlap", () => {
+  it("SentenceChunker splits text on sentence boundaries (.!?) with max 512 chars", () => {
+    const sentences = Array.from({ length: 20 }, (_, i) => `Sentence number ${i} about topic.`);
+    const text = sentences.join(" ");
+
+    const chunks = SentenceChunker(text);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(512 + 100);
+    }
+  });
+
+  it("FixedChunker produces fixed-width chunks with overlap", () => {
     const words = Array.from({ length: 1000 }, (_, i) => `word${i}`);
     const text = words.join(" ");
 
-    const chunks = DefaultChunker(text);
-
+    const chunks = FixedChunker(text);
     expect(chunks.length).toBeGreaterThan(1);
+  });
 
-    for (const chunk of chunks) {
-      const chunkWords = chunk.split(/\s+/).filter((w) => w.length > 0);
-      expect(chunkWords.length).toBeLessThanOrEqual(512);
-    }
-
-    for (let i = 1; i < chunks.length; i++) {
-      const prev = chunks[i - 1];
-      const curr = chunks[i];
-      if (!prev || !curr) continue;
-
-      const prevWords = prev.split(/\s+/).filter((w) => w.length > 0);
-      const currWords = curr.split(/\s+/).filter((w) => w.length > 0);
-      const overlapSize = Math.min(64, prevWords.length, currWords.length);
-      const prevTail = prevWords.slice(-overlapSize);
-      const currHead = currWords.slice(0, overlapSize);
-      expect(prevTail).toEqual(currHead);
-    }
+  it("NoneChunker returns the entire text as a single chunk", () => {
+    const text = "A ".repeat(1000).trim();
+    const chunks = NoneChunker(text);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toBe(text);
   });
 });

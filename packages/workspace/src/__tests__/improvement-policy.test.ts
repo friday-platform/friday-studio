@@ -1,4 +1,5 @@
 import type { ScratchpadAdapter, ScratchpadChunk } from "@atlas/agent-sdk";
+import { parse } from "@std/yaml";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@atlas/logger", () => ({
@@ -24,7 +25,7 @@ describe("applyFinding", () => {
   });
 
   describe("surface mode", () => {
-    it("calls scratchpad.append with kind='proposed-config' and does NOT call fetch", async () => {
+    it("calls scratchpad.append with kind='improvement-proposal' and does NOT call fetch", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch");
       const scratchpad = makeScratchpad();
       const proposedConfig = { version: "1.0", workspace: { name: "Updated" } };
@@ -41,13 +42,13 @@ describe("applyFinding", () => {
       expect(scratchpad.append).toHaveBeenCalledOnce();
       expect(scratchpad.append).toHaveBeenCalledWith(
         "ws-test/notes",
-        expect.objectContaining({ kind: "proposed-config" }),
+        expect.objectContaining({ kind: "improvement-proposal" }),
       );
       expect(fetchSpy).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
     });
 
-    it("returned chunk body is valid JSON of proposedConfig", async () => {
+    it("returned chunk body is valid YAML of proposedConfig", async () => {
       const scratchpad = makeScratchpad();
       const proposedConfig = { version: "1.0", workspace: { name: "Test" } };
 
@@ -61,7 +62,7 @@ describe("applyFinding", () => {
 
       const appendMock = scratchpad.append as ReturnType<typeof vi.fn>;
       const chunk = appendMock.mock.calls[0]?.[1] as ScratchpadChunk;
-      expect(JSON.parse(chunk.body)).toEqual(proposedConfig);
+      expect(parse(chunk.body)).toEqual(proposedConfig);
     });
 
     it("writes a ScratchpadChunk with valid createdAt ISO timestamp", async () => {

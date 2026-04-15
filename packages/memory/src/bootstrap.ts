@@ -1,14 +1,38 @@
-import type { CorpusKind, CorpusMetadata, MemoryAdapter, NarrativeEntry } from "@atlas/agent-sdk";
+import type { CorpusMetadata, MemoryAdapter, NarrativeEntry } from "@atlas/agent-sdk";
 import { z } from "zod";
 
-// ── Bootstrap scope types (legacy resolve path) ────────────────────────────
+// ── Bootstrap scope types ───────────────────────────────────────────────────
 
-export type BootstrapScope = "workspace" | "job" | "agent";
+export type MountScope = "workspace" | "job" | "agent";
+
+export type BootstrapScope = MountScope;
+
+export interface MountBinding {
+  scope: MountScope;
+  corpusName: string;
+}
+
+export interface BootstrapContext {
+  workspaceId: string;
+  agentId: string;
+  mounts: MountBinding[];
+}
 
 export interface BootstrapOpts {
   scopes?: BootstrapScope[];
   separator?: string;
 }
+
+export const MountBindingSchema = z.object({
+  scope: z.enum(["workspace", "job", "agent"]),
+  corpusName: z.string().min(1),
+});
+
+export const BootstrapContextSchema = z.object({
+  workspaceId: z.string().min(1),
+  agentId: z.string().min(1),
+  mounts: z.array(MountBindingSchema),
+});
 
 export const BootstrapOptsSchema = z.object({
   scopes: z.array(z.enum(["workspace", "job", "agent"])).optional(),
@@ -45,45 +69,41 @@ export async function resolveBootstrap(
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-export const DEFAULT_MOUNT_MAX_BYTES = 8192;
-export const DEFAULT_TOTAL_MAX_BYTES = 32768;
+export const DEFAULT_MOUNT_MAX_BYTES = 8 * 1024;
+export const DEFAULT_TOTAL_MAX_BYTES = 32 * 1024;
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
-export const MountConfigSchema = z.object({
-  corpus: z.string(),
-  kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
-  filter: z.record(z.string(), z.unknown()).optional(),
-  bootstrap: z.object({ maxBytes: z.number().int().positive().optional() }).optional(),
+export const MountBootstrapConfigSchema = z.object({
+  maxBytes: z.number().int().positive().optional(),
 });
 
-export const AgentMountsConfigSchema = z.object({
-  agents: z.record(z.string(), z.object({ mounts: z.array(MountConfigSchema).optional() })),
+export const AgentMountConfigSchema = z.object({
+  name: z.string(),
+  corpus: z.string(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+  bootstrap: MountBootstrapConfigSchema.optional(),
 });
 
 // ── TypeScript types ─────────────────────────────────────────────────────────
 
-export interface MountConfig {
-  corpus: string;
-  kind: CorpusKind;
-  filter?: Record<string, unknown>;
-  bootstrap?: { maxBytes?: number };
+export interface MountBootstrapConfig {
+  maxBytes?: number;
 }
 
-export interface RenderedMount {
+export interface AgentMountConfig {
   name: string;
-  entries: NarrativeEntry[];
-  bytesUsed: number;
+  corpus: string;
+  filter?: Record<string, unknown>;
+  bootstrap?: MountBootstrapConfig;
 }
 
 // ── Internal helpers (exported for unit-testing) ─────────────────────────────
 
 export function applyFilter(
   entries: NarrativeEntry[],
-  filter?: Record<string, unknown>,
+  filter: Record<string, unknown>,
 ): NarrativeEntry[] {
-  if (!filter) return entries;
-
   const keys = Object.keys(filter).filter((k) => filter[k] !== undefined);
   if (keys.length === 0) return entries;
 
@@ -129,7 +149,10 @@ function renderBullet(entry: NarrativeEntry): string {
   return `- ${entry.text}`;
 }
 
-export function truncateToBytes(entries: NarrativeEntry[], maxBytes: number): NarrativeEntry[] {
+export function truncateToBytes(
+  entries: NarrativeEntry[],
+  maxBytes: number,
+): { entries: NarrativeEntry[]; truncated: boolean } {
   const encoder = new TextEncoder();
   const kept: NarrativeEntry[] = [];
   let totalSize = 0;
@@ -138,29 +161,28 @@ export function truncateToBytes(entries: NarrativeEntry[], maxBytes: number): Na
     const line = renderBullet(entry) + "\n";
     const lineBytes = encoder.encode(line).byteLength;
     if (totalSize + lineBytes > maxBytes && kept.length > 0) {
-      return kept;
+      return { entries: kept, truncated: true };
     }
     totalSize += lineBytes;
     kept.push(entry);
   }
 
-  return kept;
+  return { entries: kept, truncated: false };
 }
 
-export function renderMounts(mounts: RenderedMount[]): string {
-  const sections: string[] = [];
-
-  for (const mount of mounts) {
-    if (mount.entries.length === 0) continue;
-
-    const lines: string[] = [`## ${mount.name}`, ""];
-    for (const e of mount.entries) {
-      lines.push(renderBullet(e));
-    }
-    sections.push(lines.join("\n"));
+export function renderSection(
+  mountName: string,
+  entries: NarrativeEntry[],
+  truncated: boolean,
+): string {
+  const lines: string[] = [`## ${mountName}`];
+  for (const e of entries) {
+    lines.push(renderBullet(e));
   }
-
-  return sections.join("\n\n");
+  if (truncated) {
+    lines.push("<!-- truncated -->");
+  }
+  return lines.join("\n");
 }
 
 // ── Main entry-point ─────────────────────────────────────────────────────────
@@ -168,38 +190,56 @@ export function renderMounts(mounts: RenderedMount[]): string {
 export async function buildBootstrapBlock(
   adapter: MemoryAdapter,
   workspaceId: string,
-  _agentId: string,
-  mounts: MountConfig[],
+  mounts: AgentMountConfig[],
   opts?: { totalMaxBytes?: number },
 ): Promise<string> {
   const totalMaxBytes = opts?.totalMaxBytes ?? DEFAULT_TOTAL_MAX_BYTES;
   const encoder = new TextEncoder();
-  const collected: RenderedMount[] = [];
+  const sections: string[] = [];
   let totalSize = 0;
 
   for (const mount of mounts) {
-    if (mount.kind !== "narrative") continue;
-
     const corpus = await adapter.corpus(workspaceId, mount.corpus, "narrative");
-    const entries = await corpus.read();
-    const filtered = applyFilter(entries, mount.filter);
+    const allEntries = await corpus.read();
+    const filtered = mount.filter ? applyFilter(allEntries, mount.filter) : allEntries;
     if (filtered.length === 0) continue;
 
     const sorted = sortByPriorityDesc(filtered);
     const perMountCap = mount.bootstrap?.maxBytes ?? DEFAULT_MOUNT_MAX_BYTES;
-    const kept = truncateToBytes(sorted, perMountCap);
+    const { entries: kept, truncated } = truncateToBytes(sorted, perMountCap);
     if (kept.length === 0) continue;
 
-    const sectionLines = [`## ${mount.corpus}`, "", ...kept.map((e) => renderBullet(e))];
-    const sectionStr = sectionLines.join("\n");
-    const separator = collected.length > 0 ? "\n\n" : "";
-    const sectionBytes = encoder.encode(separator + sectionStr).byteLength;
+    const section = renderSection(mount.name, kept, truncated);
+    const separator = sections.length > 0 ? "\n\n" : "";
+    const sectionBytes = encoder.encode(separator + section).byteLength;
 
-    if (totalSize + sectionBytes > totalMaxBytes && collected.length > 0) break;
+    if (totalSize + sectionBytes > totalMaxBytes && sections.length > 0) break;
 
     totalSize += sectionBytes;
-    collected.push({ name: mount.corpus, entries: kept, bytesUsed: sectionBytes });
+    sections.push(section);
   }
 
-  return renderMounts(collected);
+  return sections.join("\n\n");
+}
+
+// ── buildBootstrap (canonical entry-point — all narrative corpora, workspace scope)
+
+export async function buildBootstrap(
+  adapter: MemoryAdapter,
+  workspaceId: string,
+  _agentId: string,
+): Promise<string> {
+  const allCorpora: CorpusMetadata[] = await adapter.list(workspaceId);
+  const narrativeCorpora = allCorpora.filter((c) => c.kind === "narrative");
+
+  const sections: string[] = [];
+  for (const meta of narrativeCorpora) {
+    const corpus = await adapter.corpus(workspaceId, meta.name, "narrative");
+    const rendered = await corpus.render();
+    if (rendered.trim()) {
+      sections.push(rendered.trim());
+    }
+  }
+
+  return sections.join("\n\n");
 }

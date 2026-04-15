@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { fetchNarrativeCorpus, type NarrativeEntry } from "$lib/api/memory.ts";
+import { fetchNarrativeCorpus, type NarrativeEntry } from "../api/memory.ts";
 
 const PROXY_BASE = "/api/daemon";
+const BACKLOG_WORKSPACE = "thick_endive";
+const BACKLOG_CORPUS = "autopilot-backlog";
 
 export const ImprovementFindingMetaSchema = z.object({
   kind: z.literal("improvement-finding"),
@@ -30,6 +32,19 @@ export interface ImprovementGroup {
   findings: ImprovementEntry[];
 }
 
+const BacklogPayloadSchema = z.object({
+  workspace_id: z.string(),
+  signal_id: z.string(),
+  task_id: z.string(),
+  task_brief: z.string(),
+  target_files: z.array(z.string()),
+});
+
+const BacklogEntryMetaSchema = z.object({
+  auto_apply: z.boolean(),
+  payload: BacklogPayloadSchema,
+});
+
 const WORKSPACE_GROUP_KEY = "__workspace__";
 
 export async function loadImprovements(
@@ -37,9 +52,10 @@ export async function loadImprovements(
 ): Promise<ImprovementGroup[]> {
   const allEntries: ImprovementEntry[] = [];
 
-  const settled = await Promise.allSettled(
-    workspaceIds.map((wsId) => loadWorkspaceFindings(wsId)),
-  );
+  const settled = await Promise.allSettled([
+    ...workspaceIds.map((wsId) => loadWorkspaceFindings(wsId)),
+    loadBacklogFindings(),
+  ]);
 
   for (const result of settled) {
     if (result.status === "fulfilled") {
@@ -47,7 +63,74 @@ export async function loadImprovements(
     }
   }
 
-  return groupByWorkspaceAndJob(allEntries);
+  const seen = new Set<string>();
+  const deduped: ImprovementEntry[] = [];
+  for (const entry of allEntries) {
+    if (!seen.has(entry.id)) {
+      seen.add(entry.id);
+      deduped.push(entry);
+    }
+  }
+
+  return groupByWorkspaceAndJob(deduped);
+}
+
+async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
+  let entries: NarrativeEntry[];
+  try {
+    entries = await fetchNarrativeCorpus(BACKLOG_WORKSPACE, BACKLOG_CORPUS);
+  } catch {
+    return [];
+  }
+
+  const findings: ImprovementEntry[] = [];
+  for (const entry of entries) {
+    const parsed = BacklogEntryMetaSchema.safeParse(entry.metadata);
+    if (!parsed.success) continue;
+    if (parsed.data.auto_apply !== false) continue;
+
+    findings.push({
+      id: entry.id,
+      text: entry.text,
+      author: entry.author,
+      createdAt: entry.createdAt,
+      workspaceId: parsed.data.payload.workspace_id,
+      targetJobId: parsed.data.payload.signal_id,
+      beforeYaml: undefined,
+      body: parsed.data.payload.task_brief,
+      metadata: entry.metadata ?? {},
+    });
+  }
+
+  return findings;
+}
+
+export async function acceptBacklogEntry(entryId: string): Promise<void> {
+  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_CORPUS)}`;
+  await globalThis.fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: entryId,
+      text: `Accepted: ${entryId}`,
+      createdAt: new Date().toISOString(),
+      metadata: { auto_apply: true, status: "pending" },
+    }),
+  });
+}
+
+export async function rejectBacklogEntry(entryId: string): Promise<void> {
+  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(BACKLOG_WORKSPACE)}/narrative/${encodeURIComponent(BACKLOG_CORPUS)}`;
+  await globalThis.fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: entryId,
+      text: `Rejected: ${entryId}`,
+      createdAt: new Date().toISOString(),
+      metadata: { status: "rejected" },
+    }),
+  });
 }
 
 async function loadWorkspaceFindings(

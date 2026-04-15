@@ -14,7 +14,7 @@ export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
 export { createFailTool, FailInputSchema } from "./fail-tool.ts";
 export * from "./memory-adapter.ts";
 export * from "./memory-scope.ts";
-export * from "./memory-scope-model.ts";
+export type { MemoryScopeKind } from "./memory-scope-model.ts";
 export type {
   AtlasDataEvent,
   AtlasDataEvents,

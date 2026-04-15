@@ -1,7 +1,6 @@
-import type { KVCorpus, MemoryAdapter, NarrativeEntry } from "@atlas/agent-sdk";
+import type { NarrativeEntry } from "@atlas/agent-sdk";
 import { z } from "zod";
-import type { FindingCategory, FindingEntry, FindingSeverity } from "./finding.ts";
-import { toNarrativeEntry } from "./finding.ts";
+import type { ReviewFinding } from "./types.ts";
 
 const ParsedAgentConfigSchema = z.object({
   type: z.string().optional(),
@@ -24,35 +23,8 @@ const ParsedWorkspaceConfigSchema = z.object({
 
 export type ParsedWorkspaceConfig = z.infer<typeof ParsedWorkspaceConfigSchema>;
 
-export interface ReviewerDeps {
-  memoryAdapter: MemoryAdapter;
-  targetWorkspaceId: string;
-}
-
-export interface ReviewerInput {
-  sessions: NarrativeEntry[];
-}
-
-function makeFinding(
-  text: string,
-  category: FindingCategory,
-  severity: FindingSeverity,
-  opts?: { target_job_id?: string; evidence?: string },
-): FindingEntry {
-  return {
-    id: crypto.randomUUID(),
-    text,
-    author: "reviewer-agent",
-    createdAt: new Date().toISOString(),
-    metadata: { category, severity, target_job_id: opts?.target_job_id, evidence: opts?.evidence },
-  };
-}
-
-export function detectDrift(
-  sessions: NarrativeEntry[],
-  config: ParsedWorkspaceConfig,
-): FindingEntry[] {
-  const findings: FindingEntry[] = [];
+function detectDrift(sessions: NarrativeEntry[], config: ParsedWorkspaceConfig): ReviewFinding[] {
+  const findings: ReviewFinding[] = [];
   const configAgentIds = new Set(Object.keys(config.agents ?? {}));
 
   for (const session of sessions) {
@@ -60,41 +32,39 @@ export function detectDrift(
     if (typeof agentId === "string" && !configAgentIds.has(agentId)) {
       const targetJobId =
         typeof session.metadata?.jobId === "string" ? session.metadata.jobId : undefined;
-      findings.push(
-        makeFinding(
-          `Agent "${agentId}" referenced in session but missing from workspace.yml`,
-          "drift",
-          "warning",
-          { target_job_id: targetJobId },
-        ),
-      );
+      findings.push({
+        kind: "workspace_drift",
+        summary: `Agent "${agentId}" referenced in session but missing from workspace.yml`,
+        detail: `Session ${session.id} references agent "${agentId}" which is not declared in the workspace configuration.`,
+        severity: "medium",
+        target_job_id: targetJobId,
+      });
     }
   }
 
   return findings;
 }
 
-export function detectPromptIssues(config: ParsedWorkspaceConfig): FindingEntry[] {
-  const findings: FindingEntry[] = [];
+function detectPromptIssues(config: ParsedWorkspaceConfig): ReviewFinding[] {
+  const findings: ReviewFinding[] = [];
   const agents = config.agents ?? {};
 
   for (const [agentId, agent] of Object.entries(agents)) {
     if (!agent.prompt) {
-      findings.push(
-        makeFinding(
-          `Agent "${agentId}" has no system-prompt stanza in workspace.yml`,
-          "prompt",
-          "warning",
-        ),
-      );
+      findings.push({
+        kind: "prompt_issue",
+        summary: `Agent "${agentId}" has no system-prompt stanza in workspace.yml`,
+        detail: `Agent "${agentId}" is declared but missing a prompt field. This may cause unpredictable behavior.`,
+        severity: "medium",
+      });
     }
   }
 
   return findings;
 }
 
-export function detectFsmSmells(config: ParsedWorkspaceConfig): FindingEntry[] {
-  const findings: FindingEntry[] = [];
+function detectFsmSmells(config: ParsedWorkspaceConfig): ReviewFinding[] {
+  const findings: ReviewFinding[] = [];
 
   if (!config.fsm) return findings;
 
@@ -121,22 +91,24 @@ export function detectFsmSmells(config: ParsedWorkspaceConfig): FindingEntry[] {
 
   for (const stateId of stateIds) {
     if (!reachable.has(stateId) && stateId !== initial) {
-      findings.push(
-        makeFinding(`State "${stateId}" is unreachable from initial state`, "fsm", "warning"),
-      );
+      findings.push({
+        kind: "fsm_smell",
+        summary: `State "${stateId}" is unreachable from initial state`,
+        detail: `FSM state "${stateId}" cannot be reached from the initial state "${initial ?? "(none)"}". This may indicate dead configuration.`,
+        severity: "medium",
+      });
     }
   }
 
   for (const [stateId, state] of Object.entries(states)) {
     const hasTransitions = state.transitions && Object.keys(state.transitions).length > 0;
     if (!hasTransitions && !state.terminal) {
-      findings.push(
-        makeFinding(
-          `State "${stateId}" has no outbound transitions and is not terminal`,
-          "fsm",
-          "warning",
-        ),
-      );
+      findings.push({
+        kind: "fsm_smell",
+        summary: `State "${stateId}" has no outbound transitions and is not terminal`,
+        detail: `FSM state "${stateId}" has no transitions and is not marked as terminal. Sessions entering this state will be stuck.`,
+        severity: "medium",
+      });
     }
   }
 
@@ -151,7 +123,7 @@ export function parseWorkspaceConfig(raw: string): ParsedWorkspaceConfig {
 export function reviewWorkspaceConfig(
   sessions: NarrativeEntry[],
   config: ParsedWorkspaceConfig,
-): FindingEntry[] {
+): ReviewFinding[] {
   return [
     ...detectDrift(sessions, config),
     ...detectPromptIssues(config),
@@ -159,19 +131,10 @@ export function reviewWorkspaceConfig(
   ];
 }
 
-export async function runReview(deps: ReviewerDeps, input: ReviewerInput): Promise<FindingEntry[]> {
-  const { memoryAdapter, targetWorkspaceId } = deps;
-
-  const kv: KVCorpus = await memoryAdapter.corpus(targetWorkspaceId, "config", "kv");
-  const workspaceYml = await kv.get<string>("workspace.yml");
-  const config = parseWorkspaceConfig(workspaceYml ?? "{}");
-
-  const findings = reviewWorkspaceConfig(input.sessions, config);
-
-  const notes = await memoryAdapter.corpus(targetWorkspaceId, "notes", "narrative");
-  for (const finding of findings) {
-    await notes.append(toNarrativeEntry(finding));
-  }
-
-  return findings;
+export function reviewWorkspace(
+  sessions: NarrativeEntry[],
+  workspaceYmlRaw: string,
+): ReviewFinding[] {
+  const config = parseWorkspaceConfig(workspaceYmlRaw);
+  return reviewWorkspaceConfig(sessions, config);
 }

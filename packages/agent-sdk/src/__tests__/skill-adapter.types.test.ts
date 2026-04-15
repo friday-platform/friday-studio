@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ResolvedSkill } from "../skill-adapter.ts";
+import type { ResolvedSkill, SkillAdapter } from "../skill-adapter.ts";
 import type { AgentSkill } from "../types.ts";
 
 describe("SkillAdapter type contracts", () => {
@@ -29,5 +29,17 @@ describe("SkillAdapter type contracts", () => {
     const asBase: AgentSkill = skill;
     expect(asBase.name).toBe("another-skill");
     expect(asBase.description).toBe("Another skill");
+  });
+
+  it("invalidate() returns void (synchronous)", () => {
+    type InvalidateReturn = ReturnType<SkillAdapter["invalidate"]>;
+    const check: InvalidateReturn extends void ? true : false = true;
+    expect(check).toBe(true);
+  });
+
+  it("rollback() returns Promise<ResolvedSkill>", () => {
+    type RollbackReturn = ReturnType<SkillAdapter["rollback"]>;
+    const check: RollbackReturn extends Promise<ResolvedSkill> ? true : false = true;
+    expect(check).toBe(true);
   });
 });

@@ -1,4 +1,12 @@
-export { ChunkerRegistry, DefaultChunker, getChunker } from "./chunker.ts";
+export type { ChunkerFn } from "./chunker.ts";
+export {
+  ChunkerRegistry,
+  DefaultChunker,
+  FixedChunker,
+  getChunker,
+  NoneChunker,
+  SentenceChunker,
+} from "./chunker.ts";
 export type { SqliteRagConfig } from "./SqliteRetrievalCorpus.ts";
 export { SqliteRagConfigSchema, SqliteRetrievalCorpus } from "./SqliteRetrievalCorpus.ts";
 export {

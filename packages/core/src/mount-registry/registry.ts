@@ -1,91 +1,75 @@
-import { createHash } from "node:crypto";
 import type { CorpusKind, KVCorpus } from "@atlas/agent-sdk";
-import type { MountConsumer, MountSource } from "./types.ts";
-import { MountConsumerSchema, MountSourceSchema } from "./types.ts";
+import {
+  buildSourceId,
+  type MountConsumer,
+  MountConsumerSchema,
+  type MountSource,
+  MountSourceSchema,
+} from "./types.ts";
 
-export interface MountStorage extends KVCorpus {}
-
-export function deriveSourceId(workspaceId: string, kind: CorpusKind, name: string): string {
-  return createHash("sha256").update(`${workspaceId}:${kind}:${name}`).digest("hex");
-}
-
-const SOURCE_PREFIX = "mount:source:";
-const CONSUMER_PREFIX = "mount:consumer:";
-const IDX_CONSUMER_PREFIX = "mount:idx:consumer:";
+const SRC = "mount:src:";
+const CONS = "mount:cons:";
+const IDX = "mount:idx:";
 
 export class MountRegistry {
-  constructor(private readonly storage: MountStorage) {}
+  constructor(private readonly kv: KVCorpus) {}
 
   async registerSource(workspaceId: string, kind: CorpusKind, name: string): Promise<MountSource> {
-    const sourceId = deriveSourceId(workspaceId, kind, name);
-    const existing = await this.storage.get<MountSource>(`${SOURCE_PREFIX}${sourceId}`);
-    if (existing) return existing;
+    const id = buildSourceId(workspaceId, kind, name);
     const now = new Date().toISOString();
-    const source: MountSource = MountSourceSchema.parse({
-      sourceId,
-      sourceWorkspaceId: workspaceId,
-      corpusKind: kind,
-      corpusName: name,
-      createdAt: now,
-      lastAccessedAt: now,
-    });
-    await this.storage.set(`${SOURCE_PREFIX}${sourceId}`, source);
-    return source;
-  }
 
-  async addConsumer(sourceId: string, consumerWorkspaceId: string): Promise<void> {
-    const key = `${CONSUMER_PREFIX}${sourceId}:${consumerWorkspaceId}`;
-    const already = await this.storage.get(key);
-    if (already) return;
-    const entry: MountConsumer = MountConsumerSchema.parse({
-      sourceId,
-      consumerWorkspaceId,
-      mountedAt: new Date().toISOString(),
-    });
-    await this.storage.set(key, entry);
-    const idxKey = `${IDX_CONSUMER_PREFIX}${consumerWorkspaceId}`;
-    const ids = (await this.storage.get<string[]>(idxKey)) ?? [];
-    if (!ids.includes(sourceId)) {
-      await this.storage.set(idxKey, [...ids, sourceId]);
+    const existing = await this.kv.get<MountSource>(`${SRC}${id}`);
+    if (existing) {
+      const updated: MountSource = { ...existing, lastAccessedAt: now };
+      await this.kv.set(`${SRC}${id}`, updated);
+      return MountSourceSchema.parse(updated);
     }
-    await this._touchSource(sourceId);
-  }
 
-  async removeConsumer(sourceId: string, consumerWorkspaceId: string): Promise<void> {
-    await this.storage.delete(`${CONSUMER_PREFIX}${sourceId}:${consumerWorkspaceId}`);
-    const idxKey = `${IDX_CONSUMER_PREFIX}${consumerWorkspaceId}`;
-    const ids = (await this.storage.get<string[]>(idxKey)) ?? [];
-    await this.storage.set(
-      idxKey,
-      ids.filter((id) => id !== sourceId),
-    );
-  }
-
-  async listConsumers(sourceId: string): Promise<MountConsumer[]> {
-    const keys = await this.storage.list(`${CONSUMER_PREFIX}${sourceId}:`);
-    const results = await Promise.all(
-      keys.map((k) => this.storage.get<MountConsumer>(k) as Promise<MountConsumer>),
-    );
-    return results;
-  }
-
-  async listMountsForConsumer(consumerWorkspaceId: string): Promise<MountSource[]> {
-    const idxKey = `${IDX_CONSUMER_PREFIX}${consumerWorkspaceId}`;
-    const sourceIds = (await this.storage.get<string[]>(idxKey)) ?? [];
-    const results = await Promise.all(sourceIds.map((id) => this.getSource(id)));
-    return results.filter((s): s is MountSource => s !== undefined);
+    const src: MountSource = { id, workspaceId, kind, name, createdAt: now, lastAccessedAt: now };
+    await this.kv.set(`${SRC}${id}`, src);
+    return MountSourceSchema.parse(src);
   }
 
   async getSource(sourceId: string): Promise<MountSource | undefined> {
-    return await this.storage.get<MountSource>(`${SOURCE_PREFIX}${sourceId}`);
+    const raw = await this.kv.get<MountSource>(`${SRC}${sourceId}`);
+    return raw ? MountSourceSchema.parse(raw) : undefined;
   }
 
-  private async _touchSource(sourceId: string): Promise<void> {
-    const src = await this.storage.get<MountSource>(`${SOURCE_PREFIX}${sourceId}`);
-    if (!src) return;
-    await this.storage.set(`${SOURCE_PREFIX}${sourceId}`, {
-      ...src,
-      lastAccessedAt: new Date().toISOString(),
-    });
+  async addConsumer(sourceId: string, consumerId: string): Promise<void> {
+    const key = `${CONS}${sourceId}:${consumerId}`;
+    const idxKey = `${IDX}${consumerId}:${sourceId}`;
+
+    const entry: MountConsumer = { consumerId, sourceId, addedAt: new Date().toISOString() };
+    await this.kv.set(key, MountConsumerSchema.parse(entry));
+    await this.kv.set(idxKey, sourceId);
+  }
+
+  async removeConsumer(sourceId: string, consumerId: string): Promise<void> {
+    await this.kv.delete(`${CONS}${sourceId}:${consumerId}`);
+    await this.kv.delete(`${IDX}${consumerId}:${sourceId}`);
+  }
+
+  async listConsumers(sourceId: string): Promise<MountConsumer[]> {
+    const prefix = `${CONS}${sourceId}:`;
+    const keys = await this.kv.list(prefix);
+    const results: MountConsumer[] = [];
+    for (const k of keys) {
+      const v = await this.kv.get<MountConsumer>(k);
+      if (v) results.push(MountConsumerSchema.parse(v));
+    }
+    return results;
+  }
+
+  async listMountsForConsumer(consumerId: string): Promise<MountSource[]> {
+    const prefix = `${IDX}${consumerId}:`;
+    const idxKeys = await this.kv.list(prefix);
+    const sources: MountSource[] = [];
+    for (const k of idxKeys) {
+      const sourceId = await this.kv.get<string>(k);
+      if (!sourceId) continue;
+      const src = await this.getSource(sourceId);
+      if (src) sources.push(src);
+    }
+    return sources;
   }
 }

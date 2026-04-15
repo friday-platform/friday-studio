@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ScratchpadAdapter, ScratchpadChunk } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { stringify } from "@std/yaml";
 import {
   type ImprovementMode,
   resolveImprovementMode,
@@ -42,8 +43,8 @@ export async function applyFinding(params: {
 
   const chunk: ScratchpadChunk = {
     id: randomUUID(),
-    kind: "proposed-config",
-    body: JSON.stringify(params.proposedConfig, null, 2),
+    kind: "improvement-proposal",
+    body: stringify(params.proposedConfig),
     createdAt: new Date().toISOString(),
   };
   await params.scratchpad.append(`${params.workspaceId}/notes`, chunk);

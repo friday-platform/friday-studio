@@ -1,58 +1,17 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { z } from "zod";
-  import { ScratchpadChunkSchema } from "@atlas/agent-sdk";
-  import type { NarrativeEntry } from "@atlas/agent-sdk";
   import {
-    type ImprovementFinding,
-    ImprovementFindingSchema,
-    groupFindings,
-  } from "$lib/improvements/improvement-finding.ts";
+    loadImprovements,
+    type ImprovementEntry,
+    type ImprovementGroup,
+  } from "$lib/improvements/improvements-loader.ts";
   import {
     acceptFinding,
     rejectFinding,
     dismissFinding,
-  } from "$lib/improvements/improvement-actions.ts";
+  } from "$lib/improvements/apply-action.ts";
+  import { computeUnifiedDiff, parseDiffStats } from "$lib/improvements/diff-renderer.ts";
   import { workspaceQueries } from "$lib/queries";
-
-  const PROXY_BASE = "/api/daemon";
-
-  function sessionKeyFor(workspaceId: string): string {
-    return `improvement::${workspaceId}`;
-  }
-
-  async function fetchFindings(workspaceIds: string[]): Promise<NarrativeEntry[]> {
-    const results: NarrativeEntry[] = [];
-
-    for (const wsId of workspaceIds) {
-      try {
-        const res = await globalThis.fetch(
-          `${PROXY_BASE}/api/scratchpad/${encodeURIComponent(sessionKeyFor(wsId))}`,
-        );
-        if (!res.ok) continue;
-
-        const data: unknown = await res.json();
-        const chunks = z.array(ScratchpadChunkSchema).safeParse(data);
-        if (!chunks.success) continue;
-
-        for (const chunk of chunks.data) {
-          try {
-            const body: unknown = JSON.parse(chunk.body);
-            const parsed = ImprovementFindingSchema.safeParse(body);
-            if (parsed.success) {
-              results.push(parsed.data);
-            }
-          } catch {
-            continue;
-          }
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    return results;
-  }
 
   const queryClient = useQueryClient();
 
@@ -63,26 +22,44 @@
 
   const findingsQuery = createQuery(() => ({
     queryKey: ["improvements", "findings", ...workspaceIds] as const,
-    queryFn: () => fetchFindings(workspaceIds),
+    queryFn: () => loadImprovements(workspaceIds),
     enabled: workspaceIds.length > 0,
     staleTime: 10_000,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   }));
 
-  const groups = $derived(groupFindings(findingsQuery.data ?? []));
-  const totalCount = $derived(findingsQuery.data?.length ?? 0);
+  const groups: ImprovementGroup[] = $derived(findingsQuery.data ?? []);
+  const totalCount = $derived(
+    groups.reduce((sum, g) => sum + g.findings.length, 0),
+  );
 
   let pendingAction = $state<string | undefined>(undefined);
 
+  function getDiff(finding: ImprovementEntry): string {
+    if (!finding.beforeYaml) return finding.body;
+    return computeUnifiedDiff(finding.beforeYaml, finding.body);
+  }
+
+  function getDiffBadge(finding: ImprovementEntry): string {
+    const diff = getDiff(finding);
+    if (!diff) return "";
+    const stats = parseDiffStats(diff);
+    return `+${stats.additions} / -${stats.deletions}`;
+  }
+
   type Action = "accept" | "reject" | "dismiss";
 
-  async function handleAction(action: Action, finding: ImprovementFinding): Promise<void> {
+  async function handleAction(action: Action, finding: ImprovementEntry): Promise<void> {
     pendingAction = finding.id;
     try {
-      if (action === "accept") await acceptFinding(finding);
-      else if (action === "reject") await rejectFinding(finding);
-      else await dismissFinding(finding);
+      if (action === "accept") {
+        await acceptFinding(finding.id, finding.workspaceId, finding.body);
+      } else if (action === "reject") {
+        await rejectFinding(finding.id, finding.workspaceId);
+      } else {
+        await dismissFinding(finding.id, finding.workspaceId);
+      }
       await queryClient.invalidateQueries({ queryKey: ["improvements"] });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -92,9 +69,9 @@
     }
   }
 
-  async function handleDismissAll(wsId: string, findings: ImprovementFinding[]): Promise<void> {
-    for (const finding of findings) {
-      await dismissFinding(finding);
+  async function handleDismissAll(group: ImprovementGroup): Promise<void> {
+    for (const finding of group.findings) {
+      await dismissFinding(finding.id, finding.workspaceId);
     }
     await queryClient.invalidateQueries({ queryKey: ["improvements"] });
   }
@@ -118,71 +95,69 @@
       <span>Failed to load findings: {findingsQuery.error.message}</span>
       <button class="dismiss" onclick={() => findingsQuery.refetch()}>Retry</button>
     </div>
-  {:else if groups.size === 0}
+  {:else if groups.length === 0}
     <div class="empty">No pending improvement findings.</div>
   {:else}
     <div class="groups">
-      {#each [...groups.entries()] as [wsId, jobMap] (wsId)}
-        {@const allWsFindings = [...jobMap.values()].flat()}
+      {#each groups as group (group.workspaceId + "::" + group.targetJobId)}
         <section class="workspace-section">
           <div class="ws-header">
-            <h2 class="ws-heading">{wsId}</h2>
+            <h2 class="ws-heading">{group.workspaceId}</h2>
             <button
               class="btn btn-dismiss-all"
-              onclick={() => handleDismissAll(wsId, allWsFindings)}
+              onclick={() => handleDismissAll(group)}
             >
               Dismiss All
             </button>
           </div>
 
-          {#each [...jobMap.entries()] as [jobId, findings] (jobId)}
-            <div class="job-section">
-              <h3 class="job-heading">{jobId}</h3>
+          <h3 class="job-heading">{group.targetJobId}</h3>
 
-              <div class="findings-list">
-                {#each findings as finding (finding.id)}
-                  <article class="finding-card">
-                    <header class="card-header">
-                      <span class="job-badge">{finding.metadata.target_job_id}</span>
-                      <time class="timestamp">{finding.createdAt}</time>
-                    </header>
+          <div class="findings-list">
+            {#each group.findings as finding (finding.id)}
+              <article class="finding-card">
+                <header class="card-header">
+                  <span class="job-badge">{finding.targetJobId}</span>
+                  <time class="timestamp">{finding.createdAt}</time>
+                  {#if finding.beforeYaml}
+                    <span class="diff-stats">{getDiffBadge(finding)}</span>
+                  {/if}
+                </header>
 
-                    {#if finding.text}
-                      <p class="rationale">{finding.text}</p>
-                    {/if}
+                {#if finding.text}
+                  <p class="rationale">{finding.text}</p>
+                {/if}
 
-                    <div class="diff-container">
-                      <pre class="diff">{finding.metadata.proposed_diff}</pre>
-                    </div>
+                <div class="diff-container">
+                  <pre class="diff">{getDiff(finding)}</pre>
+                </div>
 
-                    <footer class="card-actions">
-                      <button
-                        class="btn btn-accept"
-                        disabled={pendingAction === finding.id}
-                        onclick={() => handleAction("accept", finding)}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        class="btn btn-reject"
-                        disabled={pendingAction === finding.id}
-                        onclick={() => handleAction("reject", finding)}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        class="btn btn-dismiss"
-                        disabled={pendingAction === finding.id}
-                        onclick={() => handleAction("dismiss", finding)}
-                      >
-                        Dismiss
-                      </button>
-                    </footer>
-                  </article>
-                {/each}
-              </div>
-            </div>
-          {/each}
+                <footer class="card-actions">
+                  <button
+                    class="btn btn-accept"
+                    disabled={pendingAction === finding.id}
+                    onclick={() => handleAction("accept", finding)}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    class="btn btn-reject"
+                    disabled={pendingAction === finding.id}
+                    onclick={() => handleAction("reject", finding)}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    class="btn btn-dismiss"
+                    disabled={pendingAction === finding.id}
+                    onclick={() => handleAction("dismiss", finding)}
+                  >
+                    Dismiss
+                  </button>
+                </footer>
+              </article>
+            {/each}
+          </div>
         </section>
       {/each}
     </div>
@@ -301,12 +276,6 @@
     color: var(--color-text);
   }
 
-  .job-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-3);
-  }
-
   .job-heading {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-mono);
@@ -348,6 +317,12 @@
 
   .timestamp {
     color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
+  }
+
+  .diff-stats {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-family: var(--font-mono);
     font-size: var(--font-size-1);
   }
 

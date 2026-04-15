@@ -52,12 +52,10 @@ export type {
 export type {
   MountConsumer,
   MountSource,
-  MountStorage,
 } from "./src/mount-registry/mod.ts";
 // Mount Registry
 export {
-  CorpusKindSchema,
-  deriveSourceId,
+  buildSourceId,
   MountConsumerSchema,
   MountRegistry,
   MountSourceSchema,

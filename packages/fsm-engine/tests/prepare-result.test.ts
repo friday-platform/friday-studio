@@ -599,6 +599,108 @@ describe("Engine: code action return values as context.input", () => {
     expect(dispatcherSig?.signal._context?.onStreamEvent).toBeDefined();
   });
 
+  it("second agent in separate FSM state receives fresh context with signal bindings", async () => {
+    const capturedArgs: { agentId: string; ctx: Context; signal: SignalWithContext }[] = [];
+
+    const fsm: FSMDefinition = {
+      id: "cross-state-agent-context",
+      initial: "idle",
+      states: {
+        idle: { on: { trigger: { target: "step_plan" } } },
+        step_plan: {
+          entry: [
+            { type: "code", function: "prepare_plan" },
+            { type: "agent", agentId: "planner", outputTo: "plan_result" },
+            { type: "emit", event: "ADVANCE" },
+          ],
+          on: { ADVANCE: { target: "step_dispatch" } },
+        },
+        step_dispatch: {
+          entry: [
+            { type: "code", function: "prepare_dispatch" },
+            { type: "agent", agentId: "dispatcher", outputTo: "dispatch_result" },
+          ],
+          type: "final",
+        },
+      },
+      functions: {
+        prepare_plan: {
+          type: "action",
+          code: `export default function prepare_plan() {
+            return { task: "Plan the work", config: { workDir: "/ws" } };
+          }`,
+        },
+        prepare_dispatch: {
+          type: "action",
+          code: `export default function prepare_dispatch(context) {
+            var plan = context.results['plan_result'];
+            return { task: "Dispatch: " + (plan ? plan.summary : "no plan"), config: { stream: true } };
+          }`,
+        },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: (action: AgentAction, ctx: Context, signal: SignalWithContext) => {
+        capturedArgs.push({ agentId: action.agentId, ctx, signal });
+        return Promise.resolve({
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { summary: `${action.agentId} completed` },
+          durationMs: 0,
+        });
+      },
+    });
+    await engine.initialize();
+
+    const streamChunks: unknown[] = [];
+    await engine.signal(
+      { type: "trigger", data: { streamId: "s-123", datetime: { tz: "UTC" } } },
+      {
+        sessionId: "sess-ctx",
+        workspaceId: "ws-ctx",
+        onStreamEvent: (chunk) => streamChunks.push(chunk),
+      },
+    );
+
+    expect(capturedArgs).toHaveLength(2);
+
+    const planner = capturedArgs.find((c) => c.agentId === "planner");
+    const dispatcher = capturedArgs.find((c) => c.agentId === "dispatcher");
+
+    // --- Planner (first agent, first state) ---
+    expect(planner?.ctx.state).toBe("step_plan");
+    expect(planner?.ctx.input).toMatchObject({ task: "Plan the work", config: { workDir: "/ws" } });
+    expect(planner?.signal._context?.sessionId).toBe("sess-ctx");
+    expect(planner?.signal._context?.onStreamEvent).toBeDefined();
+
+    // --- Dispatcher (second agent, second state via cascaded signal) ---
+    // Context must be fresh — not a stale closure from the planner's state
+    expect(dispatcher?.ctx.state).toBe("step_dispatch");
+    expect(dispatcher?.ctx.input).toMatchObject({
+      task: "Dispatch: planner completed",
+      config: { stream: true },
+    });
+    // Must see planner's output in results
+    expect(dispatcher?.ctx.results).toHaveProperty("plan_result");
+    expect(dispatcher?.ctx.results.plan_result).toMatchObject({ summary: "planner completed" });
+    // emit must be a function (not stripped)
+    expect(typeof dispatcher?.ctx.emit).toBe("function");
+    // Signal bindings must survive the state transition (the core bug being tested)
+    expect(dispatcher?.signal._context?.sessionId).toBe("sess-ctx");
+    expect(dispatcher?.signal._context?.workspaceId).toBe("ws-ctx");
+    expect(dispatcher?.signal._context?.onStreamEvent).toBeDefined();
+    // Signal data falls back to parent trigger data
+    expect(dispatcher?.signal.data).toMatchObject({ streamId: "s-123", datetime: { tz: "UTC" } });
+  });
+
   it("emit action with explicit data overrides parent signal data", async () => {
     const capturedSignals: { agentId: string; signal: SignalWithContext }[] = [];
 

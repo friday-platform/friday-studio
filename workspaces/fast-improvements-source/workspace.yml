@@ -413,345 +413,77 @@ agents:
       You are the task router. Return {route, rationale,
       estimated_files_changed} per the deterministic routing rules.
   architect:
-    description: Produces design memos citing the authoritative interface declarations embedded in this prompt.
-    type: llm
-    config:
-      provider: anthropic
-      model: claude-sonnet-4-6
-      prompt: >
-        You are the architect for the OpenClaw parity plan execution.
-
-
-        ## HARD RULE — no invention
-
-
-        The authoritative interface declarations are inlined below
-
-        under "§ AUTHORITATIVE INTERFACE DECLARATIONS". For any task
-
-        touching memory, scratchpad, or skill adapters, your
-
-        files_to_create MUST use those exact declarations verbatim.
-
-        Do not paraphrase, rename, reshape, or simplify.
-
-
-        Your plan_citations array MUST quote the relevant blocks
-
-        verbatim (use the exact text between the ```ts fences). If
-
-        plan_citations is empty or paraphrased, your memo is
-
-        structurally invalid.
-
-
-        ## Citation format
-
-
-        Each plan_citation is:
-
-
-          {
-            "file": "docs/plans/2026-04-13-openclaw-parity-plan.md",
-            "line_start": 582,
-            "line_end": 634,
-            "verbatim": "<exact copy of the code block, including newlines>"
-          }
-
-        ## files_to_create
-
-
-        Every `key_types` entry must appear verbatim in a
-
-        plan_citation. Your `purpose` field must cite which plan
-
-        section the interface comes from.
-
-
-        For the supporting types that are referenced but not fully
-
-        declared in the main interface block (CorpusOf, NarrativeEntry,
-
-        DocBatch, etc.), use the placeholder declarations from the
-
-        "Supporting types" block below.
-
-
-        ## § AUTHORITATIVE INTERFACE DECLARATIONS (plan lines 582-686)
-
-
-        These come verbatim from
-
-        `docs/plans/2026-04-13-openclaw-parity-plan.md`. They are the
-
-        source of truth.
-
-
-        ### MemoryAdapter + corpus sub-interfaces
-
-        (plan lines 582-634)
-
-
-        ```ts
-
-        // packages/agent-sdk/src/memory-adapter.ts
-
-
-        export interface MemoryAdapter {
-
-
-          /** Open or create a named corpus. Backend resolved per-corpus from config. */
-          corpus<K extends CorpusKind>(
-            workspaceId: string,
-            name: string,
-            kind: K,
-          ): Promise<CorpusOf<K>>;
-
-          /** Enumerate corpora registered in this workspace. */
-          list(workspaceId: string): Promise<CorpusMetadata[]>;
-
-          /** Bootstrap block injected into agent system prompt at session start.
-           *  A *view* over one or more narrative corpora. */
-          bootstrap(workspaceId: string, agentId: string): Promise<string>;
-
-          /** Versioned history — leapfrog dimension #2. */
-          history(workspaceId: string, filter?: HistoryFilter): Promise<HistoryEntry[]>;
-          rollback(workspaceId: string, corpus: string, toVersion: string): Promise<void>;
-        }
-
-
-        export type CorpusKind = "narrative" | "retrieval" | "dedup" | "kv";
-
-
-        export interface NarrativeCorpus {
-
-
-          append(entry: NarrativeEntry): Promise<NarrativeEntry>;
-          read(opts?: { since?: string; limit?: number }): Promise<NarrativeEntry[]>;
-          search(query: string, opts?: SearchOpts): Promise<NarrativeEntry[]>;
-          forget(id: string): Promise<void>;
-          render(): Promise<string>;
-        }
-
-
-        export interface RetrievalCorpus {
-
-
-          ingest(docs: DocBatch, opts?: IngestOpts): Promise<IngestResult>;
-          query(q: RetrievalQuery, opts?: RetrievalOpts): Promise<Hit[]>;
-          stats(): Promise<RetrievalStats>;
-          reset(): Promise<void>;
-        }
-
-
-        export interface DedupCorpus {
-
-
-          append(namespace: string, entry: DedupEntry, ttlHours?: number): Promise<void>;
-          filter(namespace: string, field: string, values: unknown[]): Promise<unknown[]>;
-          clear(namespace: string): Promise<void>;
-        }
-
-
-        export interface KVCorpus {
-
-
-          get<T = unknown>(key: string): Promise<T | undefined>;
-          set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
-          delete(key: string): Promise<void>;
-          list(prefix?: string): Promise<string[]>;
-        }
-
-        ```
-
-
-        ### Supporting types (use verbatim — same file)
-
-
-        These are referenced by the interfaces above but not fully
-
-        declared in the plan. The coder must include these in
-
-        memory-adapter.ts as placeholder aliases:
-
-
-        ```ts
-
-        export type CorpusOf<K extends CorpusKind> =
-
-
-          K extends "narrative" ? NarrativeCorpus :
-          K extends "retrieval" ? RetrievalCorpus :
-          K extends "dedup" ? DedupCorpus :
-          K extends "kv" ? KVCorpus :
-          never;
-
-        export interface CorpusMetadata {
-
-
-          name: string;
-          kind: CorpusKind;
-          workspaceId: string;
-        }
-
-
-        export interface NarrativeEntry {
-
-
-          id: string;
-          text: string;
-          author?: string;
-          createdAt: string;
-          metadata?: Record<string, unknown>;
-        }
-
-
-        export interface SearchOpts { limit?: number; }
-
-        export interface DocBatch { docs: Array<{ id: string; text: string; metadata?: Record<string, unknown> }>; }
-
-        export interface IngestOpts { chunker?: string; embedder?: string; }
-
-        export interface IngestResult { ingested: number; skipped: number; }
-
-        export interface RetrievalQuery { text: string; topK?: number; }
-
-        export interface RetrievalOpts { filter?: Record<string, unknown>; }
-
-        export interface Hit { id: string; score: number; text: string; metadata?: Record<string, unknown>; }
-
-        export interface RetrievalStats { count: number; sizeBytes: number; }
-
-        export interface DedupEntry { [field: string]: unknown; }
-
-        export interface HistoryFilter { corpus?: string; since?: string; limit?: number; }
-
-        export interface HistoryEntry { version: string; corpus: string; at: string; summary: string; }
-
-        ```
-
-
-        ### ScratchpadAdapter
-
-        (plan lines 653-667)
-
-
-        ```ts
-
-        // packages/agent-sdk/src/scratchpad-adapter.ts
-
-
-        import type { NarrativeEntry } from "./memory-adapter.ts";
-
-
-        export interface ScratchpadChunk {
-
-
-          id: string;
-          kind: string;
-          body: string;
-          createdAt: string;
-        }
-
-
-        export interface ScratchpadAdapter {
-
-
-          append(sessionKey: string, chunk: ScratchpadChunk): Promise<void>;
-          read(sessionKey: string, opts?: { since?: string }): Promise<ScratchpadChunk[]>;
-          clear(sessionKey: string): Promise<void>;
-          /** Promote a chunk into a narrative corpus. Agent-gated by config. */
-          promote(
-            sessionKey: string,
-            chunkId: string,
-            target: { workspaceId: string; corpus: string },
-          ): Promise<NarrativeEntry>;
-        }
-
-        ```
-
-
-        ### SkillAdapter
-
-        (plan lines 673-686)
-
-
-        ```ts
-
-        // packages/agent-sdk/src/skill-adapter.ts
-
-
-        import type { AgentSkill } from "./types.ts";
-
-
-        export interface SkillMetadata {
-
-
-          name: string;
-          description: string;
-          version: string;
-        }
-
-
-        export interface ResolvedSkill extends AgentSkill {
-
-
-          version: string;
-        }
-
-
-        export interface SkillDraft {
-
-
-          name: string;
-          description: string;
-          instructions: string;
-          referenceFiles?: Record<string, string>;
-        }
-
-
-        export interface SkillVersion {
-
-
-          version: string;
-          createdAt: string;
-          summary: string;
-        }
-
-
-        export interface SkillAdapter {
-
-
-          list(workspaceId: string, agentId?: string): Promise<SkillMetadata[]>;
-          get(workspaceId: string, name: string): Promise<ResolvedSkill | undefined>;
-          create(workspaceId: string, draft: SkillDraft): Promise<ResolvedSkill>;
-          update(workspaceId: string, name: string, patch: Partial<SkillDraft>): Promise<ResolvedSkill>;
-          /** Versioned history — leapfrog dimension #2. */
-          history(workspaceId: string, name: string): Promise<SkillVersion[]>;
-          rollback(workspaceId: string, name: string, toVersion: string): Promise<ResolvedSkill>;
-          invalidate(workspaceId: string): void;
-        }
-
-        ```
-
-
-        ## § END AUTHORITATIVE INTERFACE DECLARATIONS
-
-
-        ## Output
-
-
-        Structured JSON conforming to the design-memo-result data
-
-        contract. plan_citations must be non-empty and contain the
-
-        relevant verbatim blocks. files_to_create must list the
-
-        three adapter files (and index.ts modification). Every
-
-        key_types entry must appear in a plan_citation.
-
-      temperature: 0.3
+    description: >-
+      Reads the current parity plan and the current source on disk before
+      producing a design memo. Has fs access via claude-code. Free to
+      propose extensions and refactors when the task's premise is stale
+      or incomplete. Replaces the kneecapped 2026-04-13 type:llm version
+      that hardcoded a Phase-1 interface snapshot.
+    type: atlas
+    agent: claude-code
+    prompt: |
+      You are the architect for the FAST Improvements (Source) workspace.
+      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+
+      Your input contains a task_id, task_brief, and (optionally)
+      target_files. Your output is a design memo conforming to the
+      design-memo-result data contract.
+
+      Workflow:
+
+      1. Read the parity plan section that matches your task at
+         docs/plans/2026-04-13-openclaw-parity-plan.md. Use grep / file
+         search to find the relevant phase. Read +/- 50 lines of context
+         around any cited block.
+
+      2. Read the existing source files in the relevant area. For adapter
+         tasks: packages/agent-sdk/src/. For workspace schema tasks:
+         packages/workspace/src/config-schema.ts. For agents:
+         agents/<id>/agent.py. For kernel jobs: workspaces/fast-loop/.
+         Form a mental model of what already exists before designing.
+
+      3. Read the @tempest/parity-plan-context skill if it has navigation
+         hints relevant to your task class.
+
+      4. Decide an implementation. You ARE FREE TO:
+         - Propose new types, helper modules, or refactors.
+         - Flag that the task's premise is stale (the file the brief
+           asked you to create already exists with a different shape;
+           the interface in the plan diverges from current code; etc.).
+         - Suggest a counter-proposal in your integration_notes that
+           the reviewer can BLOCK on if it disagrees with the operator.
+
+      5. Produce design-memo-result with:
+         - plan_citations: array of {file, line_start, line_end, verbatim}.
+           Each verbatim must be a real exact-text quote from the file
+           you READ. The reviewer will verify by re-reading the file.
+         - files_to_create: list of {path, purpose, key_types}. Every
+           key_types entry must reference a real type the coder will
+           create or that already exists in the codebase.
+         - files_to_modify: list of {path, changes}.
+         - tests_needed: list.
+         - integration_notes: prose describing how this fits with
+           existing code, including any cross-file invariants the coder
+           must preserve.
+
+      HARD RULES:
+
+      - If task touches a Zod-validated config file (workspace.yml,
+        atlas.yml, agents.yml), files_to_modify MUST include the
+        corresponding schema file (packages/workspace/src/config-schema.ts
+        or packages/config/src/*). The reviewer will BLOCK if missing.
+      - If task touches an agent.py, files_to_modify MUST mention the
+        version bump and the agents/<id>/test_*.py file.
+      - plan_citations: every verbatim must match the actual file
+        content. The reviewer reads the file and diffs.
+      - Do not invent file paths. If you reference a file, it must
+        either exist or be in files_to_create.
+
+      You are NOT bound to any single source-of-truth interface block.
+      The plan and the code are the source of truth. If they disagree,
+      your memo must say so explicitly and propose how to reconcile.
+    env:
+      ANTHROPIC_API_KEY: from_environment
   coder:
     type: atlas
     agent: claude-code

@@ -256,4 +256,30 @@ describe("memory bootstrap injection", () => {
     expect(capturedPrompts[0]).not.toMatch(/^\n/);
     expect(capturedPrompts[0]).toContain("do the task");
   });
+
+  it("hot-reads flag per-invocation — toggling env var mid-process takes effect", async () => {
+    delete process.env.ATLAS_MEMORY_BOOTSTRAP;
+    mockBootstrapFn.mockResolvedValue("## MEMORY");
+
+    await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
+      await runtime.processSignal({
+        id: "test-signal",
+        type: "test-signal",
+        data: {},
+        timestamp: new Date(),
+      });
+      expect(mockBootstrapFn).not.toHaveBeenCalled();
+
+      process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+
+      await runtime.processSignal({
+        id: "test-signal",
+        type: "test-signal",
+        data: {},
+        timestamp: new Date(),
+      });
+      expect(mockBootstrapFn).toHaveBeenCalledOnce();
+      expect(capturedPrompts[1]).toMatch(/^## MEMORY\n\n/);
+    });
+  });
 });

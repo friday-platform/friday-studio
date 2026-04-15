@@ -19,7 +19,7 @@ export const SkillMetadataSchema = z.object({
 });
 
 export const SkillDraftSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   description: z.string(),
   instructions: z.string(),
   referenceFiles: z.record(z.string(), z.string()).optional(),

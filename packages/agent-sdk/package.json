@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./backends": "./src/backends/index.ts",
     "./types": "./src/types.ts",
     "./vercel-helpers": "./src/vercel-helpers/index.ts"
   },

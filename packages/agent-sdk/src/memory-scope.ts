@@ -1,54 +1,57 @@
 /**
- * Memory Scope Runtime Types
+ * Three-Scope Memory Model
  *
- * Discriminated union types for scope-aware routing within the MemoryAdapter
- * implementation. MountMode, MountDeclaration, ResolvedMount, and MountRegistry
- * are re-exported from memory-scope-model.ts (the canonical reference).
+ * Canonical source for the memory scope taxonomy:
+ *   1. GLOBAL  — synthetic workspace id "_global", write-gated to kernel
+ *   2. PER-WORKSPACE — owned by exactly one workspace at ~/.atlas/memory/{wsId}/
+ *   3. MOUNTED — runtime alias resolved by MountRegistry from workspace.yml mounts
  *
- * ScopePolicy and CallerRole are runtime enforcement types used by the adapter
- * to gate writes on the GLOBAL scope.
+ * The MemoryAdapter interface is scope-agnostic at the call site. The
+ * workspaceId parameter is the scope discriminator:
+ *   - "_global"      → GLOBAL scope, write-gated
+ *   - "<real-slug>"  → PER-WORKSPACE or MOUNTED (MountRegistry resolves)
+ *
+ * From the OpenClaw parity plan v6, three-scope design memo.
  */
 
 import { z } from "zod";
-import type { MountMode } from "./memory-scope-model.ts";
-import { MountDeclarationSchema } from "./memory-scope-model.ts";
 
 // ── Zod schemas ─────────────────────────────────────────────────────────────
 
-export const MemoryMountsConfigSchema = z.object({
-  mounts: z.array(MountDeclarationSchema).default([]),
+export const MountDeclarationSchema = z.object({
+  alias: z.string().min(1),
+  sourceWorkspaceId: z.string().min(1),
+  sourceCorpus: z.string().min(1),
+  mode: z.enum(["read", "read-write"]),
 });
 
-export const ScopePolicySchema = z.object({
-  workspaceId: z.string(),
-  writeAllowed: z.boolean(),
-  requiredRole: z.enum(["kernel", "instance-admin", "workspace-owner", "any"]).default("any"),
+export const WorkspaceMemoryConfigSchema = z.object({
+  mounts: z.array(MountDeclarationSchema).optional().default([]),
 });
 
 // ── TypeScript types ────────────────────────────────────────────────────────
 
-export type MemoryMountsConfig = z.infer<typeof MemoryMountsConfigSchema>;
+export type MemoryScope = "global" | "workspace" | "mounted";
 
-export type ScopePolicy = z.infer<typeof ScopePolicySchema>;
+export type MountMode = "read" | "read-write";
 
-export type CallerRole = "kernel" | "instance-admin" | "workspace-owner" | "any";
-
-export interface MemoryScopeGlobal {
-  readonly kind: "global";
-  readonly workspaceId: "_global";
+export interface MountDeclaration {
+  alias: string;
+  sourceWorkspaceId: string;
+  sourceCorpus: string;
+  mode: MountMode;
 }
 
-export interface MemoryScopePerWorkspace {
-  readonly kind: "per-workspace";
-  readonly workspaceId: string;
+export interface MountRegistryEntry {
+  consumerWorkspaceId: string;
+  mount: MountDeclaration;
+  resolvedAt: string;
 }
 
-export interface MemoryScopeMounted {
-  readonly kind: "mounted";
-  readonly alias: string;
-  readonly ownerWorkspaceId: string;
-  readonly corpus: string;
-  readonly mode: MountMode;
+export interface MountRegistry {
+  resolve(consumerWorkspaceId: string, alias: string): MountRegistryEntry | undefined;
+  listByConsumer(consumerWorkspaceId: string): MountRegistryEntry[];
+  listBySource(sourceWorkspaceId: string, sourceCorpus: string): MountRegistryEntry[];
+  register(consumerWorkspaceId: string, mounts: MountDeclaration[]): Promise<void>;
+  deregister(consumerWorkspaceId: string): void;
 }
-
-export type MemoryScope = MemoryScopeGlobal | MemoryScopePerWorkspace | MemoryScopeMounted;

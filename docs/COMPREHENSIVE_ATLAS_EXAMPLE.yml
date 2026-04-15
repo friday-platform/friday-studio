@@ -24,6 +24,16 @@ workspace:
 #             human or elevated-agent review. No live mutation.
 improvement: auto
 
+# Cross-workspace corpus mounts — expose corpora from other workspaces as
+# read (or read_write) sources for agents in this workspace.
+# kind: narrative | retrieval | dedup | kv
+# mode: read (default) | write | read_write
+corpus_mounts:
+  - workspace: thick_endive
+    corpus: reflections
+    kind: narrative
+    mode: read
+
 skills:
   - name: '@tempest/fast-self-modification'
 
@@ -83,21 +93,47 @@ jobs:
       timeout: 30m
       max_steps: 20
 
+  # Example FSM-based review job demonstrating job-level corpus output keys.
+  review-findings:
+    name: review-findings
+    description: Reviews workspace state and writes findings to a corpus.
+    title: Review Findings
+    triggers:
+      - signal: nightly-cron
+    fsm:
+      initial: idle
+      states: {}
+
+    # Declares where this job's findings are written.
+    outputs:
+      corpus: notes
+      entryKind: finding
+
+    # Declares which YAML path the downstream improvement applier reads.
+    improvement_key_convention:
+      scoped: "jobs.{target_job_id}.improvement"
+      default: "workspace.improvement"
+
+    # Classes of changes this job is NOT allowed to propose findings about.
+    scope_exclusions:
+      - skills
+      - source
+
 agents:
   worker:
     type: llm
-    name: Worker Agent
     description: Handles on-demand tasks.
     config:
+      provider: anthropic
       model: claude-sonnet-4-5-20250514
       prompt: >-
         You are a task worker. Execute the requested task and report results.
 
   scanner:
     type: llm
-    name: Scanner Agent
     description: Scans for workspace configuration drift.
     config:
+      provider: anthropic
       model: claude-sonnet-4-5-20250514
       prompt: >-
         You are a workspace scanner. Identify configuration drift and

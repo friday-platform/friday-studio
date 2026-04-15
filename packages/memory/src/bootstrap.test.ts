@@ -7,13 +7,14 @@ import type {
   NarrativeEntry,
 } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
-import type { MountConfig, RenderedMount } from "./bootstrap.ts";
+import type { AgentMountConfig } from "./bootstrap.ts";
 import {
   applyFilter,
+  buildBootstrap,
   buildBootstrapBlock,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_TOTAL_MAX_BYTES,
-  renderMounts,
+  renderSection,
   resolveBootstrap,
   sortByPriorityDesc,
   truncateToBytes,
@@ -65,6 +66,18 @@ describe("applyFilter", () => {
     expect(result.map((e) => e.text)).toEqual(["low", "exact"]);
   });
 
+  it("conjunction — all predicates must pass", () => {
+    const entries = [
+      entry({ text: "both-match", metadata: { status: "pending", category: "bug" } }),
+      entry({ text: "status-only", metadata: { status: "pending", category: "feature" } }),
+      entry({ text: "category-only", metadata: { status: "done", category: "bug" } }),
+      entry({ text: "neither", metadata: { status: "done", category: "feature" } }),
+    ];
+    const result = applyFilter(entries, { status: "pending", category: "bug" });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.text).toBe("both-match");
+  });
+
   it("unknown filter key does not reject entries (permissive policy)", () => {
     const entries = [
       entry({ text: "a", metadata: { status: "pending" } }),
@@ -95,23 +108,30 @@ describe("truncateToBytes", () => {
       entry({ text: longText }),
       entry({ text: longText }),
     ];
-    const result = truncateToBytes(entries, 600);
-    expect(result.length).toBeLessThan(3);
-    expect(result.length).toBeGreaterThan(0);
+    const { entries: kept } = truncateToBytes(entries, 600);
+    expect(kept.length).toBeLessThan(3);
+    expect(kept.length).toBeGreaterThan(0);
   });
 
   it("never truncates mid-entry", () => {
     const entries = [entry({ text: "short" }), entry({ text: "x".repeat(1000) })];
-    const result = truncateToBytes(entries, 100);
-    for (const e of result) {
+    const { entries: kept } = truncateToBytes(entries, 100);
+    for (const e of kept) {
       expect(e.text).toBe("short");
     }
   });
 
   it("returns all entries when total is under cap", () => {
     const entries = [entry({ text: "short" }), entry({ text: "also short" })];
-    const result = truncateToBytes(entries, DEFAULT_MOUNT_MAX_BYTES);
-    expect(result).toHaveLength(2);
+    const { entries: kept, truncated } = truncateToBytes(entries, DEFAULT_MOUNT_MAX_BYTES);
+    expect(kept).toHaveLength(2);
+    expect(truncated).toBe(false);
+  });
+
+  it("sets truncated flag when entries are dropped", () => {
+    const entries = [entry({ text: "x".repeat(500) }), entry({ text: "x".repeat(500) })];
+    const { truncated } = truncateToBytes(entries, 100);
+    expect(truncated).toBe(true);
   });
 });
 
@@ -139,36 +159,27 @@ describe("sortByPriorityDesc", () => {
   });
 });
 
-// ── renderMounts ────────────────────────────────────────────────────────────
+// ── renderSection ──────────────────────────────────────────────────────────
 
-describe("renderMounts", () => {
-  it("produces one ## section per mount with bullet entries", () => {
-    const mounts: RenderedMount[] = [
-      {
-        name: "tasks",
-        entries: [entry({ text: "Task A" }), entry({ text: "Task B" })],
-        bytesUsed: 100,
-      },
-      { name: "notes", entries: [entry({ text: "Note 1" })], bytesUsed: 50 },
-    ];
-    const result = renderMounts(mounts);
+describe("renderSection", () => {
+  it("produces a ## heading with bullet entries", () => {
+    const entries = [entry({ text: "Task A" }), entry({ text: "Task B" })];
+    const result = renderSection("tasks", entries, false);
     expect(result).toContain("## tasks");
     expect(result).toContain("- Task A");
     expect(result).toContain("- Task B");
-    expect(result).toContain("## notes");
-    expect(result).toContain("- Note 1");
-    const sectionCount = (result.match(/^## /gm) ?? []).length;
-    expect(sectionCount).toBe(2);
   });
 
-  it("omits mounts with zero entries after filtering", () => {
-    const mounts: RenderedMount[] = [
-      { name: "populated", entries: [entry({ text: "visible" })], bytesUsed: 50 },
-      { name: "empty", entries: [], bytesUsed: 0 },
-    ];
-    const result = renderMounts(mounts);
-    expect(result).toContain("## populated");
-    expect(result).not.toContain("## empty");
+  it("appends truncated comment when truncated is true", () => {
+    const entries = [entry({ text: "visible" })];
+    const result = renderSection("data", entries, true);
+    expect(result).toContain("<!-- truncated -->");
+  });
+
+  it("omits truncated comment when truncated is false", () => {
+    const entries = [entry({ text: "visible" })];
+    const result = renderSection("data", entries, false);
+    expect(result).not.toContain("<!-- truncated -->");
   });
 });
 
@@ -197,19 +208,65 @@ function mockAdapter(corpora: Record<string, NarrativeEntry[]>): MemoryAdapter {
 }
 
 describe("buildBootstrapBlock", () => {
+  it("calls corpus() with correct kind='narrative'", async () => {
+    const data = [entry({ text: "test" })];
+    const kindsSeen: string[] = [];
+
+    const adapter: MemoryAdapter = {
+      corpus<K extends CorpusKind>(_wid: string, _name: string, kind: K): Promise<CorpusOf<K>> {
+        kindsSeen.push(kind);
+        const narrativeCorpus: NarrativeCorpus = {
+          read: () => Promise.resolve(data),
+          append: (e: NarrativeEntry) => Promise.resolve(e),
+          search: () => Promise.resolve([]),
+          forget: () => Promise.resolve(),
+          render: () => Promise.resolve(""),
+        };
+        const result: unknown = narrativeCorpus;
+        return Promise.resolve(result as CorpusOf<K>);
+      },
+      list: () => Promise.resolve([]),
+      bootstrap: () => Promise.resolve(""),
+      history: () => Promise.resolve([]),
+      rollback: () => Promise.resolve(),
+    };
+
+    await buildBootstrapBlock(adapter, "ws-1", [{ name: "tasks", corpus: "my-corpus" }]);
+    expect(kindsSeen).toEqual(["narrative"]);
+  });
+
+  it("sections appear in mount declaration order", async () => {
+    const adapter = mockAdapter({
+      alpha: [entry({ text: "A1" })],
+      beta: [entry({ text: "B1" })],
+      gamma: [entry({ text: "G1" })],
+    });
+    const mounts: AgentMountConfig[] = [
+      { name: "alpha", corpus: "alpha" },
+      { name: "beta", corpus: "beta" },
+      { name: "gamma", corpus: "gamma" },
+    ];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
+    const alphaIdx = result.indexOf("## alpha");
+    const betaIdx = result.indexOf("## beta");
+    const gammaIdx = result.indexOf("## gamma");
+    expect(alphaIdx).toBeLessThan(betaIdx);
+    expect(betaIdx).toBeLessThan(gammaIdx);
+  });
+
   it("total output is capped at DEFAULT_TOTAL_MAX_BYTES (32 KB)", async () => {
     const bigText = "x".repeat(2000);
     const bigEntries = Array.from({ length: 20 }, (_, i) => entry({ text: `${bigText}-${i}` }));
 
     const adapter = mockAdapter({ c1: bigEntries, c2: bigEntries, c3: bigEntries });
 
-    const mounts: MountConfig[] = [
-      { corpus: "c1", kind: "narrative", bootstrap: { maxBytes: 20000 } },
-      { corpus: "c2", kind: "narrative", bootstrap: { maxBytes: 20000 } },
-      { corpus: "c3", kind: "narrative", bootstrap: { maxBytes: 20000 } },
+    const mounts: AgentMountConfig[] = [
+      { name: "c1", corpus: "c1", bootstrap: { maxBytes: 20000 } },
+      { name: "c2", corpus: "c2", bootstrap: { maxBytes: 20000 } },
+      { name: "c3", corpus: "c3", bootstrap: { maxBytes: 20000 } },
     ];
 
-    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts, {
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts, {
       totalMaxBytes: DEFAULT_TOTAL_MAX_BYTES,
     });
     const encoder = new TextEncoder();
@@ -226,13 +283,13 @@ describe("buildBootstrapBlock", () => {
 
     const adapter = mockAdapter({ corpus1: entries });
 
-    const smallCap: MountConfig[] = [
-      { corpus: "corpus1", kind: "narrative", bootstrap: { maxBytes: 256 } },
+    const smallCap: AgentMountConfig[] = [
+      { name: "corpus1", corpus: "corpus1", bootstrap: { maxBytes: 256 } },
     ];
-    const defaultCap: MountConfig[] = [{ corpus: "corpus1", kind: "narrative" }];
+    const defaultCap: AgentMountConfig[] = [{ name: "corpus1", corpus: "corpus1" }];
 
-    const smallResult = await buildBootstrapBlock(adapter, "ws-1", "agent-1", smallCap);
-    const defaultResult = await buildBootstrapBlock(adapter, "ws-1", "agent-1", defaultCap);
+    const smallResult = await buildBootstrapBlock(adapter, "ws-1", smallCap);
+    const defaultResult = await buildBootstrapBlock(adapter, "ws-1", defaultCap);
 
     const smallBullets = smallResult.split("\n").filter((l) => l.startsWith("- "));
     const defaultBullets = defaultResult.split("\n").filter((l) => l.startsWith("- "));
@@ -245,13 +302,95 @@ describe("buildBootstrapBlock", () => {
     );
 
     const adapter = mockAdapter({ corpus1: entries });
-    const mounts: MountConfig[] = [{ corpus: "corpus1", kind: "narrative" }];
+    const mounts: AgentMountConfig[] = [{ name: "corpus1", corpus: "corpus1" }];
 
-    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     const bullets = result.split("\n").filter((l) => l.startsWith("- "));
     const encoder = new TextEncoder();
     const bulletBytes = encoder.encode(bullets.map((b) => b + "\n").join("")).byteLength;
     expect(bulletBytes).toBeLessThanOrEqual(DEFAULT_MOUNT_MAX_BYTES);
+  });
+
+  it("returns empty string when agent has no bound mounts", async () => {
+    const adapter = mockAdapter({});
+    const result = await buildBootstrapBlock(adapter, "ws-1", []);
+    expect(result).toBe("");
+  });
+
+  it("applies arbitrary metadata equality filters end-to-end", async () => {
+    const adapter = mockAdapter({
+      tasks: [
+        entry({ text: "match", metadata: { category: "bug", team: "infra" } }),
+        entry({ text: "wrong-cat", metadata: { category: "feature", team: "infra" } }),
+        entry({ text: "wrong-team", metadata: { category: "bug", team: "frontend" } }),
+      ],
+    });
+    const mounts: AgentMountConfig[] = [
+      { name: "tasks", corpus: "tasks", filter: { category: "bug", team: "infra" } },
+    ];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
+    expect(result).toContain("- match");
+    expect(result).not.toContain("wrong-cat");
+    expect(result).not.toContain("wrong-team");
+  });
+
+  it("sorts surviving entries by priority desc before truncation", async () => {
+    const adapter = mockAdapter({
+      tasks: [
+        entry({ text: "low", metadata: { priority: 10 } }),
+        entry({ text: "high", metadata: { priority: 99 } }),
+        entry({ text: "mid", metadata: { priority: 50 } }),
+      ],
+    });
+    const mounts: AgentMountConfig[] = [{ name: "tasks", corpus: "tasks" }];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
+    const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+    expect(bullets).toEqual(["- high", "- mid", "- low"]);
+  });
+
+  it("renders each mount as a '## <name>' section with bullet-point entries", async () => {
+    const adapter = mockAdapter({
+      alpha: [entry({ text: "A1" }), entry({ text: "A2" })],
+      beta: [entry({ text: "B1" })],
+    });
+    const mounts: AgentMountConfig[] = [
+      { name: "alpha", corpus: "alpha" },
+      { name: "beta", corpus: "beta" },
+    ];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
+    expect(result).toContain("## alpha");
+    expect(result).toContain("- A1");
+    expect(result).toContain("- A2");
+    expect(result).toContain("## beta");
+    expect(result).toContain("- B1");
+  });
+
+  it("sections are joined by double newline", async () => {
+    const adapter = mockAdapter({
+      first: [entry({ text: "F1" })],
+      second: [entry({ text: "S1" })],
+    });
+    const mounts: AgentMountConfig[] = [
+      { name: "first", corpus: "first" },
+      { name: "second", corpus: "second" },
+    ];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
+    expect(result).toContain("## first\n- F1\n\n## second\n- S1");
+  });
+
+  it("with multiple mounts — earlier mounts are fully included before later ones are truncated", async () => {
+    const bigEntries = Array.from({ length: 50 }, (_, i) =>
+      entry({ text: `entry-${i} ${"x".repeat(500)}`, metadata: { priority: 50 - i } }),
+    );
+    const smallEntries = [entry({ text: "small" })];
+    const adapter = mockAdapter({ big: bigEntries, small: smallEntries });
+    const mounts: AgentMountConfig[] = [
+      { name: "big", corpus: "big", bootstrap: { maxBytes: 8192 } },
+      { name: "small", corpus: "small" },
+    ];
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts, { totalMaxBytes: 8200 });
+    expect(result).toContain("## big");
+    expect(result).not.toContain("## small");
   });
 
   it("returns empty string when all mounts have zero filtered entries", async () => {
@@ -259,11 +398,11 @@ describe("buildBootstrapBlock", () => {
       empty: [entry({ text: "done item", metadata: { status: "done" } })],
     });
 
-    const mounts: MountConfig[] = [
-      { corpus: "empty", kind: "narrative", filter: { status: "pending" } },
+    const mounts: AgentMountConfig[] = [
+      { name: "empty", corpus: "empty", filter: { status: "pending" } },
     ];
 
-    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     expect(result).toBe("");
   });
 });
@@ -281,11 +420,11 @@ describe("integration", () => {
       ],
     });
 
-    const mounts: MountConfig[] = [
-      { corpus: "tasks", kind: "narrative", filter: { status: "pending", priority_min: 90 } },
+    const mounts: AgentMountConfig[] = [
+      { name: "tasks", corpus: "tasks", filter: { status: "pending", priority_min: 90 } },
     ];
 
-    const result = await buildBootstrapBlock(adapter, "ws-1", "agent-1", mounts);
+    const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     expect(result).toContain("High-prio pending");
     expect(result).not.toContain("Low-prio pending");
     expect(result).not.toContain("High-prio done");
@@ -371,5 +510,74 @@ describe("resolveBootstrap", () => {
     });
     const result = await resolveBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("Narrative content");
+  });
+});
+
+// ── buildBootstrap ───────────────────────────────────────────────────────
+
+describe("buildBootstrap", () => {
+  it("returns empty string when no narrative corpora exist", async () => {
+    const adapter = mockResolveAdapter([], {});
+    const result = await buildBootstrap(adapter, "ws-1", "agent-1");
+    expect(result).toBe("");
+  });
+
+  it("only renders narrative corpora — skips retrieval, dedup, kv", async () => {
+    const corpora: CorpusMetadata[] = [
+      { name: "notes", kind: "narrative", workspaceId: "ws-1" },
+      { name: "docs", kind: "retrieval", workspaceId: "ws-1" },
+      { name: "cache", kind: "dedup", workspaceId: "ws-1" },
+      { name: "flags", kind: "kv", workspaceId: "ws-1" },
+    ];
+    const adapter = mockResolveAdapter(corpora, {
+      notes: "Important notes",
+      docs: "Should not appear",
+      cache: "Should not appear",
+      flags: "Should not appear",
+    });
+    const result = await buildBootstrap(adapter, "ws-1", "agent-1");
+    expect(result).toBe("Important notes");
+  });
+
+  it("returns empty string when all corpus renders are whitespace-only", async () => {
+    const corpora: CorpusMetadata[] = [
+      { name: "c1", kind: "narrative", workspaceId: "ws-1" },
+      { name: "c2", kind: "narrative", workspaceId: "ws-1" },
+    ];
+    const adapter = mockResolveAdapter(corpora, { c1: "   ", c2: "\n\t\n" });
+    const result = await buildBootstrap(adapter, "ws-1", "agent-1");
+    expect(result).toBe("");
+  });
+
+  it("concatenates multiple narrative corpus renders with double-newline separator", async () => {
+    const corpora: CorpusMetadata[] = [
+      { name: "c1", kind: "narrative", workspaceId: "ws-1" },
+      { name: "c2", kind: "narrative", workspaceId: "ws-1" },
+    ];
+    const adapter = mockResolveAdapter(corpora, { c1: "Block one", c2: "Block two" });
+    const result = await buildBootstrap(adapter, "ws-1", "agent-1");
+    expect(result).toBe("Block one\n\nBlock two");
+  });
+
+  it("propagates error when corpus.render() throws", async () => {
+    const corpora: CorpusMetadata[] = [{ name: "broken", kind: "narrative", workspaceId: "ws-1" }];
+    const adapter: MemoryAdapter = {
+      corpus<K extends CorpusKind>(_wid: string, _name: string, _kind: K): Promise<CorpusOf<K>> {
+        const narrativeCorpus: NarrativeCorpus = {
+          read: () => Promise.resolve([]),
+          append: (e: NarrativeEntry) => Promise.resolve(e),
+          search: () => Promise.resolve([]),
+          forget: () => Promise.resolve(),
+          render: () => Promise.reject(new Error("corpus unavailable")),
+        };
+        const result: unknown = narrativeCorpus;
+        return Promise.resolve(result as CorpusOf<K>);
+      },
+      list: () => Promise.resolve(corpora),
+      bootstrap: () => Promise.resolve(""),
+      history: () => Promise.resolve([]),
+      rollback: () => Promise.resolve(),
+    };
+    await expect(buildBootstrap(adapter, "ws-1", "agent-1")).rejects.toThrow("corpus unavailable");
   });
 });

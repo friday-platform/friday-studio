@@ -17,7 +17,7 @@ export const ScratchpadChunkSchema = z.object({
   id: z.string(),
   kind: z.string(),
   body: z.string(),
-  createdAt: z.string(),
+  createdAt: z.string().datetime(),
 });
 
 // ── TypeScript types ────────────────────────────────────────────────────────
