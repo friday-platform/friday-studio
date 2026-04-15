@@ -348,12 +348,13 @@ function scoreToolSelection(
 const browserCases: BrowserCase[] = [
   {
     id: "hackernews/read-front-page",
-    name: "hacker news - read dynamic list page",
-    input: "Go to Hacker News and tell me the title and URL of the current #1 story",
+    name: "hacker news - navigate into comment thread",
+    input:
+      "Go to Hacker News (news.ycombinator.com), click into the comment thread for the #1 story, and tell me the username of the user who posted the very first (top-most) comment in that thread.",
     category: "browser",
     expectedOutput:
-      "The agent navigated to Hacker News (news.ycombinator.com), read the front page, and reported the title and URL of the #1 story. The output should contain a specific story title (not generic placeholder text) and a valid external URL (not news.ycombinator.com itself). The content is dynamic so any real title and URL is acceptable -- do not penalize for unfamiliar titles.",
-    minSteps: 3,
+      "The agent navigated to Hacker News (news.ycombinator.com), clicked the comments link for the #1 story (landing on an item page like news.ycombinator.com/item?id=...), and reported the username of the first top-level comment on that item page. The response should contain a specific HN username. The #1 story and comments are dynamic, so any real username posted on the current #1 item is acceptable. If the #1 story has zero comments, the agent should say so explicitly. Fetching the HN front page HTML alone is NOT sufficient -- the task requires navigating into the comments page.",
+    minSteps: 4,
   },
   {
     id: "craigslist/search",
@@ -519,22 +520,22 @@ const failureCases: FailureCase[] = [
 const mixedModeCases: MixedModeCase[] = [
   {
     id: "search-then-browse",
-    name: "mixed - search for product then interact with site",
+    name: "mixed - search for docs site then interact with its search box",
     input:
-      "Search for the Wikipedia page about 'Rust (programming language)', then navigate to it and tell me the name of its original designer and the year it first appeared.",
+      "Use a web search to find the official documentation site for the Hono web framework. Then open the site in a browser, click into the docs site's built-in search box (the one shown in the site header, powered by Algolia/DocSearch), type the query 'validator' into it, and tell me the title of the first result shown in the search dropdown.",
     category: "mixed",
     expectedOutput:
-      "The agent searched for the Rust programming language Wikipedia page, found the URL, then browsed to it and extracted that Graydon Hoare is the original designer and Rust first appeared in 2015. The response should contain both the designer name and the year.",
+      "The agent used web search to locate hono.dev (the official Hono docs), then opened the page in a browser, clicked the site's built-in search input, typed 'validator', and reported the title of the first search-dropdown result (expected to be a Validator / Validation-related docs page such as 'Validation' or 'Zod Validator'). The answer should be a specific docs page title sourced from the live search dropdown, not a generic link guessed from the URL.",
     expectedTools: ["search", "browse"],
   },
   {
     id: "fetch-then-browse-escalation",
-    name: "mixed - fetch static page then browse dynamic page",
+    name: "mixed - fetch static page then browse interactive page",
     input:
-      "First, read the content at https://httpbin.org/html (a simple static page). Then go to Hacker News (news.ycombinator.com) and tell me the title of the #1 story. Report both: the heading from httpbin and the HN story title.",
+      "First, read the content at https://httpbin.org/html (a simple static page) and report its main heading. Then go to https://news.ycombinator.com, click the title link of the #2 story on the front page, and tell me the destination domain (the domain of the URL you landed on after clicking).",
     category: "mixed",
     expectedOutput:
-      "The agent fetched the httpbin.org/html page and extracted the heading (Herman Melville - Moby Dick). Then it browsed Hacker News and reported the #1 story title. The response should contain both the httpbin heading and a specific HN story title.",
+      "The agent fetched https://httpbin.org/html and extracted the heading (Herman Melville - Moby Dick). Then it browsed to Hacker News, clicked the title link of the #2 story, and reported the domain of the destination URL it landed on. The response should contain both the httpbin heading and a specific external domain (e.g. github.com, arxiv.org, nytimes.com -- not news.ycombinator.com itself). The #2 story is dynamic so any real destination domain is acceptable.",
     expectedTools: ["fetch", "browse"],
   },
 ];
