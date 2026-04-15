@@ -197,14 +197,16 @@ def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 @agent(
     id="autopilot-status-watcher",
-    version="1.3.0",
+    version="1.4.0",
     description=(
         "Closes the loop on autopilot dispatches. Reads the dispatch-log "
         "narrative memory, fetches each dispatched session's status, and "
         "appends completion entries to the autopilot-backlog memory so the "
         "planner stops re-picking finished tasks. No LLM call — pure "
         "observation. Runs as step_observe before step_plan in the kernel's "
-        "autopilot-tick FSM."
+        "autopilot-tick FSM. v1.4.0 adds the backlog-newer-than-dispatch "
+        "idempotency guard so operator resets + validator updates aren't "
+        "clobbered by repeated watcher runs."
     ),
     summary="Marks dispatched tasks completed in the backlog when their target sessions finish.",
     examples=[
@@ -282,6 +284,22 @@ def execute(prompt, ctx):
         if task_id in already_completed:
             skipped.append(f"{task_id}(already completed)")
             continue
+
+        # Idempotency guard: if the backlog's latest entry for this task is
+        # NEWER than the dispatch-log entry, something touched the backlog
+        # after the dispatch — operator reset, validator, reflector, or a
+        # prior tick of this same watcher. Leave it alone. The watcher only
+        # acts on dispatches that haven't been acknowledged in the backlog
+        # yet. Without this guard, the watcher re-writes a `blocked` entry
+        # for failed tasks on every tick, shadowing any operator reset to
+        # `pending`, which traps the task in blocked forever.
+        latest_backlog_entry = backlog_latest.get(task_id)
+        if latest_backlog_entry is not None:
+            backlog_at = latest_backlog_entry.get("createdAt", "")
+            dispatch_at = entry.get("createdAt", "")
+            if backlog_at and dispatch_at and backlog_at > dispatch_at:
+                skipped.append(f"{task_id}(backlog newer than dispatch)")
+                continue
 
         meta = entry.get("metadata") or {}
         session_id = meta.get("session_id")
