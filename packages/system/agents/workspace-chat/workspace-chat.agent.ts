@@ -43,10 +43,14 @@ import {
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
+import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createWorkspaceDoTask } from "./tools/do-task.ts";
+import { createFileIOTools } from "./tools/file-io.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
+import { createWebFetchTool } from "./tools/web-fetch.ts";
+import { createWebSearchTool } from "./tools/web-search.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
 const ROLE_SYSTEM = "system" as const;
@@ -543,12 +547,40 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             )
           : {};
 
+        // Ad-hoc freedom tools — modeled on Hermes + OpenClaw patterns.
+        // These give the chat agent web fetch + search + code execution +
+        // ephemeral file I/O so it can handle "look up X", "run this
+        // Python", "analyze this CSV" turns without bouncing off a narrow
+        // workspace-only tool set.
+        //
+        // - web_fetch: SSRF-guarded HTTP → markdown with content-provenance
+        //   wrapping, 15-min per-session cache, 2 MB raw / 32 KB extracted
+        //   caps, 30 s hard timeout.
+        // - web_search: Brave Search API, only registered when
+        //   BRAVE_SEARCH_API_KEY is set (Hermes `check_fn` pattern).
+        // - run_code: python3 / deno / bash subprocess in a per-session
+        //   scratch dir under {ATLAS_HOME}/scratch/{sessionId}/, 30 s
+        //   timeout, 100 KB stdout cap. No network inside the sandbox —
+        //   scripts must use web_fetch via the outer tool loop.
+        // - read_file / write_file / list_files: scoped to the same scratch
+        //   dir so multi-step workflows (fetch → save → analyze in Python
+        //   → read results) compose cleanly across turns.
+        const adHocSessionId = session.sessionId || `session-${Date.now()}`;
+        const webFetchTool = createWebFetchTool(logger);
+        const webSearchTool = createWebSearchTool(logger);
+        const runCodeTool = createRunCodeTool(adHocSessionId, logger);
+        const fileIOTools = createFileIOTools(adHocSessionId, logger);
+
         const primaryTools: AtlasTools = {
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
           ...resourceTools,
           ...createMemorySaveTool(workspaceId, logger),
+          ...webFetchTool,
+          ...webSearchTool,
+          ...runCodeTool,
+          ...fileIOTools,
           do_task: doTaskTool,
           load_skill: loadSkillTool,
         };
