@@ -1587,13 +1587,20 @@ jobs:
           type: action
           code: |
             export default function prepare_review(context, event) {
-              var targetWsId = (event.data && event.data.targetWorkspaceId) || '';
-              var sessionLimit = (event.data && event.data.sessionLimit) || 10;
+              // Cron fires with empty event.data. Fall back to the job-level
+              // config block (set on the running workspace), then to the
+              // default kernel dev target. Manual HTTP fires pass their own
+              // targetWorkspaceId in event.data which always wins.
+              var jobCfg = (context && context.config) || {};
+              var targetWsId =
+                (event.data && event.data.targetWorkspaceId) ||
+                jobCfg.targetWorkspaceId ||
+                'braised_biscuit';
+              var sessionLimit =
+                (event.data && event.data.sessionLimit) ||
+                jobCfg.sessionLimit ||
+                10;
               var jobIds = (event.data && event.data.jobIds) || null;
-
-              if (!targetWsId) {
-                throw new Error('Missing required input: targetWorkspaceId');
-              }
 
               return {
                 task: 'Review workspace ' + targetWsId + ' for drift, prompt issues, and FSM smells',
