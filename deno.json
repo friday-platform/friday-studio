@@ -47,7 +47,7 @@
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16.4.0",
     "atlas": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file apps/atlas-cli/src/otel-bootstrap.ts",
-    "atlas:dev": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file --watch apps/atlas-cli/src/otel-bootstrap.ts",
+    "atlas:dev": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file scripts/dev-watcher.ts",
     "start": "deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports apps/atlas-cli/src/otel-bootstrap.ts",
     "litellm:start": "docker run -d --name litellm-proxy -p 4000:4000 -v $HOME/.atlas/litellm-config.yaml:/app/config.yaml ghcr.io/berriai/litellm:main-latest --config /app/config.yaml",
     "litellm:stop": "docker stop litellm-proxy && docker rm litellm-proxy",
