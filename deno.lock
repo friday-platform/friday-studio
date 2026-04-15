@@ -123,7 +123,8 @@
     "npm:@types/ws@^8.18.1": "8.18.1",
     "npm:@vitest/coverage-v8@4.1.0": "4.1.0_vitest@4.1.2__@opentelemetry+api@1.9.1__@types+node@25.5.2__vite@7.3.2___@types+node@25.5.2___tsx@4.21.0___yaml@2.8.3___picomatch@4.0.4__tsx@4.21.0__yaml@2.8.3_@opentelemetry+api@1.9.1_@types+node@25.5.2_vite@7.3.2__@types+node@25.5.2__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
-    "npm:@xmldom/xmldom@~0.8.11": "0.8.12",
+    "npm:@xmldom/xmldom@0.9.9": "0.9.9",
+    "npm:@xmldom/xmldom@~0.9.9": "0.9.9",
     "npm:ai-sdk-provider-claude-code@^3.4.4": "3.4.4_zod@4.3.6",
     "npm:ai@^6.0.141": "6.0.158_zod@4.3.6",
     "npm:ai@^6.0.158": "6.0.158_zod@4.3.6",
@@ -4515,8 +4516,8 @@
     "@workflow/serde@4.1.0-beta.2": {
       "integrity": "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="
     },
-    "@xmldom/xmldom@0.8.12": {
-      "integrity": "sha512-9k/gHF6n/pAi/9tqr3m3aqkuiNosYTurLLUtc7xQ9sxB/wm7WPygCv8GYa6mS0fLJEHhqMC1ATYhz++U/lRHqg=="
+    "@xmldom/xmldom@0.9.9": {
+      "integrity": "sha512-qycIHAucxy/LXAYIjmLmtQ8q9GPnMbnjG1KXhWm9o5sCr6pOYDATkMPiTNa6/v8eELyqOQ2FsEqeoFYmgv/gJg=="
     },
     "accepts@2.0.0": {
       "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
@@ -8936,7 +8937,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@libpdf/core@~0.3.4",
             "npm:@modelcontextprotocol/sdk@1.28",
-            "npm:@xmldom/xmldom@~0.8.11",
+            "npm:@xmldom/xmldom@~0.9.9",
             "npm:ai@^6.0.158",
             "npm:chat@^4.26.0",
             "npm:jose@^6.1.3",

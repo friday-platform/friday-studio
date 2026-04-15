@@ -1,5 +1,5 @@
 import { MAX_DECOMPRESSED_SIZE } from "@atlas/core/artifacts/file-upload";
-import { DOMParser } from "@xmldom/xmldom";
+import { DOMParser, type Element } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import { ConverterError, elementAt, getChildElement, hasChildElement } from "./xml-utils.ts";
 
