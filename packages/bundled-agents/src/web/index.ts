@@ -48,7 +48,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
     ],
   },
   handler: async (prompt, { session, logger, stream, config, abortSignal }) => {
-    logger.info("Starting web agent", { prompt: prompt.slice(0, 200) });
+    logger.info(`[web] start: ${prompt.slice(0, 120).replace(/\s+/g, " ")}`);
 
     const artifactRefs: ArtifactRef[] = [];
     const outlineRefs: OutlineRef[] = [];
@@ -70,21 +70,23 @@ export const webAgent = createAgent<string, WebAgentResult>({
             { session, stream, logger, config, abortSignal },
             { artifactRefs, outlineRefs },
           ),
-          fetch: createFetchTool(),
-          browse: createBrowseTool(stream, sessionState, abortSignal),
+          fetch: createFetchTool(logger),
+          browse: createBrowseTool(stream, sessionState, abortSignal, logger),
         },
         stopWhen: stepCountIs(300),
         maxRetries: 3,
         abortSignal,
       });
 
-      logger.debug("Web agent complete", { usage: result.usage, steps: result.steps?.length ?? 0 });
+      const steps = result.steps?.length ?? 0;
+      const responseLen = result.text?.length ?? 0;
+      logger.info(`[web] done: ${steps} steps, ${responseLen} chars response`);
 
       const response = result.text || "Web task completed but no summary generated.";
 
       return ok({ response }, { artifactRefs, outlineRefs });
     } catch (error) {
-      logger.error("Web agent failed", { error });
+      logger.error(`[web] failed: ${stringifyError(error).slice(0, 200)}`);
       return err(stringifyError(error));
     } finally {
       await stopSession(sessionState);

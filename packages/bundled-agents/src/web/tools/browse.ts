@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
 import type { StreamEmitter } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -20,6 +21,12 @@ export interface SessionState {
   daemonStarted: boolean;
 }
 
+/** Truncates a command for single-line live-log output. */
+function truncate(s: string, max = 80): string {
+  const flat = s.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 /**
  * Creates the browse AI SDK tool for agent-browser CLI automation.
  *
@@ -31,11 +38,13 @@ export interface SessionState {
  * @param stream - Stream emitter for progress events
  * @param sessionState - Mutable session state shared with the handler for cleanup
  * @param abortSignal - Optional abort signal for cancellation
+ * @param logger - Optional logger for per-call progress lines (eval/debug visibility)
  */
 export function createBrowseTool(
   stream: StreamEmitter | undefined,
   sessionState: SessionState,
   abortSignal?: AbortSignal,
+  logger?: Logger,
 ) {
   return tool({
     description:
@@ -50,6 +59,9 @@ export function createBrowseTool(
     execute: async ({ command }): Promise<string> => {
       const sessionArgs = AUTO_CONNECT ? [] : ["--session", sessionState.sessionName];
       const timeout = sessionState.daemonStarted ? COMMAND_TIMEOUT_MS : FIRST_CALL_TIMEOUT_MS;
+      const short = truncate(command);
+
+      logger?.info(`[browse] ${short}`);
 
       try {
         const { stdout, stderr } = await execFileAsync(
@@ -67,11 +79,15 @@ export function createBrowseTool(
         }
 
         if (stdout.trim()) {
+          logger?.info(`[browse] ok: ${short}`);
           return stdout;
         }
+        logger?.info(`[browse] ok (stderr-only): ${short}`);
         return stderr || "(no output)";
       } catch (error: unknown) {
-        return `Error: ${formatExecError(error)}`;
+        const msg = formatExecError(error);
+        logger?.warn(`[browse] fail: ${short} — ${truncate(msg, 120)}`);
+        return `Error: ${msg}`;
       }
     },
   });
