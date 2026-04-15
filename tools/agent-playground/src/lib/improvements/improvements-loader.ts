@@ -179,6 +179,52 @@ export async function rejectBacklogEntry(entryId: string): Promise<void> {
   });
 }
 
+// Notes-sourced findings (improvement-finding entries in a workspace's
+// narrative/notes memory) are also append-only. Accept/reject/dismiss
+// writes a new entry with the same id and an updated status, preserving
+// the rest of the improvement-finding metadata so the loader's status
+// filter drops it from the inbox.
+async function upsertNotesEntryStatus(
+  workspaceId: string,
+  entryId: string,
+  status: "accepted" | "rejected" | "dismissed",
+  original: ImprovementEntry,
+): Promise<void> {
+  const url = `${PROXY_BASE}/api/memory/${encodeURIComponent(workspaceId)}/narrative/notes`;
+  await globalThis.fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: entryId,
+      text: original.text,
+      author: original.author ?? "workspace-reviewer",
+      createdAt: new Date().toISOString(),
+      metadata: { ...original.metadata, kind: "improvement-finding", status },
+    }),
+  });
+}
+
+export function acceptNotesEntry(
+  workspaceId: string,
+  finding: ImprovementEntry,
+): Promise<void> {
+  return upsertNotesEntryStatus(workspaceId, finding.id, "accepted", finding);
+}
+
+export function rejectNotesEntry(
+  workspaceId: string,
+  finding: ImprovementEntry,
+): Promise<void> {
+  return upsertNotesEntryStatus(workspaceId, finding.id, "rejected", finding);
+}
+
+export function dismissNotesEntry(
+  workspaceId: string,
+  finding: ImprovementEntry,
+): Promise<void> {
+  return upsertNotesEntryStatus(workspaceId, finding.id, "dismissed", finding);
+}
+
 async function loadWorkspaceFindings(
   workspaceId: string,
 ): Promise<ImprovementEntry[]> {
@@ -191,13 +237,28 @@ async function loadWorkspaceFindings(
 
   const workspaceLevelFlag = await fetchWorkspaceLevelFlag(workspaceId);
 
-  const findings: ImprovementEntry[] = [];
+  // Notes memory is append-only — accept/reject writes a new entry with the
+  // same id and an updated status. Dedupe by id (latest createdAt wins) so
+  // the UI only sees current truth and handled findings drop out.
+  const latestById = new Map<string, NarrativeEntry>();
   for (const entry of entries) {
+    const prior = latestById.get(entry.id);
+    if (!prior || entry.createdAt > prior.createdAt) {
+      latestById.set(entry.id, entry);
+    }
+  }
+
+  const findings: ImprovementEntry[] = [];
+  for (const entry of latestById.values()) {
     const meta = ImprovementFindingMetaSchema.safeParse(entry.metadata);
     if (!meta.success) continue;
 
     const flag = meta.data.improvement_flag ?? workspaceLevelFlag;
     if (flag !== "surface") continue;
+
+    // Filter out findings already accepted/rejected/dismissed.
+    const status = meta.data.status;
+    if (status && status !== "pending") continue;
 
     findings.push({
       id: entry.id,

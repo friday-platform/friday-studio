@@ -4,6 +4,9 @@
     loadImprovements,
     acceptBacklogEntry,
     rejectBacklogEntry,
+    acceptNotesEntry,
+    rejectNotesEntry,
+    dismissNotesEntry,
     type ImprovementEntry,
   } from "$lib/improvements/improvements-loader.ts";
   import type { WorkspaceGroup } from "$lib/improvements/types.ts";
@@ -95,10 +98,21 @@
         }
         // rollback is a no-op for backlog-sourced findings — they haven't
         // been applied yet.
+      } else if (finding.source === "notes") {
+        // Notes-sourced findings round-trip through the memory narrative
+        // route (append a new entry with status: accepted|rejected|dismissed).
+        // The /api/improvements/* routes only exist for lifecycle findings.
+        if (action === "accept") {
+          await acceptNotesEntry(finding.workspaceId, finding);
+        } else if (action === "reject") {
+          await rejectNotesEntry(finding.workspaceId, finding);
+        } else if (action === "dismiss") {
+          await dismissNotesEntry(finding.workspaceId, finding);
+        }
+        // rollback is a no-op for notes-sourced findings — same reason.
       } else {
-        // Lifecycle / notes findings go through the apply-action pipeline
-        // (POST /api/improvements/...) which remains the long-term path
-        // once the daemon-side route lands.
+        // Lifecycle findings go through the apply-action pipeline
+        // (POST /api/improvements/...).
         if (action === "accept") {
           await acceptFinding(finding.id, finding.workspaceId, finding.body);
         } else if (action === "reject") {
@@ -121,7 +135,13 @@
   async function handleDismissAll(wsGroup: WorkspaceGroup): Promise<void> {
     for (const job of wsGroup.jobs) {
       for (const finding of job.findings) {
-        await dismissFinding(finding.id, finding.workspaceId);
+        if (finding.source === "backlog") {
+          await rejectBacklogEntry(finding.id);
+        } else if (finding.source === "notes") {
+          await dismissNotesEntry(finding.workspaceId, finding);
+        } else {
+          await dismissFinding(finding.id, finding.workspaceId);
+        }
       }
     }
     await queryClient.invalidateQueries({ queryKey: ["improvements"] });
