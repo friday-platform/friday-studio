@@ -40,6 +40,7 @@ import {
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
+import { buildOnboardingClause, checkOnboardingState, createMemorySaveTool } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
 import { createWorkspaceDoTask } from "./tools/do-task.ts";
@@ -431,16 +432,23 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           workspaceId,
           foregroundCount: foregroundIds.length,
         });
-        const [workspaceDetails, wsConfigResult, linkSummary, userIdentitySection, foregrounds] =
-          await Promise.all([
-            fetchWorkspaceDetails(workspaceId, logger),
-            parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
-            fetchLinkSummary(logger),
-            fetchUserIdentitySection(logger),
-            foregroundIds.length > 0
-              ? fetchForegroundContexts(foregroundIds, logger)
-              : Promise.resolve([]),
-          ]);
+        const [
+          workspaceDetails,
+          wsConfigResult,
+          linkSummary,
+          userIdentitySection,
+          foregrounds,
+          onboardingState,
+        ] = await Promise.all([
+          fetchWorkspaceDetails(workspaceId, logger),
+          parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
+          fetchLinkSummary(logger),
+          fetchUserIdentitySection(logger),
+          foregroundIds.length > 0
+            ? fetchForegroundContexts(foregroundIds, logger)
+            : Promise.resolve([]),
+          checkOnboardingState(workspaceId, logger),
+        ]);
 
         let wsConfig: WorkspaceConfig | undefined;
         if (wsConfigResult.ok) {
@@ -528,6 +536,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...jobTools,
           ...artifactTools,
           ...resourceTools,
+          ...createMemorySaveTool(workspaceId, logger),
           do_task: doTaskTool,
           load_skill: loadSkillTool,
         };
@@ -582,20 +591,22 @@ For external services, use do_task. For artifact data, use artifacts_get.
         const resourceSection =
           resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
 
-        // Compose memory blocks from primary + foreground workspaces
-        const memoryBlocks =
-          foregroundIds.length > 0
-            ? await composeMemoryBlocks(workspaceId, foregroundIds, logger)
-            : [];
+        // Compose memory blocks from primary + foreground workspaces (always load primary)
+        const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
         const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
 
-        const systemPrompt = getSystemPrompt(workspaceSection, {
+        let systemPrompt = getSystemPrompt(workspaceSection, {
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           resources: resourceSection,
           memory: memorySection,
         });
+
+        if (onboardingState.needsOnboarding) {
+          systemPrompt = systemPrompt + "\n\n" + buildOnboardingClause();
+        }
+
         const datetimeMessage = buildTemporalFacts(session.datetime);
 
         // Capture system prompt context on first turn (fire-and-forget)
