@@ -86,12 +86,10 @@ const MAX_WAIT_MS = 30 * 60 * 1000; // 30 min — FAST sessions can legitimately
 const SHUTDOWN_GRACE_MS = 10_000;
 
 function log(msg: string): void {
-  // biome-ignore lint/suspicious/noConsole: supervisor CLI, exempt from @atlas/logger rule
   console.log(`[dev-watcher] ${msg}`);
 }
 
 function warn(msg: string): void {
-  // biome-ignore lint/suspicious/noConsole: supervisor CLI, exempt from @atlas/logger rule
   console.warn(`[dev-watcher] ${msg}`);
 }
 
@@ -141,51 +139,100 @@ function spawnDaemon(extraArgs: readonly string[]): ChildProcess {
   return child;
 }
 
-async function activeSessionCount(): Promise<number> {
+/**
+ * Query the daemon for the number of in-flight sessions.
+ *
+ * Returns:
+ *   - a non-negative integer on a clean read,
+ *   - `null` if the daemon can't be reached, returns non-OK, responds with an
+ *     unexpected shape, or the JSON fails to parse.
+ *
+ * `null` means "unknown" — the caller MUST treat it as "not safe to restart."
+ * Historical bug: this used to swallow every error and return 0, which allowed
+ * dev-watcher to SIGTERM the daemon while sessions were still running whenever
+ * a fetch hiccuped or the response shape drifted. We fail closed now.
+ */
+async function activeSessionCount(): Promise<number | null> {
+  let resp: Response;
   try {
-    const resp = await fetch(SESSIONS_URL, { signal: AbortSignal.timeout(2000) });
-    if (!resp.ok) return 0;
-    const parsed: unknown = await resp.json();
-    if (typeof parsed !== "object" || parsed === null || !("sessions" in parsed)) {
-      return 0;
-    }
-    const sessions = (parsed as { sessions: unknown }).sessions;
-    if (!Array.isArray(sessions)) return 0;
-    let count = 0;
-    for (const s of sessions) {
-      if (
-        typeof s === "object" &&
-        s !== null &&
-        "status" in s &&
-        (s as { status: unknown }).status === "active"
-      ) {
-        count += 1;
-      }
-    }
-    return count;
-  } catch {
-    return 0;
+    resp = await fetch(SESSIONS_URL, { signal: AbortSignal.timeout(2000) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    warn(`sessions fetch failed (${message}) — treating as "unknown"`);
+    return null;
   }
+  if (!resp.ok) {
+    warn(`sessions endpoint returned ${resp.status} — treating as "unknown"`);
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = await resp.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    warn(`sessions response parse failed (${message}) — treating as "unknown"`);
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("sessions" in parsed)) {
+    warn('sessions response missing `sessions` field — treating as "unknown"');
+    return null;
+  }
+  const { sessions } = parsed;
+  if (!Array.isArray(sessions)) {
+    warn('sessions field is not an array — treating as "unknown"');
+    return null;
+  }
+  let count = 0;
+  for (const s of sessions) {
+    if (typeof s === "object" && s !== null && "status" in s && s.status === "active") {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Block until the daemon is idle (no active sessions), or until MAX_WAIT_MS
+ * elapses.
+ *
+ * Fail-closed semantics: if `activeSessionCount` returns `null` ("unknown"),
+ * we keep waiting — never restart the daemon when we can't prove it's safe.
+ * The MAX_WAIT_MS escape hatch still applies, so a truly broken daemon will
+ * eventually get force-restarted, but a transient fetch hiccup won't.
+ */
 async function waitForIdle(): Promise<void> {
   const deadline = Date.now() + MAX_WAIT_MS;
   let lastLoggedAt = 0;
+  let consecutiveUnknowns = 0;
   while (Date.now() < deadline) {
     const count = await activeSessionCount();
-    if (count === 0) return;
+    if (count === 0) {
+      if (consecutiveUnknowns > 0) {
+        log(`daemon reachable again — ${count} active sessions, proceeding`);
+      }
+      return;
+    }
     const now = Date.now();
-    if (now - lastLoggedAt > 30_000) {
-      log(`waiting for ${count} active session(s) to finish before restarting...`);
-      lastLoggedAt = now;
+    if (count === null) {
+      consecutiveUnknowns += 1;
+      if (now - lastLoggedAt > 10_000) {
+        log(`session count unknown (${consecutiveUnknowns} consecutive) — waiting for clarity`);
+        lastLoggedAt = now;
+      }
+    } else {
+      consecutiveUnknowns = 0;
+      if (now - lastLoggedAt > 30_000) {
+        log(`waiting for ${count} active session(s) to finish before restarting...`);
+        lastLoggedAt = now;
+      }
     }
     await sleep(IDLE_POLL_MS);
   }
-  warn("max wait exceeded (10 min) — forcing restart anyway");
+  warn(`max wait (${Math.round(MAX_WAIT_MS / 60_000)} min) exceeded — forcing restart anyway`);
 }
 
 async function killDaemon(child: ChildProcess): Promise<void> {
@@ -204,7 +251,9 @@ async function main(): Promise<void> {
   const extraArgs = Deno.args.length > 0 ? Deno.args : ["daemon", "start"];
   let daemon = spawnDaemon(extraArgs);
   let restartInProgress = false;
-  let pendingRestart: NodeJS.Timeout | null = null;
+  // Deno's setTimeout returns number; node's returns NodeJS.Timeout. Using the
+  // runtime-agnostic ReturnType keeps this file portable across both typecheckers.
+  let pendingRestart: ReturnType<typeof setTimeout> | null = null;
 
   const shutdown = async (signal: string): Promise<void> => {
     log(`received ${signal}, shutting down daemon child`);
@@ -216,12 +265,19 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   const triggerRestart = async (changedPath: string): Promise<void> => {
-    if (restartInProgress) return;
+    if (restartInProgress) {
+      log(
+        `file change: ${path.relative(REPO_ROOT, changedPath)} — restart already in progress, ignoring`,
+      );
+      return;
+    }
     restartInProgress = true;
+    const startedAt = Date.now();
     try {
-      log(`file change: ${path.relative(REPO_ROOT, changedPath)} — waiting for idle`);
+      log(`file change: ${path.relative(REPO_ROOT, changedPath)} — waiting for daemon idle`);
       await waitForIdle();
-      log("daemon idle — restarting");
+      const waitedMs = Date.now() - startedAt;
+      log(`daemon idle after ${Math.round(waitedMs / 1000)}s — SIGTERM + respawn`);
       await killDaemon(daemon);
       daemon = spawnDaemon(extraArgs);
     } finally {
