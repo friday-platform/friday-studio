@@ -61,7 +61,7 @@
 
   const transport = $derived(
     new DefaultChatTransport({
-      api: apiEndpoint ?? `${getAtlasDaemonUrl()}/api/chat`,
+      api: apiEndpoint ?? `${getAtlasDaemonUrl()}/api/workspaces/user/chat`,
       /**
        * Custom fetch wrapper that:
        * 1. Calls onPostSuccess when new chat is created (POST succeeds)
@@ -248,7 +248,7 @@
    */
   async function handleStop() {
     trackEvent(GA4.STREAM_STOP);
-    const baseApi = apiEndpoint ?? `${getAtlasDaemonUrl()}/api/chat`;
+    const baseApi = apiEndpoint ?? `${getAtlasDaemonUrl()}/api/workspaces/user/chat`;
     await fetch(`${baseApi}/${chatId}/stream`, { method: "DELETE" }).catch(() => {});
     chat.stop();
   }

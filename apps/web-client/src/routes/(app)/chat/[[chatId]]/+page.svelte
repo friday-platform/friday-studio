@@ -21,10 +21,14 @@
     queryKey: ["chat-meta", data.chatId],
     queryFn: async () => {
       const res = await parseResult(
+        client.workspaceChat("user")[":chatId"].$get({ param: { chatId: data.chatId } }),
+      );
+      if (res.ok) return res.data.chat;
+      const legacyRes = await parseResult(
         client.chat[":chatId"].$get({ param: { chatId: data.chatId } }),
       );
-      if (!res.ok) return null;
-      return res.data.chat;
+      if (!legacyRes.ok) return null;
+      return legacyRes.data.chat;
     },
     enabled: !data.isNew,
   }));

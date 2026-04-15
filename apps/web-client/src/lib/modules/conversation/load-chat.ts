@@ -24,10 +24,42 @@ export async function loadChat(chatId: string | undefined, redirectPath: string)
     };
   }
 
-  const res = await parseResult(client.chat[":chatId"].$get({ param: { chatId } }));
+  const res = await parseResult(
+    client.workspaceChat("user")[":chatId"].$get({ param: { chatId } }),
+  );
 
   if (!res.ok) {
-    throw redirect(302, redirectPath);
+    const legacyRes = await parseResult(client.chat[":chatId"].$get({ param: { chatId } }));
+    if (!legacyRes.ok) {
+      throw redirect(302, redirectPath);
+    }
+    const messages = await validateAtlasUIMessages(legacyRes.data.messages);
+    const artifacts = new Map<string, ArtifactWithContents>();
+    const artifactIds = extractArtifactIds(messages);
+    if (artifactIds.length > 0) {
+      try {
+        const batchRes = await parseResult(
+          client.artifactsStorage["batch-get"].$post({
+            json: { ids: artifactIds, includeContents: true },
+          }),
+        );
+        if (batchRes.ok) {
+          for (const artifact of batchRes.data.artifacts) {
+            artifacts.set(artifact.id, artifact);
+          }
+        }
+      } catch {
+        // Graceful fallback - artifacts will be fetched on demand
+      }
+    }
+    return {
+      chatId: legacyRes.data.chat.id,
+      isNew: false as const,
+      title: legacyRes.data.chat.title,
+      chat: legacyRes.data.chat,
+      messages,
+      artifacts,
+    };
   }
 
   const messages = await validateAtlasUIMessages(res.data.messages);
