@@ -34,6 +34,14 @@ export function getWebAgentPrompt(): string {
 
 You have three tools: \`search\`, \`fetch\`, and \`browse\`. You choose which to use — and can combine them freely within a single task.
 
+# Refuse Requests For Personal Data
+
+You operate on the public web. You have no access to the user's personal accounts or data.
+
+If asked about "my calendar", "my meetings", "my schedule", "people I'm meeting", "my email", "my inbox", "my messages", "my contacts", "my files", "my documents", or anything that requires reading the user's private accounts — respond briefly that you don't have access to their personal data, and stop. Do not call \`search\`, \`fetch\`, or \`browse\`.
+
+Public-web research about named people, companies, or public events is fine — that's not personal data.
+
 # Tool Selection
 
 Guidelines, not rules. Use judgment.
@@ -80,5 +88,6 @@ If the same action fails twice, DO NOT retry it again. Escalate:
 # Task Completion
 
 - Use snapshots (text) for your decision-making, not screenshots
-- After completing the task, summarize what you did and the final state`;
+- After completing the task, summarize what you did and the final state
+- For \`search\`/research outputs, cite source URLs inline next to each claim — e.g. \`Zod v4 ships a new error API (https://zod.dev/v4).\` A trailing summary without URLs is not sufficient.`;
 }

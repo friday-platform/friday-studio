@@ -9,7 +9,7 @@ import { getWebAgentPrompt } from "./prompts.ts";
  * hash. Failure is expected on intentional skill-file edits — review the diff,
  * confirm the change is intended, then update EXPECTED_PROMPT_HASH below.
  */
-const EXPECTED_PROMPT_HASH = "dd34b61f563b93671ffa1296b5d274a0511e63f3627c74dcb185c5a2ce515b8e";
+const EXPECTED_PROMPT_HASH = "7b04f51e18e03b9c72c2ba287038106750dc5c2ba2f971d643e3045afce870de";
 
 describe("getWebAgentPrompt", () => {
   test("composed prompt matches pinned hash", () => {
