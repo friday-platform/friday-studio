@@ -3,6 +3,7 @@
   import { page } from "$app/state";
   import MemoryEntryTable from "$lib/components/MemoryEntryTable.svelte";
   import { memoryQueries } from "$lib/queries";
+  import type { NarrativeEntry } from "$lib/api/memory.ts";
 
   const workspaceId = $derived(page.params.workspaceId ?? "");
   const memoryName = $derived(page.params.memoryName ?? "");
@@ -14,7 +15,29 @@
     refetchIntervalInBackground: false,
   }));
 
-  const entries = $derived(entriesQuery.data ?? []);
+  const rawEntries = $derived(entriesQuery.data ?? []);
+
+  // Narrative memory is append-only — same id can have multiple entries
+  // reflecting status transitions (pending → completed, etc). Default to
+  // the dedupe view so the UI matches what the planner and improvements
+  // inbox actually see. Toggle to raw for audit-trail debugging.
+  let showAllHistory = $state(false);
+
+  const entries = $derived.by<NarrativeEntry[]>(() => {
+    if (showAllHistory) return rawEntries;
+    const latest = new Map<string, NarrativeEntry>();
+    for (const entry of rawEntries) {
+      const prior = latest.get(entry.id);
+      if (!prior || entry.createdAt > prior.createdAt) {
+        latest.set(entry.id, entry);
+      }
+    }
+    return [...latest.values()].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    );
+  });
+
+  const duplicateCount = $derived(rawEntries.length - new Set(rawEntries.map((e) => e.id)).size);
 
   const lastUpdated = $derived.by(() => {
     if (!entriesQuery.dataUpdatedAt) return null;
@@ -59,7 +82,16 @@
       {#if lastUpdated}
         <span class="updated">Updated: {lastUpdated}</span>
       {/if}
-      <span class="updated">{entries.length} entries</span>
+      <span class="updated">
+        {entries.length} {showAllHistory ? "raw" : "unique"} entries
+        {#if !showAllHistory && duplicateCount > 0}
+          <span class="hint">({duplicateCount} shadowed)</span>
+        {/if}
+      </span>
+      <label class="history-toggle">
+        <input type="checkbox" bind:checked={showAllHistory} />
+        Show all history
+      </label>
       <span class="hint">Press R to refresh</span>
     </div>
   </header>
@@ -161,6 +193,19 @@
   .hint {
     color: color-mix(in srgb, var(--color-text), transparent 60%);
     font-size: var(--font-size-1);
+  }
+
+  .history-toggle {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    display: flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+  }
+
+  .history-toggle input {
+    cursor: pointer;
   }
 
   .error-banner {
