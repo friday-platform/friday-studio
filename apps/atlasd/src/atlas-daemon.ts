@@ -286,8 +286,8 @@ export class AtlasDaemon {
       logger.info("Activity storage using local SQLite adapter");
     }
 
-    // Build agents from source directory (host-mounted volume in Docker)
-    const agentSourceDir = process.env.AGENT_SOURCE_DIR;
+    // Build agents from source directory (host-mounted volume in Docker, repo-local ./agents otherwise)
+    const agentSourceDir = process.env.AGENT_SOURCE_DIR ?? "./agents";
     if (agentSourceDir) {
       try {
         const srcStat = await stat(agentSourceDir);
