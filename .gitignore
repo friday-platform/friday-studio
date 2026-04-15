@@ -25,6 +25,7 @@
 !/agents/skill-author/
 !/agents/autopilot-dispatcher/
 !/agents/autopilot-status-watcher/
+!/agents/route-probe-validator/
 
 # Python build artifacts (componentize-py compiles wasm; pycache is dev-only)
 __pycache__/
