@@ -1,13 +1,12 @@
 // Shared XML utilities for OOXML converters (DOCX, PPTX).
 
+import type { Element, Node, NodeList } from "@xmldom/xmldom";
+
 /**
  * Get an element child node from a NodeList by index.
  * Returns null for non-element nodes (text, comments, etc.).
- *
- * xmldom's TS types for ChildNode don't include localName/namespaceURI,
- * but nodeType === 1 guarantees the node is an Element at runtime.
  */
-export function elementAt(nodes: NodeListOf<ChildNode>, index: number): Element | null {
+export function elementAt(nodes: NodeList<Node>, index: number): Element | null {
   const node = nodes.item(index);
   if (!node || node.nodeType !== 1) return null;
   return node as unknown as Element;

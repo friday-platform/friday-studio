@@ -24,7 +24,7 @@
     "@sveltejs/kit": "^2.55.0",
     "@types/deno": "2.5.0",
     "nanoid": "^5.1.6",
-    "svelte": "^5.54.0",
+    "svelte": "^5.55.4",
     "zod": "^4.3.5",
     "zod-form-data": "^3.0.1"
   },

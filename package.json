@@ -37,7 +37,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/turndown": "^5.0.6",
     "@vitest/coverage-v8": "4.1.0",
-    "knip": "5.88.0",
+    "knip": "6.4.1",
     "vitest": "^4.1.0"
   },
   "knip": {}

@@ -48,15 +48,7 @@ updates:
       opentelemetry:
         patterns:
           - "@opentelemetry/*"
-    # Block major version upgrades for AI SDK - requires coordinated migration
-    # See: https://ai-sdk.dev/docs/migration-guides/migration-guide-6-0
     ignore:
-      - dependency-name: "ai"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@ai-sdk/*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "ai-sdk-provider-claude-code"
-        update-types: ["version-update:semver-major"]
       # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
       # See: https://github.com/porsager/postgres/issues/1143
       - dependency-name: "postgres"
@@ -91,14 +83,9 @@ updates:
     # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
     # when OTEL_DENO=true is baked in at compile time. Affects 2.7.5 and 2.7.6.
     # See: https://github.com/denoland/deno/pull/32501, #32557
-    # Block golang >= 1.26 (still RC). Docker `versions` uses Bundler syntax
-    # on the extracted numeric version, not the full tag.
-    # See: https://github.com/dependabot/dependabot-core/issues/9007
     ignore:
       - dependency-name: "denoland/deno"
         versions: [">= 2.7.5, < 2.8.0"]
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker image npm dependencies up to date (Claude Code CLI)
   - package-ecosystem: "npm"
@@ -134,9 +121,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for traefik)
   - package-ecosystem: "docker"
@@ -232,9 +216,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for gist service)
   - package-ecosystem: "docker"
@@ -252,9 +233,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for bounce service)
   - package-ecosystem: "docker"
@@ -272,9 +250,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for atlas-auth-ui)
   - package-ecosystem: "docker"
@@ -358,9 +333,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep google-workspace-mcp Python dependencies up to date
   # Uses pip-compile: requirements.in (constraints) → requirements.txt (lockfile)
@@ -421,12 +393,7 @@ updates:
       - "npm"
       - "link"
     rebase-strategy: "auto"
-    # Block major version upgrades for AI SDK - requires coordinated migration
     ignore:
-      - dependency-name: "ai"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@ai-sdk/*"
-        update-types: ["version-update:semver-major"]
       # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
       # See: https://github.com/porsager/postgres/issues/1143
       - dependency-name: "postgres"
@@ -544,9 +511,6 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    ignore:
-      - dependency-name: "golang"
-        versions: [">= 1.26.a"]
 
   # Keep Docker dependencies up to date (for atlas-otel-collector)
   - package-ecosystem: "docker"
