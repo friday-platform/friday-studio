@@ -448,7 +448,7 @@ describe("FSM Engine - Core Mechanics", () => {
       });
     });
 
-    it("should merge parent signal data into cascaded signals that have their own data", async () => {
+    it("should replace parent signal data with explicit emit data while preserving _context", async () => {
       const onStreamEvent = vi.fn();
       const onEvent = vi.fn();
 
@@ -543,19 +543,16 @@ describe("FSM Engine - Core Mechanics", () => {
       expect(plannerSig?.hasOnStreamEvent).toBe(true);
       expect(plannerSig?.hasOnEvent).toBe(true);
 
-      // Dispatcher receives the cascaded PLAN_COMPLETE signal with BOTH
-      // the emitted data AND the parent's session-scoped fields merged in.
-      // Critically, _context (onStreamEvent, onEvent) must also propagate —
+      // Dispatcher receives the cascaded PLAN_COMPLETE signal with ONLY
+      // the emitted data (explicit data replaces parent's data).
+      // Critically, _context (onStreamEvent, onEvent) must still propagate —
       // the workspace runtime reads these to wire up streaming and event callbacks.
       const dispatcherSig = capturedSignals[1];
       expect(dispatcherSig?.agentId).toEqual("dispatcher");
       expect(dispatcherSig?.type).toEqual("PLAN_COMPLETE");
       expect(dispatcherSig?.data?.planResult).toEqual("some-plan-output");
-      expect(dispatcherSig?.data?.streamId).toEqual("chat-123");
-      expect(dispatcherSig?.data?.datetime).toEqual({
-        timezone: "UTC",
-        timestamp: "2026-04-14T00:00:00Z",
-      });
+      expect(dispatcherSig?.data).not.toHaveProperty("streamId");
+      expect(dispatcherSig?.data).not.toHaveProperty("datetime");
       expect(dispatcherSig?.hasContext).toBe(true);
       expect(dispatcherSig?.contextSessionId).toEqual("sess-1");
       expect(dispatcherSig?.contextWorkspaceId).toEqual("ws-1");
@@ -573,7 +570,10 @@ describe("FSM Engine - Core Mechanics", () => {
         states: {
           idle: { on: { TRIGGER: { target: "step_plan" } } },
           step_plan: {
-            entry: [{ type: "agent", agentId: "planner", outputTo: "plan_result" }],
+            entry: [
+              { type: "code", function: "prepare_plan" },
+              { type: "agent", agentId: "planner", outputTo: "plan_result" },
+            ],
             on: { PLAN_DONE: { target: "step_dispatch" } },
           },
           step_dispatch: {
@@ -581,6 +581,14 @@ describe("FSM Engine - Core Mechanics", () => {
             on: { DISPATCH_DONE: { target: "done" } },
           },
           done: { type: "final" },
+        },
+        functions: {
+          prepare_plan: {
+            type: "action",
+            code: `export default function prepare_plan() {
+              return { config: { workDir: "/workspace/atlas", platformUrl: "http://localhost:8080" } };
+            }`,
+          },
         },
       };
 
@@ -614,17 +622,11 @@ describe("FSM Engine - Core Mechanics", () => {
       });
       await engine.initialize();
 
-      // Pre-seed __lastPrepare to simulate a code action's config output
-      // from a prior state (e.g. prepare_plan returning workDir + platformUrl).
-      engine.context.setResult?.("__lastPrepare", {
-        config: { workDir: "/workspace/atlas", platformUrl: "http://localhost:8080" },
-      });
-
       await engine.signal({ type: "TRIGGER" });
 
       expect(capturedInputs).toHaveLength(2);
 
-      // Planner receives input.config from the pre-seeded __lastPrepare
+      // Planner receives input.config from the code action's return value
       const plannerInput = capturedInputs[0];
       expect(plannerInput?.agentId).toEqual("planner");
       expect(plannerInput?.input).toBeDefined();
@@ -635,7 +637,7 @@ describe("FSM Engine - Core Mechanics", () => {
 
       // Dispatcher also receives input.config — the write side persisted
       // __lastPrepare after step_plan, and the read side picked it up
-      // when step_dispatch's executeActions started.
+      // when step_dispatch's executeActions started (cascaded signal).
       const dispatcherInput = capturedInputs[1];
       expect(dispatcherInput?.agentId).toEqual("dispatcher");
       expect(dispatcherInput?.input).toBeDefined();

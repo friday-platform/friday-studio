@@ -36,6 +36,7 @@ const BacklogPayloadSchema = z.object({
 
 const BacklogEntryMetaSchema = z.object({
   auto_apply: z.boolean(),
+  status: z.string().optional(),
   payload: BacklogPayloadSchema,
 });
 
@@ -109,11 +110,26 @@ async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
     return [];
   }
 
-  const findings: ImprovementEntry[] = [];
+  // The backlog is append-only, so multiple entries share an id. Dedupe
+  // by taking the LATEST entry per id (highest createdAt wins). That's
+  // the entry whose `status` reflects current truth.
+  const latestById = new Map<string, NarrativeEntry>();
   for (const entry of entries) {
+    const prior = latestById.get(entry.id);
+    if (!prior || entry.createdAt > prior.createdAt) {
+      latestById.set(entry.id, entry);
+    }
+  }
+
+  const findings: ImprovementEntry[] = [];
+  for (const entry of latestById.values()) {
     const parsed = BacklogEntryMetaSchema.safeParse(entry.metadata);
     if (!parsed.success) continue;
+
+    // Only surface entries that are pending AND not auto-applied.
     if (parsed.data.auto_apply !== false) continue;
+    const status = parsed.data.status;
+    if (status && status !== "pending") continue;
 
     findings.push({
       id: entry.id,
@@ -127,8 +143,8 @@ async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
       body: parsed.data.payload.task_brief,
       metadata: entry.metadata ?? {},
       improvementType: undefined,
-      status: undefined,
-      source: "notes",
+      status,
+      source: "backlog",
     });
   }
 

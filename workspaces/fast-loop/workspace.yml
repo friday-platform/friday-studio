@@ -69,7 +69,7 @@ signals:
     provider: schedule
     title: Autopilot tick (scheduled)
     description: >-
-      Cron-driven autopilot iteration. Re-enabled 2026-04-14 after watcher-suppress (manager.ts) + active-session-guard (route 409) + per-task cooldown (planner v1.4.0) all landed. Fires every 2 minutes — gives long-running source-mod sessions time to finish before the next pick. Per-task cooldown defaults to 600s so the same task won't re-fire within 10 minutes.
+      Cron-driven autopilot iteration. Re-enabled 2026-04-14 after watcher-suppress (manager.ts) + active-session-guard (route 409) + per-task cooldown (planner v1.4.0) all landed. Fires every 2 minutes — gives long-running source-mod sessions time to finish before the next pick. Per-task cooldown defaults to 1800s (30 min) so the same task won't re-fire within 30 minutes.
     config:
       schedule: '*/2 * * * *'
       timezone: UTC

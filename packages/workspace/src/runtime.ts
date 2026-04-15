@@ -54,11 +54,6 @@ import {
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
-import {
-  mountContextKey,
-  setMountContext,
-  takeMountContext,
-} from "@atlas/core/mount-context-registry";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -103,6 +98,11 @@ import type {
   SessionSummary,
 } from "../../../apps/atlasd/src/types/core.ts";
 import { MessageUser } from "../../../apps/atlasd/src/types/core.ts";
+import {
+  mountContextKey,
+  setMountContext,
+  takeMountContext,
+} from "../../core/src/mount-context-registry.ts";
 import { createBashTool } from "./bash-tool.ts";
 import { CodeAgentExecutor } from "./code-agent-executor.ts";
 import type { MemoryMount } from "./config-schema.ts";

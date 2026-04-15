@@ -1,26 +1,32 @@
 <script lang="ts">
-  import type { ApplyAction, ImprovementType } from "./types.ts";
-  import type { ImprovementEntry } from "./improvements-loader.ts";
+  import type { ApplyAction, ImprovementEntry, ImprovementType } from "./types.ts";
   import { computeUnifiedDiff, parseDiffStats } from "./diff-renderer.ts";
 
   const {
     finding,
+    currentConfig,
     onaction,
     disabled = false,
   }: {
     finding: ImprovementEntry;
+    currentConfig?: string;
     onaction: (action: ApplyAction) => void;
     disabled?: boolean;
   } = $props();
 
   const diff = $derived(
-    finding.beforeYaml
-      ? computeUnifiedDiff(finding.beforeYaml, finding.body)
-      : finding.body,
+    finding.proposedFullConfig
+      ? computeUnifiedDiff(
+          currentConfig ?? finding.beforeYaml ?? "",
+          finding.proposedFullConfig,
+        )
+      : finding.beforeYaml
+        ? computeUnifiedDiff(finding.beforeYaml, finding.body)
+        : finding.body,
   );
 
   const diffStats = $derived(
-    finding.beforeYaml ? parseDiffStats(diff) : null,
+    (finding.proposedFullConfig || finding.beforeYaml) ? parseDiffStats(diff) : null,
   );
 
   const isApplied = $derived(finding.status === "applied");
@@ -42,6 +48,7 @@
   const diffTarget = $derived(inferDiffTarget(finding));
 
   function inferDiffTarget(entry: ImprovementEntry): string {
+    if (entry.proposedFullConfig) return "workspace.yml";
     if (entry.improvementType === "skill_update") return "SKILL.md";
     if (entry.improvementType === "agent_replace") return "agent.py";
     if (entry.improvementType === "signal_patch") return "workspace.yml (signal)";

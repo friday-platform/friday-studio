@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadImprovements, type ImprovementGroup } from "./improvements-loader.ts";
+import { loadImprovements } from "./improvements-loader.ts";
+import type { WorkspaceGroup } from "./types.ts";
 
 const fetchSpy = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>();
 
@@ -9,11 +10,13 @@ function narrativeEntry(overrides: {
   target_job_id?: string;
   improvement_flag?: string | null;
   before_yaml?: string;
+  proposed_full_config?: string;
 }): Record<string, unknown> {
   const meta: Record<string, unknown> = {
     kind: overrides.kind ?? "improvement-finding",
     target_job_id: overrides.target_job_id ?? "job-a",
     before_yaml: overrides.before_yaml,
+    proposed_full_config: overrides.proposed_full_config,
   };
   if (overrides.improvement_flag !== null) {
     meta.improvement_flag = overrides.improvement_flag ?? "surface";
@@ -57,13 +60,13 @@ describe("loadImprovements", () => {
     });
 
     const groups = await loadImprovements(["ws-alpha"]);
-    const allFindings = groups.flatMap((g) => g.findings);
+    const allFindings = groups.flatMap((ws) => ws.jobs.flatMap((j) => j.findings));
 
     expect(allFindings).toHaveLength(1);
     expect(allFindings[0]?.id).toBe("f-1");
   });
 
-  it("groups findings by workspaceId then target_job_id", async () => {
+  it("returns WorkspaceGroup[] with nested job arrays", async () => {
     fetchSpy.mockImplementation((input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.includes("ws-a") && url.includes("/narrative/notes")) {
@@ -81,21 +84,23 @@ describe("loadImprovements", () => {
       return Promise.resolve(new Response("not found", { status: 404 }));
     });
 
-    const groups = await loadImprovements(["ws-a", "ws-b"]);
+    const groups: WorkspaceGroup[] = await loadImprovements(["ws-a", "ws-b"]);
 
-    const wsAJob1 = groups.find(
-      (g: ImprovementGroup) => g.workspaceId === "ws-a" && g.targetJobId === "job-1",
-    );
-    const wsAJob2 = groups.find(
-      (g: ImprovementGroup) => g.workspaceId === "ws-a" && g.targetJobId === "job-2",
-    );
-    const wsBJob1 = groups.find(
-      (g: ImprovementGroup) => g.workspaceId === "ws-b" && g.targetJobId === "job-1",
-    );
+    expect(groups).toHaveLength(2);
 
+    const wsA = groups.find((g) => g.workspaceId === "ws-a");
+    expect(wsA).toBeDefined();
+    expect(wsA?.jobs).toHaveLength(2);
+
+    const wsAJob1 = wsA?.jobs.find((j) => j.targetJobId === "job-1");
+    const wsAJob2 = wsA?.jobs.find((j) => j.targetJobId === "job-2");
     expect(wsAJob1?.findings).toHaveLength(2);
     expect(wsAJob2?.findings).toHaveLength(1);
-    expect(wsBJob1?.findings).toHaveLength(1);
+
+    const wsB = groups.find((g) => g.workspaceId === "ws-b");
+    expect(wsB).toBeDefined();
+    expect(wsB?.jobs).toHaveLength(1);
+    expect(wsB?.jobs[0]?.findings).toHaveLength(1);
   });
 
   it("returns empty array when no matching entries exist", async () => {
@@ -135,7 +140,7 @@ describe("loadImprovements", () => {
     });
 
     const groups = await loadImprovements(["ws-alpha"]);
-    const allFindings = groups.flatMap((g) => g.findings);
+    const allFindings = groups.flatMap((ws) => ws.jobs.flatMap((j) => j.findings));
 
     expect(allFindings).toHaveLength(1);
     expect(allFindings[0]?.id).toBe("f-1");
@@ -157,5 +162,30 @@ describe("loadImprovements", () => {
 
     const groups = await loadImprovements(["ws-alpha"]);
     expect(groups).toHaveLength(0);
+  });
+
+  it("propagates proposed_full_config from metadata to ImprovementEntry", async () => {
+    const proposedConfig = "workspace:\n  name: updated\nagents:\n  planner:\n    retries: 5";
+
+    fetchSpy.mockImplementation((input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/narrative/notes")) {
+        return Promise.resolve(jsonResponse([
+          narrativeEntry({
+            id: "f-cfg",
+            proposed_full_config: proposedConfig,
+            before_yaml: "workspace:\n  name: original",
+          }),
+        ]));
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const groups = await loadImprovements(["ws-alpha"]);
+    const allFindings = groups.flatMap((ws) => ws.jobs.flatMap((j) => j.findings));
+
+    expect(allFindings).toHaveLength(1);
+    expect(allFindings[0]?.proposedFullConfig).toBe(proposedConfig);
+    expect(allFindings[0]?.beforeYaml).toBe("workspace:\n  name: original");
   });
 });

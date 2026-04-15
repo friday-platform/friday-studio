@@ -611,6 +611,10 @@ export class FSMEngine {
   private async processQueue(): Promise<void> {
     this._processing = true;
     this._processedSignalsCount = 0;
+    // Clear stale prepare config from previous signal batches so external
+    // signals start fresh. Cascaded signals within this run will see
+    // __lastPrepare set by earlier signals in the same batch.
+    this._results.delete("__lastPrepare");
     try {
       while (this._signalQueue.length > 0) {
         if (this._processedSignalsCount++ > FSMEngine.MAX_PROCESSED_SIGNALS) {
@@ -1051,11 +1055,12 @@ export class FSMEngine {
           currentState,
           hasData: !!s.data,
         });
-        // Cascaded signals inherit parent's context (including onEvent callback)
-        // and merge parent's data as a base layer so session-scoped fields
-        // (streamId, datetime) survive even when the emitted signal has its own data.
+        // Cascaded signals inherit parent's context (including onEvent callback).
+        // When the emitted signal has explicit data, it replaces the parent's
+        // data entirely. When no data is provided (e.g. bare ADVANCE), the
+        // parent's data (streamId, datetime) passes through.
         const cascadedSignal: SignalWithContext = sig._context
-          ? { ...s, data: { ...sig.data, ...s.data }, _context: sig._context }
+          ? { ...s, data: s.data ?? sig.data, _context: sig._context }
           : s;
         signals.push(cascadedSignal);
         return Promise.resolve();

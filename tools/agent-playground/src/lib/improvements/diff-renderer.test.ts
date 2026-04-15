@@ -87,3 +87,74 @@ describe("parseDiffStats", () => {
     expect(stats.deletions).toBe(0);
   });
 });
+
+describe("computeUnifiedDiff with large YAML docs", () => {
+  it("produces correct diff for full workspace.yml before/after", () => {
+    const before = [
+      "workspace:",
+      "  name: my-workspace",
+      "  description: Production agent workspace",
+      "",
+      "agents:",
+      "  planner:",
+      "    type: llm",
+      "    retries: 1",
+      "    timeout: 30",
+      "  executor:",
+      "    type: atlas",
+      "    agent: claude-code",
+      "",
+      "signals:",
+      "  run-task:",
+      "    type: http",
+      "",
+      "improvements:",
+      "  skill_update: surface",
+      "  signal_patch: surface",
+      "  agent_replace: surface",
+      "  source_mod: surface",
+    ].join("\n");
+
+    const after = [
+      "workspace:",
+      "  name: my-workspace",
+      "  description: Production agent workspace",
+      "",
+      "agents:",
+      "  planner:",
+      "    type: llm",
+      "    retries: 3",
+      "    timeout: 60",
+      "  executor:",
+      "    type: atlas",
+      "    agent: claude-code",
+      "",
+      "signals:",
+      "  run-task:",
+      "    type: http",
+      "",
+      "improvements:",
+      "  skill_update: auto_apply",
+      "  signal_patch: auto_apply",
+      "  agent_replace: surface",
+      "  source_mod: surface",
+    ].join("\n");
+
+    const diff = computeUnifiedDiff(before, after);
+
+    expect(diff).toContain("--- a/workspace.yml");
+    expect(diff).toContain("+++ b/workspace.yml");
+    expect(diff).toContain("-    retries: 1");
+    expect(diff).toContain("+    retries: 3");
+    expect(diff).toContain("-    timeout: 30");
+    expect(diff).toContain("+    timeout: 60");
+    expect(diff).toContain("-  skill_update: surface");
+    expect(diff).toContain("+  skill_update: auto_apply");
+    expect(diff).toContain("-  signal_patch: surface");
+    expect(diff).toContain("+  signal_patch: auto_apply");
+
+    const stats = parseDiffStats(diff);
+    expect(stats.additions).toBe(4);
+    expect(stats.deletions).toBe(4);
+  });
+});

@@ -13,6 +13,7 @@
   },
   "imports": {
     "@atlas/activity/titles": "../activity/src/title-utils.ts",
-    "@atlas/activity/title-generator": "../activity/src/title-generator.ts"
+    "@atlas/activity/title-generator": "../activity/src/title-generator.ts",
+    "@atlas/core/mount-context-registry": "../core/src/mount-context-registry.ts"
   }
 }

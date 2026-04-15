@@ -2,9 +2,11 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     loadImprovements,
+    acceptBacklogEntry,
+    rejectBacklogEntry,
     type ImprovementEntry,
-    type ImprovementGroup,
   } from "$lib/improvements/improvements-loader.ts";
+  import type { WorkspaceGroup } from "$lib/improvements/types.ts";
   import {
     acceptFinding,
     rejectFinding,
@@ -13,6 +15,9 @@
   } from "$lib/improvements/apply-action.ts";
   import { workspaceQueries } from "$lib/queries";
   import FindingCard from "$lib/improvements/finding-card.svelte";
+  import { z } from "zod";
+
+  const PROXY_BASE = "/api/daemon";
 
   const queryClient = useQueryClient();
 
@@ -30,26 +35,79 @@
     refetchIntervalInBackground: false,
   }));
 
-  const groups: ImprovementGroup[] = $derived(findingsQuery.data ?? []);
+  const groups: WorkspaceGroup[] = $derived(findingsQuery.data ?? []);
   const totalCount = $derived(
-    groups.reduce((sum, g) => sum + g.findings.length, 0),
+    groups.reduce(
+      (sum, ws) => sum + ws.jobs.reduce((jSum, j) => jSum + j.findings.length, 0),
+      0,
+    ),
   );
 
   let pendingAction = $state<string | undefined>(undefined);
+
+  const ConfigResponseSchema = z.object({
+    config: z.unknown(),
+  }).passthrough();
+
+  const workspaceConfigMap = $state(new Map<string, string>());
+
+  $effect(() => {
+    for (const wsGroup of groups) {
+      const needsConfig = wsGroup.jobs.some((job) =>
+        job.findings.some((f) => f.proposedFullConfig),
+      );
+      if (needsConfig && !workspaceConfigMap.has(wsGroup.workspaceId)) {
+        void fetchWorkspaceConfig(wsGroup.workspaceId);
+      }
+    }
+  });
+
+  async function fetchWorkspaceConfig(wsId: string): Promise<void> {
+    try {
+      const res = await globalThis.fetch(
+        `${PROXY_BASE}/api/workspaces/${encodeURIComponent(wsId)}/config`,
+      );
+      if (!res.ok) return;
+      const data: unknown = await res.json();
+      const parsed = ConfigResponseSchema.safeParse(data);
+      if (!parsed.success) return;
+      workspaceConfigMap.set(wsId, JSON.stringify(parsed.data.config, null, 2));
+    } catch {
+      /* ignore — config fetch is best-effort */
+    }
+  }
 
   type Action = "accept" | "reject" | "dismiss" | "rollback";
 
   async function handleAction(action: Action, finding: ImprovementEntry): Promise<void> {
     pendingAction = finding.id;
     try {
-      if (action === "accept") {
-        await acceptFinding(finding.id, finding.workspaceId, finding.body);
-      } else if (action === "reject") {
-        await rejectFinding(finding.id, finding.workspaceId);
-      } else if (action === "rollback") {
-        await rollbackFinding(finding.id, finding.workspaceId);
+      // Backlog findings are just autopilot-backlog entries with auto_apply:
+      // false. Accept flips auto_apply to true so the planner picks them up;
+      // Reject writes a status: rejected entry; Dismiss is a no-op append
+      // that's equivalent to reject for now. No /api/improvements route —
+      // everything round-trips through the existing memory narrative routes.
+      if (finding.source === "backlog") {
+        if (action === "accept") {
+          await acceptBacklogEntry(finding.id);
+        } else if (action === "reject" || action === "dismiss") {
+          await rejectBacklogEntry(finding.id);
+        }
+        // rollback is a no-op for backlog-sourced findings — they haven't
+        // been applied yet.
       } else {
-        await dismissFinding(finding.id, finding.workspaceId);
+        // Lifecycle / notes findings go through the apply-action pipeline
+        // (POST /api/improvements/...) which remains the long-term path
+        // once the daemon-side route lands.
+        if (action === "accept") {
+          await acceptFinding(finding.id, finding.workspaceId, finding.body);
+        } else if (action === "reject") {
+          await rejectFinding(finding.id, finding.workspaceId);
+        } else if (action === "rollback") {
+          await rollbackFinding(finding.id, finding.workspaceId);
+        } else {
+          await dismissFinding(finding.id, finding.workspaceId);
+        }
       }
       await queryClient.invalidateQueries({ queryKey: ["improvements"] });
     } catch (err) {
@@ -60,9 +118,11 @@
     }
   }
 
-  async function handleDismissAll(group: ImprovementGroup): Promise<void> {
-    for (const finding of group.findings) {
-      await dismissFinding(finding.id, finding.workspaceId);
+  async function handleDismissAll(wsGroup: WorkspaceGroup): Promise<void> {
+    for (const job of wsGroup.jobs) {
+      for (const finding of job.findings) {
+        await dismissFinding(finding.id, finding.workspaceId);
+      }
     }
     await queryClient.invalidateQueries({ queryKey: ["improvements"] });
   }
@@ -90,29 +150,33 @@
     <div class="empty">No pending improvement findings.</div>
   {:else}
     <div class="groups">
-      {#each groups as group (group.workspaceId + "::" + group.targetJobId)}
+      {#each groups as wsGroup (wsGroup.workspaceId)}
         <section class="workspace-section">
           <div class="ws-header">
-            <h2 class="ws-heading">{group.workspaceId}</h2>
+            <h2 class="ws-heading">{wsGroup.workspaceId}</h2>
             <button
               class="btn-dismiss-all"
-              onclick={() => handleDismissAll(group)}
+              onclick={() => handleDismissAll(wsGroup)}
             >
               Dismiss All
             </button>
           </div>
 
-          <h3 class="job-heading">{group.targetJobId}</h3>
-
-          <div class="findings-list">
-            {#each group.findings as finding (finding.id)}
-              <FindingCard
-                {finding}
-                onaction={(a) => handleAction(a, finding)}
-                disabled={pendingAction === finding.id}
-              />
-            {/each}
-          </div>
+          {#each wsGroup.jobs as jobGroup (jobGroup.targetJobId)}
+            <div class="job-section">
+              <h3 class="job-heading">{jobGroup.targetJobId}</h3>
+              <div class="findings-list">
+                {#each jobGroup.findings as finding (finding.id)}
+                  <FindingCard
+                    {finding}
+                    currentConfig={workspaceConfigMap.get(wsGroup.workspaceId)}
+                    onaction={(a) => handleAction(a, finding)}
+                    disabled={pendingAction === finding.id}
+                  />
+                {/each}
+              </div>
+            </div>
+          {/each}
         </section>
       {/each}
     </div>
@@ -229,6 +293,12 @@
   .btn-dismiss-all:hover {
     background: var(--color-surface-3);
     color: var(--color-text);
+  }
+
+  .job-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
   }
 
   .job-heading {

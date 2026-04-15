@@ -71,7 +71,7 @@ export interface ImprovementEntry {
   metadata: Record<string, unknown>;
   improvementType: ImprovementType | undefined;
   status: string | undefined;
-  source: "notes" | "lifecycle";
+  source: "notes" | "lifecycle" | "backlog";
 }
 
 export interface FindingGroup {
