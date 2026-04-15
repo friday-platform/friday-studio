@@ -1,4 +1,8 @@
 version: '1.0'
+# NOTE: repo paths below are operator-specific (hardcoded to ericskram's
+# checkout at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw).
+# The parity plan tracks generalizing this via workspace variable
+# interpolation; until then, other operators must edit this file before use.
 workspace:
   name: FAST Improvements (Source)
   description: >-
@@ -181,7 +185,7 @@ jobs:
                   task_id: task.taskId,
                   task_brief: task.brief,
                   target_files: task.targets,
-                  repo_root: '/Users/kenneth/tempest/atlas',
+                  repo_root: '/Users/ericskram/code/tempest/atlas-env/worktrees/declaw',
                 },
               };
             }
@@ -205,7 +209,7 @@ jobs:
                   ? 'Implement ' + task.taskId + ' (quick-fix path, no memo): ' + task.brief
                   : 'Implement ' + task.taskId + ' per design memo',
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '/Users/ericskram/code/tempest/atlas-env/worktrees/declaw',
                   task_id: task.taskId,
                   memo: memo || null,
                   task_brief: task.brief,
@@ -234,7 +238,7 @@ jobs:
               return {
                 task: 'Review ' + task.taskId + (memo ? ' against memo' : ' (quick-fix, no memo)'),
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '/Users/ericskram/code/tempest/atlas-env/worktrees/declaw',
                   task_id: task.taskId,
                   memo: memo || null,
                   changes: impl,
@@ -268,13 +272,13 @@ jobs:
             plan_citations:
               type: array
               description: >-
-                Verbatim quotes from the parity plan establishing the interface shapes this memo references. REQUIRED and must be non-empty. Every key_type in files_to_create must appear verbatim in one of these quotes.
+                Verbatim quotes from whichever plan file the task references (the task_brief's Design Reference, or the OpenClaw parity plan if none is given). REQUIRED and must be non-empty. Every key_type in files_to_create must appear verbatim in one of these quotes.
               items:
                 type: object
                 properties:
                   file:
                     type: string
-                    description: 'Relative path, e.g. "docs/plans/2026-04-13-openclaw-parity-plan.md"'
+                    description: 'Relative path to the plan file actually read, e.g. "docs/plans/2026-04-15-decompose-plan-design.md" or "docs/plans/2026-04-13-openclaw-parity-plan.md"'
                   line_start:
                     type: integer
                   line_end:
@@ -414,16 +418,17 @@ agents:
       estimated_files_changed} per the deterministic routing rules.
   architect:
     description: >-
-      Reads the current parity plan and the current source on disk before
-      producing a design memo. Has fs access via claude-code. Free to
-      propose extensions and refactors when the task's premise is stale
-      or incomplete. Replaces the kneecapped 2026-04-13 type:llm version
-      that hardcoded a Phase-1 interface snapshot.
+      Reads the plan referenced by the task (task_brief's Design Reference,
+      or the OpenClaw parity plan as fallback) and the current source on
+      disk before producing a design memo. Has fs access via claude-code.
+      Free to propose extensions and refactors when the task's premise is
+      stale or incomplete. Replaces the kneecapped 2026-04-13 type:llm
+      version that hardcoded a Phase-1 interface snapshot.
     type: atlas
     agent: claude-code
     prompt: |
       You are the architect for the FAST Improvements (Source) workspace.
-      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+      The atlas monorepo is mounted at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw.
 
       Your input contains a task_id, task_brief, and (optionally)
       target_files. Your output is a design memo conforming to the
@@ -431,8 +436,12 @@ agents:
 
       Workflow:
 
-      1. Read the parity plan section that matches your task at
-         docs/plans/2026-04-13-openclaw-parity-plan.md. Use grep / file
+      1. Identify the plan file for this task.
+         - If the task_brief contains a "## Design Reference" section,
+           the file path(s) listed there ARE the plan for this task.
+         - Otherwise, fall back to the OpenClaw parity plan at
+           docs/plans/2026-04-13-openclaw-parity-plan.md.
+         Read the plan section that matches your task. Use grep / file
          search to find the relevant phase. Read +/- 50 lines of context
          around any cited block.
 
@@ -488,10 +497,10 @@ agents:
     type: atlas
     agent: claude-code
     description: >-
-      Writes code in the atlas repo at /Users/kenneth/tempest/atlas per the design memo. Uses Claude Code's full toolchain: file edits, deno check, deno lint, test execution.
+      Writes code in the atlas repo at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw per the design memo. Uses Claude Code's full toolchain: file edits, deno check, deno lint, test execution.
     prompt: |
-      You are the coder for the parity plan execution. The atlas
-      monorepo is mounted at /Users/kenneth/tempest/atlas (this is your workDir).
+      You are the coder for the FAST Improvements (Source) pipeline.
+      The atlas monorepo is mounted at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw (this is your workDir).
 
       Your input contains a design memo from the architect with
       specific files to create/modify, type signatures, and tests.
@@ -520,8 +529,8 @@ agents:
     description: >-
       Reviews coder output against the plan directly via real filesystem access. Uses claude-code bundled agent for fs_* tool capability.
     prompt: |
-      You are the reviewer for the parity plan execution. The atlas
-      monorepo is mounted at /Users/kenneth/tempest/atlas. Use your
+      You are the reviewer for the FAST Improvements (Source) pipeline.
+      The atlas monorepo is mounted at /Users/ericskram/code/tempest/atlas-env/worktrees/declaw. Use your
       fs tools to read files directly.
 
       ## Step 1: Citation verification
@@ -539,10 +548,13 @@ agents:
       ## Step 2: Read the plan and source
 
       Read the plan section referenced by the architect's
-      plan_citations. The plan lives at
-      docs/plans/2026-04-13-openclaw-parity-plan.md.
+      plan_citations. The plan file is whatever the architect
+      actually cited (look at plan_citations[N].file) — this may
+      be the task_brief's Design Reference plan, or it may fall
+      back to docs/plans/2026-04-13-openclaw-parity-plan.md when
+      no Design Reference was provided.
 
-      Read /Users/kenneth/tempest/atlas/CLAUDE.md for convention
+      Read /Users/ericskram/code/tempest/atlas-env/worktrees/declaw/CLAUDE.md for convention
       rules.
 
       ## Step 3: Verify coder output against the memo
@@ -595,8 +607,9 @@ agents:
       ## Citation requirement
 
       Every finding MUST include a plan_line field citing either a
-      line in docs/plans/2026-04-13-openclaw-parity-plan.md
-      (format: "parity-plan.md:582-634"), a CLAUDE.md line, or the
+      line in the plan file the architect used (format:
+      "<plan-filename>:582-634", e.g. "parity-plan.md:582-634" or
+      "decompose-plan-design.md:120-140"), a CLAUDE.md line, or the
       relevant source file. A finding without a citation is
       invalid — the data contract will reject your output.
 
