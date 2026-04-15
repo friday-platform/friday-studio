@@ -4,7 +4,7 @@ import { JSONSchemaSchema } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, type PlatformModels, temporalGroundingMessage } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -550,9 +550,11 @@ function assignKebabIds<T extends { name: string }>(items: T[]): Array<T & { id:
 /** Generate a workspace plan (signals + agents) from a user prompt. */
 export async function generatePlan(
   prompt: string,
+  deps: { platformModels: PlatformModels },
   options?: { mode?: PlanMode; abortSignal?: AbortSignal },
 ): Promise<Phase1Result> {
   const mode = options?.mode ?? "workspace";
+  const model = deps.platformModels.get("planner");
 
   const [capabilityResult, linkSummary] = await Promise.all([
     getCapabilityIds(),
@@ -569,7 +571,7 @@ export async function generatePlan(
 
   if (mode === "task") {
     const result = await generateObject({
-      model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+      model,
       schema: schemas.task,
       experimental_repairText: repairJson,
       maxRetries: 3,
@@ -602,7 +604,7 @@ export async function generatePlan(
   }
 
   const result = await generateObject({
-    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+    model,
     schema: schemas.workspace,
     experimental_repairText: repairJson,
     maxRetries: 3,

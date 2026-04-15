@@ -39,11 +39,15 @@ vi.mock("@atlas/core/artifacts/server", () => ({
   ArtifactStorage: { create: mockArtifactCreate },
 }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: vi.fn(() => "mock-model") },
-  temporalGroundingMessage: vi.fn(() => ({ role: "user", content: "temporal" })),
-  traceModel: vi.fn((m: unknown) => m),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    registry: { languageModel: vi.fn(() => "mock-model") },
+    temporalGroundingMessage: vi.fn(() => ({ role: "user", content: "temporal" })),
+    traceModel: vi.fn((m: unknown) => m),
+  };
+});
 
 vi.mock("snowflake-sdk", () => ({
   default: {
@@ -60,6 +64,7 @@ vi.mock("snowflake-sdk", () => ({
 }));
 
 import type { AgentContext } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 
 import {
   type AnalysisRef,
@@ -264,6 +269,8 @@ const validEnv: Record<string, string> = {
   SNOWFLAKE_ROLE: "ACCOUNTADMIN",
 };
 
+const stubPlatformModels = createStubPlatformModels();
+
 function makeHandlerContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {
     tools: {},
@@ -272,6 +279,7 @@ function makeHandlerContext(overrides: Partial<AgentContext> = {}): AgentContext
     abortSignal: new AbortController().signal,
     stream: mockStream,
     env: validEnv,
+    platformModels: stubPlatformModels,
     ...overrides,
   };
 }

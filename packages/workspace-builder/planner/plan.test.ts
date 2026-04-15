@@ -30,15 +30,17 @@ vi.mock("@atlas/core/mcp-registry/storage", () => ({
   getMCPRegistryAdapter: vi.fn(() => Promise.resolve({ list: mockAdapterList })),
 }));
 
-vi.mock("@atlas/llm", () => ({
-  getDefaultProviderOpts: vi.fn(() => ({})),
-  registry: { languageModel: vi.fn(() => "mock-model") },
-  traceModel: vi.fn((m: unknown) => m),
-  temporalGroundingMessage: vi.fn(() => ({
-    role: "system",
-    content: "## Context Facts\n- Current Date: Tuesday, February 11, 2026",
-  })),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    getDefaultProviderOpts: vi.fn(() => ({})),
+    temporalGroundingMessage: vi.fn(() => ({
+      role: "system",
+      content: "## Context Facts\n- Current Date: Tuesday, February 11, 2026",
+    })),
+  };
+});
 
 vi.mock("@atlas/logger", () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
@@ -53,7 +55,10 @@ vi.mock("../../system/agents/conversation/link-context.ts", () => ({
   formatIntegrationsSection: vi.fn(() => ""),
 }));
 
+import { createStubPlatformModels } from "@atlas/llm";
 import { generatePlan, getCapabilityIds, toKebabCase } from "./plan.ts";
+
+const platformModels = createStubPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -196,7 +201,11 @@ describe("generatePlan — mode parameter", () => {
       },
     });
 
-    const result = await generatePlan("Analyze this CSV file", { mode: "task" });
+    const result = await generatePlan(
+      "Analyze this CSV file",
+      { platformModels },
+      { mode: "task" },
+    );
 
     expect(result.signals).toEqual([]);
     expect(result.agents).toEqual([
@@ -210,7 +219,7 @@ describe("generatePlan — mode parameter", () => {
       object: { plan: { workspace: { name: "Test", purpose: "Test" }, agents: [] } },
     });
 
-    await generatePlan("do something", { mode: "task" });
+    await generatePlan("do something", { platformModels }, { mode: "task" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -246,7 +255,7 @@ describe("generatePlan — mode parameter", () => {
       },
     });
 
-    await expect(generatePlan("test", { mode: "task" })).rejects.toThrow(
+    await expect(generatePlan("test", { platformModels }, { mode: "task" })).rejects.toThrow(
       'Name "&&&" produces an empty ID after sanitization',
     );
   });
@@ -272,7 +281,7 @@ describe("generatePlan — mode parameter", () => {
       },
     });
 
-    const result = await generatePlan("Summarize PRs weekly");
+    const result = await generatePlan("Summarize PRs weekly", { platformModels });
 
     expect(result.signals).toEqual([
       expect.objectContaining({ id: "weekly-check", name: "Weekly Check" }),
@@ -287,7 +296,7 @@ describe("generatePlan — mode parameter", () => {
       object: { plan: { workspace: { name: "Test", purpose: "Test" }, signals: [], agents: [] } },
     });
 
-    await generatePlan("do something", { mode: "workspace" });
+    await generatePlan("do something", { platformModels }, { mode: "workspace" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -314,7 +323,7 @@ describe("generatePlan — mode parameter", () => {
       object: { plan: { workspace: { name: "Test", purpose: "Test" }, agents: [] } },
     });
 
-    await generatePlan("do something", { mode: "task" });
+    await generatePlan("do something", { platformModels }, { mode: "task" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -348,7 +357,7 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    await generatePlan("build a meal planner", { mode: "workspace" });
+    await generatePlan("build a meal planner", { platformModels }, { mode: "workspace" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -374,7 +383,7 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    await generatePlan("build a meal planner", { mode: "workspace" });
+    await generatePlan("build a meal planner", { platformModels }, { mode: "workspace" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -429,7 +438,7 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    const result = await generatePlan("Build a meal planner");
+    const result = await generatePlan("Build a meal planner", { platformModels });
 
     expect(result.resources).toHaveLength(2);
     expect(result.resources[0]).toEqual(
@@ -460,7 +469,9 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    const result = await generatePlan("Send me Slack alerts when something happens");
+    const result = await generatePlan("Send me Slack alerts when something happens", {
+      platformModels,
+    });
 
     expect(result.resources).toEqual([]);
   });
@@ -487,7 +498,11 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    const result = await generatePlan("Import my contacts CSV", { mode: "task" });
+    const result = await generatePlan(
+      "Import my contacts CSV",
+      { platformModels },
+      { mode: "task" },
+    );
 
     expect(result.resources).toHaveLength(1);
     expect(result.resources[0]).toEqual(
@@ -514,7 +529,11 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    const result = await generatePlan("Sync my budget with Google Sheets", { mode: "workspace" });
+    const result = await generatePlan(
+      "Sync my budget with Google Sheets",
+      { platformModels },
+      { mode: "workspace" },
+    );
 
     expect(result.resources).toHaveLength(1);
     expect(result.resources[0]).toEqual(
@@ -538,7 +557,7 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    await generatePlan("track my food", { mode: "workspace" });
+    await generatePlan("track my food", { platformModels }, { mode: "workspace" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -564,7 +583,7 @@ describe("generatePlan — resource declarations", () => {
       },
     });
 
-    await generatePlan("track my food", { mode: "workspace" });
+    await generatePlan("track my food", { platformModels }, { mode: "workspace" });
 
     expect(mockGenerateObject).toHaveBeenCalledWith(
       expect.objectContaining({

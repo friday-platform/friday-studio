@@ -14,6 +14,7 @@ import type {
   AtlasUIMessageChunk,
   StreamEmitter,
 } from "@atlas/agent-sdk";
+import type { PlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 
 /** Log level matching @atlas/logger's LogLevel. */
@@ -179,6 +180,19 @@ class CapturedLogger implements Logger {
 }
 
 /**
+ * Stub `PlatformModels` used until evals migrate their real model wiring.
+ * Throws on access so any accidental platform-resolver call in an eval
+ * surfaces loudly instead of silently returning undefined.
+ */
+const stubPlatformModels: PlatformModels = {
+  get(role) {
+    throw new Error(
+      `Eval AgentContextAdapter has no PlatformModels configured — got request for '${role}'. Pass a real resolver to the constructor once evals adopt the platform model path.`,
+    );
+  },
+};
+
+/**
  * Creates minimal agent execution contexts for eval runs.
  *
  * Does not depend on workspace runtime, daemon, or database.
@@ -186,11 +200,13 @@ class CapturedLogger implements Logger {
  *
  * @param tools - AtlasTools to make available in the context
  * @param env - Environment variables (e.g., API keys)
+ * @param platformModels - Platform model resolver (defaults to a throwing stub)
  */
 export class AgentContextAdapter {
   constructor(
     private tools: AtlasTools = {},
     private env: Record<string, string> = {},
+    private platformModels: PlatformModels = stubPlatformModels,
   ) {}
 
   /**
@@ -217,6 +233,7 @@ export class AgentContextAdapter {
       stream: streamEmitter,
       logger,
       abortSignal: options?.signal,
+      platformModels: this.platformModels,
     };
 
     return {

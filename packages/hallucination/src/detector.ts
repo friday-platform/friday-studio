@@ -13,7 +13,7 @@
 
 import type { AgentResult, ToolResult } from "@atlas/agent-sdk";
 import { repairJson } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, type PlatformModels, temporalGroundingMessage } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { ModelMessage } from "ai";
 import { generateObject } from "ai";
@@ -177,6 +177,8 @@ interface LLMValidationResult {
 }
 
 export interface HallucinationDetectorConfig {
+  /** Platform model resolver — `classifier` role drives fabrication validation. */
+  platformModels: PlatformModels;
   logger?: Logger;
   retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
 }
@@ -234,7 +236,7 @@ async function performLLMValidation(
   config: HallucinationDetectorConfig,
 ): Promise<DetectionMethodResult> {
   const operation = async (): Promise<LLMValidationResult> => {
-    return await validateWithLLM(result, config.logger);
+    return await validateWithLLM(result, config.platformModels, config.logger);
   };
 
   try {
@@ -285,7 +287,11 @@ async function performLLMValidation(
 /**
  * LLM validation with robust parsing
  */
-async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LLMValidationResult> {
+async function validateWithLLM(
+  result: AgentResult,
+  platformModels: PlatformModels,
+  logger?: Logger,
+): Promise<LLMValidationResult> {
   const ValidationSchema = z.object({
     valid: z.boolean(),
     confidence: z.number().min(0).max(1),
@@ -304,7 +310,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
     ];
 
     const llmResult = await generateObject({
-      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      model: platformModels.get("classifier"),
       messages,
       schema: ValidationSchema,
       temperature: 0.05,

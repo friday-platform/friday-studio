@@ -8,9 +8,12 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { expect, it } from "vitest";
 import { WorkspaceRuntime } from "./runtime.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 function createTestConfig(): MergedConfig {
   return {
@@ -58,6 +61,7 @@ it("WorkspaceRuntime emits FSM transition and action events via chunk callback",
     const runtime = new WorkspaceRuntime({ id: "test-workspace-id" }, config, {
       workspacePath: testDir,
       lazy: true,
+      platformModels: stubPlatformModels,
     });
 
     await runtime.initialize();

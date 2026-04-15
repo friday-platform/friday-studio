@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { type HookCallback, query } from "@anthropic-ai/claude-agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, smallLLM, traceModel } from "@atlas/llm";
+import { type PlatformModels, registry, smallLLM, traceModel } from "@atlas/llm";
 import { fail, type Result, stringifyError, success, truncateUnicode } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -206,10 +206,15 @@ export type ClaudeCodeAgentResult = z.infer<typeof ClaudeCodeOutputSchema>;
  * Format tool invocation as concise single-line status message (≤50 chars).
  * Used to stream progress updates during code execution.
  */
-async function generateProgress(context: unknown, abortSignal?: AbortSignal): Promise<string> {
+async function generateProgress(
+  platformModels: PlatformModels,
+  context: unknown,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   const contextStr = typeof context === "string" ? context : JSON.stringify(context, null, 2);
 
   return await smallLLM({
+    platformModels,
     system: `Format tool invocation as single-line status. Output only the status line, no explanations.
 
 <rules>
@@ -283,7 +288,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
     },
     handler: async (
       prompt,
-      { logger, abortSignal, stream, session, env, config, outputSchema, skills },
+      { logger, abortSignal, stream, session, env, config, outputSchema, skills, platformModels },
     ) => {
       // FAST_DEVELOPMENT=true lets local dev runs fall back to the operator's
       // Claude Code subscription (~/.claude) instead of requiring a Link-managed
@@ -502,6 +507,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
               if (block.type === "tool_use") {
                 try {
                   const progress = await generateProgress(
+                    platformModels,
                     { toolName: block.name, input: block.input },
                     abortSignal,
                   );

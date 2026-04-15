@@ -1,0 +1,203 @@
+# =============================================================================
+# friday.yml — comprehensive reference example
+# =============================================================================
+#
+# This file shows every friday.yml block an operator can set today. Copy the
+# sections you need into your own `friday.yml` alongside your workspace directory.
+#
+# `friday.yml` is loaded once at daemon startup from the workspace parent
+# directory. It is optional: Friday runs with sensible defaults when no file
+# exists. `friday.yml` is a superset of `workspace.yml` — it accepts every
+# workspace field plus platform-only blocks (`models`, extended `server`,
+# extended `tools`).
+#
+# Schema: packages/config/src/workspace.ts → AtlasConfigSchema
+# =============================================================================
+
+version: "1.0"
+
+workspace:
+  name: comprehensive-example
+  description: Reference friday.yml demonstrating every available platform block.
+
+# =============================================================================
+# models — platform LLM selection per task archetype
+# =============================================================================
+#
+# Friday makes LLM calls on behalf of the platform itself (not user agents):
+# labelling a session, classifying user intent, planning a workflow, or
+# streaming a conversation. Each call site belongs to one of four archetypes.
+# The `models` block lets you pick a model for each archetype independently.
+#
+# Every field is optional. Any omitted archetype falls back to Friday's
+# built-in default chain, which walks a short list of providers and picks
+# the first one whose credentials are present. The chains are designed so
+# that setting ANTHROPIC_API_KEY alone is enough to run the whole platform.
+#
+# Model id format: "provider:model" — e.g. "anthropic:claude-haiku-4-5".
+# Known providers today: anthropic, openai, google, groq, claude-code.
+#
+# Credential resolution: each provider reads its usual env var
+# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY,
+# GROQ_API_KEY). Setting LITELLM_API_KEY universally satisfies the
+# credential check for any provider, so a LiteLLM proxy in front of Friday
+# can route every archetype through a single key.
+#
+# Invalid config — unknown provider, malformed id, or missing credentials —
+# fails daemon startup with every error reported at once, so you never have
+# to restart four times to fix four typos.
+models:
+  # ---------------------------------------------------------------------------
+  # labels — short, plain-text labelling calls
+  # ---------------------------------------------------------------------------
+  # Used for: session titles, quick summaries, and any call that produces
+  # under ~100 tokens of plain text on a user-blocking path.
+  #
+  # What matters here: latency and cost. Quality ceiling is low because the
+  # output is short and bounded.
+  #
+  # Default chain: groq:openai/gpt-oss-120b → anthropic:claude-haiku-4-5
+  # (Groq wins on latency when GROQ_API_KEY is set; otherwise falls back to
+  # Haiku so Anthropic-only setups still work with zero config.)
+  #
+  # Override when: you want to pin a specific fast model, or you run your
+  # own OSS endpoint through LiteLLM.
+  labels: groq:openai/gpt-oss-120b
+
+  # ---------------------------------------------------------------------------
+  # classifier — structured-output decisions over a Zod schema
+  # ---------------------------------------------------------------------------
+  # Used for: triage classification, routing decisions, and anything that
+  # calls `generateObject` with a small enum or discriminated union.
+  #
+  # What matters here: schema-compliant output. The model must reliably emit
+  # valid JSON matching a constrained shape. Size is less important than
+  # instruction-following.
+  #
+  # Default chain: anthropic:claude-haiku-4-5
+  #
+  # Override when: you want a cheaper classifier (e.g. gpt-4o-mini), or
+  # you have a specific model that performs better on your classification
+  # taxonomy.
+  classifier: anthropic:claude-haiku-4-5
+
+  # ---------------------------------------------------------------------------
+  # planner — multi-step synthesis with tool calls
+  # ---------------------------------------------------------------------------
+  # Used for: workspace-builder planning, plan DAG construction, and the
+  # workspace-planner agent. Typically long context in, structured plan out.
+  #
+  # What matters here: reasoning quality over large context windows. These
+  # calls are not latency-sensitive — a user waits once per plan — but a
+  # weak planner produces broken pipelines that fail downstream.
+  #
+  # Default chain: anthropic:claude-sonnet-4-6
+  #
+  # Override when: you want to trade quality for cost (pin Haiku), or you
+  # want to A/B a different frontier model against your plan-eval suite.
+  planner: anthropic:claude-sonnet-4-6
+
+  # ---------------------------------------------------------------------------
+  # conversational — streaming chat with tools and multi-turn memory
+  # ---------------------------------------------------------------------------
+  # Used for: the conversation agent, workspace chat, skill distiller, and
+  # any user-facing streaming agent the platform instantiates directly
+  # (i.e. not declared in workspace.yml).
+  #
+  # What matters here: tool-calling reliability, streaming quality, and the
+  # ability to hold 5-20 tool definitions plus a multi-turn history without
+  # losing the thread.
+  #
+  # Default chain: anthropic:claude-sonnet-4-6
+  #
+  # Override when: your users interact primarily with a different frontier
+  # model and you want consistent behaviour across platform and agent chat.
+  conversational: anthropic:claude-sonnet-4-6
+
+# -----------------------------------------------------------------------------
+# Worked example: partial override (opt in per role)
+# -----------------------------------------------------------------------------
+# You do NOT need to set every archetype. A minimal override that pins only
+# the labels role to Groq and leaves the rest on their Anthropic defaults:
+#
+#     models:
+#       labels: groq:openai/gpt-oss-120b
+#
+# Another common shape — cheap classifier, frontier planner, everything else
+# default:
+#
+#     models:
+#       classifier: openai:gpt-4o-mini
+#       planner: anthropic:claude-sonnet-4-6
+#
+# Claude Code CLI as the conversational backend (no API key required; the
+# CLI handles its own auth):
+#
+#     models:
+#       conversational: claude-code:claude-sonnet-4-6
+# -----------------------------------------------------------------------------
+
+# =============================================================================
+# server — platform MCP server + REST API (friday.yml-only extensions)
+# =============================================================================
+#
+# Workspaces can expose themselves as MCP servers so external systems can
+# discover and invoke Friday capabilities and jobs. The `server.mcp` block
+# is also available in workspace.yml; the `transport`, `auth`, and
+# `rate_limits` extensions below are friday.yml-only.
+server:
+  mcp:
+    enabled: false
+    discoverable:
+      # Capability name patterns to expose. Glob-style, matched against the
+      # capabilities your workspace declares.
+      capabilities:
+        - "workspace_*"
+      # Job name patterns to expose as callable MCP tools.
+      jobs:
+        - "review-*"
+    # Transport + auth are friday.yml-only. Omit to use defaults.
+    auth:
+      required: false
+      providers: []
+    rate_limits:
+      requests_per_hour: 1000
+      concurrent_sessions: 10
+  # REST API is declared but not currently implemented. Listed here so the
+  # schema is discoverable; leave disabled until the feature ships.
+  rest:
+    enabled: false
+    prefix: /api/v1
+    swagger: false
+
+# =============================================================================
+# tools — external MCP servers your agents can call
+# =============================================================================
+#
+# Agents reach out to external MCP servers through this block. The
+# `tool_policy` allowlist/denylist is friday.yml-only and enforces a
+# platform-wide security policy across every workspace.
+tools:
+  mcp:
+    client_config:
+      timeout:
+        progressTimeout: 2m
+        maxTotalTimeout: 30m
+    servers:
+      # Example: a filesystem MCP server exposed over stdio.
+      filesystem:
+        transport:
+          type: stdio
+          command: npx
+          args:
+            - -y
+            - "@modelcontextprotocol/server-filesystem"
+            - /tmp/friday-scratch
+    # Atlas-only: restrict which MCP tools agents may invoke, regardless of
+    # what the servers advertise. Use `allowlist` (default) to permit only
+    # named tools, or `denylist` to block specific ones.
+    tool_policy:
+      type: allowlist
+      allow:
+        - "filesystem.read_file"
+        - "filesystem.list_directory"

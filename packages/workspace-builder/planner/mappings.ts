@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import { generateText, hasToolCall, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import type { Agent, JobWithDAG, PrepareMapping, WorkspaceBlueprint } from "../types.ts";
@@ -314,8 +314,10 @@ export async function generatePrepareMappings(
   job: JobWithDAG,
   plan: WorkspaceBlueprint,
   stepOutputSchemas: Map<string, ValidatedJSONSchema>,
+  deps: { platformModels: PlatformModels },
   options: { verbose?: boolean; runDir?: string } = {},
 ): Promise<PrepareMapping[]> {
+  const model = deps.platformModels.get("planner");
   const rootSteps = job.steps.filter((s) => s.depends_on.length === 0);
   const nonRootSteps = job.steps.filter((s) => s.depends_on.length > 0);
 
@@ -358,7 +360,7 @@ export async function generatePrepareMappings(
         );
 
         const result = await generateText({
-          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          model,
           tools,
           stopWhen: [stepCountIs(10), hasToolCall("finalize")],
           messages: [

@@ -9,7 +9,7 @@
  * Reference: packages/system/agents/fsm-workspace-creator/agent-helpers.ts:35-126
  */
 
-import { registry, traceModel } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { buildDeclarationGuidance } from "@atlas/resources/guidance";
 import type { ResourceDeclaration } from "@atlas/schemas/workspace";
@@ -31,21 +31,23 @@ Bad: "- Email sender address\\n- Subject line\\n- Message body content"`;
 
 /**
  * Infer what data downstream steps need from the current step.
- * Makes a single LLM call per step using claude-haiku (small/fast).
+ * Makes a single LLM call per step via `platformModels.get("planner")`.
  *
  * @param currentStep - The step whose output requirements we're inferring
  * @param downstreamSteps - Steps that consume this step's output
+ * @param platformModels - Platform model resolver
  * @returns 1-2 sentences of behavioral guidance, or fallback text on failure
  */
 async function inferDownstreamDataNeeds(
   currentStep: { description: string },
   downstreamSteps: Array<{ description: string }>,
+  platformModels: PlatformModels,
 ): Promise<string> {
   const downstreamList = downstreamSteps.map((s, i) => `${i + 1}. ${s.description}`).join("\n");
 
   try {
     const result = await generateText({
-      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      model: platformModels.get("planner"),
       system: SYSTEM_PROMPT,
       prompt: `Current step: ${currentStep.description}
 
@@ -76,6 +78,7 @@ export interface PipelineContextEntry {
 type InferFn = (
   currentStep: { description: string },
   downstreamSteps: Array<{ description: string }>,
+  platformModels: PlatformModels,
 ) => Promise<string>;
 
 /**
@@ -100,9 +103,11 @@ type InferFn = (
 export async function enrichAgentsWithPipelineContext(
   agents: Agent[],
   jobs: JobWithDAG[],
+  deps: { platformModels: PlatformModels },
   options?: { infer?: InferFn; resources?: ResourceDeclaration[] },
 ): Promise<{ agents: Agent[]; entries: PipelineContextEntry[] }> {
   const infer = options?.infer ?? inferDownstreamDataNeeds;
+  const { platformModels } = deps;
 
   // Accumulate downstream requirements per agent across all jobs
   const requirementsByAgent = new Map<
@@ -127,6 +132,7 @@ export async function enrichAgentsWithPipelineContext(
       const requirements = await infer(
         { description: step.description },
         downstreamSteps.map((s) => ({ description: s.description })),
+        platformModels,
       );
 
       const existing = requirementsByAgent.get(step.agentId) ?? {

@@ -6,6 +6,7 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
+import type { PlatformModels } from "@atlas/llm";
 import type { DAGStep, DocumentContract, FSMDefinition } from "@atlas/workspace-builder";
 import type { Mock } from "vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -117,10 +118,22 @@ const twoStepSteps: EnhancedTaskStep[] = [
   },
 ];
 
+const stubModel: ReturnType<PlatformModels["get"]> = {
+  specificationVersion: "v3",
+  provider: "anthropic",
+  modelId: "stub",
+  supportedUrls: {},
+  doGenerate: () => Promise.reject(new Error("not implemented")),
+  doStream: () => Promise.reject(new Error("not implemented")),
+};
+
+const stubPlatformModels: PlatformModels = { get: () => stubModel };
+
 const baseContext = {
   sessionId: "test-session",
   workspaceId: "test-workspace",
   streamId: "test-stream",
+  platformModels: stubPlatformModels,
 };
 
 // ── Tests ────────────────────────────────────────────────────────────────────

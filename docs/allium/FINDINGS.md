@@ -186,7 +186,7 @@ group.
 ### INCON-3: Four distinct tool filtering mechanisms
 
 **Module:** MCP Tools
-**Files:** per-server config, `atlas.yml` tool_policy, FSM `PLATFORM_TOOL_ALLOWLIST`, deny-list concatenation during merge
+**Files:** per-server config, `friday.yml` tool_policy, FSM `PLATFORM_TOOL_ALLOWLIST`, deny-list concatenation during merge
 
 These operate at different layers with no unified model. A new tool must be added to or
 excluded from up to four separate lists.
@@ -514,7 +514,7 @@ the caller to pass it correctly.
 
 ## Architecture Observations
 
-### ARCH-1: atlas.yml config is parsed but largely unused
+### ARCH-1: friday.yml config is parsed but largely unused
 
 **Module:** Workspace Lifecycle / Configuration
 **Files:** `packages/config/src/atlas.ts`, `src/core/workspace-runtime.ts`

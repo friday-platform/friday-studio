@@ -286,6 +286,8 @@ export interface LLMProvider {
   call(params: {
     /** Synthetic agent ID for the LLM action (e.g., "fsm:job-name:output-doc") */
     agentId: string;
+    /** Registry provider key (e.g., "anthropic") from workspace YAML */
+    provider?: string;
     model: string;
     prompt: string;
     /** Structured messages with mixed content types (e.g., text + images). When present, used instead of prompt. */

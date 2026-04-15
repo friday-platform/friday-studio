@@ -5,7 +5,7 @@
  * (≤50 chars, -ing verb) given tool invocation or research stage prompts.
  */
 
-import { registry, smallLLM, traceModel } from "@atlas/llm";
+import { createPlatformModels, registry, smallLLM, traceModel } from "@atlas/llm";
 import { generateText } from "ai";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
@@ -15,6 +15,7 @@ import { createScore, type Score } from "../../lib/scoring.ts";
 await loadCredentials();
 
 const adapter = new AgentContextAdapter();
+const platformModels = createPlatformModels(null);
 
 // System prompts from the actual agents
 const CLAUDE_CODE_SYSTEM = `Format tool invocation as single-line status. Output only the status line, no explanations.
@@ -222,7 +223,7 @@ async function runSmallLLM(
   const start = performance.now();
   let text: string;
   if (provider === "groq") {
-    text = await smallLLM({ system, prompt, maxOutputTokens });
+    text = await smallLLM({ platformModels, system, prompt, maxOutputTokens });
   } else {
     const result = await generateText({
       model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),

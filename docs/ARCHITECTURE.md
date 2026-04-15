@@ -282,7 +282,7 @@ declare their agents, signals, tools, and workflow behavior. The Zod schemas in
 `packages/config/src/workspace.ts` define the contract — if it parses, it's
 valid.
 
-An `atlas.yml` exists for platform-wide settings but is rarely used in practice.
+A `friday.yml` exists for platform-wide settings but is rarely used in practice.
 When both files exist, they merge with workspace values taking precedence
 (`MergedConfig`).
 

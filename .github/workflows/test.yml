@@ -47,6 +47,8 @@ jobs:
         run: deno task --recursive sync
 
       - name: Start daemon for integration tests
+        env:
+          LITELLM_API_KEY: ci-placeholder
         run: |
           # Start daemon in background
           deno task start daemon start --port 8080 &

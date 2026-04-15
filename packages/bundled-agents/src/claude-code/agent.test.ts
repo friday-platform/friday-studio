@@ -1,5 +1,6 @@
 import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentContext } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -48,6 +49,8 @@ function createMockLogger(): Logger {
   return logger;
 }
 
+const stubPlatformModels = createStubPlatformModels();
+
 /**
  * Creates a minimal mock AgentContext for testing.
  * Only provides what's required by the agent handler.
@@ -59,6 +62,7 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
     env: {},
     stream: undefined,
     logger: createMockLogger(),
+    platformModels: stubPlatformModels,
     ...overrides,
   };
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
-import { AtlasServerConfigSchema, ServerConfigSchema } from "./atlas.ts";
+import { AtlasServerConfigSchema, PlatformModelsSchema, ServerConfigSchema } from "./atlas.ts";
 import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
@@ -160,12 +160,13 @@ export const WorkspaceConfigSchema = z.strictObject({
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 
 // ==============================================================================
-// ATLAS CONFIGURATION (atlas.yml - superset of workspace.yml)
+// ATLAS CONFIGURATION (friday.yml - superset of workspace.yml)
 // ==============================================================================
 
 export const AtlasConfigSchema = WorkspaceConfigSchema.extend({
   server: AtlasServerConfigSchema.optional(),
   tools: AtlasToolsConfigSchema.optional(),
+  models: PlatformModelsSchema.optional(),
 });
 
 export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;

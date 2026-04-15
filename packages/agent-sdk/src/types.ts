@@ -1,3 +1,4 @@
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
@@ -34,6 +35,18 @@ export interface Logger {
   error(message: string, context?: LogContext): void;
   fatal(message: string, context?: LogContext): void;
   child(context: LogContext): Logger;
+}
+
+// ==============================================================================
+// PLATFORM MODELS (mirrors @atlas/llm — SDK is a leaf node, no cross-package imports)
+// ==============================================================================
+
+/** Task archetype for a platform LLM call site. */
+export type PlatformRole = "labels" | "classifier" | "planner" | "conversational";
+
+/** Resolves platform LLMs by task archetype. Daemon constructs this once at boot. */
+export interface PlatformModels {
+  get(role: PlatformRole): LanguageModelV3;
 }
 
 // ==============================================================================
@@ -314,6 +327,8 @@ export interface AgentContext {
   abortSignal?: AbortSignal;
   telemetry?: AgentTelemetryConfig;
   memory?: AgentMemoryContext;
+  /** Resolves platform LLMs by task archetype. Daemon constructs this once at boot. */
+  platformModels: PlatformModels;
 }
 
 /** Returns AgentPayload<TOutput> via ok()/err(). Execution layer adds metadata. */

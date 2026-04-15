@@ -8,7 +8,7 @@
 
 import { repairJson } from "@atlas/agent-sdk";
 import type { FSMActionEvent, SessionHistoryEvent, SessionHistoryTimeline } from "@atlas/core";
-import { registry, traceModel } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -43,8 +43,6 @@ export interface TriageInput {
 // Classifier
 // ---------------------------------------------------------------------------
 
-const TRIAGE_MODEL = "anthropic:claude-haiku-4-5";
-
 const SYSTEM_PROMPT = `You are a job failure classifier for an AI agent orchestration platform.
 
 Your task is to classify whether a job failure is:
@@ -77,12 +75,15 @@ Respond with your classification and a concise explanation of why.`;
  * Returns null if the LLM call fails (non-fatal — the improvement loop
  * simply doesn't fire).
  */
-export async function classifyFailure(input: TriageInput): Promise<TriageResult | null> {
+export async function classifyFailure(
+  input: TriageInput,
+  platformModels: PlatformModels,
+): Promise<TriageResult | null> {
   const userPrompt = buildUserPrompt(input);
 
   try {
     const result = await generateObject({
-      model: traceModel(registry.languageModel(TRIAGE_MODEL)),
+      model: platformModels.get("classifier"),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },

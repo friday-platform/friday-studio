@@ -34,7 +34,7 @@ import {
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { smallLLM } from "@atlas/llm";
+import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -469,8 +469,9 @@ export async function createArtifactFromFile(opts: {
   fileName: string;
   chatId?: string;
   workspaceId?: string;
+  platformModels: PlatformModels;
 }) {
-  const { filePath, fileName, chatId, workspaceId } = opts;
+  const { filePath, fileName, chatId, workspaceId, platformModels } = opts;
 
   // Legacy format check — reject .doc/.ppt with helpful message
   const ext = extname(fileName).toLowerCase();
@@ -522,6 +523,7 @@ export async function createArtifactFromFile(opts: {
     const artifactId = result.data.id;
     const truncated = markdown.slice(0, 2000);
     smallLLM({
+      platformModels,
       system:
         "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
       prompt: truncated,
@@ -546,8 +548,9 @@ export async function replaceArtifactFromFile(opts: {
   artifactId: string;
   filePath: string;
   fileName: string;
+  platformModels: PlatformModels;
 }) {
-  const { artifactId, filePath, fileName } = opts;
+  const { artifactId, filePath, fileName, platformModels } = opts;
 
   // Legacy format check — reject .doc/.ppt with helpful message
   const ext = extname(fileName).toLowerCase();
@@ -603,6 +606,7 @@ export async function replaceArtifactFromFile(opts: {
     const { data, markdown } = converted;
     const truncated = markdown.slice(0, 2000);
     smallLLM({
+      platformModels,
       system:
         "Summarize the document in one sentence (max 120 chars). No quotes, no preamble, just the summary.",
       prompt: truncated,
@@ -1068,8 +1072,15 @@ const artifactsApp = daemonFactory
       return c.json({ error: "Upload failed" }, 500);
     }
 
+    const platformModels = c.get("app").daemon.getPlatformModels();
+
     if (artifactId) {
-      const result = await replaceArtifactFromFile({ artifactId, filePath, fileName: file.name });
+      const result = await replaceArtifactFromFile({
+        artifactId,
+        filePath,
+        fileName: file.name,
+        platformModels,
+      });
       if (!result.ok) {
         return c.json({ error: result.error }, 500);
       }
@@ -1081,6 +1092,7 @@ const artifactsApp = daemonFactory
       fileName: file.name,
       chatId,
       workspaceId,
+      platformModels,
     });
     if (!result.ok) {
       return c.json({ error: result.error }, 500);

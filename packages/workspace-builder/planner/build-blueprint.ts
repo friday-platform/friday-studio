@@ -8,6 +8,7 @@
 
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type {
   CredentialBinding,
@@ -98,6 +99,8 @@ export type BuildBlueprintOpts = {
   mode: PlanMode;
   /** Contextual logger instance. */
   logger: Logger;
+  /** Platform model resolver — all planner LLM calls route through `.get("planner")`. */
+  platformModels: PlatformModels;
   /** Abort signal for cancellation. */
   abortSignal?: AbortSignal;
   /** Pre-computed plan + classify results — skips those steps when provided. */
@@ -182,12 +185,13 @@ export async function buildBlueprint(
   prompt: string,
   opts: BuildBlueprintOpts,
 ): Promise<BlueprintResult> {
-  const { mode, logger, abortSignal, precomputed, onProgress } = opts;
+  const { mode, logger, abortSignal, precomputed, onProgress, platformModels } = opts;
+  const deps = { platformModels };
 
   // -- plan ----------------------------------------------------------------
   const phase1 = precomputed
     ? precomputed.plan
-    : await runStep("plan", () => generatePlan(prompt, { mode, abortSignal }), {
+    : await runStep("plan", () => generatePlan(prompt, deps, { mode, abortSignal }), {
         logger,
         abortSignal,
         inputs: { prompt, mode },
@@ -280,7 +284,7 @@ export async function buildBlueprint(
   if (mode === "workspace" && phase1.signals.length > 0) {
     phase1.signals = await runStep(
       "signals",
-      () => enrichSignals(phase1.signals, { abortSignal }),
+      () => enrichSignals(phase1.signals, deps, { abortSignal }),
       {
         logger,
         abortSignal,
@@ -295,7 +299,7 @@ export async function buildBlueprint(
 
   const rawJobs = await runStep(
     "dag",
-    () => generateDAGSteps(prompt, phase1.signals, phase1.agents),
+    () => generateDAGSteps(prompt, phase1.signals, phase1.agents, deps),
     {
       logger,
       abortSignal,
@@ -345,7 +349,7 @@ export async function buildBlueprint(
   await runStep(
     "context",
     () =>
-      enrichAgentsWithPipelineContext(phase1.agents, jobs, {
+      enrichAgentsWithPipelineContext(phase1.agents, jobs, deps, {
         resources: parsedResources.length > 0 ? parsedResources : undefined,
       }),
     {
@@ -363,7 +367,7 @@ export async function buildBlueprint(
   for (const job of jobs) {
     const jobSchemas = await runStep(
       `schemas/${job.id}`,
-      () => generateOutputSchemas(job.steps, phase1.agents),
+      () => generateOutputSchemas(job.steps, phase1.agents, deps),
       {
         logger,
         abortSignal,
@@ -382,7 +386,7 @@ export async function buildBlueprint(
 
       const retrySchemas = await runStep(
         `schemas-retry/${job.id}`,
-        () => generateOutputSchemas(missingSteps, phase1.agents),
+        () => generateOutputSchemas(missingSteps, phase1.agents, deps),
         {
           logger,
           abortSignal,
@@ -454,7 +458,7 @@ export async function buildBlueprint(
 
     const mappings = await runStep(
       `mappings/${job.id}`,
-      () => generatePrepareMappings(job, blueprint, jobSchemas),
+      () => generatePrepareMappings(job, blueprint, jobSchemas, deps),
       {
         logger,
         abortSignal,

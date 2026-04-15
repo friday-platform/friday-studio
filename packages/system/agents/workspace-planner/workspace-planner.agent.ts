@@ -1,6 +1,6 @@
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, traceModel } from "@atlas/llm";
+import type { LanguageModelV3 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
@@ -26,16 +26,17 @@ const WorkspacePlannerInputSchema = z.object({
 type WorkspacePlannerInput = z.infer<typeof WorkspacePlannerInputSchema>;
 
 /**
- * Generates concise summaries via Haiku 4.5 for revision messages and plan summaries.
+ * Generates concise summaries for revision messages and plan summaries.
  */
 async function summarize(params: {
   content: string;
   instruction: string;
+  model: LanguageModelV3;
   logger: Logger;
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const result = await generateText({
-    model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+    model: params.model,
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `
@@ -69,8 +70,9 @@ export const workspacePlannerAgent = createAgent<
   expertise: { examples: [] },
   inputSchema: WorkspacePlannerInputSchema,
 
-  handler: async (input, { logger, session, abortSignal }) => {
+  handler: async (input, { logger, session, abortSignal, platformModels }) => {
     logger.info("Starting workspace planning", { artifactId: input.artifactId });
+    const summarizeModel = platformModels.get("planner");
 
     try {
       // Build the prompt — composite for modifications, plain for new plans
@@ -95,7 +97,12 @@ export const workspacePlannerAgent = createAgent<
       }
 
       // Run the full planner pipeline
-      const result = await buildBlueprint(prompt, { mode: "workspace", logger, abortSignal });
+      const result = await buildBlueprint(prompt, {
+        mode: "workspace",
+        logger,
+        abortSignal,
+        platformModels,
+      });
 
       // Check clarifications — bail if agent classification has issues
       if (result.clarifications.length > 0) {
@@ -138,6 +145,7 @@ export const workspacePlannerAgent = createAgent<
           content: `Old plan:\n${JSON.stringify(existingBlueprint)}\nNew plan:\n${JSON.stringify(blueprint)}`,
           instruction:
             "Summarize what changed between these two workspace plans in 1-2 sentences. Focus on what was added, removed, or modified.",
+          model: summarizeModel,
           logger,
           abortSignal,
         });
@@ -145,6 +153,7 @@ export const workspacePlannerAgent = createAgent<
           content: JSON.stringify(blueprint),
           instruction:
             "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
+          model: summarizeModel,
           logger,
           abortSignal,
         });
@@ -175,6 +184,7 @@ export const workspacePlannerAgent = createAgent<
         content: JSON.stringify(blueprint),
         instruction:
           "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
+        model: summarizeModel,
         logger,
         abortSignal,
       });
@@ -212,5 +222,5 @@ export const workspacePlannerAgent = createAgent<
     }
   },
 
-  environment: { required: [{ name: "ANTHROPIC_API_KEY", description: "Claude API key" }] },
+  environment: { required: [] },
 });

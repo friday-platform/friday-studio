@@ -1,5 +1,5 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
-import type { smallLLM } from "@atlas/llm";
+import { createStubPlatformModels, type smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { ResourceEntry } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
@@ -21,6 +21,8 @@ import {
   parseArtifactSummaries,
   parseResourceEntries,
 } from "./workspace-chat.agent.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 function makeLogger(): Logger {
   return {
@@ -247,7 +249,7 @@ describe("generateChatTitle", () => {
 
     const logger = makeLogger();
     const messages = [makeMessage("user", "Help me deploy")];
-    const title = await generateChatTitle(messages, logger);
+    const title = await generateChatTitle(stubPlatformModels, messages, logger);
 
     expect(title).toBe("Deploy Setup");
     expect(mock).toHaveBeenCalledOnce();
@@ -260,7 +262,9 @@ describe("generateChatTitle", () => {
     const logger = makeLogger();
     const messages = [makeMessage("user", "Hello")];
 
-    await expect(generateChatTitle(messages, logger)).rejects.toThrow("LLM unavailable");
+    await expect(generateChatTitle(stubPlatformModels, messages, logger)).rejects.toThrow(
+      "LLM unavailable",
+    );
   });
 
   it("returns 'Saved Chat' when LLM returns empty string", async () => {
@@ -269,7 +273,7 @@ describe("generateChatTitle", () => {
 
     const logger = makeLogger();
     const messages = [makeMessage("user", "Hi")];
-    const title = await generateChatTitle(messages, logger);
+    const title = await generateChatTitle(stubPlatformModels, messages, logger);
 
     expect(title).toBe("Saved Chat");
   });
@@ -280,7 +284,7 @@ describe("generateChatTitle", () => {
 
     const logger = makeLogger();
     const messages = [makeMessage("user", "Hmm")];
-    const title = await generateChatTitle(messages, logger);
+    const title = await generateChatTitle(stubPlatformModels, messages, logger);
 
     expect(title).toBe("Saved Chat");
   });

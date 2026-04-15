@@ -18,12 +18,14 @@ import {
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
+import { createPlannerEvalPlatformModels } from "../../lib/planner-models.ts";
 import { type BaseEvalCase, defineEval, type EvalRegistration } from "../../lib/registration.ts";
 import { createScore, type Score } from "../../lib/scoring.ts";
 
 await loadCredentials();
 
 const adapter = new AgentContextAdapter();
+const platformModels = createPlannerEvalPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Case type
@@ -321,7 +323,7 @@ export const evals: EvalRegistration[] = cases.flatMap((testCase) =>
       config: {
         input: testCase.input,
         run: async () => {
-          return await generatePlan(testCase.input, { mode });
+          return await generatePlan(testCase.input, { platformModels }, { mode });
         },
         score: async (result) => {
           const scores: Score[] = [];

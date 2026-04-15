@@ -13,11 +13,10 @@ vi.mock("@atlas/agent-sdk", async (importOriginal) => {
   return { ...actual, repairJson: vi.fn((text: string) => text) };
 });
 
-vi.mock("@atlas/llm", () => ({
-  getDefaultProviderOpts: vi.fn(() => ({})),
-  registry: { languageModel: vi.fn(() => "mock-model") },
-  traceModel: vi.fn((m: unknown) => m),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, getDefaultProviderOpts: vi.fn(() => ({})) };
+});
 
 vi.mock("@atlas/logger", () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
@@ -30,8 +29,11 @@ vi.mock("@atlas/bundled-agents/registry", () => ({
   },
 }));
 
+import { createStubPlatformModels } from "@atlas/llm";
 import type { ClassifiedDAGStep } from "../types.ts";
 import { generateOutputSchemas } from "./schemas.ts";
+
+const platformModels = createStubPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,7 +93,7 @@ describe("generateOutputSchemas", () => {
 
       mockRegistry.mockReturnValue({ "data-analyst": { outputJsonSchema: bundledSchema } });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       expect(result.get("s1")).toEqual(bundledSchema);
       expect(mockGenerateObject).not.toHaveBeenCalled();
@@ -120,7 +122,7 @@ describe("generateOutputSchemas", () => {
         },
       });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       expect(result.has("s1")).toBe(true);
       expect(mockGenerateObject).toHaveBeenCalledTimes(1);
@@ -154,7 +156,7 @@ describe("generateOutputSchemas", () => {
         },
       });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       expect(result.has("s1")).toBe(true);
       // Should resolve to "Primary Analyst" (primary key wins), not "CSV Analyst"
@@ -182,7 +184,7 @@ describe("generateOutputSchemas", () => {
 
       mockRegistry.mockReturnValue({});
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       expect(result.size).toBe(0);
       expect(mockGenerateObject).not.toHaveBeenCalled();
@@ -214,7 +216,7 @@ describe("generateOutputSchemas", () => {
         },
       });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       const schema = result.get("s1");
       expect(schema).toBeDefined();
@@ -257,7 +259,7 @@ describe("generateOutputSchemas", () => {
         },
       });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       const schema = result.get("s1");
       expect(schema).toMatchObject({
@@ -298,7 +300,7 @@ describe("generateOutputSchemas", () => {
           },
         });
 
-      const result = await generateOutputSchemas(steps, agents);
+      const result = await generateOutputSchemas(steps, agents, { platformModels });
 
       expect(result.has("s1")).toBe(true);
       expect(mockGenerateObject).toHaveBeenCalledTimes(3);
@@ -319,7 +321,9 @@ describe("generateOutputSchemas", () => {
         .mockRejectedValueOnce(new Error("fail 2"))
         .mockRejectedValueOnce(new Error("fail 3"));
 
-      await expect(generateOutputSchemas(steps, agents)).rejects.toThrow("fail 3");
+      await expect(generateOutputSchemas(steps, agents, { platformModels })).rejects.toThrow(
+        "fail 3",
+      );
     });
   });
 });

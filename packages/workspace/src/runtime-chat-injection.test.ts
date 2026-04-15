@@ -8,9 +8,12 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { MergedConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WorkspaceRuntime } from "./runtime.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 /** Minimal config with no signals and no jobs */
 function createMinimalConfig(overrides?: {
@@ -64,6 +67,7 @@ describe("workspace direct chat injection", () => {
     const runtime = new WorkspaceRuntime({ id: "my-workspace" }, config, {
       workspacePath: testDir,
       lazy: true,
+      platformModels: stubPlatformModels,
     });
 
     await expect(runtime.initialize()).rejects.toThrow(/reserved/);
@@ -76,6 +80,7 @@ describe("workspace direct chat injection", () => {
     const runtime = new WorkspaceRuntime({ id: "my-workspace" }, config, {
       workspacePath: testDir,
       lazy: true,
+      platformModels: stubPlatformModels,
     });
 
     await runtime.initialize();
@@ -114,6 +119,7 @@ describe("workspace direct chat injection", () => {
     const runtime = new WorkspaceRuntime({ id: "atlas-conversation" }, config, {
       workspacePath: testDir,
       lazy: true,
+      platformModels: stubPlatformModels,
     });
 
     await runtime.initialize();

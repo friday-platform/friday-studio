@@ -5,7 +5,7 @@
  * token budget on internal reasoning tokens, producing empty output.
  */
 
-import { smallLLM } from "@atlas/llm";
+import { createPlatformModels, smallLLM } from "@atlas/llm";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { type BaseEvalCase, defineEval, type EvalRegistration } from "../../lib/registration.ts";
@@ -14,6 +14,7 @@ import { createScore, type Score } from "../../lib/scoring.ts";
 await loadCredentials();
 
 const adapter = new AgentContextAdapter();
+const platformModels = createPlatformModels(null);
 
 const TITLE_SYSTEM =
   "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.";
@@ -90,6 +91,7 @@ const titleEvals = titleCases.map((testCase) =>
       run: async () => {
         const start = performance.now();
         const text = await smallLLM({
+          platformModels,
           system: TITLE_SYSTEM,
           prompt: `Generate a title for this conversation:\n${testCase.input}`,
           maxOutputTokens: MAX_OUTPUT_TOKENS,

@@ -13,6 +13,7 @@ services:
         required: false
     environment:
       ATLAS_LOG_LEVEL: ${ATLAS_LOG_LEVEL:-info}
+      ATLAS_CONFIG_PATH: /app/user-config
       FRIDAY_DAEMON_PORT: ${FRIDAY_DAEMON_PORT:-18080}
       FRIDAY_LINK_PORT: ${FRIDAY_LINK_PORT:-13100}
       FRIDAY_STUDIO_PORT: ${FRIDAY_STUDIO_PORT:-15200}
@@ -24,6 +25,8 @@ services:
       - link-data:/data/link
       - ${KNOWLEDGE_DATA_DIR:-/tmp/knowledge}:${KNOWLEDGE_DATA_DIR:-/tmp/knowledge}:ro
       - ${AGENTS_DIR:-./agents}:/home/atlas/agent-src:ro
+      # Platform configuration - mounts project root so friday.yml can live next to docker-compose.yml
+      - ./:/app/user-config:ro
       # Uncomment to override default webhook mappings:
       # - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
     dns:

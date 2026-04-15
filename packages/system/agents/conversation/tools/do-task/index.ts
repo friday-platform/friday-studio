@@ -9,7 +9,7 @@ import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import { smallLLM } from "@atlas/llm";
+import { createPlatformModels, type PlatformModels, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { truncateUnicode } from "@atlas/utils";
 import {
@@ -104,12 +104,14 @@ export function fallbackTaskSummary(intent: string, stepCount: number, success: 
 }
 
 async function generateTaskSummary(
+  platformModels: PlatformModels,
   intent: string,
   stepCount: number,
   success: boolean,
 ): Promise<string> {
   try {
     return await smallLLM({
+      platformModels,
       system: "Summarize task execution in 1 sentence, ≤100 chars. Be direct, no fluff.",
       prompt: `Intent: ${intent}\nSteps: ${stepCount}\nStatus: ${success ? "succeeded" : "failed"}`,
       maxOutputTokens: 250,
@@ -119,9 +121,13 @@ async function generateTaskSummary(
   }
 }
 
-async function generateProgressLabel(intent: string): Promise<string> {
+async function generateProgressLabel(
+  platformModels: PlatformModels,
+  intent: string,
+): Promise<string> {
   try {
     const label = await smallLLM({
+      platformModels,
       system:
         "Summarize what was accomplished in 3-4 words. Use past tense. No punctuation. Examples: 'Searched Notion workspace', 'Created weekly summary', 'Analyzed ticket data'.",
       prompt: intent,
@@ -134,6 +140,7 @@ async function generateProgressLabel(intent: string): Promise<string> {
 }
 
 async function storeTaskArtifact(
+  platformModels: PlatformModels,
   data: {
     intent: string;
     plan: unknown;
@@ -145,7 +152,12 @@ async function storeTaskArtifact(
   logger: Logger,
 ): Promise<string> {
   const stepCount = Array.isArray(data.results) ? data.results.length : 0;
-  const rawSummary = await generateTaskSummary(data.intent, stepCount, data.success);
+  const rawSummary = await generateTaskSummary(
+    platformModels,
+    data.intent,
+    stepCount,
+    data.success,
+  );
   const summary = rawSummary.trim() || fallbackTaskSummary(data.intent, stepCount, data.success);
 
   const artifactResult = await parseResult(
@@ -421,7 +433,12 @@ export function createDoTaskTool(
       try {
         emitProgress({ type: "planning" });
 
-        const planResult = await generatePlan(enrichedIntent, { mode: "task", abortSignal });
+        const platformModels = createPlatformModels(null);
+        const planResult = await generatePlan(
+          enrichedIntent,
+          { platformModels },
+          { mode: "task", abortSignal },
+        );
 
         // Reuse dynamic servers already fetched during planning (avoids redundant KV lookup)
         const dynamicServers = planResult.dynamicServers;
@@ -523,6 +540,7 @@ export function createDoTaskTool(
               sessionId: session.sessionId,
               workspaceId: session.workspaceId,
               streamId: session.streamId,
+              platformModels,
               userId: session.userId,
               daemonUrl: session.daemonUrl,
               datetime: session.datetime,
@@ -569,6 +587,7 @@ export function createDoTaskTool(
 
             try {
               await storeTaskArtifact(
+                platformModels,
                 {
                   intent,
                   plan: [fastpathStep],
@@ -597,7 +616,7 @@ export function createDoTaskTool(
             };
 
             if (execResult.success) {
-              const progressLabel = await generateProgressLabel(intent);
+              const progressLabel = await generateProgressLabel(platformModels, intent);
               return {
                 success: true,
                 summary: progressLabel,
@@ -634,6 +653,7 @@ export function createDoTaskTool(
             mode: "task",
             logger,
             abortSignal,
+            platformModels,
             workspaceId: session.workspaceId,
             precomputed: {
               plan: planResult,
@@ -716,6 +736,7 @@ export function createDoTaskTool(
 
         // Generate friendly descriptions for progress UX
         const friendlyDescriptions = await generateFriendlyDescriptions(
+          platformModels,
           classifiedJob.steps.map((s) => ({ agentId: s.agentId, description: s.description })),
           intent,
           abortSignal,
@@ -763,6 +784,7 @@ export function createDoTaskTool(
             sessionId: session.sessionId,
             workspaceId: session.workspaceId,
             streamId: session.streamId,
+            platformModels,
             userId: session.userId,
             daemonUrl: session.daemonUrl,
             datetime: session.datetime,
@@ -809,6 +831,7 @@ export function createDoTaskTool(
 
           try {
             await storeTaskArtifact(
+              platformModels,
               {
                 intent,
                 plan: plan.steps,
@@ -835,7 +858,7 @@ export function createDoTaskTool(
           };
 
           if (execResult.success) {
-            const progressLabel = await generateProgressLabel(intent);
+            const progressLabel = await generateProgressLabel(platformModels, intent);
             return {
               success: true,
               summary: progressLabel,

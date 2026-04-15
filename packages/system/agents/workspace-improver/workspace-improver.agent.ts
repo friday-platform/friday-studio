@@ -12,7 +12,7 @@
 
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, traceModel } from "@atlas/llm";
+import type { LanguageModelV3 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
@@ -59,8 +59,6 @@ interface WorkspaceImproverSuccessData {
 // ---------------------------------------------------------------------------
 // LLM schemas
 // ---------------------------------------------------------------------------
-
-const IMPROVER_MODEL = "anthropic:claude-sonnet-4-5";
 
 const BlueprintRevisionSchema = z.object({
   revisedBlueprint: WorkspaceBlueprintSchema,
@@ -128,7 +126,7 @@ export const workspaceImproverAgent = createAgent<string, WorkspaceImproverSucce
     "passes structural validation.",
   expertise: { examples: [] },
 
-  handler: async (rawInput, { logger, stream, abortSignal }) => {
+  handler: async (rawInput, { logger, stream, abortSignal, platformModels }) => {
     const inputParse = WorkspaceImproverInputSchema.safeParse(JSON.parse(rawInput));
     if (!inputParse.success) {
       return err(`Invalid input: ${z.prettifyError(inputParse.error)}`);
@@ -169,7 +167,8 @@ export const workspaceImproverAgent = createAgent<string, WorkspaceImproverSucce
 
       const userPrompt = buildUserPrompt(input, originalBlueprint, revisionHistory);
 
-      let revisedResult = await generateRevision(userPrompt, abortSignal, logger);
+      const model = platformModels.get("conversational");
+      let revisedResult = await generateRevision(userPrompt, model, abortSignal, logger);
 
       // 4. Validate revision scope
       let validation = validateRevisionScope(originalBlueprint, revisedResult.revisedBlueprint);
@@ -186,7 +185,7 @@ export const workspaceImproverAgent = createAgent<string, WorkspaceImproverSucce
         });
 
         const retryPrompt = buildRetryPrompt(userPrompt, validation);
-        revisedResult = await generateRevision(retryPrompt, abortSignal, logger);
+        revisedResult = await generateRevision(retryPrompt, model, abortSignal, logger);
         validation = validateRevisionScope(originalBlueprint, revisedResult.revisedBlueprint);
       }
 
@@ -325,11 +324,12 @@ async function loadRevisionHistory(
 
 async function generateRevision(
   userPrompt: string,
+  model: LanguageModelV3,
   abortSignal: AbortSignal | undefined,
   logger: Logger,
 ): Promise<z.infer<typeof BlueprintRevisionSchema>> {
   const result = await generateObject({
-    model: traceModel(registry.languageModel(IMPROVER_MODEL)),
+    model,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userPrompt },

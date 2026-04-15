@@ -533,7 +533,7 @@ rule DisposeManager {
 // Open Questions
 // =============================================================================
 
-open_question "MCPServerRegistry (config hierarchy) and MCPDiscoveryRegistry (server metadata catalog) serve overlapping but distinct purposes. MCPServerRegistry resolves atlas.yml + workspace.yml configs at workspace boot. MCPDiscoveryRegistry matches agent 'needs' to known server templates during workspace creation. The naming is confusing -- both are called 'registry'. Should they be renamed to clarify their roles?"
+open_question "MCPServerRegistry (config hierarchy) and MCPDiscoveryRegistry (server metadata catalog) serve overlapping but distinct purposes. MCPServerRegistry resolves friday.yml + workspace.yml configs at workspace boot. MCPDiscoveryRegistry matches agent 'needs' to known server templates during workspace creation. The naming is confusing -- both are called 'registry'. Should they be renamed to clarify their roles?"
 
 open_question "MCPManager is used as both a singleton (MCPManager.getInstance()) and as instances created by GlobalMCPServerPool. The singleton pattern in MCPManager conflicts with pool-based lifecycle management. Which pattern should win?"
 

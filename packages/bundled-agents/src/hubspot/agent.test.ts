@@ -1,5 +1,6 @@
 import { env } from "node:process";
 import type { AgentContext } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createCommentFixture from "./fixtures/create-comment.json" with { type: "json" };
@@ -12,10 +13,14 @@ vi.mock("ai", () => ({
   tool: vi.fn((opts: Record<string, unknown>) => opts),
 }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: vi.fn(() => "mock-model") },
-  traceModel: vi.fn((m: unknown) => m),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    registry: { languageModel: vi.fn(() => "mock-model") },
+    traceModel: vi.fn((m: unknown) => m),
+  };
+});
 
 vi.mock("@atlas/agent-sdk/vercel-helpers", () => ({
   collectToolUsageFromSteps: vi.fn(() => ({ assembledToolCalls: [], assembledToolResults: [] })),
@@ -41,6 +46,8 @@ function createMockLogger(): Logger {
   return logger;
 }
 
+const stubPlatformModels = createStubPlatformModels();
+
 /** Creates a minimal mock AgentContext for testing. */
 function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
   return {
@@ -49,6 +56,7 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
     env: {},
     stream: undefined,
     logger: createMockLogger(),
+    platformModels: stubPlatformModels,
     ...overrides,
   };
 }

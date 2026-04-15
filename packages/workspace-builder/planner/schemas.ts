@@ -2,7 +2,7 @@ import { repairJson } from "@atlas/agent-sdk";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";
 import { JSONSchemaSchema } from "@atlas/core/artifacts";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -151,7 +151,9 @@ function fieldsToJSONSchema(output: z.infer<typeof OutputFieldSchema>): Validate
 export async function generateOutputSchemas(
   steps: ClassifiedDAGStep[],
   agents: Agent[],
+  deps: { platformModels: PlatformModels },
 ): Promise<Map<string, ValidatedJSONSchema>> {
+  const model = deps.platformModels.get("planner");
   const agentMap = new Map(agents.map((a) => [a.id, a]));
   const schemas = new Map<string, ValidatedJSONSchema>();
 
@@ -180,7 +182,7 @@ export async function generateOutputSchemas(
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           try {
             const result = await generateObject({
-              model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+              model,
               schema: OutputFieldSchema,
               experimental_repairText: repairJson,
               maxRetries: 3,

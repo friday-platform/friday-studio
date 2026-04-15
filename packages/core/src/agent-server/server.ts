@@ -13,6 +13,7 @@ import type {
   AtlasAgent,
 } from "@atlas/agent-sdk";
 import { type AgentSessionData, AgentSessionDataSchema } from "@atlas/agent-sdk";
+import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { AtlasTelemetry } from "@atlas/logger/telemetry";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -83,6 +84,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
     this.buildAgentContext = createAgentContextBuilder({
       logger: deps.logger,
+      platformModels: deps.platformModels,
       server: this.server.server,
       // Pass through SSE check with session context
       hasActiveSSE: (sessionId?: string) => this.hasActiveSSE(sessionId),
@@ -425,6 +427,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     daemonUrl: string;
     logger: Logger;
     agentRegistry: AgentRegistry;
+    platformModels: PlatformModels;
     sessionId: string;
     hasActiveSSE?: (sessionId?: string) => boolean;
   }): AtlasAgentsMCPServer {

@@ -44,6 +44,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
   CredentialNotFoundError: MockCredentialNotFoundError,
 }));
 
+import { createStubPlatformModels } from "@atlas/llm";
 import type { BuildBlueprintOpts } from "./build-blueprint.ts";
 import { buildBlueprint, PipelineError } from "./build-blueprint.ts";
 
@@ -61,8 +62,10 @@ const mockLogger = {
   child: vi.fn(() => mockLogger),
 };
 
+const platformModels = createStubPlatformModels();
+
 function baseOpts(overrides?: Partial<BuildBlueprintOpts>): BuildBlueprintOpts {
-  return { mode: "workspace", logger: mockLogger, ...overrides };
+  return { mode: "workspace", logger: mockLogger, platformModels, ...overrides };
 }
 
 const PLAN_RESULT = {
@@ -597,6 +600,7 @@ describe("buildBlueprint", () => {
         expect.arrayContaining([
           expect.objectContaining({ id: "csv-data-analyst", bundledId: "data-analyst" }),
         ]),
+        expect.objectContaining({ platformModels }),
       );
       expect(result.blueprint.jobs).toHaveLength(1);
       const job = result.blueprint.jobs[0];

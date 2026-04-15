@@ -1,4 +1,4 @@
-import { smallLLM } from "@atlas/llm";
+import { type PlatformModels, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { Parallel } from "parallel-web";
 import { z } from "zod";
@@ -49,13 +49,18 @@ export type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
 
 const PARALLEL_MAX_OBJECTIVE = 4500;
 
-async function condenseObjective(objective: string, logger: Logger): Promise<string> {
+async function condenseObjective(
+  platformModels: PlatformModels,
+  objective: string,
+  logger: Logger,
+): Promise<string> {
   if (objective.length <= PARALLEL_MAX_OBJECTIVE) return objective;
 
   logger.info("Condensing long objective", { originalLength: objective.length });
 
   try {
     const condensed = await smallLLM({
+      platformModels,
       system:
         "Extract the core search question from this context. Output ONLY the search query, max 500 chars.",
       prompt: objective,
@@ -114,11 +119,12 @@ export function resolveDefaultRecencyDays(
 
 export async function executeSearch(
   client: Parallel,
+  platformModels: PlatformModels,
   objective: string,
   analysis: QueryAnalysis,
   logger: Logger,
 ): Promise<SearchResult> {
-  objective = await condenseObjective(objective, logger);
+  objective = await condenseObjective(platformModels, objective, logger);
 
   const sourcePolicy: Parallel.SourcePolicy = {};
 

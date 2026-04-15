@@ -1,6 +1,6 @@
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import type { SystemModelMessage, UserModelMessage } from "ai";
 import { generateObject } from "ai";
@@ -69,7 +69,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
     "Optimizes context for agent execution based on agent needs and token constraints. Internal platform agent, not exposed to users.",
   expertise: { examples: [] },
   inputSchema: SupervisorInputSchema,
-  handler: async (input, { logger, stream, abortSignal }) => {
+  handler: async (input, { logger, stream, abortSignal, platformModels }) => {
     try {
       stream?.emit({
         type: "data-tool-progress",
@@ -131,7 +131,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
       ];
 
       const result = await generateObject({
-        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+        model: platformModels.get("conversational"),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
         messages,

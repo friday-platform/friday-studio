@@ -8,6 +8,7 @@
  * @module
  */
 
+import { createPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import {
   buildBlueprint,
@@ -48,6 +49,7 @@ function generateBlueprint(
     logger: opts.logger,
     abortSignal: opts.abortSignal,
     onProgress: opts.onProgress,
+    platformModels: createPlatformModels(null),
   };
   return buildBlueprint(prompt, buildOpts);
 }

@@ -64,7 +64,7 @@ export const PlatformMCPConfigSchema = z.strictObject({
 export type PlatformMCPConfig = z.infer<typeof PlatformMCPConfigSchema>;
 
 /**
- * Extended platform MCP configuration (atlas.yml only)
+ * Extended platform MCP configuration (friday.yml only)
  */
 export const AtlasPlatformMCPConfigSchema = PlatformMCPConfigSchema.extend({
   transport: MCPTransportConfigSchema.optional(),
@@ -96,7 +96,7 @@ export const ToolsConfigSchema = z.strictObject({
 export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
 
 /**
- * Extended tools configuration with policies (atlas.yml only)
+ * Extended tools configuration with policies (friday.yml only)
  */
 export const AtlasToolsConfigSchema = ToolsConfigSchema.extend({
   mcp: MCPClientConfigSchema.extend({

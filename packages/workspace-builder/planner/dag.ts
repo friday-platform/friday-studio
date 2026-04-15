@@ -1,5 +1,5 @@
 import { repairJson } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { topologicalSort } from "../topological-sort.ts";
@@ -54,6 +54,7 @@ export async function generateDAGSteps(
   prompt: string,
   signals: Signal[],
   agents: Agent[],
+  deps: { platformModels: PlatformModels },
 ): Promise<JobWithDAG[]> {
   // Task mode has no signals — use a synthetic trigger so the enum is never empty
   const signalIds = signals.length > 0 ? signals.map((s) => s.id) : ["adhoc-trigger"];
@@ -84,7 +85,7 @@ export async function generateDAGSteps(
   });
 
   const result = await generateObject({
-    model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+    model: deps.platformModels.get("planner"),
     schema: jobSchema,
     experimental_repairText: repairJson,
     maxRetries: 3,

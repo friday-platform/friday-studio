@@ -25,9 +25,8 @@ import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import {
   buildTemporalFacts,
   getDefaultProviderOpts,
-  registry,
+  type PlatformModels,
   smallLLM,
-  traceModel,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
@@ -58,7 +57,7 @@ import { skills } from "./skills/index.ts";
 import { connectServiceSucceeded, workspaceCreationComplete } from "./stop-conditions.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
-import { conversationTools } from "./tools/mod.ts";
+import { conversationTools, createConnectMcpServerTool } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 import { createStreamingSignalTriggerTool } from "./tools/streaming-signal-trigger.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
@@ -281,13 +280,18 @@ function getSystemPrompt(
 /**
  * Generates a concise 2-3 word title for a conversation based on its messages.
  */
-async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
+async function generateChatTitle(
+  platformModels: PlatformModels,
+  messages: AtlasUIMessage[],
+  logger: Logger,
+): Promise<string> {
   const messagePreview = messages
     .map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`)
     .join("\n");
 
   try {
     return await smallLLM({
+      platformModels,
       system:
         "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
       prompt: `Generate a title for this conversation:\n${messagePreview}`,
@@ -327,9 +331,10 @@ function buildAgentContext(
   session: AgentContext["session"],
   logger: Logger,
   stream: StreamEmitter,
+  platformModels: AgentContext["platformModels"],
   abortSignal?: AbortSignal,
 ): AgentContext {
-  return { tools: {}, session, env: {}, stream, logger, abortSignal };
+  return { tools: {}, session, env: {}, stream, logger, abortSignal, platformModels };
 }
 
 // Export the agent
@@ -346,7 +351,10 @@ export const conversationAgent = createAgent<string, ConversationResult>({
   /**
    * NOTE: prompt param is unused — message history is loaded from chat DB instead.
    */
-  handler: async (_, { session, logger, tools, stream, abortSignal, telemetry }) => {
+  handler: async (
+    _,
+    { session, logger, tools, stream, abortSignal, telemetry, platformModels },
+  ) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -396,7 +404,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
          * also then further refine it based on the next turn, which should be more meaningful.
          */
         if (messages.length === 2 || messages.length === 4) {
-          const title = await generateChatTitle(messages, logger);
+          const title = await generateChatTitle(platformModels, messages, logger);
           const titleResult = await parseResult(
             client.chat[":chatId"].title.$patch({
               param: { chatId: session.streamId },
@@ -480,7 +488,13 @@ export const conversationAgent = createAgent<string, ConversationResult>({
          * Direct invocation via .execute() — no MCP round-trip.
          */
         const agentStream = createAgentStreamEmitter(writer);
-        const agentContext = buildAgentContext(session, logger, agentStream, abortSignal);
+        const agentContext = buildAgentContext(
+          session,
+          logger,
+          agentStream,
+          platformModels,
+          abortSignal,
+        );
 
         const systemAgents: AtlasTools = {
           "workspace-planner": tool({
@@ -732,6 +746,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         const allTools = {
           ...filteredTools,
           ...conversationTools,
+          connect_mcp_server: createConnectMcpServerTool(platformModels),
           ...connectServiceTool,
           ...systemAgents,
           do_task: doTaskTool,
@@ -888,7 +903,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
         try {
           try {
             result = streamText({
-              model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+              model: platformModels.get("conversational"),
               experimental_repairToolCall: repairToolCall,
               messages: [
                 {
@@ -1108,6 +1123,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
           if (summarizableTools.length > 0 && !errorEmitted) {
             try {
               const summaryText = await generateActionSummary(
+                platformModels,
                 summarizableTools,
                 finalText ?? "",
                 logger,
@@ -1189,6 +1205,7 @@ export const conversationAgent = createAgent<string, ConversationResult>({
  * Called after the main turn completes if tool calls were made.
  */
 async function generateActionSummary(
+  platformModels: PlatformModels,
   toolNames: string[],
   responseText: string,
   log: Logger,
@@ -1198,6 +1215,7 @@ async function generateActionSummary(
 
   try {
     const summary = await smallLLM({
+      platformModels,
       system:
         "Summarize what tools were used in one short sentence (max 10 words). Focus on which tools and services were used, not what was accomplished. Examples: 'Used Notion search tools and created an artifact', 'Searched Linear issues and posted to Slack', 'Ran a task with Notion and Google Calendar'. Write ONLY the summary sentence, nothing else.",
       prompt: `Tools used: ${toolList}\nResponse to user: ${truncatedResponse}`,

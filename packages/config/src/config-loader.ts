@@ -85,7 +85,7 @@ export class ConfigLoader {
    * Load and validate Atlas platform configuration
    */
   async loadAtlas(): Promise<z.infer<typeof AtlasConfigSchema> | null> {
-    const configPath = `${this.workspacePath}/atlas.yml`;
+    const configPath = `${this.workspacePath}/friday.yml`;
 
     if (!(await this.adapter.exists(configPath))) {
       return null; // Atlas config is optional
@@ -108,7 +108,7 @@ export class ConfigLoader {
   }
 
   /**
-   * Load both workspace.yml and atlas.yml, return them as separate configurations
+   * Load both workspace.yml and friday.yml, return them as separate configurations
    */
   async load(): Promise<MergedConfig> {
     const [workspace, atlas] = await Promise.all([this.loadWorkspace(), this.loadAtlas()]);

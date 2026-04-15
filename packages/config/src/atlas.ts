@@ -1,50 +1,29 @@
 /**
  * Atlas-specific configuration schemas
- * These are only available in atlas.yml, not workspace.yml
+ * These are only available in friday.yml, not workspace.yml
  */
 
 import { z } from "zod";
-import { DurationSchema, SupervisionLevel } from "./base.ts";
 
 // ==============================================================================
-// SUPERVISOR CONFIGURATION
+// PLATFORM MODELS CONFIGURATION
 // ==============================================================================
 
-const SupervisorPromptsSchema = z.strictObject({
-  system: z.string().optional(),
-  analysis: z.string().optional(),
-  planning: z.string().optional(),
+const ModelIdSchema = z
+  .string()
+  .regex(/^[a-z-]+:.+$/, "Must be in 'provider:model' format (e.g., 'anthropic:claude-haiku-4-5')");
+
+/**
+ * Per-archetype model selection for platform LLM calls.
+ * Any omitted field falls back to the built-in default chain.
+ */
+export const PlatformModelsSchema = z.object({
+  labels: ModelIdSchema.optional(),
+  classifier: ModelIdSchema.optional(),
+  planner: ModelIdSchema.optional(),
+  conversational: ModelIdSchema.optional(),
 });
-export type SupervisorPrompts = z.infer<typeof SupervisorPromptsSchema>;
-
-const SupervisorConfigSchema = z.strictObject({
-  model: z.string().describe("LLM model to use for supervision"),
-
-  supervision: z.strictObject({
-    level: SupervisionLevel,
-    cache_enabled: z.boolean(),
-    cache_adapter: z.string().optional(),
-    cache_ttl_hours: z.number().positive().optional(),
-    parallel_llm_calls: z.boolean().optional(),
-    timeouts: z
-      .strictObject({
-        analysis: DurationSchema,
-        validation: DurationSchema,
-        execution: DurationSchema.optional(),
-      })
-      .optional(),
-  }),
-
-  prompts: SupervisorPromptsSchema,
-});
-export type SupervisorConfig = z.infer<typeof SupervisorConfigSchema>;
-
-export const SupervisorsConfigSchema = z.strictObject({
-  workspace: SupervisorConfigSchema,
-  session: SupervisorConfigSchema,
-  agent: SupervisorConfigSchema,
-});
-export type SupervisorsConfig = z.infer<typeof SupervisorsConfigSchema>;
+export type PlatformModelsConfig = z.infer<typeof PlatformModelsSchema>;
 
 // ==============================================================================
 // SYSTEM WORKSPACES
@@ -72,7 +51,7 @@ export const ServerConfigSchema = z.strictObject({
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
 /**
- * Extended server configuration (atlas.yml only)
+ * Extended server configuration (friday.yml only)
  */
 export const AtlasServerConfigSchema = ServerConfigSchema.extend({
   mcp: AtlasPlatformMCPConfigSchema.optional(),

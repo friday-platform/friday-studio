@@ -1,4 +1,5 @@
 import type { SessionHistoryTimeline } from "@atlas/core";
+import { createStubPlatformModels } from "@atlas/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,7 @@ function makeInput(overrides?: Partial<ImprovementLoopInput>): ImprovementLoopIn
     errorMessage: "Tool 'search-web' not found",
     blueprintArtifactId: "artifact-789",
     timeline: emptyTimeline,
+    platformModels: createStubPlatformModels(),
     invokeImprover: vi
       .fn<(input: unknown) => Promise<ImproverAgentResult>>()
       .mockResolvedValue({
@@ -111,12 +113,15 @@ describe("runImprovementLoop", () => {
 
     // Triage was called with correct args
     expect(mockClassifyFailure).toHaveBeenCalledOnce();
-    expect(mockClassifyFailure).toHaveBeenCalledWith({
-      errorMessage: "Tool 'search-web' not found",
-      jobId: "analyze-job",
-      failedStepId: "step-1",
-      transcriptExcerpt: "[tool-call] search-web(...)",
-    });
+    expect(mockClassifyFailure).toHaveBeenCalledWith(
+      {
+        errorMessage: "Tool 'search-web' not found",
+        jobId: "analyze-job",
+        failedStepId: "step-1",
+        transcriptExcerpt: "[tool-call] search-web(...)",
+      },
+      expect.objectContaining({ get: expect.any(Function) }),
+    );
 
     // Improver was invoked with correct args
     expect(input.invokeImprover).toHaveBeenCalledOnce();

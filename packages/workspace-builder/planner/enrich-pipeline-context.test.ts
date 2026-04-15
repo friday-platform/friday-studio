@@ -1,7 +1,10 @@
+import { createStubPlatformModels } from "@atlas/llm";
 import type { ResourceDeclaration } from "@atlas/schemas/workspace";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent, JobWithDAG } from "../types.ts";
 import { enrichAgentsWithPipelineContext } from "./enrich-pipeline-context.ts";
+
+const platformModels = createStubPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,9 +63,12 @@ describe("enrichAgentsWithPipelineContext", () => {
       }),
     ];
 
-    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-    });
+    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer },
+    );
 
     const enrichedDescription =
       "Fetches emails\n\nDOWNSTREAM DATA REQUIREMENTS:\nInclude full message bodies and sender details, not just headers or metadata.";
@@ -78,9 +84,11 @@ describe("enrichAgentsWithPipelineContext", () => {
       },
     ]);
     expect(infer).toHaveBeenCalledOnce();
-    expect(infer).toHaveBeenCalledWith({ description: "Fetch emails" }, [
-      { description: "Summarize emails" },
-    ]);
+    expect(infer).toHaveBeenCalledWith(
+      { description: "Fetch emails" },
+      [{ description: "Summarize emails" }],
+      platformModels,
+    );
   });
 
   it("accumulates requirements for agent appearing in multiple jobs", async () => {
@@ -121,9 +129,12 @@ describe("enrichAgentsWithPipelineContext", () => {
       }),
     ];
 
-    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-    });
+    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer },
+    );
 
     const enrichedDescription =
       "Fetches data\n\nDOWNSTREAM DATA REQUIREMENTS:\nInclude complete records with all relevant attributes from source A.\n\nCapture full data payloads from source B, not just summaries.";
@@ -155,9 +166,12 @@ describe("enrichAgentsWithPipelineContext", () => {
       }),
     ];
 
-    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-    });
+    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer },
+    );
 
     expect(enriched.map((a) => a.description)).toEqual(["Solo agent"]);
     expect(entries).toHaveLength(0);
@@ -200,9 +214,12 @@ describe("enrichAgentsWithPipelineContext", () => {
       }),
     ];
 
-    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-    });
+    const { agents: enriched, entries } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer },
+    );
 
     // Bundled agent receives enrichment because step.agentId matches agent.id
     expect(enriched[0]?.description).toBe(
@@ -254,10 +271,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-      resources: [DOCUMENT_RESOURCE],
-    });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer, resources: [DOCUMENT_RESOURCE] },
+    );
 
     for (const agent of enriched) {
       expect(agent.description).toContain("## Workspace Resources");
@@ -277,10 +296,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-      resources: [EXTERNAL_REF],
-    });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer, resources: [EXTERNAL_REF] },
+    );
 
     expect(enriched[0]?.description).toContain("## Workspace Resources");
     expect(enriched[0]?.description).toContain("budget_sheet");
@@ -297,10 +318,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-      resources: [DOCUMENT_RESOURCE, EXTERNAL_REF],
-    });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer, resources: [DOCUMENT_RESOURCE, EXTERNAL_REF] },
+    );
 
     const desc = enriched[0]?.description ?? "";
     expect(desc).toContain("grocery_list");
@@ -317,10 +340,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-      resources: [],
-    });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer, resources: [] },
+    );
 
     expect(enriched[0]?.description).not.toContain("## Workspace Resources");
   });
@@ -335,7 +360,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, { infer });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer },
+    );
 
     expect(enriched[0]?.description).not.toContain("## Workspace Resources");
   });
@@ -361,10 +391,12 @@ describe("enrichAgentsWithPipelineContext — resource enrichment", () => {
       }),
     ];
 
-    const { agents: enriched } = await enrichAgentsWithPipelineContext(agents, jobs, {
-      infer,
-      resources: [DOCUMENT_RESOURCE],
-    });
+    const { agents: enriched } = await enrichAgentsWithPipelineContext(
+      agents,
+      jobs,
+      { platformModels },
+      { infer, resources: [DOCUMENT_RESOURCE] },
+    );
 
     const fetcherDesc = enriched[0]?.description ?? "";
     // Has both downstream requirements AND resource section

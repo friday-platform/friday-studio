@@ -15,6 +15,7 @@ import {
   type ResourceWithData,
   ResourceWithDataSchema,
 } from "@atlas/ledger";
+import { createStubPlatformModels } from "@atlas/llm";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -181,7 +182,9 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
     evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: () => ledger,
     getActivityAdapter: vi.fn(),
-    daemon: {} as AppContext["daemon"],
+    daemon: {
+      getPlatformModels: () => createStubPlatformModels(),
+    } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],

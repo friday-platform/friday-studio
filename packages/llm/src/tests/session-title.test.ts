@@ -1,8 +1,12 @@
 import { expect, it } from "vitest";
 import { type GenerateSessionTitleInput, generateSessionTitle } from "../session-title.ts";
+import { createStubPlatformModels } from "../test-utils.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 function makeInput(overrides: Partial<GenerateSessionTitleInput> = {}): GenerateSessionTitleInput {
   return {
+    platformModels: stubPlatformModels,
     signal: { type: "http", id: "test-signal" },
     output: "some output",
     status: "completed",

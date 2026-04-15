@@ -10,12 +10,15 @@
 
 import { repairJson } from "@atlas/agent-sdk";
 import { type SessionAISummary, SessionAISummarySchema, type SessionView } from "@atlas/core";
-import { registry, traceModel } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject as defaultGenerateObject } from "ai";
 
-/** Dependency-injection seam for testing. */
+/** Dependencies for `generateSessionSummary`. */
 export interface GenerateSessionSummaryDeps {
+  /** Platform model resolver — `classifier` role is used for summarization. */
+  platformModels: PlatformModels;
+  /** Optional override for the AI SDK generator (testing seam). */
   generateObject?: (...args: unknown[]) => Promise<{ object: unknown }>;
 }
 
@@ -29,17 +32,17 @@ export interface GenerateSessionSummaryDeps {
  */
 export async function generateSessionSummary(
   view: SessionView,
-  deps?: GenerateSessionSummaryDeps,
+  deps: GenerateSessionSummaryDeps,
   jobDescription?: string,
   workspaceName?: string,
 ): Promise<SessionAISummary | undefined> {
-  const generate = deps?.generateObject ?? defaultGenerateObject;
+  const generate = deps.generateObject ?? defaultGenerateObject;
 
   try {
     const prompt = buildPrompt(view, jobDescription, workspaceName);
 
     const { object } = await generate({
-      model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      model: deps.platformModels.get("classifier"),
       schema: SessionAISummarySchema,
       prompt,
       maxOutputTokens: 300,

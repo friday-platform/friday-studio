@@ -14,7 +14,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AgentLLMConfig, AgentMetadata, AgentResult, Logger } from "@atlas/agent-sdk";
-import { registry, smallLLM, traceModel } from "@atlas/llm";
+import { registry, traceModel } from "@atlas/llm";
 import type { LanguageModel, ModelMessage } from "ai";
 import { generateObject, generateText, jsonSchema, streamText } from "ai";
 import { z } from "zod";
@@ -273,7 +273,7 @@ async function handleClaudeCodeGenerate(
       if (part.type === "tool-call") {
         options.logger?.debug("Claude Code tool call", { toolName: part.toolName });
         if (options.streamEmitter) {
-          const progress = await generateProgress({ toolName: part.toolName, input: part.input });
+          const progress = generateProgress({ toolName: part.toolName, input: part.input });
           options.streamEmitter.emit({
             type: "data-tool-progress",
             data: { toolName: "Claude Code", content: progress },
@@ -302,28 +302,34 @@ async function handleClaudeCodeGenerate(
 
 /**
  * Generate concise, human-readable progress from a tool invocation.
- * Uses smallLLM() — same approach as the TS claude-code agent.
+ *
+ * Uses a simple template-based approach since WASM agents don't have access
+ * to platformModels (out of scope per design). Falls back to descriptive
+ * strings based on tool name patterns.
  */
-async function generateProgress(context: { toolName: string; input: unknown }): Promise<string> {
-  const contextStr = JSON.stringify(context, null, 2);
-  return await smallLLM({
-    system: `Format tool invocation as single-line status. Output only the status line, no explanations.
+function generateProgress(context: { toolName: string; input: unknown }): string {
+  const { toolName, input } = context;
 
-<rules>
-- Single line, ≤50 chars
-- Use -ing verbs: Reading, Writing, Executing
-- Preserve technical terms, numbers, HTTP codes, filenames
-- Abbreviate long paths to filename only (>20 chars)
-- Remove articles: the, this, my, a, an
-</rules>
+  // Extract a meaningful target from input if available
+  const inputObj = typeof input === "object" && input !== null ? input : {};
+  const path =
+    (inputObj as Record<string, unknown>).path ??
+    (inputObj as Record<string, unknown>).file_path ??
+    (inputObj as Record<string, unknown>).filename;
+  const target = typeof path === "string" ? path.split("/").pop() : undefined;
 
-<examples>
-Write to /tmp/agent-output.txt → "Writing agent-output.txt"
-Read package.json → "Reading package.json"
-</examples>`,
-    prompt: contextStr,
-    maxOutputTokens: 250,
-  });
+  // Map common tool name patterns to -ing verbs
+  const lower = toolName.toLowerCase();
+  if (lower.includes("read")) return target ? `Reading ${target}` : "Reading file";
+  if (lower.includes("write")) return target ? `Writing ${target}` : "Writing file";
+  if (lower.includes("edit")) return target ? `Editing ${target}` : "Editing file";
+  if (lower.includes("search") || lower.includes("grep"))
+    return target ? `Searching ${target}` : "Searching";
+  if (lower.includes("bash") || lower.includes("exec")) return "Executing command";
+  if (lower.includes("glob")) return "Finding files";
+
+  // Default: "Using <ToolName>"
+  return `Using ${toolName}`.slice(0, 50);
 }
 
 /**

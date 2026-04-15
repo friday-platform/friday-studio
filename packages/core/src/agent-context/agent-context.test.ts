@@ -12,6 +12,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AtlasAgent } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import { packSkillArchive, SkillStorage } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
@@ -39,6 +40,8 @@ const mockLogger = {
   fatal: () => {},
   child: () => mockLogger,
 } as Parameters<typeof createAgentContextBuilder>[0]["logger"];
+
+const fakePlatformModels = createStubPlatformModels();
 
 // Minimal agent for testing
 function createTestAgent(overrides: Partial<AtlasAgent> = {}): AtlasAgent {
@@ -118,7 +121,10 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to use temp adapter
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -142,7 +148,10 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { enrichedPrompt } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -165,7 +174,10 @@ describe("buildAgentContext skill injection", () => {
     // No skills created — list returns empty array
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context, enrichedPrompt } = await buildAgentContext(
       createTestAgent(),
@@ -192,7 +204,10 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage methods
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -212,7 +227,10 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to return an error
     vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: false, error: "Database error" });
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     // Should not throw, should proceed without skills
     const { context, enrichedPrompt } = await buildAgentContext(
@@ -253,7 +271,10 @@ describe("buildAgentContext skill injection", () => {
       dispose: mockDispose,
     });
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -281,7 +302,10 @@ describe("buildAgentContext skill injection", () => {
     // Stub SkillStorage.list to use temp adapter
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     // Agent does NOT opt in to workspace skills (default behavior)
     const { context, enrichedPrompt } = await buildAgentContext(
@@ -326,7 +350,10 @@ describe("buildAgentContext skill injection", () => {
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
     vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -355,7 +382,10 @@ describe("buildAgentContext skill injection", () => {
       error: "Database connection failed",
     });
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     // Should not throw
     const { context } = await buildAgentContext(
@@ -378,7 +408,10 @@ describe("buildAgentContext skill injection", () => {
 
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -424,7 +457,10 @@ describe("buildAgentContext skill injection", () => {
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
     vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -472,7 +508,10 @@ describe("buildAgentContext skill injection", () => {
     vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
     vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent({ useWorkspaceSkills: true }),
@@ -521,7 +560,10 @@ describe("buildAgentContext credential error propagation", () => {
 
     mockCreateMCPTools.mockRejectedValue(credError);
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     await expect(
       buildAgentContext(createTestAgent(), createTestSessionData("ws-cred-fail"), "test"),
@@ -531,7 +573,10 @@ describe("buildAgentContext credential error propagation", () => {
   it("swallows non-credential errors and returns empty tools", async () => {
     mockCreateMCPTools.mockRejectedValue(new Error("connection refused"));
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
 
     const { context } = await buildAgentContext(
       createTestAgent(),
@@ -592,7 +637,10 @@ describe("buildAgentContext mergeServerConfigs precedence", () => {
       },
     };
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     await buildAgentContext(
       createTestAgent({ mcpConfig: agentMCPConfig }),
       createTestSessionData("ws-merge-test"),
@@ -647,7 +695,10 @@ describe("buildAgentContext MCP dispose lifecycle", () => {
         }),
     );
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     const { releaseMCPTools } = await buildAgentContext(
       createTestAgent(),
       createTestSessionData("ws-dispose"),

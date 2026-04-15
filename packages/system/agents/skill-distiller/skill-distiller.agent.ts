@@ -1,7 +1,6 @@
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { SkillDraft } from "@atlas/core/artifacts";
-import { registry, traceModel } from "@atlas/llm";
 import { SkillNameSchema } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
@@ -36,7 +35,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
   inputSchema: SkillDistillerInputSchema,
   useWorkspaceSkills: true,
 
-  handler: async (input, { logger, stream, session, abortSignal }) => {
+  handler: async (input, { logger, stream, session, abortSignal, platformModels }) => {
     const namespace = input.namespace ?? "friday";
 
     logger.info("Starting skill distillation", {
@@ -130,7 +129,7 @@ Update this draft based on the corpus material. Preserve what works, improve wha
       }
 
       const result = await generateObject({
-        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+        model: platformModels.get("conversational"),
         experimental_repairText: repairJson,
         system: SKILL_DISTILLER_PROMPT,
         prompt: userPrompt,

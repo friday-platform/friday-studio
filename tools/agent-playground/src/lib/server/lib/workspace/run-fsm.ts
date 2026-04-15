@@ -16,6 +16,7 @@ import {
   type FSMDefinition,
   type FSMEvent,
 } from "@atlas/fsm-engine";
+import { registry, traceModel } from "@atlas/llm";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { createInlineCodeExecutor } from "./inline-code-executor.ts";
 import { createMockAgentExecutor, createMockLLMProvider } from "./mock-executor.ts";
@@ -104,7 +105,9 @@ export async function runFSM(opts: RunFSMOptions): Promise<ExecutionReport> {
     ? createMockLLMProvider({ plan: opts.plan, agentOverrides: opts.agentOverrides })
     : (() => {
         // FSM actions have model baked in from compilation — override to use Groq
-        const adapter = new AtlasLLMProviderAdapter("openai/gpt-oss-120b", "groq");
+        const adapter = new AtlasLLMProviderAdapter(
+          traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+        );
         return {
           call: (params: Parameters<typeof adapter.call>[0]) =>
             adapter.call({ ...params, model: "" }),

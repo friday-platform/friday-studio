@@ -8,9 +8,12 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { MergedConfig } from "@atlas/config";
 import type { SessionStreamEvent, SessionSummary } from "@atlas/core";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { describe, expect, it, vi } from "vitest";
 import { WorkspaceRuntime } from "./runtime.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 // Stub the LLM-based summary generator
 vi.mock("../../../apps/atlasd/src/session-summarizer.ts", () => ({
@@ -106,6 +109,7 @@ describe("code action failure before agent action", () => {
         workspacePath: testDir,
         lazy: true,
         createSessionStream: () => mock.stream,
+        platformModels: stubPlatformModels,
       });
 
       await runtime.initialize();

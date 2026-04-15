@@ -1,4 +1,5 @@
 import type { AgentContext } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -87,6 +88,8 @@ function createMockLogger(): Logger {
   return logger;
 }
 
+const stubPlatformModels = createStubPlatformModels();
+
 function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
   return {
     tools: {},
@@ -98,6 +101,7 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
     env: { ANTHROPIC_API_KEY: "test-api-key" },
     stream: undefined,
     logger: createMockLogger(),
+    platformModels: stubPlatformModels,
     ...overrides,
   };
 }

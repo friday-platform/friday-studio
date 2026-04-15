@@ -1,12 +1,14 @@
 import type { WorkspaceSessionStatusType } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { truncateUnicode } from "@atlas/utils";
+import type { PlatformModels } from "./platform-models.ts";
 import { smallLLM } from "./small.ts";
 
 const MAX_TITLE_LENGTH = 60;
 const MIN_TITLE_LENGTH = 3;
 
 export interface GenerateSessionTitleInput {
+  platformModels: PlatformModels;
   signal: { type: string; id: string; data?: Record<string, unknown> };
   output: unknown;
   status: WorkspaceSessionStatusType;
@@ -24,6 +26,7 @@ export async function generateSessionTitle(input: GenerateSessionTitleInput): Pr
   try {
     const prompt = buildPrompt(input);
     const result = await llm({
+      platformModels: input.platformModels,
       system: `You are a title generator. Generate a concise, descriptive title summarizing what was accomplished.
 
 CONSTRAINTS:

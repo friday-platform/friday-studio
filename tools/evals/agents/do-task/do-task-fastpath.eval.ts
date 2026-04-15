@@ -28,6 +28,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { createPlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { isFastpathEligible } from "../../../../packages/system/agents/conversation/tools/do-task/fastpath.ts";
 import { buildBlueprint } from "../../../../packages/workspace-builder/planner/build-blueprint.ts";
@@ -48,6 +49,7 @@ await loadCredentials();
 
 const adapter = new AgentContextAdapter();
 const logger = createLogger({ name: "fastpath-eval" });
+const platformModels = createPlatformModels(null);
 
 async function fetchDynamicServers(): Promise<MCPServerMetadata[]> {
   try {
@@ -153,7 +155,7 @@ const allCases: FastpathRoutingCase[] = [...singleAgentCases, ...multiAgentCases
 async function runPlanningPhase(input: string): Promise<RoutingResult> {
   const start = Date.now();
 
-  const plan = await generatePlan(input, { mode: "task" });
+  const plan = await generatePlan(input, { platformModels }, { mode: "task" });
   const dynamicServers = await fetchDynamicServers();
   const classifyResult = await classifyAgents(plan.agents, { dynamicServers });
   const eligible = isFastpathEligible(plan, classifyResult);
@@ -184,7 +186,7 @@ async function runPlanningPhase(input: string): Promise<RoutingResult> {
 async function runSpeedupComparison(input: string): Promise<SpeedupResult> {
   // Run fastpath timing (plan + classify only)
   const fpStart = Date.now();
-  const plan = await generatePlan(input, { mode: "task" });
+  const plan = await generatePlan(input, { platformModels }, { mode: "task" });
   const dynamicServers = await fetchDynamicServers();
   const classifyResult = await classifyAgents(plan.agents, { dynamicServers });
   const fastpathMs = Date.now() - fpStart;
@@ -205,6 +207,7 @@ async function runSpeedupComparison(input: string): Promise<SpeedupResult> {
   await buildBlueprint(input, {
     mode: "task",
     logger,
+    platformModels,
     precomputed: { plan, classified: classifyResult },
   });
   const fullPipelineMs = Date.now() - bpStart;

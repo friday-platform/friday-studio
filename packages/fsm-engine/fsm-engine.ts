@@ -1327,6 +1327,7 @@ export class FSMEngine {
 
               let result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
+                provider: action.provider,
                 model: action.model,
                 prompt: contextPrompt,
                 messages,
@@ -1402,6 +1403,7 @@ export class FSMEngine {
 
                   result = await this.options.llmProvider.call({
                     agentId: llmAgentId,
+                    provider: action.provider,
                     model: action.model,
                     prompt: retryPrompt,
                     messages: retryMessages,

@@ -1,4 +1,5 @@
 import type { SessionAISummary, SessionView } from "@atlas/core";
+import { createStubPlatformModels } from "@atlas/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateSessionSummaryDeps } from "./session-summarizer.ts";
 import { generateSessionSummary } from "./session-summarizer.ts";
@@ -88,7 +89,10 @@ describe("generateSessionSummary", () => {
     mockGenerate.mockResolvedValueOnce({ object: summaryResult });
     const view = makeView();
 
-    await generateSessionSummary(view, { generateObject: mockGenerate });
+    await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     const prompt = getPromptFromMock(mockGenerate);
 
@@ -103,7 +107,10 @@ describe("generateSessionSummary", () => {
     mockGenerate.mockResolvedValueOnce({ object: summaryResult });
     const view = makeView({ status: "failed" });
 
-    await generateSessionSummary(view, { generateObject: mockGenerate });
+    await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     const prompt = getPromptFromMock(mockGenerate);
     expect(prompt).toContain("failed");
@@ -113,7 +120,10 @@ describe("generateSessionSummary", () => {
     mockGenerate.mockResolvedValueOnce({ object: summaryResult });
     const view = makeView();
 
-    await generateSessionSummary(view, { generateObject: mockGenerate });
+    await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     const prompt = getPromptFromMock(mockGenerate);
     // Only the last block's output is included as the result
@@ -126,7 +136,10 @@ describe("generateSessionSummary", () => {
   it("returns structured summary on success", async () => {
     mockGenerate.mockResolvedValueOnce({ object: summaryResult });
 
-    const result = await generateSessionSummary(makeView(), { generateObject: mockGenerate });
+    const result = await generateSessionSummary(makeView(), {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     expect(result).toEqual(summaryResult);
   });
@@ -134,7 +147,10 @@ describe("generateSessionSummary", () => {
   it("returns undefined on timeout (AbortSignal)", async () => {
     mockGenerate.mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
 
-    const result = await generateSessionSummary(makeView(), { generateObject: mockGenerate });
+    const result = await generateSessionSummary(makeView(), {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -142,7 +158,10 @@ describe("generateSessionSummary", () => {
   it("returns undefined on API error", async () => {
     mockGenerate.mockRejectedValueOnce(new Error("503 Service Unavailable"));
 
-    const result = await generateSessionSummary(makeView(), { generateObject: mockGenerate });
+    const result = await generateSessionSummary(makeView(), {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -172,7 +191,10 @@ describe("generateSessionSummary", () => {
       ],
     });
 
-    const result = await generateSessionSummary(view, { generateObject: mockGenerate });
+    const result = await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     expect(result).toEqual(failedSummary);
     const prompt = getPromptFromMock(mockGenerate);
@@ -186,7 +208,10 @@ describe("generateSessionSummary", () => {
 
     const view = makeView({ status: "skipped", agentBlocks: [] });
 
-    await generateSessionSummary(view, { generateObject: mockGenerate });
+    await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     const prompt = getPromptFromMock(mockGenerate);
     expect(prompt).toContain("skipped");
@@ -201,7 +226,10 @@ describe("generateSessionSummary", () => {
 
     const view = makeView({ status: "skipped", agentBlocks: [] });
 
-    const result = await generateSessionSummary(view, { generateObject: mockGenerate });
+    const result = await generateSessionSummary(view, {
+      platformModels: createStubPlatformModels(),
+      generateObject: mockGenerate,
+    });
 
     expect(result).toEqual(emptySummary);
   });

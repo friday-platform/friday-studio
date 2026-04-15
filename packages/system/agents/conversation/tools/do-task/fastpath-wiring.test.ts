@@ -25,6 +25,18 @@ const mockBuildFSMFromPlan = vi.hoisted(() => vi.fn());
 const mockExecuteTaskViaFSMDirect = vi.hoisted(() => vi.fn());
 const mockGenerateFriendlyDescriptions = vi.hoisted(() => vi.fn());
 const mockSmallLLM = vi.hoisted(() => vi.fn());
+const mockCreatePlatformModels = vi.hoisted(() =>
+  vi.fn(() => ({
+    get: () => ({
+      specificationVersion: "v3",
+      provider: "anthropic",
+      modelId: "stub",
+      supportedUrls: {},
+      doGenerate: () => Promise.reject(new Error("not implemented")),
+      doStream: () => Promise.reject(new Error("not implemented")),
+    }),
+  })),
+);
 const mockParseResult = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/workspace-builder", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@atlas/workspace-builder")>();
@@ -47,7 +59,10 @@ vi.mock("./friendly-descriptions.ts", () => ({
   generateFriendlyDescriptions: mockGenerateFriendlyDescriptions,
 }));
 
-vi.mock("@atlas/llm", () => ({ smallLLM: mockSmallLLM }));
+vi.mock("@atlas/llm", () => ({
+  smallLLM: mockSmallLLM,
+  createPlatformModels: mockCreatePlatformModels,
+}));
 
 vi.mock("@atlas/client/v2", () => ({
   client: { artifactsStorage: { index: { $post: vi.fn() } } },

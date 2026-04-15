@@ -9,12 +9,32 @@ import {
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { black, PDF } from "@libpdf/core";
+import { Hono } from "hono";
 import JSZip from "jszip";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { artifactsApp, replaceArtifactFromFile, resolveFileType } from "./artifacts.ts";
+import type { AppContext, AppVariables } from "../src/factory.ts";
+import {
+  artifactsApp as rawArtifactsApp,
+  replaceArtifactFromFile,
+  resolveFileType,
+} from "./artifacts.ts";
+
+const stubPlatformModels = createStubPlatformModels();
+
+const mockAppContext = {
+  daemon: { getPlatformModels: () => stubPlatformModels },
+} as unknown as AppContext;
+
+const artifactsApp = new Hono<AppVariables>()
+  .use("*", async (c, next) => {
+    c.set("app", mockAppContext);
+    await next();
+  })
+  .route("/", rawArtifactsApp);
 
 // Configure storage to use a temp directory before any imports that might use ArtifactStorage
 const tempDir = makeTempDir();
@@ -1297,6 +1317,7 @@ describe("replaceArtifactFromFile", () => {
       artifactId: original.id,
       filePath: replacementPath,
       fileName: "updated-notes.txt",
+      platformModels: stubPlatformModels,
     });
 
     expect(result.ok).toBe(true);
@@ -1330,6 +1351,7 @@ describe("replaceArtifactFromFile", () => {
       artifactId: original.id,
       filePath: replacementPath,
       fileName: "updated-data.csv",
+      platformModels: stubPlatformModels,
     });
 
     expect(result.ok).toBe(true);

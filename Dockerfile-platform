@@ -139,9 +139,9 @@ COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/loca
 # puts it under /usr/lib/<arch>/, which varies by platform)
 RUN ln -sf "$(find /usr/lib -name 'libsqlite3.so.0' -print -quit)" /usr/lib/libsqlite3.so.0
 
-# Create data directories owned by atlas
-RUN mkdir -p /data/atlas /data/link /tmp/.npm && \
-    chown -R 10001:10001 /data /tmp/.npm /home/atlas
+# Create data and config directories owned by atlas
+RUN mkdir -p /data/atlas /data/link /tmp/.npm /app/config && \
+    chown -R 10001:10001 /data /tmp/.npm /home/atlas /app/config
 
 # ── Install compiled binaries (no layer duplication) ─────────────────────────
 COPY --from=builder /app/bin/atlas /usr/local/bin/atlas
@@ -218,6 +218,7 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     npm_config_cache=/tmp/.npm \
     ATLAS_HOME=/data/atlas \
     ATLAS_LOG_LEVEL=info \
+    ATLAS_CONFIG_PATH=/app/config \
     ATLAS_NPX_PATH=/usr/bin/npx \
     ATLAS_CLAUDE_PATH=/usr/local/bin/claude \
     ATLAS_SQLITE3_PATH=/usr/bin/sqlite3 \

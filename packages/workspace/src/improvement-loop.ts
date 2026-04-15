@@ -13,6 +13,7 @@
 
 import { client, parseResult } from "@atlas/client/v2";
 import type { SessionHistoryTimeline } from "@atlas/core";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { z } from "zod";
 import {
@@ -69,6 +70,8 @@ export interface ImprovementLoopInput {
   errorMessage: string;
   blueprintArtifactId: string;
   timeline: SessionHistoryTimeline;
+  /** Platform model resolver — `classifier` role drives triage. */
+  platformModels: PlatformModels;
   /** Callback to invoke the workspace-improver agent */
   invokeImprover: (input: ImproverAgentInput) => Promise<ImproverAgentResult>;
 }
@@ -103,6 +106,7 @@ async function runImprovementLoopInternal(input: ImprovementLoopInput): Promise<
     errorMessage,
     blueprintArtifactId,
     timeline,
+    platformModels,
     invokeImprover,
   } = input;
 
@@ -119,12 +123,10 @@ async function runImprovementLoopInternal(input: ImprovementLoopInput): Promise<
   });
 
   // 2. Run triage classifier
-  const triageResult = await classifyFailure({
-    errorMessage,
-    jobId: jobName,
-    failedStepId,
-    transcriptExcerpt,
-  });
+  const triageResult = await classifyFailure(
+    { errorMessage, jobId: jobName, failedStepId, transcriptExcerpt },
+    platformModels,
+  );
 
   if (!triageResult) {
     log.warn("Triage classification returned null, skipping improvement loop", {

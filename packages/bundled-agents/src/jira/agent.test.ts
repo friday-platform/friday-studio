@@ -1,3 +1,4 @@
+import { createStubPlatformModels } from "@atlas/llm";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,8 @@ const mockLogger = {
   child: () => mockLogger,
 };
 
+const stubPlatformModels = createStubPlatformModels();
+
 function makeContext(env: Record<string, string>) {
   return {
     env,
@@ -57,6 +60,7 @@ function makeContext(env: Record<string, string>) {
     session: { sessionId: "test-session", workspaceId: "test-ws" },
     stream: undefined,
     abortSignal: new AbortController().signal,
+    platformModels: stubPlatformModels,
   };
 }
 

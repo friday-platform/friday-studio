@@ -497,6 +497,7 @@ const resourceRoutes = daemonFactory
           artifactId,
           filePath,
           fileName: file.name,
+          platformModels: c.get("app").daemon.getPlatformModels(),
         });
 
         if (!replaceResult.ok) {

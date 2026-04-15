@@ -13,6 +13,7 @@ import {
   MAX_FILE_SIZE,
   MAX_OFFICE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
@@ -285,8 +286,10 @@ export const chunkedUploadApp = daemonFactory
 
     session.status = "completing";
 
+    const platformModels = c.get("app").daemon.getPlatformModels();
+
     // Fire-and-forget: assemble chunks and create artifact in background
-    assembleAndConvert(uploadId, session).catch((error) => {
+    assembleAndConvert(uploadId, session, platformModels).catch((error) => {
       // Safety net — assembleAndConvert handles its own errors internally.
       // This only fires if something truly unexpected escapes.
       logger.error("Unexpected error in chunked upload assembly", {
@@ -335,7 +338,11 @@ export function _getSessionForTest(uploadId: string): UploadSession | undefined 
 export const _cleanupExpiredSessionsForTest = cleanupExpiredSessions;
 
 /** Assemble chunks into a single file and create the artifact (runs in background). */
-async function assembleAndConvert(uploadId: string, session: UploadSession): Promise<void> {
+async function assembleAndConvert(
+  uploadId: string,
+  session: UploadSession,
+  platformModels: PlatformModels,
+): Promise<void> {
   const uuid = crypto.randomUUID();
   const ext = extname(session.fileName) || ".txt";
   const assembledPath = join(tmpdir(), "atlas-chunked-upload", "assembled", `${uuid}${ext}`);
@@ -376,12 +383,14 @@ async function assembleAndConvert(uploadId: string, session: UploadSession): Pro
           artifactId: session.artifactId,
           filePath: assembledPath,
           fileName: session.fileName,
+          platformModels,
         })
       : await createArtifactFromFile({
           filePath: assembledPath,
           fileName: session.fileName,
           chatId: session.chatId,
           workspaceId: session.workspaceId,
+          platformModels,
         });
 
     if (!result.ok) {

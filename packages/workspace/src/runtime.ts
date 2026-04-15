@@ -73,7 +73,11 @@ import {
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm";
+import {
+  type GenerateSessionTitleInput,
+  generateSessionTitle,
+  type PlatformModels,
+} from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -257,6 +261,8 @@ interface WorkspaceRuntimeOptions {
   memoryMounts?: MemoryMount[];
   /** Kernel workspace ID — only this workspace may hold rw mounts against _global */
   kernelWorkspaceId?: string;
+  /** Platform model resolver — required for session summarization and other platform LLM calls */
+  platformModels: PlatformModels;
 }
 
 interface FSMJob {
@@ -366,7 +372,7 @@ export class WorkspaceRuntime {
   constructor(
     workspace: WorkspaceRuntimeInit,
     config: MergedConfig,
-    options: WorkspaceRuntimeOptions = {},
+    options: WorkspaceRuntimeOptions,
   ) {
     this.workspace = workspace;
     this.config = config;
@@ -725,18 +731,24 @@ export class WorkspaceRuntime {
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
     const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
+    const platformModels = this.options.platformModels;
+    if (!platformModels) {
+      throw new Error(
+        "WorkspaceRuntime requires platformModels to construct AtlasLLMProviderAdapter",
+      );
+    }
     const engineOptions = {
       documentStore: job.documentStore,
       scope,
-      llmProvider: new AtlasLLMProviderAdapter(
-        "claude-sonnet-4-6",
-        "anthropic",
-        undefined,
-        job.maxSteps,
-      ),
+      llmProvider: new AtlasLLMProviderAdapter(platformModels.get("conversational"), {
+        maxSteps: job.maxSteps,
+      }),
       agentExecutor,
       mcpServerConfigs,
-      validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
+      validateOutput: createFSMOutputValidator(
+        SupervisionLevel.STANDARD,
+        this.options.platformModels,
+      ),
       artifactStorage: ArtifactStorage,
       resourceAdapter: this.options.resourceStorage,
     };
@@ -1197,6 +1209,7 @@ export class WorkspaceRuntime {
                 jobId: job.name,
                 userId: this.createdByUserId,
                 activityStorage: this.options.activityStorage,
+                platformModels: this.options.platformModels,
               });
             } catch (publishError) {
               logger.warn("Auto-publish at session teardown failed", {
@@ -1243,12 +1256,15 @@ export class WorkspaceRuntime {
 
             const view = buildSessionView(sessionStream.getBufferedEvents());
 
-            const aiSummary = await generateSessionSummary(
-              view,
-              undefined,
-              job.description,
-              this.workspace.name,
-            );
+            const platformModels = this.options.platformModels;
+            const aiSummary = platformModels
+              ? await generateSessionSummary(
+                  view,
+                  { platformModels },
+                  job.description,
+                  this.workspace.name,
+                )
+              : undefined;
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -1284,10 +1300,12 @@ export class WorkspaceRuntime {
             // Replace "running" activity with final activity for terminal sessions
             if (
               this.options.activityStorage &&
+              this.options.platformModels &&
               this.createdByUserId &&
               !isConversation &&
               (view.status === "completed" || view.status === "failed")
             ) {
+              const titlePlatformModels = this.options.platformModels;
               // Delete the "running" activity first
               await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
                 logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
@@ -1299,6 +1317,7 @@ export class WorkspaceRuntime {
                 const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
 
                 const title = await generateSessionActivityTitle({
+                  platformModels: titlePlatformModels,
                   status: view.status,
                   jobName: job.name,
                   agentNames: executedBlocks.map((b) => b.agentName),
@@ -1613,7 +1632,7 @@ export class WorkspaceRuntime {
         }
 
         // Validate agent output (hallucination detection only runs for LLM agents)
-        await validateAgentOutput(agentResult, fsmContext, agentType);
+        await validateAgentOutput(agentResult, fsmContext, agentType, this.options.platformModels);
 
         // Auto-publish dirty resource drafts after agent turn completion
         if (this.options.resourceStorage && workspaceId) {
@@ -2239,7 +2258,8 @@ export class WorkspaceRuntime {
   private async fireImprovementLoop(sessionResult: SessionResult, job: FSMJob): Promise<void> {
     const blueprintArtifactId = this.options.blueprintArtifactId;
     const invokeImprover = this.options.invokeImprover;
-    if (!blueprintArtifactId || !invokeImprover) return;
+    const platformModels = this.options.platformModels;
+    if (!blueprintArtifactId || !invokeImprover || !platformModels) return;
 
     // Circuit breaker: skip if already fired or a pending revision existed at startup
     if (this.improvementLoopFired || this.options.hasPendingRevision) {
@@ -2269,6 +2289,7 @@ export class WorkspaceRuntime {
       errorMessage: sessionResult.error?.message ?? "Unknown error",
       blueprintArtifactId,
       timeline: timelineResult.data,
+      platformModels,
       invokeImprover,
     });
   }
@@ -2377,9 +2398,16 @@ export class WorkspaceRuntime {
 
   private async generateAndStoreTitle(
     sessionId: string,
-    input: GenerateSessionTitleInput,
+    input: Omit<GenerateSessionTitleInput, "platformModels">,
   ): Promise<void> {
-    const title = await generateSessionTitle(input);
+    const platformModels = this.options.platformModels;
+    if (!platformModels) {
+      logger.debug("Skipping session title generation: platformModels not configured", {
+        sessionId,
+      });
+      return;
+    }
+    const title = await generateSessionTitle({ ...input, platformModels });
     const result = await SessionHistoryStorage.updateSessionTitle(sessionId, title);
     if (!result.ok) {
       logger.warn("Failed to store session title", { sessionId, error: result.error });

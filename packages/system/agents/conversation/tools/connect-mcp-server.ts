@@ -1,7 +1,7 @@
 import type { ToolProgress } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { registry, traceModel } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, tool } from "ai";
@@ -112,11 +112,12 @@ export type ExtractionError = { error: string; missingInfo: string[] };
  */
 export async function extractAndHydrate(
   input: string,
+  platformModels: PlatformModels,
   abortSignal?: AbortSignal,
 ): Promise<HydratedConfig | ExtractionError> {
   // LLM extraction
   const result = await generateObject({
-    model: traceModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+    model: platformModels.get("classifier"),
     schema: LLMExtractionResultSchema,
     messages: [
       { role: "system", content: EXTRACTION_PROMPT },
@@ -174,181 +175,183 @@ export async function extractAndHydrate(
  *
  * Returns setup instructions or asks for clarification if input is too vague.
  */
-export const connectMcpServerTool = tool({
-  description:
-    "Add a new MCP server to the platform. Accepts connection info in any format (JSON config, URL, or description). Returns setup instructions or asks for clarification if input is too vague.",
+export function createConnectMcpServerTool(platformModels: PlatformModels) {
+  return tool({
+    description:
+      "Add a new MCP server to the platform. Accepts connection info in any format (JSON config, URL, or description). Returns setup instructions or asks for clarification if input is too vague.",
 
-  inputSchema: z.object({
-    connection_info: z
-      .string()
-      .describe(
-        "MCP server connection info - JSON config, URL, CLI command, or natural language description",
-      ),
-  }),
+    inputSchema: z.object({
+      connection_info: z
+        .string()
+        .describe(
+          "MCP server connection info - JSON config, URL, CLI command, or natural language description",
+        ),
+    }),
 
-  execute: async ({ connection_info }, { abortSignal }) => {
-    // 1. Check blessed registry FIRST (fast path, no LLM call)
-    const blessedMatch = checkBlessedRegistry(connection_info);
-    if (blessedMatch) {
+    execute: async ({ connection_info }, { abortSignal }) => {
+      // 1. Check blessed registry FIRST (fast path, no LLM call)
+      const blessedMatch = checkBlessedRegistry(connection_info);
+      if (blessedMatch) {
+        return {
+          success: true,
+          server: { id: blessedMatch.id, name: blessedMatch.name },
+          provider: null,
+          authType: blessedMatch.authType,
+          nextSteps: [
+            `"${blessedMatch.name}" is registered and available for tasks`,
+            ...(blessedMatch.authType !== "none"
+              ? [
+                  `Authentication is required to use this server. Ask the user if they would like to authenticate now.`,
+                ]
+              : []),
+          ],
+          isBlessed: true,
+          progress: {
+            label: `Connected to ${blessedMatch.name}`,
+            status: "completed",
+          } satisfies ToolProgress,
+        };
+      }
+
+      // 2. Extract + hydrate via LLM
+      const result = await extractAndHydrate(connection_info, platformModels, abortSignal);
+      if ("error" in result) {
+        return {
+          success: false,
+          error: result.error,
+          missingInfo: result.missingInfo,
+          stage: "extraction",
+          hint: "Please provide more details about this MCP server.",
+          progress: { label: "Failed to connect server", status: "failed" } satisfies ToolProgress,
+        };
+      }
+
+      // 3. Create Link provider FIRST if auth required (blocking - no provider = useless server)
+      let providerCreated: { id: string; type: string } | null = null;
+      let providerOwnedByUs = false;
+      if (result.provider) {
+        // Try creating the provider
+        try {
+          const providerResult = await parseResult(
+            client.link.v1.providers.$post({ json: { provider: result.provider } }),
+          );
+          if (providerResult.ok && providerResult.data.ok) {
+            providerCreated = { id: providerResult.data.provider.id, type: result.provider.type };
+            providerOwnedByUs = true;
+          }
+        } catch {
+          // Creation failed — may be a retry after previous orphaned provider
+        }
+
+        // If creation didn't succeed, check if provider already exists (idempotent retry)
+        if (!providerCreated) {
+          try {
+            const existingResult = await parseResult(
+              client.link.v1.providers[":id"].$get({ param: { id: result.provider.id } }),
+            );
+            if (existingResult.ok) {
+              logger.info("Provider already exists, reusing for registry creation", {
+                providerId: result.provider.id,
+              });
+              providerCreated = { id: result.provider.id, type: result.provider.type };
+            }
+          } catch {
+            // Existence check also failed
+          }
+        }
+
+        if (!providerCreated) {
+          return {
+            success: false,
+            error: `Cannot set up authentication for "${result.registry.name}"`,
+            stage: "provider",
+            hint: "The connection service may be unavailable. Please try again later.",
+            progress: {
+              label: `Failed to connect to ${result.registry.name}`,
+              status: "failed",
+            } satisfies ToolProgress,
+          };
+        }
+      }
+
+      // 4. Add to MCP registry (only after provider is ready, if auth was required)
+      const registryResult = await parseResult(
+        client.mcpRegistry.index.$post({
+          json: {
+            entry: {
+              ...result.registry,
+              source: "agents" as const,
+              securityRating: "unverified" as const,
+            },
+          },
+        }),
+      );
+      if (!registryResult.ok) {
+        // Compensating delete: only remove provider if we created it in this invocation
+        if (providerCreated && providerOwnedByUs) {
+          try {
+            await parseResult(
+              client.link.v1.providers[":id"].$delete({ param: { id: providerCreated.id } }),
+            );
+          } catch (cleanupErr) {
+            logger.warn("Failed to clean up orphaned provider", {
+              providerId: providerCreated.id,
+              error: cleanupErr,
+            });
+          }
+        }
+
+        // Handle 409 collision - daemon returns { error, suggestion }
+        const errorParsed = z
+          .object({ error: z.string().optional(), suggestion: z.string().optional() })
+          .safeParse(registryResult.error);
+        if (errorParsed.success && errorParsed.data.suggestion) {
+          return {
+            success: false,
+            error: errorParsed.data.error ?? `Server ID "${result.registry.id}" already exists.`,
+            stage: "registry",
+            suggestion: errorParsed.data.suggestion,
+            hint: `Try using "${errorParsed.data.suggestion}" instead.`,
+            progress: {
+              label: `Failed to connect to ${result.registry.name}`,
+              status: "failed",
+            } satisfies ToolProgress,
+          };
+        }
+        return {
+          success: false,
+          error: String(registryResult.error),
+          stage: "registry",
+          progress: {
+            label: `Failed to connect to ${result.registry.name}`,
+            status: "failed",
+          } satisfies ToolProgress,
+        };
+      }
+
+      // 5. Return success with next steps
       return {
         success: true,
-        server: { id: blessedMatch.id, name: blessedMatch.name },
-        provider: null,
-        authType: blessedMatch.authType,
+        server: { id: result.registry.id, name: result.registry.name },
+        provider: providerCreated,
+        authType: result.provider?.type ?? "none",
         nextSteps: [
-          `"${blessedMatch.name}" is registered and available for tasks`,
-          ...(blessedMatch.authType !== "none"
+          `Server "${result.registry.name}" is now available in the MCP registry for tasks`,
+          ...(providerCreated
             ? [
                 `Authentication is required to use this server. Ask the user if they would like to authenticate now.`,
               ]
             : []),
         ],
-        isBlessed: true,
+        isBlessed: false,
         progress: {
-          label: `Connected to ${blessedMatch.name}`,
+          label: `Connected to ${result.registry.name}`,
           status: "completed",
         } satisfies ToolProgress,
       };
-    }
-
-    // 2. Extract + hydrate via LLM
-    const result = await extractAndHydrate(connection_info, abortSignal);
-    if ("error" in result) {
-      return {
-        success: false,
-        error: result.error,
-        missingInfo: result.missingInfo,
-        stage: "extraction",
-        hint: "Please provide more details about this MCP server.",
-        progress: { label: "Failed to connect server", status: "failed" } satisfies ToolProgress,
-      };
-    }
-
-    // 3. Create Link provider FIRST if auth required (blocking - no provider = useless server)
-    let providerCreated: { id: string; type: string } | null = null;
-    let providerOwnedByUs = false;
-    if (result.provider) {
-      // Try creating the provider
-      try {
-        const providerResult = await parseResult(
-          client.link.v1.providers.$post({ json: { provider: result.provider } }),
-        );
-        if (providerResult.ok && providerResult.data.ok) {
-          providerCreated = { id: providerResult.data.provider.id, type: result.provider.type };
-          providerOwnedByUs = true;
-        }
-      } catch {
-        // Creation failed — may be a retry after previous orphaned provider
-      }
-
-      // If creation didn't succeed, check if provider already exists (idempotent retry)
-      if (!providerCreated) {
-        try {
-          const existingResult = await parseResult(
-            client.link.v1.providers[":id"].$get({ param: { id: result.provider.id } }),
-          );
-          if (existingResult.ok) {
-            logger.info("Provider already exists, reusing for registry creation", {
-              providerId: result.provider.id,
-            });
-            providerCreated = { id: result.provider.id, type: result.provider.type };
-          }
-        } catch {
-          // Existence check also failed
-        }
-      }
-
-      if (!providerCreated) {
-        return {
-          success: false,
-          error: `Cannot set up authentication for "${result.registry.name}"`,
-          stage: "provider",
-          hint: "The connection service may be unavailable. Please try again later.",
-          progress: {
-            label: `Failed to connect to ${result.registry.name}`,
-            status: "failed",
-          } satisfies ToolProgress,
-        };
-      }
-    }
-
-    // 4. Add to MCP registry (only after provider is ready, if auth was required)
-    const registryResult = await parseResult(
-      client.mcpRegistry.index.$post({
-        json: {
-          entry: {
-            ...result.registry,
-            source: "agents" as const,
-            securityRating: "unverified" as const,
-          },
-        },
-      }),
-    );
-    if (!registryResult.ok) {
-      // Compensating delete: only remove provider if we created it in this invocation
-      if (providerCreated && providerOwnedByUs) {
-        try {
-          await parseResult(
-            client.link.v1.providers[":id"].$delete({ param: { id: providerCreated.id } }),
-          );
-        } catch (cleanupErr) {
-          logger.warn("Failed to clean up orphaned provider", {
-            providerId: providerCreated.id,
-            error: cleanupErr,
-          });
-        }
-      }
-
-      // Handle 409 collision - daemon returns { error, suggestion }
-      const errorParsed = z
-        .object({ error: z.string().optional(), suggestion: z.string().optional() })
-        .safeParse(registryResult.error);
-      if (errorParsed.success && errorParsed.data.suggestion) {
-        return {
-          success: false,
-          error: errorParsed.data.error ?? `Server ID "${result.registry.id}" already exists.`,
-          stage: "registry",
-          suggestion: errorParsed.data.suggestion,
-          hint: `Try using "${errorParsed.data.suggestion}" instead.`,
-          progress: {
-            label: `Failed to connect to ${result.registry.name}`,
-            status: "failed",
-          } satisfies ToolProgress,
-        };
-      }
-      return {
-        success: false,
-        error: String(registryResult.error),
-        stage: "registry",
-        progress: {
-          label: `Failed to connect to ${result.registry.name}`,
-          status: "failed",
-        } satisfies ToolProgress,
-      };
-    }
-
-    // 5. Return success with next steps
-    return {
-      success: true,
-      server: { id: result.registry.id, name: result.registry.name },
-      provider: providerCreated,
-      authType: result.provider?.type ?? "none",
-      nextSteps: [
-        `Server "${result.registry.name}" is now available in the MCP registry for tasks`,
-        ...(providerCreated
-          ? [
-              `Authentication is required to use this server. Ask the user if they would like to authenticate now.`,
-            ]
-          : []),
-      ],
-      isBlessed: false,
-      progress: {
-        label: `Connected to ${result.registry.name}`,
-        status: "completed",
-      } satisfies ToolProgress,
-    };
-  },
-});
+    },
+  });
+}
 
 // Export the wrapper that uses the global registry (used by evals)
 export { checkBlessedRegistry as _checkBlessedRegistry };

@@ -49,7 +49,7 @@ src/                # atlasd internals
   services/         # Daemon services
 ```
 
-Config: `atlas.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
+Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
 [`CLAUDE.md`](CLAUDE.md) (dev guidelines + hard rules)
 
 ## AI Workflow

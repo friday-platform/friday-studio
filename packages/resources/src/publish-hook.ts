@@ -1,12 +1,14 @@
 import type { ActivityStorageAdapter } from "@atlas/activity";
 import { generateResourceActivityTitle } from "@atlas/activity/title-generator";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
+import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 
 export interface PublishDirtyDraftsContext {
   jobId?: string;
   userId?: string;
   activityStorage?: ActivityStorageAdapter;
+  platformModels?: PlatformModels;
 }
 
 /**
@@ -26,7 +28,13 @@ export async function publishDirtyDrafts(
     }
 
     // Create activity items for each published resource
-    if (context?.activityStorage && context.userId && published.length > 0) {
+    if (
+      context?.activityStorage &&
+      context.userId &&
+      context.platformModels &&
+      published.length > 0
+    ) {
+      const platformModels = context.platformModels;
       // Look up resource metadata for human-readable names and types
       let metadataBySlug: Map<string, { name: string; type: string }> = new Map();
       try {
@@ -43,6 +51,7 @@ export async function publishDirtyDrafts(
         try {
           const meta = metadataBySlug.get(resource.slug);
           const title = await generateResourceActivityTitle({
+            platformModels,
             resourceName: meta?.name ?? resource.slug,
             resourceSlug: resource.slug,
             resourceType: meta?.type ?? "document",

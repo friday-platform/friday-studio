@@ -8,6 +8,7 @@ import type {
 } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -32,6 +33,7 @@ import { createEnvironmentContext } from "./environment-context.ts";
 
 interface AgentContextBuilderDeps {
   logger: Logger;
+  platformModels: PlatformModels;
   server?: Server;
   hasActiveSSE?: () => boolean;
 }
@@ -209,6 +211,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           agentId: agent.metadata.id,
           streamId: sessionData.streamId,
         }),
+        platformModels: deps.platformModels,
+        // Spread overrides to include abortSignal and other overrides
         ...overrides,
         ...(memory ? { memory } : {}),
         // Tools should be last to ensure they're available unless explicitly overridden

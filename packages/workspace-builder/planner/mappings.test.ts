@@ -15,11 +15,14 @@ vi.mock("@atlas/bundled-agents/registry", () => ({
   },
 }));
 
+import { createStubPlatformModels } from "@atlas/llm";
 import {
   buildMappingPrompt,
   generatePrepareMappings,
   resolveConsumerInputSchema,
 } from "./mappings.ts";
+
+const platformModels = createStubPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -227,7 +230,7 @@ describe("generatePrepareMappings — signal mappings", () => {
     });
     const blueprint = makeBlueprint({ signals: [signal], jobs: [job] });
 
-    const result = await generatePrepareMappings(job, blueprint, new Map());
+    const result = await generatePrepareMappings(job, blueprint, new Map(), { platformModels });
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -248,7 +251,7 @@ describe("generatePrepareMappings — signal mappings", () => {
     const signal = makeSignal({ id: "test-signal" });
     const blueprint = makeBlueprint({ signals: [signal], jobs: [job] });
 
-    const result = await generatePrepareMappings(job, blueprint, new Map());
+    const result = await generatePrepareMappings(job, blueprint, new Map(), { platformModels });
 
     expect(result).toHaveLength(0);
   });
@@ -259,7 +262,7 @@ describe("generatePrepareMappings — signal mappings", () => {
     const signal = makeSignal({ id: "test-signal", payloadSchema: { type: "object" } });
     const blueprint = makeBlueprint({ signals: [signal], jobs: [job] });
 
-    const result = await generatePrepareMappings(job, blueprint, new Map());
+    const result = await generatePrepareMappings(job, blueprint, new Map(), { platformModels });
 
     expect(result).toHaveLength(0);
   });
@@ -274,7 +277,7 @@ describe("generatePrepareMappings — signal mappings", () => {
     });
     const blueprint = makeBlueprint({ signals: [signal], jobs: [job] });
 
-    const result = await generatePrepareMappings(job, blueprint, new Map());
+    const result = await generatePrepareMappings(job, blueprint, new Map(), { platformModels });
 
     expect(result).toHaveLength(2);
     expect(result.map((m) => m.consumerStepId)).toEqual(["fetch-a", "fetch-b"]);

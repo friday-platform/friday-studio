@@ -1,10 +1,11 @@
-import { smallLLM } from "@atlas/llm";
+import { type PlatformModels, smallLLM } from "@atlas/llm";
 
 /**
  * Generate friendly descriptions for all steps in a single batch.
  * Falls back to raw descriptions on error.
  */
 export async function generateFriendlyDescriptions(
+  platformModels: PlatformModels,
   steps: Array<{ agentId?: string; description: string }>,
   intent: string,
   abortSignal?: AbortSignal,
@@ -17,6 +18,7 @@ export async function generateFriendlyDescriptions(
       .join("\n");
 
     const result = await smallLLM({
+      platformModels,
       system:
         "Generate brief, friendly progress messages (≤10 words each) for what an AI assistant is doing. One per line, matching input order. Be specific but concise. No numbering, no punctuation at end. NEVER include UUIDs, artifact IDs, or technical identifiers - use filenames or descriptive terms instead.",
       prompt: `User intent: ${intent}\n\nSteps:\n${stepList}`,

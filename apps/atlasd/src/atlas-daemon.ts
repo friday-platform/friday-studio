@@ -6,7 +6,7 @@ import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
-import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
+import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
   AtlasAgentsMCPServer,
   AgentRegistry as CoreAgentRegistry,
@@ -19,6 +19,7 @@ import {
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
+import { createPlatformModels, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
@@ -129,7 +130,7 @@ export class AtlasDaemon {
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
-  private supervisorDefaults: SupervisorDefaults | null = null;
+  private platformModels: PlatformModels | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
@@ -248,8 +249,18 @@ export class AtlasDaemon {
 
     logger.info("Initializing Atlas daemon...");
 
-    // Load supervisor defaults once at startup
-    this.loadSupervisorDefaults();
+    // Load platform model configuration (friday.yml) and construct the resolver.
+    // Runs eager validation — throws on malformed config or missing credentials.
+    // ATLAS_CONFIG_PATH can override the search directory (set by --atlas-config CLI flag).
+    const configDir = process.env.ATLAS_CONFIG_PATH ?? process.cwd();
+    logger.info("Loading platform config", { configDir, configFile: `${configDir}/friday.yml` });
+    const atlasConfigSource = new FilesystemAtlasConfigSource(configDir);
+    const atlasConfig = await atlasConfigSource.load();
+    this.platformModels = createPlatformModels(atlasConfig);
+    logger.info("Platform models resolver initialized", {
+      configLoaded: atlasConfig !== null,
+      configured: atlasConfig?.models ? Object.keys(atlasConfig.models) : [],
+    });
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready)
     logger.info("Creating WorkspaceManager...");
@@ -468,20 +479,6 @@ export class AtlasDaemon {
   // fs-watch registration moved to signal registrars
 
   /**
-   * Load supervisor defaults (compiled into the application)
-   */
-  private loadSupervisorDefaults(): void {
-    // Use compiled-in defaults - no file I/O needed
-    this.supervisorDefaults = supervisorDefaultsWrapped;
-
-    logger.info("Loaded supervisor defaults", {
-      source: "compiled",
-      version: this.supervisorDefaults.version,
-      hasSupervisors: !!this.supervisorDefaults?.supervisors,
-    });
-  }
-
-  /**
    * Get or create per-session MCP server
    */
   private async getOrCreateAgentSession(
@@ -513,6 +510,7 @@ export class AtlasDaemon {
         if (!registry) throw new Error("Agent registry not initialized");
         return registry;
       })(),
+      platformModels: this.getPlatformModels(),
       sessionId,
       hasActiveSSE: (sid?: string) => {
         const checkId = sid || sessionId;
@@ -624,18 +622,13 @@ export class AtlasDaemon {
   }
 
   /**
-   * Initialize the daemon - load supervisor defaults, initialize WorkspaceManager, etc.
-   * Must be called before start()
+   * Resolved platform model selector. Initialized during `initialize()`.
    */
-
-  /**
-   * Get cached supervisor defaults
-   */
-  getSupervisorDefaults(): SupervisorDefaults {
-    if (!this.supervisorDefaults) {
-      throw new Error("Supervisor defaults not loaded");
+  getPlatformModels(): PlatformModels {
+    if (!this.platformModels) {
+      throw new Error("Platform models not initialized. Call initialize() first.");
     }
-    return this.supervisorDefaults;
+    return this.platformModels;
   }
 
   /** Get activity storage adapter (constructed during initialize). */
@@ -1096,6 +1089,7 @@ export class AtlasDaemon {
           workspacePath, // Pass workspace path for daemon mode
           resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
           activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
+          platformModels: this.getPlatformModels(),
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           invokeImprover: this.createImproverCallback(workspace.id),
@@ -1571,6 +1565,7 @@ export class AtlasDaemon {
         env: {},
         stream: undefined,
         logger: logger.child({ component: "workspace-improver", workspaceId }),
+        platformModels: this.getPlatformModels(),
       });
 
       // Transform AgentPayload → ImproverAgentResult

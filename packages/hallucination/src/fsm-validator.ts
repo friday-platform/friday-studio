@@ -7,6 +7,7 @@
 
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { LLMActionTrace, LLMOutputValidationResult } from "@atlas/fsm-engine";
+import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import {
   analyzeResults,
@@ -45,16 +46,27 @@ export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, s
  * Uses existing hallucination detector infrastructure.
  * Adapts LLMActionTrace -> AgentResult at the boundary.
  *
+ * When `platformModels` is omitted, returns a no-op validator that reports
+ * valid for every trace. Callers still being migrated onto the DI seam use
+ * this fallback; production paths (workspace runtime) always pass a resolver.
+ *
  * @param supervisionLevel - Controls validation strictness (defaults to STANDARD)
+ * @param platformModels - Platform model resolver; `classifier` role drives validation
  * @returns OutputValidator function for use in FSM execution
  */
 export function createFSMOutputValidator(
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
+  platformModels?: PlatformModels,
 ): (trace: LLMActionTrace) => Promise<LLMOutputValidationResult> {
+  if (!platformModels) {
+    return () => Promise.resolve({ valid: true });
+  }
+
   return async (trace: LLMActionTrace): Promise<LLMOutputValidationResult> => {
     const agentResult = traceToAgentResult(trace);
 
     const config: HallucinationDetectorConfig = {
+      platformModels,
       logger: logger.child({ component: "fsm-output-validator" }),
     };
 

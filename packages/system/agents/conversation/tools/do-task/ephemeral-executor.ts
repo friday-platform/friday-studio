@@ -27,7 +27,7 @@ import {
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import { buildTemporalFacts } from "@atlas/llm";
+import { buildTemporalFacts, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import type { DAGStep, DocumentContract } from "@atlas/workspace-builder";
 import type {
@@ -41,6 +41,7 @@ interface ExecutionContext {
   sessionId: string;
   workspaceId: string;
   streamId: string;
+  platformModels: PlatformModels;
   userId?: string;
   daemonUrl?: string;
   datetime?: DatetimeContext;
@@ -286,7 +287,7 @@ export async function executeTaskViaFSMDirect(
 
     engine = createEngine(expandedFSM, {
       documentStore: docStore,
-      llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-6"),
+      llmProvider: new AtlasLLMProviderAdapter(context.platformModels.get("conversational")),
       scope,
       agentExecutor,
       mcpServerConfigs: context.mcpServerConfigs,

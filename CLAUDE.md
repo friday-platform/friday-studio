@@ -95,7 +95,10 @@ go build                # Build
   output shape changes from MCP envelope (`result.content[].text`) to raw
   payload — downstream parsers silently fail
 - `@ai-sdk/provider` is not re-exported by the `ai` package — add as explicit
-  dep, pin to `^2.0.1` for ai@5 compatibility
+  dep, pin to `^3.0.8` for ai@6 compatibility (`LanguageModelV3` lives there)
+- `@atlas/llm` re-exports `LanguageModelV3` from `@ai-sdk/provider` — but
+  `@atlas/agent-sdk` is a leaf node (no `@atlas/*` deps allowed), so it defines
+  `PlatformModels`/`PlatformRole` locally instead of importing from `@atlas/llm`
 - `LanguageModelV2ToolCall.input` is stringified JSON, not parsed — must
   `JSON.parse` for extraction
 - `LanguageModelV2`'s `doGenerate`/`doStream` return `PromiseLike<T>` — `async`
@@ -226,10 +229,10 @@ gh pr create
 
 ## Config Files
 
-- `atlas.yml` - Platform-wide settings (loaded from workspace directory,
+- `friday.yml` - Platform-wide settings (loaded from workspace directory,
   optional)
 - `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
-- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
+- `docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml` - Example friday.yml with all available
   options
 
 ## Environment Variables

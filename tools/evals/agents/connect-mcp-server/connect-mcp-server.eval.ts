@@ -6,6 +6,7 @@
  * stdio-apikey, stdio-none) or returns an error for vague inputs.
  */
 
+import { createPlatformModels } from "@atlas/llm";
 import { extractAndHydrate } from "@atlas/system/agents/conversation/tools/connect-mcp-server";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
@@ -13,6 +14,8 @@ import { loadCredentials } from "../../lib/load-credentials.ts";
 import { type BaseEvalCase, defineEval, type EvalRegistration } from "../../lib/registration.ts";
 
 await loadCredentials();
+
+const platformModels = createPlatformModels(null);
 
 const adapter = new AgentContextAdapter();
 
@@ -108,7 +111,7 @@ export const evals: EvalRegistration[] = cases.map((testCase) =>
     config: {
       input: testCase.input,
       run: async (prompt) => {
-        const result = await extractAndHydrate(prompt);
+        const result = await extractAndHydrate(prompt, platformModels);
         if ("error" in result) {
           return { error: result.error };
         }

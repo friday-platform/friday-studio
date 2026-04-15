@@ -10,10 +10,11 @@
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { connectMcpServerTool } from "./connect-mcp-server.ts";
 import { createSkillTool } from "./create-skill.ts";
 import { displayArtifact } from "./display-artifact.ts";
 import { takeNoteTool } from "./scratchpad-tools.ts";
+
+export { createConnectMcpServerTool } from "./connect-mcp-server.ts";
 /**
  * All conversation agent tools exported as AtlasTools.
  * These can be spread directly onto the tools object in the agent handler.
@@ -21,6 +22,5 @@ import { takeNoteTool } from "./scratchpad-tools.ts";
 export const conversationTools: AtlasTools = {
   take_note: takeNoteTool,
   display_artifact: displayArtifact,
-  connect_mcp_server: connectMcpServerTool,
   create_skill: createSkillTool,
 };

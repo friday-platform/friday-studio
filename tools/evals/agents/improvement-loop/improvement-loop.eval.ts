@@ -13,6 +13,7 @@
  */
 
 import { client, parseResult } from "@atlas/client/v2";
+import { createPlatformModels } from "@atlas/llm";
 import { workspaceImproverAgent } from "@atlas/system/agents";
 import { classifyFailure, type TriageInput } from "@atlas/workspace";
 import {
@@ -30,6 +31,7 @@ import { createScore } from "../../lib/scoring.ts";
 await loadCredentials();
 
 const adapter = new AgentContextAdapter();
+const platformModels = createPlatformModels(null);
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -271,7 +273,7 @@ const triageEvals: EvalRegistration[] = triageCases.map((c) =>
     config: {
       input: c.input,
       run: async () => {
-        const result = await classifyFailure(c.triageInput);
+        const result = await classifyFailure(c.triageInput, platformModels);
         return { result, expected: c.expectedClassification };
       },
       assert: ({ result }) => {
@@ -413,12 +415,15 @@ const pipelineEvals: EvalRegistration[] = pipelineCases.map((c) =>
         const artifactId = await storeBlueprint(c.blueprint);
 
         // Step 2: Triage
-        const triageResult = await classifyFailure({
-          errorMessage: c.errorMessage,
-          jobId: c.jobId,
-          failedStepId: c.failedStepId,
-          transcriptExcerpt: c.transcriptExcerpt,
-        });
+        const triageResult = await classifyFailure(
+          {
+            errorMessage: c.errorMessage,
+            jobId: c.jobId,
+            failedStepId: c.failedStepId,
+            transcriptExcerpt: c.transcriptExcerpt,
+          },
+          platformModels,
+        );
 
         assert(triageResult !== null, "Triage returned null");
 

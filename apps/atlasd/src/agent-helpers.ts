@@ -17,7 +17,7 @@ import {
   SupervisionLevel,
 } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import { buildTemporalFacts, type DatetimeContext } from "@atlas/llm";
+import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { buildResourceGuidance, enrichCatalogEntries, toCatalogEntries } from "@atlas/resources";
 
@@ -205,6 +205,7 @@ export async function validateAgentOutput(
   result: AgentResult,
   context: Context,
   agentType: "llm" | "system" | "sdk",
+  platformModels?: PlatformModels,
   expectedSchema?: JSONSchema,
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
 ): Promise<void> {
@@ -230,8 +231,9 @@ export async function validateAgentOutput(
 
   // Only run hallucination detection for ad-hoc LLM agents
   // System agents and SDK agents are code-based and should not be checked
-  if (agentType === "llm") {
+  if (agentType === "llm" && platformModels) {
     const hallucinationDetectorConfig: HallucinationDetectorConfig = {
+      platformModels,
       logger: logger.child({ component: "hallucination-detector" }),
     };
 
@@ -280,6 +282,10 @@ export async function validateAgentOutput(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  } else if (agentType === "llm") {
+    logger.debug("Skipping hallucination detection — no platformModels injected", {
+      agentId: result.agentId,
+    });
   } else {
     logger.debug("Skipping hallucination detection for non-LLM agent", {
       agentId: result.agentId,

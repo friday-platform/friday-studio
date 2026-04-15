@@ -3,6 +3,7 @@
  */
 
 import type { AgentRegistry } from "@atlas/agent-sdk";
+import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { z } from "zod";
 
@@ -18,6 +19,9 @@ export interface AgentServerDependencies {
 
   /** Base URL for the daemon */
   daemonUrl: string;
+
+  /** Platform model resolver threaded into every AgentContext built by this server. */
+  platformModels: PlatformModels;
 
   /** Optional state store for persistence */
   stateStore?: StateStore;

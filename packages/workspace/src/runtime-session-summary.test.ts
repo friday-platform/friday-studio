@@ -7,9 +7,12 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { MergedConfig } from "@atlas/config";
 import type { SessionAISummary, SessionStreamEvent, SessionSummary } from "@atlas/core";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { describe, expect, it, vi } from "vitest";
 import { WorkspaceRuntime } from "./runtime.ts";
+
+const fakePlatformModels = createStubPlatformModels();
 
 // ---------------------------------------------------------------------------
 // Mock generateSessionSummary — it calls an LLM, so we stub it
@@ -106,6 +109,7 @@ describe("workspace-runtime session:summary wiring", () => {
         workspacePath: testDir,
         lazy: true,
         createSessionStream: (_sessionId: string) => mock.stream,
+        platformModels: fakePlatformModels,
       });
 
       await runtime.initialize();
@@ -173,6 +177,7 @@ describe("workspace-runtime session:summary wiring", () => {
         workspacePath: testDir,
         lazy: true,
         createSessionStream: (_sessionId: string) => mock.stream,
+        platformModels: fakePlatformModels,
       });
 
       await runtime.initialize();

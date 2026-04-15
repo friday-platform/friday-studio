@@ -13,6 +13,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import {
   getDefaultProviderOpts,
+  type PlatformModels,
   registry,
   smallLLM,
   temporalGroundingMessage,
@@ -45,6 +46,7 @@ const SUMMARY_MAX_CHARS = 4500;
  * Tier 2: Use smallLLM to compress while preserving all event names.
  */
 async function generateCalendarSummary(
+  platformModels: PlatformModels,
   schedule: CalendarSchedule,
   abortSignal?: AbortSignal,
 ): Promise<string> {
@@ -63,6 +65,7 @@ async function generateCalendarSummary(
   // Tier 2: Use smallLLM to compress while preserving all event names and times
   try {
     const compressed = await smallLLM({
+      platformModels,
       system: `You compress calendar event lists into concise summaries. CRITICAL RULES:
 1. NEVER drop any event - every event name must appear
 2. Preserve all times (use short format like 9am, 2:30pm)
@@ -127,7 +130,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
     },
   },
 
-  handler: async (prompt, { tools, logger, abortSignal, stream, session }) => {
+  handler: async (prompt, { tools, logger, abortSignal, stream, session, platformModels }) => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
       return err("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
@@ -257,7 +260,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         });
 
         // Generate rich summary with actual event names and times
-        const summary = await generateCalendarSummary(calendarData, abortSignal);
+        const summary = await generateCalendarSummary(platformModels, calendarData, abortSignal);
 
         // Create artifact via direct API call
         const artifactResponse = await parseResult(

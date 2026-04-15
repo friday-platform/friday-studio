@@ -5,17 +5,40 @@ import {
   CHUNKED_UPLOAD_TTL_MS,
   MAX_FILE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import { Hono } from "hono";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { artifactsApp } from "./artifacts.ts";
+import type { AppContext, AppVariables } from "../src/factory.ts";
+import { artifactsApp as rawArtifactsApp } from "./artifacts.ts";
 import {
   _cleanupExpiredSessionsForTest,
   _getSessionForTest,
   _resetSessionsForTest,
-  chunkedUploadApp,
   MAX_CONCURRENT_SESSIONS,
+  chunkedUploadApp as rawChunkedUploadApp,
 } from "./chunked-upload.ts";
+
+const stubPlatformModels = createStubPlatformModels();
+
+const mockAppContext = {
+  daemon: { getPlatformModels: () => stubPlatformModels },
+} as unknown as AppContext;
+
+const artifactsApp = new Hono<AppVariables>()
+  .use("*", async (c, next) => {
+    c.set("app", mockAppContext);
+    await next();
+  })
+  .route("/", rawArtifactsApp);
+
+const chunkedUploadApp = new Hono<AppVariables>()
+  .use("*", async (c, next) => {
+    c.set("app", mockAppContext);
+    await next();
+  })
+  .route("/", rawChunkedUploadApp);
 
 // Configure storage to use a temp directory
 const tempDir = makeTempDir();

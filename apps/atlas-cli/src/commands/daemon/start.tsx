@@ -275,7 +275,7 @@ export function builder(y: YargsInstance) {
     })
     .option("atlas-config", {
       type: "string",
-      describe: "Path to atlas.yml configuration directory",
+      describe: "Path to friday.yml configuration directory",
       alias: "c",
     })
     .example("$0 daemon start", "Start daemon on default port 8080")

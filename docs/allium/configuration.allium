@@ -3,7 +3,7 @@
 // =============================================================================
 //
 // Describes the configuration loading, validation, and mutation system.
-// Two config files: workspace.yml (required) and atlas.yml (optional superset).
+// Two config files: workspace.yml (required) and friday.yml (optional superset).
 // All validation uses Zod v4 with strictObject schemas.
 
 // =============================================================================
@@ -240,7 +240,7 @@ entity PlatformMCPConfig {
 }
 
 variant AtlasPlatformMCPConfig : PlatformMCPConfig {
-  // atlas.yml only - extends with transport, auth, rate limits
+  // friday.yml only - extends with transport, auth, rate limits
   transport: MCPTransport?,
   auth: { required: Bool = false, providers: List<String>? }?,
   rate_limits: {
@@ -256,7 +256,7 @@ entity ToolsConfig {
 }
 
 variant AtlasToolsConfig : ToolsConfig {
-  // atlas.yml only - extends MCP client with tool policy
+  // friday.yml only - extends MCP client with tool policy
   mcp: MCPClientConfig & {
     tool_policy: {
       type: "allowlist" | "denylist" = "allowlist",
@@ -419,7 +419,7 @@ variant AtlasServerConfig : ServerConfig {
 }
 
 // =============================================================================
-// SUPERVISOR CONFIGURATION (atlas.yml only)
+// SUPERVISOR CONFIGURATION (friday.yml only)
 // =============================================================================
 
 value SupervisorPrompts {
@@ -452,7 +452,7 @@ entity SupervisorsConfig {
 }
 
 // =============================================================================
-// PLANNING CONFIGURATION (atlas.yml only)
+// PLANNING CONFIGURATION (friday.yml only)
 // =============================================================================
 
 entity PlanningConfig {
@@ -490,7 +490,7 @@ entity PlanningConfig {
 }
 
 // =============================================================================
-// RUNTIME CONFIGURATION (atlas.yml only)
+// RUNTIME CONFIGURATION (friday.yml only)
 // =============================================================================
 
 entity RuntimeConfig {
@@ -559,7 +559,7 @@ entity AtlasConfig : WorkspaceConfig {
 
 entity MergedConfig {
   workspace: WorkspaceConfig,          // always present
-  atlas: AtlasConfig?                  // null if no atlas.yml
+  atlas: AtlasConfig?                  // null if no friday.yml
 }
 
 // =============================================================================
@@ -581,7 +581,7 @@ rule ConfigFileNotFound {
 rule AtlasConfigOptional {
   when: LoadAtlasConfig(workspacePath),
   requires: true,
-  ensures: returns null if atlas.yml missing or empty
+  ensures: returns null if friday.yml missing or empty
 }
 
 rule ConfigValidation {
@@ -747,4 +747,4 @@ open_question "Signal payload schema validation happens at runtime via JSON Sche
 
 open_question "Config merging keeps workspace and atlas configs as separate objects in MergedConfig rather than deep-merging them. Signal/agent lookup checks workspace first, then atlas. But tools, server, and other sections are NOT merged -- atlas simply overrides workspace via schema extension. Is this asymmetry intentional?"
 
-open_question "Mutation system only operates on WorkspaceConfig, never AtlasConfig. Mutations are not available for atlas.yml-specific fields (supervisors, planning, runtime). Is atlas.yml considered immutable at runtime?"
+open_question "Mutation system only operates on WorkspaceConfig, never AtlasConfig. Mutations are not available for friday.yml-specific fields (supervisors, planning, runtime). Is friday.yml considered immutable at runtime?"

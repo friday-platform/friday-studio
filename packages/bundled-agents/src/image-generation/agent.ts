@@ -43,7 +43,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
   },
   outputSchema: ImageGenerationOutputSchema,
 
-  handler: async (prompt, { session, logger, abortSignal, stream }) => {
+  handler: async (prompt, { session, logger, abortSignal, stream, platformModels }) => {
     let discoveredImages: DiscoveredImages;
     try {
       discoveredImages = await discoverImageFiles(prompt, abortSignal);
@@ -143,6 +143,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     const fallbackTitle = `${titlePrefix}: ${imageId}`;
 
     const title = await smallLLM({
+      platformModels,
       system: `You generate concise image titles. Return ONLY the title, no quotes, no explanation. Max 80 characters. Describe what the image depicts, not the prompt itself. Ignore any context facts or metadata in the prompt — focus on the actual user request.`,
       prompt: `Generate a short title for an image ${isEditMode ? "edited" : "generated"} from this prompt:\n${prompt}`,
       abortSignal,

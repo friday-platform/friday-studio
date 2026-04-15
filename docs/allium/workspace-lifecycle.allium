@@ -53,7 +53,7 @@ entity ActiveSession {
 }
 
 value MergedConfig {
-  atlas:     AtlasConfig | null,   // from atlas.yml (optional, platform-level)
+  atlas:     AtlasConfig | null,   // from friday.yml (optional, platform-level)
   workspace: WorkspaceConfig       // from workspace.yml (required)
 }
 
@@ -87,8 +87,8 @@ rule LoadWorkspaceConfig {
   ensures:
     // workspace.yml takes precedence over eph_workspace.yml when both exist
     config.workspace is parsed and validated via WorkspaceConfigSchema,
-    config.atlas is parsed and validated via AtlasConfigSchema if atlas.yml exists,
-    config.atlas is null if atlas.yml does not exist,
+    config.atlas is parsed and validated via AtlasConfigSchema if friday.yml exists,
+    config.atlas is null if friday.yml does not exist,
     // MergedConfig keeps both configs separate (no deep merge)
     result is MergedConfig { atlas, workspace }
 }
@@ -108,9 +108,9 @@ rule ValidateSignalPayload {
   ensures:  payload matches signal's declared schema
 }
 
-open_question "Config merging is not a deep merge -- MergedConfig keeps atlas and workspace as separate fields. The runtime only reads from config.workspace for jobs, signals, agents. When does atlas config actually influence behavior? Currently supervisors/planning/runtime from atlas.yml appear to be unused by WorkspaceRuntime."
+open_question "Config merging is not a deep merge -- MergedConfig keeps atlas and workspace as separate fields. The runtime only reads from config.workspace for jobs, signals, agents. When does atlas config actually influence behavior? Currently supervisors/planning/runtime from friday.yml appear to be unused by WorkspaceRuntime."
 
-open_question "AtlasConfig extends WorkspaceConfigSchema, meaning atlas.yml also has signals/jobs/agents. validateMergedConfig merges signals from both for system-signal validation, but WorkspaceRuntime only reads config.workspace.jobs and config.workspace.signals. Signals defined only in atlas.yml would be invisible to the runtime."
+open_question "AtlasConfig extends WorkspaceConfigSchema, meaning friday.yml also has signals/jobs/agents. validateMergedConfig merges signals from both for system-signal validation, but WorkspaceRuntime only reads config.workspace.jobs and config.workspace.signals. Signals defined only in friday.yml would be invisible to the runtime."
 
 
 // ---------------------------------------------------------------------------

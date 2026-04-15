@@ -7,6 +7,7 @@
  */
 
 import type { AgentContext, AtlasUIMessage, StreamEmitter } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -108,13 +109,17 @@ vi.mock("@atlas/core/errors", () => ({
   getErrorDisplayMessage: vi.fn(() => "Something went wrong"),
 }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: mockRegistryLanguageModel },
-  traceModel: mockTraceModel,
-  smallLLM: mockSmallLLM,
-  buildTemporalFacts: mockBuildTemporalFacts,
-  getDefaultProviderOpts: mockGetDefaultProviderOpts,
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    registry: { languageModel: mockRegistryLanguageModel },
+    traceModel: mockTraceModel,
+    smallLLM: mockSmallLLM,
+    buildTemporalFacts: mockBuildTemporalFacts,
+    getDefaultProviderOpts: mockGetDefaultProviderOpts,
+  };
+});
 
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: mockGetAtlasDaemonUrl }));
 
@@ -187,6 +192,8 @@ function makeMessage(role: "user" | "assistant", text: string): AtlasUIMessage {
   return { id: crypto.randomUUID(), role, parts: [{ type: "text", text }] };
 }
 
+const stubPlatformModels = createStubPlatformModels();
+
 function makeContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {
     tools: {},
@@ -194,6 +201,7 @@ function makeContext(overrides: Partial<AgentContext> = {}): AgentContext {
     env: {},
     stream: makeStream(),
     logger: makeLogger(),
+    platformModels: stubPlatformModels,
     ...overrides,
   };
 }

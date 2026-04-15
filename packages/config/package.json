@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./mod.ts",
+    "./server": "./src/filesystem-atlas-source.ts",
     "./entry-actions": "./src/entry-actions.ts",
     "./mutations": "./src/mutations/index.ts",
     "./workspace-agents": "./src/mutations/workspace-agents.ts",

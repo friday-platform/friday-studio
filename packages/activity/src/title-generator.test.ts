@@ -1,6 +1,9 @@
+import { createStubPlatformModels } from "@atlas/llm";
 import { describe, expect, it, vi } from "vitest";
 import { generateResourceActivityTitle, generateSessionActivityTitle } from "./title-generator.ts";
 import { generateUserActivityTitle } from "./title-utils.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 describe("generateSessionActivityTitle", () => {
   it("passes correct context to LLM prompt", async () => {
@@ -16,6 +19,7 @@ describe("generateSessionActivityTitle", () => {
       agentNames: ["deployer", "validator"],
       finalOutput: "Deployment successful",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(mockLLM).toHaveBeenCalledOnce();
@@ -40,6 +44,7 @@ describe("generateSessionActivityTitle", () => {
       finalOutput: undefined,
       error: "Connection timeout",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     const callArgs = mockLLM.mock.calls[0]?.[0];
@@ -59,6 +64,7 @@ describe("generateSessionActivityTitle", () => {
       agentNames: ["deployer"],
       finalOutput: "Deployment successful",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Deployed API gateway to staging");
@@ -77,6 +83,7 @@ describe("generateSessionActivityTitle", () => {
       agentNames: [],
       finalOutput: undefined,
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Deploy api session completed");
@@ -95,6 +102,7 @@ describe("generateSessionActivityTitle", () => {
       agentNames: [],
       finalOutput: undefined,
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Daily report session failed");
@@ -113,6 +121,7 @@ describe("generateSessionActivityTitle", () => {
       agentNames: [],
       finalOutput: undefined,
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Nightly sync session failed");
@@ -132,6 +141,7 @@ describe("generateResourceActivityTitle", () => {
       resourceSlug: "product-roadmap",
       resourceType: "document",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(mockLLM).toHaveBeenCalledOnce();
@@ -153,6 +163,7 @@ describe("generateResourceActivityTitle", () => {
       resourceSlug: "product-roadmap",
       resourceType: "document",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Updated product roadmap document");
@@ -170,6 +181,7 @@ describe("generateResourceActivityTitle", () => {
       resourceSlug: "product-roadmap",
       resourceType: "document",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("Product Roadmap was updated");
@@ -187,6 +199,7 @@ describe("generateResourceActivityTitle", () => {
       resourceSlug: "api-docs",
       resourceType: "document",
       _llm: mockLLM,
+      platformModels: stubPlatformModels,
     });
 
     expect(title).toBe("API Docs was updated");

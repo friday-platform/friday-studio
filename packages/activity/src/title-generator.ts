@@ -1,4 +1,4 @@
-import { smallLLM } from "@atlas/llm";
+import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { truncateUnicode } from "@atlas/utils";
 import { kebabToSentenceCase, MAX_TITLE_LENGTH } from "./title-utils.ts";
@@ -10,6 +10,7 @@ const MIN_TITLE_LENGTH = 3;
 // ==============================================================================
 
 export interface GenerateSessionActivityTitleInput {
+  platformModels: PlatformModels;
   status: string;
   jobName: string;
   agentNames: string[];
@@ -39,6 +40,7 @@ export async function generateSessionActivityTitle(
     }
 
     const result = await llm({
+      platformModels: input.platformModels,
       system: `You are a title generator. Generate a concise activity title summarizing what happened in this session.
 
 CONSTRAINTS:
@@ -72,6 +74,7 @@ function sessionFallbackTitle(input: GenerateSessionActivityTitleInput): string 
 // ==============================================================================
 
 export interface GenerateResourceActivityTitleInput {
+  platformModels: PlatformModels;
   resourceName: string;
   resourceSlug: string;
   resourceType: string;
@@ -90,6 +93,7 @@ export async function generateResourceActivityTitle(
     parts.push(`Slug: ${input.resourceSlug}`);
 
     const result = await llm({
+      platformModels: input.platformModels,
       system: `You are a title generator. Generate a concise title describing a resource update.
 
 CONSTRAINTS:

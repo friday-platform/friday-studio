@@ -9,9 +9,12 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { MergedConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { describe, expect, it } from "vitest";
 import { WorkspaceRuntime } from "./runtime.ts";
+
+const stubPlatformModels = createStubPlatformModels();
 
 /** FSM with a code action that references a non-existent function → throws at execution */
 function createFailingConfig(): MergedConfig {
@@ -87,6 +90,7 @@ async function withTestRuntime<T>(
     const runtime = new WorkspaceRuntime({ id: "test-workspace-id" }, config, {
       workspacePath: testDir,
       lazy: true,
+      platformModels: stubPlatformModels,
     });
     await runtime.initialize();
     const result = await fn(runtime);

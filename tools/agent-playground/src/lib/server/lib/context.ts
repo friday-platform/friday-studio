@@ -13,6 +13,7 @@ import type {
   AtlasUIMessageChunk,
   StreamEmitter,
 } from "@atlas/agent-sdk";
+import type { PlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 
 /** Options for creating a playground agent context. */
@@ -22,7 +23,21 @@ export interface PlaygroundContextOpts {
   onStream?: (chunk: AtlasUIMessageChunk) => void;
   onLog?: (entry: { level: string; message: string; context?: unknown }) => void;
   abortSignal?: AbortSignal;
+  platformModels?: PlatformModels;
 }
+
+/**
+ * Stub `PlatformModels` used when the playground creates a context without
+ * a real resolver. Throws on access so any accidental platform-resolver call
+ * surfaces loudly instead of silently returning undefined.
+ */
+const stubPlatformModels: PlatformModels = {
+  get(role) {
+    throw new Error(
+      `Playground context has no PlatformModels configured — got request for '${role}'. Pass one via PlaygroundContextOpts.platformModels.`,
+    );
+  },
+};
 
 /**
  * StreamEmitter that fires a callback on each emitted chunk.
@@ -110,6 +125,7 @@ export class PlaygroundContextAdapter {
       stream,
       logger,
       abortSignal: opts.abortSignal,
+      platformModels: opts.platformModels ?? stubPlatformModels,
     };
 
     return { context };

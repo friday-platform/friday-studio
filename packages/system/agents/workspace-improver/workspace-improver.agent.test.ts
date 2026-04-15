@@ -1,3 +1,4 @@
+import { createStubPlatformModels, type PlatformModels } from "@atlas/llm";
 import { type WorkspaceBlueprint, WorkspaceBlueprintSchema } from "@atlas/workspace-builder";
 import { beforeEach, describe, expect, it, type MockedFunction, vi } from "vitest";
 
@@ -11,10 +12,14 @@ const mockPut = vi.fn();
 
 vi.mock("ai", () => ({ generateObject: (...args: unknown[]) => mockGenerateObject(...args) }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: vi.fn((id: string) => ({ modelId: id })) },
-  traceModel: vi.fn((m: unknown) => m),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    registry: { languageModel: vi.fn((id: string) => ({ modelId: id })) },
+    traceModel: vi.fn((m: unknown) => m),
+  };
+});
 
 vi.mock("@atlas/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -160,6 +165,7 @@ interface TestContext {
   abortSignal: undefined;
   tools: Record<string, never>;
   env: Record<string, never>;
+  platformModels: PlatformModels;
   // Allow additional properties for AgentContext compatibility
   [key: string]: unknown;
 }
@@ -180,6 +186,7 @@ function makeContext(): TestContext {
     abortSignal: undefined,
     tools: {},
     env: {},
+    platformModels: createStubPlatformModels(),
   };
 }
 

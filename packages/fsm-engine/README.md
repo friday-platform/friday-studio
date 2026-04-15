@@ -407,8 +407,8 @@ Configure LLM provider:
 import { AtlasLLMProviderAdapter } from "@atlas/fsm-engine";
 
 const llmProvider = new AtlasLLMProviderAdapter(
-  "claude-sonnet-4-6",
-  "anthropic",
+  platformModels.get("conversational"),
+  { maxSteps: 10 },
 );
 
 const engine = new FSMEngine(fsm, {

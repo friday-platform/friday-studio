@@ -8,6 +8,8 @@
 export * from "./src/agents.ts";
 // Atlas-specific schemas
 export * from "./src/atlas.ts";
+// Atlas platform config source abstraction
+export type { AtlasConfigSource } from "./src/atlas-source.ts";
 // Base types and enums
 export * from "./src/base.ts";
 // Configuration loader
@@ -16,6 +18,8 @@ export * from "./src/config-loader.ts";
 export type { ConfigurationAdapter } from "./src/configuration-adapter.ts";
 // Expand agent actions in FSM definitions
 export { expandAgentActions } from "./src/expand-agent-actions.ts";
+// NOTE: FilesystemAtlasConfigSource NOT exported here — uses node:fs.
+// Import from "@atlas/config/server" for server-only filesystem adapter.
 // Job specification schemas
 export * from "./src/jobs.ts";
 // MCP schemas (Platform and Protocol)
@@ -28,12 +32,6 @@ export { resolveRuntimeAgentId } from "./src/resolve-runtime-agent.ts";
 export * from "./src/signals.ts";
 // Skill schemas
 export * from "./src/skills.ts";
-// Supervisor defaults
-export {
-  type SupervisorDefaults,
-  supervisorDefaults,
-  supervisorDefaultsWrapped,
-} from "./src/supervisor-defaults.ts";
 export * from "./src/topology.ts";
 export * from "./src/workspace.ts";
 

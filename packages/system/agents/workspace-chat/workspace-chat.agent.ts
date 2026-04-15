@@ -10,9 +10,8 @@ import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
   buildTemporalFacts,
   getDefaultProviderOpts,
-  registry,
+  type PlatformModels,
   smallLLM,
-  traceModel,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
@@ -339,6 +338,7 @@ export function getSystemPrompt(
  * Generates a concise 2-3 word title for a conversation based on its messages.
  */
 export async function generateChatTitle(
+  platformModels: PlatformModels,
   messages: AtlasUIMessage[],
   logger: Logger,
 ): Promise<string> {
@@ -347,6 +347,7 @@ export async function generateChatTitle(
     .join("\n");
 
   const result = await smallLLM({
+    platformModels,
     system:
       "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
     prompt: `Generate a title for this conversation:\n${messagePreview}`,
@@ -369,7 +370,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
   expertise: { examples: [] },
   useWorkspaceSkills: true,
 
-  handler: async (_, { session, logger, stream, abortSignal }) => {
+  handler: async (_, { session, logger, stream, abortSignal, platformModels }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -402,7 +403,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         // Generate title on turns 2 and 4
         if (messages.length === 2 || messages.length === 4) {
-          const title = await generateChatTitle(messages, logger);
+          const title = await generateChatTitle(platformModels, messages, logger);
           const titleResult = await parseResult(
             client
               .workspaceChat(workspaceId)
@@ -680,7 +681,7 @@ For external services, use do_task. For artifact data, use artifacts_get.
 
         try {
           const result = streamText({
-            model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+            model: platformModels.get("conversational"),
             experimental_repairToolCall: repairToolCall,
             messages: [
               { role: ROLE_SYSTEM, content: systemPrompt },

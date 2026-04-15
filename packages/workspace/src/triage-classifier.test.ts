@@ -1,4 +1,5 @@
 import type { SessionHistoryTimeline } from "@atlas/core";
+import { createStubPlatformModels } from "@atlas/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTranscriptExcerpt,
@@ -9,12 +10,6 @@ import {
 // Mock the AI SDK generateObject call
 const mockGenerateObject = vi.fn();
 vi.mock("ai", () => ({ generateObject: (...args: unknown[]) => mockGenerateObject(...args) }));
-
-// Mock the LLM registry
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: vi.fn(() => ({ modelId: "mock-model" })) },
-  traceModel: vi.fn((m: unknown) => m),
-}));
 
 // Mock logger
 vi.mock("@atlas/logger", () => ({
@@ -29,11 +24,10 @@ describe("classifyFailure", () => {
   it("returns null when LLM call fails", async () => {
     mockGenerateObject.mockRejectedValue(new Error("LLM service unavailable"));
 
-    const result = await classifyFailure({
-      errorMessage: "Some error",
-      jobId: "test-job",
-      transcriptExcerpt: "(no events)",
-    });
+    const result = await classifyFailure(
+      { errorMessage: "Some error", jobId: "test-job", transcriptExcerpt: "(no events)" },
+      createStubPlatformModels(),
+    );
 
     expect(result).toBeNull();
   });

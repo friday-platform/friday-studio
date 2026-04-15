@@ -8,7 +8,7 @@
 
 import { repairJson } from "@atlas/agent-sdk";
 import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
-import { registry, traceModel } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { CronExpressionParser } from "cron-parser";
@@ -88,10 +88,11 @@ const ENRICHMENT_CONFIG = {
 async function callEnrichmentLLM<S extends z.ZodType>(
   signal: Signal,
   opts: { schema: S; schemaName: string; schemaDescription: string; systemPrompt: string },
+  platformModels: PlatformModels,
   abortSignal?: AbortSignal,
 ) {
   const { object } = await generateObject({
-    model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+    model: platformModels.get("planner"),
     schema: opts.schema,
     experimental_repairText: repairJson,
     schemaName: opts.schemaName,
@@ -117,9 +118,11 @@ ${signal.displayLabel ? `Display label: ${signal.displayLabel}` : ""}`,
  */
 export async function enrichSignals(
   signals: Signal[],
+  deps: { platformModels: PlatformModels },
   options?: { abortSignal?: AbortSignal },
 ): Promise<Signal[]> {
   const enriched: Signal[] = [];
+  const { platformModels } = deps;
 
   for (const signal of signals) {
     if (signal.signalConfig) {
@@ -135,13 +138,23 @@ export async function enrichSignals(
       case "schedule":
         signalConfig = {
           provider: "schedule",
-          config: await callEnrichmentLLM(signal, ENRICHMENT_CONFIG.schedule, options?.abortSignal),
+          config: await callEnrichmentLLM(
+            signal,
+            ENRICHMENT_CONFIG.schedule,
+            platformModels,
+            options?.abortSignal,
+          ),
         };
         break;
       case "http":
         signalConfig = {
           provider: "http",
-          config: await callEnrichmentLLM(signal, ENRICHMENT_CONFIG.http, options?.abortSignal),
+          config: await callEnrichmentLLM(
+            signal,
+            ENRICHMENT_CONFIG.http,
+            platformModels,
+            options?.abortSignal,
+          ),
         };
         break;
     }
