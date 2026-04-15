@@ -14,11 +14,14 @@ const templateYaml = readFileSync(
 );
 
 export async function ensureDefaultUserWorkspace(manager: WorkspaceManager): Promise<void> {
+  // The `user` workspace is the stable personal scope every authenticated chat
+  // routes into. It must exist in every installation, not just fresh ones —
+  // the previous first-run guard (`nonSystem.length > 0`) bailed out whenever
+  // FAST kernel workspaces (frozen_granola, fizzy_waffle, poached_quiche) were
+  // already present, leaving `POST /api/chat` with a broken reference to a
+  // missing workspace. We now only skip if `user` itself already exists.
   const existing = await manager.find({ id: USER_WORKSPACE_ID });
   if (existing) return;
-
-  const nonSystem = await manager.list({ includeSystem: false });
-  if (nonSystem.length > 0) return;
 
   const dir = join(getAtlasHome(), "workspaces", USER_WORKSPACE_ID);
   await mkdir(dir, { recursive: true });

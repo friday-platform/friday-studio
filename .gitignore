@@ -53,6 +53,7 @@ Thumbs.db
 tasks
 .claude/projects/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 
 lgtm/
 build/

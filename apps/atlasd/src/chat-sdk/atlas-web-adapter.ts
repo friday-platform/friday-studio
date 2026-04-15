@@ -7,7 +7,11 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { type AtlasUIMessage, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import {
+  type AtlasUIMessage,
+  normalizeToUIMessages,
+  validateAtlasUIMessages,
+} from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { logger } from "@atlas/logger";
 import type {
@@ -169,7 +173,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // attached` etc. would otherwise be stripped by `toAtlasUIMessage`.
     let uiMessage: AtlasUIMessage;
     try {
-      const [validated] = await validateAtlasUIMessages([parsed.data.message]);
+      const [validated] = await validateAtlasUIMessages(normalizeToUIMessages(parsed.data.message));
       if (!validated) {
         return new Response(JSON.stringify({ error: "Empty or invalid message" }), {
           status: 400,

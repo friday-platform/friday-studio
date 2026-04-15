@@ -12,6 +12,7 @@ import {
   validateUIMessages,
 } from "ai";
 import { z } from "zod";
+import { normalizeToUIMessages } from "./normalize-to-ui-messages.ts";
 import type { AtlasTools } from "./types.ts";
 
 /**
@@ -232,16 +233,34 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return [];
   }
 
+  // Normalize each element — plain strings become user UIMessages, single
+  // objects get wrapped in arrays, arrays are passed through. This makes
+  // callers like `validateAtlasUIMessages([message])` tolerate plain strings
+  // sent by curl / external clients without crashing validateUIMessages.
+  const normalized = messages.flatMap((m) => normalizeToUIMessages(m));
+  if (normalized.length === 0) {
+    return [];
+  }
+
   // AI SDK v6 rejects messages with empty parts arrays. Filter them out
   // rather than failing — tool-call-only responses can produce assistant
   // messages with parts: [] before text content arrives.
   const hasEmptyParts = z.object({ parts: z.array(z.unknown()).max(0) });
-  const nonEmpty = messages.filter((m) => !hasEmptyParts.safeParse(m).success);
+  const nonEmpty = normalized.filter((m) => !hasEmptyParts.safeParse(m).success);
   if (nonEmpty.length === 0) {
     return [];
   }
+
+  // Normalize: auto-assign id to messages missing one (defense-in-depth for
+  // clients that omit UIMessage.id — the AI SDK requires it).
+  const withIds = nonEmpty.map((m) => {
+    if (typeof m !== "object" || m === null) return m;
+    if ("id" in m && typeof m.id === "string" && m.id.length > 0) return m;
+    return { ...m, id: crypto.randomUUID() };
+  });
+
   return await validateUIMessages({
-    messages: nonEmpty,
+    messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
   });

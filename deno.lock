@@ -9438,6 +9438,7 @@
         ],
         "packageJson": {
           "dependencies": [
+            "npm:@ai-sdk/svelte@^4.0.141",
             "npm:@codemirror/lang-markdown@^6.5.0",
             "npm:@codemirror/lang-yaml@^6.1.2",
             "npm:@codemirror/language@^6.12.3",

@@ -227,4 +227,69 @@ describe("validateAtlasUIMessages", () => {
     expect(validated.length).toEqual(1);
     expect(validated[0]?.parts.length).toEqual(3);
   });
+
+  it("accepts a plain string and wraps it as user UIMessage with text part", async () => {
+    // Simulates: validateAtlasUIMessages(["hello"]) — what happens when
+    // a caller sends `{ message: "hello" }` and the handler does [message]
+    const validated = await validateAtlasUIMessages(["hello"]);
+    expect(validated).toHaveLength(1);
+    expect(validated[0]?.role).toEqual("user");
+    expect(validated[0]?.parts[0]?.type).toEqual("text");
+    if (validated[0]?.parts[0]?.type === "text") {
+      expect(validated[0].parts[0].text).toEqual("hello");
+    }
+  });
+
+  it("accepts an already-valid UIMessage object and passes it through", async () => {
+    const msg = { id: "msg-1", role: "user", parts: [{ type: "text", text: "hi" }] };
+    const validated = await validateAtlasUIMessages([msg]);
+    expect(validated).toHaveLength(1);
+    expect(validated[0]?.role).toEqual("user");
+  });
+
+  it("accepts an array containing a mix of strings and UIMessage objects", async () => {
+    const validated = await validateAtlasUIMessages([
+      "hello from string",
+      { id: "msg-2", role: "user", parts: [{ type: "text", text: "hi from object" }] },
+    ]);
+    expect(validated).toHaveLength(2);
+    expect(validated[0]?.role).toEqual("user");
+    expect(validated[1]?.role).toEqual("user");
+  });
+
+  it("auto-assigns id to messages missing one", async () => {
+    const messages = [{ role: "user", parts: [{ type: "text", text: "Hello" }] }];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    expect(validated[0]?.role).toEqual("user");
+    expect(typeof validated[0]?.id).toEqual("string");
+    expect(validated[0]?.id.length).toBeGreaterThan(0);
+  });
+
+  it("replaces empty-string id with generated UUID", async () => {
+    const messages = [{ id: "", role: "user", parts: [{ type: "text", text: "Hello" }] }];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    expect(validated[0]?.id.length).toBeGreaterThan(0);
+  });
+
+  it("preserves existing id when message already has one", async () => {
+    const messages = [
+      { id: "existing-id-123", role: "user", parts: [{ type: "text", text: "Hello" }] },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    expect(validated[0]?.id).toEqual("existing-id-123");
+  });
+
+  it("strings always become role:user — no way to forge other roles", async () => {
+    // Plain strings are always normalized to role: "user", ensuring
+    // no prompt injection via string-based messages
+    const validated = await validateAtlasUIMessages(["test message"]);
+    expect(validated).toHaveLength(1);
+    expect(validated[0]?.role).toEqual("user");
+  });
 });

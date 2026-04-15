@@ -20,6 +20,7 @@
   type NavItem = { label: string; href: string };
 
   const toolLinks: NavItem[] = [
+    { label: "Chat", href: "/" },
     { label: "Memory", href: "/memory" },
     { label: "Improvements", href: "/improvements" },
     { label: "Agent Tester", href: "/agents/built-in" },
@@ -28,6 +29,7 @@
   ];
 
   function isToolActive(href: string): boolean {
+    if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   }
 

@@ -65,6 +65,7 @@ import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
+import { scheduleExpandRoutes } from "../routes/schedule-expand.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
@@ -734,6 +735,7 @@ export class AtlasDaemon {
     this.app.route("/api/skills", skillsRoutes);
     this.app.route("/api/report", reportRoutes);
     this.app.route("/api/memory", memoryNarrativeRoutes);
+    this.app.route("/api/schedule-expand", scheduleExpandRoutes);
 
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));

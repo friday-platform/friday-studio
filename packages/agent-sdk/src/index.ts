@@ -33,6 +33,7 @@ export {
   SkillWriteEventSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
+export { normalizeToUIMessages } from "./normalize-to-ui-messages.ts";
 export { createPlatformTools, PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export * from "./resolved-memory.ts";
 export type { ResourceToolkit } from "./resource-toolkit.ts";

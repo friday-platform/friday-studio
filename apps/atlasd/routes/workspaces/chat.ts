@@ -9,7 +9,7 @@
  */
 
 import process from "node:process";
-import { validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
@@ -176,36 +176,49 @@ const workspaceChatRoutes = daemonFactory
     );
   })
 
-  .post("/:chatId/message", zValidator("json", z.object({ message: z.unknown() })), async (c) => {
-    const chatId = c.req.param("chatId");
-    const workspaceId = c.req.param("workspaceId");
-    const { message } = c.req.valid("json");
+  .post(
+    "/:chatId/message",
+    zValidator(
+      "json",
+      z.object({
+        message: z.union([
+          z.string(),
+          z.record(z.string(), z.unknown()),
+          z.array(z.record(z.string(), z.unknown())),
+        ]),
+      }),
+    ),
+    async (c) => {
+      const chatId = c.req.param("chatId");
+      const workspaceId = c.req.param("workspaceId");
+      const { message } = c.req.valid("json");
 
-    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
-    if (!chatResult.ok || !chatResult.data) {
-      return c.json({ error: "Chat not found" }, 404);
-    }
+      const chatResult = await ChatStorage.getChat(chatId, workspaceId);
+      if (!chatResult.ok || !chatResult.data) {
+        return c.json({ error: "Chat not found" }, 404);
+      }
 
-    const [validatedMessage] = await validateAtlasUIMessages([message]);
-    if (!validatedMessage) {
-      return c.json({ error: "Invalid message format" }, 400);
-    }
-    // Only user-role messages may be appended through this endpoint. Assistant
-    // and system messages are produced server-side by agents, which persist
-    // them in-process via ChatStorage. Allowing client-supplied roles here
-    // would let any caller poison the next LLM turn (prompt injection).
-    if (validatedMessage.role !== "user") {
-      return c.json({ error: "Only user-role messages may be appended" }, 403);
-    }
+      const [validatedMessage] = await validateAtlasUIMessages(normalizeToUIMessages(message));
+      if (!validatedMessage) {
+        return c.json({ error: "Invalid message format" }, 400);
+      }
+      // Only user-role messages may be appended through this endpoint. Assistant
+      // and system messages are produced server-side by agents, which persist
+      // them in-process via ChatStorage. Allowing client-supplied roles here
+      // would let any caller poison the next LLM turn (prompt injection).
+      if (validatedMessage.role !== "user") {
+        return c.json({ error: "Only user-role messages may be appended" }, 403);
+      }
 
-    const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage, workspaceId);
-    if (!appendResult.ok) {
-      logger.error("Failed to append message", { chatId, error: appendResult.error });
-      return c.json({ error: "Failed to append message" }, 500);
-    }
+      const appendResult = await ChatStorage.appendMessage(chatId, validatedMessage, workspaceId);
+      if (!appendResult.ok) {
+        logger.error("Failed to append message", { chatId, error: appendResult.error });
+        return c.json({ error: "Failed to append message" }, 500);
+      }
 
-    return c.json({ success: true }, 200);
-  })
+      return c.json({ success: true }, 200);
+    },
+  )
 
   .patch("/:chatId/title", zValidator("json", z.object({ title: z.string() })), async (c) => {
     const chatId = c.req.param("chatId");
