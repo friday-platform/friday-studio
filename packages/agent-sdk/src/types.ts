@@ -259,6 +259,7 @@ export const AgentSessionDataSchema = z.object({
     })
     .optional(),
   memoryContextKey: z.string().optional(),
+  foregroundWorkspaceIds: z.array(z.string()).optional(),
 });
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;

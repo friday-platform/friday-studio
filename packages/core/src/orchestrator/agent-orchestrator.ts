@@ -60,6 +60,7 @@ export interface AgentExecutionContext {
   outputSchema?: Record<string, unknown>;
   /** Process-local key for looking up pre-built AgentMemoryContext from the mount context registry */
   memoryContextKey?: string;
+  foregroundWorkspaceIds?: string[];
 }
 
 export interface AgentOrchestratorConfig {
@@ -315,6 +316,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           streamId: context.streamId,
           datetime: context.datetime,
           memoryContextKey: context.memoryContextKey,
+          foregroundWorkspaceIds: context.foregroundWorkspaceIds,
         },
         outputSchema: context.outputSchema,
         config: context.config,

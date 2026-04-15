@@ -11,6 +11,9 @@ import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 
+// Deferred rename: thick_endive → kernel (separate cleanup pass)
+export const KERNEL_WORKSPACE_ID = "thick_endive" as const;
+
 type SSEClient = {
   controller: ReadableStreamDefaultController<Uint8Array>;
   connectedAt: number;
@@ -62,6 +65,9 @@ export interface AppContext {
 
   // Session history adapter for reading completed sessions (v2)
   sessionHistoryAdapter: SessionHistoryAdapter;
+
+  // When true, the kernel workspace is visible in user-facing lists
+  exposeKernel: boolean;
 }
 
 export interface CreateAppOptions {

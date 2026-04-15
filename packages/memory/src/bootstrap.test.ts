@@ -16,6 +16,7 @@ import {
   DEFAULT_TOTAL_MAX_BYTES,
   renderSection,
   resolveBootstrap,
+  seedMemories,
   sortByPriorityDesc,
   truncateToBytes,
 } from "./bootstrap.ts";
@@ -579,5 +580,60 @@ describe("buildBootstrap", () => {
       rollback: () => Promise.resolve(),
     };
     await expect(buildBootstrap(adapter, "ws-1", "agent-1")).rejects.toThrow("corpus unavailable");
+  });
+});
+
+// ── seedMemories ──────────────────────────────────────────────────────────────
+
+describe("seedMemories", () => {
+  it("calls ensureRoot for narrative and no-strategy entries, skips kv", async () => {
+    const calls: Array<{ workspaceId: string; name: string }> = [];
+    const adapter = {
+      ensureRoot: (workspaceId: string, name: string) => {
+        calls.push({ workspaceId, name });
+        return Promise.resolve();
+      },
+    };
+
+    await seedMemories(adapter, "ws-1", [
+      { name: "notes", strategy: "narrative" },
+      { name: "cache", strategy: "kv" },
+      { name: "scratch" },
+    ]);
+
+    expect(calls).toEqual([
+      { workspaceId: "ws-1", name: "notes" },
+      { workspaceId: "ws-1", name: "scratch" },
+    ]);
+  });
+
+  it("skips retrieval and dedup strategies", async () => {
+    const calls: Array<{ workspaceId: string; name: string }> = [];
+    const adapter = {
+      ensureRoot: (workspaceId: string, name: string) => {
+        calls.push({ workspaceId, name });
+        return Promise.resolve();
+      },
+    };
+
+    await seedMemories(adapter, "ws-1", [
+      { name: "docs", strategy: "retrieval" },
+      { name: "seen", strategy: "dedup" },
+    ]);
+
+    expect(calls).toEqual([]);
+  });
+
+  it("makes no calls for empty entries array", async () => {
+    const calls: string[] = [];
+    const adapter = {
+      ensureRoot: (_workspaceId: string, name: string) => {
+        calls.push(name);
+        return Promise.resolve();
+      },
+    };
+
+    await seedMemories(adapter, "ws-1", []);
+    expect(calls).toEqual([]);
   });
 });

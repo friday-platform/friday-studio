@@ -68,4 +68,28 @@ describe("MdMemoryAdapter", () => {
     const result = await adapter.bootstrap("ws-empty", "agent-1");
     expect(result).toBe("");
   });
+
+  describe("ensureRoot()", () => {
+    it("creates the narrative directory for the given workspace and memory name", async () => {
+      await adapter.ensureRoot("ws1", "foo");
+      const dir = path.join(tmpDir, "memory", "ws1", "narrative", "foo");
+      const stats = await fs.stat(dir);
+      expect(stats.isDirectory()).toBe(true);
+    });
+
+    it("is idempotent — calling twice does not error", async () => {
+      await adapter.ensureRoot("ws1", "foo");
+      await adapter.ensureRoot("ws1", "foo");
+      const dir = path.join(tmpDir, "memory", "ws1", "narrative", "foo");
+      const stats = await fs.stat(dir);
+      expect(stats.isDirectory()).toBe(true);
+    });
+
+    it("creates an empty directory (no MEMORY.md, no entries.jsonl)", async () => {
+      await adapter.ensureRoot("ws1", "bar");
+      const dir = path.join(tmpDir, "memory", "ws1", "narrative", "bar");
+      const contents = await fs.readdir(dir);
+      expect(contents).toEqual([]);
+    });
+  });
 });

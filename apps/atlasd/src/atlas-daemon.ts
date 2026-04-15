@@ -188,7 +188,9 @@ export class AtlasDaemon {
       ...options,
       cors: corsOrigins, // Override with resolved CORS origins
     };
+    const exposeKernel = process.env.ATLAS_EXPOSE_KERNEL === "1";
     const context = {
+      exposeKernel,
       runtimes: this.runtimes,
       startTime: this.startTime,
       sseClients: this.sseClients,
@@ -1264,6 +1266,7 @@ export class AtlasDaemon {
         | Record<string, { provider?: string; config?: Record<string, unknown> }>
         | undefined,
       streamRegistry: this.streamRegistry,
+      exposeKernel: process.env.ATLAS_EXPOSE_KERNEL === "1",
       triggerFn: async (signalId, signalData, streamId, onStreamEvent) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         const session = await runtime.triggerSignalWithSession(

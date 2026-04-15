@@ -243,3 +243,17 @@ export async function buildBootstrap(
 
   return sections.join("\n\n");
 }
+
+// ── seedMemories (eager directory creation on workspace registration) ────────
+
+export async function seedMemories(
+  adapter: { ensureRoot(workspaceId: string, name: string): Promise<void> },
+  workspaceId: string,
+  ownEntries: Array<{ name: string; strategy?: string }>,
+): Promise<void> {
+  for (const entry of ownEntries) {
+    if (!entry.strategy || entry.strategy === "narrative") {
+      await adapter.ensureRoot(workspaceId, entry.name);
+    }
+  }
+}

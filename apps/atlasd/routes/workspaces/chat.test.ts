@@ -364,6 +364,51 @@ describe("PATCH /:workspaceId/chat/:chatId/title — update chat title", () => {
   });
 });
 
+describe("POST /:workspaceId/chat — foreground workspace validation", () => {
+  test("passes through to webhook handler with valid foreground_workspace_ids", async () => {
+    const { app, mockWebhooksAtlas } = createTestApp();
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-1",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+      foreground_workspace_ids: ["ws-1"],
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockWebhooksAtlas).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns 400 for nonexistent foreground workspace ID", async () => {
+    const { app, mockContext } = createTestApp();
+    const manager = mockContext.getWorkspaceManager();
+    manager.find.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve(id === "ws-1" ? { id: "ws-1", name: "Test" } : null),
+    );
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-2",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+      foreground_workspace_ids: ["ws-1", "nonexistent-ws"],
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as JsonBody;
+    expect(body.error).toBe("Unknown foreground workspace: nonexistent-ws");
+  });
+
+  test("succeeds without foreground_workspace_ids (backward compatibility)", async () => {
+    const { app, mockWebhooksAtlas } = createTestApp();
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-3",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockWebhooksAtlas).toHaveBeenCalledTimes(1);
+  });
+});
+
 // Workspace-not-found middleware is applied at the route group level — one
 // hit is enough to verify the 404 short-circuit.
 test("workspace-not-found middleware short-circuits with 404", async () => {

@@ -232,6 +232,14 @@ gh pr create
 - `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
   options
 
+## Environment Variables
+
+- `ATLAS_EXPOSE_KERNEL=1` — when set, the kernel workspace (`thick_endive`)
+  becomes visible in the workspace picker and `/api/workspaces` list. When unset
+  (the default), the kernel is hidden from all user-facing surfaces. Internal
+  paths (cron, session dispatch, planner) always address the kernel directly by
+  ID and are unaffected by this flag.
+
 ## Architecture Gotchas
 
 **Worker context:** Worker-executed code actions can't read Context properties

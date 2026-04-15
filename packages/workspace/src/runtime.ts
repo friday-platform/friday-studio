@@ -1421,6 +1421,11 @@ export class WorkspaceRuntime {
         }
       | undefined;
 
+    const rawFgIds = signal.data?.foregroundWorkspaceIds;
+    const foregroundWorkspaceIds = Array.isArray(rawFgIds)
+      ? rawFgIds.filter((id): id is string => typeof id === "string")
+      : undefined;
+
     const sessionId = signal._context?.sessionId;
     if (!sessionId) {
       throw new Error(
@@ -1492,6 +1497,7 @@ export class WorkspaceRuntime {
                 outputSchema: options?.outputSchema,
                 datetime,
                 agentEnv: agentConfig.env,
+                foregroundWorkspaceIds,
               })
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
@@ -1499,6 +1505,7 @@ export class WorkspaceRuntime {
                 streamId,
                 datetime,
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
+                foregroundWorkspaceIds,
                 // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
                 // keeping the FSM onEvent callback clean (FSMEvent types only)
                 onStreamEvent: signal._context?.onStreamEvent,
@@ -1579,6 +1586,7 @@ export class WorkspaceRuntime {
       outputSchema?: Record<string, unknown>;
       datetime?: unknown;
       agentEnv?: Record<string, string | LinkCredentialRef>;
+      foregroundWorkspaceIds?: string[];
     },
   ): Promise<AgentResult> {
     // Resolve agent source location from disk

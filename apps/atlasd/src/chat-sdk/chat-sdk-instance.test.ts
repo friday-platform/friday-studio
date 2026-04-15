@@ -22,6 +22,7 @@ vi.mock("@atlas/core/chat/storage", () => ({
 
 import type { Message, Thread } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
 import { createMessageHandler } from "./chat-sdk-instance.ts";
 
@@ -243,5 +244,123 @@ describe("createMessageHandler", () => {
     expect(mockAppendMessage).toHaveBeenCalled();
     // finally block ran even though post threw
     expect(registry.getStream("chat-err")?.active).toBe(false);
+  });
+});
+
+describe("createMessageHandler — kernel filtering", () => {
+  beforeEach(() => {
+    mockAppendMessage.mockReset();
+    mockAppendMessage.mockResolvedValue({ ok: true });
+  });
+
+  it("filters KERNEL_WORKSPACE_ID from foregroundWorkspaceIds when exposeKernel is false", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      exposeKernel: false,
+    });
+
+    const thread = makeThread("chat-kernel-1");
+    registry.createStream("chat-kernel-1");
+    const preValidated = {
+      id: "msg-k1",
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "hi" }],
+      metadata: {},
+    };
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-kernel-1",
+        raw: {
+          uiMessage: preValidated,
+          foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID, "fg-2"],
+        },
+      }),
+    );
+
+    expect(triggerFn).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ foregroundWorkspaceIds: ["fg-1", "fg-2"] }),
+      "chat-kernel-1",
+      expect.any(Function),
+    );
+  });
+
+  it("passes KERNEL_WORKSPACE_ID through when exposeKernel is true", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      exposeKernel: true,
+    });
+
+    const thread = makeThread("chat-kernel-2");
+    registry.createStream("chat-kernel-2");
+    const preValidated = {
+      id: "msg-k2",
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "hi" }],
+      metadata: {},
+    };
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-kernel-2",
+        raw: { uiMessage: preValidated, foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID] },
+      }),
+    );
+
+    expect(triggerFn).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID] }),
+      "chat-kernel-2",
+      expect.any(Function),
+    );
+  });
+
+  it("passes undefined foregroundWorkspaceIds through as undefined", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      exposeKernel: false,
+    });
+
+    const thread = makeThread("chat-kernel-3");
+    registry.createStream("chat-kernel-3");
+    await handler(thread, makeMessage({ threadId: "chat-kernel-3" }));
+
+    const payload = triggerFn.mock.calls[0]?.[1];
+    expect(payload?.foregroundWorkspaceIds).toBeUndefined();
+  });
+
+  it("keeps empty foregroundWorkspaceIds array as empty", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      exposeKernel: false,
+    });
+
+    const thread = makeThread("chat-kernel-4");
+    registry.createStream("chat-kernel-4");
+    const preValidated = {
+      id: "msg-k4",
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "hi" }],
+      metadata: {},
+    };
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-kernel-4",
+        raw: { uiMessage: preValidated, foregroundWorkspaceIds: [] },
+      }),
+    );
+
+    expect(triggerFn).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ foregroundWorkspaceIds: [] }),
+      "chat-kernel-4",
+      expect.any(Function),
+    );
   });
 });

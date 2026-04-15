@@ -13,6 +13,7 @@ import { signalToStream, type TriggerFn } from "@atlas/workspace/signal-to-strea
 import type { Message, StreamEvent, Thread } from "chat";
 import { Chat } from "chat";
 import { z } from "zod";
+import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import {
   ByWorkspaceResponseSchema,
   SlackCredentialSecretSchema,
@@ -29,6 +30,7 @@ export interface ChatSdkInstanceConfig {
   signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
   streamRegistry: StreamRegistry;
   triggerFn: TriggerFn;
+  exposeKernel?: boolean;
 }
 
 export interface ChatSdkInstance {
@@ -135,6 +137,7 @@ export function createMessageHandler(
   triggerFn: TriggerFn,
   streamRegistry: StreamRegistry,
   stateAdapter?: ChatSdkStateAdapter,
+  options?: { exposeKernel?: boolean },
 ): (thread: Thread, message: Message) => Promise<void> {
   return async (thread: Thread, message: Message): Promise<void> => {
     const adapterName = thread.adapter.name;
@@ -186,6 +189,18 @@ export function createMessageHandler(
         ? message.raw.datetime
         : undefined;
 
+    const rawFgPayload =
+      typeof message.raw === "object" &&
+      message.raw !== null &&
+      "foregroundWorkspaceIds" in message.raw
+        ? message.raw.foregroundWorkspaceIds
+        : undefined;
+    const foregroundWorkspaceIds = Array.isArray(rawFgPayload)
+      ? rawFgPayload
+          .filter((id: unknown): id is string => typeof id === "string")
+          .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
+      : undefined;
+
     // signalToStream fans events two ways: the tap pushes ALL client-safe
     // events to StreamRegistry for the full web SSE stream, while the async
     // iterable feeds thread.post() → fromFullStream for platform adapters
@@ -193,7 +208,7 @@ export function createMessageHandler(
     const stream = signalToStream<StreamEvent>(
       triggerFn,
       "chat",
-      { chatId, userId, streamId, datetime },
+      { chatId, userId, streamId, datetime, foregroundWorkspaceIds },
       streamId,
       (chunk: unknown) => {
         if (isClientSafeEvent(chunk)) {
@@ -229,7 +244,9 @@ export function initializeChatSdkInstance(
     logger: "silent",
   });
 
-  const handler = createMessageHandler(workspaceId, triggerFn, streamRegistry, stateAdapter);
+  const handler = createMessageHandler(workspaceId, triggerFn, streamRegistry, stateAdapter, {
+    exposeKernel: config.exposeKernel,
+  });
   chat.onNewMention(handler);
   chat.onSubscribedMessage(handler);
 

@@ -173,3 +173,43 @@ tools:
     expect(workspace.name).toBe("test-dangling-token");
   });
 });
+
+describe("WorkspaceManager.registerWorkspace — options.id", () => {
+  const workspaceYaml = `
+version: "1.0"
+workspace:
+  name: custom-id-test
+`;
+
+  let tempDir: string;
+  let manager: WorkspaceManager;
+
+  aroundEach(async (run) => {
+    tempDir = await mkdtemp(join(tmpdir(), "atlas-test-id-"));
+    await writeFile(join(tempDir, "workspace.yml"), workspaceYaml);
+
+    const kv = await createKVStorage({ type: "memory" });
+    const registry = new RegistryStorageAdapter(kv);
+    await registry.initialize();
+    manager = new WorkspaceManager(registry);
+    await run();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("uses the provided ID instead of generating one", async () => {
+    const { workspace, created } = await manager.registerWorkspace(tempDir, { id: "custom-id" });
+
+    expect(created).toBe(true);
+    expect(workspace.id).toBe("custom-id");
+    expect(workspace.name).toBe("custom-id-test");
+  });
+
+  it("returns existing workspace when id already exists in registry", async () => {
+    const first = await manager.registerWorkspace(tempDir, { id: "custom-id" });
+    expect(first.created).toBe(true);
+
+    const second = await manager.registerWorkspace(tempDir, { id: "custom-id" });
+    expect(second.created).toBe(false);
+    expect(second.workspace.id).toBe("custom-id");
+  });
+});

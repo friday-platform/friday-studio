@@ -40,7 +40,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
-import { daemonFactory } from "../../src/factory.ts";
+import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
   createLinkUnwiredClient,
   createLinkWireClient,
@@ -319,7 +319,10 @@ const workspacesRoutes = daemonFactory
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
-      const workspaces = await manager.list({ includeSystem: true });
+      const allWorkspaces = await manager.list({ includeSystem: true });
+      const workspaces = ctx.exposeKernel
+        ? allWorkspaces
+        : allWorkspaces.filter((w) => w.id !== KERNEL_WORKSPACE_ID);
       const response = workspaces
         .map((w) => ({
           ...w,

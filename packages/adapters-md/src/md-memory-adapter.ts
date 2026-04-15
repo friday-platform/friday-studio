@@ -36,6 +36,10 @@ export class MdMemoryAdapter implements MemoryAdapter {
     return path.join(this.root, "memory", workspaceId, "narrative");
   }
 
+  async ensureRoot(workspaceId: string, memoryName: string): Promise<void> {
+    await fs.mkdir(path.join(this.narrativeDir(workspaceId), memoryName), { recursive: true });
+  }
+
   // TS cannot narrow conditional CorpusOf<K> from a runtime check on K
   // (microsoft/TypeScript#33014); safe because all non-narrative paths throw
   async corpus<K extends CorpusKind>(

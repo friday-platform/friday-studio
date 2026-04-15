@@ -46,6 +46,7 @@ const webhookBodySchema = z.object({
       timezoneOffset: z.string(),
     })
     .optional(),
+  foreground_workspace_ids: z.array(z.string()).optional(),
 });
 
 /** Join the text parts of a validated AtlasUIMessage into a flat string. */
@@ -86,6 +87,7 @@ export interface WebChatPayload {
     localTime: string;
     timezoneOffset: string;
   };
+  foregroundWorkspaceIds?: string[];
 }
 
 export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
@@ -197,7 +199,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     const chatId = parsed.data.id;
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? "default-user";
-    const { datetime } = parsed.data;
+    const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;
 
     analytics.emit({
       eventName: EventNames.CONVERSATION_STARTED,
@@ -209,7 +211,14 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // Create the buffer BEFORE dispatching so we don't lose early events.
     this.streamRegistry.createStream(chatId);
 
-    const payload: WebChatPayload = { chatId, message: messageText, userId, uiMessage, datetime };
+    const payload: WebChatPayload = {
+      chatId,
+      message: messageText,
+      userId,
+      uiMessage,
+      datetime,
+      foregroundWorkspaceIds,
+    };
     const message = this.parseMessage(payload);
     this.chat.processMessage(this, chatId, message, {
       ...options,

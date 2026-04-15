@@ -4,15 +4,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
+import { MdMemoryAdapter } from "@atlas/adapters-md";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { MissingEnvironmentError } from "@atlas/core";
 import { deleteSlackApp } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
+import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
+import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
 import type { WorkspaceRuntime } from "./runtime.ts";
 import { createRegistryStorage, type RegistryStorageAdapter, StorageConfigs } from "./storage.ts";
@@ -173,6 +176,14 @@ export class WorkspaceManager {
 
     if (!this.isTestMode()) {
       try {
+        await ensureDefaultUserWorkspace(this);
+      } catch (error) {
+        logger.error("Failed to bootstrap default user workspace", { error });
+      }
+    }
+
+    if (!this.isTestMode()) {
+      try {
         const imported = await this.importExistingWorkspaces();
         if (imported > 0) {
           logger.info(`Auto-imported ${imported} workspace(s)`);
@@ -193,6 +204,7 @@ export class WorkspaceManager {
   async registerWorkspace(
     workspacePath: string,
     options?: {
+      id?: string;
       name?: string;
       description?: string;
       tags?: string[];
@@ -200,6 +212,11 @@ export class WorkspaceManager {
       skipEnvValidation?: boolean;
     },
   ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
+    if (options?.id) {
+      const existingById = await this.registry.getWorkspace(options.id);
+      if (existingById) return { workspace: existingById, created: false };
+    }
+
     const absolutePath = await Deno.realPath(workspacePath);
 
     const existing = await this.registry.findWorkspaceByPath(absolutePath);
@@ -237,7 +254,7 @@ export class WorkspaceManager {
         ? ephemeralPath
         : join(absolutePath, "workspace.yml");
 
-    const id = await this.generateUniqueId();
+    const id = options?.id ?? (await this.generateUniqueId());
 
     const entry: WorkspaceEntry = {
       id,
@@ -262,6 +279,16 @@ export class WorkspaceManager {
 
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
+
+    const ownEntries = config.workspace.memory?.own ?? [];
+    if (ownEntries.length > 0) {
+      try {
+        const memoryAdapter = new MdMemoryAdapter({ root: getAtlasHome() });
+        await seedMemories(memoryAdapter, entry.id, ownEntries);
+      } catch (error) {
+        logger.warn("Failed to seed workspace memories", { workspaceId: entry.id, error });
+      }
+    }
 
     if (!entry.metadata?.ephemeral) {
       try {

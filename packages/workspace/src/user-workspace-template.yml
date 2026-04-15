@@ -1,0 +1,15 @@
+version: "1.0"
+workspace:
+  name: "Personal"
+  description: "Your default personal workspace"
+memory:
+  own:
+    - name: user-profile
+      type: long_term
+      strategy: narrative
+    - name: notes
+      type: long_term
+      strategy: narrative
+    - name: scratchpad
+      type: scratchpad
+      strategy: narrative

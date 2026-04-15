@@ -121,6 +121,7 @@ const AgentSessionDataSchema = z.object({
     })
     .optional(),
   memoryContextKey: z.string().optional(),
+  foregroundWorkspaceIds: z.array(z.string()).optional(),
 });
 
 /**

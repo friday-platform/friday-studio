@@ -73,6 +73,27 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: "Missing workspaceId" }, 400);
     }
 
+    const body: unknown = await c.req.raw
+      .clone()
+      .json()
+      .catch(() => null);
+    const rawFgIds =
+      typeof body === "object" && body !== null && "foreground_workspace_ids" in body
+        ? body.foreground_workspace_ids
+        : undefined;
+    const foregroundIds = Array.isArray(rawFgIds)
+      ? rawFgIds.filter((id: unknown): id is string => typeof id === "string")
+      : [];
+    if (foregroundIds.length > 0) {
+      const manager = ctx.getWorkspaceManager();
+      for (const fgId of foregroundIds) {
+        const found = await manager.find({ id: fgId });
+        if (!found) {
+          return c.json({ error: `Unknown foreground workspace: ${fgId}` }, 400);
+        }
+      }
+    }
+
     const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
       if (error instanceof WorkspaceNotFoundError) return null;
       throw error;

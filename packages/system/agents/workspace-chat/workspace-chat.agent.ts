@@ -32,6 +32,14 @@ import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/lin
 import { connectServiceSucceeded } from "../conversation/stop-conditions.ts";
 import { createConnectServiceTool } from "../conversation/tools/connect-service.ts";
 import { fetchUserIdentitySection } from "../conversation/user-identity.ts";
+import {
+  composeMemoryBlocks,
+  composeResources,
+  composeSkills,
+  composeTools,
+  composeWorkspaceSections,
+  fetchForegroundContexts,
+} from "./compose-context.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
 import { createWorkspaceDoTask } from "./tools/do-task.ts";
@@ -126,13 +134,7 @@ export function computeOrphanedArtifacts(
   return artifacts.filter((a) => !linkedArtifactIds.has(a.id));
 }
 
-/**
- * Fetch workspace details: config, agents, jobs, signals, resources, artifacts.
- */
-async function fetchWorkspaceDetails(
-  workspaceId: string,
-  logger: Logger,
-): Promise<{
+export interface WorkspaceDetails {
   name: string;
   description?: string;
   agents: string[];
@@ -140,7 +142,12 @@ async function fetchWorkspaceDetails(
   signals: Array<{ name: string }>;
   resourceEntries: ResourceEntry[];
   orphanedArtifacts: ArtifactSummary[];
-}> {
+}
+
+export async function fetchWorkspaceDetails(
+  workspaceId: string,
+  logger: Logger,
+): Promise<WorkspaceDetails> {
   const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult, resourcesResult] =
     await Promise.all([
       parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
@@ -228,10 +235,7 @@ async function fetchWorkspaceDetails(
 /**
  * Format workspace capabilities as a system prompt section.
  */
-export function formatWorkspaceSection(
-  workspaceId: string,
-  details: Awaited<ReturnType<typeof fetchWorkspaceDetails>>,
-): string {
+export function formatWorkspaceSection(workspaceId: string, details: WorkspaceDetails): string {
   let section = `<workspace id="${workspaceId}" name="${details.name}">`;
 
   if (details.description) {
@@ -279,11 +283,21 @@ ${entries.join("\n")}
  */
 export function getSystemPrompt(
   workspaceSection: string,
-  options?: { integrations?: string; skills?: string; userIdentity?: string; resources?: string },
+  options?: {
+    integrations?: string;
+    skills?: string;
+    userIdentity?: string;
+    resources?: string;
+    memory?: string;
+  },
 ): string {
   let prompt = SYSTEM_PROMPT;
 
   prompt = `${prompt}\n\n${workspaceSection}`;
+
+  if (options?.memory) {
+    prompt = `${prompt}\n\n${options.memory}`;
+  }
 
   if (options?.resources) {
     prompt = `${prompt}\n\n${options.resources}`;
@@ -412,13 +426,20 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         }
 
         // Parallel fetch of startup context
-        logger.info("Fetching workspace chat startup context", { workspaceId });
-        const [workspaceDetails, wsConfigResult, linkSummary, userIdentitySection] =
+        const foregroundIds = session.foregroundWorkspaceIds ?? [];
+        logger.info("Fetching workspace chat startup context", {
+          workspaceId,
+          foregroundCount: foregroundIds.length,
+        });
+        const [workspaceDetails, wsConfigResult, linkSummary, userIdentitySection, foregrounds] =
           await Promise.all([
             fetchWorkspaceDetails(workspaceId, logger),
             parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
             fetchLinkSummary(logger),
             fetchUserIdentitySection(logger),
+            foregroundIds.length > 0
+              ? fetchForegroundContexts(foregroundIds, logger)
+              : Promise.resolve([]),
           ]);
 
         let wsConfig: WorkspaceConfig | undefined;
@@ -431,15 +452,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           });
         }
 
-        // Format sections
-        const workspaceSection = formatWorkspaceSection(workspaceId, workspaceDetails);
+        // Format sections — compose with foreground workspaces
+        const primaryWorkspaceSection = formatWorkspaceSection(workspaceId, workspaceDetails);
+        const workspaceSection = composeWorkspaceSections(primaryWorkspaceSection, foregrounds);
         const integrationsSection = linkSummary
           ? formatIntegrationsSection(linkSummary)
           : undefined;
 
-        // Skills — scoped to this workspace (unassigned ∪ directly assigned)
-        const visibleSkills = await resolveVisibleSkills(workspaceId, SkillStorage);
-        const skillsSection = buildSkillsSection(visibleSkills);
+        // Skills — scoped to this workspace (unassigned ∪ directly assigned), merged with foregrounds
+        const primarySkills = await resolveVisibleSkills(workspaceId, SkillStorage);
+        const mergedSkills = composeSkills(primarySkills, foregrounds);
+        const skillsSection = buildSkillsSection(mergedSkills);
 
         // Connect service tool
         const connectServiceTool: AtlasTools = {};
@@ -487,17 +510,20 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           logger,
         );
 
+        // Compose resources from primary + foreground workspaces
+        const mergedResources = composeResources(workspaceDetails.resourceEntries, foregrounds);
+
         // Resource tools — only register when workspace has document resources
-        const hasDocuments = workspaceDetails.resourceEntries.some((e) => e.type === "document");
+        const hasDocuments = mergedResources.some((e) => e.type === "document");
         const resourceTools = hasDocuments
           ? createResourceChatTools(
               resourceAdapter,
-              new Map(workspaceDetails.resourceEntries.map((e) => [e.slug, e])),
+              new Map(mergedResources.map((e) => [e.slug, e])),
               workspaceId,
             )
           : {};
 
-        const allTools = {
+        const primaryTools: AtlasTools = {
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
@@ -505,6 +531,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           do_task: doTaskTool,
           load_skill: loadSkillTool,
         };
+
+        // Build foreground job tools and compose with primary (primary wins on name conflict)
+        const foregroundToolSets = foregrounds.map((fg) => ({
+          workspaceId: fg.workspaceId,
+          tools: createJobTools(
+            fg.workspaceId,
+            fg.config?.jobs ?? {},
+            fg.config?.signals ?? {},
+            logger,
+          ),
+        }));
+        const allTools = composeTools(primaryTools, foregroundToolSets);
 
         // Build resource section for system prompt
         const resourceSectionParts: string[] = [];
@@ -516,7 +554,7 @@ For external services, use do_task. For artifact data, use artifacts_get.
 </resources>`);
         }
 
-        const resourceGuidance = buildResourceGuidance(workspaceDetails.resourceEntries, {
+        const resourceGuidance = buildResourceGuidance(mergedResources, {
           availableTools: RESOURCE_CHAT_TOOL_NAMES,
         });
         if (resourceGuidance) {
@@ -544,11 +582,19 @@ For external services, use do_task. For artifact data, use artifacts_get.
         const resourceSection =
           resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
 
+        // Compose memory blocks from primary + foreground workspaces
+        const memoryBlocks =
+          foregroundIds.length > 0
+            ? await composeMemoryBlocks(workspaceId, foregroundIds, logger)
+            : [];
+        const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
+
         const systemPrompt = getSystemPrompt(workspaceSection, {
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           resources: resourceSection,
+          memory: memorySection,
         });
         const datetimeMessage = buildTemporalFacts(session.datetime);
 

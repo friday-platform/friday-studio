@@ -14,6 +14,7 @@
   },
   "main": "./mod.ts",
   "dependencies": {
+    "@atlas/adapters-md": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/analytics": "workspace:*",
     "@atlas/config": "workspace:*",
@@ -25,6 +26,7 @@
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/memory": "workspace:*",
     "@atlas/mcp": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/resources": "workspace:*",
