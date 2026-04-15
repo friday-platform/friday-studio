@@ -20,12 +20,12 @@ from friday_agent_sdk import agent, ok
 from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py needs this
 
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
-KERNEL_WS_DEFAULT = "thick_endive"
+KERNEL_WS_DEFAULT = "salted_granola"
 DISPATCH_LOG_DEFAULT = "dispatch-log"
 BACKLOG_DEFAULT = "autopilot-backlog"
 
 REFLECTOR_SIGNAL = "reflect-on-last-run"
-REFLECTOR_TARGET_WS = "thick_endive"
+REFLECTOR_TARGET_WS = "salted_granola"
 DURATION_THRESHOLD_MS = 300_000
 
 _REFLECTOR_SKIP_JOBS = frozenset({
@@ -197,7 +197,7 @@ def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 @agent(
     id="autopilot-status-watcher",
-    version="1.4.0",
+    version="1.5.0",
     description=(
         "Closes the loop on autopilot dispatches. Reads the dispatch-log "
         "narrative memory, fetches each dispatched session's status, and "
@@ -206,7 +206,8 @@ def _latest_per_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         "observation. Runs as step_observe before step_plan in the kernel's "
         "autopilot-tick FSM. v1.4.0 adds the backlog-newer-than-dispatch "
         "idempotency guard so operator resets + validator updates aren't "
-        "clobbered by repeated watcher runs."
+        "clobbered by repeated watcher runs. v1.5.0 adds session_id-level "
+        "pair dedupe on top of the v1.4.0 timestamp guard."
     ),
     summary="Marks dispatched tasks completed in the backlog when their target sessions finish.",
     examples=[
@@ -337,9 +338,18 @@ def execute(prompt, ctx):
             continue
 
         # 5. Session is done — route through validator or mark directly.
-        existing_meta = (backlog_latest.get(task_id, {}).get("metadata") or {})
+        existing_entry = backlog_latest.get(task_id, {}) or {}
+        existing_meta = (existing_entry.get("metadata") or {})
+        existing_status = existing_meta.get("status")
+        existing_session = existing_meta.get("source_session_id")
 
         if status == "failed":
+            # Pair-dedupe: already blocked for *this specific* failed session.
+            # Marking it again just spams the corpus. Operator overrides are
+            # handled earlier by the generic backlog-newer-than-dispatch guard.
+            if existing_status == "blocked" and existing_session == session_id:
+                skipped.append(f"{task_id}(already blocked for session {session_id[:8]})")
+                continue
             completion_body = {
                 "id": task_id,
                 "text": f"{task_id} [auto-blocked via session {session_id[:8]} at {entry.get('createdAt', '?')}]",
