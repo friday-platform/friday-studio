@@ -63,6 +63,29 @@ signals:
     provider: http
     config:
       path: /webhooks/chat-unify-task
+  analyze-plan-progress:
+    description: >-
+      Manually fire the plan-progress analyzer. Reads the chat-unification
+      plan, walks recent execute-task sessions on this workspace, grep-verifies
+      the source for real completion evidence, and proposes new discovery
+      tasks to the kernel backlog with auto_apply=false so they land in the
+      improvements inbox for operator approval.
+    title: Analyze plan progress (manual)
+    provider: http
+    config:
+      path: /webhooks/analyze-plan-progress
+  analyze-plan-progress-cron:
+    description: >-
+      Cron-driven plan reconciliation. Every 5 minutes. Same job as
+      analyze-plan-progress — reads the plan, cross-references recent sessions
+      with real source evidence, proposes discovery tasks to the kernel
+      backlog (auto_apply=false). Active-session guard on this workspace
+      means this will skip while execute-task is mid-dispatch.
+    title: Analyze plan progress (scheduled)
+    provider: schedule
+    config:
+      schedule: '*/5 * * * *'
+      timezone: UTC
 jobs:
   execute-task:
     description: >-
@@ -470,6 +493,267 @@ jobs:
             - assertions_checked
             - summary
       tools: {}
+  analyze-plan-progress:
+    description: >-
+      Reads the chat-unification plan, walks recent execute-task sessions on
+      this workspace, grep-verifies source for real completion evidence,
+      proposes discovery tasks to the kernel backlog with auto_apply=false
+      so they land in the improvements inbox for operator approval.
+    title: Analyze plan progress
+    triggers:
+      - signal: analyze-plan-progress
+      - signal: analyze-plan-progress-cron
+    fsm:
+      id: plan-analyze-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: analyze_cleanup
+          'on':
+            analyze-plan-progress:
+              target: step_analyze
+            analyze-plan-progress-cron:
+              target: step_analyze
+        step_analyze:
+          entry:
+            - type: code
+              function: prepare_analyze
+            - type: agent
+              agentId: plan-analyzer
+              outputTo: analysis-output
+              outputType: plan-reconciliation-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_append_discoveries
+              guards:
+                - guard_analysis_done
+        step_append_discoveries:
+          entry:
+            - type: code
+              function: append_discovery_tasks
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_append_done
+        completed:
+          type: final
+      functions:
+        analyze_cleanup:
+          type: action
+          code: |
+            export default function analyze_cleanup(context, event) {
+              // session-scoped results clear between runs
+            }
+        prepare_analyze:
+          type: action
+          code: |
+            export default function prepare_analyze(context, event) {
+              return {
+                task: 'Analyze chat-unification plan progress',
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  plan_doc: 'docs/plans/2026-04-15-chat-unification.md',
+                  target_workspace_name: 'Chat Unification Exec',
+                  backlog_url: 'http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog',
+                  daemon_base: 'http://localhost:8080',
+                },
+              };
+            }
+        guard_analysis_done:
+          type: guard
+          code: |
+            export default function guard_analysis_done(context, event) {
+              return context.results['analysis-output'] !== undefined;
+            }
+        append_discovery_tasks:
+          type: action
+          code: |
+            export default async function append_discovery_tasks(context, event) {
+              var analysis = context.results['analysis-output'];
+              if (!analysis) {
+                context.results['append-discoveries-output'] = { appendedCount: 0, error: 'no analysis output' };
+                return { appendedCount: 0 };
+              }
+              var proposed = analysis.new_tasks_proposed || [];
+              if (proposed.length === 0) {
+                context.results['append-discoveries-output'] = { appendedCount: 0, totalProposed: 0 };
+                return { appendedCount: 0 };
+              }
+              var backlogUrl = 'http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog';
+              var sessionsUrl = 'http://localhost:8080/api/workspaces';
+              // Resolve the target exec workspace runtime id by name so the
+              // proposed tasks point at whatever the current runtime id is.
+              var targetId = 'chunky_endive';
+              try {
+                var wsResp = await fetch(sessionsUrl);
+                if (wsResp.ok) {
+                  var wsBody = await wsResp.json();
+                  var wsList = Array.isArray(wsBody) ? wsBody : (wsBody.workspaces || []);
+                  for (var w = 0; w < wsList.length; w++) {
+                    if (wsList[w] && wsList[w].name === 'Chat Unification Exec') {
+                      targetId = wsList[w].id;
+                      break;
+                    }
+                  }
+                }
+              } catch (_err) { /* fall back to default */ }
+
+              var appended = 0;
+              var errors = [];
+              var sessionId = (context.session && context.session.id) || 'unknown';
+              for (var i = 0; i < proposed.length; i++) {
+                var t = proposed[i];
+                if (!t || !t.id) continue;
+                var body = JSON.stringify({
+                  id: t.id,
+                  text: t.title || t.id,
+                  metadata: {
+                    status: 'pending',
+                    priority: typeof t.priority === 'number' ? t.priority : 40,
+                    kind: 'chat-unify-discovery',
+                    blocked_by: t.blocked_by || [],
+                    match_job_name: 'execute-task',
+                    auto_apply: false,
+                    payload: {
+                      workspace_id: targetId,
+                      signal_id: 'execute-task',
+                      task_id: t.id,
+                      task_brief: t.task_brief || t.rationale || t.title || '',
+                      target_files: t.target_files || [],
+                      playwright_routes: t.playwright_routes || [],
+                      playwright_assertions: t.playwright_assertions || [],
+                      discovery_source_session: sessionId,
+                      discovery_rationale: t.rationale || '',
+                    },
+                  },
+                });
+                try {
+                  var resp = await fetch(backlogUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: body,
+                  });
+                  if (resp.ok) {
+                    appended += 1;
+                  } else {
+                    errors.push('POST ' + t.id + ' -> ' + resp.status);
+                  }
+                } catch (err) {
+                  errors.push(String(err).slice(0, 120));
+                }
+              }
+              context.results['append-discoveries-output'] = {
+                appendedCount: appended,
+                totalProposed: proposed.length,
+                errors: errors,
+              };
+              return { appendedCount: appended };
+            }
+        guard_append_done:
+          type: guard
+          code: |
+            export default function guard_append_done(context, event) {
+              return context.results['append-discoveries-output'] !== undefined;
+            }
+      documentTypes:
+        plan-reconciliation-result:
+          type: object
+          properties:
+            sessions_reviewed:
+              type: integer
+              description: Count of execute-task sessions inspected on this workspace.
+            phases_assessed:
+              type: array
+              description: >-
+                One entry per phase in the plan. completion_status reflects
+                real source evidence, not just session completion status.
+              items:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                  plan_phase:
+                    type: string
+                  completion_status:
+                    type: string
+                    enum:
+                      - not_started
+                      - in_progress
+                      - completed
+                      - completed_with_issues
+                      - drift
+                  evidence:
+                    type: string
+                    description: >-
+                      Prose citing what was found on disk. Empty string for
+                      not_started.
+                  concerns:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - task_id
+                  - completion_status
+            new_tasks_proposed:
+              type: array
+              description: >-
+                Discovery tasks to append to the kernel backlog with
+                auto_apply=false. Each must have a stable id that will dedupe
+                correctly on re-run.
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: >-
+                      Stable id, pattern chat-unify-discovery-<slug>. If the
+                      same gap is found on a subsequent run, use the SAME id
+                      so the backlog latest-by-id dedupe shadows the older
+                      entry.
+                  title:
+                    type: string
+                  priority:
+                    type: integer
+                  rationale:
+                    type: string
+                  task_brief:
+                    type: string
+                  target_files:
+                    type: array
+                    items:
+                      type: string
+                  blocked_by:
+                    type: array
+                    items:
+                      type: string
+                  playwright_routes:
+                    type: array
+                    items:
+                      type: string
+                  playwright_assertions:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - id
+                  - title
+                  - rationale
+                  - task_brief
+            summary:
+              type: string
+          required:
+            - sessions_reviewed
+            - phases_assessed
+            - new_tasks_proposed
+            - summary
+      tools: {}
 agents:
   architect:
     description: >-
@@ -751,5 +1035,111 @@ agents:
       ## Output
 
       Structured JSON per playwright-result contract.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  plan-analyzer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reads the chat-unification plan, walks recent execute-task sessions on
+      this workspace, grep-verifies real source evidence of phase completion,
+      and proposes discovery tasks for the kernel backlog when gaps are found.
+      Cannot modify source — read-only except for its structured JSON output.
+    prompt: |
+      You are the plan-analyzer for the chat-unification execution workspace.
+      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+
+      Your job is reconciliation: look at what the plan says should happen,
+      look at what the sessions claim was done, look at what's actually on
+      disk, and emit a structured assessment + discovery task proposals.
+
+      Your output is structured JSON conforming to the plan-reconciliation-result
+      data contract. Use your bash and fs tools freely — you are read-only
+      on source.
+
+      ## Workflow
+
+      1. **Read the plan.** Open docs/plans/2026-04-15-chat-unification.md
+         and parse the 9 phase sections. Each phase has a task_id, files
+         to modify/create/delete, and exit criteria.
+
+      2. **Fetch sessions.** Look up the Chat Unification Exec workspace
+         runtime id by name first:
+
+             curl -s http://localhost:8080/api/workspaces | jq '.[] | select(.name=="Chat Unification Exec") | .id'
+
+         Then fetch recent execute-task sessions:
+
+             curl -s "http://localhost:8080/api/sessions?workspaceId=<id>&limit=50"
+
+         For each session, fetch the detail:
+
+             curl -s "http://localhost:8080/api/sessions/<sessionId>"
+
+         Extract from each agentBlock: stateId, status, output. Key fields:
+         - impl-output.files_written[] — what the coder wrote
+         - impl-output.files_deleted[] — what the coder removed
+         - review-output.verdict — APPROVE | NEEDS_CHANGES | BLOCK
+         - review-output.findings[] — reviewer concerns
+         - browser-output.passed — playwright gate (if present)
+
+      3. **Verify completion claims against disk.** A session's
+         review-output may say APPROVE but the work might not actually
+         match the plan. For each phase that has at least one session
+         with verdict=APPROVE:
+         - Check the files the phase says should be modified. For each,
+           grep for the symbol or phrase the phase introduces
+           (e.g. Phase 1: grep for ATLAS_EXPOSE_KERNEL in
+           apps/atlasd/src/atlas-daemon.ts).
+         - If the grep hits: completion_status = completed.
+         - If the grep misses: completion_status = drift. Emit a concern.
+         - If the session was APPROVE but files_written.length === 0:
+           completion_status = completed_with_issues. The coder produced
+           a no-op. Propose a new discovery task to re-dispatch with a
+           refined brief.
+
+      4. **Propose discovery tasks.** For every gap or drift, emit a
+         new_tasks_proposed entry with:
+         - id: chat-unify-discovery-<slug>. The slug must be STABLE — if
+           the same gap is found on a subsequent run, use the SAME id so
+           latest-by-id dedupes the older entry.
+         - priority: 45 for critical gaps, 30 for drift, 15 for minor polish.
+         - rationale: one sentence on WHY this task exists.
+         - task_brief: an expanded brief that the architect can act on.
+           Include plan citations (e.g. "per docs/plans/2026-04-15-chat-unification.md:120-140").
+         - target_files: concrete paths.
+         - blocked_by: list any task_id this depends on. If the discovery
+           depends on a pending plan phase, list that phase's id.
+         - playwright_routes + playwright_assertions: include if the gap
+           is UI-visible.
+
+         Before proposing a new task, check the current backlog for any
+         entry with the same id:
+
+             curl -s http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog | \
+               jq '.[] | select(.id=="<proposed-id>")'
+
+         If an entry exists and its status is pending, skip proposing
+         (the existing entry will still be picked). If its status is
+         completed/rejected and the gap is still real, propose anyway —
+         latest-by-id will shadow the old entry with the new pending one.
+
+      5. **Emit your structured output.** Conform to the
+         plan-reconciliation-result contract exactly. Every
+         phases_assessed entry MUST include task_id and completion_status.
+         Every new_tasks_proposed entry MUST include id, title, rationale,
+         and task_brief.
+
+      ## Hard rules
+
+      - Do NOT modify any source file.
+      - Do NOT POST to the backlog yourself. The FSM's next step does
+        the append with auto_apply=false so proposals land in the
+        improvements inbox. Your job is to emit the structured proposal.
+      - If you find zero gaps, return an empty new_tasks_proposed array
+        and a summary that says so. Do not fabricate work.
+      - If you cannot tell whether a phase is complete, mark it
+        in_progress with evidence describing what you couldn't verify.
+        Do not guess.
     env:
       ANTHROPIC_API_KEY: from_environment
