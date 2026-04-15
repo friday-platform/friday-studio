@@ -443,10 +443,14 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
                 ...process.env,
                 GH_TOKEN: ghToken,
               };
-              // Only force ANTHROPIC_API_KEY when we actually have one.
-              // When FAST_DEVELOPMENT=true and apiKey is missing, leaving the
-              // var unset lets the Claude CLI fall back to ~/.claude OAuth.
-              if (apiKey) {
+              // FAST_DEVELOPMENT forces the Claude CLI child to use local
+              // ~/.claude OAuth even when the daemon itself has an
+              // ANTHROPIC_API_KEY (used by generateObject / smallLLM / other
+              // agents that run in-process). We selectively scrub the key
+              // from the child env without affecting the parent daemon.
+              if (useSubscriptionAuth) {
+                delete childEnv.ANTHROPIC_API_KEY;
+              } else if (apiKey) {
                 childEnv.ANTHROPIC_API_KEY = apiKey;
               } else {
                 delete childEnv.ANTHROPIC_API_KEY;
