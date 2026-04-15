@@ -410,11 +410,20 @@ jobs:
               type: boolean
             deno_lint_passed:
               type: boolean
+            commit_hash:
+              type: string
+              description: >-
+                Git commit SHA for the work done in this session. Set to
+                HEAD if no changes were committed (work was already done
+                by a prior iteration). Empty string only if git commit
+                failed for a real reason — reviewer routes empty to
+                NEEDS_CHANGES.
             summary:
               type: string
           required:
             - files_written
             - deno_check_passed
+            - commit_hash
             - summary
         review-result:
           type: object
@@ -860,10 +869,30 @@ agents:
       5. If `deno check` or lint fails, fix and retry before reporting.
       6. For phases that delete files (Phase 3, Phase 6): actually
          delete them with `rm`. Do not just remove imports.
+      7. **COMMIT your work before reporting.** This is REQUIRED. The
+         FSM has no separate step_commit state, so the coder is
+         responsible for persisting work to git. Steps:
+         a. `git add` each path in files_written and files_deleted.
+            Do NOT use `git add .` or `git add -A` — use explicit paths.
+            CLAUDE.md hard rule.
+         b. `git -c commit.gpgsign=false commit -m "feat(chat-unify): <task_id> — <1-line summary>"`
+            Use the conventional prefix format.
+         c. Capture the resulting commit SHA via `git rev-parse HEAD`.
+            Include it as commit_hash in your output.
+         d. If `git commit` fails with "nothing to commit" (your changes
+            exactly match a prior commit's content, or a prior iteration
+            already committed the same files), that is NOT a failure:
+            - Set commit_hash to the current HEAD (`git rev-parse HEAD`).
+            - Note in summary that the work was already committed.
+            - Proceed normally.
+         e. If `git commit` fails for another reason (pre-commit hook,
+            merge conflict, etc.), report the failure in summary and
+            leave commit_hash empty. The reviewer will route to
+            NEEDS_CHANGES.
 
       Report your work as structured JSON conforming to the coder-result
       contract. Include files_written, files_deleted, tests_added,
-      deno_check_passed, deno_lint_passed, summary.
+      deno_check_passed, deno_lint_passed, commit_hash, summary.
     env:
       ANTHROPIC_API_KEY: from_environment
   reviewer:
@@ -906,6 +935,21 @@ agents:
 
       Run `deno check` and `deno lint` on the coder's files. Record
       the results.
+
+      ## Step 4b: Commit verification
+
+      The coder is required to git-commit its work (impl-output.commit_hash
+      must be non-empty). Verify that the commit exists and contains the
+      claimed files:
+        - `git show --stat <commit_hash>` — confirm it's a real commit
+          on the current branch.
+        - For each file in impl-output.files_written, verify the commit
+          touched it.
+        - If commit_hash is empty, the coder failed to commit. Verdict
+          MUST be NEEDS_CHANGES with a finding citing the missing commit.
+        - If commit_hash is present but the commit doesn't contain the
+          written files, verdict MUST be BLOCK (coder lied about
+          committing). Cite the discrepancy.
 
       ## Step 5: Legacy-path removal check (Phase 3, Phase 6)
 
