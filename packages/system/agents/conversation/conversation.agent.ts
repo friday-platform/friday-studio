@@ -1,3 +1,11 @@
+// LEGACY — quarantined as of chat-unify (Phase 6).
+// The conversation agent is superseded by workspace-chat. POST /api/chat now
+// delegates to the user workspace's Chat SDK instance. This file, its
+// conversation-stream signal, and the handle-conversation FSM job are kept
+// wired but inert — nothing fires them from user-facing surfaces.
+//
+// Do NOT add features here. Will be removed after the Phase 9 cleanup audit.
+
 import process from "node:process";
 import type {
   AgentContext,

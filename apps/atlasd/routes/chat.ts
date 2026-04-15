@@ -1,31 +1,13 @@
 import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
+import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
-import { stream } from "hono/streaming";
 import { z } from "zod";
-import { daemonFactory } from "../src/factory.ts";
-import { isClientSafeEvent } from "../src/stream-event-filter.ts";
+import { daemonFactory, USER_WORKSPACE_ID } from "../src/factory.ts";
 
-const analytics = createAnalyticsClient();
-
-const chatRequestSchema = z.object({
-  id: z.string().min(1),
-  message: z.unknown(),
-  datetime: z
-    .object({
-      timezone: z.string(),
-      timestamp: z.string(),
-      localDate: z.string(),
-      localTime: z.string(),
-      timezoneOffset: z.string(),
-    })
-    .optional(),
-});
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
 const listChatsQuerySchema = z.object({
@@ -42,122 +24,92 @@ function getUserId(): string {
   return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
 }
 
+/**
+ * Resolve a chat by trying the user workspace first, then the global (legacy) path.
+ * Returns the chat data or null if not found in either location.
+ */
+async function resolveChat(chatId: string) {
+  const userResult = await ChatStorage.getChat(chatId, USER_WORKSPACE_ID);
+  if (userResult.ok && userResult.data) {
+    return userResult.data;
+  }
+  const globalResult = await ChatStorage.getChat(chatId);
+  if (globalResult.ok && globalResult.data) {
+    return globalResult.data;
+  }
+  return null;
+}
+
 const chatRoutes = daemonFactory
   .createApp()
   /**
    * GET /api/chat
    * List recent chats with cursor-based pagination.
+   * Merges user workspace chats and legacy global chats.
    */
   .get("/", zValidator("query", listChatsQuerySchema), async (c) => {
     const { limit, cursor } = c.req.valid("query");
-    const result = await ChatStorage.listChats({ limit, cursor });
-    if (!result.ok) {
-      return c.json({ error: result.error }, 500);
+
+    const [workspaceResult, globalResult] = await Promise.all([
+      ChatStorage.listChatsByWorkspace(USER_WORKSPACE_ID, { limit, cursor }),
+      ChatStorage.listChats({ limit, cursor }),
+    ]);
+
+    if (!workspaceResult.ok && !globalResult.ok) {
+      return c.json({ error: workspaceResult.error }, 500);
     }
 
-    return c.json(result.data, 200);
+    const workspaceChats = workspaceResult.ok ? workspaceResult.data.chats : [];
+    const globalChats = globalResult.ok ? globalResult.data.chats : [];
+
+    const seen = new Set<string>();
+    const merged: typeof workspaceChats = [];
+
+    for (const chat of workspaceChats) {
+      seen.add(chat.id);
+      merged.push(chat);
+    }
+    for (const chat of globalChats) {
+      if (!seen.has(chat.id)) {
+        merged.push(chat);
+      }
+    }
+
+    merged.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    const effectiveLimit = limit ?? 50;
+    const chats = merged.slice(0, effectiveLimit);
+
+    return c.json({ chats, nextCursor: null, hasMore: merged.length > effectiveLimit }, 200);
   })
 
   /**
    * POST /api/chat
-   * Create chat, store message, stream events in response body.
-   * Streams newline-delimited JSON events.
+   * Delegate to the user workspace's Chat SDK instance.
+   * The Chat SDK handles validation, persistence, signal trigger, and SSE streaming.
    */
-  .post("/", zValidator("json", chatRequestSchema), async (c) => {
+  .post("/", async (c) => {
     const ctx = c.get("app");
-    const { id: chatId, message, datetime } = c.req.valid("json");
-    const userId = getUserId();
-    const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
-    const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
-    if (!result.ok) {
-      return c.json({ error: "Failed to create chat" }, 500);
+    const instance = await ctx
+      .getOrCreateChatSdkInstance(USER_WORKSPACE_ID)
+      .catch((error: unknown) => {
+        if (error instanceof WorkspaceNotFoundError) return null;
+        throw error;
+      });
+    if (!instance) {
+      return c.json({ error: "Workspace not found" }, 404);
     }
 
-    analytics.emit({
-      eventName: EventNames.CONVERSATION_STARTED,
-      userId,
-      workspaceId,
-      conversationId: chatId,
-    });
-
-    const [userMessage] = await validateAtlasUIMessages([message]);
-    if (!userMessage) {
-      return c.json({ error: "Invalid message format" }, 400);
-    }
-    // Only user-role messages may be submitted. Assistant and system messages
-    // are produced server-side by agents and persisted in-process via
-    // ChatStorage. Allowing client-supplied roles here would let any caller
-    // seed the chat with a forged assistant turn (prompt injection).
-    if (userMessage.role !== "user") {
-      return c.json({ error: "Only user-role messages may be submitted" }, 403);
+    const handler = instance.chat.webhooks.atlas;
+    if (!handler) {
+      return c.json({ error: "Atlas web adapter not configured" }, 500);
     }
 
-    const appendResult = await ChatStorage.appendMessage(chatId, userMessage, workspaceId);
-    if (!appendResult.ok) {
-      return c.json({ error: "Failed to store message" }, 500);
-    }
-
-    const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
-
-    // Initialize stream buffer for resumption support
-    ctx.streamRegistry.createStream(chatId);
-
-    // Stream response directly with SSE format
-    return stream(c, async (streamWriter) => {
-      let sessionComplete = false;
-
-      runtime
-        .triggerSignalWithSession(
-          "conversation-stream",
-          { chatId, userId, streamId: chatId, datetime },
-          chatId,
-          async (chunk) => {
-            if (chunk.type === "data-session-finish") {
-              sessionComplete = true;
-            }
-
-            // Only forward UI message stream events to the client.
-            // FSM lifecycle events (data-fsm-*, data-session-*) break the
-            // AI SDK's client-side parser which validates against uiMessageChunkSchema.
-            if (!isClientSafeEvent(chunk)) return;
-
-            // Buffer event for potential resumption
-            ctx.streamRegistry.appendEvent(chatId, chunk);
-
-            // Write to this HTTP connection
-            try {
-              await streamWriter.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            } catch (error) {
-              // Client disconnected - events continue buffering in registry
-              logger.debug("Client disconnected during stream", { chatId, error });
-            }
-          },
-        )
-        .catch((error) => {
-          logger.error("Session error", { error, chatId });
-          streamWriter.writeln(
-            `data: ${JSON.stringify({
-              type: "data-error",
-              data: { error: stringifyError(error), errorCause: error },
-            })}`,
-          );
-          streamWriter.writeln("");
-          sessionComplete = true;
-        })
-        .finally(() => {
-          ctx.streamRegistry.finishStream(chatId);
-        });
-
-      // Keep stream alive until session completes
-      while (!sessionComplete) {
-        await streamWriter.sleep(100);
-      }
-
-      // Send completion marker
-      await streamWriter.writeln("data: [DONE]");
-      await streamWriter.writeln("");
-    });
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("X-Atlas-User-Id", getUserId());
+    const request = new Request(c.req.raw, { headers });
+    return handler(request);
   })
 
   /**
@@ -227,21 +179,26 @@ const chatRoutes = daemonFactory
   /**
    * GET /api/chat/:chatId
    * Retrieve chat metadata and message history.
+   * Falls back to global (legacy) path if not found in user workspace.
    */
   .get("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
 
-    const chatResult = await ChatStorage.getChat(chatId);
-    if (!chatResult.ok || !chatResult.data) {
+    const chat = await resolveChat(chatId);
+    if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
-    const { messages, systemPromptContext, ...chat } = chatResult.data;
+    const { messages, systemPromptContext, ...metadata } = chat;
     // Return last 100 messages in chronological order (oldest first)
     const limitedMessages = messages.slice(-100);
 
     return c.json(
-      { chat, messages: limitedMessages, systemPromptContext: systemPromptContext ?? null },
+      {
+        chat: metadata,
+        messages: limitedMessages,
+        systemPromptContext: systemPromptContext ?? null,
+      },
       200,
     );
   })
@@ -259,9 +216,8 @@ const chatRoutes = daemonFactory
     const chatId = c.req.param("chatId");
     const { message } = c.req.valid("json");
 
-    // Verify chat exists
-    const chatResult = await ChatStorage.getChat(chatId);
-    if (!chatResult.ok || !chatResult.data) {
+    const chat = await resolveChat(chatId);
+    if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
@@ -278,7 +234,7 @@ const chatRoutes = daemonFactory
     const appendResult = await ChatStorage.appendMessage(
       chatId,
       validatedMessage,
-      chatResult.data.workspaceId,
+      chat.workspaceId,
     );
     if (!appendResult.ok) {
       logger.error("Failed to append message", { chatId, error: appendResult.error });
@@ -290,33 +246,55 @@ const chatRoutes = daemonFactory
 
   /**
    * PATCH /api/chat/:chatId/title
-   * Update chat title.
+   * Update chat title. Falls back to global path for legacy chats.
    */
   .patch("/:chatId/title", zValidator("json", updateTitleSchema), async (c) => {
     const chatId = c.req.param("chatId");
     const { title } = c.req.valid("json");
 
-    const result = await ChatStorage.updateChatTitle(chatId, title);
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
+    const result = await ChatStorage.updateChatTitle(chatId, title, USER_WORKSPACE_ID);
+    if (result.ok) {
+      return c.json({ chat: result.data }, 200);
     }
 
-    return c.json({ chat: result.data }, 200);
+    if (result.error === "Chat not found") {
+      const globalResult = await ChatStorage.updateChatTitle(chatId, title);
+      if (globalResult.ok) {
+        return c.json({ chat: globalResult.data }, 200);
+      }
+      return c.json(
+        { error: globalResult.error },
+        globalResult.error === "Chat not found" ? 404 : 500,
+      );
+    }
+
+    return c.json({ error: result.error }, 500);
   })
 
   /**
    * DELETE /api/chat/:chatId
-   * Delete a chat.
+   * Delete a chat. Falls back to global path for legacy chats.
    */
   .delete("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
 
-    const result = await ChatStorage.deleteChat(chatId);
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
+    const result = await ChatStorage.deleteChat(chatId, USER_WORKSPACE_ID);
+    if (result.ok) {
+      return c.json({ success: true }, 200);
     }
 
-    return c.json({ success: true }, 200);
+    if (result.error === "Chat not found") {
+      const globalResult = await ChatStorage.deleteChat(chatId);
+      if (globalResult.ok) {
+        return c.json({ success: true }, 200);
+      }
+      return c.json(
+        { error: globalResult.error },
+        globalResult.error === "Chat not found" ? 404 : 500,
+      );
+    }
+
+    return c.json({ error: result.error }, 500);
   });
 
 export default chatRoutes;

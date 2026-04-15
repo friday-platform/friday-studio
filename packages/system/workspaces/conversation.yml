@@ -1,3 +1,9 @@
+# LEGACY — quarantined as of chat-unify (Phase 6).
+# The atlas-conversation workspace is superseded by the 'user' workspace.
+# Signals (conversation-stream, discord, etc.) and jobs (handle-conversation)
+# are kept wired but nothing fires them from user-facing surfaces.
+# Do NOT add features. Will be removed after the Phase 9 cleanup audit.
+
 version: "1.0"
 workspace:
   name: "atlas-conversation"
