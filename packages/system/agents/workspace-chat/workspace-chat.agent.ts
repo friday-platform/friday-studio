@@ -40,12 +40,14 @@ import {
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
-import { buildOnboardingClause, checkOnboardingState, createMemorySaveTool } from "./onboarding.ts";
+import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
 import { createWorkspaceDoTask } from "./tools/do-task.ts";
 import { createJobTools } from "./tools/job-tools.ts";
+import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
+import { fetchUserProfileState } from "./user-profile.ts";
 
 const ROLE_SYSTEM = "system" as const;
 
@@ -290,6 +292,8 @@ export function getSystemPrompt(
     userIdentity?: string;
     resources?: string;
     memory?: string;
+    onboarding?: string;
+    userProfile?: string;
   },
 ): string {
   let prompt = SYSTEM_PROMPT;
@@ -298,6 +302,10 @@ export function getSystemPrompt(
 
   if (options?.memory) {
     prompt = `${prompt}\n\n${options.memory}`;
+  }
+
+  if (options?.onboarding) {
+    prompt = `${prompt}\n\n${options.onboarding}`;
   }
 
   if (options?.resources) {
@@ -314,6 +322,10 @@ export function getSystemPrompt(
 
   if (options?.userIdentity) {
     prompt = `${prompt}\n\n${options.userIdentity}`;
+  }
+
+  if (options?.userProfile) {
+    prompt = `${prompt}\n\n${options.userProfile}`;
   }
 
   return prompt;
@@ -438,7 +450,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           linkSummary,
           userIdentitySection,
           foregrounds,
-          onboardingState,
+          profileState,
         ] = await Promise.all([
           fetchWorkspaceDetails(workspaceId, logger),
           parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
@@ -447,7 +459,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           foregroundIds.length > 0
             ? fetchForegroundContexts(foregroundIds, logger)
             : Promise.resolve([]),
-          checkOnboardingState(workspaceId, logger),
+          fetchUserProfileState(workspaceId, logger),
         ]);
 
         let wsConfig: WorkspaceConfig | undefined;
@@ -595,17 +607,18 @@ For external services, use do_task. For artifact data, use artifacts_get.
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
         const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
 
-        let systemPrompt = getSystemPrompt(workspaceSection, {
+        const onboardingClause = buildOnboardingClause(profileState);
+        const userProfileClause = buildUserProfileClause(profileState);
+
+        const systemPrompt = getSystemPrompt(workspaceSection, {
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           resources: resourceSection,
           memory: memorySection,
+          onboarding: onboardingClause,
+          userProfile: userProfileClause,
         });
-
-        if (onboardingState.needsOnboarding) {
-          systemPrompt = systemPrompt + "\n\n" + buildOnboardingClause();
-        }
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
 
