@@ -1,0 +1,755 @@
+version: '1.0'
+workspace:
+  name: Chat Unification Exec
+  description: >-
+    Tier-6 source modification workspace scoped to the chat-unification plan
+    (docs/plans/2026-04-15-chat-unification.md). Architect → coder → reviewer
+    → optional browser-test pipeline. Browser-test runs Playwright against an
+    already-running playground (localhost:5200) + daemon (localhost:8080) for
+    any task that declares playwright_routes in its payload.
+signals:
+  execute-task:
+    description: >-
+      Execute a specific task from the chat-unification plan. Pass task_id,
+      task_brief, optional target_files, optional playwright_routes +
+      playwright_assertions. The architect reads the plan + source, produces
+      a design memo; the coder implements via claude-code; the reviewer
+      verifies against the memo and the plan; the playwright-validator
+      (if routes declared) drives a browser against the running playground.
+    title: Run chat-unification task
+    schema:
+      type: object
+      properties:
+        task_id:
+          type: string
+          title: Task ID
+          description: >-
+            Slug for the task, e.g. "chat-unify-1-atlas-conversation-agent-config".
+        task_brief:
+          type: string
+          title: Task brief
+          description: >-
+            Prose description of what to build. The architect expands this into
+            a design memo after reading the plan doc.
+        target_files:
+          type: array
+          items:
+            type: string
+          title: Target files
+          description: >-
+            Expected files to create/modify. Advisory — the architect can add
+            more after reading the code.
+        playwright_routes:
+          type: array
+          items:
+            type: string
+          title: Playwright routes
+          description: >-
+            Optional. URL paths on localhost:5200 to visit in the browser test.
+            If empty or omitted, step_browser_test is skipped.
+        playwright_assertions:
+          type: array
+          items:
+            type: string
+          title: Playwright assertions
+          description: >-
+            Optional. Natural-language assertions the browser test must verify,
+            e.g. "can send a message and receive a streamed response within 10s".
+            The playwright-validator agent translates these into a Playwright
+            spec file and runs it.
+      required:
+        - task_id
+        - task_brief
+    provider: http
+    config:
+      path: /webhooks/chat-unify-task
+jobs:
+  execute-task:
+    description: >-
+      Architect produces design memo → coder implements → reviewer verifies →
+      playwright-validator drives the browser (if routes declared). Each step
+      has a data contract on its output; the FSM cannot advance until the
+      contract is fulfilled.
+    title: Execute chat-unification task
+    triggers:
+      - signal: execute-task
+    fsm:
+      id: chat-unify-pipeline
+      initial: idle
+      states:
+        idle:
+          entry:
+            - type: code
+              function: cleanup
+          'on':
+            execute-task:
+              target: step_research
+        step_research:
+          entry:
+            - type: code
+              function: prepare_research
+            - type: agent
+              agentId: architect
+              outputTo: memo-output
+              outputType: design-memo-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_implement
+              guards:
+                - guard_memo_done
+        step_implement:
+          entry:
+            - type: code
+              function: prepare_implement
+            - type: agent
+              agentId: coder
+              outputTo: impl-output
+              outputType: coder-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: step_review
+              guards:
+                - guard_impl_done
+        step_review:
+          entry:
+            - type: code
+              function: prepare_review
+            - type: agent
+              agentId: reviewer
+              outputTo: review-output
+              outputType: review-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              - target: step_browser_test
+                guards:
+                  - guard_review_done
+                  - guard_needs_browser_test
+              - target: completed
+                guards:
+                  - guard_review_done
+                  - guard_no_browser_test
+        step_browser_test:
+          entry:
+            - type: code
+              function: prepare_browser_test
+            - type: agent
+              agentId: playwright-validator
+              outputTo: browser-output
+              outputType: playwright-result
+            - type: emit
+              event: ADVANCE
+          'on':
+            ADVANCE:
+              target: completed
+              guards:
+                - guard_browser_done
+        completed:
+          type: final
+      functions:
+        cleanup:
+          type: action
+          code: |
+            export default function cleanup(context, event) {
+              // Session-scoped results clear automatically between runs
+            }
+        prepare_research:
+          type: action
+          code: |
+            export default function prepare_research(context, event) {
+              var taskId = event.data && event.data.task_id;
+              var brief = event.data && event.data.task_brief;
+              var targets = (event.data && event.data.target_files) || [];
+              var routes = (event.data && event.data.playwright_routes) || [];
+              var assertions = (event.data && event.data.playwright_assertions) || [];
+              if (!taskId || typeof taskId !== 'string') {
+                throw new Error('Missing required input: task_id');
+              }
+              if (!brief || typeof brief !== 'string') {
+                throw new Error('Missing required input: task_brief');
+              }
+              context.setResult('task-input', {
+                taskId: taskId,
+                brief: brief,
+                targets: targets,
+                playwrightRoutes: routes,
+                playwrightAssertions: assertions,
+              });
+              return {
+                task: 'Design memo for ' + taskId + ': ' + brief,
+                config: {
+                  task_id: taskId,
+                  task_brief: brief,
+                  target_files: targets,
+                  repo_root: '/Users/kenneth/tempest/atlas',
+                },
+              };
+            }
+        guard_memo_done:
+          type: guard
+          code: |
+            export default function guard_memo_done(context, event) {
+              return context.results['memo-output'] !== undefined;
+            }
+        prepare_implement:
+          type: action
+          code: |
+            export default function prepare_implement(context, event) {
+              var memo = context.results['memo-output'];
+              var task = context.results['task-input'];
+              if (!task || !memo) throw new Error('Missing memo or task input');
+              return {
+                task: 'Implement ' + task.taskId + ' per design memo',
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  task_id: task.taskId,
+                  memo: memo,
+                  task_brief: task.brief,
+                  target_files: task.targets,
+                },
+              };
+            }
+        guard_impl_done:
+          type: guard
+          code: |
+            export default function guard_impl_done(context, event) {
+              return context.results['impl-output'] !== undefined;
+            }
+        prepare_review:
+          type: action
+          code: |
+            export default function prepare_review(context, event) {
+              var memo = context.results['memo-output'];
+              var impl = context.results['impl-output'];
+              var task = context.results['task-input'];
+              if (!impl || !task || !memo) {
+                throw new Error('Missing impl, memo, or task input');
+              }
+              return {
+                task: 'Review ' + task.taskId + ' against memo and chat-unification plan',
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  task_id: task.taskId,
+                  memo: memo,
+                  changes: impl,
+                },
+              };
+            }
+        guard_review_done:
+          type: guard
+          code: |
+            export default function guard_review_done(context, event) {
+              var r = context.results['review-output'];
+              return r !== undefined && r.verdict === 'APPROVE';
+            }
+        guard_needs_browser_test:
+          type: guard
+          code: |
+            export default function guard_needs_browser_test(context, event) {
+              var task = context.results['task-input'];
+              return task && Array.isArray(task.playwrightRoutes) && task.playwrightRoutes.length > 0;
+            }
+        guard_no_browser_test:
+          type: guard
+          code: |
+            export default function guard_no_browser_test(context, event) {
+              var task = context.results['task-input'];
+              return !task || !Array.isArray(task.playwrightRoutes) || task.playwrightRoutes.length === 0;
+            }
+        prepare_browser_test:
+          type: action
+          code: |
+            export default function prepare_browser_test(context, event) {
+              var task = context.results['task-input'];
+              var impl = context.results['impl-output'];
+              if (!task) throw new Error('Missing task input');
+              return {
+                task: 'Run Playwright browser tests for ' + task.taskId,
+                config: {
+                  workDir: '/Users/kenneth/tempest/atlas',
+                  task_id: task.taskId,
+                  routes: task.playwrightRoutes || [],
+                  assertions: task.playwrightAssertions || [],
+                  playground_base: 'http://localhost:5200',
+                  daemon_base: 'http://localhost:8080',
+                  files_written: (impl && impl.files_written) || [],
+                },
+              };
+            }
+        guard_browser_done:
+          type: guard
+          code: |
+            export default function guard_browser_done(context, event) {
+              var r = context.results['browser-output'];
+              return r !== undefined && r.passed === true;
+            }
+      documentTypes:
+        design-memo-result:
+          type: object
+          properties:
+            plan_citations:
+              type: array
+              description: >-
+                Verbatim quotes from docs/plans/2026-04-15-chat-unification.md
+                establishing the phase this memo targets. REQUIRED and must be
+                non-empty. Every key_type in files_to_create must trace back to
+                one of these quotes.
+              items:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    description: 'Relative path, e.g. "docs/plans/2026-04-15-chat-unification.md"'
+                  line_start:
+                    type: integer
+                  line_end:
+                    type: integer
+                  verbatim:
+                    type: string
+                required:
+                  - file
+                  - verbatim
+              minItems: 1
+            files_to_create:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  purpose:
+                    type: string
+                  key_types:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - path
+                  - purpose
+            files_to_modify:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  changes:
+                    type: string
+                required:
+                  - path
+                  - changes
+            files_to_delete:
+              type: array
+              items:
+                type: string
+              description: >-
+                Files the phase requires deleting (e.g. the legacy conversation
+                agent in Phase 3). Reviewer verifies they were actually removed.
+            tests_needed:
+              type: array
+              items:
+                type: string
+            integration_notes:
+              type: string
+          required:
+            - plan_citations
+            - integration_notes
+        coder-result:
+          type: object
+          properties:
+            files_written:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  lines_added:
+                    type: integer
+                  lines_removed:
+                    type: integer
+                required:
+                  - path
+            files_deleted:
+              type: array
+              items:
+                type: string
+            tests_added:
+              type: array
+              items:
+                type: string
+            deno_check_passed:
+              type: boolean
+            deno_lint_passed:
+              type: boolean
+            summary:
+              type: string
+          required:
+            - files_written
+            - deno_check_passed
+            - summary
+        review-result:
+          type: object
+          properties:
+            verdict:
+              type: string
+              enum:
+                - APPROVE
+                - NEEDS_CHANGES
+                - BLOCK
+            findings:
+              type: array
+              items:
+                type: object
+                properties:
+                  severity:
+                    type: string
+                    enum:
+                      - CRITICAL
+                      - WARNING
+                      - SUGGESTION
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                  description:
+                    type: string
+                  plan_line:
+                    type: string
+                    description: >-
+                      Citation for what this finding violates. Either a plan
+                      line range (e.g. "chat-unification.md:120-140") or a
+                      CLAUDE.md line citation. Required for all findings.
+                required:
+                  - severity
+                  - description
+                  - plan_line
+            summary:
+              type: string
+          required:
+            - verdict
+            - summary
+        playwright-result:
+          type: object
+          properties:
+            passed:
+              type: boolean
+            routes_tested:
+              type: array
+              items:
+                type: string
+            assertions_checked:
+              type: array
+              items:
+                type: object
+                properties:
+                  assertion:
+                    type: string
+                  passed:
+                    type: boolean
+                  detail:
+                    type: string
+                required:
+                  - assertion
+                  - passed
+            spec_file:
+              type: string
+              description: >-
+                Path to the generated Playwright spec file, relative to repo
+                root, so the operator can re-run or inspect it later.
+            summary:
+              type: string
+          required:
+            - passed
+            - routes_tested
+            - assertions_checked
+            - summary
+      tools: {}
+agents:
+  architect:
+    description: >-
+      Reads the chat-unification plan and current source on disk before
+      producing a design memo. Has fs access via claude-code.
+    type: atlas
+    agent: claude-code
+    prompt: |
+      You are the architect for the chat-unification execution workspace.
+      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+
+      Your input contains a task_id, task_brief, and (optionally)
+      target_files. Your output is a design memo conforming to the
+      design-memo-result data contract.
+
+      Workflow:
+
+      1. Read the chat-unification plan at
+         docs/plans/2026-04-15-chat-unification.md. Find the phase that
+         matches your task_id (they are numbered chat-unify-1 through
+         chat-unify-9). Read the whole phase section plus the "Context:
+         what PR 2792 already delivered", "Current state", and "Target
+         state" sections for context. You MUST NOT re-specify anything
+         PR 2792 already delivered — reference it, don't duplicate it.
+         Also read the 2026-03-31 plan doc (referenced from the new
+         plan's header) if your phase touches any Chat SDK primitives.
+
+      2. Read the relevant source files for your phase. Index:
+         - Chat HTTP routes: apps/atlasd/routes/chat.ts,
+           apps/atlasd/routes/workspaces/chat.ts
+         - Chat SDK wiring: apps/atlasd/src/chat-sdk/chat-sdk-instance.ts,
+           apps/atlasd/src/chat-sdk/adapter-factory.ts,
+           apps/atlasd/src/chat-sdk/atlas-web-adapter.ts
+         - Chat state adapter: packages/core/src/chat/chat-sdk-state-adapter.ts
+         - Signal-to-stream bridge: packages/workspace/src/signal-to-stream.ts
+         - workspace-chat agent:
+           packages/system/agents/workspace-chat/workspace-chat.agent.ts
+         - Legacy conversation agent (to quarantine, not delete):
+           packages/system/agents/conversation/conversation.agent.ts
+         - System workspace config:
+           packages/system/workspaces/conversation.yml
+         - Workspace manager (for Phase 2/3):
+           packages/workspace/src/manager.ts
+         - Memory adapter & bootstrap (for Phase 2):
+           packages/adapters-md/src/md-memory-adapter.ts,
+           packages/memory/src/bootstrap.ts
+         - Web-client chat:
+           apps/web-client/src/lib/modules/conversation/chat-provider.svelte,
+           apps/web-client/src/lib/modules/conversation/load-chat.ts,
+           apps/web-client/src/routes/(app)/chat/[[chatId]]/+page.svelte,
+           apps/web-client/src/routes/(app)/spaces/[spaceId]/chat/[[chatId]]/+page.svelte
+         - CLI: apps/atlas-cli/src/commands/prompt.ts
+
+      3. Decide an implementation. You ARE FREE TO propose new types,
+         helper modules, or refactors. If the task's premise is stale
+         (e.g. the code already diverged from the plan) flag it in
+         integration_notes and propose a reconciliation.
+
+      4. Produce design-memo-result with:
+         - plan_citations: array of {file, line_start, line_end, verbatim}
+           from the chat-unification plan. Each verbatim must be a real
+           exact-text quote. The reviewer re-reads the file.
+         - files_to_create, files_to_modify, files_to_delete
+         - tests_needed
+         - integration_notes: prose describing cross-file invariants and
+           any migration steps (e.g. "existing chats in ~/.atlas/chats/
+           without a workspace subdir must still load").
+
+      HARD RULES:
+
+      - If the task deletes a file (Phase 3 deletes the conversation
+        agent), files_to_delete must list it, and integration_notes
+        must enumerate every callsite that references it.
+      - plan_citations must cite docs/plans/2026-04-15-chat-unification.md.
+      - Do not invent file paths. Every path must either exist or be
+        in files_to_create.
+      - Phase 2, 4, 6 touch user-visible chat behavior. integration_notes
+        must list exactly which Playwright assertions the operator should
+        add to the task payload so step_browser_test can verify.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  coder:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Writes code in the atlas repo per the design memo. Uses claude-code's
+      full toolchain: file edits, deno check, deno lint, test execution.
+    prompt: |
+      You are the coder for the chat-unification execution. The atlas
+      monorepo is mounted at /Users/kenneth/tempest/atlas (this is your
+      workDir).
+
+      Your input contains a design memo from the architect with specific
+      files to create/modify/delete, type signatures, and tests.
+
+      Rules:
+      1. Follow the memo exactly. Do not invent files not in the memo.
+      2. Follow CLAUDE.md conventions: Deno, Zod v4, @atlas/logger,
+         node:* builtins (not Deno APIs), static imports, no `any`,
+         no `as` assertions (except `as const` on string literals),
+         no `!` non-null assertions.
+      3. Run `deno check` on files you create or modify.
+      4. Run `deno lint` on files you create or modify.
+      5. If `deno check` or lint fails, fix and retry before reporting.
+      6. For phases that delete files (Phase 3, Phase 6): actually
+         delete them with `rm`. Do not just remove imports.
+
+      Report your work as structured JSON conforming to the coder-result
+      contract. Include files_written, files_deleted, tests_added,
+      deno_check_passed, deno_lint_passed, summary.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  reviewer:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Reviews coder output against the chat-unification plan directly via
+      real filesystem access. Uses claude-code bundled agent for fs tool
+      capability.
+    prompt: |
+      You are the reviewer for the chat-unification execution. The atlas
+      monorepo is mounted at /Users/kenneth/tempest/atlas. Use your fs
+      tools to read files directly.
+
+      ## Step 1: Citation verification
+
+      For each entry in the architect's plan_citations array:
+      1. Read the cited file at the cited line range.
+      2. Compare the verbatim field against the actual file content.
+      3. If mismatch: emit a CRITICAL finding.
+      If ANY citation mismatches, verdict MUST be BLOCK.
+
+      ## Step 2: Read the plan and CLAUDE.md
+
+      Read docs/plans/2026-04-15-chat-unification.md. Find the phase
+      that matches your task_id. Read the whole phase section.
+
+      Read /Users/kenneth/tempest/atlas/CLAUDE.md for convention rules.
+
+      ## Step 3: Verify coder output against the memo
+
+      For each file the coder wrote, verify it matches the architect's
+      memo (files_to_create, files_to_modify, files_to_delete):
+      - Files not in the memo (coder invented files) → NEEDS_CHANGES
+      - Missing files from the memo → NEEDS_CHANGES
+      - files_to_delete entries still on disk → BLOCK
+      - CLAUDE.md hard-rule violations → severity by impact
+
+      ## Step 4: Deno check + lint
+
+      Run `deno check` and `deno lint` on the coder's files. Record
+      the results.
+
+      ## Step 5: Legacy-path removal check (Phase 3, Phase 6)
+
+      If the task is Phase 3 or Phase 6, grep the repo for any
+      remaining references to the symbols being removed:
+      - Phase 3: `conversation-stream` signal, `handle-conversation`
+        job, `conversation.agent.ts` imports.
+      - Phase 6: `/api/chat` (without `workspaces` prefix) in client
+        code.
+      If any reference remains, emit BLOCK.
+
+      ## Step 6: Regression check
+
+      The core invariant through Phases 1-7: every `deno task atlas
+      prompt "hi"` run must return a coherent reply. Phases 4 and 5
+      specifically change how this works. The reviewer does NOT run
+      the CLI — the playwright-validator does the end-to-end check
+      in step_browser_test. But the reviewer must verify the code
+      path is intact by reading the changed files.
+
+      ## Verdict rules
+
+      - APPROVE: coder output matches the memo, conventions followed,
+        deno check/lint pass, legacy references removed where required.
+      - NEEDS_CHANGES: fixable in one pass.
+      - BLOCK: citation mismatch, legacy reference remaining in a
+        removal phase, CLAUDE.md hard-rule violation.
+
+      ## Citation requirement
+
+      Every finding MUST include a plan_line field citing either a
+      line in docs/plans/2026-04-15-chat-unification.md (format:
+      "chat-unification.md:120-140"), a CLAUDE.md line, or the
+      relevant source file. A finding without a citation is invalid.
+
+      ## Output
+
+      Structured JSON per review-result contract. If all checks pass,
+      return APPROVE with a brief summary and an empty findings array.
+    env:
+      ANTHROPIC_API_KEY: from_environment
+  playwright-validator:
+    type: atlas
+    agent: claude-code
+    description: >-
+      Drives a Playwright browser test against the already-running playground
+      (localhost:5200) and daemon (localhost:8080). Generates a spec file from
+      the task's routes + assertions, runs it, reports pass/fail. Assumes
+      playground + daemon are already up — fails loudly otherwise.
+    prompt: |
+      You are the playwright-validator for the chat-unification execution.
+      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas. Use
+      your bash and fs tools.
+
+      Your input (in the `config` field) contains:
+      - task_id
+      - routes: array of URL paths on localhost:5200 (e.g. ["/chat/new"])
+      - assertions: array of natural-language assertions (e.g. ["can send
+        a message and receive a streamed response within 10s"])
+      - playground_base: "http://localhost:5200"
+      - daemon_base: "http://localhost:8080"
+      - files_written: array of paths the coder just wrote
+
+      Workflow:
+
+      1. **Preflight.** Check that playground and daemon are up:
+         `curl -sf http://localhost:5200/ -o /dev/null && echo ok`
+         `curl -sf http://localhost:8080/health && echo ok`
+         If either is down, emit playwright-result with passed=false and
+         a summary that says the operator must start the servers. Do NOT
+         try to start them yourself.
+
+      2. **Ensure Playwright is installed.** Check for a package.json and
+         whether @playwright/test is present. If not, run
+         `npm install -D @playwright/test` from the repo root. Then run
+         `npx playwright install chromium` to ensure the browser binary
+         exists. Cache these on first run.
+
+      3. **Generate a spec file.** Create a new file at
+         `/tmp/chat-unify-<task_id>.spec.ts`. The spec should:
+         - Use @playwright/test's `test` and `expect`.
+         - For each route in config.routes, create a test that navigates
+           to `${playground_base}${route}`.
+         - For each assertion, generate a Playwright test body that
+           verifies it. Use your judgment to translate natural language
+           to concrete Playwright calls. Common assertions:
+           - "can send a message and receive a streamed response within Ns":
+             fill a textarea or contenteditable, click send, wait for a
+             response element within N*1000 ms, assert it's non-empty.
+           - "transcript persists on reload":
+             send a message, wait for response, reload, assert the
+             message is still visible.
+           - "can navigate from X to Y":
+             goto X, click a link to Y, assert URL.
+         - If you're uncertain about selectors, use `page.getByRole` or
+           `page.getByText` which are the most robust, and fall back to
+           `page.locator('[data-testid=...]')` if you see testid
+           attributes in the source code.
+
+      4. **Run the spec.** From the repo root, run
+         `npx playwright test /tmp/chat-unify-<task_id>.spec.ts
+         --reporter=json 2>&1`. Capture stdout + stderr.
+
+      5. **Parse the results.** From Playwright's JSON reporter output,
+         extract per-test pass/fail status and any failure messages.
+
+      6. **Report.** Emit playwright-result with:
+         - passed: true only if ALL assertions passed AND all tests ran
+         - routes_tested: list of routes you actually navigated to
+         - assertions_checked: per-assertion {assertion, passed, detail}
+         - spec_file: the path to the generated spec file
+         - summary: 2-3 sentence summary
+
+      HARD RULES:
+
+      - Do NOT start the playground or daemon. They are the operator's
+        responsibility. If they're down, fail the test with a clear
+        message.
+      - Do NOT modify the coder's files. You are read-only on the repo
+        source. You can write to /tmp/ and to the repo's package.json /
+        node_modules only (for Playwright install).
+      - If any assertion fails, passed must be false. Partial success
+        is still failure.
+      - If Playwright throws (e.g. cannot launch browser, timeout), emit
+        passed: false with the error message in summary.
+
+      ## Output
+
+      Structured JSON per playwright-result contract.
+    env:
+      ANTHROPIC_API_KEY: from_environment
