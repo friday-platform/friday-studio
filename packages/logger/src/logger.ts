@@ -138,13 +138,28 @@ class AtlasLoggerV2 extends BaseLogger {
   }
 
   private async writeToFile(jsonLine: string, workspaceId?: string): Promise<void> {
-    const logPath = workspaceId
-      ? join(getAtlasLogsDir(), "workspaces", `${workspaceId}.log`)
-      : join(getAtlasLogsDir(), "global.log");
+    // Always write to global.log. When workspaceId is set, ALSO write to the
+    // workspace-scoped file so operators can tail per-workspace output while
+    // still seeing every event in the unified global feed for debugging.
+    const globalPath = join(getAtlasLogsDir(), "global.log");
+    const workspacePath =
+      workspaceId !== undefined
+        ? join(getAtlasLogsDir(), "workspaces", `${workspaceId}.log`)
+        : null;
 
-    await fs.promises.mkdir(dirname(logPath), { recursive: true });
+    const dirs = new Set<string>([dirname(globalPath)]);
+    if (workspacePath !== null) dirs.add(dirname(workspacePath));
+    await Promise.all(Array.from(dirs).map((dir) => fs.promises.mkdir(dir, { recursive: true })));
 
-    await executeWrite(logPath, () => fs.promises.appendFile(logPath, `${jsonLine}\n`));
+    const writes: Promise<unknown>[] = [
+      executeWrite(globalPath, () => fs.promises.appendFile(globalPath, `${jsonLine}\n`)),
+    ];
+    if (workspacePath !== null) {
+      writes.push(
+        executeWrite(workspacePath, () => fs.promises.appendFile(workspacePath, `${jsonLine}\n`)),
+      );
+    }
+    await Promise.all(writes);
   }
 }
 
