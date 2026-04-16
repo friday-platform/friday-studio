@@ -10,9 +10,9 @@
   const { proposal, onconfirm, oncancel }: Props = $props();
 
   let editing = $state(false);
-  let editTaskBrief = $state(proposal.taskBrief);
-  let editPriority = $state(proposal.priority);
-  let editKind: "feature" | "improvement" | "bugfix" = $state(proposal.kind);
+  let editTaskBrief = $state("");
+  let editPriority = $state(10);
+  let editKind: "feature" | "improvement" | "bugfix" = $state("improvement");
 
   function handleConfirm() {
     if (editing) {
@@ -28,14 +28,14 @@
   }
 
   function handleEdit() {
+    editTaskBrief = proposal.taskBrief;
+    editPriority = proposal.priority;
+    editKind = proposal.kind;
     editing = true;
   }
 
   function handleCancelEdit() {
     editing = false;
-    editTaskBrief = proposal.taskBrief;
-    editPriority = proposal.priority;
-    editKind = proposal.kind;
   }
 </script>
 
