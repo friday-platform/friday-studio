@@ -102,8 +102,8 @@ const SynthesisResponseSchema = z.object({
   summary: z.string().describe("2-3 sentence summary. Direct and factual, no fluff."),
 });
 
-const SYNTHESIS_MODEL = "google:gemini-3.1-pro-preview";
-const ANALYSIS_MODEL = "google:gemini-3.1-pro-preview";
+const SYNTHESIS_MODEL = "anthropic:claude-sonnet-4-6";
+const ANALYSIS_MODEL = "anthropic:claude-sonnet-4-6";
 
 // ---------------------------------------------------------------------------
 // Pipeline steps

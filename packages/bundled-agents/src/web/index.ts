@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import process from "node:process";
 import type { ArtifactRef, OutlineRef } from "@atlas/agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
@@ -30,8 +31,10 @@ export const webAgent = createAgent<string, WebAgentResult>({
     "sites, filling forms, completing multi-step web workflows, any task requiring " +
     "both search and browser interaction.",
   constraints:
-    "Requires `agent-browser` CLI for browser interaction and Parallel API access " +
-    "(`PARALLEL_API_KEY` or `FRIDAY_GATEWAY_URL`+`ATLAS_KEY`) for search. " +
+    "Requires `agent-browser` CLI for browser interaction. " +
+    "Web search is available when a search provider key is configured " +
+    "(`PARALLEL_API_KEY` or `FRIDAY_GATEWAY_URL`+`ATLAS_KEY`); without one " +
+    "the agent can still fetch URLs and browse but cannot search. " +
     "Set `AGENT_BROWSER_AUTO_CONNECT=1` to attach to your already-running Chrome " +
     "(note: in this mode all concurrent invocations share that browser — isolation " +
     "is not guaranteed). Otherwise an isolated Chrome is spawned per invocation. " +
@@ -58,21 +61,30 @@ export const webAgent = createAgent<string, WebAgentResult>({
     };
 
     try {
+      const hasSearchKey = Boolean(process.env.PARALLEL_API_KEY || process.env.FRIDAY_GATEWAY_URL);
+
+      const tools: Record<string, ReturnType<typeof createFetchTool>> = {
+        fetch: createFetchTool(logger),
+        browse: createBrowseTool(stream, sessionState, abortSignal, logger),
+      };
+
+      if (hasSearchKey) {
+        tools.search = createSearchTool(
+          { session, stream, logger, config, abortSignal },
+          { artifactRefs, outlineRefs },
+        );
+      } else {
+        logger.info("[web] search tool disabled — no PARALLEL_API_KEY or FRIDAY_GATEWAY_URL");
+      }
+
       const result = await generateText({
-        model: traceModel(registry.languageModel("google:gemini-3.1-pro-preview")),
+        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
         messages: [
-          { role: "system", content: getWebAgentPrompt() },
+          { role: "system", content: getWebAgentPrompt({ hasSearch: hasSearchKey }) },
           temporalGroundingMessage(),
           { role: "user", content: prompt },
         ],
-        tools: {
-          search: createSearchTool(
-            { session, stream, logger, config, abortSignal },
-            { artifactRefs, outlineRefs },
-          ),
-          fetch: createFetchTool(logger),
-          browse: createBrowseTool(stream, sessionState, abortSignal, logger),
-        },
+        tools,
         stopWhen: stepCountIs(300),
         maxRetries: 3,
         abortSignal,
