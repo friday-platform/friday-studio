@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { ChatMessage, ToolCallDisplay } from "./types";
 
   interface Props {
@@ -19,7 +20,119 @@
     status,
   }: Props = $props();
 
-  let activeTab: "context" | "tools" | "timeline" | "prompt" = $state("context");
+  let activeTab: "context" | "tools" | "timeline" | "waterfall" | "prompt" = $state("context");
+
+  /**
+   * Turn-level timing tracker. Records when each user message appears and
+   * when the assistant response completes, building a per-turn waterfall.
+   */
+  interface TurnTiming {
+    userMessageId: string;
+    userText: string;
+    startMs: number;
+    endMs?: number;
+    toolCalls: Array<{
+      name: string;
+      state: string;
+      firstSeenMs: number;
+      doneMs?: number;
+    }>;
+  }
+
+  const turnTimings = new Map<string, TurnTiming>();
+
+  // Track timing by observing message changes
+  $effect(() => {
+    const now = Date.now();
+    for (const msg of messages) {
+      if (msg.role === "user" && !turnTimings.has(msg.id)) {
+        turnTimings.set(msg.id, {
+          userMessageId: msg.id,
+          userText: msg.content,
+          startMs: now,
+          toolCalls: [],
+        });
+      }
+    }
+    // Find the current turn (last user message)
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    const timing = turnTimings.get(lastUser.id);
+    if (!timing) return;
+
+    // Track tool call timing
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (lastAssistant?.toolCalls) {
+      for (const tc of lastAssistant.toolCalls) {
+        const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
+        if (!existing) {
+          timing.toolCalls.push({
+            name: tc.toolName,
+            state: tc.state,
+            firstSeenMs: now,
+            doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
+          });
+        } else {
+          existing.state = tc.state;
+          if ((tc.state === "output-available" || tc.state === "output-error") && !existing.doneMs) {
+            existing.doneMs = now;
+          }
+        }
+      }
+    }
+
+    // Mark turn end when assistant has content and status is idle
+    if (lastAssistant && lastAssistant.content.length > 0 && status === "idle" && !timing.endMs) {
+      timing.endMs = now;
+    }
+  });
+
+  /** Computed waterfall data from turn timings. */
+  const waterfallTurns = $derived.by(() => {
+    const turns: Array<{
+      userText: string;
+      totalMs: number;
+      bars: Array<{
+        label: string;
+        durationMs: number;
+        type: "tool" | "llm";
+        state: string;
+        offsetPct: number;
+        widthPct: number;
+      }>;
+    }> = [];
+
+    for (const timing of turnTimings.values()) {
+      const totalMs = (timing.endMs ?? Date.now()) - timing.startMs;
+      if (totalMs <= 0) continue;
+
+      const bars: typeof turns[number]["bars"] = [];
+      for (const tc of timing.toolCalls) {
+        const start = tc.firstSeenMs - timing.startMs;
+        const dur = (tc.doneMs ?? Date.now()) - tc.firstSeenMs;
+        bars.push({
+          label: tc.name,
+          durationMs: dur,
+          type: "tool",
+          state: tc.state,
+          offsetPct: Math.max(0, (start / totalMs) * 100),
+          widthPct: Math.max(2, (dur / totalMs) * 100),
+        });
+      }
+
+      turns.push({
+        userText: timing.userText.slice(0, 40) + (timing.userText.length > 40 ? "..." : ""),
+        totalMs,
+        bars,
+      });
+    }
+    return turns;
+  });
+
+  function formatMs(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
 
   /** All unique tool names used across all assistant messages. */
   const usedTools = $derived.by(() => {
@@ -107,6 +220,7 @@
     { id: "context" as const, label: "Context" },
     { id: "tools" as const, label: "Tools" },
     { id: "timeline" as const, label: "Timeline" },
+    { id: "waterfall" as const, label: "Waterfall" },
     { id: "prompt" as const, label: "Prompt" },
   ];
 </script>
@@ -208,6 +322,43 @@
                     <span class="timeline-detail">{entry.content}</span>
                   {:else}
                     <span class="timeline-detail">{entry.content}</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+      {:else if activeTab === "waterfall"}
+        {#if waterfallTurns.length === 0}
+          <div class="empty">Send a message to see timing data.</div>
+        {:else}
+          <div class="waterfall">
+            {#each waterfallTurns as turn, i (i)}
+              <div class="waterfall-turn">
+                <div class="waterfall-header">
+                  <span class="waterfall-label">{turn.userText}</span>
+                  <span class="waterfall-total">{formatMs(turn.totalMs)}</span>
+                </div>
+                <div class="waterfall-bars">
+                  {#each turn.bars as bar (bar.label + bar.offsetPct)}
+                    <div
+                      class="waterfall-bar"
+                      class:done={bar.state === "output-available"}
+                      class:error={bar.state === "output-error" || bar.state === "output-denied"}
+                      class:running={bar.state !== "output-available" && bar.state !== "output-error" && bar.state !== "output-denied"}
+                      style="margin-inline-start: {bar.offsetPct}%; inline-size: {bar.widthPct}%;"
+                      title="{bar.label}: {formatMs(bar.durationMs)}"
+                    >
+                      <span class="bar-label">{bar.label}</span>
+                      <span class="bar-time">{formatMs(bar.durationMs)}</span>
+                    </div>
+                  {/each}
+                  {#if turn.bars.length === 0}
+                    <div class="waterfall-bar done" style="inline-size: 100%;">
+                      <span class="bar-label">LLM response</span>
+                      <span class="bar-time">{formatMs(turn.totalMs)}</span>
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -453,6 +604,98 @@
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     user-select: none;
+  }
+
+  /* ─── Waterfall ──────────────────────────────────────────────────────── */
+
+  .waterfall {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4);
+  }
+
+  .waterfall-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .waterfall-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .waterfall-label {
+    color: var(--color-text);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .waterfall-total {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    flex-shrink: 0;
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+  }
+
+  .waterfall-bars {
+    background-color: light-dark(hsl(220 12% 95%), color-mix(in srgb, var(--color-surface-3), transparent 50%));
+    border-radius: var(--radius-1);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-block-size: 24px;
+    padding: 3px;
+  }
+
+  .waterfall-bar {
+    align-items: center;
+    border-radius: 3px;
+    display: flex;
+    font-size: var(--font-size-0);
+    gap: var(--size-1);
+    justify-content: space-between;
+    min-inline-size: 40px;
+    padding: 2px 6px;
+  }
+
+  .waterfall-bar.done {
+    background-color: light-dark(hsl(142 60% 80%), hsl(142 40% 25%));
+    color: light-dark(hsl(142 60% 25%), hsl(142 60% 80%));
+  }
+
+  .waterfall-bar.running {
+    animation: bar-pulse 1.5s ease-in-out infinite;
+    background-color: light-dark(hsl(217 70% 85%), hsl(217 40% 30%));
+    color: light-dark(hsl(217 70% 30%), hsl(217 70% 80%));
+  }
+
+  .waterfall-bar.error {
+    background-color: light-dark(hsl(10 70% 85%), hsl(10 40% 25%));
+    color: light-dark(hsl(10 70% 30%), hsl(10 70% 80%));
+  }
+
+  @keyframes bar-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .bar-label {
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-weight: var(--font-weight-5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bar-time {
+    flex-shrink: 0;
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    opacity: 0.7;
   }
 
   .prompt-text {
