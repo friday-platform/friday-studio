@@ -1,7 +1,9 @@
 <script lang="ts">
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { createQuery } from "@tanstack/svelte-query";
   import { DefaultChatTransport } from "ai";
+  import { page } from "$app/state";
   import { onMount } from "svelte";
   import {
     buildBacklogEntry,
@@ -9,7 +11,15 @@
     parseScheduleCommand,
     submitBacklogEntry,
   } from "$lib/scheduling/fast-task-scheduler";
+  import { workspaceQueries } from "$lib/queries";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
+
+  const wsId = $derived(page.params.workspaceId ?? "user");
+  const configQuery = createQuery(() => workspaceQueries.config(wsId));
+  const workspaceName = $derived(
+    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
+      ?? wsId,
+  );
 
   let chatDragOver = $state(false);
   let pendingImages: ImageAttachment[] = $state([]);
@@ -588,7 +598,7 @@
 
   <header class="chat-header">
     <h2>Chat</h2>
-    <span class="workspace-badge">Personal</span>
+    <span class="workspace-badge">{workspaceName}</span>
     <span class="header-spacer"></span>
     {#if chat && chat.messages.length > 0}
       <button class="new-chat-button" onclick={startNewChat} disabled={streaming}>
