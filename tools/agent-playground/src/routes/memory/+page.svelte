@@ -5,9 +5,20 @@
   // that the user clicks if they arrived with a query param. Same UX, no
   // navigation loop. See docs/never-again/2026-04-02-effect-goto-loops.md
   import { createQuery } from "@tanstack/svelte-query";
-  import { memoryQueries } from "$lib/queries";
+  import { memoryQueries, workspaceQueries } from "$lib/queries";
 
   const workspacesQuery = createQuery(() => memoryQueries.workspaces());
+  const wsListQuery = createQuery(() => workspaceQueries.list());
+
+  /** Map workspace ID → display name from the daemon workspace list. */
+  const nameMap = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const ws of wsListQuery.data ?? []) {
+      map.set(ws.id, ws.name);
+    }
+    return map;
+  });
+
   const workspaces = $derived(workspacesQuery.data ?? []);
 </script>
 
@@ -29,10 +40,11 @@
   {:else}
     <ul class="workspace-list">
       {#each workspaces as ws (ws)}
+        {@const displayName = nameMap.get(ws) ?? ws}
         <li>
           <a href="/memory/{encodeURIComponent(ws)}" class="workspace-card">
             <span class="ws-dot"></span>
-            <span class="ws-name">{ws}</span>
+            <span class="ws-name">{displayName}</span>
           </a>
         </li>
       {/each}
