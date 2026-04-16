@@ -22,7 +22,6 @@
   type NavItem = { label: string; href: string };
 
   const toolLinks: NavItem[] = [
-    { label: "Chat", href: "/" },
     { label: "Memory", href: "/memory" },
     { label: "Improvements", href: "/improvements" },
     { label: "Agent Tester", href: "/agents/built-in" },
@@ -31,7 +30,6 @@
   ];
 
   function isToolActive(href: string): boolean {
-    if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   }
 
@@ -105,6 +103,11 @@
                 {@const isBase = pathname === base || pathname === `${base}/`}
                 {@const subPages = [
                   { label: "Overview", href: base, isActive: isBase },
+                  {
+                    label: "Chat",
+                    href: `${base}/chat`,
+                    isActive: pathname.startsWith(`${base}/chat`),
+                  },
                   {
                     label: "Agents",
                     href: `${base}/agents`,

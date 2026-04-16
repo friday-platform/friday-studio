@@ -1,5 +1,8 @@
 <script lang="ts">
-  import UserChat from "$lib/components/chat/user-chat.svelte";
-</script>
+  import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
 
-<UserChat />
+  onMount(() => {
+    void goto("/platform/user/chat", { replaceState: true });
+  });
+</script>

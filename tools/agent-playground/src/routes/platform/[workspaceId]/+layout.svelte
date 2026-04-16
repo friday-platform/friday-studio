@@ -68,6 +68,9 @@
   /** Edit page is full-screen editor — no sidebar. */
   const isEdit = $derived(page.route.id === "/platform/[workspaceId]/edit");
 
+  /** Chat page is full-width — no sidebar. */
+  const isChat = $derived(page.route.id === "/platform/[workspaceId]/chat");
+
   /** Agents page renders its own sidebar content (agent index). */
   const isAgents = $derived(page.route.id === "/platform/[workspaceId]/agents");
 
@@ -131,7 +134,7 @@
   <Page.Content scrollable={true} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isOverview && !isEdit}
+  {#if !isSessionDetail && !isOverview && !isEdit && !isChat}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />
