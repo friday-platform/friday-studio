@@ -238,6 +238,11 @@
   }
 
   onMount(async () => {
+    // Request geolocation eagerly — browser caches the permission, so
+    // subsequent calls are instant. Doing it on mount means the first
+    // message already has coordinates without waiting for the prompt.
+    void requestLocation();
+
     const saved = getPersistedChatId();
     if (saved) {
       await rehydrateChat(saved);
