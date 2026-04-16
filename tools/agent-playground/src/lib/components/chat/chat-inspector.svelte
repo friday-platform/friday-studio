@@ -107,13 +107,14 @@
         }
       }
 
-      // Close the turn when:
-      // 1. A subsequent user message exists (next turn started), OR
-      // 2. Assistant has content AND status is idle (response complete), OR
-      // 3. Assistant has content AND this isn't the last user message
+      // Close the turn when assistant has content and either:
+      // - A subsequent user message exists (next turn started)
+      // - Status is idle (streaming finished)
+      // - Status is not streaming/submitted (catch-all for completed state)
       if (assistantMsg && assistantMsg.content.length > 0) {
         const isLastUser = msgs.filter((m) => m.role === "user").at(-1)?.id === timing.userMessageId;
-        if (!isLastUser || currentStatus === "idle") {
+        const isDone = !isLastUser || currentStatus === "idle" || (currentStatus !== "streaming" && currentStatus !== "submitted");
+        if (isDone) {
           timing.endMs = now;
           changed = true;
         }
