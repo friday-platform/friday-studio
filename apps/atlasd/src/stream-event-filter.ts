@@ -25,7 +25,9 @@ export function isClientSafeEvent(chunk: unknown): chunk is AtlasUIMessageChunk 
   const { type } = chunk;
   if (typeof type !== "string") return false;
   for (const prefix of INTERNAL_EVENT_PREFIXES) {
-    if (type.startsWith(prefix)) return false;
+    // data-session-start must pass through — the AI SDK stream processor
+    // uses it to initialize the assistant message. Filtering it kills the stream.
+    if (type.startsWith(prefix) && type !== "data-session-start") return false;
   }
   return true;
 }
