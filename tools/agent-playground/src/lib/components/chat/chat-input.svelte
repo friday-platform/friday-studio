@@ -38,31 +38,28 @@
     sr.interimResults = true;
     sr.lang = navigator.language || "en-US";
 
-    let finalTranscript = "";
+    // Text that was in the input before recording started
+    const preExisting = value;
 
     sr.onresult = (e: SpeechRecognitionEvent) => {
+      let final = "";
       let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Rebuild full transcript from all results each time
+      for (let i = 0; i < e.results.length; i++) {
         const result = e.results[i];
         if (result && result[0]) {
           if (result.isFinal) {
-            finalTranscript += result[0].transcript;
+            final += result[0].transcript;
           } else {
             interim += result[0].transcript;
           }
         }
       }
-      // Append final text to the input value, show interim as preview
-      const base = value.endsWith(" ") || value.length === 0 ? value : value + " ";
-      value = base + finalTranscript + interim;
+      const sep = preExisting.length > 0 && !preExisting.endsWith(" ") ? " " : "";
+      value = preExisting + sep + final + interim;
     };
 
     sr.onend = () => {
-      // Commit final transcript and clean up
-      const base = value.endsWith(" ") || value.length === 0 ? value : value + " ";
-      if (finalTranscript.length > 0) {
-        value = base.trimEnd() + (base.length > 0 ? " " : "") + finalTranscript;
-      }
       recording = false;
       recognition = null;
     };
