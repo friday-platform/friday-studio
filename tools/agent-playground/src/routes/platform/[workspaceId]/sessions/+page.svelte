@@ -24,8 +24,11 @@
     return filterNoiseNodes(raw, initialIds);
   });
 
+  /** Jobs that are internal plumbing — hide from the runs list. */
+  const HIDDEN_JOBS = new Set(["handle-chat"]);
+
   const sortedSessions = $derived.by(() => {
-    const data = sessions.data ?? [];
+    const data = (sessions.data ?? []).filter((s) => !HIDDEN_JOBS.has(s.jobName));
     const active = data.filter((s) => s.status === "active");
     const rest = data.filter((s) => s.status !== "active");
     return [...active, ...rest];

@@ -153,19 +153,23 @@
     return filterNoiseNodes(raw, initialIds);
   });
 
+  /** Jobs that are internal plumbing — hide from the overview. */
+  const HIDDEN_JOBS = new Set(["handle-chat"]);
+
   const sessionsQuery = createQuery(() => ({
     ...sessionQueries.list(workspaceId),
     refetchInterval: 5_000,
   }));
 
+  const visibleSessions = $derived(
+    (sessionsQuery.data ?? []).filter((s) => !HIDDEN_JOBS.has(s.jobName)),
+  );
+
   /** Latest session — rendered as full progress card. */
-  const latestSession = $derived((sessionsQuery.data ?? [])[0] ?? null);
+  const latestSession = $derived(visibleSessions[0] ?? null);
 
   /** Older sessions — compact rows (up to 3). */
-  const olderSessions = $derived.by(() => {
-    const data = sessionsQuery.data ?? [];
-    return data.slice(1, 4);
-  });
+  const olderSessions = $derived(visibleSessions.slice(1, 4));
 
   /** Map job ID → human-readable title for display in session rows. */
   const jobTitleMap = $derived.by((): Record<string, string> => {
