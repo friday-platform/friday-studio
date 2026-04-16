@@ -9,9 +9,49 @@
     parseScheduleCommand,
     submitBacklogEntry,
   } from "$lib/scheduling/fast-task-scheduler";
-  import ChatInput from "./chat-input.svelte";
+  import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
+
+  let chatDragOver = $state(false);
+  let pendingImages: ImageAttachment[] = $state([]);
+
+  async function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function handleChatDrop(e: DragEvent) {
+    e.preventDefault();
+    chatDragOver = false;
+    if (e.dataTransfer?.files) {
+      void addDroppedFiles(e.dataTransfer.files);
+    }
+  }
+
+  function handleChatDragOver(e: DragEvent) {
+    e.preventDefault();
+    chatDragOver = true;
+  }
+
+  function handleChatDragLeave(e: DragEvent) {
+    // Only dismiss if leaving the container (not entering a child)
+    if (e.currentTarget instanceof HTMLElement && !e.currentTarget.contains(e.relatedTarget as Node)) {
+      chatDragOver = false;
+    }
+  }
+
+  async function addDroppedFiles(files: FileList) {
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      const dataUrl = await fileToDataUrl(file);
+      pendingImages = [...pendingImages, { id: crypto.randomUUID(), file, dataUrl }];
+    }
+  }
   import ChatMessageList from "./chat-message-list.svelte";
-  import type { ChatMessage, ScheduleProposal, ToolCallDisplay } from "./types";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
 
   /**
@@ -303,6 +343,24 @@
    * Svelte $state race-bug phantom) still get filtered because their
    * only part is data-*.
    */
+  function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
+    if (!Array.isArray(msg.parts)) return [];
+    const imgs: ImageDisplay[] = [];
+    for (const part of msg.parts) {
+      if (typeof part !== "object" || part === null || !("type" in part)) continue;
+      const p = part as { type: unknown; url?: unknown; mediaType?: unknown; filename?: unknown };
+      if (p.type !== "file" || typeof p.url !== "string") continue;
+      const mediaType = typeof p.mediaType === "string" ? p.mediaType : "image/png";
+      if (!mediaType.startsWith("image/")) continue;
+      imgs.push({
+        url: p.url,
+        mediaType,
+        filename: typeof p.filename === "string" ? p.filename : undefined,
+      });
+    }
+    return imgs;
+  }
+
   function hasRenderableContent(msg: AtlasUIMessage): boolean {
     if (!Array.isArray(msg.parts)) return false;
     return msg.parts.some((p) => {
@@ -310,7 +368,7 @@
       const t = (p as { type: unknown }).type;
       if (typeof t !== "string") return false;
       return (
-        t === "text" || t === "reasoning" || t === "dynamic-tool" || t.startsWith("tool-")
+        t === "text" || t === "file" || t === "reasoning" || t === "dynamic-tool" || t.startsWith("tool-")
       );
     });
   }
@@ -348,6 +406,7 @@
             content: extractText(msg),
             timestamp: Date.now(),
             toolCalls: extractToolCalls(msg),
+            images: extractImages(msg),
           }))
       : [];
     return [...chatMsgs, ...localEvents];
@@ -458,7 +517,7 @@
     error = null;
   }
 
-  function handleSubmit(text: string) {
+  function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (streaming) return;
 
     // Intercept /schedule slash-command before it reaches the chat agent.
@@ -470,14 +529,63 @@
 
     if (!chat) return;
     error = null;
+
+    // Merge images from the input component + any dropped on the chat area
+    const allImages = [...inputImages, ...pendingImages];
+    pendingImages = [];
+
+    const parts: Array<
+      | { type: "text"; text: string }
+      | { type: "file"; mediaType: string; url: string; filename?: string }
+    > = [];
+
+    if (text.length > 0) {
+      parts.push({ type: "text", text });
+    }
+
+    for (const img of allImages) {
+      parts.push({
+        type: "file",
+        mediaType: img.file.type || "image/png",
+        url: img.dataUrl,
+        filename: img.file.name,
+      });
+    }
+
+    if (parts.length === 0) return;
+
     void chat.sendMessage({
       role: "user",
-      parts: [{ type: "text", text }],
+      parts,
     });
   }
 </script>
 
-<div class="user-chat">
+<div
+  class="user-chat"
+  class:chat-drag-over={chatDragOver}
+  ondrop={handleChatDrop}
+  ondragover={handleChatDragOver}
+  ondragleave={handleChatDragLeave}
+  role="presentation"
+>
+  {#if chatDragOver}
+    <div class="drop-overlay">
+      <span>Drop image here</span>
+    </div>
+  {/if}
+
+  {#if pendingImages.length > 0}
+    <div class="pending-images-bar">
+      {#each pendingImages as img (img.id)}
+        <div class="pending-image">
+          <img src={img.dataUrl} alt={img.file.name} />
+          <button onclick={() => { pendingImages = pendingImages.filter(i => i.id !== img.id); }} aria-label="Remove">✕</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <header class="chat-header">
     <h2>Chat</h2>
     <span class="workspace-badge">user</span>
@@ -580,5 +688,78 @@
     border-block-start: 1px solid var(--color-border-1);
     flex-shrink: 0;
     padding: var(--size-3) var(--size-4);
+  }
+
+  /* ─── Drag-drop overlay ────────────────────────────────────────────── */
+
+  .user-chat.chat-drag-over {
+    position: relative;
+  }
+
+  .drop-overlay {
+    align-items: center;
+    background-color: color-mix(in srgb, var(--color-primary), transparent 85%);
+    border: 2px dashed var(--color-primary);
+    border-radius: var(--radius-3);
+    display: flex;
+    inset: var(--size-2);
+    justify-content: center;
+    position: absolute;
+    z-index: 10;
+  }
+
+  .drop-overlay span {
+    background-color: var(--color-primary);
+    border-radius: var(--radius-2);
+    color: white;
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .pending-images-bar {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    gap: var(--size-2);
+    overflow-x: auto;
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .pending-image {
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .pending-image img {
+    block-size: 48px;
+    display: block;
+    inline-size: auto;
+    max-inline-size: 80px;
+    object-fit: cover;
+  }
+
+  .pending-image button {
+    align-items: center;
+    background-color: color-mix(in srgb, var(--color-surface-1), transparent 20%);
+    block-size: 16px;
+    border: none;
+    border-radius: 50%;
+    color: var(--color-text);
+    cursor: pointer;
+    display: flex;
+    font-size: 9px;
+    inline-size: 16px;
+    inset-block-start: 2px;
+    inset-inline-end: 2px;
+    justify-content: center;
+    position: absolute;
+  }
+
+  .pending-image button:hover {
+    background-color: var(--color-error);
+    color: white;
   }
 </style>

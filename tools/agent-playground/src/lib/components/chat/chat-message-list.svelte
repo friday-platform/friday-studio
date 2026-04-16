@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, ScheduleProposal, ToolCallDisplay } from "./types";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
 
   interface Props {
@@ -218,6 +218,14 @@
             </div>
           {/if}
 
+          {#if message.images && message.images.length > 0}
+            <div class="message-images">
+              {#each message.images as img}
+                <img src={img.url} alt={img.filename ?? "attached image"} class="chat-image" />
+              {/each}
+            </div>
+          {/if}
+
           {#if message.content.length > 0}
             <div class="message-content">{message.content}</div>
           {/if}
@@ -408,6 +416,23 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ─── Inline images ─────────────────────────────────────────────────── */
+
+  .message-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .chat-image {
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    display: block;
+    max-block-size: 300px;
+    max-inline-size: 100%;
+    object-fit: contain;
   }
 
   /* ─── Empty state ───────────────────────────────────────────────────── */

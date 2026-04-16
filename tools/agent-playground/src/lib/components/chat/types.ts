@@ -59,6 +59,12 @@ export interface ToolCallDisplay {
   errorText?: string;
 }
 
+export interface ImageDisplay {
+  url: string;
+  filename?: string;
+  mediaType: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -73,6 +79,8 @@ export interface ChatMessage {
    * a silent 4-second pause. Ignored for user and system messages.
    */
   toolCalls?: ToolCallDisplay[];
+  /** Image attachments from the user (data URLs from drag-drop / paste). */
+  images?: ImageDisplay[];
 }
 
 /**
