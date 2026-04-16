@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import type { ValidationResult } from "./types.ts";
 
-const KERNEL_WORKSPACE_ID = "fast-loop";
+const KERNEL_WORKSPACE_ID = "system";
 const WORKSPACE_YML_PATTERN = /^workspaces\/([^/]+)\/workspace\.yml$/;
 
 export async function validateWorkspaceYml(

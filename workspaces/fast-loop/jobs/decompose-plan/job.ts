@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import { appendDiscoveryAsTask } from "../../../../packages/memory/src/discovery-to-task.ts";
+import { findRepoRoot } from "../../../../packages/workspace/src/variable-interpolation.ts";
 import { checkIntegrity } from "./integrity.ts";
 import type { DecomposerResult, IntegrityFinding } from "./schemas.ts";
 
@@ -16,37 +17,9 @@ export function isAbsolutePath(p: string): boolean {
   return isAbsolute(p);
 }
 
-/**
- * Walk up the filesystem from the plan file's enclosing directory until
- * we find a `.git` entry, then return that ancestor as the repo root.
- *
- * Handles two layouts:
- *
- *   1. Regular checkout — `.git` is a directory inside the repo root.
- *   2. Git worktree — `.git` is a text file inside the worktree root
- *      that points at the shared object store. `statSync` catches both.
- *
- * Returns `null` if no `.git` ancestor is found between `plan_path` and
- * the filesystem root. The caller's action throws a helpful error in
- * that case and asks the operator to pass `repo_root` explicitly.
- */
-// deno-lint-ignore require-await
-export async function findRepoRoot(planPath: string): Promise<string | null> {
-  let dir = dirname(planPath);
-  // Root sentinel — Node's `dirname("/") === "/"` so compare on stability.
-  while (true) {
-    const gitEntry = join(dir, ".git");
-    try {
-      statSync(gitEntry);
-      return dir;
-    } catch {
-      // Not found at this level — walk up.
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
+// Re-export findRepoRoot from the canonical location so inline FSM actions
+// that `import('./jobs/decompose-plan/job.ts')` still find it here.
+export { findRepoRoot };
 
 /**
  * Thin wrapper over checkIntegrity for inline FSM import.
@@ -140,7 +113,7 @@ export async function emitDiagnosticTask(
   return await appendDiscoveryAsTask(corpusBaseUrl, {
     discovered_by: "decompose-plan",
     discovered_session: sessionId,
-    target_workspace_id: "salted_granola",
+    target_workspace_id: "system",
     target_signal_id: "review-decomposition-failure",
     title: "decompose-plan: persistent integrity violations",
     brief,

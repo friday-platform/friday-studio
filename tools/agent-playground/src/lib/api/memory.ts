@@ -37,7 +37,7 @@ export const KNOWN_WORKSPACES: string[] = (() => {
       : undefined;
   const parsed = z.string().safeParse(envValue);
   if (parsed.success) return parsed.data.split(",").map((s) => s.trim()).filter(Boolean);
-  return ["salted_granola"];
+  return ["system"];
 })();
 
 /**
@@ -51,7 +51,7 @@ const KNOWN_MEMORIES: ReadonlyArray<{
   name: string;
   kind: CorpusMetadata["kind"];
 }> = [
-  { workspaceId: "salted_granola", name: "autopilot-backlog", kind: "narrative" },
+  { workspaceId: "system", name: "autopilot-backlog", kind: "narrative" },
 ];
 
 export const EntryMetaSchema = z.object({

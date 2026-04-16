@@ -24,7 +24,7 @@ const testDir = import.meta.dirname;
 if (!testDir) throw new Error("import.meta.dirname not available");
 
 const REPO_ROOT = resolve(testDir, "../../../..");
-const PLAN_PATH = "workspaces/fast-loop/jobs/decompose-plan/__fixtures__/trivial-plan.md";
+const PLAN_PATH = "workspaces/system/jobs/decompose-plan/__fixtures__/trivial-plan.md";
 const SESSION_ID = "e2e-test-session";
 const WORKSPACE_ID = "test-workspace";
 const FIXED_DATE = new Date("2026-04-15T18:00:00.000Z");
@@ -38,7 +38,7 @@ const VALID_BRIEF_TRACER = [
   "- [ ] JSON Schema in workspace.yml matches",
   "",
   "## Starting Points",
-  "- workspaces/fast-loop/jobs/decompose-plan/schemas.ts",
+  "- workspaces/system/jobs/decompose-plan/schemas.ts",
 ].join("\n");
 
 const VALID_BRIEF_WIRING = [
@@ -50,7 +50,7 @@ const VALID_BRIEF_WIRING = [
   "- [ ] integrity.ts validates created_at format",
   "",
   "## Starting Points",
-  "- workspaces/fast-loop/jobs/decompose-plan/job.ts",
+  "- workspaces/system/jobs/decompose-plan/job.ts",
 ].join("\n");
 
 function makeCannedBatch(): DecomposerResult {
@@ -63,7 +63,7 @@ function makeCannedBatch(): DecomposerResult {
         task_id: "schema-extension",
         subject: "Tracer Bullet: Add metadata field to DecomposerResultSchema",
         task_brief: VALID_BRIEF_TRACER,
-        target_files: ["workspaces/fast-loop/jobs/decompose-plan/schemas.ts"],
+        target_files: ["workspaces/system/jobs/decompose-plan/schemas.ts"],
         blocked_by: [],
         priority: 10,
         is_tracer: true,
@@ -73,7 +73,7 @@ function makeCannedBatch(): DecomposerResult {
         task_id: "runtime-wiring",
         subject: "Wire batch metadata into apply_to_backlog",
         task_brief: VALID_BRIEF_WIRING,
-        target_files: ["workspaces/fast-loop/jobs/decompose-plan/job.ts"],
+        target_files: ["workspaces/system/jobs/decompose-plan/job.ts"],
         blocked_by: ["schema-extension"],
         priority: 20,
         is_tracer: false,
@@ -272,7 +272,7 @@ function buildHandlers(): Record<string, (ctx: Context, sig: Signal) => unknown>
       if (input.dry_run) {
         const dt = DefaultTargetSchema.parse(input.default_target);
         const dryResult = await postDryRunBatch(
-          "http://localhost:8080/api/memory/salted_granola/narrative/dry-run-decompositions",
+          "http://localhost:8080/api/memory/system/narrative/dry-run-decompositions",
           batch,
           dt,
         );
@@ -311,7 +311,7 @@ function buildHandlers(): Record<string, (ctx: Context, sig: Signal) => unknown>
           },
         };
         const resp = await fetch(
-          "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog",
+          "http://localhost:8080/api/memory/system/narrative/autopilot-backlog",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -473,7 +473,7 @@ describe("decompose-plan E2E", () => {
     expect(tracerEntry.metadata.payload.signal_id).toBe("run-task");
     expect(tracerEntry.metadata.payload.task_id).toBe("schema-extension");
     expect(tracerEntry.metadata.payload.target_files).toEqual([
-      "workspaces/fast-loop/jobs/decompose-plan/schemas.ts",
+      "workspaces/system/jobs/decompose-plan/schemas.ts",
     ]);
 
     // ---- Follow-up task ----

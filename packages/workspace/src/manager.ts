@@ -15,6 +15,7 @@ import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
+import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
 import type { WorkspaceRuntime } from "./runtime.ts";
@@ -152,6 +153,7 @@ export class WorkspaceManager {
     });
 
     await this.registerSystemWorkspaces();
+    await this.migrateFastLoopToSystem();
 
     try {
       const existingNonSystem = (await this.list({ includeSystem: false })) || [];
@@ -210,6 +212,7 @@ export class WorkspaceManager {
       tags?: string[];
       createdBy?: string;
       skipEnvValidation?: boolean;
+      canonical?: "personal" | "system";
     },
   ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
     if (options?.id) {
@@ -274,6 +277,7 @@ export class WorkspaceManager {
         expiresAt: isEphemeral
           ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
           : undefined,
+        canonical: options?.canonical,
       },
     };
 
@@ -330,6 +334,7 @@ export class WorkspaceManager {
         metadata: {
           description: config.workspace.description,
           system: true,
+          canonical: getCanonicalKind(id),
           tags: ["system"],
           color: randomColor(),
         },
@@ -339,12 +344,17 @@ export class WorkspaceManager {
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
-      } else if (existing.name !== entry.name || !existing.metadata?.system) {
+      } else if (
+        existing.name !== entry.name ||
+        !existing.metadata?.system ||
+        existing.metadata?.canonical !== entry.metadata?.canonical
+      ) {
         await this.registry.updateWorkspaceStatus(id, existing.status, {
           name: entry.name,
           metadata: {
             ...existing.metadata,
             system: true,
+            canonical: getCanonicalKind(id),
             description: entry.metadata?.description,
           },
         });
@@ -368,6 +378,37 @@ export class WorkspaceManager {
         await this.registry.unregisterWorkspace(ws.id);
       }
     }
+  }
+
+  /**
+   * Migrate legacy fast-loop workspace to system.
+   *
+   * Existing installs may have a workspace registered under an ID or name
+   * containing "fast-loop". This migration updates the registry entry to
+   * point to the new system system workspace. Idempotent: no-op if
+   * no fast-loop workspace exists or if system is already registered.
+   */
+  private async migrateFastLoopToSystem(): Promise<void> {
+    const allWorkspaces = await this.registry.listWorkspaces();
+    const fastLoopEntry = allWorkspaces.find(
+      (ws) =>
+        ws.id.includes("fast-loop") ||
+        ws.name.includes("fast-loop") ||
+        ws.path.includes("fast-loop"),
+    );
+
+    if (!fastLoopEntry) return;
+
+    // system is already registered by registerSystemWorkspaces — just
+    // remove the stale fast-loop entry.
+    logger.info("Migrating fast-loop workspace to system", {
+      oldId: fastLoopEntry.id,
+      oldName: fastLoopEntry.name,
+      oldPath: fastLoopEntry.path,
+    });
+
+    await this.registry.unregisterWorkspace(fastLoopEntry.id);
+    logger.info("Fast-loop workspace entry removed (replaced by system)");
   }
 
   /** Return workspace config; use embedded config for system workspaces. */
@@ -457,6 +498,10 @@ export class WorkspaceManager {
       return;
     }
 
+    if (workspace.metadata?.canonical && !options?.force) {
+      throw new Error(`Cannot delete canonical workspace '${id}'.`);
+    }
+
     if (workspace.metadata?.system && !options?.force) {
       throw new Error(`Cannot delete system workspace '${id}'. Use force=true to override.`);
     }
@@ -516,6 +561,25 @@ export class WorkspaceManager {
     }
 
     logger.info("Workspace deleted", { id, name: workspace.name });
+  }
+
+  /**
+   * Rename a workspace.
+   *
+   * Canonical system workspaces cannot be renamed. Canonical personal
+   * workspaces are renamable. Non-canonical workspaces rename freely.
+   */
+  async renameWorkspace(id: string, newName: string): Promise<void> {
+    const workspace = await this.registry.getWorkspace(id);
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${id}`);
+    }
+
+    if (workspace.metadata?.canonical === "system") {
+      throw new Error(`Cannot rename system canonical workspace '${id}'.`);
+    }
+
+    await this.registry.updateWorkspaceStatus(id, workspace.status, { name: newName });
   }
 
   /** Register active runtime and persist status=running. */

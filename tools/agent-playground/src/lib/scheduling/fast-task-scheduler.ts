@@ -15,7 +15,7 @@ import type { ScheduleProposal } from "../components/chat/types.ts";
 
 const SCHEDULE_PREFIX = "/schedule ";
 const SCHEDULE_EXPAND_URL = "/api/daemon/api/schedule-expand";
-const BACKLOG_URL = "/api/daemon/api/memory/poached_quiche/narrative/autopilot-backlog";
+const BACKLOG_URL = "/api/daemon/api/memory/bitter_jam/narrative/autopilot-backlog";
 const DEFAULT_AUTHOR = "lcf";
 const TARGET_WORKSPACE_ID = "fizzy_waffle";
 const SIGNAL_ID = "run-task" as const;

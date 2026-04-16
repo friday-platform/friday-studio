@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appendDiscoveryAsTask } from "../../../../packages/memory/src/discovery-to-task.ts";
 import { validateAgentBuild } from "./validators/agent-build.ts";
 import { validateLint } from "./validators/lint.ts";
+import { validateSmokeTest } from "./validators/smoke-test.ts";
 import { validateTypecheck } from "./validators/typecheck.ts";
 import type { ValidationResult } from "./validators/types.ts";
 import { validateWorkspaceYml } from "./validators/workspace-yml.ts";
@@ -110,6 +111,9 @@ export async function runPostSessionValidator(
     }),
   );
   results.push(await validateAgentBuild(input.changedFiles));
+
+  // SMOKE_TEST — runtime endpoint validation for route file changes
+  results.push(await validateSmokeTest(input.changedFiles, { platformUrl: baseUrl }));
 
   const failures = results.filter((r) => !r.ok);
   const allPass = failures.length === 0;

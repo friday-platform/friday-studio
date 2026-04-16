@@ -11,8 +11,7 @@ import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 
-// Deferred rename: thick_endive → kernel (separate cleanup pass)
-export const KERNEL_WORKSPACE_ID = "thick_endive" as const;
+export const KERNEL_WORKSPACE_ID = "system" as const;
 export const USER_WORKSPACE_ID = "user" as const;
 
 type SSEClient = {

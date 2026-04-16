@@ -8,8 +8,11 @@ const conversationYaml = readFileSync(
   "utf-8",
 );
 
+const systemYaml = readFileSync(fileURLToPath(new URL("./system.yml", import.meta.url)), "utf-8");
+
 export const SYSTEM_WORKSPACES: Record<string, WorkspaceConfig> = {
   "atlas-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
+  system: WorkspaceConfigSchema.parse(parse(systemYaml)),
 } as const;
 
 export type SystemWorkspaceId = keyof typeof SYSTEM_WORKSPACES;

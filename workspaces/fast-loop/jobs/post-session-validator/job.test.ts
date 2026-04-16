@@ -24,6 +24,8 @@ const mockValidateWorkspaceYml =
     ) => Promise<ValidationResult>
   >();
 const mockValidateAgentBuild = vi.fn<(files: string[]) => Promise<ValidationResult>>();
+const mockValidateSmokeTest =
+  vi.fn<(files: string[], opts?: { platformUrl?: string }) => Promise<ValidationResult>>();
 
 vi.mock("./validators/typecheck.ts", () => ({ validateTypecheck: () => mockValidateTypecheck() }));
 vi.mock("./validators/lint.ts", () => ({
@@ -38,6 +40,10 @@ vi.mock("./validators/workspace-yml.ts", () => ({
 }));
 vi.mock("./validators/agent-build.ts", () => ({
   validateAgentBuild: (files: string[]) => mockValidateAgentBuild(files),
+}));
+vi.mock("./validators/smoke-test.ts", () => ({
+  validateSmokeTest: (files: string[], opts?: { platformUrl?: string }) =>
+    mockValidateSmokeTest(files, opts),
 }));
 
 import {
@@ -75,6 +81,7 @@ function setupAllPass(): void {
   mockValidateLint.mockResolvedValue(passResult("lint"));
   mockValidateWorkspaceYml.mockResolvedValue(passResult("workspace-yml"));
   mockValidateAgentBuild.mockResolvedValue(passResult("agent-build"));
+  mockValidateSmokeTest.mockResolvedValue(passResult("smoke-test"));
 }
 
 describe("runPostSessionValidator", () => {
@@ -109,6 +116,7 @@ describe("runPostSessionValidator", () => {
     mockValidateLint.mockReset();
     mockValidateWorkspaceYml.mockReset();
     mockValidateAgentBuild.mockReset();
+    mockValidateSmokeTest.mockReset();
   });
 
   afterEach(() => {
@@ -130,6 +138,7 @@ describe("runPostSessionValidator", () => {
     expect(mockValidateLint).not.toHaveBeenCalled();
     expect(mockValidateWorkspaceYml).not.toHaveBeenCalled();
     expect(mockValidateAgentBuild).not.toHaveBeenCalled();
+    expect(mockValidateSmokeTest).not.toHaveBeenCalled();
 
     expect(fetchCalls).toHaveLength(1);
     const backlogCall = fetchCalls[0];
@@ -147,7 +156,7 @@ describe("runPostSessionValidator", () => {
     const result = await runPostSessionValidator(validInput(), "http://test:8080");
 
     expect(result.validated).toBe(true);
-    expect(result.results).toHaveLength(4);
+    expect(result.results).toHaveLength(5);
     expect(result.results.every((r) => r.ok)).toBe(true);
     expect(result.discoveriesAppended).toBe(0);
     expect(mockAppendDiscoveryAsTask).not.toHaveBeenCalled();
@@ -166,6 +175,7 @@ describe("runPostSessionValidator", () => {
     mockValidateLint.mockResolvedValue(passResult("lint"));
     mockValidateWorkspaceYml.mockResolvedValue(passResult("workspace-yml"));
     mockValidateAgentBuild.mockResolvedValue(passResult("agent-build"));
+    mockValidateSmokeTest.mockResolvedValue(passResult("smoke-test"));
 
     const result = await runPostSessionValidator(validInput(), "http://test:8080");
 
@@ -207,6 +217,7 @@ describe("runPostSessionValidator", () => {
     mockValidateAgentBuild.mockResolvedValue(
       failResult("agent-build", ["reflector: build failed"]),
     );
+    mockValidateSmokeTest.mockResolvedValue(passResult("smoke-test"));
 
     const result = await runPostSessionValidator(validInput(), "http://test:8080");
 
@@ -238,6 +249,7 @@ describe("runPostSessionValidator", () => {
     mockValidateLint.mockResolvedValue(passResult("lint"));
     mockValidateWorkspaceYml.mockResolvedValue(passResult("workspace-yml"));
     mockValidateAgentBuild.mockResolvedValue(passResult("agent-build"));
+    mockValidateSmokeTest.mockResolvedValue(passResult("smoke-test"));
 
     await runPostSessionValidator(validInput({ taskPriority: 100 }), "http://test:8080");
 
@@ -251,6 +263,7 @@ describe("runPostSessionValidator", () => {
     mockValidateLint.mockResolvedValue(passResult("lint"));
     mockValidateWorkspaceYml.mockResolvedValue(passResult("workspace-yml"));
     mockValidateAgentBuild.mockResolvedValue(passResult("agent-build"));
+    mockValidateSmokeTest.mockResolvedValue(passResult("smoke-test"));
 
     await runPostSessionValidator(validInput(), "http://test:8080");
 

@@ -60,6 +60,7 @@ import {
   type AgentAction,
   type AgentExecutor,
   AtlasLLMProviderAdapter,
+  buildWorkspaceMeta,
   type Context,
   createEngine,
   type FSMActionExecutionEvent,
@@ -116,6 +117,7 @@ import {
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedCorpusBinding } from "./mounted-corpus-binding.ts";
+import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
 
 /**
  * Classify an error to determine session status.
@@ -144,6 +146,7 @@ interface WorkspaceRuntimeSignal {
 /** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
 interface WorkspaceRuntimeInit {
   id: string;
+  name?: string;
   members?: { userId?: string };
 }
 
@@ -384,6 +387,19 @@ export class WorkspaceRuntime {
 
     const workspacePath = this.options.workspacePath || `.atlas/workspaces/${this.workspace.id}`;
 
+    // Resolve workspace variables and interpolate config placeholders ({{repo_root}}, etc.)
+    const wsVars = await resolveWorkspaceVariables(
+      workspacePath,
+      this.workspace.id,
+      this.options.daemonUrl,
+    );
+    if (wsVars) {
+      this.config = { ...this.config, workspace: interpolateConfig(this.config.workspace, wsVars) };
+      if (this.config.atlas) {
+        this.config = { ...this.config, atlas: interpolateConfig(this.config.atlas, wsVars) };
+      }
+    }
+
     const configJobs = this.config.workspace.jobs || {};
 
     // Reserved signal name validation — "chat" is system-owned
@@ -395,7 +411,7 @@ export class WorkspaceRuntime {
     }
 
     // Skip chat injection for the system conversation workspace
-    const SKIP_CHAT_INJECTION = new Set(["atlas-conversation"]);
+    const SKIP_CHAT_INJECTION = new Set(["atlas-conversation", "system"]);
 
     if (!SKIP_CHAT_INJECTION.has(this.workspace.id)) {
       // Auto-inject chat signal + handle-chat job for workspace direct chat
@@ -691,7 +707,7 @@ export class WorkspaceRuntime {
 
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
-    const scope = { workspaceId: this.workspace.id };
+    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
     const engineOptions = {
       documentStore: job.documentStore,
       scope,
@@ -838,6 +854,18 @@ export class WorkspaceRuntime {
         currentState: engine.state,
       });
     }
+
+    // Seed __meta into engine results so code actions can reference
+    // workspace_path, repo_root, workspace_id, and platform_url via
+    // context.results['__meta'] without hardcoding operator paths.
+    const workspacePath = this.options.workspacePath ?? `.atlas/workspaces/${this.workspace.id}`;
+    engine.seedResults({
+      __meta: buildWorkspaceMeta({
+        workspacePath,
+        workspaceId: this.workspace.id,
+        daemonUrl: this.options.daemonUrl,
+      }),
+    });
 
     const sessionId = crypto.randomUUID();
 
@@ -1163,7 +1191,12 @@ export class WorkspaceRuntime {
 
             const view = buildSessionView(sessionStream.getBufferedEvents());
 
-            const aiSummary = await generateSessionSummary(view, undefined, job.description);
+            const aiSummary = await generateSessionSummary(
+              view,
+              undefined,
+              job.description,
+              this.workspace.name,
+            );
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -1936,7 +1969,7 @@ export class WorkspaceRuntime {
       throw new Error("Cannot clear state - engine not initialized");
     }
 
-    const scope = { workspaceId: this.workspace.id };
+    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
     const fsmId = job.engine.definition.id;
 
     // Clear persisted state file (no schema, null value — cannot fail validation)
@@ -2151,6 +2184,7 @@ export class WorkspaceRuntime {
 
     await runImprovementLoop({
       workspaceId: this.workspace.id,
+      workspaceName: this.workspace.name ?? this.workspace.id,
       sessionId: sessionResult.id,
       jobName: job.name,
       errorMessage: sessionResult.error?.message ?? "Unknown error",

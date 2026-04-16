@@ -11,7 +11,7 @@
   } from "$lib/scheduling/fast-task-scheduler";
   import ChatInput from "./chat-input.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
-  import type { ChatMessage, ScheduleProposal } from "./types";
+  import type { ChatMessage, ScheduleProposal, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
 
   /**
@@ -234,6 +234,88 @@
   }
 
   /**
+   * Extract tool-call parts from an {@link AtlasUIMessage} in stream order.
+   *
+   * AI SDK v6 emits one part per tool invocation, typed either as
+   * `tool-<name>` (static tools — our `web_fetch`, `run_code`, etc. are
+   * registered this way via `createWebFetchTool` / `createRunCodeTool`) or
+   * as `dynamic-tool` (runtime-resolved). Both carry `toolCallId`, `state`,
+   * `input`, and — on success — `output`. We flatten both shapes into
+   * {@link ToolCallDisplay} so the message list can render them as status
+   * cards without caring about the static/dynamic distinction.
+   *
+   * Without this extraction, tool activity was invisible: the user would
+   * see a long pause between "Friday" and the final text reply while
+   * web_fetch / run_code ran in the background.
+   */
+  function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
+    if (!Array.isArray(msg.parts)) return [];
+    const calls: ToolCallDisplay[] = [];
+    for (const part of msg.parts) {
+      if (typeof part !== "object" || part === null || !("type" in part)) continue;
+      const type = (part as { type: unknown }).type;
+      if (typeof type !== "string") continue;
+
+      // Both static (`tool-<name>`) and dynamic (`dynamic-tool`) carry the
+      // same shape of state / input / output / errorText / toolCallId
+      // fields, so we cast via a common structural interface once we know
+      // the part is a tool.
+      const isStatic = type.startsWith("tool-");
+      const isDynamic = type === "dynamic-tool";
+      if (!isStatic && !isDynamic) continue;
+
+      const tp = part as {
+        type: string;
+        toolCallId?: unknown;
+        toolName?: unknown;
+        state?: unknown;
+        input?: unknown;
+        output?: unknown;
+        errorText?: unknown;
+      };
+
+      const toolCallId = typeof tp.toolCallId === "string" ? tp.toolCallId : "";
+      const toolName = isDynamic
+        ? typeof tp.toolName === "string"
+          ? tp.toolName
+          : "tool"
+        : type.slice("tool-".length);
+      const state = typeof tp.state === "string" ? tp.state : "input-streaming";
+
+      calls.push({
+        toolCallId,
+        toolName,
+        state: state as ToolCallDisplay["state"],
+        input: tp.input,
+        output: tp.output,
+        errorText: typeof tp.errorText === "string" ? tp.errorText : undefined,
+      });
+    }
+    return calls;
+  }
+
+  /**
+   * True if a message has anything worth rendering — a text part, a tool
+   * call (in any state), or a reasoning part. Used as the phantom filter
+   * replacement: the old version required a text part, which hid
+   * tool-in-progress messages for 2–6 s while web_fetch / run_code ran.
+   * Empty assistants with only `[data-session-start]` (the AI SDK +
+   * Svelte $state race-bug phantom) still get filtered because their
+   * only part is data-*.
+   */
+  function hasRenderableContent(msg: AtlasUIMessage): boolean {
+    if (!Array.isArray(msg.parts)) return false;
+    return msg.parts.some((p) => {
+      if (typeof p !== "object" || p === null || !("type" in p)) return false;
+      const t = (p as { type: unknown }).type;
+      if (typeof t !== "string") return false;
+      return (
+        t === "text" || t === "reasoning" || t === "dynamic-tool" || t.startsWith("tool-")
+      );
+    });
+  }
+
+  /**
    * Derive the unified display list: real chat turns from the AI SDK plus
    * playground-local events (schedule proposals, system toasts). Chat
    * messages come first (ordered by AI SDK), local events tail at the end.
@@ -249,23 +331,23 @@
    * doesn't observe the mutation. We end up with two assistants per turn:
    * one with only `[data-session-start]` parts, one with the real text.
    *
-   * Filtering assistant entries that lack a `text` part hides the phantom
-   * in every case: pre-stream the real message has no text either, but it
-   * gains one as soon as the first `text-start` arrives and the filter
-   * resolves within the same microtask.
+   * Filtering assistant entries that have no text/tool/reasoning parts
+   * hides the phantom while still letting tool-in-progress messages show
+   * up with a live status card before the first text-delta arrives.
    */
   const displayedMessages: ChatMessage[] = $derived.by(() => {
     const chatMsgs: ChatMessage[] = chat
       ? chat.messages
           .filter((msg) => {
             if (msg.role !== "assistant") return true;
-            return Array.isArray(msg.parts) && msg.parts.some((p) => p.type === "text");
+            return hasRenderableContent(msg);
           })
           .map((msg) => ({
             id: msg.id,
             role: msg.role === "user" ? "user" : msg.role === "system" ? "system" : "assistant",
             content: extractText(msg),
             timestamp: Date.now(),
+            toolCalls: extractToolCalls(msg),
           }))
       : [];
     return [...chatMsgs, ...localEvents];

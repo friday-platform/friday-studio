@@ -17,10 +17,10 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py nee
 # is available in the WASM stdlib sandbox. Extension preserved for operator
 # backwards-compat with renamed .json files.
 BACKLOG_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog"
+    "http://localhost:8080/api/memory/bitter_jam/narrative/autopilot-backlog"
 )
 DISPATCH_LOG_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/salted_granola/narrative/dispatch-log"
+    "http://localhost:8080/api/memory/bitter_jam/narrative/dispatch-log"
 )
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
 

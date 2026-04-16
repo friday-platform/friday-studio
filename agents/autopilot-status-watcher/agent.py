@@ -20,12 +20,12 @@ from friday_agent_sdk import agent, ok
 from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py needs this
 
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
-KERNEL_WS_DEFAULT = "salted_granola"
+KERNEL_WS_DEFAULT = "system"
 DISPATCH_LOG_DEFAULT = "dispatch-log"
 BACKLOG_DEFAULT = "autopilot-backlog"
 
 REFLECTOR_SIGNAL = "reflect-on-last-run"
-REFLECTOR_TARGET_WS = "salted_granola"
+REFLECTOR_TARGET_WS = "system"
 DURATION_THRESHOLD_MS = 300_000
 
 _REFLECTOR_SKIP_JOBS = frozenset({

@@ -9,7 +9,7 @@ Two phases: schema extension, then runtime wiring.
 ## Phase 1 — Schema Extension
 
 Extend `DecomposerResultSchema` in
-`workspaces/fast-loop/jobs/decompose-plan/schemas.ts` to include an
+`workspaces/system/jobs/decompose-plan/schemas.ts` to include an
 optional `metadata` object on the batch root:
 
 ```ts
@@ -19,13 +19,13 @@ metadata: z.object({
 }).optional(),
 ```
 
-Update the JSON Schema in `workspaces/fast-loop/workspace.yml` under
+Update the JSON Schema in `workspaces/system/workspace.yml` under
 `documentTypes.decomposer-result` to mirror the new field.
 
 ### Files
 
-- `workspaces/fast-loop/jobs/decompose-plan/schemas.ts`
-- `workspaces/fast-loop/workspace.yml`
+- `workspaces/system/jobs/decompose-plan/schemas.ts`
+- `workspaces/system/workspace.yml`
 
 ### Acceptance Criteria
 
@@ -38,14 +38,14 @@ Update the JSON Schema in `workspaces/fast-loop/workspace.yml` under
 
 Wire the new metadata into `apply_to_backlog` so each task POST includes
 `batch_metadata` in its payload. Update the integrity checker in
-`workspaces/fast-loop/jobs/decompose-plan/integrity.ts` to validate
+`workspaces/system/jobs/decompose-plan/integrity.ts` to validate
 `created_at` is ISO-8601 when present.
 
 ### Files
 
-- `workspaces/fast-loop/jobs/decompose-plan/job.ts`
-- `workspaces/fast-loop/jobs/decompose-plan/integrity.ts`
-- `workspaces/fast-loop/workspace.yml`
+- `workspaces/system/jobs/decompose-plan/job.ts`
+- `workspaces/system/jobs/decompose-plan/integrity.ts`
+- `workspaces/system/workspace.yml`
 
 ### Acceptance Criteria
 

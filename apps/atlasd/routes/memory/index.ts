@@ -8,7 +8,7 @@ import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { validator } from "hono-openapi";
 import { z } from "zod";
-import { daemonFactory } from "../../src/factory.ts";
+import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 
 /** Relaxed request body for POST — only text is required. */
 const AppendBodySchema = z.object({
@@ -55,12 +55,15 @@ async function isDir(p: string): Promise<boolean> {
 // GET / — list workspace IDs that have any memory on disk.
 // Backed by ~/.atlas/memory/ — every immediate subdirectory is treated as a
 // workspaceId. Empty array if the memory root doesn't exist yet.
+// Respects ATLAS_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
 memoryNarrativeRoutes.get("/", async (c) => {
   const root = path.join(getAtlasHome(), "memory");
   const entries = await safeReaddir(root);
+  const exposeKernel = c.get("app").exposeKernel;
   const workspaces: string[] = [];
   for (const name of entries) {
     if (name.startsWith(".")) continue;
+    if (!exposeKernel && name === KERNEL_WORKSPACE_ID) continue;
     if (await isDir(path.join(root, name))) workspaces.push(name);
   }
   return c.json(workspaces);

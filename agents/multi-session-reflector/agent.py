@@ -21,7 +21,7 @@ from friday_agent_sdk._bridge import Agent  # noqa: F401
 
 PLATFORM_URL_DEFAULT = "http://localhost:8080"
 BACKLOG_CORPUS_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog"
+    "http://localhost:8080/api/memory/bitter_jam/narrative/autopilot-backlog"
 )
 SKILL_NAMESPACE = "tempest"
 SKILL_NAME = "fast-self-modification"

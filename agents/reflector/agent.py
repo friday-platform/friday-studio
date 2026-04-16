@@ -288,9 +288,9 @@ def _outcome_from_session(session_summary: dict[str, Any]) -> str:
     return "APPROVE"  # session completed but no explicit verdict — assume clean
 
 
-KERNEL_WORKSPACE_ID = "salted_granola"
+KERNEL_WORKSPACE_ID = "system"
 BACKLOG_CORPUS_URL_DEFAULT = (
-    "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog"
+    "http://localhost:8080/api/memory/bitter_jam/narrative/autopilot-backlog"
 )
 
 
@@ -302,7 +302,7 @@ def _append_to_corpus(
     rationale: str,
     update_warranted: bool,
 ) -> None:
-    """Append a reflection entry to the salted_granola reflections corpus.
+    """Append a reflection entry to the system reflections corpus.
 
     Non-blocking: failures are logged but never raise.
     """

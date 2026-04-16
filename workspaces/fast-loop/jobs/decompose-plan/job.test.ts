@@ -171,7 +171,7 @@ describe("emitDiagnosticTask", () => {
     ];
 
     const result = await emitDiagnosticTask(
-      "http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog",
+      "http://localhost:8080/api/memory/system/narrative/autopilot-backlog",
       "sess-42",
       findings,
       "dp-batch-001",
@@ -179,11 +179,11 @@ describe("emitDiagnosticTask", () => {
 
     expect(mockAppendDiscoveryAsTask).toHaveBeenCalledTimes(1);
     const [url, discovery] = mockAppendDiscoveryAsTask.mock.calls[0] ?? [];
-    expect(url).toBe("http://localhost:8080/api/memory/salted_granola/narrative/autopilot-backlog");
+    expect(url).toBe("http://localhost:8080/api/memory/system/narrative/autopilot-backlog");
     expect(discovery).toMatchObject({
       discovered_by: "decompose-plan",
       discovered_session: "sess-42",
-      target_workspace_id: "salted_granola",
+      target_workspace_id: "system",
       target_signal_id: "review-decomposition-failure",
       title: "decompose-plan: persistent integrity violations",
       target_files: [],
@@ -231,8 +231,7 @@ describe("postDryRunBatch", () => {
     vi.unstubAllGlobals();
   });
 
-  const CORPUS_URL =
-    "http://localhost:8080/api/memory/salted_granola/narrative/dry-run-decompositions";
+  const CORPUS_URL = "http://localhost:8080/api/memory/system/narrative/dry-run-decompositions";
   const DEFAULT_TARGET = { workspace_id: "test-ws", signal_id: "run-task" };
 
   it("constructs correct entry shape", async () => {
@@ -544,7 +543,7 @@ describe("FSM state-transition paths", () => {
     };
     if (input.dry_run) {
       const dryResult = await postDryRunBatch(
-        "http://localhost:8080/api/memory/salted_granola/narrative/dry-run-decompositions",
+        "http://localhost:8080/api/memory/system/narrative/dry-run-decompositions",
         batch,
         input.default_target,
       );

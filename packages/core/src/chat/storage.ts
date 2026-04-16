@@ -44,7 +44,7 @@ const StoredChatSchema = z.object({
 type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
 
 /** System workspace IDs that use global (non-prefixed) chat filenames */
-const GLOBAL_WORKSPACE_IDS = new Set(["atlas-conversation", "friday-conversation"]);
+const GLOBAL_WORKSPACE_IDS = new Set(["atlas-conversation", "friday-conversation", "system"]);
 
 /** Whether a workspaceId should use workspace-prefixed filenames */
 function isWorkspaceScoped(workspaceId: string): boolean {

@@ -29,12 +29,50 @@ export interface ScheduleProposal {
   kind: "feature" | "improvement" | "bugfix";
 }
 
+/**
+ * Flattened tool-call shape extracted from a message's `parts` array at
+ * render time. Covers both static `tool-<name>` parts and the `dynamic-tool`
+ * fallback. The chat message list renders these as inline status cards so
+ * the user can see tool activity live instead of staring at a long pause
+ * while Friday fetches URLs or runs Python.
+ *
+ * See AI SDK v6's `ToolUIPart<TOOLS>` and `DynamicToolUIPart` types for the
+ * canonical source — we flatten to a single string-based shape because the
+ * rendering component doesn't need type-level tool discrimination.
+ */
+export interface ToolCallDisplay {
+  toolCallId: string;
+  toolName: string;
+  state:
+    | "input-streaming"
+    | "input-available"
+    | "approval-requested"
+    | "approval-responded"
+    | "output-available"
+    | "output-error"
+    | "output-denied";
+  /** Tool arguments (may be partial during `input-streaming`). */
+  input?: unknown;
+  /** Tool result once `state === "output-available"`. */
+  output?: unknown;
+  /** Error message when `state === "output-error"`. */
+  errorText?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
   scheduleProposal?: ScheduleProposal;
+  /**
+   * Tool calls emitted by the assistant for this message, in stream order.
+   * Non-empty means the chat message list should render a status card for
+   * each call before the text content — this is what gives the user
+   * visibility into "Friday is fetching the WoW news page" instead of
+   * a silent 4-second pause. Ignored for user and system messages.
+   */
+  toolCalls?: ToolCallDisplay[];
 }
 
 /**

@@ -16,7 +16,7 @@ const VALID_TASK = {
   task_id: "extract-schemas",
   subject: "Extract Zod schemas to shared module",
   task_brief: "## Context\nMove inline schemas to schemas.ts",
-  target_files: ["workspaces/fast-loop/jobs/decompose-plan/schemas.ts"],
+  target_files: ["workspaces/system/jobs/decompose-plan/schemas.ts"],
   blocked_by: [],
   priority: 10,
   is_tracer: true,
