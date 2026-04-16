@@ -21,6 +21,29 @@
   }: Props = $props();
 
   let activeTab: "context" | "tools" | "timeline" | "waterfall" | "prompt" = $state("context");
+  let inspectorWidth = $state(350);
+  let dragging = $state(false);
+
+  function startDrag(e: PointerEvent) {
+    e.preventDefault();
+    dragging = true;
+    const startX = e.clientX;
+    const startWidth = inspectorWidth;
+
+    function onMove(ev: PointerEvent) {
+      // Dragging left edge → moving left increases width
+      inspectorWidth = Math.max(250, Math.min(800, startWidth + (startX - ev.clientX)));
+    }
+
+    function onUp() {
+      dragging = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   /**
    * Debounced message snapshot — only updates when message COUNT changes
@@ -264,6 +287,39 @@
     return `${(ms / 1000).toFixed(1)}s`;
   }
 
+  /** Parse available tools from the system prompt context. */
+  const availableTools = $derived.by(() => {
+    if (!open || !systemPromptContext) return [];
+    const tools: Array<{ name: string; description: string }> = [];
+    for (const msg of systemPromptContext.systemMessages) {
+      // Match tool definitions in system prompt — typically formatted as
+      // "tool_name: description" or listed in a tools section
+      const toolMatches = msg.matchAll(/^[-•]\s*\*\*(\w+)\*\*\s*[—–-]\s*(.+)$/gm);
+      for (const m of toolMatches) {
+        if (m[1] && m[2]) tools.push({ name: m[1], description: m[2].slice(0, 80) });
+      }
+      // Also match "tool: name" patterns from capability sections
+      const capMatches = msg.matchAll(/`(\w+(?:_\w+)+)`/g);
+      for (const m of capMatches) {
+        if (m[1] && !tools.find((t) => t.name === m[1])) {
+          tools.push({ name: m[1], description: "" });
+        }
+      }
+    }
+    return tools;
+  });
+
+  /** Model info extracted from system prompt. */
+  const modelInfo = $derived.by(() => {
+    if (!open || !systemPromptContext) return null;
+    for (const msg of systemPromptContext.systemMessages) {
+      // Look for model references
+      const match = msg.match(/claude[- ](?:sonnet|opus|haiku)[- ]\d[- ]\d/i);
+      if (match) return match[0];
+    }
+    return null;
+  });
+
   /** All unique tool names used across all assistant messages. */
   const usedTools = $derived.by(() => {
     if (!open) return new Set<string>();
@@ -359,7 +415,14 @@
 </script>
 
 {#if open}
-  <div class="inspector">
+  <div class="inspector" style="inline-size: {inspectorWidth}px; min-inline-size: {inspectorWidth}px;">
+    <div
+      class="resize-handle"
+      class:active={dragging}
+      onpointerdown={startDrag}
+      role="separator"
+      aria-orientation="vertical"
+    ></div>
     <div class="inspector-tabs">
       {#each tabs as tab (tab.id)}
         <button
@@ -515,12 +578,36 @@
 <style>
   .inspector {
     background-color: var(--color-surface-2);
-    border-inline-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
-    inline-size: 350px;
-    min-inline-size: 350px;
     overflow: hidden;
+    position: relative;
+  }
+
+  .resize-handle {
+    block-size: 100%;
+    cursor: col-resize;
+    inline-size: 4px;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    position: absolute;
+    z-index: 5;
+  }
+
+  .resize-handle::after {
+    background-color: var(--color-border-1);
+    block-size: 100%;
+    content: "";
+    inline-size: 1px;
+    inset-inline-start: 0;
+    position: absolute;
+    transition: background-color 100ms ease, inline-size 100ms ease;
+  }
+
+  .resize-handle:hover::after,
+  .resize-handle.active::after {
+    background-color: var(--color-primary);
+    inline-size: 2px;
   }
 
   .inspector-tabs {
