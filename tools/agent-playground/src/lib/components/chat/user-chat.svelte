@@ -13,6 +13,7 @@
   } from "$lib/scheduling/fast-task-scheduler";
   import { workspaceQueries } from "$lib/queries";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
+  import ChatInspector from "./chat-inspector.svelte";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
@@ -20,6 +21,16 @@
     (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
       ?? wsId,
   );
+
+  let inspectorOpen = $state(false);
+
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
+      e.preventDefault();
+      inspectorOpen = !inspectorOpen;
+    }
+  }
+  let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
 
   let chatDragOver = $state(false);
   let pendingImages: ImageAttachment[] = $state([]);
@@ -229,6 +240,7 @@
 
       chatId = parsed.data.chat.id;
       initialMessages = rehydrated;
+      systemPromptContext = parsed.data.systemPromptContext ?? null;
     } catch {
       // Silent — server might be temporarily down; the user can still send
       // a fresh message to start a new chat.
@@ -614,6 +626,8 @@
   }
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <div
   class="user-chat"
   class:chat-drag-over={chatDragOver}
@@ -648,22 +662,46 @@
         New Chat
       </button>
     {/if}
+    <button
+      class="inspector-toggle"
+      class:active={inspectorOpen}
+      onclick={() => inspectorOpen = !inspectorOpen}
+      aria-label="Toggle inspector"
+      title="Inspector (Cmd+Shift+I)"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 2v12M2 6h12M2 10h12M10 2v12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+      </svg>
+    </button>
   </header>
 
-  {#if rehydrating}
-    <div class="rehydrating-indicator">Loading conversation...</div>
-  {/if}
+  <div class="chat-body">
+    <div class="chat-main">
+      {#if rehydrating}
+        <div class="rehydrating-indicator">Loading conversation...</div>
+      {/if}
 
-  <ChatMessageList messages={displayedMessages} onScheduleAction={handleScheduleAction} />
+      <ChatMessageList messages={displayedMessages} onScheduleAction={handleScheduleAction} />
 
-  {#if error}
-    <div class="error-banner" role="alert">
-      {error}
+      {#if error}
+        <div class="error-banner" role="alert">
+          {error}
+        </div>
+      {/if}
+
+      <div class="chat-input-area">
+        <ChatInput disabled={streaming} onsubmit={handleSubmit} />
+      </div>
     </div>
-  {/if}
 
-  <div class="chat-input-area">
-    <ChatInput disabled={streaming} onsubmit={handleSubmit} />
+    <ChatInspector
+      open={inspectorOpen}
+      {chatId}
+      messages={displayedMessages}
+      {systemPromptContext}
+      {workspaceName}
+      status={streaming ? "streaming" : (chat?.status ?? "idle")}
+    />
   </div>
 </div>
 
@@ -743,10 +781,49 @@
     padding: var(--size-2) var(--size-3);
   }
 
+  .chat-body {
+    display: flex;
+    flex: 1;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+
+  .chat-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
   .chat-input-area {
     border-block-start: 1px solid var(--color-border-1);
     flex-shrink: 0;
     padding: var(--size-3) var(--size-4);
+  }
+
+  .inspector-toggle {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    cursor: pointer;
+    display: flex;
+    block-size: var(--size-7);
+    inline-size: var(--size-7);
+    justify-content: center;
+    transition: all 100ms ease;
+  }
+
+  .inspector-toggle:hover {
+    background-color: var(--color-surface-3);
+    color: var(--color-text);
+  }
+
+  .inspector-toggle.active {
+    background-color: var(--color-primary);
+    color: white;
   }
 
   /* ─── Drag-drop overlay ────────────────────────────────────────────── */
