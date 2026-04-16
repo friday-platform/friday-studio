@@ -40,13 +40,24 @@
   }
 
   let turnTimings = $state<TurnTiming[]>([]);
+  /** IDs of messages that existed on mount (rehydrated — no timing data). */
+  let rehydratedIds = $state<Set<string>>(new Set());
+  let initialized = false;
 
   // Track timing by observing message changes
   $effect(() => {
     const now = Date.now();
 
+    // First run: mark all existing messages as rehydrated (no timing data)
+    if (!initialized) {
+      initialized = true;
+      rehydratedIds = new Set(messages.map((m) => m.id));
+      return;
+    }
+
+    // Only track NEW user messages (not rehydrated ones)
     for (const msg of messages) {
-      if (msg.role === "user" && !turnTimings.find((t) => t.userMessageId === msg.id)) {
+      if (msg.role === "user" && !rehydratedIds.has(msg.id) && !turnTimings.find((t) => t.userMessageId === msg.id)) {
         turnTimings = [...turnTimings, {
           userMessageId: msg.id,
           userText: msg.content,
@@ -56,46 +67,47 @@
       }
     }
 
-    // Find the current turn (last user message)
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (!lastUser) return;
-    const timingIdx = turnTimings.findIndex((t) => t.userMessageId === lastUser.id);
-    if (timingIdx < 0) return;
-    const timing = turnTimings[timingIdx];
-    if (!timing) return;
-
+    // Update ALL active (non-ended) turns, not just the last one
     let changed = false;
+    for (const timing of turnTimings) {
+      if (timing.endMs) continue; // already finished
 
-    // Track tool call timing
-    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    if (lastAssistant?.toolCalls) {
-      for (const tc of lastAssistant.toolCalls) {
-        const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
-        if (!existing) {
-          timing.toolCalls = [...timing.toolCalls, {
-            name: tc.toolName,
-            state: tc.state,
-            firstSeenMs: now,
-            doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
-          }];
-          changed = true;
-        } else if (existing.state !== tc.state) {
-          existing.state = tc.state;
-          if ((tc.state === "output-available" || tc.state === "output-error") && !existing.doneMs) {
-            existing.doneMs = now;
+      // Find the assistant message that follows this user message
+      const userIdx = messages.findIndex((m) => m.id === timing.userMessageId);
+      if (userIdx < 0) continue;
+      const assistantMsg = messages.slice(userIdx + 1).find((m) => m.role === "assistant");
+
+      if (assistantMsg?.toolCalls) {
+        for (const tc of assistantMsg.toolCalls) {
+          const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
+          if (!existing) {
+            timing.toolCalls = [...timing.toolCalls, {
+              name: tc.toolName,
+              state: tc.state,
+              firstSeenMs: now,
+              doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
+            }];
+            changed = true;
+          } else if (existing.state !== tc.state) {
+            existing.state = tc.state;
+            if ((tc.state === "output-available" || tc.state === "output-error") && !existing.doneMs) {
+              existing.doneMs = now;
+            }
+            changed = true;
           }
+        }
+      }
+
+      // Mark turn end: assistant has text content AND either next user message exists or status is idle
+      if (assistantMsg && assistantMsg.content.length > 0) {
+        const nextUserAfter = messages.slice(userIdx + 1).find((m) => m.role === "user");
+        if (nextUserAfter || status === "idle") {
+          timing.endMs = now;
           changed = true;
         }
       }
     }
 
-    // Mark turn end when assistant has content and status is idle
-    if (lastAssistant && lastAssistant.content.length > 0 && status === "idle" && !timing.endMs) {
-      timing.endMs = now;
-      changed = true;
-    }
-
-    // Force reactivity by replacing the array
     if (changed) {
       turnTimings = [...turnTimings];
     }
