@@ -131,7 +131,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <Page.Root>
-  <Page.Content scrollable={true} padded={false}>
+  <Page.Content scrollable={!isChat} padded={false}>
     {@render children?.()}
   </Page.Content>
   {#if !isSessionDetail && !isOverview && !isEdit && !isChat}

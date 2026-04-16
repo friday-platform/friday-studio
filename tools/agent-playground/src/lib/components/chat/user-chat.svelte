@@ -617,8 +617,10 @@
 <style>
   .user-chat {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    block-size: 100%;
+    min-block-size: 0;
+    overflow: hidden;
   }
 
   .chat-header {
