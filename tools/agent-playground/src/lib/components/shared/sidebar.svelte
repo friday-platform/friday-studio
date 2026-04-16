@@ -2,6 +2,7 @@
   import { Collapsible, Dialog, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
+  import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
   import { workspaceQueries } from "$lib/queries";
@@ -13,6 +14,7 @@
 
   const addDialogOpen = writable(false);
   let showTooltip = $state(false);
+  let addTab = $state<"create" | "upload">("create");
 
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const visibleWorkspaces = $derived(workspacesQuery.data ?? []);
@@ -185,7 +187,7 @@
   </div>
 </nav>
 
-<Dialog.Root open={addDialogOpen}>
+<Dialog.Root open={addDialogOpen} onOpenChange={({ next }) => { if (!next) addTab = "create"; return next; }}>
   {#snippet children()}
     <Dialog.Content>
       <Dialog.Close />
@@ -195,9 +197,21 @@
         <Dialog.Description>
           Your agents, jobs, and signals. Ready to run.
         </Dialog.Description>
+        <div class="tab-bar">
+          <button class="tab" class:active={addTab === "create"} onclick={() => addTab = "create"}>
+            Create New
+          </button>
+          <button class="tab" class:active={addTab === "upload"} onclick={() => addTab = "upload"}>
+            Upload File
+          </button>
+        </div>
       {/snippet}
 
-      <WorkspaceLoader inline onclose={() => addDialogOpen.set(false)} />
+      {#if addTab === "create"}
+        <CreateWorkspaceForm onclose={() => addDialogOpen.set(false)} />
+      {:else}
+        <WorkspaceLoader inline onclose={() => addDialogOpen.set(false)} />
+      {/if}
 
       {#snippet footer()}
         <Dialog.Cancel>Cancel</Dialog.Cancel>
@@ -292,6 +306,34 @@
       font-size: var(--font-size-1);
       padding: var(--size-1) var(--size-2);
     }
+  }
+
+  /* --- Tab bar (Add space dialog) --- */
+
+  .tab-bar {
+    display: flex;
+    gap: var(--size-1);
+    margin-block-start: var(--size-3);
+  }
+
+  .tab {
+    all: unset;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-1-5) var(--size-3);
+    transition: all 150ms ease;
+  }
+
+  .tab:hover {
+    color: var(--color-text);
+  }
+
+  .tab.active {
+    border-color: var(--color-accent);
+    color: var(--color-text);
   }
 
   /* --- Nav section (matches web-client nav) --- */
