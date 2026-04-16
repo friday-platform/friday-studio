@@ -48,12 +48,12 @@
   // Snapshot for rendering — only changes when version bumps
   let turnTimings = $state<TurnTiming[]>([]);
 
-  // Track timing by observing message changes — only when inspector is open
+  // Track timing by observing message changes — always runs (lightweight)
   $effect(() => {
-    if (!open) return;
-    // Read reactive deps: messages array and status
-    const msgs = messages;
+    // Read reactive deps: messages length and status (not full message content)
+    const msgCount = messages.length;
     const currentStatus = status;
+    const msgs = messages;
     const now = Date.now();
 
     // First run: mark existing messages as rehydrated
@@ -107,9 +107,13 @@
         }
       }
 
+      // Close the turn when:
+      // 1. A subsequent user message exists (next turn started), OR
+      // 2. Assistant has content AND status is idle (response complete), OR
+      // 3. Assistant has content AND this isn't the last user message
       if (assistantMsg && assistantMsg.content.length > 0) {
-        const nextUserAfter = msgs.slice(userIdx + 1).find((m) => m.role === "user");
-        if (nextUserAfter || currentStatus === "idle") {
+        const isLastUser = msgs.filter((m) => m.role === "user").at(-1)?.id === timing.userMessageId;
+        if (!isLastUser || currentStatus === "idle") {
           timing.endMs = now;
           changed = true;
         }
