@@ -103,11 +103,11 @@
                 {@const isBase = pathname === base || pathname === `${base}/`}
                 {@const subPages = [
                   { label: "Overview", href: base, isActive: isBase },
-                  {
+                  ...(ws.id === "user" ? [{
                     label: "Chat",
                     href: `${base}/chat`,
                     isActive: pathname.startsWith(`${base}/chat`),
-                  },
+                  }] : []),
                   {
                     label: "Agents",
                     href: `${base}/agents`,
