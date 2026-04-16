@@ -1,5 +1,0 @@
-{
-  "name": "@atlas/fast-loop-jobs",
-  "version": "0.0.1",
-  "exports": "./jobs/review-target-workspace.ts"
-}
