@@ -2,33 +2,36 @@
 
 /* Accent colors for markdown — maps blue family to accent variables */
 :root {
-  --accent-1: hsl(216 20% 95%);
+  color-scheme: light dark;
+
+  --accent-1: light-dark(hsl(216 20% 95%), hsl(210 9% 9%));
   --accent-2: hsl(212 97% 49%);
-  --accent-3: hsl(212 97% 27%);
+  --accent-3: light-dark(hsl(212 97% 27%), hsl(212 96% 78%));
 
   /* Extended syntax highlighting palette (not in @atlas/ui tokens) */
-  --brown-3: hsl(35 49% 21%);
-  --red-3: hsl(24 96% 33%);
-  --green-3: hsl(99 78% 20%);
+  --brown-3: light-dark(hsl(35 49% 21%), hsl(34 49% 61%));
+  --red-3: light-dark(hsl(24 96% 33%), hsl(24 96% 78%));
+  --green-3: light-dark(hsl(99 78% 20%), hsl(100 79% 78%));
 
   /* Editor text opacity variants — based on --color-text for each mode */
-  --editor-muted: hsl(230 32% 14% / 0.5);
-  --editor-dimmed: hsl(230 32% 14% / 0.7);
-}
+  --editor-muted: light-dark(hsl(230 32% 14% / 0.5), hsl(40 12% 95% / 0.4));
+  --editor-dimmed: light-dark(hsl(230 32% 14% / 0.7), hsl(40 12% 95% / 0.55));
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent-1: hsl(210 9% 9%);
-    --accent-2: hsl(212 97% 49%);
-    --accent-3: hsl(212 96% 78%);
+  /*
+   * Chat-specific tokens missing from @atlas/ui/tokens.css.
+   * Defined here using light-dark() per W3C CSS Color Adjust §2.
+   * Contrast ratios target ≥4.5:1 for normal text, ≥3:1 for large text.
+   */
 
-    --brown-3: hsl(34 49% 61%);
-    --red-3: hsl(24 96% 78%);
-    --green-3: hsl(100 79% 78%);
+  /* Primary action — user message bubbles, send button */
+  --color-primary: light-dark(hsl(212 97% 40%), hsl(212 97% 49%));
 
-    --editor-muted: hsl(40 12% 95% / 0.4);
-    --editor-dimmed: hsl(40 12% 95% / 0.55);
-  }
+  /* Third surface layer — message bubbles, input area */
+  --color-surface-3: light-dark(hsl(220 16% 93%), hsl(228 4% 16%));
+
+  /* Tool card states — bg tints, border accents */
+  --color-info: light-dark(hsl(217 91% 50%), hsl(217 91% 65%));
+  --color-error: light-dark(hsl(10 100% 42%), hsl(10 100% 65%));
 }
 
 /* Reset (from web-client/src/reset.css) */

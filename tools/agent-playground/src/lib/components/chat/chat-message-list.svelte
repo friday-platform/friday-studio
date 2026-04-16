@@ -300,9 +300,9 @@
   }
 
   .system-content {
-    background-color: color-mix(in srgb, var(--color-info, #3b82f6), transparent 85%);
-    border: 1px solid color-mix(in srgb, var(--color-info, #3b82f6), transparent 70%);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    background-color: light-dark(hsl(217 80% 95%), color-mix(in srgb, var(--color-info), transparent 85%));
+    border: 1px solid light-dark(hsl(217 60% 85%), color-mix(in srgb, var(--color-info), transparent 70%));
+    color: light-dark(hsl(217 30% 35%), color-mix(in srgb, var(--color-text), transparent 20%));
     font-size: var(--font-size-1);
     font-style: italic;
     text-align: center;
@@ -317,21 +317,21 @@
   }
 
   .tool-card {
-    background-color: color-mix(in srgb, var(--color-surface-3), transparent 30%);
-    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 40%);
+    background-color: light-dark(hsl(220 16% 95%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
+    border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     font-size: var(--font-size-1);
     padding: var(--size-1-5) var(--size-2-5);
   }
 
   .tool-card.in-progress {
-    border-color: color-mix(in srgb, var(--color-info, #3b82f6), transparent 50%);
-    background-color: color-mix(in srgb, var(--color-info, #3b82f6), transparent 90%);
+    border-color: light-dark(hsl(217 80% 70%), color-mix(in srgb, var(--color-info), transparent 50%));
+    background-color: light-dark(hsl(217 80% 95%), color-mix(in srgb, var(--color-info), transparent 90%));
   }
 
   .tool-card.error {
-    border-color: color-mix(in srgb, var(--color-error, #ef4444), transparent 50%);
-    background-color: color-mix(in srgb, var(--color-error, #ef4444), transparent 90%);
+    border-color: light-dark(hsl(10 80% 70%), color-mix(in srgb, var(--color-error), transparent 50%));
+    background-color: light-dark(hsl(10 80% 95%), color-mix(in srgb, var(--color-error), transparent 90%));
   }
 
   .tool-card-header {
@@ -356,7 +356,7 @@
   }
 
   .tool-card-arg {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    color: light-dark(hsl(220 10% 40%), color-mix(in srgb, var(--color-text), transparent 35%));
     flex-shrink: 0;
     font-family: var(--font-family-mono, ui-monospace, monospace);
     max-inline-size: 40ch;
@@ -366,7 +366,7 @@
   }
 
   .tool-card-status {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
     flex: 1;
     font-style: italic;
     min-inline-size: 0;
@@ -381,14 +381,14 @@
   }
 
   .tool-card-details > summary {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: light-dark(hsl(220 10% 50%), color-mix(in srgb, var(--color-text), transparent 50%));
     cursor: pointer;
     font-size: var(--font-size-0, 11px);
     user-select: none;
   }
 
   .tool-card-details > pre {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 30%);
+    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 30%));
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0, 11px);
@@ -404,8 +404,8 @@
 
   .spinner {
     animation: tool-spin 0.8s linear infinite;
-    border: 2px solid color-mix(in srgb, var(--color-info, #3b82f6), transparent 60%);
-    border-block-start-color: var(--color-info, #3b82f6);
+    border: 2px solid light-dark(hsl(217 60% 80%), color-mix(in srgb, var(--color-info), transparent 60%));
+    border-block-start-color: var(--color-info);
     border-radius: 50%;
     display: inline-block;
     inline-size: 10px;
