@@ -147,7 +147,7 @@ WHERE o.deleted_at IS NULL
   AND o.metadata->>'session_id' IS NOT NULL
   AND o.metadata->>'status' IN ('completed', 'failed')
   -- Exclude conversation workspaces and chat jobs
-  AND o.metadata->>'workspace_id' NOT IN ('atlas-conversation', 'friday-conversation', 'system')
+  AND o.metadata->>'workspace_id' NOT IN ('atlas-conversation', 'friday-conversation')
   AND o.metadata->>'job_name' != 'handle-chat'
   -- Prevent duplicate backfill (idempotent)
   AND NOT EXISTS (
