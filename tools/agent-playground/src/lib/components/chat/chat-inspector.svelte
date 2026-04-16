@@ -48,8 +48,9 @@
   // Snapshot for rendering — only changes when version bumps
   let turnTimings = $state<TurnTiming[]>([]);
 
-  // Track timing by observing message changes
+  // Track timing by observing message changes — only when inspector is open
   $effect(() => {
+    if (!open) return;
     // Read reactive deps: messages array and status
     const msgs = messages;
     const currentStatus = status;
@@ -211,11 +212,10 @@
     return turns;
   });
 
-  /** Live-ticking "now" — updates every 500ms when streaming for live elapsed display. */
+  /** Live-ticking "now" — only runs when inspector is open AND streaming. */
   let tickNow = $state(Date.now());
   $effect(() => {
-    // Only subscribe to status — don't read turnTimings or messages here
-    const isActive = status === "streaming" || status === "submitted";
+    const isActive = open && (status === "streaming" || status === "submitted");
     if (isActive) {
       const interval = setInterval(() => { tickNow = Date.now(); }, 500);
       return () => clearInterval(interval);
