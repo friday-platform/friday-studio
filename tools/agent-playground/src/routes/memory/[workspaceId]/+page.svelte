@@ -20,6 +20,14 @@
   const narrativeMemories = $derived(
     (memoriesQuery.data ?? []).filter((c) => c.kind === "narrative"),
   );
+
+  /** Convert a slug like `autopilot-backlog` → `Autopilot Backlog`. */
+  function humanize(slug: string): string {
+    return slug
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
 </script>
 
 <div class="memory-list">
@@ -50,8 +58,8 @@
             href="/memory/{encodeURIComponent(workspaceId)}/{encodeURIComponent(memory.name)}"
             class="memory-card"
           >
-            <span class="memory-name">{memory.name}</span>
-            <span class="memory-kind">{memory.kind}</span>
+            <span class="memory-name">{humanize(memory.name)}</span>
+            <span class="memory-kind">{memory.name}</span>
           </a>
         </li>
       {/each}
