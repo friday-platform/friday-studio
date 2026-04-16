@@ -39,54 +39,62 @@
     }>;
   }
 
+  // Use an untracked store to avoid $effect read/write loops
+  const timingsStore: TurnTiming[] = [];
+  const rehydratedStore = new Set<string>();
+  let storeInitialized = false;
+  let turnTimingsVersion = $state(0);
+
+  // Snapshot for rendering — only changes when version bumps
   let turnTimings = $state<TurnTiming[]>([]);
-  /** IDs of messages that existed on mount (rehydrated — no timing data). */
-  let rehydratedIds = $state<Set<string>>(new Set());
-  let initialized = false;
 
   // Track timing by observing message changes
   $effect(() => {
+    // Read reactive deps: messages array and status
+    const msgs = messages;
+    const currentStatus = status;
     const now = Date.now();
 
-    // First run: mark all existing messages as rehydrated (no timing data)
-    if (!initialized) {
-      initialized = true;
-      rehydratedIds = new Set(messages.map((m) => m.id));
+    // First run: mark existing messages as rehydrated
+    if (!storeInitialized) {
+      storeInitialized = true;
+      for (const m of msgs) rehydratedStore.add(m.id);
       return;
     }
 
-    // Only track NEW user messages (not rehydrated ones)
-    for (const msg of messages) {
-      if (msg.role === "user" && !rehydratedIds.has(msg.id) && !turnTimings.find((t) => t.userMessageId === msg.id)) {
-        turnTimings = [...turnTimings, {
+    let changed = false;
+
+    // Track NEW user messages
+    for (const msg of msgs) {
+      if (msg.role === "user" && !rehydratedStore.has(msg.id) && !timingsStore.find((t) => t.userMessageId === msg.id)) {
+        timingsStore.push({
           userMessageId: msg.id,
           userText: msg.content,
           startMs: now,
           toolCalls: [],
-        }];
+        });
+        changed = true;
       }
     }
 
-    // Update ALL active (non-ended) turns, not just the last one
-    let changed = false;
-    for (const timing of turnTimings) {
-      if (timing.endMs) continue; // already finished
+    // Update active turns
+    for (const timing of timingsStore) {
+      if (timing.endMs) continue;
 
-      // Find the assistant message that follows this user message
-      const userIdx = messages.findIndex((m) => m.id === timing.userMessageId);
+      const userIdx = msgs.findIndex((m) => m.id === timing.userMessageId);
       if (userIdx < 0) continue;
-      const assistantMsg = messages.slice(userIdx + 1).find((m) => m.role === "assistant");
+      const assistantMsg = msgs.slice(userIdx + 1).find((m) => m.role === "assistant");
 
       if (assistantMsg?.toolCalls) {
         for (const tc of assistantMsg.toolCalls) {
           const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
           if (!existing) {
-            timing.toolCalls = [...timing.toolCalls, {
+            timing.toolCalls.push({
               name: tc.toolName,
               state: tc.state,
               firstSeenMs: now,
               doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
-            }];
+            });
             changed = true;
           } else if (existing.state !== tc.state) {
             existing.state = tc.state;
@@ -98,10 +106,9 @@
         }
       }
 
-      // Mark turn end: assistant has text content AND either next user message exists or status is idle
       if (assistantMsg && assistantMsg.content.length > 0) {
-        const nextUserAfter = messages.slice(userIdx + 1).find((m) => m.role === "user");
-        if (nextUserAfter || status === "idle") {
+        const nextUserAfter = msgs.slice(userIdx + 1).find((m) => m.role === "user");
+        if (nextUserAfter || currentStatus === "idle") {
           timing.endMs = now;
           changed = true;
         }
@@ -109,7 +116,9 @@
     }
 
     if (changed) {
-      turnTimings = [...turnTimings];
+      // Copy to reactive state for rendering
+      turnTimings = timingsStore.map((t) => ({ ...t, toolCalls: [...t.toolCalls] }));
+      turnTimingsVersion++;
     }
   });
 
@@ -202,11 +211,13 @@
     return turns;
   });
 
-  /** Live-ticking "now" — updates every 100ms when streaming for live elapsed display. */
+  /** Live-ticking "now" — updates every 500ms when streaming for live elapsed display. */
   let tickNow = $state(Date.now());
   $effect(() => {
-    if (status === "streaming" || status === "submitted") {
-      const interval = setInterval(() => { tickNow = Date.now(); }, 100);
+    // Only subscribe to status — don't read turnTimings or messages here
+    const isActive = status === "streaming" || status === "submitted";
+    if (isActive) {
+      const interval = setInterval(() => { tickNow = Date.now(); }, 500);
       return () => clearInterval(interval);
     }
   });
