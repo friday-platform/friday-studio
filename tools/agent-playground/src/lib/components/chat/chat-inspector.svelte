@@ -62,7 +62,7 @@
         entries.push({
           type: "user",
           timestamp: msg.timestamp,
-          content: msg.content.slice(0, 80) + (msg.content.length > 80 ? "..." : ""),
+          content: msg.content,
         });
       }
       if (msg.role === "assistant") {
@@ -81,7 +81,7 @@
           entries.push({
             type: "assistant",
             timestamp: msg.timestamp,
-            content: msg.content.slice(0, 80) + (msg.content.length > 80 ? "..." : ""),
+            content: msg.content,
           });
         }
       }
@@ -436,9 +436,8 @@
 
   .timeline-detail {
     color: color-mix(in srgb, var(--color-text), transparent 35%);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.4;
+    word-break: break-word;
   }
 
   /* Prompt tab */
