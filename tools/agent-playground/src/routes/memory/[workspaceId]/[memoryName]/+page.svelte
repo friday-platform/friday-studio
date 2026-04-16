@@ -2,11 +2,16 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import MemoryEntryTable from "$lib/components/MemoryEntryTable.svelte";
-  import { memoryQueries } from "$lib/queries";
+  import { memoryQueries, workspaceQueries } from "$lib/queries";
   import type { NarrativeEntry } from "$lib/api/memory.ts";
 
   const workspaceId = $derived(page.params.workspaceId ?? "");
   const memoryName = $derived(page.params.memoryName ?? "");
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId || null));
+  const workspaceName = $derived(
+    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
+      ?? workspaceId,
+  );
 
   const entriesQuery = createQuery(() => ({
     ...memoryQueries.narrativeEntries(workspaceId, memoryName),
@@ -65,7 +70,7 @@
     <nav class="breadcrumb">
       <a href="/memory">Memory</a>
       <span class="sep">/</span>
-      <a href="/memory/{encodeURIComponent(workspaceId)}">{workspaceId}</a>
+      <a href="/memory/{encodeURIComponent(workspaceId)}">{workspaceName}</a>
       <span class="sep">/</span>
       <span>{memoryName}</span>
     </nav>

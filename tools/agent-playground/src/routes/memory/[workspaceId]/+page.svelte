@@ -1,9 +1,14 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import { memoryQueries } from "$lib/queries";
+  import { memoryQueries, workspaceQueries } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? "");
+  const configQuery = createQuery(() => workspaceQueries.config(workspaceId || null));
+  const workspaceName = $derived(
+    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
+      ?? workspaceId,
+  );
 
   const memoriesQuery = createQuery(() => ({
     ...memoryQueries.memories(workspaceId),
@@ -22,9 +27,9 @@
     <nav class="breadcrumb">
       <a href="/memory">Memory</a>
       <span class="sep">/</span>
-      <span>{workspaceId}</span>
+      <span>{workspaceName}</span>
     </nav>
-    <h1>{workspaceId}</h1>
+    <h1>{workspaceName}</h1>
     <p class="subtitle">Narrative memories in this workspace</p>
   </header>
 
