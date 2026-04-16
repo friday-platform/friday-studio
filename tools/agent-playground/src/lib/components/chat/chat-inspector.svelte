@@ -39,26 +39,32 @@
     }>;
   }
 
-  const turnTimings = new Map<string, TurnTiming>();
+  let turnTimings = $state<TurnTiming[]>([]);
 
   // Track timing by observing message changes
   $effect(() => {
     const now = Date.now();
+
     for (const msg of messages) {
-      if (msg.role === "user" && !turnTimings.has(msg.id)) {
-        turnTimings.set(msg.id, {
+      if (msg.role === "user" && !turnTimings.find((t) => t.userMessageId === msg.id)) {
+        turnTimings = [...turnTimings, {
           userMessageId: msg.id,
           userText: msg.content,
           startMs: now,
           toolCalls: [],
-        });
+        }];
       }
     }
+
     // Find the current turn (last user message)
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
-    const timing = turnTimings.get(lastUser.id);
+    const timingIdx = turnTimings.findIndex((t) => t.userMessageId === lastUser.id);
+    if (timingIdx < 0) return;
+    const timing = turnTimings[timingIdx];
     if (!timing) return;
+
+    let changed = false;
 
     // Track tool call timing
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
@@ -66,17 +72,19 @@
       for (const tc of lastAssistant.toolCalls) {
         const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
         if (!existing) {
-          timing.toolCalls.push({
+          timing.toolCalls = [...timing.toolCalls, {
             name: tc.toolName,
             state: tc.state,
             firstSeenMs: now,
             doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
-          });
-        } else {
+          }];
+          changed = true;
+        } else if (existing.state !== tc.state) {
           existing.state = tc.state;
           if ((tc.state === "output-available" || tc.state === "output-error") && !existing.doneMs) {
             existing.doneMs = now;
           }
+          changed = true;
         }
       }
     }
@@ -84,6 +92,12 @@
     // Mark turn end when assistant has content and status is idle
     if (lastAssistant && lastAssistant.content.length > 0 && status === "idle" && !timing.endMs) {
       timing.endMs = now;
+      changed = true;
+    }
+
+    // Force reactivity by replacing the array
+    if (changed) {
+      turnTimings = [...turnTimings];
     }
   });
 
@@ -102,7 +116,7 @@
       }>;
     }> = [];
 
-    for (const timing of turnTimings.values()) {
+    for (const timing of turnTimings) {
       const totalMs = (timing.endMs ?? Date.now()) - timing.startMs;
       if (totalMs <= 0) continue;
 
