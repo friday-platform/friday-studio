@@ -662,14 +662,6 @@
         New Chat
       </button>
     {/if}
-    <button
-      class="inspector-toggle"
-      class:active={inspectorOpen}
-      onclick={() => inspectorOpen = !inspectorOpen}
-      aria-label="Toggle inspector"
-    >
-      <kbd>&#8984;&#8679;I</kbd>
-    </button>
   </header>
 
   <div class="chat-body">
@@ -799,36 +791,6 @@
     padding: var(--size-3) var(--size-4);
   }
 
-  .inspector-toggle {
-    align-items: center;
-    background: transparent;
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    padding: var(--size-0-5) var(--size-1-5);
-    transition: all 100ms ease;
-  }
-
-  .inspector-toggle kbd {
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.02em;
-  }
-
-  .inspector-toggle:hover {
-    background-color: var(--color-surface-3);
-    color: var(--color-text);
-  }
-
-  .inspector-toggle.active {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    color: white;
-  }
 
   /* ─── Drag-drop overlay ────────────────────────────────────────────── */
 
