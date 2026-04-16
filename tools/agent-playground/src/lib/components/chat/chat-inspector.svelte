@@ -61,6 +61,7 @@
     firstResponseMs?: number;  // first assistant message part appeared
     endMs?: number;
     toolCalls: Array<{
+      key: string;
       name: string;
       state: string;
       firstSeenMs: number;
@@ -122,13 +123,17 @@
 
       if (assistantMsg?.toolCalls) {
         for (const tc of assistantMsg.toolCalls) {
-          const existing = timing.toolCalls.find((t) => t.name === tc.toolName && t.state !== "output-available");
+          const tcKey = tc.toolCallId || tc.toolName;
+          const existing = timing.toolCalls.find((t) => t.key === tcKey);
           if (!existing) {
+            const isDone = tc.state === "output-available" || tc.state === "output-error";
             timing.toolCalls.push({
+              key: tcKey,
               name: tc.toolName,
               state: tc.state,
-              firstSeenMs: now,
-              doneMs: tc.state === "output-available" || tc.state === "output-error" ? now : undefined,
+              // If tool arrived already completed, backdate firstSeenMs to first response
+              firstSeenMs: isDone ? (timing.firstResponseMs ?? timing.startMs) : now,
+              doneMs: isDone ? now : undefined,
             });
             changed = true;
           } else if (existing.state !== tc.state) {
