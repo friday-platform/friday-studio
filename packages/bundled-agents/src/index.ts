@@ -23,7 +23,14 @@ import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
 import { TranscriptionOutputSchema, transcriptionAgent } from "./transcription/agent.ts";
 import { type DiscoveredAudio, discoverAudioFiles } from "./transcription/discovery.ts";
-import { ResearchOutputSchema, webSearchAgent } from "./web-search/web-search.ts";
+import {
+  type BrowserAgentResult,
+  BrowserOutputSchema,
+  browserAgent,
+  ResearchOutputSchema,
+  webSearchAgent,
+} from "./web/compat.ts";
+import { type WebAgentResult, WebOutputSchema, webAgent } from "./web/index.ts";
 
 export type { KnowledgeResult } from "./knowledge/shared.ts";
 export {
@@ -34,15 +41,19 @@ export {
 } from "./registry.ts";
 
 export type {
+  BrowserAgentResult,
   DataAnalystResult,
   DiscoveredAudio,
   DiscoveredImages,
   QueryExecution,
   SnowflakeAnalystResult,
+  WebAgentResult,
 };
 export {
   BbOutputSchema,
+  BrowserOutputSchema,
   bbAgent,
+  browserAgent,
   ClaudeCodeOutputSchema,
   CsvFilterSamplerOutputSchema,
   claudeCodeAgent,
@@ -76,5 +87,7 @@ export {
   TranscriptionOutputSchema,
   tableAgent,
   transcriptionAgent,
+  WebOutputSchema,
+  webAgent,
   webSearchAgent,
 };

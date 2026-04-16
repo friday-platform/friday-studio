@@ -18,7 +18,7 @@ import { snowflakeAnalystAgent } from "./snowflake-analyst/agent.ts";
 import { summaryAgent } from "./summary.ts";
 import { tableAgent } from "./table.ts";
 import { transcriptionAgent } from "./transcription/agent.ts";
-import { webSearchAgent } from "./web-search/web-search.ts";
+import { webAgent } from "./web/index.ts";
 
 /**
  * All bundled agents in the order they're registered.
@@ -28,7 +28,7 @@ import { webSearchAgent } from "./web-search/web-search.ts";
 export const bundledAgents: AtlasAgent[] = [
   slackCommunicatorAgent,
   googleCalendarAgent,
-  webSearchAgent,
+  webAgent,
   summaryAgent,
   emailAgent,
   fathomGetTranscriptAgent,
@@ -129,21 +129,21 @@ function deriveRegistryEntry(agent: AtlasAgent) {
   };
 }
 
+const baseRegistry = Object.fromEntries(
+  bundledAgents.map((agent) => [agent.metadata.id, deriveRegistryEntry(agent)]),
+);
+
 /**
  * Registry of bundled agents compiled into Atlas.
  *
- * Derived automatically from the bundledAgents array. Adding an agent to the
- * array automatically includes it in this registry.
- *
- * @example
- * ```typescript
- * const slackAgent = bundledAgentsRegistry["slack"];
- * console.log(slackAgent.examples); // ["Post update to #general: ..."]
- * console.log(slackAgent.outputJsonSchema); // JSON Schema from SlackOutputSchema
- * ```
+ * Includes aliases for old agent IDs (`browser`, `research`) that now point
+ * to the unified `web` agent, so existing workspace configs keep working.
  */
-export const bundledAgentsRegistry = Object.fromEntries(
-  bundledAgents.map((agent) => [agent.metadata.id, deriveRegistryEntry(agent)]),
-) as Record<string, ReturnType<typeof deriveRegistryEntry>>;
+export const bundledAgentsRegistry = {
+  ...baseRegistry,
+  // Aliases: old agent IDs → unified web agent
+  browser: baseRegistry["web"],
+  research: baseRegistry["web"],
+} as Record<string, ReturnType<typeof deriveRegistryEntry>>;
 
 export type BundledAgentRegistryEntry = (typeof bundledAgentsRegistry)[string];

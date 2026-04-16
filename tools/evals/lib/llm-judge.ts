@@ -48,7 +48,7 @@ Use decimal values (e.g., 0.7, 0.85) for partial matches.`,
   });
 
   return {
-    ...createScore("LLMJudge", object.score),
+    ...createScore("LLMJudge", object.score, object.justification),
     metadata: { justification: object.justification },
   };
 }

@@ -195,25 +195,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
         },
       ],
     },
-    playwright: {
-      id: "playwright",
-      name: "Playwright Browser Automation",
-      description:
-        "Browser automation via Playwright — navigate pages, click elements, fill forms, take screenshots, extract text from JS-rendered content.",
-      constraints:
-        "For general web research (searching for information), use the bundled research agent. Use Playwright for page interaction, form filling, JS-rendered scraping, and browser automation.",
-      source: "static",
-      securityRating: "medium",
-      configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "@executeautomation/playwright-mcp-server"],
-        },
-        tools: { allow: ["navigate", "click", "type", "screenshot", "extract_text"] },
-        client_config: { timeout: { progressTimeout: "120s", maxTotalTimeout: "30m" } },
-      },
-    },
     time: {
       id: "time",
       name: "Time & Timezone",
