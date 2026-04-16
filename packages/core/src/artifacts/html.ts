@@ -83,8 +83,8 @@ export function renderTableHTML(data: TableData): string {
   parts.push(`<tbody>`);
   for (const row of data.rows) {
     parts.push(`<tr>`);
-    for (const header of data.headers) {
-      const value = row[header];
+    for (let col = 0; col < data.headers.length; col++) {
+      const value = row[col];
       const displayValue = value !== undefined && value !== null ? String(value) : "";
       parts.push(`<td>${escapeHTML(displayValue)}</td>`);
     }

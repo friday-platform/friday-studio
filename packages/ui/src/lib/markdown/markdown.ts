@@ -1,10 +1,38 @@
 import type { TreeCursor } from "@lezer/common";
 import { parser, Table } from "@lezer/markdown";
+import { Marked } from "marked";
 
-// Configure parser with GFM extensions
+// ─── marked configuration ──────────────────────────────────────────────
+// Single shared instance with GFM tables, breaks, and links with target=_blank.
+
+const marked = new Marked({
+  gfm: true,
+  breaks: false,
+  async: false,
+});
+
+const renderer = {
+  // Open links in a new tab
+  link({ href, text }: { href: string; text: string }): string {
+    return `<a href="${href}" target="_blank">${text}</a>`;
+  },
+  // H5/H6 → bold paragraph (matches old behavior)
+  heading({ text, depth }: { text: string; depth: number }): string {
+    if (depth >= 5) return `<p><strong>${text}</strong></p>\n`;
+    return `<h${depth}>${text}</h${depth}>\n`;
+  },
+  // Strip horizontal rules (matches old behavior)
+  hr(): string {
+    return "";
+  },
+};
+
+marked.use({ renderer });
+
+// ─── Lezer AST helpers (preserved for backward compat / tests) ─────────
+
 const markdownParser = parser.configure([Table]);
 
-// Node structure for rendering
 interface ASTNode {
   type: string;
   from: number;
@@ -13,9 +41,6 @@ interface ASTNode {
   children: ASTNode[];
 }
 
-/**
- * Parse markdown text into a Lezer AST tree structure
- */
 export function parseMarkdownToAST(text: string): ASTNode | null {
   if (!text) return null;
 
@@ -44,99 +69,70 @@ export function parseMarkdownToAST(text: string): ASTNode | null {
   return buildNode(cursor);
 }
 
-/**
- * Clean markdown syntax from text content
- */
 export function cleanMarkdownSyntax(node: ASTNode): string {
   const content = node.content;
 
   switch (node.type) {
     case "StrongEmphasis":
-      // Remove ** or __ markers
       return content.replace(/^(\*\*|__)/, "").replace(/(\*\*|__)$/, "");
-
     case "Emphasis":
-      // Remove * or _ markers
       return content.replace(/^(\*|_)/, "").replace(/(\*|_)$/, "");
-
     case "Strikethrough":
-      // Remove ~~ markers
       return content.replace(/^~~/, "").replace(/~~$/, "");
-
     case "InlineCode":
-      // Remove backtick markers
       return content.replace(/^`/, "").replace(/`$/, "");
-
     case "CodeBlock":
-      // Remove triple backticks and language identifier
       return content.replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "");
-
     case "ATXHeading1":
     case "ATXHeading2":
     case "ATXHeading3":
     case "ATXHeading4":
     case "ATXHeading5":
     case "ATXHeading6":
-      // Remove # symbols from headings
       return content.replace(/^#+\s*/, "");
-
     default:
       return content;
   }
 }
 
-/**
- * Extract link URL and text from markdown link syntax
- */
 export function extractLinkData(content: string): { text: string; href: string } {
   const match = content.match(/\[([^\]]+)\]\(([^)]+)\)/);
   return { text: match?.[1] ?? content, href: match?.[2] ?? "#" };
 }
 
-/**
- * Reconstruct paragraph content with proper inline element handling
- */
 function reconstructParagraphContent(node: ASTNode): string {
   let result = "";
   let lastEnd = node.from;
   const originalContent = node.content;
 
-  // Process each child element
   for (const child of node.children) {
-    // Add any text before this child
     if (child.from > lastEnd) {
       const textBetween = originalContent.slice(lastEnd - node.from, child.from - node.from);
       result += textBetween;
     }
 
-    // Process the child element
     if (child.type === "StrongEmphasis") {
-      // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 2, child.to - node.from - 2);
       result += `<strong>${innerText}</strong>`;
     } else if (child.type === "Emphasis") {
-      // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 1, child.to - node.from - 1);
       result += `<em>${innerText}</em>`;
     } else if (child.type === "Strikethrough") {
-      // Extract text between markers
       const innerText = originalContent.slice(child.from - node.from + 2, child.to - node.from - 2);
       result += `<del>${innerText}</del>`;
     } else if (child.type === "Link") {
       const linkData = extractLinkData(child.content);
       result += `<a href="${linkData.href}" target="_blank">${linkData.text}</a>`;
     } else if (child.type === "InlineCode") {
-      const innerText = child.content.slice(1, -1); // Remove backticks
+      const innerText = child.content.slice(1, -1);
       result += `<code>${innerText}</code>`;
     } else {
-      // For other types, use the regular astToHTML
       result += astToHTML(child, "Paragraph");
     }
 
     lastEnd = child.to;
   }
 
-  // Add any remaining text after the last child
   if (lastEnd < node.to) {
     const textAfter = originalContent.slice(lastEnd - node.from);
     result += textAfter;
@@ -145,9 +141,6 @@ function reconstructParagraphContent(node: ASTNode): string {
   return result;
 }
 
-/**
- * Render table cells from a TableHeader or TableRow node
- */
 function renderTableCells(row: ASTNode, tag: "th" | "td"): string {
   return row.children
     .filter((c) => c.type === "TableCell")
@@ -161,13 +154,9 @@ function renderTableCells(row: ASTNode, tag: "th" | "td"): string {
     .join("");
 }
 
-/**
- * Convert AST node to HTML string
- */
 export function astToHTML(node: ASTNode | null, parentType: string = ""): string {
   if (!node) return "";
 
-  // Skip marker nodes
   const skipTypes = [
     "ListMark",
     "HeaderMark",
@@ -180,7 +169,6 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
     return "";
   }
 
-  // Process children recursively
   const renderChildren = (currentParent: string = node.type): string => {
     return node.children
       .map((child) => astToHTML(child, currentParent))
@@ -193,15 +181,12 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       return renderChildren();
 
     case "Paragraph":
-      // Skip <p> wrapper if inside ListItem
       if (parentType === "ListItem") {
-        // For list items, we need to handle mixed content (text + inline elements)
         if (node.children.length > 0) {
           return reconstructParagraphContent(node);
         }
         return node.content;
       }
-      // Regular paragraphs
       if (node.children.length > 0) {
         return `<p>${reconstructParagraphContent(node)}</p>`;
       }
@@ -214,7 +199,6 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       return `<ol>${renderChildren()}</ol>`;
 
     case "ListItem": {
-      // Skip ListMark children and unwrap Paragraph children
       const listContent = node.children
         .filter((child) => child.type !== "ListMark")
         .map((child) => astToHTML(child, "ListItem"))
@@ -223,18 +207,12 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
     }
 
     case "StrongEmphasis":
-      // These are handled in reconstructParagraphContent when inside paragraphs
-      // This is a fallback for standalone usage
       return `<strong>${cleanMarkdownSyntax(node)}</strong>`;
 
     case "Emphasis":
-      // These are handled in reconstructParagraphContent when inside paragraphs
-      // This is a fallback for standalone usage
       return `<em>${cleanMarkdownSyntax(node)}</em>`;
 
     case "Strikethrough":
-      // These are handled in reconstructParagraphContent when inside paragraphs
-      // This is a fallback for standalone usage
       return `<del>${cleanMarkdownSyntax(node)}</del>`;
 
     case "Link": {
@@ -247,9 +225,7 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
 
     case "CodeBlock":
     case "FencedCode":
-      // Code blocks may have nested structure, check children first
       if (node.children.length > 0) {
-        // Look for CodeText child
         const codeText = node.children.find((child) => child.type === "CodeText");
         if (codeText) {
           return `<pre><code>${codeText.content}</code></pre>`;
@@ -257,58 +233,52 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       }
       return `<pre><code>${cleanMarkdownSyntax(node)}</code></pre>`;
 
-    // Convert headers to bold paragraphs
-    case "ATXHeading1":
-      // Headers have their text in children, skipping the HeaderMark
+    case "ATXHeading1": {
       if (node.children.length > 0) {
         const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
         if (textChildren.length > 0) {
-          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
-          return `<h1>${headerText}</h1>`;
+          return `<h1>${textChildren.map((child) => astToHTML(child, parentType)).join("")}</h1>`;
         }
       }
       return `<h1>${cleanMarkdownSyntax(node)}</h1>`;
-    case "ATXHeading2":
-      // Headers have their text in children, skipping the HeaderMark
+    }
+    case "ATXHeading2": {
       if (node.children.length > 0) {
         const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
         if (textChildren.length > 0) {
-          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
-          return `<h2>${headerText}</h2>`;
+          return `<h2>${textChildren.map((child) => astToHTML(child, parentType)).join("")}</h2>`;
         }
       }
       return `<h2>${cleanMarkdownSyntax(node)}</h2>`;
-    case "ATXHeading3":
-      // Headers have their text in children, skipping the HeaderMark
+    }
+    case "ATXHeading3": {
       if (node.children.length > 0) {
         const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
         if (textChildren.length > 0) {
-          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
-          return `<h3>${headerText}</h3>`;
+          return `<h3>${textChildren.map((child) => astToHTML(child, parentType)).join("")}</h3>`;
         }
       }
       return `<h3>${cleanMarkdownSyntax(node)}</h3>`;
-    case "ATXHeading4":
-      // Headers have their text in children, skipping the HeaderMark
+    }
+    case "ATXHeading4": {
       if (node.children.length > 0) {
         const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
         if (textChildren.length > 0) {
-          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
-          return `<h4>${headerText}</h4>`;
+          return `<h4>${textChildren.map((child) => astToHTML(child, parentType)).join("")}</h4>`;
         }
       }
       return `<h4>${cleanMarkdownSyntax(node)}</h4>`;
+    }
     case "ATXHeading5":
-    case "ATXHeading6":
-      // Headers have their text in children, skipping the HeaderMark
+    case "ATXHeading6": {
       if (node.children.length > 0) {
         const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
         if (textChildren.length > 0) {
-          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
-          return `<p><strong>${headerText}</strong></p>`;
+          return `<p><strong>${textChildren.map((child) => astToHTML(child, parentType)).join("")}</strong></p>`;
         }
       }
       return `<p><strong>${cleanMarkdownSyntax(node)}</strong></p>`;
+    }
 
     case "Table": {
       const headerNode = node.children.find((c) => c.type === "TableHeader");
@@ -334,11 +304,9 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       }</blockquote>`;
 
     case "HorizontalRule":
-      // Skip horizontal rules entirely
       return "";
 
     default:
-      // For unknown types, just render children or content
       if (node.children.length > 0) {
         return renderChildren(parentType);
       }
@@ -346,12 +314,112 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
   }
 }
 
+// ─── Pipe-table normalizer ─────────────────────────────────────────────
+// LLMs often emit pipe-separated lines without the GFM separator row
+// (|---|---|). This pre-processing step detects such runs and inserts the
+// missing separator so both Lezer and marked recognize them as tables.
+
+function normalizePipeTables(text: string): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (isPipeRow(trimmed) && !isGfmSeparator(trimmed)) {
+      const cols = countPipeCols(trimmed);
+
+      // Already a proper GFM table — consume it whole
+      const nextTrimmed = lines[i + 1]?.trim() ?? "";
+      if (isGfmSeparator(nextTrimmed)) {
+        result.push(line);
+        result.push(lines[i + 1] ?? "");
+        let j = i + 2;
+        while (j < lines.length) {
+          const bodyLine = lines[j]?.trim() ?? "";
+          if (isPipeRow(bodyLine) && !isGfmSeparator(bodyLine)) {
+            result.push(lines[j] ?? "");
+            j++;
+          } else {
+            break;
+          }
+        }
+        i = j;
+        continue;
+      }
+
+      // No separator — collect consecutive pipe rows with same column count
+      let runEnd = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        const next = lines[j]?.trim() ?? "";
+        if (isPipeRow(next) && !isGfmSeparator(next) && countPipeCols(next) === cols) {
+          runEnd = j;
+        } else {
+          break;
+        }
+      }
+
+      // Only transform runs of ≥2 lines (header + at least one data row)
+      if (runEnd > i) {
+        result.push(ensureWrappedPipes(lines[i] ?? ""));
+        result.push(buildSeparator(cols));
+        for (let k = i + 1; k <= runEnd; k++) {
+          result.push(ensureWrappedPipes(lines[k] ?? ""));
+        }
+        i = runEnd + 1;
+        continue;
+      }
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  return result.join("\n");
+}
+
+function isPipeRow(line: string): boolean {
+  if (line.length === 0) return false;
+  const pipes = line.split("|").length - 1;
+  return pipes >= 2;
+}
+
+function isGfmSeparator(line: string): boolean {
+  return /^\|?[\s:]*-{3,}[\s:]*(\|[\s:]*-{3,}[\s:]*)+\|?$/.test(line);
+}
+
+function countPipeCols(line: string): number {
+  const stripped = line.replace(/^\|/, "").replace(/\|$/, "");
+  return stripped.split("|").length;
+}
+
+function ensureWrappedPipes(line: string): string {
+  let s = line.trim();
+  if (!s.startsWith("|")) s = `| ${s}`;
+  if (!s.endsWith("|")) s = `${s} |`;
+  return s;
+}
+
+function buildSeparator(cols: number): string {
+  return `| ${Array.from({ length: cols }, () => "---").join(" | ")} |`;
+}
+
+// ─── Public API ────────────────────────────────────────────────────────
+
 /**
- * Main function to convert markdown to HTML
+ * Convert markdown to HTML using `marked` (GFM-compliant, battle-tested).
+ * Pipe-separated lines without a GFM separator row are auto-fixed first.
  */
 export function markdownToHTML(markdown: string): string {
-  // Normalize CRLF → LF (@lezer/markdown Table extension doesn't handle \r\n)
-  const ast = parseMarkdownToAST(markdown.replace(/\r\n/g, "\n"));
-
-  return astToHTML(ast);
+  if (!markdown) return "";
+  // Normalize CRLF
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  // Auto-fix sloppy pipe tables from LLM output
+  const withTables = normalizePipeTables(normalized);
+  // marked.parse() is synchronous when async: false
+  const html = marked.parse(withTables) as string;
+  // Strip trailing newline that marked adds
+  return html.replace(/\n$/, "");
 }

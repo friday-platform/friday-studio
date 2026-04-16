@@ -196,6 +196,8 @@
   /** Computed waterfall data from turn timings. */
   const waterfallTurns = $derived.by(() => {
     if (!open) return [];
+    // Subscribe to ticker so active turn durations update every 1s
+    const _tick = waterfallTick;
     const now = Date.now();
     const turns: Array<{
       userText: string;
@@ -305,7 +307,17 @@
     return turns;
   });
 
-  /** No active ticker — waterfall updates when messages change naturally. */
+  /** Slow ticker (1s) — ONLY when waterfall tab is active with open turns.
+   * This is safe because waterfallTurns reads turnTimings (small array),
+   * NOT messages (which updates on every text-delta). */
+  let waterfallTick = $state(0);
+  $effect(() => {
+    const hasActiveTurns = turnTimings.some((t) => !t.endMs);
+    if (open && activeTab === "waterfall" && hasActiveTurns) {
+      const interval = setInterval(() => { waterfallTick++; }, 1000);
+      return () => clearInterval(interval);
+    }
+  });
 
   function formatMs(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
@@ -430,6 +442,38 @@
     return "⟳";
   }
 
+  function formatBytes(n: number): string {
+    if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
+    if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${n} B`;
+  }
+
+  function genericPreview(inp: Record<string, unknown>): string {
+    // Try common field names in priority order
+    for (const key of ["prompt", "intent", "query", "name", "path", "url", "text"]) {
+      const val = inp[key];
+      if (typeof val === "string" && val.length > 0) {
+        return val.length > 80 ? `${val.slice(0, 80)}…` : val;
+      }
+    }
+    // Fall back to first string value
+    for (const v of Object.values(inp)) {
+      if (typeof v === "string" && v.length > 0) {
+        return v.length > 80 ? `${v.slice(0, 80)}…` : v;
+      }
+    }
+    return "";
+  }
+
+  /** Look up observed duration for a tool call from the waterfall timing store. */
+  function getToolDurationMs(toolCallId: string): number | null {
+    for (const turn of turnTimings) {
+      const tc = turn.toolCalls.find((t) => t.key === toolCallId);
+      if (tc && tc.doneMs) return tc.doneMs - tc.firstSeenMs;
+    }
+    return null;
+  }
+
   const tabs = [
     { id: "context" as const, label: "Context" },
     { id: "tools" as const, label: "Tools" },
@@ -438,6 +482,24 @@
     { id: "prompt" as const, label: "Prompt" },
   ];
 </script>
+
+{#snippet callStatus(state: string)}
+  {#if state === "output-available"}
+    <span class="stat ok">OK</span>
+  {:else if state === "output-error"}
+    <span class="stat err">ERROR</span>
+  {:else if state === "output-denied"}
+    <span class="stat err">DENIED</span>
+  {:else if state === "input-streaming"}
+    <span class="stat running">streaming input</span>
+  {:else if state === "input-available"}
+    <span class="stat running">executing</span>
+  {:else if state === "approval-requested"}
+    <span class="stat warn">needs approval</span>
+  {:else}
+    <span class="stat running">{state}</span>
+  {/if}
+{/snippet}
 
 {#if open}
   <div class="inspector" style="inline-size: {inspectorWidth}px; min-inline-size: {inspectorWidth}px;">
@@ -512,12 +574,240 @@
                 {@const calls = allToolCalls.filter(tc => tc.toolName === name)}
                 {@const ok = calls.filter(tc => tc.state === "output-available").length}
                 {@const err = calls.filter(tc => tc.state === "output-error" || tc.state === "output-denied").length}
-                <li class="tool-entry">
-                  <span class="tool-name">{name}</span>
-                  <span class="tool-stats">
-                    <span class="stat ok">{ok}✓</span>
-                    {#if err > 0}<span class="stat err">{err}✗</span>{/if}
-                  </span>
+                <li class="tool-group">
+                  <div class="tool-entry">
+                    <span class="tool-name">{name}</span>
+                    <span class="tool-stats">
+                      <span class="stat ok">{ok}✓</span>
+                      {#if err > 0}<span class="stat err">{err}✗</span>{/if}
+                    </span>
+                  </div>
+                  {#if calls.length > 0}
+                    <ul class="tool-call-details">
+                      {#each calls as call (call.toolCallId)}
+                        {@const inp = (typeof call.input === "object" && call.input !== null ? call.input : {}) as Record<string, unknown>}
+                        {@const out = (typeof call.output === "object" && call.output !== null ? call.output : {}) as Record<string, unknown>}
+                        {@const errorMsg = typeof out.error === "string" ? out.error : (call.errorText ?? null)}
+                        <li class="call-detail">
+                          {#if name === "web_fetch"}
+                            {@const url = typeof inp.url === "string" ? inp.url : ""}
+                            {@const format = typeof inp.format === "string" ? inp.format : "markdown"}
+                            {@const timeoutMs = typeof inp.timeout_ms === "number" ? inp.timeout_ms : null}
+                            {@const sourceUrl = typeof out.sourceUrl === "string" ? out.sourceUrl : ""}
+                            {@const fromCache = out.fromCache === true}
+                            {@const contentLen = typeof out.content === "string" ? out.content.length : 0}
+                            {@const redirected = sourceUrl !== "" && url !== "" && sourceUrl !== url && sourceUrl !== url.replace(/^http:/, "https:")}
+                            {@const fetchDuration = getToolDurationMs(call.toolCallId)}
+                            <div class="call-headline" title={url}>
+                              <span class="http-badge">GET</span>
+                              {url}
+                            </div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if fetchDuration !== null}
+                                <dt>Time</dt>
+                                <dd>{formatMs(fetchDuration)}</dd>
+                              {/if}
+                              <dt>Format</dt>
+                              <dd>{format}</dd>
+                              {#if call.state === "output-available"}
+                                <dt>Cache</dt>
+                                <dd>{#if fromCache}<span class="stat ok">HIT</span>{:else}<span class="stat dim">MISS</span>{/if}</dd>
+                              {/if}
+                              {#if contentLen > 0}
+                                <dt>Size</dt>
+                                <dd>{formatBytes(contentLen)}</dd>
+                              {/if}
+                              {#if redirected}
+                                <dt>Redirect</dt>
+                                <dd class="mono-sm" title={sourceUrl}>{sourceUrl}</dd>
+                              {/if}
+                              {#if timeoutMs !== null && timeoutMs !== 30000}
+                                <dt>Timeout</dt>
+                                <dd>{(timeoutMs / 1000).toFixed(0)}s</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "web_search"}
+                            {@const query = typeof inp.query === "string" ? inp.query : ""}
+                            {@const count = typeof inp.count === "number" ? inp.count : 10}
+                            {@const results = Array.isArray(out.results) ? out.results : []}
+                            <div class="call-headline" title={query}>
+                              <span class="search-badge">Q</span>
+                              {query}
+                            </div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              <dt>Requested</dt>
+                              <dd>{count} results</dd>
+                              {#if results.length > 0}
+                                <dt>Returned</dt>
+                                <dd>{results.length} result{results.length === 1 ? "" : "s"}</dd>
+                              {/if}
+                            </dl>
+                            {#if results.length > 0}
+                              <ul class="search-results">
+                                {#each results as r, ri (ri)}
+                                  {@const rt = typeof r === "object" && r !== null ? r as Record<string, unknown> : {}}
+                                  <li class="search-result">
+                                    <span class="search-result-title">{typeof rt.title === "string" ? rt.title : ""}</span>
+                                    <span class="search-result-url">{typeof rt.url === "string" ? rt.url : ""}</span>
+                                  </li>
+                                {/each}
+                              </ul>
+                            {/if}
+
+                          {:else if name === "run_code"}
+                            {@const language = typeof inp.language === "string" ? inp.language : ""}
+                            {@const sourceLen = typeof inp.source === "string" ? inp.source.length : 0}
+                            {@const exitCode = typeof out.exit_code === "number" ? out.exit_code : null}
+                            {@const durationMs = typeof out.duration_ms === "number" ? out.duration_ms : null}
+                            {@const stdoutLen = typeof out.stdout === "string" ? out.stdout.length : 0}
+                            {@const stderrLen = typeof out.stderr === "string" ? out.stderr.length : 0}
+                            {@const stdoutTrunc = out.stdout_truncated === true}
+                            {@const stderrTrunc = out.stderr_truncated === true}
+                            {@const timeoutMs = typeof inp.timeout_ms === "number" ? inp.timeout_ms : null}
+                            <div class="call-headline">
+                              <span class="lang-badge" class:python={language === "python"} class:javascript={language === "javascript"} class:bash={language === "bash"}>{language || "code"}</span>
+                              {sourceLen > 0 ? `${sourceLen} chars` : ""}
+                            </div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if exitCode !== null}
+                                <dt>Exit</dt>
+                                <dd><span class={exitCode === 0 ? "stat ok" : "stat err"}>{exitCode}</span></dd>
+                              {/if}
+                              {#if durationMs !== null}
+                                <dt>Duration</dt>
+                                <dd>{formatMs(durationMs)}</dd>
+                              {/if}
+                              {#if stdoutLen > 0}
+                                <dt>stdout</dt>
+                                <dd>{formatBytes(stdoutLen)}{stdoutTrunc ? " (truncated)" : ""}</dd>
+                              {/if}
+                              {#if stderrLen > 0}
+                                <dt>stderr</dt>
+                                <dd class="stat err">{formatBytes(stderrLen)}{stderrTrunc ? " (truncated)" : ""}</dd>
+                              {/if}
+                              {#if timeoutMs !== null && timeoutMs !== 30000}
+                                <dt>Timeout</dt>
+                                <dd>{(timeoutMs / 1000).toFixed(0)}s</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "read_file"}
+                            {@const path = typeof inp.path === "string" ? inp.path : ""}
+                            {@const sizeBytes = typeof out.size_bytes === "number" ? out.size_bytes : null}
+                            {@const truncated = out.truncated === true}
+                            <div class="call-headline mono-sm">{path}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if sizeBytes !== null}
+                                <dt>Size</dt>
+                                <dd>{formatBytes(sizeBytes)}{truncated ? " (truncated)" : ""}</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "write_file"}
+                            {@const path = typeof inp.path === "string" ? inp.path : ""}
+                            {@const bytesWritten = typeof out.bytes_written === "number" ? out.bytes_written : null}
+                            {@const contentLen = typeof inp.content === "string" ? inp.content.length : 0}
+                            <div class="call-headline mono-sm">{path}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if bytesWritten !== null}
+                                <dt>Written</dt>
+                                <dd>{formatBytes(bytesWritten)}</dd>
+                              {:else if contentLen > 0}
+                                <dt>Input</dt>
+                                <dd>{formatBytes(contentLen)}</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "list_files"}
+                            {@const path = typeof inp.path === "string" ? inp.path : "."}
+                            {@const entries = Array.isArray(out.entries) ? out.entries : []}
+                            {@const truncated = out.truncated === true}
+                            <div class="call-headline mono-sm">{path}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if entries.length > 0 || call.state === "output-available"}
+                                <dt>Entries</dt>
+                                <dd>{entries.length}{truncated ? " (truncated)" : ""}</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "memory_save"}
+                            {@const text = typeof inp.text === "string" ? inp.text : ""}
+                            {@const memType = typeof inp.type === "string" ? inp.type : "general"}
+                            <div class="call-headline">{text.length > 60 ? `${text.slice(0, 60)}…` : text}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              <dt>Type</dt>
+                              <dd>{memType}</dd>
+                            </dl>
+
+                          {:else if name === "do_task"}
+                            {@const intent = typeof inp.intent === "string" ? inp.intent : ""}
+                            {@const sessionId = typeof out.sessionId === "string" ? out.sessionId : null}
+                            {@const taskStatus = typeof out.status === "string" ? out.status : null}
+                            <div class="call-headline">{intent.length > 80 ? `${intent.slice(0, 80)}…` : intent}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if sessionId}
+                                <dt>Session</dt>
+                                <dd class="mono-sm">{sessionId.slice(0, 8)}</dd>
+                              {/if}
+                              {#if taskStatus}
+                                <dt>Result</dt>
+                                <dd>{taskStatus}</dd>
+                              {/if}
+                            </dl>
+
+                          {:else if name === "artifacts_get"}
+                            {@const artifactId = typeof inp.artifactId === "string" ? inp.artifactId : ""}
+                            {@const revision = typeof inp.revision === "number" ? inp.revision : null}
+                            <div class="call-headline mono-sm">{artifactId}{revision !== null ? ` @r${revision}` : ""}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                            </dl>
+
+                          {:else}
+                            <!-- Generic fallback for job tools and unknown tools -->
+                            {@const preview = genericPreview(inp)}
+                            {#if preview}
+                              <div class="call-headline">{preview}</div>
+                            {/if}
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if typeof out.sessionId === "string"}
+                                <dt>Session</dt>
+                                <dd class="mono-sm">{(out.sessionId as string).slice(0, 8)}</dd>
+                              {/if}
+                              {#if typeof out.status === "string"}
+                                <dt>Result</dt>
+                                <dd>{out.status}</dd>
+                              {/if}
+                            </dl>
+                          {/if}
+
+                          {#if errorMsg}
+                            <div class="call-error">{errorMsg}</div>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
                 </li>
               {/each}
             </ul>
@@ -779,6 +1069,156 @@
 
   .stat.err {
     color: var(--color-error);
+  }
+
+  .stat.running {
+    color: var(--color-info);
+  }
+
+  .tool-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  /* Tool call detail rows */
+  .tool-call-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    margin-inline-start: var(--size-2);
+    padding-inline-start: var(--size-2);
+    border-inline-start: 1px solid var(--color-border-1);
+  }
+
+  .call-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .call-headline {
+    color: var(--color-text);
+    font-size: var(--font-size-0);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .call-meta {
+    display: grid;
+    gap: 2px var(--size-3);
+    grid-template-columns: auto 1fr;
+  }
+
+  .call-meta dt {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-0);
+  }
+
+  .call-meta dd {
+    font-size: var(--font-size-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .call-error {
+    color: var(--color-error);
+    font-size: var(--font-size-0);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .mono-sm {
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Badges */
+  .http-badge, .search-badge, .lang-badge {
+    border-radius: var(--radius-1);
+    display: inline-block;
+    font-size: 9px;
+    font-weight: var(--font-weight-7);
+    letter-spacing: 0.04em;
+    margin-inline-end: var(--size-1);
+    padding: 1px 4px;
+    vertical-align: middle;
+  }
+
+  .http-badge {
+    background-color: light-dark(hsl(142 50% 88%), hsl(142 20% 20%));
+    color: light-dark(hsl(142 50% 30%), hsl(142 50% 70%));
+  }
+
+  .search-badge {
+    background-color: light-dark(hsl(270 50% 90%), hsl(270 20% 20%));
+    color: light-dark(hsl(270 50% 35%), hsl(270 50% 70%));
+  }
+
+  .lang-badge {
+    background-color: light-dark(hsl(200 50% 90%), hsl(200 20% 20%));
+    color: light-dark(hsl(200 50% 35%), hsl(200 50% 70%));
+  }
+
+  .lang-badge.python {
+    background-color: light-dark(hsl(210 60% 90%), hsl(210 25% 20%));
+    color: light-dark(hsl(210 60% 35%), hsl(210 60% 70%));
+  }
+
+  .lang-badge.javascript {
+    background-color: light-dark(hsl(50 70% 90%), hsl(50 25% 18%));
+    color: light-dark(hsl(50 70% 30%), hsl(50 70% 70%));
+  }
+
+  .lang-badge.bash {
+    background-color: light-dark(hsl(0 0% 90%), hsl(0 0% 20%));
+    color: light-dark(hsl(0 0% 35%), hsl(0 0% 70%));
+  }
+
+  .stat.dim {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+  }
+
+  .stat.warn {
+    color: light-dark(hsl(38 80% 40%), hsl(38 70% 65%));
+  }
+
+  /* Search results list */
+  .search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-block-start: var(--size-1);
+  }
+
+  .search-result {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--font-size-0);
+    gap: 0;
+  }
+
+  .search-result-title {
+    color: var(--color-text);
+    font-weight: var(--font-weight-5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-result-url {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Timeline tab */

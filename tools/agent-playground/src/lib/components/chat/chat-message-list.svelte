@@ -54,6 +54,63 @@
   }
 
   /**
+   * Svelte action: inject a "Copy" button on every <pre> and <table> inside
+   * a `.markdown-body` container. Runs after initial render and re-scans
+   * when the DOM subtree changes (streaming content).
+   */
+  function copyButtons(node: HTMLElement) {
+    function injectButtons() {
+      for (const el of node.querySelectorAll("pre, table")) {
+        // Skip if already wrapped
+        if (el.parentElement?.classList.contains("copyable-wrapper")) continue;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "copyable-wrapper";
+        el.parentNode?.insertBefore(wrapper, el);
+        wrapper.appendChild(el);
+
+        const btn = document.createElement("button");
+        btn.className = "copy-btn";
+        btn.setAttribute("aria-label", "Copy to clipboard");
+        btn.textContent = "Copy";
+        btn.addEventListener("click", () => {
+          let text: string;
+          if (el.tagName === "TABLE") {
+            // Extract table as tab-separated text
+            const rows: string[] = [];
+            for (const tr of el.querySelectorAll("tr")) {
+              const cells: string[] = [];
+              for (const cell of tr.querySelectorAll("th, td")) {
+                cells.push((cell as HTMLElement).textContent?.trim() ?? "");
+              }
+              rows.push(cells.join("\t"));
+            }
+            text = rows.join("\n");
+          } else {
+            text = (el as HTMLElement).textContent ?? "";
+          }
+          void navigator.clipboard.writeText(text).then(() => {
+            btn.textContent = "Copied!";
+            setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+          });
+        });
+        wrapper.appendChild(btn);
+      }
+    }
+
+    injectButtons();
+
+    const observer = new MutationObserver(() => injectButtons());
+    observer.observe(node, { childList: true, subtree: true });
+
+    return {
+      destroy() {
+        observer.disconnect();
+      },
+    };
+  }
+
+  /**
    * Render a tool's input arguments as a short one-liner for the tool
    * card label. Picks the most informative field per tool so the user
    * sees "web_fetch(blizzard.com)" instead of "web_fetch" or a full JSON
@@ -247,7 +304,7 @@
 
           {#if message.content.length > 0}
             {#if message.role === "assistant"}
-              <div class="message-content markdown-body">{@html markdownToHTML(message.content)}</div>
+              <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTML(message.content)}</div>
             {:else}
               <div class="message-content">{message.content}</div>
             {/if}
@@ -380,7 +437,8 @@
     border-collapse: collapse;
     font-size: var(--font-size-1);
     margin-block: 0.5em;
-    inline-size: 100%;
+    max-inline-size: 100%;
+    overflow-x: auto;
   }
 
   .message-content.markdown-body :global(th),
@@ -388,10 +446,16 @@
     border: 1px solid var(--color-border-1);
     padding: var(--size-1) var(--size-2);
     text-align: start;
+    white-space: nowrap;
   }
 
   .message-content.markdown-body :global(th) {
+    background-color: light-dark(hsl(220 12% 94%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
     font-weight: var(--font-weight-6);
+  }
+
+  .message-content.markdown-body :global(tr:nth-child(even) td) {
+    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 50%));
   }
 
   .message-content.markdown-body :global(blockquote) {
@@ -405,6 +469,37 @@
   .message-content.markdown-body :global(a) {
     color: var(--color-primary);
     text-decoration: underline;
+  }
+
+  /* Copy button on code blocks and tables */
+  .message-content.markdown-body :global(.copyable-wrapper) {
+    position: relative;
+  }
+
+  .message-content.markdown-body :global(.copy-btn) {
+    background-color: light-dark(hsl(220 12% 88%), hsl(220 10% 22%));
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    inset-block-start: var(--size-1);
+    inset-inline-end: var(--size-1);
+    opacity: 0;
+    padding: 2px 8px;
+    position: absolute;
+    transition: opacity 100ms ease, color 100ms ease, background-color 100ms ease;
+    z-index: 1;
+  }
+
+  .message-content.markdown-body :global(.copyable-wrapper:hover .copy-btn) {
+    opacity: 1;
+  }
+
+  .message-content.markdown-body :global(.copy-btn:hover) {
+    background-color: light-dark(hsl(220 12% 82%), hsl(220 10% 28%));
+    color: var(--color-text);
   }
 
   .message.user .message-content {

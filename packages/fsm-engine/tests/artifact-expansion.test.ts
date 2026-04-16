@@ -91,7 +91,7 @@ describe("expandArtifactRefsInDocuments", () => {
       const artifact2Data: ArtifactDataInput = {
         type: "table",
         version: 1,
-        data: { title: "Test Table", headers: ["a", "b"], rows: [{ a: "1", b: "2" }] },
+        data: { title: "Test Table", headers: ["a", "b"], rows: [["1", "2"]] },
       };
 
       const artifact1Id = await createTestArtifact(artifact1Data, "Summary");
