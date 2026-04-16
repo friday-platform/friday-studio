@@ -1,9 +1,52 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { appendDiscoveryAsTask } from "../../../../packages/memory/src/discovery-to-task.ts";
 import { checkIntegrity } from "./integrity.ts";
 import type { DecomposerResult, IntegrityFinding } from "./schemas.ts";
+
+/**
+ * Exported so the `prepare_decompose` inline action can validate that a
+ * caller-supplied `plan_path` is absolute before trying to derive a repo
+ * root from it. Inline FSM actions run in a Deno worker without direct
+ * access to `node:path`, so this tiny helper exists solely to keep the
+ * import surface minimal on the worker side.
+ */
+export function isAbsolutePath(p: string): boolean {
+  return isAbsolute(p);
+}
+
+/**
+ * Walk up the filesystem from the plan file's enclosing directory until
+ * we find a `.git` entry, then return that ancestor as the repo root.
+ *
+ * Handles two layouts:
+ *
+ *   1. Regular checkout — `.git` is a directory inside the repo root.
+ *   2. Git worktree — `.git` is a text file inside the worktree root
+ *      that points at the shared object store. `statSync` catches both.
+ *
+ * Returns `null` if no `.git` ancestor is found between `plan_path` and
+ * the filesystem root. The caller's action throws a helpful error in
+ * that case and asks the operator to pass `repo_root` explicitly.
+ */
+// deno-lint-ignore require-await
+export async function findRepoRoot(planPath: string): Promise<string | null> {
+  let dir = dirname(planPath);
+  // Root sentinel — Node's `dirname("/") === "/"` so compare on stability.
+  while (true) {
+    const gitEntry = join(dir, ".git");
+    try {
+      statSync(gitEntry);
+      return dir;
+    } catch {
+      // Not found at this level — walk up.
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
 
 /**
  * Thin wrapper over checkIntegrity for inline FSM import.
