@@ -667,11 +667,8 @@
       class:active={inspectorOpen}
       onclick={() => inspectorOpen = !inspectorOpen}
       aria-label="Toggle inspector"
-      title="Inspector (Cmd+Shift+I)"
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M6 2v12M2 6h12M2 10h12M10 2v12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-      </svg>
+      <kbd>&#8984;&#8679;I</kbd>
     </button>
   </header>
 
@@ -805,15 +802,21 @@
   .inspector-toggle {
     align-items: center;
     background: transparent;
-    border: 1px solid transparent;
+    border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     color: color-mix(in srgb, var(--color-text), transparent 50%);
     cursor: pointer;
     display: flex;
-    block-size: var(--size-7);
-    inline-size: var(--size-7);
     justify-content: center;
+    padding: var(--size-0-5) var(--size-1-5);
     transition: all 100ms ease;
+  }
+
+  .inspector-toggle kbd {
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.02em;
   }
 
   .inspector-toggle:hover {
@@ -823,6 +826,7 @@
 
   .inspector-toggle.active {
     background-color: var(--color-primary);
+    border-color: var(--color-primary);
     color: white;
   }
 
