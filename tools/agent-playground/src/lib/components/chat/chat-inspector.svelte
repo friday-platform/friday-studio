@@ -49,12 +49,11 @@
   // Snapshot for rendering — only changes when version bumps
   let turnTimings = $state<TurnTiming[]>([]);
 
-  // Track timing by observing message changes — always runs (lightweight)
+  // Track timing — ONLY when inspector is open to avoid performance impact
   $effect(() => {
-    // Read reactive deps: messages length and status (not full message content)
-    const msgCount = messages.length;
-    const currentStatus = status;
+    if (!open) return; // Critical: don't subscribe to messages when closed
     const msgs = messages;
+    const currentStatus = status;
     const now = Date.now();
 
     // First run: mark existing messages as rehydrated
@@ -137,6 +136,7 @@
 
   /** Computed waterfall data from turn timings. */
   const waterfallTurns = $derived.by(() => {
+    if (!open) return [];
     const now = Date.now();
     const turns: Array<{
       userText: string;
@@ -233,6 +233,7 @@
 
   /** All unique tool names used across all assistant messages. */
   const usedTools = $derived.by(() => {
+    if (!open) return new Set<string>();
     const names = new Set<string>();
     for (const msg of messages) {
       if (msg.toolCalls) {
@@ -246,6 +247,7 @@
 
   /** All tool calls flattened with message context. */
   const allToolCalls = $derived.by(() => {
+    if (!open) return [];
     const calls: Array<ToolCallDisplay & { messageId: string }> = [];
     for (const msg of messages) {
       if (msg.toolCalls) {
@@ -259,6 +261,7 @@
 
   /** Timeline entries: messages + tool calls interleaved. */
   const timeline = $derived.by(() => {
+    if (!open) return [];
     const entries: Array<{
       type: "user" | "assistant" | "tool";
       timestamp: number;
