@@ -2,7 +2,10 @@
  * @atlas/ui design tokens
  *
  * Shared token set for spacing, radius, typography, z-index, shadows,
- * and light/dark theme colors. Import via:
+ * and light/dark theme colors. Uses CSS light-dark() per W3C CSS Color
+ * Adjust Module §2 — requires `color-scheme: light dark` on :root.
+ *
+ * Import via:
  *
  *   import '@atlas/ui/tokens.css';
  *
@@ -10,6 +13,8 @@
  */
 
 :root {
+  color-scheme: light dark;
+
   /* Scale */
   --size-scale: var(--system-scale, 1);
   --text-scale: var(--system-text-scale, 1);
@@ -143,35 +148,50 @@
   --layer-4: 40;
   --layer-5: 50;
 
-  /* Colors */
-  --color-white: hsl(0 0% 100% / 1);
-  --color-error: hsl(10 100% 38% / 1);
-  --color-text: hsl(230 32% 14% / 1);
+  /*
+   * Colors — light-dark() per W3C CSS Color Adjust §2.
+   *
+   * Light values target ≥4.5:1 contrast on white surfaces.
+   * Dark values follow Material Design guidance: desaturated accents,
+   * no pure black (#121212 base), 87/60/38% white for text emphasis.
+   */
 
-  /* Semantic colors */
-  --color-accent: hsl(263 70% 50%);
-  --color-success: hsl(142 71% 45%);
-  --color-warning: hsl(38 92% 50%);
-  --color-info: hsl(217 91% 60%);
+  /* Core text — near-black on light, warm off-white on dark (Material high-emphasis) */
+  --color-text: light-dark(hsl(230 32% 14%), hsl(40 12% 95%));
+
+  /* Inverted surface — white on light, near-black on dark */
+  --color-white: light-dark(hsl(0 0% 100%), hsl(0 0% 0%));
+
+  /* Primary action — buttons, user message bubbles, links */
+  --color-primary: light-dark(hsl(212 97% 40%), hsl(212 80% 55%));
+
+  /* Semantic status */
+  --color-error: light-dark(hsl(10 100% 38%), hsl(10 100% 65%));
+  --color-accent: light-dark(hsl(263 70% 50%), hsl(263 70% 65%));
+  --color-success: light-dark(hsl(142 71% 45%), hsl(142 71% 55%));
+  --color-warning: light-dark(hsl(38 92% 50%), hsl(38 92% 55%));
+  --color-info: light-dark(hsl(217 91% 50%), hsl(217 91% 65%));
 
   /* Accent palette — syntax highlighting tier */
-  --yellow-3: hsl(33 100% 35%);
-  --green-3: hsl(99 78% 25%);
-  --blue-3: hsl(212 97% 27%);
-  --purple-3: hsl(271 100% 26%);
+  --yellow-3: light-dark(hsl(33 100% 35%), hsl(42 100% 78%));
+  --green-3: light-dark(hsl(99 78% 25%), hsl(100 79% 78%));
+  --blue-3: light-dark(hsl(212 97% 27%), hsl(212 96% 78%));
+  --purple-3: light-dark(hsl(271 100% 26%), hsl(271 100% 82%));
 
-  /* Surfaces */
-  --color-surface-1: hsl(240 100% 100% / 1);
-  --color-surface-2: hsl(240 12% 95% / 1);
+  /* Surfaces — Material elevation: light uses white+gray, dark avoids pure black */
+  --color-surface-1: light-dark(hsl(0 0% 100%), hsl(228 2% 7%));
+  --color-surface-2: light-dark(hsl(240 12% 95%), hsl(228 2% 9%));
+  --color-surface-3: light-dark(hsl(220 16% 93%), hsl(228 4% 16%));
 
   /* Highlights */
-  --color-highlight-1: hsl(221 88% 20% / 0.06);
+  --color-highlight-1: light-dark(hsl(221 88% 20% / 0.06), hsl(223 28% 90% / 0.06));
 
   /* Borders */
-  --color-border-1: hsl(220 24% 90%);
-  --color-border-2: hsl(240 3 94% / 1);
+  --color-border-1: light-dark(hsl(220 24% 90%), hsl(230 10% 24%));
+  --color-border-2: light-dark(hsl(240 3% 94%), hsl(230 10% 18%));
 
-  /* Shadows */
+  /* Shadows — can't use light-dark() because commas in shadow layers
+     conflict with the function's two-argument syntax. Use @media fallback. */
   --shadow-canvas: 0 4px 16px -8px hsl(0 0 0 / 0.05), 0 0 0 1px hsl(0 0 0 / 0.05);
   --shadow-1:
     0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06),
@@ -181,29 +201,8 @@
     0px 0px 0px 1px rgba(0, 1, 165, 0.08), 0px 6px 16px -4px rgba(26, 83, 204, 0.12),
     0px 16px 32px -8px rgba(26, 83, 204, 0.1), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
-  /* Dark theme */
   @media (prefers-color-scheme: dark) {
-    --color-surface-1: hsl(228 2% 7% / 1);
-    --color-surface-2: hsl(228 2% 9% / 1);
-    --color-highlight-1: hsl(223 28% 90% / 0.06);
-    --color-border-1: hsl(230 10% 24%);
-    --color-border-2: hsl(230 10% 18%);
-    --color-error: hsl(10 100% 65% / 1);
-    --color-text: hsl(40 12% 95% / 1);
-    --color-white: hsl(0 0 0% / 1);
-
-    --color-accent: hsl(263 70% 65%);
-    --color-success: hsl(142 71% 55%);
-    --color-warning: hsl(38 92% 55%);
-    --color-info: hsl(217 91% 65%);
-
-    /* Accent palette — syntax highlighting tier */
-    --yellow-3: hsl(42 100% 78%);
-    --green-3: hsl(100 79% 78%);
-    --blue-3: hsl(212 96% 78%);
-    --purple-3: hsl(271 100% 82%);
-
-    --shadow-canvas: 0 0 0 1px hsl(0 0 100 / 0.04);
+    --shadow-canvas: 0 0 0 1px hsl(0 0 100% / 0.04);
     --shadow-1:
       0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12),
       0px 3px 12px -4px rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12),
