@@ -23,6 +23,26 @@
   let activeTab: "context" | "tools" | "timeline" | "waterfall" | "prompt" = $state("context");
 
   /**
+   * Debounced message snapshot — only updates when message COUNT changes
+   * or status transitions, not on every streaming text-delta. This prevents
+   * the inspector's derived computations from re-running hundreds of times
+   * per second during streaming (which caused a 4.6s main thread block).
+   */
+  let snapshotMessages = $state<ChatMessage[]>([]);
+  let lastSnapshotCount = 0;
+  let lastSnapshotStatus = "";
+  $effect(() => {
+    const count = messages.length;
+    const s = status;
+    if (count !== lastSnapshotCount || (s === "idle" && lastSnapshotStatus !== "idle")) {
+      lastSnapshotCount = count;
+      lastSnapshotStatus = s;
+      snapshotMessages = messages;
+    }
+    lastSnapshotStatus = s;
+  });
+
+  /**
    * Turn-level timing tracker. Records when each user message appears and
    * when the assistant response completes, building a per-turn waterfall.
    */
@@ -52,7 +72,7 @@
   // Track timing — ONLY when inspector is open to avoid performance impact
   $effect(() => {
     if (!open) return; // Critical: don't subscribe to messages when closed
-    const msgs = messages;
+    const msgs = snapshotMessages;
     const currentStatus = status;
     const now = Date.now();
 
@@ -235,7 +255,7 @@
   const usedTools = $derived.by(() => {
     if (!open) return new Set<string>();
     const names = new Set<string>();
-    for (const msg of messages) {
+    for (const msg of snapshotMessages) {
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
           names.add(tc.toolName);
@@ -249,7 +269,7 @@
   const allToolCalls = $derived.by(() => {
     if (!open) return [];
     const calls: Array<ToolCallDisplay & { messageId: string }> = [];
-    for (const msg of messages) {
+    for (const msg of snapshotMessages) {
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
           calls.push({ ...tc, messageId: msg.id });
@@ -270,7 +290,7 @@
       toolState?: string;
       duration?: string;
     }> = [];
-    for (const msg of messages) {
+    for (const msg of snapshotMessages) {
       if (msg.role === "user") {
         entries.push({
           type: "user",
@@ -360,7 +380,7 @@
               {status}
             </dd>
             <dt>Messages</dt>
-            <dd>{messages.length}</dd>
+            <dd>{snapshotMessages.length}</dd>
             <dt>Tool Calls</dt>
             <dd>{allToolCalls.length}</dd>
           </dl>
