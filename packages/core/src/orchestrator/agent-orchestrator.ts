@@ -47,6 +47,8 @@ export interface AgentExecutionContext {
     localDate: string;
     localTime: string;
     timezoneOffset: string;
+    latitude?: string;
+    longitude?: string;
   };
   previousResults?: AgentResult[];
   additionalContext?: unknown;

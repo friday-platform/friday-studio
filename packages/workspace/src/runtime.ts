@@ -1451,6 +1451,8 @@ export class WorkspaceRuntime {
           localDate: string;
           localTime: string;
           timezoneOffset: string;
+          latitude?: string;
+          longitude?: string;
         }
       | undefined;
 
