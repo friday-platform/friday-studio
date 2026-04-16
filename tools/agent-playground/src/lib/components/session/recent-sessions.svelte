@@ -14,9 +14,12 @@
     refetchInterval: 5_000,
   }));
 
+  /** Jobs that are internal plumbing — hide from recent runs. */
+  const HIDDEN_JOBS = new Set(["handle-chat"]);
+
   /** Show at most 5, active pinned to top. */
   const recentSessions = $derived.by(() => {
-    const data = sessionsQuery.data ?? [];
+    const data = (sessionsQuery.data ?? []).filter((s) => !HIDDEN_JOBS.has(s.jobName));
     const active = data.filter((s) => s.status === "active");
     const rest = data.filter((s) => s.status !== "active");
     return [...active, ...rest].slice(0, 5);
