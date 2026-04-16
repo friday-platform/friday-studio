@@ -137,7 +137,7 @@
 
   /** Computed waterfall data from turn timings. */
   const waterfallTurns = $derived.by(() => {
-    const _tick = tickNow; // subscribe to live ticker
+    const now = Date.now();
     const turns: Array<{
       userText: string;
       totalMs: number;
@@ -153,7 +153,7 @@
     }> = [];
 
     for (const timing of turnTimings) {
-      const now = _tick;
+      // Use current time for active turns
       const totalMs = (timing.endMs ?? now) - timing.startMs;
       if (totalMs <= 0) continue;
       const isActive = !timing.endMs;
@@ -224,15 +224,7 @@
     return turns;
   });
 
-  /** Live-ticking "now" — only runs when inspector is open AND streaming. */
-  let tickNow = $state(Date.now());
-  $effect(() => {
-    const isActive = open && (status === "streaming" || status === "submitted");
-    if (isActive) {
-      const interval = setInterval(() => { tickNow = Date.now(); }, 100);
-      return () => clearInterval(interval);
-    }
-  });
+  /** No active ticker — waterfall updates when messages change naturally. */
 
   function formatMs(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
