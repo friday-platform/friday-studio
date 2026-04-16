@@ -588,7 +588,7 @@
 
   <header class="chat-header">
     <h2>Chat</h2>
-    <span class="workspace-badge">user</span>
+    <span class="workspace-badge">Personal</span>
     <span class="header-spacer"></span>
     {#if chat && chat.messages.length > 0}
       <button class="new-chat-button" onclick={startNewChat} disabled={streaming}>
