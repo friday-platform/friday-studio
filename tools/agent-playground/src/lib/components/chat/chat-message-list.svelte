@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { markdownToHTML } from "@atlas/ui";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
 
@@ -227,7 +228,11 @@
           {/if}
 
           {#if message.content.length > 0}
-            <div class="message-content">{message.content}</div>
+            {#if message.role === "assistant"}
+              <div class="message-content markdown-body">{@html markdownToHTML(message.content)}</div>
+            {:else}
+              <div class="message-content">{message.content}</div>
+            {/if}
           {/if}
         {/if}
       </div>
@@ -287,6 +292,101 @@
     padding: var(--size-2-5) var(--size-3);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .message-content.markdown-body {
+    white-space: normal;
+  }
+
+  .message-content.markdown-body :global(p) {
+    margin-block: 0.4em;
+  }
+
+  .message-content.markdown-body :global(p:first-child) {
+    margin-block-start: 0;
+  }
+
+  .message-content.markdown-body :global(p:last-child) {
+    margin-block-end: 0;
+  }
+
+  .message-content.markdown-body :global(ul),
+  .message-content.markdown-body :global(ol) {
+    margin-block: 0.4em;
+    padding-inline-start: 1.4em;
+  }
+
+  .message-content.markdown-body :global(li) {
+    margin-block: 0.15em;
+  }
+
+  .message-content.markdown-body :global(code) {
+    background-color: light-dark(hsl(220 16% 90%), hsl(228 4% 22%));
+    border-radius: var(--radius-1);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: 0.9em;
+    padding: 0.1em 0.35em;
+  }
+
+  .message-content.markdown-body :global(pre) {
+    background-color: light-dark(hsl(220 16% 90%), hsl(228 4% 12%));
+    border-radius: var(--radius-2);
+    margin-block: 0.5em;
+    overflow-x: auto;
+    padding: var(--size-2);
+  }
+
+  .message-content.markdown-body :global(pre code) {
+    background-color: transparent;
+    font-size: var(--font-size-1);
+    padding: 0;
+  }
+
+  .message-content.markdown-body :global(strong) {
+    font-weight: var(--font-weight-6);
+  }
+
+  .message-content.markdown-body :global(h1),
+  .message-content.markdown-body :global(h2),
+  .message-content.markdown-body :global(h3),
+  .message-content.markdown-body :global(h4) {
+    font-weight: var(--font-weight-6);
+    margin-block: 0.6em 0.3em;
+  }
+
+  .message-content.markdown-body :global(h1) { font-size: 1.2em; }
+  .message-content.markdown-body :global(h2) { font-size: 1.1em; }
+  .message-content.markdown-body :global(h3) { font-size: 1.05em; }
+
+  .message-content.markdown-body :global(table) {
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-block: 0.5em;
+    inline-size: 100%;
+  }
+
+  .message-content.markdown-body :global(th),
+  .message-content.markdown-body :global(td) {
+    border: 1px solid var(--color-border-1);
+    padding: var(--size-1) var(--size-2);
+    text-align: start;
+  }
+
+  .message-content.markdown-body :global(th) {
+    font-weight: var(--font-weight-6);
+  }
+
+  .message-content.markdown-body :global(blockquote) {
+    border-inline-start: 3px solid var(--color-border-1);
+    color: light-dark(hsl(220 10% 40%), color-mix(in srgb, var(--color-text), transparent 25%));
+    margin-block: 0.4em;
+    margin-inline: 0;
+    padding-inline-start: var(--size-3);
+  }
+
+  .message-content.markdown-body :global(a) {
+    color: var(--color-primary);
+    text-decoration: underline;
   }
 
   .message.user .message-content {
