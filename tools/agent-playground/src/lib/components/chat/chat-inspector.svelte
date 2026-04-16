@@ -29,17 +29,25 @@
    * per second during streaming (which caused a 4.6s main thread block).
    */
   let snapshotMessages = $state<ChatMessage[]>([]);
-  let lastSnapshotCount = 0;
-  let lastSnapshotStatus = "";
+  let lastSnapshotKey = "";
   $effect(() => {
+    // Build a lightweight key from message count + tool call states.
+    // This avoids iterating message content (which changes every text-delta)
+    // while still detecting new messages and tool state transitions.
     const count = messages.length;
     const s = status;
-    if (count !== lastSnapshotCount || (s === "idle" && lastSnapshotStatus !== "idle")) {
-      lastSnapshotCount = count;
-      lastSnapshotStatus = s;
+    let toolKey = "";
+    if (count > 0) {
+      const last = messages[count - 1];
+      if (last && last.toolCalls) {
+        toolKey = last.toolCalls.map((tc) => tc.state).join(",");
+      }
+    }
+    const key = `${count}:${s}:${toolKey}`;
+    if (key !== lastSnapshotKey) {
+      lastSnapshotKey = key;
       snapshotMessages = messages;
     }
-    lastSnapshotStatus = s;
   });
 
   /**
