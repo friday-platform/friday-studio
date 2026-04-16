@@ -33,6 +33,8 @@ const WorkspaceImproverInputSchema = z.object({
   artifactId: z.string().describe("WorkspacePlan artifact ID"),
   /** Workspace ID (for context) */
   workspaceId: z.string().describe("Workspace ID"),
+  /** Human-readable workspace name */
+  workspaceName: z.string().describe("Human-readable workspace name"),
   /** Job that failed */
   jobId: z.string().describe("Job ID that failed"),
   /** Step where failure occurred, if known */
@@ -352,7 +354,12 @@ function buildUserPrompt(
   blueprint: WorkspaceBlueprint,
   revisionHistory: string[],
 ): string {
-  const parts = ["## Failure Context", "", `**Job:** ${input.jobId}`];
+  const parts = [
+    "## Failure Context",
+    "",
+    `**Workspace:** ${input.workspaceName} (${input.workspaceId})`,
+    `**Job:** ${input.jobId}`,
+  ];
 
   if (input.failedStepId) {
     parts.push(`**Failed Step:** ${input.failedStepId}`);

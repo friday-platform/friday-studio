@@ -328,6 +328,7 @@ const workspacesRoutes = daemonFactory
           ...w,
           description: w.metadata?.description,
           type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
+          canonical: w.metadata?.canonical,
         }))
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       return c.json(response);
@@ -1157,6 +1158,10 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
 
+        if (name && workspace.metadata?.canonical) {
+          return c.json({ error: "Cannot rename canonical workspace" }, 403);
+        }
+
         const newMetadata = { ...workspace.metadata, ...metadataUpdates };
         await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
           ...(name ? { name } : {}),
@@ -1940,6 +1945,10 @@ const workspacesRoutes = daemonFactory
 
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        if (workspace.metadata?.canonical && !force) {
+          return c.json({ error: `Cannot delete canonical workspace '${workspaceId}'` }, 403);
         }
 
         // Check if workspace is in .atlas directory

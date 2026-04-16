@@ -20,7 +20,7 @@ This is tedious, error-prone, and doesn't compose with the autopilot loop that n
 
 ## Solution
 
-A new HTTP signal `decompose-plan` on the `fast-loop` kernel workspace that:
+A new HTTP signal `decompose-plan` on the system kernel workspace that:
 
 1. Accepts a pointer to a plan document, a scope slice, a default target (workspace + signal), and an optional `dry_run` flag.
 2. Runs a small FSM that reads the plan, calls a claude-code agent to produce a structured task batch, verifies structural integrity, and appends each task directly to `autopilot-backlog`.
@@ -47,9 +47,9 @@ From the operator's perspective: write a plan, fire one signal, autopilot drains
 
 ### Modules built or modified
 
-- **`workspaces/fast-loop/workspace.yml`** — add the `decompose-plan` HTTP signal, a `decompose-plan` job with its FSM, and a new agent definition `plan-decomposer` (type: `atlas`, agent: `claude-code`, workDir pointing at the atlas repo root so the decomposer can read plans and grep the codebase to verify starting points).
-- **`workspaces/fast-loop/jobs/decompose-plan/job.ts`** (new) — exports the FSM code actions: `prepare_decompose`, `retry_decompose`, `apply_to_backlog`, `emit_diagnostic_task`, plus the guards `guard_integrity_clean`, `guard_retry_allowed`.
-- **`workspaces/fast-loop/jobs/decompose-plan/integrity.ts`** (new) — pure function `checkIntegrity(batch: DecomposerResult): IntegrityFinding[]`. No LLM, no I/O beyond filesystem `existsSync` for target-file resolution. Unit-testable in isolation.
+- **`packages/system/workspaces/system.yml`** — add the `decompose-plan` HTTP signal, a `decompose-plan` job with its FSM, and a new agent definition `plan-decomposer` (type: `atlas`, agent: `claude-code`, workDir pointing at the atlas repo root so the decomposer can read plans and grep the codebase to verify starting points).
+- **`packages/system/workspaces/jobs/decompose-plan/job.ts`** (new) — exports the FSM code actions: `prepare_decompose`, `retry_decompose`, `apply_to_backlog`, `emit_diagnostic_task`, plus the guards `guard_integrity_clean`, `guard_retry_allowed`.
+- **`packages/system/workspaces/jobs/decompose-plan/integrity.ts`** (new) — pure function `checkIntegrity(batch: DecomposerResult): IntegrityFinding[]`. No LLM, no I/O beyond filesystem `existsSync` for target-file resolution. Unit-testable in isolation.
 - **`packages/memory/src/discovery-to-task.ts`** (extend) — reuse the existing `appendDiscoveryAsTask` helper for the diagnostic failure case. No new helper needed; `apply_to_backlog` can POST directly to the backlog corpus endpoint in a loop.
 
 ### FSM shape
@@ -243,7 +243,7 @@ Tests that verify LLM output quality are out of scope — the decomposer is a cl
 **Modules tested:**
 
 - **`integrity.ts`** — unit tests with fixture batches covering each rule: valid batch, cyclic `blocked_by`, dangling `blocked_by` reference, empty AC section in `task_brief`, no tracer in multi-task batch, multiple tracers, `target_files` path that doesn't exist. Follow the style of `packages/memory/src/discovery-to-task.test.ts` — pure function, fixture-in-fixture-out.
-- **`job.ts` code actions** — unit tests for `prepare_decompose` (hashing, scope extraction), `retry_decompose` (counter increment, findings serialization), `apply_to_backlog` (POST payload shape). Mock the HTTP client; verify the payloads constructed. Prior art: `workspaces/fast-loop/jobs/post-session-validator/job.test.ts`.
+- **`job.ts` code actions** — unit tests for `prepare_decompose` (hashing, scope extraction), `retry_decompose` (counter increment, findings serialization), `apply_to_backlog` (POST payload shape). Mock the HTTP client; verify the payloads constructed. Prior art: `packages/system/workspaces/jobs/post-session-validator/job.test.ts`.
 - **FSM integration** — use the `@atlas/fsm-engine` test harness with a mocked `plan-decomposer` agent (returns a pre-canned valid batch, then a pre-canned invalid batch on the retry path) to verify state transitions and guards fire correctly. Prior art: `packages/fsm-engine/src/engine.test.ts`.
 - **E2E** — one smoke test that dispatches `decompose-plan` against a fixture plan file (`test/fixtures/trivial-plan.md`), stubs the claude-code agent with a deterministic mock, asserts the tasks land in an in-memory backlog double with correct metadata.
 
@@ -335,7 +335,7 @@ The planner's per-task 30-min cooldown also applies — if a decomposed task fai
 - Implementing tasks skill — `.claude/skills/implementing-tasks/SKILL.md`
 - Fast self-modification skill — `.claude/skills/fast-self-modification/SKILL.md`
 - Autopilot planner agent — `agents/autopilot-planner/agent.py`
-- Post-session validator job — `workspaces/fast-loop/jobs/post-session-validator/job.ts`
+- Post-session validator job — `packages/system/workspaces/jobs/post-session-validator/job.ts`
 - Discovery-to-task helper — `packages/memory/src/discovery-to-task.ts`
 - Fast-improvements-source workspace — `workspaces/fast-improvements-source/workspace.yml`
-- Fast-loop workspace — `workspaces/fast-loop/workspace.yml`
+- System workspace — `packages/system/workspaces/system.yml`

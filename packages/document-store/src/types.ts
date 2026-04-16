@@ -6,6 +6,7 @@ import { z } from "zod";
 
 export interface DocumentScope {
   workspaceId: string;
+  workspaceName?: string;
   sessionId?: string;
 }
 

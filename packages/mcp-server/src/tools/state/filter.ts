@@ -20,6 +20,7 @@ export function registerStateFilterTool(server: McpServer, ctx: ToolContext): vo
         "Single deterministic call replaces N individual lookups.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID (auto-injected by platform)"),
+        workspaceName: z.string().optional().describe("Human-readable workspace name"),
         key: z
           .string()
           .min(1)
@@ -37,8 +38,14 @@ export function registerStateFilterTool(server: McpServer, ctx: ToolContext): vo
           .describe("Array of values to check — returns those NOT found in state"),
       },
     },
-    async ({ workspaceId, key, field, values }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP state_filter called", { workspaceId, key, field, count: values.length });
+    async ({ workspaceId, workspaceName, key, field, values }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP state_filter called", {
+        workspaceId,
+        workspaceName,
+        key,
+        field,
+        count: values.length,
+      });
 
       try {
         const filePath = join(getWorkspaceFilesDir(workspaceId), "state.db");

@@ -28,6 +28,8 @@
 
   const workspace = $derived(data.workspace);
   const integrations = $derived(data.integrations);
+  const isCanonical = $derived(!!workspace.metadata?.canonical);
+  const isSystemCanonical = $derived(workspace.metadata?.canonical === "system");
 
   // slack-app is shown in the Communicators section below, not the Integrations table.
   const regularIntegrations = $derived(integrations.filter((i) => i.provider !== "slack-app"));
@@ -141,7 +143,12 @@
     <div class="name-field">
       <label>
         <span class="form-field">Name</span>
-        <input type="text" bind:value={nameValue} onblur={handleUpdateName} />
+        <input
+          type="text"
+          bind:value={nameValue}
+          onblur={handleUpdateName}
+          readonly={isSystemCanonical}
+        />
       </label>
     </div>
 
@@ -218,49 +225,51 @@
     {/if}
   </div>
 
-  <div>
-    <h2>Actions</h2>
+  {#if !isCanonical}
+    <div>
+      <h2>Actions</h2>
 
-    <div class="delete-space">
-      <Dialog.Root>
-        <Dialog.Trigger>
-          <Button noninteractive>
-            {#snippet prepend()}
-              <span style:color="var(--color-error)">
-                <Icons.Trash />
+      <div class="delete-space">
+        <Dialog.Root>
+          <Dialog.Trigger>
+            <Button noninteractive>
+              {#snippet prepend()}
+                <span style:color="var(--color-error)">
+                  <Icons.Trash />
+                </span>
+              {/snippet}
+              Delete space
+            </Button>
+          </Dialog.Trigger>
+
+          <Dialog.Content>
+            <Dialog.Close />
+
+            {#snippet icon()}
+              <span style:color="var(--color-red)">
+                <Icons.DeleteSpace />
               </span>
             {/snippet}
-            Delete space
-          </Button>
-        </Dialog.Trigger>
 
-        <Dialog.Content>
-          <Dialog.Close />
+            {#snippet header()}
+              <Dialog.Title>Delete space</Dialog.Title>
+              <Dialog.Description>
+                <p>Are you sure you want to delete this space?</p>
+              </Dialog.Description>
+            {/snippet}
 
-          {#snippet icon()}
-            <span style:color="var(--color-red)">
-              <Icons.DeleteSpace />
-            </span>
-          {/snippet}
+            {#snippet footer()}
+              <Dialog.Button onclick={handleDeleteWorkspace}>Delete</Dialog.Button>
 
-          {#snippet header()}
-            <Dialog.Title>Delete space</Dialog.Title>
-            <Dialog.Description>
-              <p>Are you sure you want to delete this space?</p>
-            </Dialog.Description>
-          {/snippet}
+              <Dialog.Cancel>Cancel</Dialog.Cancel>
+            {/snippet}
+          </Dialog.Content>
+        </Dialog.Root>
 
-          {#snippet footer()}
-            <Dialog.Button onclick={handleDeleteWorkspace}>Delete</Dialog.Button>
-
-            <Dialog.Cancel>Cancel</Dialog.Cancel>
-          {/snippet}
-        </Dialog.Content>
-      </Dialog.Root>
-
-      <p>This action cannot be reversed</p>
+        <p>This action cannot be reversed</p>
+      </div>
     </div>
-  </div>
+  {/if}
 </div>
 
 <style>

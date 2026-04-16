@@ -26,7 +26,7 @@ const REPO_ROOT = process.cwd();
 const WATCH_TARGETS: readonly string[] = [
   "apps/atlasd",
   "packages",
-  "workspaces/fast-loop/workspace.yml",
+  "workspaces/system/workspace.yml",
   "workspaces/fast-improvements-source/workspace.yml",
   "workspaces/agent-author/workspace.yml",
   "agents",

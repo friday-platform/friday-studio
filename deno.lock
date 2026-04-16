@@ -9472,14 +9472,6 @@
             "npm:ws@^8.20.0"
           ]
         }
-      },
-      "workspaces/fast-loop": {
-        "packageJson": {
-          "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
-          ]
-        }
       }
     }
   }

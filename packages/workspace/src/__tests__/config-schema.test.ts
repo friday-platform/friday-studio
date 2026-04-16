@@ -104,10 +104,10 @@ describe("WorkspaceConfigSchema — new keys", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts combined fixture with outputs+improvement_key_convention+scope_exclusions matching fast-loop workspace.yml", () => {
+  it("accepts combined fixture with outputs+improvement_key_convention+scope_exclusions matching system workspace.yml", () => {
     const fixture = {
       version: "1.0",
-      workspace: { name: "fast-loop" },
+      workspace: { name: "system" },
       memory: {
         mounts: [
           {

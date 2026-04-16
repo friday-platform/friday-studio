@@ -247,6 +247,7 @@ export interface StreamEmitter<T extends AtlasUIMessageChunk = AtlasUIMessageChu
 export const AgentSessionDataSchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
+  workspaceName: z.string().optional().describe("Human-readable workspace name"),
   userId: z.string().optional(),
   streamId: z.string().optional(),
   datetime: z

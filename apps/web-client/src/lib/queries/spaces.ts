@@ -9,5 +9,9 @@ export async function listSpaces(): Promise<WorkspacesListResponse> {
     console.error("Failed to load spaces:", res.error);
     throw new Error("Failed to load spaces");
   }
-  return res.data.filter((w) => !w.metadata?.system && !w.path.includes("/examples/"));
+  return res.data.filter(
+    (w) =>
+      (!w.metadata?.system || w.metadata?.canonical === "personal") &&
+      !w.path.includes("/examples/"),
+  );
 }

@@ -420,6 +420,7 @@ export class FSMEngine {
   private static readonly MAX_RECURSION_DEPTH = 10;
   private static readonly MAX_PROCESSED_SIGNALS = 100;
   private _processedSignalsCount = 0;
+  private _hasProcessedSignal = false;
 
   constructor(
     private _definition: FSMDefinition,
@@ -637,6 +638,7 @@ export class FSMEngine {
   }
 
   private async processSingleSignal(sig: SignalWithContext): Promise<void> {
+    this._hasProcessedSignal = true;
     await withOtelSpan(
       "fsm.signal",
       {
@@ -1902,13 +1904,22 @@ export class FSMEngine {
     // Allowlisted platform tools get workspaceId auto-injected from engine scope
     // so workspace.yml never needs to reference workspace identity.
     const scopeWorkspaceId = this.options.scope.workspaceId;
+    const scopeWorkspaceName = this.options.scope.workspaceName;
     for (const [name, mcpTool] of Object.entries(mcpResult.tools)) {
       if (!PLATFORM_TOOL_NAMES.has(name) || PLATFORM_TOOL_ALLOWLIST.has(name)) {
         if (PLATFORM_TOOL_ALLOWLIST.has(name) && mcpTool.execute) {
           const origExecute = mcpTool.execute;
           tools[name] = {
             ...mcpTool,
-            execute: (args, opts) => origExecute({ ...args, workspaceId: scopeWorkspaceId }, opts),
+            execute: (args, opts) =>
+              origExecute(
+                {
+                  ...args,
+                  workspaceId: scopeWorkspaceId,
+                  ...(scopeWorkspaceName && { workspaceName: scopeWorkspaceName }),
+                },
+                opts,
+              ),
           };
         } else {
           tools[name] = mcpTool;
@@ -2043,13 +2054,17 @@ export class FSMEngine {
       logger.debug("Applied stateAppend mutations", {
         count: items.length,
         workspaceId: this.options.scope.workspaceId,
+        workspaceName: this.options.scope.workspaceName,
       });
     } catch (error) {
       // Hard fail — if state write fails, the ticket will be reprocessed
       // next run (at-least-once semantics). Throwing surfaces the error
       // to the session rather than silently losing state.
+      const nameLabel = this.options.scope.workspaceName
+        ? ` (${this.options.scope.workspaceName})`
+        : "";
       throw new Error(
-        `stateAppend failed for workspace ${this.options.scope.workspaceId}: ${
+        `stateAppend failed for workspace ${this.options.scope.workspaceId}${nameLabel}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -2266,6 +2281,27 @@ export class FSMEngine {
    * Re-runs idle state entry actions to allow selective document cleanup
    * Used when workspace needs to start fresh for trigger signals
    */
+  /**
+   * Pre-populate results entries before any signal processing.
+   * Used by WorkspaceRuntime to inject `__meta` (and potentially other
+   * seed data) so code actions see it via `context.results`.
+   *
+   * Merges entries — calling multiple times before the first signal
+   * accumulates keys. Throws if called after a signal has been processed
+   * to prevent accidental mid-session mutation.
+   */
+  seedResults(results: Record<string, Record<string, unknown>>): void {
+    if (this._hasProcessedSignal) {
+      throw new Error(
+        "seedResults() cannot be called after a signal has been processed. " +
+          "Seed data must be injected before the first engine.signal() call.",
+      );
+    }
+    for (const [key, value] of Object.entries(results)) {
+      this._results.set(key, value);
+    }
+  }
+
   async reset(): Promise<void> {
     this._currentState = this._definition.initial;
     this._results.clear();
@@ -2274,6 +2310,7 @@ export class FSMEngine {
     this._emittedEvents = [];
     this._recursionDepth = 0;
     this._processedSignalsCount = 0;
+    this._hasProcessedSignal = false;
     this._processing = false;
 
     // Re-run idle entry actions (like initialize() does)

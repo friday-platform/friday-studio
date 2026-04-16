@@ -14,13 +14,31 @@ import { z } from "zod";
 import type { ConfigurationAdapter } from "./configuration-adapter.ts";
 
 /**
+ * Optional interpolation function type.
+ * When provided, the loader applies it to the parsed config after Zod validation.
+ * Used by WorkspaceRuntime to resolve `{{repo_root}}` and other placeholders.
+ */
+export type ConfigInterpolator = <T>(value: T) => T;
+
+/**
  * Configuration loader v2 with improved type safety
  */
 export class ConfigLoader {
+  private interpolator?: ConfigInterpolator;
+
   constructor(
     private adapter: ConfigurationAdapter,
     private workspacePath: string,
   ) {}
+
+  /**
+   * Set an interpolation function to apply after Zod parsing.
+   * When set, all loaded configs are passed through this function
+   * to resolve template placeholders like `{{repo_root}}`.
+   */
+  setInterpolator(fn: ConfigInterpolator): void {
+    this.interpolator = fn;
+  }
 
   /**
    * Resolve the workspace configuration file path. Prefer persistent when both exist.
@@ -53,6 +71,11 @@ export class ConfigLoader {
     const result = WorkspaceConfigSchema.safeParse(rawConfig);
     if (!result.success) {
       throw new ConfigValidationError("Workspace configuration validation failed", result.error);
+    }
+
+    // Apply interpolation if configured (resolves {{repo_root}} etc.)
+    if (this.interpolator) {
+      return this.interpolator(result.data);
     }
 
     return result.data;

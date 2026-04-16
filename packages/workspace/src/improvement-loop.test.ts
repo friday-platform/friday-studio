@@ -56,6 +56,7 @@ const emptyTimeline: SessionHistoryTimeline = {
 function makeInput(overrides?: Partial<ImprovementLoopInput>): ImprovementLoopInput {
   return {
     workspaceId: "ws-123",
+    workspaceName: "My Test Workspace",
     sessionId: "session-456",
     jobName: "analyze-job",
     errorMessage: "Tool 'search-web' not found",

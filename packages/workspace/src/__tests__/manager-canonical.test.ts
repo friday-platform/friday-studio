@@ -72,14 +72,10 @@ describe("WorkspaceManager.deleteWorkspace", () => {
   });
 
   it("blocks deletion of personal canonical workspace without force", async () => {
-    const entry = makeEntry({
-      id: "atlas-personal",
-      name: "Personal",
-      metadata: { canonical: "personal" },
-    });
+    const entry = makeEntry({ id: "user", name: "Personal", metadata: { canonical: "personal" } });
     await registry.registerWorkspace(entry);
 
-    await expect(manager.deleteWorkspace("atlas-personal")).rejects.toThrow(
+    await expect(manager.deleteWorkspace("user")).rejects.toThrow(
       "Cannot delete canonical workspace",
     );
   });
@@ -124,15 +120,11 @@ describe("WorkspaceManager.renameWorkspace", () => {
   });
 
   it("allows rename of personal canonical workspace", async () => {
-    const entry = makeEntry({
-      id: "atlas-personal",
-      name: "Personal",
-      metadata: { canonical: "personal" },
-    });
+    const entry = makeEntry({ id: "user", name: "Personal", metadata: { canonical: "personal" } });
     await registry.registerWorkspace(entry);
 
-    await manager.renameWorkspace("atlas-personal", "My Space");
-    const found = await manager.find({ id: "atlas-personal" });
+    await manager.renameWorkspace("user", "My Space");
+    const found = await manager.find({ id: "user" });
     expect(found?.name).toBe("My Space");
   });
 

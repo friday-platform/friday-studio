@@ -1085,7 +1085,11 @@ export class AtlasDaemon {
       }
 
       runtime = new WorkspaceRuntime(
-        { id: workspace.id, members: { userId: workspace.metadata?.createdBy } },
+        {
+          id: workspace.id,
+          name: workspace.name,
+          members: { userId: workspace.metadata?.createdBy },
+        },
         mergedConfig,
         {
           lazy: true, // Always use lazy loading in daemon mode

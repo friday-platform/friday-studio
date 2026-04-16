@@ -27,7 +27,7 @@ export async function ensureDefaultUserWorkspace(manager: WorkspaceManager): Pro
   await mkdir(dir, { recursive: true });
   writeFileSync(join(dir, "workspace.yml"), templateYaml, "utf-8");
 
-  await manager.registerWorkspace(dir, { id: USER_WORKSPACE_ID });
+  await manager.registerWorkspace(dir, { id: USER_WORKSPACE_ID, canonical: "personal" });
 
   logger.info("Default user workspace created", { id: USER_WORKSPACE_ID });
 }

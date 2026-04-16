@@ -29,6 +29,21 @@ export {
 } from "./schemas.ts";
 export type { SkillFrontmatter } from "./skill-md-parser.ts";
 export { parseSkillMd, SkillFrontmatterSchema } from "./skill-md-parser.ts";
+// skills.sh client
+export type {
+  SkillsShDownloadResult,
+  SkillsShFile,
+  SkillsShSearchResult,
+  SkillsShSkillEntry,
+} from "./skills-sh-client.ts";
+export {
+  SkillsShClient,
+  SkillsShDownloadResultSchema,
+  SkillsShFileSchema,
+  SkillsShSearchResultSchema,
+  SkillsShSkillEntrySchema,
+  sortByOfficialPriority,
+} from "./skills-sh-client.ts";
 export { toSlug } from "./slug.ts";
 // Storage
 export type { SkillStorageAdapter } from "./storage.ts";

@@ -39,7 +39,7 @@ Line-range index into `docs/plans/2026-04-13-openclaw-parity-plan.md`:
 - `apps/atlasd/routes/workspaces/` — Workspace CRUD + update + signal endpoints
 - `agents/` — Python WASM agents (user-type, built via `deno task atlas agent build`)
 - `workspaces/` — Workspace definitions (workspace.yml + skill/ dirs)
-- `workspaces/fast-loop/` — FAST Loop kernel (thick_endive)
+- `packages/system/workspaces/system.yml` — System workspace (kernel)
 - `workspaces/fast-improvements-source/` — This workspace (braised_biscuit)
 
 ## Per-task-class checklists
@@ -49,7 +49,7 @@ For each task kind, the files the architect should read FIRST.
 ### kernel-* tasks (kernel must-lands)
 
 - Read plan lines 1289-1353 for the kernel must-lands list
-- Read `workspaces/fast-loop/workspace.yml` for current kernel config
+- Read `packages/system/workspaces/system.yml` for current kernel config
 - Read `packages/workspace/src/manager.ts` for workspace lifecycle
 - Read `apps/atlasd/routes/workspaces/` for daemon routes
 - Read `packages/fsm-engine/` if touching FSM behavior
@@ -84,7 +84,7 @@ For each task kind, the files the architect should read FIRST.
 
 - Read plan lines 1572-1621 for Phase 8 scope
 - Read this workspace (`workspaces/fast-improvements-source/`) as the prototype
-- Read `workspaces/fast-loop/workspace.yml` for dispatch patterns
+- Read `packages/system/workspaces/system.yml` for dispatch patterns
 
 ### agent-* tasks (Python WASM agents)
 

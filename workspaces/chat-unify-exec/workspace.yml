@@ -1,4 +1,6 @@
 version: '1.0'
+# Paths use {{repo_root}} and {{platform_url}} variable interpolation,
+# resolved at config-load time by the daemon. No operator-specific edits needed.
 workspace:
   name: Chat Unification Exec
   description: >-
@@ -209,7 +211,7 @@ jobs:
                   task_id: taskId,
                   task_brief: brief,
                   target_files: targets,
-                  repo_root: '/Users/kenneth/tempest/atlas',
+                  repo_root: '{{repo_root}}',
                 },
               };
             }
@@ -229,7 +231,7 @@ jobs:
               return {
                 task: 'Implement ' + task.taskId + ' per design memo',
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '{{repo_root}}',
                   task_id: task.taskId,
                   memo: memo,
                   task_brief: task.brief,
@@ -256,7 +258,7 @@ jobs:
               return {
                 task: 'Review ' + task.taskId + ' against memo and chat-unification plan',
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '{{repo_root}}',
                   task_id: task.taskId,
                   memo: memo,
                   changes: impl,
@@ -294,7 +296,7 @@ jobs:
               return {
                 task: 'Run Playwright browser tests for ' + task.taskId,
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '{{repo_root}}',
                   task_id: task.taskId,
                   routes: task.playwrightRoutes || [],
                   assertions: task.playwrightAssertions || [],
@@ -567,7 +569,7 @@ jobs:
               return {
                 task: 'Analyze chat-unification plan progress',
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '{{repo_root}}',
                   plan_doc: 'docs/plans/2026-04-15-chat-unification.md',
                   target_workspace_name: 'Chat Unification Exec',
                   backlog_url: 'http://localhost:8080/api/memory/thick_endive/narrative/autopilot-backlog',
@@ -772,7 +774,7 @@ agents:
     agent: claude-code
     prompt: |
       You are the architect for the chat-unification execution workspace.
-      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+      The atlas monorepo is mounted at {{repo_root}}.
 
       Your input contains a task_id, task_brief, and (optionally)
       target_files. Your output is a design memo conforming to the
@@ -852,7 +854,7 @@ agents:
       full toolchain: file edits, deno check, deno lint, test execution.
     prompt: |
       You are the coder for the chat-unification execution. The atlas
-      monorepo is mounted at /Users/kenneth/tempest/atlas (this is your
+      monorepo is mounted at {{repo_root}} (this is your
       workDir).
 
       Your input contains a design memo from the architect with specific
@@ -904,7 +906,7 @@ agents:
       capability.
     prompt: |
       You are the reviewer for the chat-unification execution. The atlas
-      monorepo is mounted at /Users/kenneth/tempest/atlas. Use your fs
+      monorepo is mounted at {{repo_root}}. Use your fs
       tools to read files directly.
 
       ## Step 1: Citation verification
@@ -920,7 +922,7 @@ agents:
       Read docs/plans/2026-04-15-chat-unification.md. Find the phase
       that matches your task_id. Read the whole phase section.
 
-      Read /Users/kenneth/tempest/atlas/CLAUDE.md for convention rules.
+      Read {{repo_root}}/CLAUDE.md for convention rules.
 
       ## Step 3: Verify coder output against the memo
 
@@ -1023,7 +1025,7 @@ agents:
       Cannot modify source — read-only except for its structured JSON output.
     prompt: |
       You are the plan-analyzer for the chat-unification execution workspace.
-      The atlas monorepo is mounted at /Users/kenneth/tempest/atlas.
+      The atlas monorepo is mounted at {{repo_root}}.
 
       Your job is reconciliation: look at what the plan says should happen,
       look at what the sessions claim was done, look at what's actually on

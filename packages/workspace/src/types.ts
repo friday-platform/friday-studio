@@ -10,6 +10,7 @@ export const WorkspaceMetadataSchema = z.object({
   description: z.string().optional(),
   tags: z.array(z.string()).optional(),
   system: z.boolean().optional(),
+  canonical: z.enum(["personal", "system"]).optional(),
   atlasVersion: z.string().optional(),
   /** User ID who created this workspace, used for analytics */
   createdBy: z.string().optional(),

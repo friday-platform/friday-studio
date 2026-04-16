@@ -33,6 +33,7 @@ export abstract class DocumentStore {
         type,
         id,
         workspaceId: scope.workspaceId,
+        workspaceName: scope.workspaceName,
         sessionId: scope.sessionId,
         error: msg,
       });
@@ -63,6 +64,7 @@ export abstract class DocumentStore {
       type,
       id,
       workspaceId: scope.workspaceId,
+      workspaceName: scope.workspaceName,
       sessionId: scope.sessionId,
     });
 
@@ -89,6 +91,7 @@ export abstract class DocumentStore {
         type,
         id,
         workspaceId: scope.workspaceId,
+        workspaceName: scope.workspaceName,
         sessionId: scope.sessionId,
         error: envelopeResult.error,
       });
@@ -108,6 +111,7 @@ export abstract class DocumentStore {
         type,
         id,
         workspaceId: scope.workspaceId,
+        workspaceName: scope.workspaceName,
         sessionId: scope.sessionId,
         error: msg,
       });
@@ -158,6 +162,7 @@ export abstract class DocumentStore {
         this.logger.error("State validation failed on save", {
           key,
           workspaceId: scope.workspaceId,
+          workspaceName: scope.workspaceName,
           sessionId: scope.sessionId,
           error: msg,
         });
@@ -196,6 +201,7 @@ export abstract class DocumentStore {
         this.logger.error("State validation failed on load", {
           key,
           workspaceId: scope.workspaceId,
+          workspaceName: scope.workspaceName,
           sessionId: scope.sessionId,
           error: msg,
         });

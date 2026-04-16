@@ -9,7 +9,7 @@ import {
 
 describe("CANONICAL_WORKSPACE_IDS", () => {
   it("defines personal and system IDs", () => {
-    expect(CANONICAL_WORKSPACE_IDS.PERSONAL).toBe("atlas-personal");
+    expect(CANONICAL_WORKSPACE_IDS.PERSONAL).toBe("user");
     expect(CANONICAL_WORKSPACE_IDS.SYSTEM).toBe("system");
   });
 });
@@ -31,7 +31,11 @@ describe("CANONICAL_CONSTRAINTS", () => {
 });
 
 describe("getCanonicalKind", () => {
-  it("returns 'personal' for atlas-personal", () => {
+  it("returns 'personal' for user (primary ID)", () => {
+    expect(getCanonicalKind("user")).toBe("personal");
+  });
+
+  it("returns 'personal' for atlas-personal (legacy alias)", () => {
     expect(getCanonicalKind("atlas-personal")).toBe("personal");
   });
 
@@ -47,6 +51,7 @@ describe("getCanonicalKind", () => {
 
 describe("isCanonical", () => {
   it("returns true for canonical IDs", () => {
+    expect(isCanonical("user")).toBe(true);
     expect(isCanonical("atlas-personal")).toBe(true);
     expect(isCanonical("system")).toBe(true);
   });

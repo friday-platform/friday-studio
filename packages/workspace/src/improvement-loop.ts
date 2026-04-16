@@ -38,6 +38,7 @@ export type PendingRevision = NonNullable<WorkspaceMetadata["pendingRevision"]>;
 export interface ImproverAgentInput {
   artifactId: string;
   workspaceId: string;
+  workspaceName: string;
   jobId: string;
   failedStepId?: string;
   errorMessage: string;
@@ -62,6 +63,7 @@ export type ImproverAgentResult =
 
 export interface ImprovementLoopInput {
   workspaceId: string;
+  workspaceName: string;
   sessionId: string;
   jobName: string;
   errorMessage: string;
@@ -95,6 +97,7 @@ export async function runImprovementLoop(input: ImprovementLoopInput): Promise<v
 async function runImprovementLoopInternal(input: ImprovementLoopInput): Promise<void> {
   const {
     workspaceId,
+    workspaceName,
     sessionId,
     jobName,
     errorMessage,
@@ -107,7 +110,13 @@ async function runImprovementLoopInternal(input: ImprovementLoopInput): Promise<
   const transcriptExcerpt = buildTranscriptExcerpt(timeline);
   const failedStepId = extractFailedStepId(timeline);
 
-  log.info("Starting improvement loop", { workspaceId, sessionId, jobName, failedStepId });
+  log.info("Starting improvement loop", {
+    workspaceId,
+    workspaceName,
+    sessionId,
+    jobName,
+    failedStepId,
+  });
 
   // 2. Run triage classifier
   const triageResult = await classifyFailure({
@@ -148,6 +157,7 @@ async function runImprovementLoopInternal(input: ImprovementLoopInput): Promise<
   const result = await invokeImprover({
     artifactId: blueprintArtifactId,
     workspaceId,
+    workspaceName,
     jobId: jobName,
     failedStepId,
     errorMessage,

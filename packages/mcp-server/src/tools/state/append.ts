@@ -57,6 +57,7 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
         "State survives across job runs and workspace restarts.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID"),
+        workspaceName: z.string().optional().describe("Human-readable workspace name"),
         key: z
           .string()
           .min(1)
@@ -73,8 +74,8 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
           .describe("Prune entries older than this many hours"),
       },
     },
-    async ({ workspaceId, key, entry, ttl_hours }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP state_append called", { workspaceId, key, ttl_hours });
+    async ({ workspaceId, workspaceName, key, entry, ttl_hours }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP state_append called", { workspaceId, workspaceName, key, ttl_hours });
 
       try {
         const dir = getWorkspaceFilesDir(workspaceId);
@@ -119,7 +120,8 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
 
           // Create or update artifact for workspace-scoped discovery
           const existingId = await resolveArtifactId(workspaceId);
-          const summary = `Workspace state DB (${count} entries in "${key}")`;
+          const nameLabel = workspaceName ? ` [${workspaceName}]` : "";
+          const summary = `Workspace${nameLabel} state DB (${count} entries in "${key}")`;
 
           if (existingId) {
             const updateResult = await ArtifactStorage.update({

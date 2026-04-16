@@ -48,3 +48,6 @@ export * from "./types.ts";
 // Validation
 export type { ValidationResult } from "./validator.ts";
 export { validateFSMStructure } from "./validator.ts";
+export type { BuildWorkspaceMetaInput, WorkspaceMeta } from "./workspace-meta.ts";
+// Workspace meta injection
+export { buildWorkspaceMeta, findRepoRoot, WorkspaceMetaSchema } from "./workspace-meta.ts";

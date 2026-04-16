@@ -12,7 +12,7 @@ import type { WorkspaceMetadata } from "./types.ts";
 export type CanonicalWorkspaceKind = "personal" | "system";
 
 /** Well-known canonical workspace IDs. */
-export const CANONICAL_WORKSPACE_IDS = { PERSONAL: "atlas-personal", SYSTEM: "system" } as const;
+export const CANONICAL_WORKSPACE_IDS = { PERSONAL: "user", SYSTEM: "system" } as const;
 
 export type CanonicalWorkspaceId =
   (typeof CANONICAL_WORKSPACE_IDS)[keyof typeof CANONICAL_WORKSPACE_IDS];
@@ -29,6 +29,9 @@ export const CANONICAL_CONSTRAINTS: Record<
 const canonicalIdToKind: Record<string, CanonicalWorkspaceKind> = {
   [CANONICAL_WORKSPACE_IDS.PERSONAL]: "personal",
   [CANONICAL_WORKSPACE_IDS.SYSTEM]: "system",
+  // Legacy alias — early canonical.ts used "atlas-personal" before the
+  // first-run-bootstrap settled on "user" as the stable ID.
+  "atlas-personal": "personal",
 };
 
 /** Returns the canonical kind for a workspace ID, or undefined if not canonical. */

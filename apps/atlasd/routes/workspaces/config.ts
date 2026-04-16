@@ -326,7 +326,13 @@ async function handleUpdateCredential(
       );
     }
 
-    if (workspace.metadata?.system) {
+    if (workspace.metadata?.canonical === "system") {
+      return c.json(
+        { success: false, error: "forbidden", message: "Cannot modify system canonical workspace" },
+        403,
+      );
+    }
+    if (workspace.metadata?.system && workspace.metadata?.canonical !== "personal") {
       return c.json(
         { success: false, error: "forbidden", message: "Cannot modify system workspace" },
         403,
@@ -595,8 +601,18 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         );
       }
 
-      // 2. System workspace protection
-      if (workspace.metadata?.system) {
+      // 2. System workspace / canonical protection
+      if (workspace.metadata?.canonical === "system") {
+        return c.json(
+          {
+            success: false,
+            error: "forbidden",
+            message: "Cannot modify system canonical workspace",
+          },
+          403,
+        );
+      }
+      if (workspace.metadata?.system && workspace.metadata?.canonical !== "personal") {
         return c.json(
           { success: false, error: "forbidden", message: "Cannot modify system workspace" },
           403,

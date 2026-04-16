@@ -132,6 +132,7 @@ function makeArtifactResponse(blueprint: WorkspaceBlueprint, revision = 1) {
 const defaultInput = {
   artifactId: "artifact-123",
   workspaceId: "workspace-456",
+  workspaceName: "My Test Workspace",
   jobId: "analyze-job",
   failedStepId: "step-1",
   errorMessage: "Tool 'search-web' not found in available tools",

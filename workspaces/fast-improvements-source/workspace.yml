@@ -446,7 +446,7 @@ agents:
       2. Read the existing source files in the relevant area. For adapter
          tasks: packages/agent-sdk/src/. For workspace schema tasks:
          packages/workspace/src/config-schema.ts. For agents:
-         agents/<id>/agent.py. For kernel jobs: workspaces/fast-loop/.
+         agents/<id>/agent.py. For kernel jobs: packages/system/workspaces/.
          Form a mental model of what already exists before designing.
 
       3. Read the @tempest/parity-plan-context skill if it has navigation

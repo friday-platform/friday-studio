@@ -31,11 +31,12 @@ export async function generateSessionSummary(
   view: SessionView,
   deps?: GenerateSessionSummaryDeps,
   jobDescription?: string,
+  workspaceName?: string,
 ): Promise<SessionAISummary | undefined> {
   const generate = deps?.generateObject ?? defaultGenerateObject;
 
   try {
-    const prompt = buildPrompt(view, jobDescription);
+    const prompt = buildPrompt(view, jobDescription, workspaceName);
 
     const { object } = await generate({
       model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
@@ -63,7 +64,7 @@ export async function generateSessionSummary(
  * deliverable. The last step's output is what the job produced — earlier
  * steps are implementation details.
  */
-function buildPrompt(view: SessionView, jobDescription?: string): string {
+function buildPrompt(view: SessionView, jobDescription?: string, workspaceName?: string): string {
   const job = jobDescription ?? view.task;
   const steps = view.agentBlocks
     .map((b) => {
@@ -80,12 +81,14 @@ Status: ${lastBlock.status}
 Output: ${JSON.stringify(lastBlock.output)}${lastBlock.error ? `\nError: ${lastBlock.error}` : ""}`
     : "No steps executed.";
 
+  const workspaceSection = workspaceName ? `\nWorkspace: ${workspaceName}` : "";
+
   return `Summarize this automated job. Focus on what was delivered, not the process.
 
 Key details should be the concrete deliverables and artifacts produced (documents created, URLs, titles). Do NOT rehash intermediate steps or restate the job description.
 
 ## Job
-${job}
+${job}${workspaceSection}
 Status: ${view.status}
 
 ## Steps

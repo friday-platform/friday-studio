@@ -22,6 +22,7 @@ export function registerStateLookupTool(server: McpServer, ctx: ToolContext): vo
         "Returns the matching entry if found.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID"),
+        workspaceName: z.string().optional().describe("Human-readable workspace name"),
         key: z
           .string()
           .min(1)
@@ -39,8 +40,8 @@ export function registerStateLookupTool(server: McpServer, ctx: ToolContext): vo
           .describe("Value to match against field"),
       },
     },
-    async ({ workspaceId, key, field, value }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP state_lookup called", { workspaceId, key, field });
+    async ({ workspaceId, workspaceName, key, field, value }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP state_lookup called", { workspaceId, workspaceName, key, field });
 
       try {
         const filePath = join(getWorkspaceFilesDir(workspaceId), "state.db");

@@ -18,6 +18,15 @@
 
 // Export system workspaces
 export { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
+export type { CanonicalWorkspaceId, CanonicalWorkspaceKind } from "./src/canonical.ts";
+// Canonical workspace helpers
+export {
+  CANONICAL_CONSTRAINTS,
+  CANONICAL_WORKSPACE_IDS,
+  getCanonicalKind,
+  isCanonical,
+  isCanonicalEntry,
+} from "./src/canonical.ts";
 // Improvement loop
 export type {
   ImprovementLoopInput,
@@ -60,5 +69,13 @@ export {
   WorkspaceStatusEnum,
   WorkspaceStatusSchema,
 } from "./src/types.ts";
+export type { WorkspaceVariables } from "./src/variable-interpolation.ts";
+// Variable interpolation ({{repo_root}}, {{platform_url}}, etc.)
+export {
+  findRepoRoot,
+  interpolateConfig,
+  resolveWorkspaceVariables,
+  WorkspaceVariablesSchema,
+} from "./src/variable-interpolation.ts";
 // Re-export watchers module for convenience
 export * as watchers from "./src/watchers/index.ts";

@@ -131,15 +131,17 @@
                 Share
               </DropdownMenu.Item>
 
-              <DropdownMenu.Item
-                onclick={() => {
-                  trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
-                  open.set(true);
-                }}
-              >
-                <Icons.Trash />
-                Remove
-              </DropdownMenu.Item>
+              {#if !workspace.metadata?.canonical}
+                <DropdownMenu.Item
+                  onclick={() => {
+                    trackEvent(GA4.WORKSPACE_DELETE_CLICK, { workspace_id: workspace.id });
+                    open.set(true);
+                  }}
+                >
+                  <Icons.Trash />
+                  Remove
+                </DropdownMenu.Item>
+              {/if}
 
               <DropdownMenu.Separator />
               <DropdownMenu.Label>Color</DropdownMenu.Label>
@@ -158,28 +160,30 @@
                 </DropdownMenu.Item>
               {/each}
 
-              <Dialog.Content>
-                <Dialog.Close />
+              {#if !workspace.metadata?.canonical}
+                <Dialog.Content>
+                  <Dialog.Close />
 
-                {#snippet icon()}
-                  <span style:color="var(--color-red)">
-                    <Icons.DeleteSpace />
-                  </span>
-                {/snippet}
+                  {#snippet icon()}
+                    <span style:color="var(--color-red)">
+                      <Icons.DeleteSpace />
+                    </span>
+                  {/snippet}
 
-                {#snippet header()}
-                  <Dialog.Title>Remove Space</Dialog.Title>
-                  <Dialog.Description>
-                    <p>Are you sure you want to remove this space?</p>
-                  </Dialog.Description>
-                {/snippet}
+                  {#snippet header()}
+                    <Dialog.Title>Remove Space</Dialog.Title>
+                    <Dialog.Description>
+                      <p>Are you sure you want to remove this space?</p>
+                    </Dialog.Description>
+                  {/snippet}
 
-                {#snippet footer()}
-                  <Dialog.Button onclick={handleDeleteWorkspace}>Confirm</Dialog.Button>
+                  {#snippet footer()}
+                    <Dialog.Button onclick={handleDeleteWorkspace}>Confirm</Dialog.Button>
 
-                  <Dialog.Cancel>Cancel</Dialog.Cancel>
-                {/snippet}
-              </Dialog.Content>
+                    <Dialog.Cancel>Cancel</Dialog.Cancel>
+                  {/snippet}
+                </Dialog.Content>
+              {/if}
             {/snippet}
           </Dialog.Root>
         {/snippet}

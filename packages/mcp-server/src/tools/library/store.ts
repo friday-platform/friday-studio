@@ -47,6 +47,10 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
             "Category tags to help organize and discover this item later (e.g., 'production', 'analysis', 'template')",
           ),
         workspace_id: z.string().optional().describe("Associated workspace ID"),
+        workspace_name: z
+          .string()
+          .optional()
+          .describe("Human-readable workspace name (primary key for memory)"),
         session_id: z.string().optional().describe("Associated session ID"),
         agent_ids: z
           .array(z.string())
@@ -70,6 +74,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
       mime_type = "text/markdown",
       tags = [],
       workspace_id,
+      workspace_name,
       session_id,
       agent_ids = [],
       source = "agent",
@@ -82,6 +87,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
         contentLength: content.length,
         tagCount: tags.length,
         workspace_id,
+        workspace_name,
         session_id,
       });
 
@@ -96,6 +102,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
           mime_type,
           tags,
           workspace_id,
+          workspace_name,
           session_id,
           agent_ids,
           source,

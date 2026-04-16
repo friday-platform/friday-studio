@@ -28,6 +28,8 @@ export class MdNarrativeCorpus implements NarrativeCorpus {
       {
         schema: NarrativeEntrySchema,
         commit: async (parsed: NarrativeEntry): Promise<NarrativeEntry> => {
+          // Ensure parent directory exists on first write (mirrors MdMemoryAdapter.get() mkdir)
+          await fs.mkdir(path.dirname(this.memoryPath), { recursive: true });
           const line = `- [${parsed.createdAt}] ${parsed.text} (id: ${parsed.id})\n`;
           await fs.appendFile(this.memoryPath, line, "utf-8");
           await fs.appendFile(this.jsonlPath, JSON.stringify(parsed) + "\n", "utf-8");

@@ -6,8 +6,7 @@
     "./packages/*",
     "./tools/evals",
     "./tools/agent-playground",
-    "./tools/pty-server",
-    "./workspaces/fast-loop"
+    "./tools/pty-server"
   ],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
