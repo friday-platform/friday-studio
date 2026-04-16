@@ -54,19 +54,22 @@
   let snapshotMessages = $state<ChatMessage[]>([]);
   let lastSnapshotKey = "";
   $effect(() => {
-    // Build a lightweight key from message count + tool call states.
-    // This avoids iterating message content (which changes every text-delta)
-    // while still detecting new messages and tool state transitions.
+    // Build a lightweight key from message count + status + tool states.
+    // Triggers on: new message, status change (submitted→streaming→idle),
+    // tool state transition. Does NOT trigger on every text-delta.
     const count = messages.length;
     const s = status;
     let toolKey = "";
+    let hasContent = false;
     if (count > 0) {
       const last = messages[count - 1];
       if (last && last.toolCalls) {
         toolKey = last.toolCalls.map((tc) => tc.state).join(",");
       }
+      // Detect when content first appears (empty → non-empty)
+      if (last && last.content.length > 0) hasContent = true;
     }
-    const key = `${count}:${s}:${toolKey}`;
+    const key = `${count}:${s}:${toolKey}:${hasContent}`;
     if (key !== lastSnapshotKey) {
       lastSnapshotKey = key;
       snapshotMessages = messages;
@@ -258,13 +261,35 @@
             widthPct: Math.max(2, (responseMs / totalMs) * 100),
           });
         }
-      } else {
-        // No tools — show waiting + response
+      } else if (timing.firstResponseMs) {
+        // No tools but got first response — split into waiting + streaming/response
+        const waitMs = timing.firstResponseMs - timing.startMs;
+        const responseMs = (timing.endMs ?? now) - timing.firstResponseMs;
+        if (waitMs > 50) {
+          bars.push({
+            label: "waiting",
+            durationMs: waitMs,
+            type: "waiting",
+            state: "done",
+            offsetPct: 0,
+            widthPct: Math.max(2, (waitMs / totalMs) * 100),
+          });
+        }
         bars.push({
-          label: isActive ? "processing..." : "response",
-          durationMs: totalMs,
-          type: isActive ? "waiting" : "response",
+          label: isActive ? "streaming" : "response",
+          durationMs: responseMs,
+          type: "response",
           state: isActive ? "streaming" : "done",
+          offsetPct: Math.max(0, (waitMs / totalMs) * 100),
+          widthPct: Math.max(2, (responseMs / totalMs) * 100),
+        });
+      } else {
+        // Still waiting for first response
+        bars.push({
+          label: "waiting",
+          durationMs: totalMs,
+          type: "waiting",
+          state: "streaming",
           offsetPct: 0,
           widthPct: 100,
         });
