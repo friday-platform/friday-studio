@@ -131,9 +131,37 @@
   }
 
   /**
+   * Cached geolocation — requested once on first chat message. The browser
+   * prompts for permission; if denied, lat/lon stay undefined and the agent
+   * falls back to timezone-based location guessing.
+   */
+  let cachedLocation: { latitude: string; longitude: string } | null = null;
+  let locationRequested = false;
+
+  function requestLocation(): Promise<void> {
+    if (locationRequested) return Promise.resolve();
+    locationRequested = true;
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          cachedLocation = {
+            latitude: pos.coords.latitude.toFixed(4),
+            longitude: pos.coords.longitude.toFixed(4),
+          };
+          resolve();
+        },
+        () => { resolve(); },
+        { timeout: 5000, maximumAge: 300000 },
+      );
+    });
+  }
+
+  /**
    * Build the timezone/locale context the backend optionally accepts. The
    * chat-unification plan uses this to show accurate local timestamps in
-   * agent replies without hard-coding UTC everywhere.
+   * agent replies without hard-coding UTC everywhere. Includes geolocation
+   * when available so the agent can give location-accurate answers.
    */
   function buildDatetime(): Record<string, string> {
     const now = new Date();
@@ -143,13 +171,20 @@
     const absHours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0");
     const absMins = String(Math.abs(offset) % 60).padStart(2, "0");
 
-    return {
+    const result: Record<string, string> = {
       timezone: tz,
       timestamp: now.toISOString(),
       localDate: now.toLocaleDateString("en-CA"),
       localTime: now.toLocaleTimeString("en-US", { hour12: false }),
       timezoneOffset: `${sign}${absHours}:${absMins}`,
     };
+
+    if (cachedLocation) {
+      result.latitude = cachedLocation.latitude;
+      result.longitude = cachedLocation.longitude;
+    }
+
+    return result;
   }
 
   /**
@@ -527,8 +562,11 @@
     error = null;
   }
 
-  function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
+  async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (streaming) return;
+
+    // Request geolocation on first message (browser prompts once)
+    await requestLocation();
 
     // Intercept /schedule slash-command before it reaches the chat agent.
     const scheduleCmd = parseScheduleCommand(text);
