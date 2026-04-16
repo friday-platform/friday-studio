@@ -1,5 +1,6 @@
 <script lang="ts">
   import { markdownToHTML } from "@atlas/ui";
+  import { tick } from "svelte";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
 
@@ -24,13 +25,18 @@
     messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0),
   );
 
+  async function scrollToBottom() {
+    await tick();
+    if (containerEl) {
+      containerEl.scrollTop = containerEl.scrollHeight;
+    }
+  }
+
   $effect(() => {
     // deps: messages.length, totalToolCallCount
     const _len = messages.length;
     const _calls = totalToolCallCount;
-    if (containerEl) {
-      containerEl.scrollTop = containerEl.scrollHeight;
-    }
+    void scrollToBottom();
   });
 
   /**

@@ -623,11 +623,15 @@
 
   .chat-header {
     align-items: center;
+    background-color: var(--color-surface-1);
     border-block-end: 1px solid var(--color-border-1);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-3);
     padding: var(--size-4) var(--size-5);
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--layer-1, 10);
   }
 
   .chat-header h2 {
