@@ -118,6 +118,8 @@ const AgentSessionDataSchema = z.object({
       localDate: z.string(),
       localTime: z.string(),
       timezoneOffset: z.string(),
+      latitude: z.string().optional(),
+      longitude: z.string().optional(),
     })
     .optional(),
   memoryContextKey: z.string().optional(),
