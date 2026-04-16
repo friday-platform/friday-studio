@@ -19,6 +19,10 @@ export interface DatetimeContext {
   localTime: string;
   /** UTC offset e.g. '-08:00' */
   timezoneOffset: string;
+  /** Browser geolocation latitude (optional) */
+  latitude?: string;
+  /** Browser geolocation longitude (optional) */
+  longitude?: string;
 }
 
 /**
@@ -30,13 +34,17 @@ export interface DatetimeContext {
  */
 export function buildTemporalFacts(datetime?: DatetimeContext): string {
   if (datetime) {
-    return [
+    const facts = [
       `## Context Facts`,
       `- Current Date: ${datetime.localDate}`,
       `- Current Time: ${datetime.localTime} (${datetime.timezone})`,
       `- Timestamp: ${datetime.timestamp}`,
       `- Timezone Offset: ${datetime.timezoneOffset}`,
-    ].join("\n");
+    ];
+    if (datetime.latitude && datetime.longitude) {
+      facts.push(`- User Location: ${datetime.latitude}, ${datetime.longitude}`);
+    }
+    return facts.join("\n");
   }
 
   // Server-side fallback — annotate with server timezone so the LLM

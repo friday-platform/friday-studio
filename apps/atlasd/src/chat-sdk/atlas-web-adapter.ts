@@ -48,6 +48,8 @@ const webhookBodySchema = z.object({
       localDate: z.string(),
       localTime: z.string(),
       timezoneOffset: z.string(),
+      latitude: z.string().optional(),
+      longitude: z.string().optional(),
     })
     .optional(),
   foreground_workspace_ids: z.array(z.string()).optional(),
