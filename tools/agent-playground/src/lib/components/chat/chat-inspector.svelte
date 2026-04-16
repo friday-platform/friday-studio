@@ -30,6 +30,7 @@
     userMessageId: string;
     userText: string;
     startMs: number;
+    firstResponseMs?: number;  // first assistant message part appeared
     endMs?: number;
     toolCalls: Array<{
       name: string;
@@ -85,6 +86,12 @@
       const userIdx = msgs.findIndex((m) => m.id === timing.userMessageId);
       if (userIdx < 0) continue;
       const assistantMsg = msgs.slice(userIdx + 1).find((m) => m.role === "assistant");
+
+      // Track first response (assistant message appeared)
+      if (assistantMsg && !timing.firstResponseMs) {
+        timing.firstResponseMs = now;
+        changed = true;
+      }
 
       if (assistantMsg?.toolCalls) {
         for (const tc of assistantMsg.toolCalls) {
@@ -222,7 +229,7 @@
   $effect(() => {
     const isActive = open && (status === "streaming" || status === "submitted");
     if (isActive) {
-      const interval = setInterval(() => { tickNow = Date.now(); }, 500);
+      const interval = setInterval(() => { tickNow = Date.now(); }, 100);
       return () => clearInterval(interval);
     }
   });
@@ -446,9 +453,9 @@
                       class:error={bar.state === "output-error" || bar.state === "output-denied"}
                       class:running={bar.state === "streaming" || (bar.state !== "output-available" && bar.state !== "output-error" && bar.state !== "output-denied" && bar.state !== "done")}
                       class:waiting={bar.type === "waiting"}
-                      style="margin-inline-start: {bar.offsetPct}%; inline-size: {bar.widthPct}%;"
                       title="{bar.label}: {formatMs(bar.durationMs)}"
                     >
+                      <div class="bar-fill" style="inline-size: {bar.widthPct}%;"></div>
                       <span class="bar-label">{bar.label}</span>
                       <span class="bar-time">{formatMs(bar.durationMs)}</span>
                     </div>
@@ -757,29 +764,60 @@
     font-size: var(--font-size-0);
     gap: var(--size-1);
     justify-content: space-between;
-    min-inline-size: 40px;
-    padding: 2px 6px;
+    overflow: hidden;
+    padding: 3px 6px;
+    position: relative;
+  }
+
+  .bar-fill {
+    border-radius: 3px;
+    inset: 0;
+    min-inline-size: 2px;
+    position: absolute;
+    z-index: 0;
+  }
+
+  .bar-label, .bar-time {
+    position: relative;
+    z-index: 1;
   }
 
   .waterfall-bar.done {
-    background-color: light-dark(hsl(142 60% 80%), hsl(142 40% 25%));
+    background-color: light-dark(hsl(142 60% 92%), hsl(142 20% 15%));
     color: light-dark(hsl(142 60% 25%), hsl(142 60% 80%));
   }
 
+  .waterfall-bar.done .bar-fill {
+    background-color: light-dark(hsl(142 60% 75%), hsl(142 40% 25%));
+  }
+
   .waterfall-bar.running {
-    animation: bar-pulse 1.5s ease-in-out infinite;
-    background-color: light-dark(hsl(217 70% 85%), hsl(217 40% 30%));
+    background-color: light-dark(hsl(217 70% 93%), hsl(217 20% 15%));
     color: light-dark(hsl(217 70% 30%), hsl(217 70% 80%));
   }
 
+  .waterfall-bar.running .bar-fill {
+    animation: bar-pulse 1.5s ease-in-out infinite;
+    background-color: light-dark(hsl(217 70% 78%), hsl(217 40% 30%));
+  }
+
   .waterfall-bar.error {
-    background-color: light-dark(hsl(10 70% 85%), hsl(10 40% 25%));
+    background-color: light-dark(hsl(10 70% 93%), hsl(10 20% 15%));
     color: light-dark(hsl(10 70% 30%), hsl(10 70% 80%));
   }
 
+  .waterfall-bar.error .bar-fill {
+    background-color: light-dark(hsl(10 70% 80%), hsl(10 40% 25%));
+  }
+
   .waterfall-bar.waiting {
-    background-color: light-dark(hsl(38 70% 85%), hsl(38 40% 25%));
+    background-color: light-dark(hsl(38 70% 93%), hsl(38 20% 15%));
     color: light-dark(hsl(38 70% 30%), hsl(38 70% 80%));
+  }
+
+  .waterfall-bar.waiting .bar-fill {
+    animation: bar-pulse 1.5s ease-in-out infinite;
+    background-color: light-dark(hsl(38 70% 78%), hsl(38 40% 25%));
   }
 
   @keyframes bar-pulse {
