@@ -141,21 +141,42 @@
   }
 
   /** Formatter for the collapsible raw output. Handles strings + JSON. */
+  /** Pretty-print and syntax-highlight JSON for the details panel. */
   function formatRawOutput(output: unknown): string {
+    let jsonStr: string;
     if (typeof output === "string") {
-      // Try to parse as JSON for pretty-printing (web_fetch returns JSON strings)
       try {
         const parsed: unknown = JSON.parse(output);
-        return JSON.stringify(parsed, null, 2);
+        jsonStr = JSON.stringify(parsed, null, 2);
       } catch {
-        return output;
+        return escapeHtml(output);
+      }
+    } else {
+      try {
+        jsonStr = JSON.stringify(output, null, 2);
+      } catch {
+        return escapeHtml(String(output));
       }
     }
-    try {
-      return JSON.stringify(output, null, 2);
-    } catch {
-      return String(output);
-    }
+    return highlightJson(jsonStr);
+  }
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /** Regex-based JSON syntax highlighter — no dependencies. */
+  function highlightJson(json: string): string {
+    return json.replace(
+      /("(?:\\.|[^"\\])*")\s*:|("(?:\\.|[^"\\])*")|(true|false|null)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+      (match, key?: string, str?: string, bool?: string, num?: string) => {
+        if (key) return `<span class="json-key">${escapeHtml(key)}</span>:`;
+        if (str) return `<span class="json-string">${escapeHtml(str)}</span>`;
+        if (bool) return `<span class="json-bool">${bool}</span>`;
+        if (num) return `<span class="json-number">${num}</span>`;
+        return match;
+      },
+    );
   }
 </script>
 
@@ -220,12 +241,12 @@
                   {#if call.state === "output-available" && call.output !== undefined}
                     <details class="tool-card-details">
                       <summary>details</summary>
-                      <pre>{formatRawOutput(call.output)}</pre>
+                      <pre>{@html formatRawOutput(call.output)}</pre>
                     </details>
                   {:else if call.state === "output-error" && call.input !== undefined}
                     <details class="tool-card-details">
                       <summary>input</summary>
-                      <pre>{formatRawOutput(call.input)}</pre>
+                      <pre>{@html formatRawOutput(call.input)}</pre>
                     </details>
                   {/if}
                 </div>
@@ -530,6 +551,24 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ─── JSON syntax highlighting ───────────────────────────────────────── */
+
+  .tool-card-details > pre :global(.json-key) {
+    color: light-dark(hsl(212 97% 40%), hsl(212 96% 78%));
+  }
+
+  .tool-card-details > pre :global(.json-string) {
+    color: light-dark(hsl(142 60% 35%), hsl(142 60% 65%));
+  }
+
+  .tool-card-details > pre :global(.json-number) {
+    color: light-dark(hsl(30 90% 40%), hsl(30 90% 70%));
+  }
+
+  .tool-card-details > pre :global(.json-bool) {
+    color: light-dark(hsl(263 70% 50%), hsl(263 70% 75%));
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */
