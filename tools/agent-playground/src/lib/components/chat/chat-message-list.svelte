@@ -1,6 +1,7 @@
 <script lang="ts">
   import { markdownToHTML } from "@atlas/ui";
   import { tick } from "svelte";
+  import { jsonHighlighter } from "./json-highlighter";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
 
@@ -149,34 +150,16 @@
         const parsed: unknown = JSON.parse(output);
         jsonStr = JSON.stringify(parsed, null, 2);
       } catch {
-        return escapeHtml(output);
+        return output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
     } else {
       try {
         jsonStr = JSON.stringify(output, null, 2);
       } catch {
-        return escapeHtml(String(output));
+        return String(output).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
     }
-    return highlightJson(jsonStr);
-  }
-
-  function escapeHtml(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  /** Regex-based JSON syntax highlighter — no dependencies. */
-  function highlightJson(json: string): string {
-    return json.replace(
-      /("(?:\\.|[^"\\])*")\s*:|("(?:\\.|[^"\\])*")|(true|false|null)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-      (match, key?: string, str?: string, bool?: string, num?: string) => {
-        if (key) return `<span class="json-key">${escapeHtml(key)}</span>:`;
-        if (str) return `<span class="json-string">${escapeHtml(str)}</span>`;
-        if (bool) return `<span class="json-bool">${bool}</span>`;
-        if (num) return `<span class="json-number">${num}</span>`;
-        return match;
-      },
-    );
+    return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
   }
 </script>
 
@@ -553,22 +536,16 @@
     }
   }
 
-  /* ─── JSON syntax highlighting ───────────────────────────────────────── */
+  /* ─── Shiki JSON highlighting ────────────────────────────────────────── */
 
-  .tool-card-details > pre :global(.json-key) {
-    color: light-dark(hsl(212 97% 40%), hsl(212 96% 78%));
+  .tool-card-details :global(pre.shiki) {
+    background: transparent !important;
+    margin: 0;
   }
 
-  .tool-card-details > pre :global(.json-string) {
-    color: light-dark(hsl(142 60% 35%), hsl(142 60% 65%));
-  }
-
-  .tool-card-details > pre :global(.json-number) {
-    color: light-dark(hsl(30 90% 40%), hsl(30 90% 70%));
-  }
-
-  .tool-card-details > pre :global(.json-bool) {
-    color: light-dark(hsl(263 70% 50%), hsl(263 70% 75%));
+  .tool-card-details :global(pre.shiki code) {
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */
