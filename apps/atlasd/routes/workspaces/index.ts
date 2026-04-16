@@ -1158,8 +1158,8 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
 
-        if (name && workspace.metadata?.canonical) {
-          return c.json({ error: "Cannot rename canonical workspace" }, 403);
+        if (name && workspace.metadata?.canonical === "system") {
+          return c.json({ error: "Cannot rename system canonical workspace" }, 403);
         }
 
         const newMetadata = { ...workspace.metadata, ...metadataUpdates };

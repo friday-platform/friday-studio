@@ -32,6 +32,8 @@ const canonicalIdToKind: Record<string, CanonicalWorkspaceKind> = {
   // Legacy alias — early canonical.ts used "atlas-personal" before the
   // first-run-bootstrap settled on "user" as the stable ID.
   "atlas-personal": "personal",
+  // The conversation workspace is both system AND canonical.
+  "atlas-conversation": "system",
 };
 
 /** Returns the canonical kind for a workspace ID, or undefined if not canonical. */

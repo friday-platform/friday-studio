@@ -80,6 +80,11 @@ export class MCPStreamEmitter implements StreamEmitter {
     if (this.ended) {
       throw new Error("Cannot emit after stream has ended");
     }
+    this.logger.debug("Emitting stream notification", {
+      eventType: event.type,
+      sessionId: this.sessionId,
+      toolName: this.toolName,
+    });
     try {
       this.server.notification({
         method: "notifications/tool/streamContent",

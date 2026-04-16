@@ -43,6 +43,10 @@ describe("getCanonicalKind", () => {
     expect(getCanonicalKind("system")).toBe("system");
   });
 
+  it("returns 'system' for atlas-conversation", () => {
+    expect(getCanonicalKind("atlas-conversation")).toBe("system");
+  });
+
   it("returns undefined for non-canonical IDs", () => {
     expect(getCanonicalKind("braised_biscuit")).toBeUndefined();
     expect(getCanonicalKind("")).toBeUndefined();
@@ -54,6 +58,7 @@ describe("isCanonical", () => {
     expect(isCanonical("user")).toBe(true);
     expect(isCanonical("atlas-personal")).toBe(true);
     expect(isCanonical("system")).toBe(true);
+    expect(isCanonical("atlas-conversation")).toBe(true);
   });
 
   it("returns false for non-canonical IDs", () => {

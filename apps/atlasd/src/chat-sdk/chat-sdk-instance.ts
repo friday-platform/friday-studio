@@ -212,7 +212,16 @@ export function createMessageHandler(
       streamId,
       (chunk: unknown) => {
         if (isClientSafeEvent(chunk)) {
-          streamRegistry.appendEvent(chatId, chunk);
+          const appended = streamRegistry.appendEvent(chatId, chunk);
+          if (!appended) {
+            logger.warn("stream_event_dropped", {
+              chatId,
+              chunkType:
+                typeof chunk === "object" && chunk !== null && "type" in chunk
+                  ? String(chunk.type)
+                  : "unknown",
+            });
+          }
         }
       },
     );

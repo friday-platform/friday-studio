@@ -228,8 +228,14 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
       ...options,
       waitUntil: (task) => {
         // Close the stream even if the handler was skipped (e.g. dedup).
+        // Drain delay: MCP notification delivery is asynchronous — late-arriving
+        // StreamContentNotification chunks can be dropped if finishStream sets
+        // buffer.active=false before they arrive. A short delay lets in-flight
+        // notifications land before we close the stream.
         task.finally(() => {
-          this.streamRegistry.finishStream(chatId);
+          setTimeout(() => {
+            this.streamRegistry.finishStream(chatId);
+          }, 500);
         });
       },
     });

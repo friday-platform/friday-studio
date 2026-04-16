@@ -255,7 +255,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     if (context.onStreamEvent) {
       const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
       this.activeStreamHandlers.set(handlerKey, context.onStreamEvent);
-      logger.debug("Registered handler for SSE stream", { handlerKey });
+      logger.debug("Registered stream handler", {
+        handlerKey,
+        activeHandlerKeys: [...this.activeStreamHandlers.keys()],
+      });
     } else {
       logger.debug("No stream callback provided");
     }
@@ -447,6 +450,14 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         const handler = this.activeStreamHandlers.get(handlerKey);
         if (handler) {
           handler(evt);
+        } else {
+          this.logger.warn("No stream handler for notification", {
+            handlerKey,
+            sessionId,
+            agentId,
+            eventType: evt.type,
+            activeHandlerKeys: [...this.activeStreamHandlers.keys()],
+          });
         }
       });
 
