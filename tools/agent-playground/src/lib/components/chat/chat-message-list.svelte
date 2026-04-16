@@ -142,7 +142,15 @@
 
   /** Formatter for the collapsible raw output. Handles strings + JSON. */
   function formatRawOutput(output: unknown): string {
-    if (typeof output === "string") return output;
+    if (typeof output === "string") {
+      // Try to parse as JSON for pretty-printing (web_fetch returns JSON strings)
+      try {
+        const parsed: unknown = JSON.parse(output);
+        return JSON.stringify(parsed, null, 2);
+      } catch {
+        return output;
+      }
+    }
     try {
       return JSON.stringify(output, null, 2);
     } catch {
@@ -499,11 +507,11 @@
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0, 11px);
     margin-block-start: var(--size-1);
-    max-block-size: 300px;
+    max-block-size: 400px;
     overflow: auto;
     padding: var(--size-2);
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
   }
 
   /* ─── Spinner ───────────────────────────────────────────────────────── */
