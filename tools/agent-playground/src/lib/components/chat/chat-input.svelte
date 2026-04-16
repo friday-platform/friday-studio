@@ -22,15 +22,16 @@
   let recognition: SpeechRecognition | null = $state(null);
 
   const hasContent = $derived(value.trim().length > 0 || images.length > 0);
-  const sttSupported = typeof webkitSpeechRecognition !== "undefined"
-    || typeof SpeechRecognition !== "undefined";
+  const sttSupported = typeof window !== "undefined"
+    && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
 
   function toggleRecording() {
     if (recording) {
       recognition?.stop();
       return;
     }
-    const SpeechRecognitionCtor = SpeechRecognition ?? webkitSpeechRecognition;
+    const w = window as unknown as Record<string, unknown>;
+    const SpeechRecognitionCtor = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as SpeechRecognitionConstructor | undefined;
     if (!SpeechRecognitionCtor) return;
 
     const sr = new SpeechRecognitionCtor();
