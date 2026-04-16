@@ -25,7 +25,8 @@
   let inspectorOpen = $state(false);
 
   function handleGlobalKeydown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
+    // Cmd+Shift+D (Debug) — Cmd+Shift+I is intercepted by Chrome DevTools
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "d") {
       e.preventDefault();
       inspectorOpen = !inspectorOpen;
     }
@@ -249,20 +250,20 @@
     }
   }
 
-  onMount(async () => {
-    // Request geolocation eagerly — browser caches the permission, so
-    // subsequent calls are instant. Doing it on mount means the first
-    // message already has coordinates without waiting for the prompt.
+  onMount(() => {
+    // Request geolocation eagerly — browser caches the permission
     void requestLocation();
 
     const saved = getPersistedChatId();
     if (saved) {
-      await rehydrateChat(saved);
-    }
-    if (!chatId) {
+      // Start rehydration in background — show chat immediately
+      chatId = saved;
+      rehydrationDone = true;
+      void rehydrateChat(saved);
+    } else {
       chatId = crypto.randomUUID();
+      rehydrationDone = true;
     }
-    rehydrationDone = true;
   });
 
   // Transport — re-derived when CHAT_API / prepareSendMessagesRequest would
