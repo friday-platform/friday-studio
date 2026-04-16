@@ -103,13 +103,15 @@
 
   /** Computed waterfall data from turn timings. */
   const waterfallTurns = $derived.by(() => {
+    const _tick = tickNow; // subscribe to live ticker
     const turns: Array<{
       userText: string;
       totalMs: number;
+      isActive: boolean;
       bars: Array<{
         label: string;
         durationMs: number;
-        type: "tool" | "llm";
+        type: "tool" | "waiting" | "response";
         state: string;
         offsetPct: number;
         widthPct: number;
@@ -117,30 +119,84 @@
     }> = [];
 
     for (const timing of turnTimings) {
-      const totalMs = (timing.endMs ?? Date.now()) - timing.startMs;
+      const now = _tick;
+      const totalMs = (timing.endMs ?? now) - timing.startMs;
       if (totalMs <= 0) continue;
+      const isActive = !timing.endMs;
 
       const bars: typeof turns[number]["bars"] = [];
-      for (const tc of timing.toolCalls) {
-        const start = tc.firstSeenMs - timing.startMs;
-        const dur = (tc.doneMs ?? Date.now()) - tc.firstSeenMs;
+
+      if (timing.toolCalls.length > 0) {
+        // Add waiting phase (from user message to first tool call)
+        const firstToolMs = Math.min(...timing.toolCalls.map((t) => t.firstSeenMs));
+        const waitMs = firstToolMs - timing.startMs;
+        if (waitMs > 100) {
+          bars.push({
+            label: "waiting",
+            durationMs: waitMs,
+            type: "waiting",
+            state: "done",
+            offsetPct: 0,
+            widthPct: Math.max(2, (waitMs / totalMs) * 100),
+          });
+        }
+
+        // Tool call bars
+        for (const tc of timing.toolCalls) {
+          const start = tc.firstSeenMs - timing.startMs;
+          const dur = (tc.doneMs ?? now) - tc.firstSeenMs;
+          bars.push({
+            label: tc.name,
+            durationMs: dur,
+            type: "tool",
+            state: tc.state,
+            offsetPct: Math.max(0, (start / totalMs) * 100),
+            widthPct: Math.max(2, (dur / totalMs) * 100),
+          });
+        }
+
+        // Response phase (from last tool done to end)
+        const lastToolDone = Math.max(...timing.toolCalls.map((t) => t.doneMs ?? now));
+        const responseMs = (timing.endMs ?? now) - lastToolDone;
+        if (responseMs > 100) {
+          bars.push({
+            label: "response",
+            durationMs: responseMs,
+            type: "response",
+            state: isActive ? "streaming" : "done",
+            offsetPct: Math.max(0, ((lastToolDone - timing.startMs) / totalMs) * 100),
+            widthPct: Math.max(2, (responseMs / totalMs) * 100),
+          });
+        }
+      } else {
+        // No tools — show waiting + response
         bars.push({
-          label: tc.name,
-          durationMs: dur,
-          type: "tool",
-          state: tc.state,
-          offsetPct: Math.max(0, (start / totalMs) * 100),
-          widthPct: Math.max(2, (dur / totalMs) * 100),
+          label: isActive ? "processing..." : "response",
+          durationMs: totalMs,
+          type: isActive ? "waiting" : "response",
+          state: isActive ? "streaming" : "done",
+          offsetPct: 0,
+          widthPct: 100,
         });
       }
 
       turns.push({
         userText: timing.userText.slice(0, 40) + (timing.userText.length > 40 ? "..." : ""),
         totalMs,
+        isActive,
         bars,
       });
     }
     return turns;
+  });
+
+  /** Live-ticking "now" — updates every 100ms when streaming for live elapsed display. */
+  let tickNow = $state(Date.now());
+  $effect(() => {
+    if (status === "streaming" || status === "submitted") {
+      const interval = setInterval(() => { tickNow = Date.now(); }, 100);
+      return () => clearInterval(interval);
+    }
   });
 
   function formatMs(ms: number): string {
@@ -352,15 +408,16 @@
               <div class="waterfall-turn">
                 <div class="waterfall-header">
                   <span class="waterfall-label">{turn.userText}</span>
-                  <span class="waterfall-total">{formatMs(turn.totalMs)}</span>
+                  <span class="waterfall-total" class:active={turn.isActive}>{formatMs(turn.totalMs)}</span>
                 </div>
                 <div class="waterfall-bars">
-                  {#each turn.bars as bar (bar.label + bar.offsetPct)}
+                  {#each turn.bars as bar, bi (bar.label + bi)}
                     <div
                       class="waterfall-bar"
-                      class:done={bar.state === "output-available"}
+                      class:done={bar.state === "output-available" || bar.state === "done"}
                       class:error={bar.state === "output-error" || bar.state === "output-denied"}
-                      class:running={bar.state !== "output-available" && bar.state !== "output-error" && bar.state !== "output-denied"}
+                      class:running={bar.state === "streaming" || (bar.state !== "output-available" && bar.state !== "output-error" && bar.state !== "output-denied" && bar.state !== "done")}
+                      class:waiting={bar.type === "waiting"}
                       style="margin-inline-start: {bar.offsetPct}%; inline-size: {bar.widthPct}%;"
                       title="{bar.label}: {formatMs(bar.durationMs)}"
                     >
@@ -368,12 +425,6 @@
                       <span class="bar-time">{formatMs(bar.durationMs)}</span>
                     </div>
                   {/each}
-                  {#if turn.bars.length === 0}
-                    <div class="waterfall-bar done" style="inline-size: 100%;">
-                      <span class="bar-label">LLM response</span>
-                      <span class="bar-time">{formatMs(turn.totalMs)}</span>
-                    </div>
-                  {/if}
                 </div>
               </div>
             {/each}
@@ -656,6 +707,11 @@
     font-size: var(--font-size-0);
   }
 
+  .waterfall-total.active {
+    color: var(--color-info);
+    font-weight: var(--font-weight-6);
+  }
+
   .waterfall-bars {
     background-color: light-dark(hsl(220 12% 95%), color-mix(in srgb, var(--color-surface-3), transparent 50%));
     border-radius: var(--radius-1);
@@ -691,6 +747,11 @@
   .waterfall-bar.error {
     background-color: light-dark(hsl(10 70% 85%), hsl(10 40% 25%));
     color: light-dark(hsl(10 70% 30%), hsl(10 70% 80%));
+  }
+
+  .waterfall-bar.waiting {
+    background-color: light-dark(hsl(38 70% 85%), hsl(38 40% 25%));
+    color: light-dark(hsl(38 70% 30%), hsl(38 70% 80%));
   }
 
   @keyframes bar-pulse {
