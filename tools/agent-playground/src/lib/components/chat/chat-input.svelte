@@ -16,8 +16,66 @@
   let images: ImageAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
+  /// <reference path="./speech-recognition.d.ts" />
+
+  let recording = $state(false);
+  let recognition: SpeechRecognition | null = $state(null);
 
   const hasContent = $derived(value.trim().length > 0 || images.length > 0);
+  const sttSupported = typeof webkitSpeechRecognition !== "undefined"
+    || typeof SpeechRecognition !== "undefined";
+
+  function toggleRecording() {
+    if (recording) {
+      recognition?.stop();
+      return;
+    }
+    const SpeechRecognitionCtor = SpeechRecognition ?? webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    const sr = new SpeechRecognitionCtor();
+    sr.continuous = true;
+    sr.interimResults = true;
+    sr.lang = navigator.language || "en-US";
+
+    let finalTranscript = "";
+
+    sr.onresult = (e: SpeechRecognitionEvent) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result && result[0]) {
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interim += result[0].transcript;
+          }
+        }
+      }
+      // Append final text to the input value, show interim as preview
+      const base = value.endsWith(" ") || value.length === 0 ? value : value + " ";
+      value = base + finalTranscript + interim;
+    };
+
+    sr.onend = () => {
+      // Commit final transcript and clean up
+      const base = value.endsWith(" ") || value.length === 0 ? value : value + " ";
+      if (finalTranscript.length > 0) {
+        value = base.trimEnd() + (base.length > 0 ? " " : "") + finalTranscript;
+      }
+      recording = false;
+      recognition = null;
+    };
+
+    sr.onerror = () => {
+      recording = false;
+      recognition = null;
+    };
+
+    recognition = sr;
+    recording = true;
+    sr.start();
+  }
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -146,13 +204,33 @@
       onchange={handleFileInput}
       class="file-input-hidden"
     />
+    {#if sttSupported}
+      <button
+        class="mic-button"
+        class:recording
+        onclick={toggleRecording}
+        {disabled}
+        aria-label={recording ? "Stop recording" : "Voice input"}
+      >
+        {#if recording}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
+          </svg>
+        {:else}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 1.5a2 2 0 0 0-2 2v4a2 2 0 0 0 4 0v-4a2 2 0 0 0-2-2Z" fill="currentColor" />
+            <path d="M4 6.5a.5.5 0 0 1 1 0v1a3 3 0 0 0 6 0v-1a.5.5 0 0 1 1 0v1a4 4 0 0 1-3.5 3.97V13h2a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1h2v-1.53A4 4 0 0 1 4 7.5v-1Z" fill="currentColor" />
+          </svg>
+        {/if}
+      </button>
+    {/if}
     <textarea
       data-testid="chat-input"
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
       {disabled}
-      placeholder={dragOver ? "Drop image here..." : "Send a message..."}
+      placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
       rows={1}
     ></textarea>
     <button
@@ -222,6 +300,39 @@
   .attach-button:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  .mic-button {
+    align-items: center;
+    background: transparent;
+    border: none;
+    block-size: var(--size-7);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    display: flex;
+    flex-shrink: 0;
+    inline-size: var(--size-7);
+    justify-content: center;
+    transition: color 150ms ease;
+  }
+
+  .mic-button:hover:not(:disabled) {
+    color: var(--color-text);
+  }
+
+  .mic-button.recording {
+    animation: mic-pulse 1.5s ease-in-out infinite;
+    color: var(--color-error);
+  }
+
+  .mic-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  @keyframes mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   textarea {
