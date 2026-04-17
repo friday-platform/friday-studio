@@ -7,9 +7,16 @@
 
   interface Props {
     onsubmit: (message: string, images: ImageAttachment[]) => void;
+    /** True while the assistant is producing a response. Swaps the send slot
+     * for a stop button; users press Enter to send when idle. */
+    streaming?: boolean;
+    /** True while a stop request is in flight (DELETE session). */
+    stopping?: boolean;
+    /** Abort the current turn. Required when `streaming` can be true. */
+    onstop?: () => void;
   }
 
-  const { onsubmit }: Props = $props();
+  const { onsubmit, streaming = false, stopping = false, onstop }: Props = $props();
 
   let value = $state("");
   let images: ImageAttachment[] = $state([]);
@@ -227,22 +234,19 @@
       placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
       rows={1}
     ></textarea>
-    <button
-      class="send-button"
-      disabled={!hasContent}
-      onclick={submit}
-      aria-label="Send message"
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M14 2L7 9M14 2L9.5 14L7 9M14 2L2 6.5L7 9"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
+    {#if streaming}
+      <button
+        class="stop-button"
+        onclick={() => onstop?.()}
+        disabled={stopping}
+        aria-label="Stop response"
+        title="Stop response"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+        </svg>
+      </button>
+    {/if}
   </div>
 </div>
 
@@ -350,9 +354,9 @@
     opacity: 0.5;
   }
 
-  .send-button {
+  .stop-button {
     align-items: center;
-    background-color: var(--color-primary);
+    background-color: var(--color-error, #c93b3b);
     border: none;
     border-radius: var(--radius-2);
     block-size: var(--size-7);
@@ -365,12 +369,12 @@
     transition: opacity 150ms ease;
   }
 
-  .send-button:disabled {
+  .stop-button:disabled {
     cursor: default;
-    opacity: 0.4;
+    opacity: 0.5;
   }
 
-  .send-button:not(:disabled):hover {
+  .stop-button:not(:disabled):hover {
     opacity: 0.85;
   }
 

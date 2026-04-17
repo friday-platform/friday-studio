@@ -923,19 +923,6 @@
       {/if}
 
       <div class="chat-input-area">
-        {#if streaming}
-          <div class="stop-row">
-            <button
-              type="button"
-              class="stop-button"
-              onclick={handleStop}
-              disabled={stopping}
-              title="Abort the current response"
-            >
-              {stopping ? "Stopping…" : "Stop response"}
-            </button>
-          </div>
-        {/if}
         {#if queuedMessages.length > 0}
           <div class="queued-indicator">
             {queuedMessages.length === 1
@@ -943,7 +930,7 @@
               : `${queuedMessages.length} messages queued — will send when the assistant finishes`}
           </div>
         {/if}
-        <ChatInput onsubmit={handleSubmit} />
+        <ChatInput onsubmit={handleSubmit} {streaming} {stopping} onstop={handleStop} />
       </div>
     </div>
 
@@ -1067,34 +1054,6 @@
     padding-block-end: var(--size-2);
     text-align: center;
   }
-
-  .stop-row {
-    display: flex;
-    justify-content: center;
-    padding-block-end: var(--size-2);
-  }
-
-  .stop-button {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-error);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-3);
-    transition: background-color 150ms ease;
-  }
-
-  .stop-button:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--color-error), transparent 85%);
-  }
-
-  .stop-button:disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
-
 
   /* ─── Drag-drop overlay ────────────────────────────────────────────── */
 
