@@ -14,9 +14,21 @@
     stopping?: boolean;
     /** Abort the current turn. Required when `streaming` can be true. */
     onstop?: () => void;
+    /** Text-to-speech read-out toggle state, lifted to the parent so it
+     * can drive the speechSynthesis queue. */
+    ttsEnabled?: boolean;
+    /** User flipped the TTS button. */
+    onttsToggle?: () => void;
   }
 
-  const { onsubmit, streaming = false, stopping = false, onstop }: Props = $props();
+  const {
+    onsubmit,
+    streaming = false,
+    stopping = false,
+    onstop,
+    ttsEnabled = false,
+    onttsToggle,
+  }: Props = $props();
 
   let value = $state("");
   let images: ImageAttachment[] = $state([]);
@@ -207,12 +219,21 @@
       onchange={handleFileInput}
       class="file-input-hidden"
     />
+    <textarea
+      data-testid="chat-input"
+      bind:value
+      onkeydown={handleKeydown}
+      onpaste={handlePaste}
+      placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
+      rows={1}
+    ></textarea>
     {#if sttSupported}
       <button
         class="mic-button"
         class:recording
         onclick={toggleRecording}
         aria-label={recording ? "Stop recording" : "Voice input"}
+        title={recording ? "Stop recording" : "Voice input"}
       >
         {#if recording}
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -226,14 +247,30 @@
         {/if}
       </button>
     {/if}
-    <textarea
-      data-testid="chat-input"
-      bind:value
-      onkeydown={handleKeydown}
-      onpaste={handlePaste}
-      placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
-      rows={1}
-    ></textarea>
+    {#if onttsToggle}
+      <button
+        class="tts-button"
+        class:active={ttsEnabled}
+        onclick={() => onttsToggle?.()}
+        aria-label={ttsEnabled ? "Turn off read-aloud" : "Turn on read-aloud"}
+        aria-pressed={ttsEnabled}
+        title={ttsEnabled ? "Read-aloud: on" : "Read-aloud: off"}
+      >
+        {#if ttsEnabled}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="6" width="1.5" height="4" rx="0.5" fill="currentColor"><animate attributeName="height" values="4;8;4" dur="1s" repeatCount="indefinite"/><animate attributeName="y" values="6;4;6" dur="1s" repeatCount="indefinite"/></rect>
+            <rect x="5" y="4" width="1.5" height="8" rx="0.5" fill="currentColor"><animate attributeName="height" values="8;4;8" dur="1s" repeatCount="indefinite"/><animate attributeName="y" values="4;6;4" dur="1s" repeatCount="indefinite"/></rect>
+            <rect x="8" y="5" width="1.5" height="6" rx="0.5" fill="currentColor"><animate attributeName="height" values="6;10;6" dur="1.1s" repeatCount="indefinite"/><animate attributeName="y" values="5;3;5" dur="1.1s" repeatCount="indefinite"/></rect>
+            <rect x="11" y="6" width="1.5" height="4" rx="0.5" fill="currentColor"><animate attributeName="height" values="4;8;4" dur="0.9s" repeatCount="indefinite"/><animate attributeName="y" values="6;4;6" dur="0.9s" repeatCount="indefinite"/></rect>
+          </svg>
+        {:else}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 2.5L4.5 5H2v6h2.5L8 13.5v-11Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/>
+            <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        {/if}
+      </button>
+    {/if}
     {#if streaming}
       <button
         class="stop-button"
@@ -326,6 +363,28 @@
   .mic-button:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  .tts-button {
+    align-items: center;
+    background: transparent;
+    border: none;
+    block-size: var(--size-7);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    display: flex;
+    flex-shrink: 0;
+    inline-size: var(--size-7);
+    justify-content: center;
+    transition: color 150ms ease;
+  }
+
+  .tts-button:hover {
+    color: var(--color-text);
+  }
+
+  .tts-button.active {
+    color: var(--color-primary);
   }
 
   @keyframes mic-pulse {

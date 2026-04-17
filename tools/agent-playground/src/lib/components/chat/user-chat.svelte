@@ -12,6 +12,7 @@
   } from "$lib/scheduling/fast-task-scheduler";
   import { workspaceQueries } from "$lib/queries";
   import { nextQueueStep } from "./chat-queue.ts";
+  import { nextSpeechChunk } from "./chat-tts.ts";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatListPanel from "./chat-list-panel.svelte";
@@ -478,6 +479,90 @@
     }
   }
 
+  // ─── Text-to-speech (Web Speech API) ──────────────────────────────────
+  //
+  // The Chrome `chrome.tts` API lives in the extensions sandbox; for a web
+  // page, `window.speechSynthesis` is the public surface and uses the same
+  // OS voices. Orchestration here: the toggle starts "reading along" with
+  // the streaming assistant, feeding completed sentences to `speak()` as
+  // they finalize. Past/currently-streaming messages are left alone; only
+  // NEW assistant turns are read so flipping the toggle mid-response
+  // doesn't suddenly blurt out the backlog.
+  const TTS_PREF_KEY = "atlas:chat:ttsEnabled";
+  const ttsSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+
+  function loadTtsPref(): boolean {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(TTS_PREF_KEY) === "1";
+  }
+
+  let ttsEnabled = $state(ttsSupported && loadTtsPref());
+  // message.id of a turn we should NOT read — set when the toggle flips on
+  // mid-stream, so only the NEXT turn (and onward) gets read.
+  let ttsSkipMessageId = $state<string | null>(null);
+  // Per-message raw-text offset (chat-tts.ts#nextSpeechChunk resume cursor).
+  let ttsOffsets: Map<string, number> = new Map();
+
+  function toggleTts(): void {
+    if (!ttsSupported) return;
+    const next = !ttsEnabled;
+    ttsEnabled = next;
+    try {
+      localStorage.setItem(TTS_PREF_KEY, next ? "1" : "0");
+    } catch {
+      // quota / private mode — pref is best-effort.
+    }
+    if (!next) {
+      // Toggle-off cancels the current utterance and any queued ones so the
+      // chat goes quiet immediately rather than finishing the buffer.
+      window.speechSynthesis.cancel();
+      ttsSkipMessageId = null;
+      return;
+    }
+    // Toggle-on while a turn is already streaming: skip it so the user
+    // isn't caught off-guard by mid-sentence audio. If nothing is in
+    // flight, next assistant turn starts at offset 0 on arrival.
+    if (streaming && chat) {
+      for (let i = chat.messages.length - 1; i >= 0; i--) {
+        const msg = chat.messages[i];
+        if (msg?.role === "assistant") {
+          ttsSkipMessageId = msg.id;
+          break;
+        }
+      }
+    }
+  }
+
+  // Feed new completed sentences from the latest assistant message into
+  // speechSynthesis.speak(). Guarded on `ttsEnabled` so the effect is a
+  // cheap no-op when TTS is off. Reads the message list reactively so it
+  // re-runs every time a text-delta lands.
+  $effect(() => {
+    if (!ttsEnabled || !ttsSupported || !chat) return;
+    // Walk backward to find the latest assistant message — the one being
+    // streamed if anything is in flight.
+    let latestAssistant: AtlasUIMessage | null = null;
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const msg = chat.messages[i];
+      if (msg?.role === "assistant") {
+        latestAssistant = msg;
+        break;
+      }
+    }
+    if (!latestAssistant) return;
+    if (latestAssistant.id === ttsSkipMessageId) return;
+
+    const text = extractText(latestAssistant);
+    const offset = ttsOffsets.get(latestAssistant.id) ?? 0;
+    const chunk = nextSpeechChunk(text, offset);
+    if (!chunk.speak) return;
+    ttsOffsets.set(latestAssistant.id, chunk.nextOffset);
+
+    const utterance = new SpeechSynthesisUtterance(chunk.speak);
+    utterance.rate = 1.05;
+    window.speechSynthesis.speak(utterance);
+  });
+
   /**
    * Messages composed while the assistant is still responding. We don't block
    * the input during streaming — users should be able to keep composing —
@@ -930,7 +1015,14 @@
               : `${queuedMessages.length} messages queued — will send when the assistant finishes`}
           </div>
         {/if}
-        <ChatInput onsubmit={handleSubmit} {streaming} {stopping} onstop={handleStop} />
+        <ChatInput
+          onsubmit={handleSubmit}
+          {streaming}
+          {stopping}
+          onstop={handleStop}
+          {ttsEnabled}
+          onttsToggle={ttsSupported ? toggleTts : undefined}
+        />
       </div>
     </div>
 
