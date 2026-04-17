@@ -142,7 +142,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
   return {
     run_code: tool({
       description:
-        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s) and stdout/stderr size caps. Intended for trusted code; do not run hostile input.",
+        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s) and stdout/stderr size caps. Intended for trusted code; do not run hostile input. **No TTY**: commands that need interactive auth (`op item create/read/edit/delete`, `ssh`, `sudo`, `gpg`, `aws sso login`, `gh auth login`, `security`) can't prompt the user here — they will fail silently with empty stderr. Tell the user to run those in their terminal directly.",
       inputSchema: RunCodeInput,
       execute: async ({ language, source, timeout_ms }): Promise<RunCodeSuccess | RunCodeError> => {
         const dir = scratchDir(sessionId);
@@ -194,18 +194,21 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
           );
         } catch (err) {
           const duration = Date.now() - started;
-          // exec() throws on non-zero exit; inspect for exit code + streams.
-          // The thrown error is an ExecException with optional stdout/stderr
-          // buffers attached. Guard narrow-by-property so we don't need a cast.
+          // exec() throws on non-zero exit OR on exec-layer errors (timeout,
+          // maxBuffer, ENOENT). Both kinds of error object carry
+          // `stdout`/`stderr` when they exist, and we want to surface them
+          // regardless — losing stderr leaves the LLM guessing and re-trying.
+          // So: duck-type for the standard exec-error shape (has at least
+          // one of stdout/stderr/killed/code/signal) rather than gating on
+          // `code` being a number, which missed string-typed codes like
+          // ERR_CHILD_PROCESS_STDIO_MAXBUFFER.
           if (
             typeof err === "object" &&
             err !== null &&
-            "code" in err &&
-            ((err as { code?: unknown }).code === undefined ||
-              typeof (err as { code?: unknown }).code === "number")
+            ("stdout" in err || "stderr" in err || "killed" in err || "signal" in err)
           ) {
             const execErr = err as {
-              code?: number;
+              code?: number | string;
               killed?: boolean;
               signal?: string;
               stdout?: string | Buffer;
@@ -215,20 +218,20 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
             if (execErr.killed && execErr.signal === "SIGKILL") {
               return { error: `run_code killed by timeout after ${timeout}ms` };
             }
+            const stdout = stringify(execErr.stdout);
+            const stderr = stringify(execErr.stderr);
+            // Numeric exit code when the child exited normally; 1 as a
+            // conservative default when only an exec-layer error fired.
+            const exitCode = typeof execErr.code === "number" ? execErr.code : 1;
             logger.info("run_code nonzero exit", {
               sessionId,
               language: lang,
-              exitCode: execErr.code,
+              exitCode,
               duration,
+              hadStderr: stderr.length > 0,
             });
-            return buildSuccess(
-              lang,
-              dir,
-              stringify(execErr.stdout),
-              stringify(execErr.stderr),
-              execErr.code ?? 1,
-              duration,
-            );
+            const enriched = enrichEmptyStderrWithTtyHint(source, stderr, exitCode);
+            return buildSuccess(lang, dir, stdout, enriched, exitCode, duration);
           }
           const message = err instanceof Error ? err.message : String(err);
           return { error: `run_code execution failed: ${message}` };
@@ -246,6 +249,38 @@ function stringify(value: string | Buffer | undefined): string {
   if (value === undefined) return "";
   if (typeof value === "string") return value;
   return value.toString("utf-8");
+}
+
+/**
+ * Commands that route their auth prompts through `/dev/tty` rather than
+ * stdout/stderr, or that insist on an interactive password flow. When any
+ * of these appears in the source and the command fails with **empty
+ * stderr**, we inject a hint so the LLM (and the user) aren't left staring
+ * at a silent failure. The list is intentionally conservative — only
+ * commands that frequently fail in CI-style pipe environments.
+ *
+ * The regex uses a word boundary on both sides so `op`, `ssh`, `sudo`, etc.
+ * don't match substrings (`opt`, `sshkeygen` would still match — good —
+ * but `setopt` wouldn't).
+ */
+const TTY_AUTH_COMMAND_RE =
+  /\b(op|ssh|scp|sftp|sudo|gpg|security|keychain|aws\s+sso\s+login|gh\s+auth\s+login|doctl\s+auth\s+init|gcloud\s+auth\s+login|az\s+login)\b/;
+
+function enrichEmptyStderrWithTtyHint(source: string, stderr: string, exitCode: number): string {
+  if (exitCode === 0) return stderr;
+  if (stderr.trim() !== "") return stderr;
+  if (!TTY_AUTH_COMMAND_RE.test(source)) return stderr;
+  return (
+    "[run_code hint] The command failed with empty stderr, and the script " +
+    "uses a tool that needs interactive auth via a real terminal (op, ssh, " +
+    "sudo, gpg, aws sso login, gh auth login, etc.). Those tools write auth " +
+    "prompts to /dev/tty, which this sandbox does not provide — the process " +
+    "exits silently without ever surfacing the prompt.\n" +
+    "\n" +
+    "Action: tell the user to run the exact command in their own terminal. " +
+    "Do not retry — each retry triggers another auth prompt (e.g. Touch ID, " +
+    "Apple Watch) that cannot complete here."
+  );
 }
 
 function buildSuccess(
