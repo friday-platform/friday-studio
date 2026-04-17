@@ -218,6 +218,11 @@ export class AtlasDaemon {
       get sessionHistoryAdapter() {
         return this.daemon.sessionHistoryAdapter;
       },
+      get platformModels() {
+        // Lazy getter: platformModels is constructed later in initialize(),
+        // but routes read it on demand (not at AppContext construction).
+        return this.daemon.getPlatformModels();
+      },
     };
     // Only pass env var origins to global CORS (production)
     // Local dev uses "*" for global routes, but MCP endpoints still use this.options.cors
@@ -496,7 +501,7 @@ export class AtlasDaemon {
     // Create transport
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: () => sessionId,
-      onsessioninitialized: (sid) => {
+      onsessioninitialized: (sid: string) => {
         logger.info("[Daemon] Agent session initialized", { sessionId: sid });
       },
     });
@@ -571,7 +576,7 @@ export class AtlasDaemon {
     // Create transport
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: () => sessionId,
-      onsessioninitialized: (sid) => {
+      onsessioninitialized: (sid: string) => {
         logger.info("[Daemon] Platform session initialized", { sessionId: sid });
       },
     });

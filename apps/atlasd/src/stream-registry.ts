@@ -5,6 +5,7 @@
  * disconnect can resume without missing messages.
  */
 
+import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 
@@ -12,6 +13,19 @@ import { logger } from "@atlas/logger";
 export interface StreamController {
   enqueue(chunk: Uint8Array): void;
   close(): void;
+}
+
+/**
+ * Parse a positive integer from env or fall back to the default.
+ * Rejects non-finite / non-positive values to avoid accidentally disabling
+ * the cap with "0" or a typo.
+ */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
 }
 
 /**
@@ -31,8 +45,23 @@ export interface StreamController {
  * protocol is positional (start → delta* → end). We now **stop
  * buffering on overflow** and mark the stream non-replayable, so late
  * subscribers get a clean 204 instead of a corrupt partial replay.
+ *
+ * Override via `ATLAS_STREAM_MAX_EVENTS` — tenanted deployments typically
+ * want a much smaller cap (e.g. 5000) to bound per-tenant memory.
  */
-const MAX_EVENTS = 50_000;
+const MAX_EVENTS = envInt("ATLAS_STREAM_MAX_EVENTS", 50_000);
+
+/**
+ * Hard ceiling on buffered events across every active stream in the
+ * process. When appending a chunk would exceed this, the registry marks
+ * the target buffer `replayDisabled` and refuses further recording — live
+ * subscribers still receive the broadcast, but late reconnects get 204.
+ *
+ * Single-tenant local daemons can leave the default (10M events, ≈5 GB
+ * worst case at 500 B/event); multi-tenant pods should drop it via
+ * `ATLAS_STREAM_TOTAL_EVENT_CEILING`.
+ */
+const TOTAL_EVENT_CEILING = envInt("ATLAS_STREAM_TOTAL_EVENT_CEILING", 10_000_000);
 /** TTL for finished streams (5 minutes) */
 const FINISHED_TTL_MS = 5 * 60 * 1000;
 /** TTL for stale active streams (30 minutes) */
@@ -59,6 +88,16 @@ export interface StreamBuffer {
 export class StreamRegistry {
   private streams = new Map<string, StreamBuffer>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Running total of events across every buffer in {@link streams}. Kept
+   * as a cached counter so `appendEvent` can enforce {@link TOTAL_EVENT_CEILING}
+   * without re-summing every stream on the hot path.
+   */
+  private totalEvents = 0;
+
+  /** Has the total-ceiling warning fired already? Avoids log-spam under overflow. */
+  private ceilingWarned = false;
 
   /** Encode and cache the [DONE] sentinel once */
   private static readonly DONE_CHUNK = new TextEncoder().encode("data: [DONE]\n\n");
@@ -105,6 +144,8 @@ export class StreamRegistry {
       StreamRegistry.closeSubscribers(buffer.subscribers);
     }
     this.streams.clear();
+    this.totalEvents = 0;
+    this.ceilingWarned = false;
     logger.info("StreamRegistry shutdown");
   }
 
@@ -117,6 +158,11 @@ export class StreamRegistry {
     if (existing) {
       existing.active = false;
       StreamRegistry.closeSubscribers(existing.subscribers);
+      // Releasing the old buffer's events: reclaim their quota before the
+      // replacement buffer starts filling, so TOTAL_EVENT_CEILING doesn't
+      // double-count a chat that keeps being restarted (e.g. a user in a
+      // send-regenerate loop).
+      this.totalEvents = Math.max(0, this.totalEvents - existing.events.length);
     }
 
     const now = Date.now();
@@ -159,16 +205,35 @@ export class StreamRegistry {
       return false;
     }
 
-    if (!buffer.replayDisabled && buffer.events.length >= MAX_EVENTS) {
-      buffer.replayDisabled = true;
-      logger.warn("stream_buffer_overflow_replay_disabled", {
-        chatId,
-        bufferedEvents: buffer.events.length,
-        limit: MAX_EVENTS,
-      });
+    // Two separate caps: per-buffer (MAX_EVENTS) guards a single runaway
+    // chat; process-wide (TOTAL_EVENT_CEILING) guards the aggregate under
+    // multi-tenant workloads. Either trip flips `replayDisabled` on this
+    // buffer so late `subscribe()` callers get 204 instead of a corrupt
+    // partial replay; live subscribers continue via the broadcast below.
+    if (!buffer.replayDisabled) {
+      if (buffer.events.length >= MAX_EVENTS) {
+        buffer.replayDisabled = true;
+        logger.warn("stream_buffer_overflow_replay_disabled", {
+          chatId,
+          bufferedEvents: buffer.events.length,
+          limit: MAX_EVENTS,
+        });
+      } else if (this.totalEvents >= TOTAL_EVENT_CEILING) {
+        buffer.replayDisabled = true;
+        if (!this.ceilingWarned) {
+          this.ceilingWarned = true;
+          logger.warn("stream_registry_total_ceiling_hit_replay_disabled", {
+            chatId,
+            totalEvents: this.totalEvents,
+            ceiling: TOTAL_EVENT_CEILING,
+            activeStreams: this.streams.size,
+          });
+        }
+      }
     }
     if (!buffer.replayDisabled) {
       buffer.events.push(event);
+      this.totalEvents++;
     }
     buffer.lastEventAt = Date.now();
 
@@ -268,12 +333,14 @@ export class StreamRegistry {
   private cleanup(): void {
     const now = Date.now();
     let removed = 0;
+    let eventsFreed = 0;
 
     for (const [chatId, buffer] of this.streams) {
       const age = now - buffer.lastEventAt;
 
       // Remove finished streams after TTL
       if (!buffer.active && age > FINISHED_TTL_MS) {
+        eventsFreed += buffer.events.length;
         this.streams.delete(chatId);
         removed++;
         continue;
@@ -282,16 +349,31 @@ export class StreamRegistry {
       // Remove stale active streams after longer TTL
       if (buffer.active && age > STALE_TTL_MS) {
         StreamRegistry.closeSubscribers(buffer.subscribers);
+        eventsFreed += buffer.events.length;
         this.streams.delete(chatId);
         removed++;
       }
     }
 
+    if (eventsFreed > 0) {
+      this.totalEvents = Math.max(0, this.totalEvents - eventsFreed);
+      // Reset the warn-once latch when we're back below the ceiling so a
+      // future overflow re-logs. Anything else would eat repeat-incident
+      // signal in long-running daemons.
+      if (this.ceilingWarned && this.totalEvents < TOTAL_EVENT_CEILING) {
+        this.ceilingWarned = false;
+      }
+    }
+
     if (removed > 0) {
-      logger.debug("Cleaned up streams", { removed, remaining: this.streams.size });
+      logger.debug("Cleaned up streams", {
+        removed,
+        remaining: this.streams.size,
+        totalEvents: this.totalEvents,
+      });
     }
   }
 }
 
 // Export constants for testing
-export { CLEANUP_INTERVAL_MS, FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS };
+export { CLEANUP_INTERVAL_MS, FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS, TOTAL_EVENT_CEILING };

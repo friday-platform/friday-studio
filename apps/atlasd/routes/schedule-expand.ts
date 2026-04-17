@@ -46,11 +46,13 @@ export const scheduleExpandRoutes = daemonFactory
   .createApp()
   .post("/", zValidator("json", ScheduleExpandRequestSchema), async (c) => {
     const { input } = c.req.valid("json");
+    const ctx = c.get("app");
 
     logger.info("Expanding schedule input", { inputLength: input.length });
 
     try {
       const rawResponse = await smallLLM({
+        platformModels: ctx.platformModels,
         system: EXPANSION_SYSTEM_PROMPT,
         prompt: input,
         maxOutputTokens: 300,

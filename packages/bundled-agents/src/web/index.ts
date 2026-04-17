@@ -50,7 +50,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
       "Find the best-rated restaurant in SF and make a reservation",
     ],
   },
-  handler: async (prompt, { session, logger, stream, config, abortSignal }) => {
+  handler: async (prompt, { session, logger, stream, config, abortSignal, platformModels }) => {
     logger.info(`[web] start: ${prompt.slice(0, 120).replace(/\s+/g, " ")}`);
 
     const artifactRefs: ArtifactRef[] = [];
@@ -70,7 +70,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
 
       if (hasSearchKey) {
         tools.search = createSearchTool(
-          { session, stream, logger, config, abortSignal },
+          { session, stream, logger, config, abortSignal, platformModels },
           { artifactRefs, outlineRefs },
         );
       } else {

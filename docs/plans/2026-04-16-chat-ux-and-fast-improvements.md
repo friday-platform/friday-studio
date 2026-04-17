@@ -125,7 +125,7 @@ after 4s → session persists with `status: "cancelled"` and duration 3.5s.
 - Stale tool-card "running…" remains in the UI for the last in-flight tool at
   abort time. Re-opens after reload with the final cancelled state.
 
-### 4.2 Settings page (P1) — [STATUS: done, MVP]
+### 4.2 Settings page (P1) — [STATUS: done, MVP + models section]
 Models are already chosen and wired up; the settings UI just isn't exposed.
 **Approach:** Ship a simple settings page that surfaces whatever is already
 configurable. Don't over-design upfront — iterate based on what feels missing
@@ -152,10 +152,38 @@ trip through `PUT /api/config/env`, daemon sees the update on next
 in-process (that's a surfacing limitation, not a settings-page one).
 
 **Not shipped (out of scope for MVP):**
-- Model routing picker (per-role defaults live in `friday.yml` / env, not in
-  `.env`) — wait for 4.3.
 - Admin vs. user setting split.
 - Validation of keys against known set; today any key is accepted.
+
+**Follow-up (2026-04-17, lcf): models section added**
+- Cherry-picked PR #2894 (`feat(llm): configurable platform model providers via
+  friday.yml`, commit `3740b19f23`) into this branch so `PlatformModels` is
+  available locally. Conflicts resolved in `agent-sdk/src/types.ts`,
+  `agent-sdk/package.json`, `core/agent-context/index.ts`, `workspace/runtime.ts`.
+- New `GET /api/config/models` endpoint returns per-role `{ resolved, configured }`:
+  `resolved` is what the daemon loaded at startup, `configured` is what
+  `friday.yml` pins (null when using the default chain).
+- New `PUT /api/config/models` writes the `models.*` section of `friday.yml`.
+  Validation runs `createPlatformModels` before write, so bad provider/model
+  IDs return 400 with `PlatformModelsConfigError`'s aggregated per-role message
+  (e.g. "provider 'bogus' is not registered; known providers: anthropic,
+  claude-code, google, groq, openai"). Supplies `version: "1.0"` and a default
+  `workspace: { name: "atlas-platform" }` when the file didn't already exist,
+  so the resulting file passes `AtlasConfigSchema` on next boot.
+- Settings page **Models** section is editable: per-role `provider:model`
+  text inputs seeded from `configured`, "Currently active" line shows the
+  live-resolved model, "Save models" round-trips through the PUT endpoint.
+  Blank input means "use default chain" — empty values clear the key from
+  `friday.yml`.
+- Settings page **Environment variables** section is now collapsible
+  (`<details>` closed by default) so it doesn't dominate the viewport.
+
+**Known gaps (not blockers):**
+- Restart is still manual after a models save. The UI shows a
+  "restart required" banner but doesn't trigger one — folding that in is a
+  separate task (the daemon reload semantics need a design call).
+- Input is free-text, not a dropdown of known provider/model combos. Good
+  enough today; dropdown can follow when typos become a problem.
 
 ### 4.3 Per-step model routing (P2) — [STATUS: blocked on 4.2]
 Claude Code agent currently uses Opus for everything. Want a router so some

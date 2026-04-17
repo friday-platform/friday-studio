@@ -9,6 +9,10 @@ export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
 // Consumers needing the sqlite backends import them from the subpath:
 //   import { SqliteRetrievalCorpus } from "@atlas/agent-sdk/backends";
 export type { SqliteRagConfig } from "./backends/index.ts";
+export {
+  type ClosePendingToolPartsResult,
+  closePendingToolParts,
+} from "./close-pending-tool-parts.ts";
 export { createAgent } from "./create-agent.ts";
 export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
 export { createFailTool, FailInputSchema } from "./fail-tool.ts";

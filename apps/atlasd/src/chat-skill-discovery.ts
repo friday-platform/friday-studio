@@ -61,9 +61,13 @@ Examples:
  *
  * On LLM failure, defaults to { complex: false } to avoid blocking.
  */
-export async function judgeComplexity(messageText: string): Promise<ComplexityJudgment> {
+export async function judgeComplexity(
+  messageText: string,
+  platformModels: import("@atlas/llm").PlatformModels,
+): Promise<ComplexityJudgment> {
   try {
     const response = await smallLLM({
+      platformModels,
       system: COMPLEXITY_SYSTEM_PROMPT,
       prompt: messageText,
       maxOutputTokens: 30,
@@ -199,6 +203,8 @@ export interface DiscoverSkillOptions {
   workspaceId: string;
   /** skills.sh client instance (injected for testability). */
   skillsShClient: SkillsShClient;
+  /** Platform LLM resolver (classifier role used for the complexity judgment). */
+  platformModels: import("@atlas/llm").PlatformModels;
 }
 
 /**
@@ -211,10 +217,10 @@ export interface DiscoverSkillOptions {
 export async function discoverAndInstallSkill(
   options: DiscoverSkillOptions,
 ): Promise<SkillDiscoveryResult> {
-  const { messageText, skillsShClient } = options;
+  const { messageText, skillsShClient, platformModels } = options;
 
   // Step 1: Complexity judgment
-  const judgment = await judgeComplexity(messageText);
+  const judgment = await judgeComplexity(messageText, platformModels);
 
   if (!judgment.complex) {
     logger.debug("Skill discovery skipped: not complex", { rationale: judgment.rationale });

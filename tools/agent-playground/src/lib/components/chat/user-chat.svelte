@@ -11,6 +11,7 @@
     submitBacklogEntry,
   } from "$lib/scheduling/fast-task-scheduler";
   import { workspaceQueries } from "$lib/queries";
+  import { nextQueueStep } from "./chat-queue.ts";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatListPanel from "./chat-list-panel.svelte";
@@ -213,22 +214,49 @@
   }
 
   /**
+   * Monotonic token for rehydrate operations. Bumped every time a caller
+   * starts a new rehydrate; `rehydrateChat` skips every state write whose
+   * token is stale. Without this, a chat-list click colliding with a route
+   * change could resolve in arbitrary order and render the earlier chat's
+   * messages under the newer `chatId`.
+   */
+  let rehydrateToken = 0;
+
+  /**
    * Rehydrate chat state from the backend using a persisted chatId.
    * On 404 (chat deleted) clears localStorage and starts fresh.
    * Network errors are silent so the caller can retry with a new chatId.
+   *
+   * `token` is compared against {@link rehydrateToken} at every await barrier.
+   * If a newer rehydrate started while this one was in flight, all of this
+   * one's writes are skipped so the newer flow owns state exclusively.
    */
-  async function rehydrateChat(id: string): Promise<void> {
-    rehydrating = true;
+  async function rehydrateChat(id: string, token: number): Promise<void> {
+    const isStale = () => token !== rehydrateToken;
+    if (!isStale()) rehydrating = true;
     try {
       const response = await fetch(`${CHAT_API}/${encodeURIComponent(id)}`);
+      if (isStale()) return;
       if (!response.ok) {
-        if (response.status === 404) clearPersistedChatId();
+        if (response.status === 404) {
+          // The persisted chat id points at a deleted chat. Clear the
+          // localStorage entry AND rotate `chatId` + kill `shouldResumeStream`
+          // so the resume effect doesn't fire against a tombstone (the
+          // registry would return 204 anyway, but there's no reason to
+          // advertise traffic for a chat we already know is gone).
+          clearPersistedChatId();
+          chatId = crypto.randomUUID();
+          shouldResumeStream = false;
+        }
         return;
       }
       const json: unknown = await response.json();
+      if (isStale()) return;
       const parsed = GetChatResponseSchema.safeParse(json);
       if (!parsed.success) {
         clearPersistedChatId();
+        chatId = crypto.randomUUID();
+        shouldResumeStream = false;
         return;
       }
 
@@ -252,6 +280,7 @@
         }
       }
 
+      if (isStale()) return;
       chatId = parsed.data.chat.id;
       initialMessages = rehydrated;
       systemPromptContext = parsed.data.systemPromptContext ?? null;
@@ -259,7 +288,10 @@
       // Silent — server might be temporarily down; the user can still send
       // a fresh message to start a new chat.
     } finally {
-      rehydrating = false;
+      // Only the owner of the latest token gets to flip `rehydrating` back
+      // off; stale finalizers leave it alone so the in-flight rehydrate's
+      // loading state survives until that one settles.
+      if (!isStale()) rehydrating = false;
     }
   }
 
@@ -294,10 +326,15 @@
     if (saved) {
       chatId = saved;
       shouldResumeStream = true;
-      void rehydrateChat(saved).finally(() => {
-        rehydrationDone = true;
+      const token = ++rehydrateToken;
+      void rehydrateChat(saved, token).finally(() => {
+        if (token === rehydrateToken) rehydrationDone = true;
       });
     } else {
+      // No persisted id; still bump the token so any in-flight rehydrate
+      // kicked off by a previous wsId (or switchToChat) becomes stale and
+      // its `.finally` can't flip `rehydrationDone` behind our back.
+      rehydrateToken++;
       chatId = crypto.randomUUID();
       rehydrationDone = true;
       shouldResumeStream = false;
@@ -356,9 +393,18 @@
   $effect(() => {
     if (chat && shouldResumeStream) {
       shouldResumeStream = false;
-      chat.resumeStream().catch(() => {
+      const instance = chat;
+      instance.resumeStream().catch(() => {
         // Silent: the most common outcome is 204 (no active stream).
       });
+      // Effect cleanup: when `chat` is re-derived (wsId change, switchToChat,
+      // startNewChat) or the component unmounts, abort the old Chat's
+      // resume fetch instead of letting it run until the server hangs up.
+      // `chat.stop()` calls the AbortController inside `makeRequest` and
+      // rejects the resume promise — swallowed above, so it's safe.
+      return () => {
+        void instance.stop().catch(() => {});
+      };
     }
   });
 
@@ -467,16 +513,20 @@
     if (flushing) return;
     flushing = true;
     try {
-      // `chat` can change between iterations (wsId switch), so re-read it
-      // and re-check `streaming` every pass. If the user switches workspace
-      // mid-drain, `queuedMessages = []` above clears the queue and this
-      // loop exits cleanly.
-      while (!streaming && queuedMessages.length > 0 && chat) {
-        const next = queuedMessages[0];
-        if (!next) break;
-        queuedMessages = queuedMessages.slice(1);
+      // `chat` and `streaming` can both change across awaits (wsId switch,
+      // next turn starting). The pure `nextQueueStep` reducer (unit-tested
+      // in chat-queue.test.ts) encapsulates the can-we-dequeue branch so
+      // the runtime loop stays small. Null `toSend` means "hold" — exit
+      // and let the wsId-tracked $effect below re-kick when state changes.
+      while (true) {
+        const step = nextQueueStep(queuedMessages, {
+          streaming,
+          hasChat: chat !== null,
+        });
+        if (step.toSend === null || !chat) break;
+        queuedMessages = step.remainder;
         try {
-          await chat.sendMessage({ role: "user", parts: next });
+          await chat.sendMessage({ role: "user", parts: step.toSend });
         } catch {
           // Error surfaces via the `chat.error` effect; don't loop on it.
           break;
@@ -770,8 +820,9 @@
     rehydrationDone = false;
     shouldResumeStream = true;
     persistChatId(targetChatId);
-    void rehydrateChat(targetChatId).finally(() => {
-      rehydrationDone = true;
+    const token = ++rehydrateToken;
+    void rehydrateChat(targetChatId, token).finally(() => {
+      if (token === rehydrateToken) rehydrationDone = true;
     });
   }
 

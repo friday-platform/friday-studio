@@ -24,7 +24,7 @@ export function parseUserProfileState(
   for (const entry of entries) {
     if (entry.metadata?.type === "user-name") {
       const match = NAME_EXTRACT.exec(entry.text);
-      const name = match ? match[1] : entry.text;
+      const name = match?.[1] ?? entry.text;
       return { status: "known", name: name.trim() };
     }
   }

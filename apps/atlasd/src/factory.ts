@@ -3,6 +3,7 @@ import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
+import type { PlatformModels } from "@atlas/llm";
 import type { LibraryStorageAdapter } from "@atlas/storage";
 import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
@@ -68,6 +69,11 @@ export interface AppContext {
 
   // When true, the kernel workspace is visible in user-facing lists
   exposeKernel: boolean;
+
+  // Platform LLM resolver (friday.yml models config, per-role).
+  // Required for any route that invokes `smallLLM` or needs the daemon's
+  // configured classifier/planner/conversational/labels model.
+  platformModels: PlatformModels;
 }
 
 export interface CreateAppOptions {

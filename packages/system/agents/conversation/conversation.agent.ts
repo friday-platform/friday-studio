@@ -14,7 +14,13 @@ import type {
   AtlasUIMessageChunk,
   StreamEmitter,
 } from "@atlas/agent-sdk";
-import { createAgent, ok, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import {
+  closePendingToolParts,
+  createAgent,
+  ok,
+  repairToolCall,
+  validateAtlasUIMessages,
+} from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { OutlineRefsResultSchema } from "@atlas/core";
@@ -444,6 +450,17 @@ export const conversationAgent = createAgent<string, ConversationResult>({
               lastMessage.parts.unshift({
                 type: "data-session-start",
                 data: { sessionId: session.sessionId },
+              });
+            }
+            // Close any tool-call parts that never reached a terminal state
+            // (turn cancelled / agent crashed mid-tool). Otherwise the chat
+            // page would render an eternal "running…" spinner on reload.
+            const { closed } = closePendingToolParts(lastMessage);
+            if (closed > 0) {
+              logger.info("Closed pending tool parts before persist", {
+                streamId: session.streamId,
+                messageId: lastMessage.id,
+                closed,
               });
             }
             // Persist assistant message directly via ChatStorage. The HTTP

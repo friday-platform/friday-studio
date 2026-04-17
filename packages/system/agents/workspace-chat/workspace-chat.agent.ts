@@ -1,5 +1,11 @@
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
-import { createAgent, ok, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import {
+  closePendingToolParts,
+  createAgent,
+  ok,
+  repairToolCall,
+  validateAtlasUIMessages,
+} from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
@@ -418,8 +424,24 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // is locked down to user-role messages only — assistant persistence
         // happens in-process to avoid that guard and to skip an unnecessary
         // localhost roundtrip.
+        //
+        // Before persisting, sweep any tool-call parts that didn't reach a
+        // terminal state. Cancelled / crashed turns leave the last in-flight
+        // tool stuck in `input-streaming` or `input-available`, which the
+        // chat page would then render as a "running…" spinner forever on
+        // reload. Flipping them to `output-error` gives the UI something to
+        // render and matches the semantics of what actually happened.
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
+          const { closed } = closePendingToolParts(lastMessage);
+          if (closed > 0) {
+            logger.info("Closed pending tool parts before persist", {
+              streamId: session.streamId,
+              messageId: lastMessage.id,
+              closed,
+              aborted: abortSignal?.aborted === true,
+            });
+          }
           const appendResult = await ChatStorage.appendMessage(
             session.streamId,
             lastMessage,

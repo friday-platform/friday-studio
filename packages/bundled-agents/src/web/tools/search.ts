@@ -2,7 +2,7 @@ import process from "node:process";
 import type { AgentSessionData, ArtifactRef, OutlineRef, StreamEmitter } from "@atlas/agent-sdk";
 import { createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import { type PlatformModels, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { generateObject, generateText, tool } from "ai";
 import { Parallel } from "parallel-web";
@@ -29,6 +29,7 @@ interface SearchToolContext {
   logger: Logger;
   config?: Record<string, unknown>;
   abortSignal?: AbortSignal;
+  platformModels: PlatformModels;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +305,13 @@ export function createSearchTool(ctx: SearchToolContext, refs: SearchRefs) {
 
       logger.info(`[search] running ${analysis.searchQueries.length} queries`);
 
-      const searchResult = await executeSearch(parallelClient, objective, analysis, logger);
+      const searchResult = await executeSearch(
+        parallelClient,
+        ctx.platformModels,
+        objective,
+        analysis,
+        logger,
+      );
 
       logger.info(`[search] got ${searchResult.results.length} results, synthesizing`);
 
