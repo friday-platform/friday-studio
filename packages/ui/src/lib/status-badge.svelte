@@ -5,14 +5,14 @@
   Matches the web-client "Complete" / "Failed" / "Running" badge pattern.
 
   @component
-  @param {"completed" | "failed" | "active" | "skipped" | "pending"} status - Execution status
+  @param {"completed" | "failed" | "active" | "skipped" | "pending" | "cancelled"} status - Execution status
   @param {string} [label] - Override the default label text
 -->
 
 <script lang="ts">
   import { IconSmall } from "./icons/index.js";
 
-  type Status = "completed" | "failed" | "active" | "skipped" | "pending";
+  type Status = "completed" | "failed" | "active" | "skipped" | "pending" | "cancelled";
 
   type Props = {
     status: Status;
@@ -27,6 +27,7 @@
     active: "Running",
     skipped: "Skipped",
     pending: "Pending",
+    cancelled: "Cancelled",
   };
 
   const displayLabel = $derived(label ?? defaultLabels[status]);
@@ -39,6 +40,7 @@
   class:status-badge--active={status === "active"}
   class:status-badge--skipped={status === "skipped"}
   class:status-badge--pending={status === "pending"}
+  class:status-badge--cancelled={status === "cancelled"}
 >
   <span class="status-badge-icon">
     {#if status === "completed"}
@@ -47,6 +49,8 @@
       <IconSmall.Close />
     {:else if status === "active"}
       <span class="spin"><IconSmall.Progress /></span>
+    {:else if status === "cancelled"}
+      <IconSmall.Close />
     {/if}
   </span>
   {displayLabel}
@@ -89,6 +93,12 @@
     background-color: var(--color-text);
     color: var(--color-surface-1);
     opacity: 0.3;
+  }
+
+  .status-badge--cancelled {
+    background-color: var(--color-text);
+    color: var(--color-surface-1);
+    opacity: 0.5;
   }
 
   .status-badge-icon {

@@ -160,6 +160,28 @@ describe("markdownToHTML", () => {
     expect(result).toContain("<em>Italic</em> item");
   });
 
+  it("bare numeric answer renders as text, not empty ordered list", () => {
+    // An arithmetic reply like "2." was being eaten by marked's ordered-
+    // list marker rule, producing <ol start="2"><li></li></ol> — the chat
+    // bubble ended up empty.
+    const result = markdownToHTML("2.");
+    expect(result).not.toContain("<ol");
+    expect(result).toContain("2.");
+  });
+
+  it("bare numeric with leading whitespace still preserved", () => {
+    const result = markdownToHTML("  4.  ");
+    expect(result).not.toContain("<ol");
+    expect(result).toContain("4.");
+  });
+
+  it("real ordered list with content still parses correctly", () => {
+    const result = markdownToHTML("1. First item\n2. Second item");
+    expect(result).toContain("<ol>");
+    expect(result).toContain("<li>First item</li>");
+    expect(result).toContain("<li>Second item</li>");
+  });
+
   it("H1", () => {
     expect(markdownToHTML("# Header 1")).toContain("<h1>Header 1</h1>");
   });

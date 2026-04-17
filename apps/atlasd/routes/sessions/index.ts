@@ -142,24 +142,25 @@ const sessionsRoutes = daemonFactory
     return c.json({ error: `Session not found: ${sessionId}` }, 404);
   })
   /** Cancel a running session. */
-  .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
+  .delete("/:id", zValidator("param", z.object({ id: z.string() })), (c) => {
     const { id } = c.req.valid("param");
     const ctx = c.get("app");
 
+    // `getSessions()` returns only *finalized* sessions on the runtime; an
+    // in-flight execution lives in `activeAbortControllers` until its finally
+    // block. Check that explicitly so DELETE can hit currently-running work.
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      const activeSession = runtime.getSessions().find((s) => s.id === id);
-      if (activeSession) {
-        try {
-          await runtime.cancelSession(id);
-          return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);
-        } catch (error) {
-          logger.error("Failed to cancel session", { error, sessionId: id, workspaceId });
-          return c.json({ error: stringifyError(error) }, 500);
-        }
+      if (!runtime.hasActiveSession(id)) continue;
+      try {
+        runtime.cancelSession(id);
+        return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);
+      } catch (error) {
+        logger.error("Failed to cancel session", { error, sessionId: id, workspaceId });
+        return c.json({ error: stringifyError(error) }, 500);
       }
     }
 
-    return c.json({ error: `Session not found: ${id}` }, 404);
+    return c.json({ error: `Session not found or not active: ${id}` }, 404);
   });
 
 export { sessionsRoutes };

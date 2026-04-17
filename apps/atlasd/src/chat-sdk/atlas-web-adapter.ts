@@ -215,7 +215,9 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     });
 
     // Create the buffer BEFORE dispatching so we don't lose early events.
-    this.streamRegistry.createStream(chatId);
+    // Capture the buffer reference so the delayed finishStream only closes
+    // THIS turn's buffer, even if a follow-up POST has already replaced it.
+    const turnBuffer = this.streamRegistry.createStream(chatId);
 
     const payload: WebChatPayload = {
       chatId,
@@ -234,9 +236,16 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
         // StreamContentNotification chunks can be dropped if finishStream sets
         // buffer.active=false before they arrive. A short delay lets in-flight
         // notifications land before we close the stream.
+        //
+        // Guard with the captured buffer: if a follow-up POST with the same
+        // chatId has already called createStream (replacing `turnBuffer` with
+        // a fresh one), the original handler's own `finally` has closed
+        // `turnBuffer` already, and blindly calling finishStream(chatId) here
+        // would rip the subscribers out of the *new* turn's buffer — leaving
+        // queued follow-up messages with only the session-start chunk.
         task.finally(() => {
           setTimeout(() => {
-            this.streamRegistry.finishStream(chatId);
+            this.streamRegistry.finishStreamIfCurrent(chatId, turnBuffer);
           }, 500);
         });
       },

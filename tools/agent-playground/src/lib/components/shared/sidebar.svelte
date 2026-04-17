@@ -27,6 +27,7 @@
     { label: "Agent Tester", href: "/agents/built-in" },
     { label: "Job Inspector", href: "/inspector" },
     { label: "Skills", href: "/skills" },
+    { label: "Settings", href: "/settings" },
   ];
 
   function isToolActive(href: string): boolean {

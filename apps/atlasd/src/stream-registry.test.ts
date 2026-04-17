@@ -359,6 +359,55 @@ describe("StreamRegistry", () => {
     });
   });
 
+  describe("finishStreamIfCurrent", () => {
+    it("closes the stream when the buffer matches", () => {
+      const buffer = registry.createStream("chat-1");
+
+      let closeCalled = false;
+      const controller = createController({
+        onClose: () => {
+          closeCalled = true;
+        },
+      });
+      registry.subscribe("chat-1", controller);
+
+      registry.finishStreamIfCurrent("chat-1", buffer);
+
+      expect(closeCalled).toBe(true);
+      expect(buffer.active).toBe(false);
+    });
+
+    it("no-ops when the buffer has been replaced by a new turn", () => {
+      // First turn creates buffer A.
+      const bufferA = registry.createStream("chat-1");
+
+      // Second turn arrives and replaces A with B (simulating a queued
+      // follow-up POST coming in while the first turn's delayed
+      // finishStream is still pending).
+      const bufferB = registry.createStream("chat-1");
+      expect(bufferA).not.toBe(bufferB);
+      expect(bufferA.active).toBe(false);
+      expect(bufferB.active).toBe(true);
+
+      // Subscribe a live controller to B (the in-flight turn).
+      let closeCalled = false;
+      const controller = createController({
+        onClose: () => {
+          closeCalled = true;
+        },
+      });
+      registry.subscribe("chat-1", controller);
+
+      // The delayed timer from turn A fires, but the chatId now points at
+      // buffer B. Guard must skip so B's subscriber stays alive.
+      registry.finishStreamIfCurrent("chat-1", bufferA);
+
+      expect(closeCalled).toBe(false);
+      expect(bufferB.active).toBe(true);
+      expect(bufferB.subscribers.size).toBe(1);
+    });
+  });
+
   describe("shutdown", () => {
     it("sends [DONE] to all subscribers before closing", () => {
       registry.createStream("chat-1");

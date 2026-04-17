@@ -57,6 +57,27 @@
   const COLLAPSE_THRESHOLD = 3;
 
   /**
+   * Per-message latch: once the user clicks the drawer summary, record their
+   * choice and stop syncing `open` from `anyRunning`. Without this, Svelte
+   * re-writes `open={false}` when the last tool finishes — slamming the
+   * drawer shut while the user is reading individual cards.
+   */
+  let userToggledGroups: Map<string, boolean> = $state(new Map());
+
+  function handleGroupToggleClick(e: MouseEvent, messageId: string, anyRunning: boolean) {
+    // Take over the default <summary> click. We manage `open` via the
+    // `userToggledGroups` latch; flipping the current effective state here
+    // keeps the animation in sync without the browser fighting Svelte's
+    // reactive `open` attribute on the next anyRunning tick.
+    e.preventDefault();
+    const prev = userToggledGroups.get(messageId);
+    const currentOpen = prev ?? anyRunning;
+    const next = new Map(userToggledGroups);
+    next.set(messageId, !currentOpen);
+    userToggledGroups = next;
+  }
+
+  /**
    * Build a short summary for a collapsed tool-call group. Surfaces the
    * total, any errors or running calls, and the most recent tool name so
    * the user knows at a glance what happened without expanding.
@@ -322,12 +343,17 @@
                 Long tool runs (workspace creation, etc.) clutter the thread
                 when every step renders inline. Collapse into a single-line
                 summary that auto-opens while any call is running (so live
-                progress is always visible) and closes once the run settles.
-                The `open` binding re-reacts as `anyRunning` flips, so the
-                drawer animates open/closed without user interaction.
+                progress is always visible) and closes once the run settles
+                — unless the user has manually toggled the drawer, in which
+                case their choice is latched via `userToggledGroups`.
               -->
-              <details class="tool-call-group" open={anyRunning}>
-                <summary class="tool-call-group-summary">
+              {@const userChoice = userToggledGroups.get(message.id)}
+              {@const isOpen = userChoice ?? anyRunning}
+              <details class="tool-call-group" open={isOpen}>
+                <summary
+                  class="tool-call-group-summary"
+                  onclick={(e) => handleGroupToggleClick(e, message.id, anyRunning)}
+                >
                   <span class="tool-card-icon" aria-hidden="true">
                     {#if anyRunning}
                       <span class="spinner"></span>

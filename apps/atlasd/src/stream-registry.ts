@@ -249,6 +249,20 @@ export class StreamRegistry {
   }
 
   /**
+   * Finish a stream only if it matches the given buffer reference. Used by
+   * adapters that schedule a delayed close: if a new turn has replaced the
+   * buffer since the timer was set, this is a no-op so the in-flight turn
+   * doesn't get its subscribers ripped out from under it.
+   */
+  finishStreamIfCurrent(chatId: string, expected: StreamBuffer): void {
+    const current = this.streams.get(chatId);
+    if (current !== expected) {
+      return;
+    }
+    this.finishStream(chatId);
+  }
+
+  /**
    * Remove finished and stale streams
    */
   private cleanup(): void {

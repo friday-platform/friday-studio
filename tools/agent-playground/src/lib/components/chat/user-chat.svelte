@@ -286,6 +286,9 @@
     initialMessages = [];
     error = null;
     rehydrationDone = false;
+    // Queued sends belong to the old workspace's Chat; don't cross-post them
+    // into the workspace we're switching to.
+    queuedMessages = [];
 
     const saved = getPersistedChatId();
     if (saved) {
@@ -369,6 +372,67 @@
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
 
   /**
+   * Session id of the in-flight turn, extracted from the server's
+   * `data-session-start` chunk on the current assistant message. Used by
+   * the Stop button to DELETE `/api/sessions/<id>`, which triggers the
+   * workspace runtime's AbortController for the session and flips the
+   * status to "cancelled" in history.
+   */
+  const activeSessionId = $derived.by<string | null>(() => {
+    if (!chat || !streaming) return null;
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const msg = chat.messages[i];
+      if (!msg || msg.role !== "assistant" || !Array.isArray(msg.parts)) continue;
+      for (const part of msg.parts) {
+        if (
+          typeof part === "object" &&
+          part !== null &&
+          "type" in part &&
+          (part as { type: unknown }).type === "data-session-start"
+        ) {
+          const data = (part as { data?: unknown }).data;
+          if (
+            typeof data === "object" &&
+            data !== null &&
+            "sessionId" in data &&
+            typeof (data as { sessionId: unknown }).sessionId === "string"
+          ) {
+            return (data as { sessionId: string }).sessionId;
+          }
+        }
+      }
+      break; // only inspect the most recent assistant message
+    }
+    return null;
+  });
+
+  let stopping = $state(false);
+
+  /**
+   * Abort the in-flight turn both client-side (`chat.stop()` tears down the
+   * SSE read loop) and server-side (DELETE /api/sessions/<id> flips the
+   * workspace runtime's AbortController). Fire-and-forget on errors — if
+   * either side already finished we don't care, the whole flow is idempotent.
+   */
+  async function handleStop(): Promise<void> {
+    if (stopping || !chat) return;
+    stopping = true;
+    const sid = activeSessionId;
+    try {
+      void chat.stop().catch(() => {});
+      if (sid) {
+        await fetch(`/api/daemon/api/sessions/${encodeURIComponent(sid)}`, {
+          method: "DELETE",
+        }).catch(() => {
+          // Server may have already finished — not a user-facing error.
+        });
+      }
+    } finally {
+      stopping = false;
+    }
+  }
+
+  /**
    * Messages composed while the assistant is still responding. We don't block
    * the input during streaming — users should be able to keep composing —
    * but `@ai-sdk/svelte`'s `sendMessage` can only fire one turn at a time.
@@ -384,15 +448,48 @@
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 
-  // Flush queued messages when the current turn finishes. `sendMessage` is
-  // awaited sequentially so each queued entry becomes its own turn, matching
-  // the natural "user typed another thing" behavior.
+  // Drain queued messages one at a time, awaiting each `sendMessage` so the
+  // next entry only fires after the previous turn settles.
+  //
+  // A prior version tried to flush from a bare `$effect` that did
+  // `queuedMessages = queuedMessages.slice(1); void chat.sendMessage(...)`.
+  // That was racy: `sendMessage` flips status to "submitted" on a microtask,
+  // not synchronously. The queue mutation re-invalidated the effect, and a
+  // second pass could run before status flipped, dispatching the same entry
+  // twice or losing the awaited promise entirely — the visible symptom was
+  // a user message posting with no assistant reply.
+  //
+  // The `flushing` flag pins ownership of the drain to a single async pass;
+  // the $effect only kicks it off when idle and the queue has work.
+  let flushing = $state(false);
+
+  async function drainQueuedMessages(): Promise<void> {
+    if (flushing) return;
+    flushing = true;
+    try {
+      // `chat` can change between iterations (wsId switch), so re-read it
+      // and re-check `streaming` every pass. If the user switches workspace
+      // mid-drain, `queuedMessages = []` above clears the queue and this
+      // loop exits cleanly.
+      while (!streaming && queuedMessages.length > 0 && chat) {
+        const next = queuedMessages[0];
+        if (!next) break;
+        queuedMessages = queuedMessages.slice(1);
+        try {
+          await chat.sendMessage({ role: "user", parts: next });
+        } catch {
+          // Error surfaces via the `chat.error` effect; don't loop on it.
+          break;
+        }
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
   $effect(() => {
-    if (streaming || queuedMessages.length === 0 || !chat) return;
-    const next = queuedMessages[0];
-    if (!next) return;
-    queuedMessages = queuedMessages.slice(1);
-    void chat.sendMessage({ role: "user", parts: next });
+    if (streaming || queuedMessages.length === 0 || !chat || flushing) return;
+    void drainQueuedMessages();
   });
 
   /**
@@ -667,6 +764,8 @@
     localEvents = [];
     initialMessages = [];
     error = null;
+    // Queued sends belong to the chat we're leaving; don't cross-post them.
+    queuedMessages = [];
     chatId = targetChatId;
     rehydrationDone = false;
     shouldResumeStream = true;
@@ -773,6 +872,19 @@
       {/if}
 
       <div class="chat-input-area">
+        {#if streaming}
+          <div class="stop-row">
+            <button
+              type="button"
+              class="stop-button"
+              onclick={handleStop}
+              disabled={stopping}
+              title="Abort the current response"
+            >
+              {stopping ? "Stopping…" : "Stop response"}
+            </button>
+          </div>
+        {/if}
         {#if queuedMessages.length > 0}
           <div class="queued-indicator">
             {queuedMessages.length === 1
@@ -903,6 +1015,33 @@
     font-size: var(--font-size-1);
     padding-block-end: var(--size-2);
     text-align: center;
+  }
+
+  .stop-row {
+    display: flex;
+    justify-content: center;
+    padding-block-end: var(--size-2);
+  }
+
+  .stop-button {
+    background-color: var(--color-surface-3);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-error);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-1) var(--size-3);
+    transition: background-color 150ms ease;
+  }
+
+  .stop-button:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-error), transparent 85%);
+  }
+
+  .stop-button:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 
 

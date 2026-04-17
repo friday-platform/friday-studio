@@ -15,7 +15,13 @@ import { z } from "zod";
 // Primitives
 // ---------------------------------------------------------------------------
 
-export const SessionStatusSchema = z.enum(["active", "completed", "failed", "skipped"]);
+export const SessionStatusSchema = z.enum([
+  "active",
+  "completed",
+  "failed",
+  "skipped",
+  "cancelled",
+]);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 export const SessionActionTypeSchema = z.enum(["agent", "llm"]);

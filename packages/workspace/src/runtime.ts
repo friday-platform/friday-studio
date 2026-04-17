@@ -131,6 +131,12 @@ export function classifySessionError(error: unknown): WorkspaceSessionStatusType
   // Deleted/expired credentials are user configuration issues, not platform bugs.
   // Classify as "skipped" to prevent false production failure alerts.
   if (hasUnusableCredentialCause(error)) return WorkspaceSessionStatus.SKIPPED;
+  // User-initiated cancellation via AbortController. DOMException with
+  // name="AbortError" is the standard shape; the session was interrupted
+  // deliberately, not a platform failure.
+  if (error instanceof Error && error.name === "AbortError") {
+    return WorkspaceSessionStatus.CANCELLED;
+  }
   return WorkspaceSessionStatus.FAILED;
 }
 
@@ -319,6 +325,17 @@ export class WorkspaceRuntime {
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
   private sessionCompletionEmitter = new EventEmitter();
+
+  /**
+   * AbortController per in-flight session. Populated in processSignalForJob
+   * at session start, removed in its finally block. `sessions` only gets a
+   * terminal entry after finalizeSession runs, so cancellation needs its own
+   * map covering the "currently executing" window. `cancelSession` aborts
+   * the controller; downstream (FSM engine, agent orchestrator) already
+   * observes the signal because it threads through `processSignal`'s
+   * abortSignal parameter.
+   */
+  private activeAbortControllers = new Map<string, AbortController>();
 
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
@@ -869,6 +886,26 @@ export class WorkspaceRuntime {
 
     const sessionId = crypto.randomUUID();
 
+    // Per-session AbortController. Composes with any parent signal passed in
+    // (so a canceled HTTP request still propagates) and is registered in
+    // `activeAbortControllers` so `cancelSession()` can abort mid-execution.
+    // Downstream (FSM engine `engine.signal({..., abortSignal})`) already
+    // observes this — no additional wiring needed.
+    const sessionAbortController = new AbortController();
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        sessionAbortController.abort(abortSignal.reason);
+      } else {
+        abortSignal.addEventListener(
+          "abort",
+          () => sessionAbortController.abort(abortSignal.reason),
+          { once: true },
+        );
+      }
+    }
+    this.activeAbortControllers.set(sessionId, sessionAbortController);
+    const effectiveAbortSignal = sessionAbortController.signal;
+
     return withOtelSpan(
       "session.process",
       {
@@ -980,7 +1017,7 @@ export class WorkspaceRuntime {
             {
               sessionId: session.id,
               workspaceId: this.workspace.id,
-              abortSignal,
+              abortSignal: effectiveAbortSignal,
               skipStates,
               // FSM lifecycle events only (state transitions, action executions, tool calls/results)
               onEvent: (event) => {
@@ -1051,19 +1088,36 @@ export class WorkspaceRuntime {
           );
 
           session.artifacts = this.extractArtifacts(engine.documents);
-          session.status = WorkspaceSessionStatus.COMPLETED;
           session.completedAt = new Date();
+
+          // A cancelled agent call currently returns a successful-looking
+          // result (the orchestrator maps MCP "cancelled" → "completed" on
+          // line ~177 of agent-orchestrator.ts). So success-path arrivals
+          // still count as cancellations when the user hit Stop; check the
+          // AbortController we composed up top and override the status.
+          if (effectiveAbortSignal.aborted) {
+            session.status = WorkspaceSessionStatus.CANCELLED;
+          } else {
+            session.status = WorkspaceSessionStatus.COMPLETED;
+          }
 
           logger.info("Signal processed successfully", {
             sessionId: session.id,
             finalState: engine.state,
             artifactCount: session.artifacts.length,
             jobName: job.name,
+            status: session.status,
           });
         } catch (error) {
           session.completedAt = new Date();
           session.error = error instanceof Error ? error : new Error(String(error));
-          session.status = classifySessionError(error);
+          // Prefer the explicit cancel signal over error-name pattern matching —
+          // a downstream `AbortError` isn't always what bubbles up from MCP.
+          if (effectiveAbortSignal.aborted) {
+            session.status = WorkspaceSessionStatus.CANCELLED;
+          } else {
+            session.status = classifySessionError(error);
+          }
 
           if (otelSpan) {
             if (error instanceof Error) otelSpan.recordException(error);
@@ -1178,12 +1232,10 @@ export class WorkspaceRuntime {
             sessionStream.emit({
               type: "session:complete",
               sessionId,
-              status:
-                session.status === "active"
-                  ? "completed"
-                  : session.status === "cancelled"
-                    ? "failed"
-                    : session.status,
+              // `active` can only happen via an unreachable codepath (entry is
+              // default-initialized); fall back to "completed" so the stream
+              // never emits a half-open terminal event.
+              status: session.status === "active" ? "completed" : session.status,
               durationMs,
               error: session.error?.message,
               timestamp: (session.completedAt ?? new Date()).toISOString(),
@@ -1269,6 +1321,7 @@ export class WorkspaceRuntime {
           }
 
           this.agentResultSideChannel.delete(sessionId);
+          this.activeAbortControllers.delete(sessionId);
         }
 
         if (otelSpan) {
@@ -1547,6 +1600,12 @@ export class WorkspaceRuntime {
                 additionalContext: { documents: fsmContext.documents },
                 config: mergedConfig,
                 outputSchema: options?.outputSchema,
+                // Propagate session cancellation to the agent MCP transport —
+                // the orchestrator already listens for this on line ~296 and
+                // sends `notifications/cancelled` to the agents server, so
+                // DELETE /api/sessions/:id actually stops in-flight LLM work
+                // instead of just detaching the client.
+                abortSignal: signal._context?.abortSignal,
               });
 
         if (agentOtelSpan) {
@@ -2085,16 +2144,34 @@ export class WorkspaceRuntime {
     return this.sessions.get(sessionId)?.session;
   }
 
+  /**
+   * Abort an in-flight session. Throws when the session isn't active (already
+   * finished, or never existed). The abort propagates through the FSM engine's
+   * abortSignal to running agent calls, and the resulting AbortError is
+   * classified as "cancelled" by classifySessionError so history records a
+   * user cancellation rather than a platform failure.
+   */
   cancelSession(sessionId: string): void {
-    const activeSession = this.sessions.get(sessionId);
-    if (!activeSession) {
-      throw new Error(`Session ${sessionId} not found`);
+    const controller = this.activeAbortControllers.get(sessionId);
+    if (!controller) {
+      throw new Error(`Session ${sessionId} is not active (already finished or unknown)`);
     }
 
-    activeSession.session.cancel();
-    this.sessions.delete(sessionId);
+    // Use a named AbortError so classifySessionError routes this to CANCELLED.
+    const reason = new Error("Session cancelled by user");
+    reason.name = "AbortError";
+    controller.abort(reason);
 
-    logger.info("Session cancelled", { sessionId, workspaceId: this.workspace.id });
+    logger.info("Session cancel requested", { sessionId, workspaceId: this.workspace.id });
+  }
+
+  /**
+   * Whether the given session has an in-flight execution (i.e., can be cancelled).
+   * The `sessions` map only holds *finalized* sessions, so callers routing a
+   * DELETE to the right workspace should use this to find the active one.
+   */
+  hasActiveSession(sessionId: string): boolean {
+    return this.activeAbortControllers.has(sessionId);
   }
 
   listSignals(): Array<{ id: string; description?: string; provider: string }> {

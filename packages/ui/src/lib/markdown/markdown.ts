@@ -409,6 +409,23 @@ function buildSeparator(cols: number): string {
 // ─── Public API ────────────────────────────────────────────────────────
 
 /**
+ * Escape lines that are ONLY a digit followed by a period (with no content
+ * after) so marked doesn't interpret them as empty ordered-list markers.
+ *
+ * CommonMark treats `2.` on its own line as a valid (empty) ordered-list
+ * marker starting at 2, rendering as `<ol start="2"><li></li></ol>`. When an
+ * LLM replies to "what is 1+1?" with just "2.", that rule swallows the
+ * entire answer into an empty list and the user sees a blank bubble.
+ *
+ * We only escape the period when the line matches `^\d+\.\s*$` — anything
+ * followed by real content (`"1. first item"`, `"The answer is 2."`) is
+ * untouched.
+ */
+function preserveBareNumericLines(text: string): string {
+  return text.replace(/^(\s*)(\d+)\.([ \t]*)$/gm, "$1$2\\.$3");
+}
+
+/**
  * Convert markdown to HTML using `marked` (GFM-compliant, battle-tested).
  * Pipe-separated lines without a GFM separator row are auto-fixed first.
  */
@@ -416,8 +433,11 @@ export function markdownToHTML(markdown: string): string {
   if (!markdown) return "";
   // Normalize CRLF
   const normalized = markdown.replace(/\r\n/g, "\n");
+  // Preserve bare "N." answers (e.g. "2." as a reply to arithmetic) that
+  // marked would otherwise swallow into an empty <ol><li></li></ol>.
+  const preserved = preserveBareNumericLines(normalized);
   // Auto-fix sloppy pipe tables from LLM output
-  const withTables = normalizePipeTables(normalized);
+  const withTables = normalizePipeTables(preserved);
   // marked.parse() is synchronous when async: false
   const html = marked.parse(withTables) as string;
   // Strip trailing newline that marked adds
