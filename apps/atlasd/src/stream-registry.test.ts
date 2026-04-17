@@ -1,4 +1,5 @@
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { logger } from "@atlas/logger";
 import { aroundEach, describe, expect, it, vi } from "vitest";
 import {
   CLEANUP_INTERVAL_MS,
@@ -179,6 +180,52 @@ describe("StreamRegistry", () => {
 
       const result = registry.subscribe("chat-1", createController());
       expect(result).toBe(false);
+    });
+
+    // Pin the boundary: exactly MAX_EVENTS appends must be accepted, and the
+    // (N+1)th trips replayDisabled. Guards against a `>` → `>=` regression
+    // at stream-registry.ts:214 (off-by-one would either silently drop the
+    // last legal event or buffer one too many).
+    it("accepts exactly MAX_EVENTS appends; the (N+1)th trips replayDisabled", () => {
+      registry.createStream("chat-1");
+
+      for (let i = 0; i < MAX_EVENTS; i++) {
+        registry.appendEvent("chat-1", makeEvent(i));
+      }
+
+      let buffer = registry.getStream("chat-1");
+      expect.assert(buffer !== undefined, "buffer should exist");
+      expect(buffer.events).toHaveLength(MAX_EVENTS);
+      expect(buffer.replayDisabled).toBe(false);
+
+      registry.appendEvent("chat-1", makeEvent(MAX_EVENTS));
+
+      buffer = registry.getStream("chat-1");
+      expect.assert(buffer !== undefined, "buffer should exist");
+      expect(buffer.events).toHaveLength(MAX_EVENTS);
+      expect(buffer.replayDisabled).toBe(true);
+    });
+
+    // The `!buffer.replayDisabled &&` guard is the only thing keeping the
+    // overflow warning from firing on every post-overflow append. 100 extra
+    // appends past the cap must still produce exactly one warn — a regression
+    // that dropped the latch would flood logs in long-running daemons.
+    it("logs stream_buffer_overflow_replay_disabled exactly once per stream", () => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        registry.createStream("chat-1");
+
+        for (let i = 0; i < MAX_EVENTS + 100; i++) {
+          registry.appendEvent("chat-1", makeEvent(i));
+        }
+
+        const overflowCalls = warnSpy.mock.calls.filter(
+          (call) => call[0] === "stream_buffer_overflow_replay_disabled",
+        );
+        expect(overflowCalls).toHaveLength(1);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 
