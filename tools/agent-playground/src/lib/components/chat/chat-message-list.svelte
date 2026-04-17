@@ -26,6 +26,25 @@
     messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0),
   );
 
+  // "Sticky-follow" state: true while the viewport is anchored at/near the
+  // bottom, false the moment the user scrolls up to read history. Without
+  // this, every streaming token would re-snap the scroll to the bottom and
+  // the user couldn't review earlier messages mid-generation.
+  //
+  // A small threshold (not just === 0) tolerates subpixel rounding and the
+  // half-line of inertia after a fast wheel scroll that settles just above
+  // the bottom — we want "basically at the bottom" to still count as
+  // following.
+  const STICK_THRESHOLD_PX = 80;
+  let followBottom = $state(true);
+
+  function handleScroll() {
+    if (!containerEl) return;
+    const distanceFromBottom =
+      containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
+    followBottom = distanceFromBottom < STICK_THRESHOLD_PX;
+  }
+
   async function scrollToBottom() {
     await tick();
     if (containerEl) {
@@ -37,7 +56,14 @@
     // deps: messages.length, totalToolCallCount
     const _len = messages.length;
     const _calls = totalToolCallCount;
-    void scrollToBottom();
+    // Only scroll if the user is still anchored at the bottom. If they
+    // scrolled up to read history, honor that — otherwise we'd hijack
+    // their position every token and the chat would be unreadable during
+    // generation. Re-enabling follow is implicit: when they scroll back
+    // to the bottom, `handleScroll` flips `followBottom` to true.
+    if (followBottom) {
+      void scrollToBottom();
+    }
   });
 
   /**
@@ -313,7 +339,7 @@
   </div>
 {/snippet}
 
-<div class="message-list" bind:this={containerEl}>
+<div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
   {#each messages as message (message.id)}
     {#if message.scheduleProposal}
       <div class="message system" style="align-self: center; max-inline-size: 90%;">
