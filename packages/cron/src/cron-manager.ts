@@ -78,9 +78,15 @@ export class CronManager {
   }
 
   /**
-   * Start the cron manager and restore persisted timers
+   * Start the cron manager and restore persisted timers.
+   *
+   * `options.knownWorkspaceIds` enables orphan pruning: any persisted timer
+   * whose `workspaceId` isn't in the set is dropped from memory and storage
+   * before the tick loop starts. Defense-in-depth for workspaces removed
+   * outside the manager's normal delete path (direct `rm -rf` of a
+   * workspace directory, crashes mid-delete, FAST self-modification).
    */
-  async start(): Promise<void> {
+  async start(options?: { knownWorkspaceIds?: ReadonlySet<string> }): Promise<void> {
     if (this.isRunning) {
       this.logger.warn("CronManager is already running");
       return;
@@ -91,6 +97,10 @@ export class CronManager {
     try {
       // Restore persisted timers
       await this.loadPersistedTimers();
+
+      if (options?.knownWorkspaceIds) {
+        await this.pruneOrphanedTimers(options.knownWorkspaceIds);
+      }
 
       // Start the interval-based timer checking for reliability
       this.startTimerCheckInterval();
@@ -103,6 +113,36 @@ export class CronManager {
     } catch (error) {
       this.logger.error("Failed to start CronManager", { error });
       throw error;
+    }
+  }
+
+  /**
+   * Drop timers whose workspaceId isn't in the set of known workspaces.
+   * Removes both the in-memory entry and the storage row so the orphan
+   * can't resurrect on the next restart.
+   */
+  private async pruneOrphanedTimers(known: ReadonlySet<string>): Promise<void> {
+    const orphaned: Array<[string, TimerInfo]> = [];
+    for (const [timerKey, timer] of this.timers.entries()) {
+      if (!known.has(timer.workspaceId)) {
+        orphaned.push([timerKey, timer]);
+      }
+    }
+    for (const [timerKey, timer] of orphaned) {
+      this.logger.warn("Pruning orphaned cron timer (workspace missing)", {
+        workspaceId: timer.workspaceId,
+        signalId: timer.signalId,
+        timerKey,
+      });
+      this.timers.delete(timerKey);
+      try {
+        await this.storage.delete([`cron_timers`, timerKey]);
+      } catch (error) {
+        this.logger.error("Failed to delete orphaned timer from storage", { timerKey, error });
+      }
+    }
+    if (orphaned.length > 0) {
+      this.logger.info("Pruned orphaned cron timers", { count: orphaned.length });
     }
   }
 

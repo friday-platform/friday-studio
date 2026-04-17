@@ -375,6 +375,10 @@ export class WorkspaceManager {
     for (const ws of allWorkspaces) {
       if (ws.metadata?.system && !systemIds.has(ws.id)) {
         logger.info(`Removing orphaned system workspace: ${ws.id} (${ws.name})`);
+        // Pair registry unregister with registrar cleanup so cron timers
+        // (and fs watchers) for the orphaned workspace don't survive as
+        // ghosts that fire every tick against a missing workspace.
+        await this.unregisterWithRegistrars(ws.id);
         await this.registry.unregisterWorkspace(ws.id);
       }
     }
@@ -407,6 +411,9 @@ export class WorkspaceManager {
       oldPath: fastLoopEntry.path,
     });
 
+    // Pair registry unregister with registrar cleanup so cron timers
+    // and fs watchers tied to the old fast-loop id don't outlive it.
+    await this.unregisterWithRegistrars(fastLoopEntry.id);
     await this.registry.unregisterWorkspace(fastLoopEntry.id);
     logger.info("Fast-loop workspace entry removed (replaced by system)");
   }

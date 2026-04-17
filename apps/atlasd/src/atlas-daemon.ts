@@ -435,8 +435,12 @@ export class AtlasDaemon {
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
 
-    // Start CronManager
-    await this.cronManager.start();
+    // Start CronManager — pass the live set of workspace ids so any
+    // persisted timer pointing at a deleted workspace (e.g. one removed
+    // outside the manager via direct rm) is pruned before the tick loop
+    // can fire WorkspaceNotFoundError every cron interval.
+    const knownWorkspaces = await this.workspaceManager.list({ includeSystem: true });
+    await this.cronManager.start({ knownWorkspaceIds: new Set(knownWorkspaces.map((w) => w.id)) });
 
     // Initialize StreamRegistry
     this.streamRegistry = new StreamRegistry();
