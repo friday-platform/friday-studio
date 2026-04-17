@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { z } from "zod";
+
+  const LastOpenedSchema = z.record(z.string(), z.string());
 
   interface ChatListEntry {
     id: string;
@@ -36,11 +39,8 @@
     try {
       const raw = localStorage.getItem(LAST_OPENED_KEY);
       if (!raw) return {};
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null) {
-        return parsed as Record<string, string>;
-      }
-      return {};
+      const parsed = LastOpenedSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data : {};
     } catch {
       return {};
     }
@@ -110,14 +110,30 @@
     void fetchChats();
   });
 
-  // Poll every 15s for new messages (low cost — header+meta only)
+  // Poll every 15s for new messages (low cost — header+meta only). Skip the
+  // tick when the tab is hidden so a backgrounded playground doesn't keep
+  // hammering the daemon; refetch immediately on the visibilitychange back
+  // to "visible" so the list isn't stale when the user returns.
   $effect(() => {
     if (!workspaceId) return;
     const interval = setInterval(() => {
-      // Refetch initial page only — keeps list fresh without disturbing expansions
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
       void fetchChats();
     }, 15_000);
-    return () => clearInterval(interval);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchChats();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisible);
+    }
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
+    };
   });
 
   const visibleChats = $derived(

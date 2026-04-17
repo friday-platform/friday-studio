@@ -99,8 +99,11 @@ export class StreamRegistry {
   /** Has the total-ceiling warning fired already? Avoids log-spam under overflow. */
   private ceilingWarned = false;
 
+  /** Shared encoder — TextEncoder is stateless, so one instance per process is safe. */
+  private static readonly ENCODER = new TextEncoder();
+
   /** Encode and cache the [DONE] sentinel once */
-  private static readonly DONE_CHUNK = new TextEncoder().encode("data: [DONE]\n\n");
+  private static readonly DONE_CHUNK = StreamRegistry.ENCODER.encode("data: [DONE]\n\n");
 
   /**
    * Send [DONE] sentinel to all subscribers, close their controllers, and clear the set.
@@ -239,8 +242,7 @@ export class StreamRegistry {
 
     // Broadcast to all subscribers regardless of buffer state — they've
     // already seen every prior event and can keep processing this one.
-    const encoder = new TextEncoder();
-    const data = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+    const data = StreamRegistry.ENCODER.encode(`data: ${JSON.stringify(event)}\n\n`);
 
     for (const controller of buffer.subscribers) {
       try {
@@ -266,10 +268,9 @@ export class StreamRegistry {
     }
 
     // Replay buffered events to this subscriber
-    const encoder = new TextEncoder();
     for (const event of buffer.events) {
       try {
-        const data = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+        const data = StreamRegistry.ENCODER.encode(`data: ${JSON.stringify(event)}\n\n`);
         controller.enqueue(data);
       } catch {
         // Controller closed during replay
