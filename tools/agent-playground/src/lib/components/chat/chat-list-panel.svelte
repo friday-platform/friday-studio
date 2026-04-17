@@ -82,14 +82,39 @@
         hasMore: boolean;
       };
       if (cursor === undefined) {
-        chats = data.chats;
+        // Initial load OR poll refresh. Merge-dedupe by id so a 15s poll
+        // doesn't collapse entries the user loaded via "Load more": any
+        // deeper page still in memory is preserved at its previous
+        // position, while the fresh first page seeds new chats at the
+        // top and updates metadata (title, updatedAt) for existing ones.
+        // Fresh-page ordering wins at the top; stale deeper entries trail.
+        const seen = new Set<string>();
+        const merged: ChatListEntry[] = [];
+        for (const c of data.chats) {
+          merged.push(c);
+          seen.add(c.id);
+        }
+        for (const c of chats) {
+          if (!seen.has(c.id)) {
+            merged.push(c);
+            seen.add(c.id);
+          }
+        }
+        chats = merged;
+        // Only seed pagination on the very first fetch. Polls must NOT
+        // overwrite nextCursor — the user may be paging deeper and
+        // resetting to page-2 would break their next "Load more" click.
+        if (nextCursor === null && !hasMore) {
+          nextCursor = data.nextCursor;
+          hasMore = data.hasMore;
+        }
       } else {
         // Dedupe on append by id
         const seen = new Set(chats.map((c) => c.id));
         chats = [...chats, ...data.chats.filter((c) => !seen.has(c.id))];
+        nextCursor = data.nextCursor;
+        hasMore = data.hasMore;
       }
-      nextCursor = data.nextCursor;
-      hasMore = data.hasMore;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
