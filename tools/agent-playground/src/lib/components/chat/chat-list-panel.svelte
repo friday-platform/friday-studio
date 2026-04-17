@@ -180,54 +180,54 @@
 </script>
 
 <!--
-  Spec: only render the panel when there's more than one chat. A single chat
-  (the current one) means there's no history worth navigating to, so the
-  panel adds clutter with no value. While the initial fetch is in flight
-  `chats.length === 0` and the panel stays hidden; once fetched with ≥ 2
-  entries it appears.
+  Panel renders on every workspace. Empty state (`chats.length === 0`) shows
+  a short "No chats yet" hint so the affordance is visible before the first
+  message is sent.
 -->
-{#if chats.length > 1}
-  <aside class="chat-list-panel">
-    <div class="chat-list-header">
-      <h3>Chats</h3>
-    </div>
+<aside class="chat-list-panel">
+  <div class="chat-list-header">
+    <h3>Chats</h3>
+  </div>
 
-    {#if error}
-      <div class="list-error">{error}</div>
-    {/if}
+  {#if error}
+    <div class="list-error">{error}</div>
+  {/if}
 
-    <ul class="chat-list">
-      {#each visibleChats as chat (chat.id)}
-        {@const unread = isUnread(chat)}
-        <li>
-          <button
-            class="chat-item"
-            class:active={chat.id === currentChatId}
-            class:unread
-            onclick={() => handleClick(chat.id)}
-          >
-            <span class="item-dot" aria-hidden="true"></span>
-            <div class="item-body">
-              <div class="item-top">
-                <span class="item-title">{chat.title ?? "Untitled"}</span>
-                <span class="item-time">{formatRelativeTime(chat.updatedAt)}</span>
-              </div>
-              <div class="item-meta">
-                <span class="source-badge source-{chat.source}">{sourceLabel(chat.source)}</span>
-              </div>
+  {#if chats.length === 0 && !loading}
+    <p class="list-empty">No chats yet — send a message to start one.</p>
+  {/if}
+
+  <ul class="chat-list">
+    {#each visibleChats as chat (chat.id)}
+      {@const unread = isUnread(chat)}
+      <li>
+        <button
+          class="chat-item"
+          class:active={chat.id === currentChatId}
+          class:unread
+          onclick={() => handleClick(chat.id)}
+        >
+          <span class="item-dot" aria-hidden="true"></span>
+          <div class="item-body">
+            <div class="item-top">
+              <span class="item-title">{chat.title ?? "Untitled"}</span>
+              <span class="item-time">{formatRelativeTime(chat.updatedAt)}</span>
             </div>
-          </button>
-        </li>
-      {/each}
-    </ul>
+            <div class="item-meta">
+              <span class="source-badge source-{chat.source}">{sourceLabel(chat.source)}</span>
+            </div>
+          </div>
+        </button>
+      </li>
+    {/each}
+  </ul>
 
-    {#if hasMore}
-      <button class="load-more" onclick={loadMore} disabled={loading}>
-        {loading ? "Loading…" : "Load more"}
-      </button>
-    {/if}
-  </aside>
-{/if}
+  {#if hasMore}
+    <button class="load-more" onclick={loadMore} disabled={loading}>
+      {loading ? "Loading…" : "Load more"}
+    </button>
+  {/if}
+</aside>
 
 <style>
   .chat-list-panel {
