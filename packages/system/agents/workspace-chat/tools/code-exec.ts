@@ -142,9 +142,18 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
   return {
     run_code: tool({
       description:
-        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Default timeout is 30 s (max 120 s); scripts that invoke known interactive-auth commands (`op`, `ssh`, `sudo`, `gpg`, `security`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init`) auto-get the full 120 s budget so the user has room to approve on Watch / Touch ID. Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. If an auth-requiring command still times out or fails silently with empty stderr, it almost always means the user missed the approval prompt — tell them to run the command in their terminal directly instead of retrying.",
+        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s, max 120 s). Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. Interactive-auth commands are REFUSED INSTANTLY — empirically, the desktop auth prompt (Watch, Touch ID, password) for `op item`/`op read`/`op vault`/`op document`/`op user`/`op signin`, `ssh host…`, `scp`, `sftp`, `sudo`, `gpg --decrypt|--sign|--encrypt`, `security unlock-keychain`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init` only surfaces after the sandbox kills the process. Tell the user to run those in their terminal directly and paste the output back. `op account list`, `op whoami`, `op --version`, `gpg --version`, etc. still run normally — they don't need vault / key auth.",
       inputSchema: RunCodeInput,
       execute: async ({ language, source, timeout_ms }): Promise<RunCodeSuccess | RunCodeError> => {
+        // Refuse interactive-auth commands before we even create a
+        // scratch dir. See `TTY_AUTH_COMMAND_RE` above for the rationale
+        // — waiting for the timeout doesn't help, so we return instantly
+        // with a copy-paste-ready command for the user.
+        if (TTY_AUTH_COMMAND_RE.test(source)) {
+          logger.info("run_code refused (interactive auth)", { sessionId });
+          return { error: buildInteractiveAuthRefusal(source) };
+        }
+
         const dir = scratchDir(sessionId);
         try {
           await mkdir(dir, { recursive: true });
@@ -166,18 +175,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
         }
 
         const command = spec.build(filePath);
-        // Interactive-auth commands (op / ssh / sudo / gpg / cloud CLI
-        // logins) need time for the 1Password / Keychain / SSO desktop
-        // helper to launch AND for the user to approve on Watch / Touch
-        // ID. That routinely takes 30-60 s from a cold start. Under the
-        // old 30 s default, we'd SIGKILL the process mid-handshake — the
-        // user would tap Authorize but op was already dead. Give those
-        // scripts the full MAX_TIMEOUT_MS by default; the LLM can still
-        // override with an explicit `timeout_ms`.
-        const defaultTimeout = TTY_AUTH_COMMAND_RE.test(source)
-          ? MAX_TIMEOUT_MS
-          : DEFAULT_TIMEOUT_MS;
-        const timeout = Math.min(timeout_ms ?? defaultTimeout, MAX_TIMEOUT_MS);
+        const timeout = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
         const options: ExecOptions = {
           cwd: dir,
           timeout,
@@ -227,15 +225,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
               message?: string;
             };
             if (execErr.killed && execErr.signal === "SIGKILL") {
-              // Timeout on a known-auth command almost always means the
-              // user didn't tap Authorize in time (or the desktop helper
-              // never surfaced the prompt). The bare "killed by timeout"
-              // message is unactionable — steer the LLM toward telling
-              // the user to run the command in their own terminal.
-              const hint = TTY_AUTH_COMMAND_RE.test(source)
-                ? " — the script uses an interactive-auth command (op/ssh/sudo/…). The user probably didn't tap Authorize in time, or the 1Password / Keychain / SSO helper is stuck. Tell them to run the command in their terminal directly; do not retry."
-                : "";
-              return { error: `run_code killed by timeout after ${timeout}ms${hint}` };
+              return { error: `run_code killed by timeout after ${timeout}ms` };
             }
             const stdout = stringify(execErr.stdout);
             const stderr = stringify(execErr.stderr);
@@ -249,8 +239,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
               duration,
               hadStderr: stderr.length > 0,
             });
-            const enriched = enrichEmptyStderrWithTtyHint(source, stderr, exitCode);
-            return buildSuccess(lang, dir, stdout, enriched, exitCode, duration);
+            return buildSuccess(lang, dir, stdout, stderr, exitCode, duration);
           }
           const message = err instanceof Error ? err.message : String(err);
           return { error: `run_code execution failed: ${message}` };
@@ -271,34 +260,63 @@ function stringify(value: string | Buffer | undefined): string {
 }
 
 /**
- * Commands that route their auth prompts through `/dev/tty` rather than
- * stdout/stderr, or that insist on an interactive password flow. When any
- * of these appears in the source and the command fails with **empty
- * stderr**, we inject a hint so the LLM (and the user) aren't left staring
- * at a silent failure. The list is intentionally conservative — only
- * commands that frequently fail in CI-style pipe environments.
+ * Commands that demand interactive auth (biometrics, Watch approval,
+ * password prompt) and in practice **cannot complete from this sandbox**.
  *
- * The regex uses a word boundary on both sides so `op`, `ssh`, `sudo`, etc.
- * don't match substrings (`opt`, `sshkeygen` would still match — good —
- * but `setopt` wouldn't).
+ * Empirical finding: even giving `op` the full 120 s timeout, the
+ * 1Password desktop helper's Watch prompt lands *exactly* after SIGKILL,
+ * not before — something about the exec lifecycle blocks the desktop app
+ * from surfacing the prompt until the child dies. Waiting longer doesn't
+ * fix it; it just makes the user wait N seconds to learn the same thing.
+ *
+ * So we refuse fast with a clear "run in your terminal" message and a
+ * copy-paste command. Instant feedback beats a silent 120 s stare.
+ *
+ * The regex is narrow: for `op` we only catch subcommands that actually
+ * need vault access (`item`, `read`, `document`, `vault`, `user`, `group`,
+ * `connect`, `signin`). `op account list`, `op whoami`, `op --version`
+ * read local config and still run. Similar targeting for `gpg`
+ * (only the decrypt/sign/encrypt/clearsign verbs need keyring auth) —
+ * `gpg --version` / `gpg --list-keys` stay untouched.
  */
-const TTY_AUTH_COMMAND_RE =
-  /\b(op|ssh|scp|sftp|sudo|gpg|security|keychain|aws\s+sso\s+login|gh\s+auth\s+login|doctl\s+auth\s+init|gcloud\s+auth\s+login|az\s+login)\b/;
+const TTY_AUTH_COMMAND_RE = new RegExp(
+  [
+    String.raw`\bop\s+(item|read|document|vault|user|group|connect|signin)\b`,
+    String.raw`\bssh\s+`, // plain ssh to a host; ssh-keygen / ssh-add handled separately below
+    String.raw`\bscp\s+`,
+    String.raw`\bsftp\s+`,
+    String.raw`\bsudo\b`,
+    String.raw`\bgpg\s+(--decrypt|--sign|--encrypt|--clearsign|-d\b|-s\b|-e\b)`,
+    String.raw`\bsecurity\s+(unlock-keychain|find-generic-password|find-internet-password|add-generic-password)`,
+    String.raw`\baws\s+sso\s+login\b`,
+    String.raw`\bgh\s+auth\s+login\b`,
+    String.raw`\bgcloud\s+auth\s+login\b`,
+    String.raw`\baz\s+login\b`,
+    String.raw`\bdoctl\s+auth\s+init\b`,
+  ].join("|"),
+);
 
-function enrichEmptyStderrWithTtyHint(source: string, stderr: string, exitCode: number): string {
-  if (exitCode === 0) return stderr;
-  if (stderr.trim() !== "") return stderr;
-  if (!TTY_AUTH_COMMAND_RE.test(source)) return stderr;
+/**
+ * Produce the "run this in your terminal" message. The source is echoed
+ * inside a fenced code block so the playground's markdown renderer gives
+ * the user a one-click copy button. Kept as a function so the tool
+ * factory and the TTY-hint path can share wording.
+ */
+function buildInteractiveAuthRefusal(source: string): string {
   return (
-    "[run_code hint] The command failed with empty stderr, and the script " +
-    "uses a tool that needs interactive auth via a real terminal (op, ssh, " +
-    "sudo, gpg, aws sso login, gh auth login, etc.). Those tools write auth " +
-    "prompts to /dev/tty, which this sandbox does not provide — the process " +
-    "exits silently without ever surfacing the prompt.\n" +
+    "[run_code refused] This script invokes an interactive-auth command " +
+    "(op / ssh / sudo / gpg / aws sso / gh auth / gcloud / az / doctl). " +
+    "Those can't complete from this sandbox — empirically, the desktop " +
+    "auth prompt (Watch, Touch ID, password) only surfaces after the " +
+    "process is killed, which is useless. Run the command in your " +
+    "terminal directly and paste the result back if needed.\n" +
     "\n" +
-    "Action: tell the user to run the exact command in their own terminal. " +
-    "Do not retry — each retry triggers another auth prompt (e.g. Touch ID, " +
-    "Apple Watch) that cannot complete here."
+    "```bash\n" +
+    source.trim() +
+    "\n```\n" +
+    "\n" +
+    "Do NOT retry from `run_code` — each retry triggers another auth " +
+    "prompt that can't be completed."
   );
 }
 

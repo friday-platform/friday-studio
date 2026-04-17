@@ -39,57 +39,69 @@ function hasKey<K extends string>(o: unknown, k: K): o is Record<K, unknown> {
   return typeof o === "object" && o !== null && k in o;
 }
 
-describe("run_code — interactive-auth guidance and stream preservation", () => {
-  it("adds a TTY hint when a 1Password command fails with empty stderr", async () => {
-    const tools = createRunCodeTool("test-session-tty-op", logger);
+describe("run_code — interactive-auth refusal + stream preservation", () => {
+  it("refuses `op item create` instantly with a copy-paste command", async () => {
+    const tools = createRunCodeTool("test-session-op-refuse", logger);
     const run = getExecute(tools.run_code);
 
-    // Simulate the exact failure mode the user hit: nonzero exit, empty
-    // stderr, source text contains `op` (the regex anchor). We can't
-    // actually run `op` in the test — on a machine where op is installed,
-    // it would wait for a TTY auth prompt and time out; on CI without op,
-    // it would write to stderr, defeating the empty-stderr premise.
+    const started = Date.now();
     const result = await run({
       language: "bash",
-      source: "# op item create simulation — silent nonzero exit\nexit 1",
+      source: 'op item create --category="Secure Note" --title="x" notesPlain="y"',
     });
+    const duration = Date.now() - started;
 
-    expect(hasKey(result, "exit_code")).toBe(true);
-    if (!hasKey(result, "exit_code")) throw new Error("expected success shape");
-    expect(result.exit_code).not.toBe(0);
-
-    expect(hasKey(result, "stderr")).toBe(true);
-    const stderr = String(result.stderr);
-    expect(stderr).toContain("run_code hint");
-    expect(stderr).toContain("/dev/tty");
-    expect(stderr).toContain("Do not retry");
+    if (!hasKey(result, "error"))
+      throw new Error(`expected refusal, got ${JSON.stringify(result)}`);
+    expect(String(result.error)).toContain("run_code refused");
+    expect(String(result.error)).toContain("Run the command in your terminal");
+    expect(String(result.error)).toContain("op item create");
+    // Must be fast — 1 second max. The whole point is to avoid the 120 s
+    // silent wait the user was hitting before.
+    expect(duration).toBeLessThan(1_000);
   });
 
-  it("does NOT add the hint when the command is not on the interactive-auth list", async () => {
-    const tools = createRunCodeTool("test-session-tty-noop", logger);
+  it("refuses `ssh host` and `sudo …` and `aws sso login`", async () => {
+    const tools = createRunCodeTool("test-session-multi-refuse", logger);
     const run = getExecute(tools.run_code);
 
-    // `false` alone: nonzero exit, empty stderr, but no op/ssh/sudo in source.
-    const result = await run({ language: "bash", source: "echo plain-work && false" });
-
-    if (!hasKey(result, "stderr")) throw new Error("expected success shape");
-    const stderr = String(result.stderr);
-    expect(stderr).not.toContain("run_code hint");
+    for (const source of [
+      "ssh deploy@prod 'uptime'",
+      "sudo rm /tmp/something",
+      "aws sso login --profile staging",
+      "gh auth login",
+      "gpg --decrypt file.gpg",
+    ]) {
+      const result = await run({ language: "bash", source });
+      if (!hasKey(result, "error")) throw new Error(`expected refusal for ${source}`);
+      expect(String(result.error)).toContain("run_code refused");
+    }
   });
 
-  it("does NOT add the hint when real stderr content was captured", async () => {
-    const tools = createRunCodeTool("test-session-tty-real-stderr", logger);
+  it("still runs `op account list` and `op whoami` (no vault auth)", async () => {
+    // The refusal regex is narrow: only matches op subcommands that touch
+    // the vault. `op account list` reads local config and must keep
+    // working from the sandbox.
+    const tools = createRunCodeTool("test-session-op-read", logger);
     const run = getExecute(tools.run_code);
 
-    // `op --not-a-real-flag` will fail with real stderr output; the hint
-    // must NOT stomp on the useful diagnostic. We can't rely on op being
-    // installed in CI, so emit something `op-ish` via `>&2 echo` instead.
-    const result = await run({ language: "bash", source: 'echo "op: unknown flag" >&2 && exit 2' });
-
-    if (!hasKey(result, "stderr")) throw new Error("expected success shape");
-    const stderr = String(result.stderr);
-    expect(stderr).toContain("op: unknown flag");
-    expect(stderr).not.toContain("run_code hint");
+    // We can't rely on `op` being installed in CI, so instead of running
+    // the real command, we use a shell that only mentions these safe
+    // subcommands as arguments to `echo` — that exercises the regex
+    // without needing op on PATH. If the regex falsely matched these,
+    // we'd get a refusal; since it doesn't, we get a normal exit 0.
+    for (const source of [
+      'echo "would run: op account list"',
+      'echo "would run: op whoami"',
+      'echo "would run: op --version"',
+      'echo "would run: gpg --version"',
+    ]) {
+      const result = await run({ language: "bash", source });
+      if (!hasKey(result, "exit_code")) {
+        throw new Error(`expected success for ${source}, got ${JSON.stringify(result)}`);
+      }
+      expect(result.exit_code).toBe(0);
+    }
   });
 
   it("preserves stderr on nonzero exit (regression — was lost via the 'code is number' condition)", async () => {
@@ -105,47 +117,5 @@ describe("run_code — interactive-auth guidance and stream preservation", () =>
     expect(String(result.stdout)).toContain("stdout content");
     expect(String(result.stderr)).toContain("stderr content");
     expect(result.exit_code).toBe(7);
-  });
-
-  it("auto-extends the timeout past 30 s for interactive-auth commands", async () => {
-    // Script mentions `op`, which the regex matches — the default 30 s
-    // timeout should lift to the 120 s max so a real auth prompt has
-    // time to complete. We don't actually wait 120 s here; we just
-    // prove the logic path doesn't error on a quick op-mentioning
-    // script. The hint-branch test below separately pins the SIGKILL
-    // timeout message.
-    const tools = createRunCodeTool("test-session-auth-timeout", logger);
-    const run = getExecute(tools.run_code);
-
-    const result = await run({
-      language: "bash",
-      source: "# op item create: auth-requiring command\nsleep 0.1 && exit 0",
-    });
-
-    if (!hasKey(result, "exit_code")) {
-      throw new Error(`expected success shape, got ${JSON.stringify(result)}`);
-    }
-    expect(result.exit_code).toBe(0);
-  });
-
-  it("adds a 'didn't tap Authorize' hint when an auth command times out", async () => {
-    // Force a timeout by setting `timeout_ms: 1000` on a 3 s sleep that
-    // mentions `op`. The sigkill path should emit the interactive-auth
-    // hint that tells the LLM not to retry.
-    const tools = createRunCodeTool("test-session-auth-sigkill", logger);
-    const run = getExecute(tools.run_code);
-
-    const result = await run({
-      language: "bash",
-      source: "# op: script that outlives the explicit timeout\nsleep 3",
-      timeout_ms: 1_000,
-    });
-
-    if (!hasKey(result, "error")) {
-      throw new Error(`expected timeout error, got ${JSON.stringify(result)}`);
-    }
-    expect(String(result.error)).toContain("killed by timeout");
-    expect(String(result.error)).toContain("Authorize");
-    expect(String(result.error)).toContain("do not retry");
   });
 });
