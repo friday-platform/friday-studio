@@ -1253,13 +1253,14 @@ export class AtlasDaemon {
     const workspace = await manager.find({ id: workspaceId });
     const userId = workspace?.metadata?.createdBy ?? "default-user";
 
-    let credentials: PlatformCredentials | undefined;
-    let credentialId: string | undefined;
+    let credentials: PlatformCredentials[] | undefined;
     try {
-      const resolved = await resolvePlatformCredentials(workspaceId);
-      if (resolved) {
-        credentials = resolved.credentials;
-        credentialId = resolved.credentialId;
+      const signals = config.workspace?.signals as
+        | Record<string, { provider?: string; config?: Record<string, unknown> }>
+        | undefined;
+      const resolved = await resolvePlatformCredentials(workspaceId, signals);
+      if (resolved.length > 0) {
+        credentials = resolved.map((r) => r.credentials);
       }
     } catch (error) {
       logger.warn("chat_sdk_credential_resolution_failed", { workspaceId, error });
@@ -1286,7 +1287,6 @@ export class AtlasDaemon {
     };
 
     const instance = await initializeChatSdkInstance(instanceConfig, credentials);
-    instance.credentialId = credentialId;
     return instance;
   }
 

@@ -54,6 +54,49 @@ export const SlackProviderConfigSchema = z.strictObject({
 });
 export type SlackProviderConfig = z.infer<typeof SlackProviderConfigSchema>;
 
+export const TelegramProviderConfigSchema = z.strictObject({
+  bot_token: z
+    .string()
+    .optional()
+    .describe("Telegram bot token. Falls back to TELEGRAM_BOT_TOKEN env var."),
+  webhook_secret: z
+    .string()
+    .optional()
+    .describe(
+      "Webhook secret for x-telegram-bot-api-secret-token verification. Falls back to TELEGRAM_WEBHOOK_SECRET env var.",
+    ),
+});
+export type TelegramProviderConfig = z.infer<typeof TelegramProviderConfigSchema>;
+
+export const WhatsAppProviderConfigSchema = z.strictObject({
+  access_token: z
+    .string()
+    .optional()
+    .describe(
+      "Meta Graph API access token. Falls back to WHATSAPP_ACCESS_TOKEN env var. Prefer a permanent System User token for production.",
+    ),
+  app_secret: z
+    .string()
+    .optional()
+    .describe(
+      "Meta app secret used for X-Hub-Signature-256 verification. Falls back to WHATSAPP_APP_SECRET env var.",
+    ),
+  phone_number_id: z
+    .string()
+    .optional()
+    .describe(
+      "WhatsApp Business phone number ID from the Meta dashboard. Falls back to WHATSAPP_PHONE_NUMBER_ID env var.",
+    ),
+  verify_token: z
+    .string()
+    .optional()
+    .describe(
+      "User-defined secret string echoed back during Meta's GET verification handshake. Falls back to WHATSAPP_VERIFY_TOKEN env var.",
+    ),
+  api_version: z.string().optional().describe("Graph API version (defaults to v21.0 when omitted)"),
+});
+export type WhatsAppProviderConfig = z.infer<typeof WhatsAppProviderConfigSchema>;
+
 export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("http"),
   config: HTTPProviderConfigSchema,
@@ -76,12 +119,24 @@ export const SlackSignalConfigSchema = BaseSignalConfigSchema.extend({
   config: SlackProviderConfigSchema,
 });
 
+export const TelegramSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("telegram"),
+  config: TelegramProviderConfigSchema,
+});
+
+export const WhatsAppSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("whatsapp"),
+  config: WhatsAppProviderConfigSchema,
+});
+
 export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
   SystemSignalConfigSchema,
   FileWatchSignalConfigSchema,
   SlackSignalConfigSchema,
+  TelegramSignalConfigSchema,
+  WhatsAppSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
@@ -93,6 +148,8 @@ export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;
 export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
 export type SlackSignalConfig = z.infer<typeof SlackSignalConfigSchema>;
+export type TelegramSignalConfig = z.infer<typeof TelegramSignalConfigSchema>;
+export type WhatsAppSignalConfig = z.infer<typeof WhatsAppSignalConfigSchema>;
 
 export const SignalTriggerRequestSchema = z.strictObject({
   payload: z

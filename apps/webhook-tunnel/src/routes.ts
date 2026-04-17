@@ -26,6 +26,51 @@ export function createWebhookRoutes(config: Config, getTunnelUrl: () => string |
     }),
   );
 
+  // Platform pass-through — forwards raw webhook to atlasd's platform
+  // signal endpoint. Use this for Chat SDK adapters (Telegram, Slack) that
+  // handle signature verification + parsing internally.
+  //
+  // URL pattern: /platform/{provider}/{...suffix}
+  //   e.g. /platform/telegram/<bot_token_suffix>
+  //        /platform/slack
+  app.all("/platform/:provider/:suffix?", async (c) => {
+    const { provider, suffix } = c.req.param();
+    const basePath = suffix
+      ? `${config.atlasdUrl}/signals/${provider}/${suffix}`
+      : `${config.atlasdUrl}/signals/${provider}`;
+    // Preserve query string — Meta/Slack/etc. verification handshakes carry
+    // data in the query (e.g. hub.verify_token, hub.challenge for WhatsApp).
+    const incomingQuery = new URL(c.req.raw.url).search;
+    const upstream = `${basePath}${incomingQuery}`;
+
+    // Forward raw body + all headers (Chat SDK needs them for verification)
+    const body = await c.req.arrayBuffer();
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    headers.delete("content-length");
+
+    logger.info("Platform webhook received", {
+      provider,
+      suffix,
+      upstream,
+      bodyBytes: body.byteLength,
+    });
+
+    try {
+      const res = await fetch(upstream, {
+        method: c.req.method,
+        headers,
+        body: body.byteLength > 0 ? body : undefined,
+      });
+      const resBody = await res.arrayBuffer();
+      return new Response(resBody, { status: res.status, headers: res.headers });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("Platform forward failed", { provider, suffix, error: msg });
+      return c.json({ error: `Cannot reach atlasd: ${msg}` }, 502);
+    }
+  });
+
   // Main webhook handler
   app.post("/hook/:provider/:workspaceId/:signalId", async (c) => {
     const { provider, workspaceId, signalId } = c.req.param();

@@ -31,7 +31,7 @@ const StoredChatSchema = z.object({
   id: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
-  source: z.enum(["atlas", "slack", "discord"]),
+  source: z.enum(["atlas", "slack", "discord", "telegram", "whatsapp"]),
   color: ColorSchema.optional(),
   title: z.string().optional(),
   createdAt: z.iso.datetime(),
@@ -97,7 +97,7 @@ async function createChat(input: {
   chatId: string;
   userId: string;
   workspaceId: string;
-  source: "atlas" | "slack" | "discord";
+  source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp";
 }): Promise<Result<Chat, string>> {
   try {
     await ensureChatDir(input.workspaceId);

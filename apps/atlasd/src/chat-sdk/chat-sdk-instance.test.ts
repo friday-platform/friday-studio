@@ -20,11 +20,12 @@ vi.mock("@atlas/core/chat/storage", () => ({
   },
 }));
 
+import process from "node:process";
 import type { Message, Thread } from "chat";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
-import { createMessageHandler } from "./chat-sdk-instance.ts";
+import { createMessageHandler, resolvePlatformCredentials } from "./chat-sdk-instance.ts";
 
 function makeMessage(overrides?: Partial<Message>): Message {
   return {
@@ -362,5 +363,86 @@ describe("createMessageHandler — kernel filtering", () => {
       "chat-kernel-4",
       expect.any(Function),
     );
+  });
+});
+
+describe("resolvePlatformCredentials", () => {
+  // resolveSlackCredentials calls out to the Link service. We redirect it to
+  // an unreachable port so the fetch fails and it returns null, matching the
+  // no-slack-wired case without touching the fn under test.
+  const originalLinkUrl = process.env.LINK_SERVICE_URL;
+  const originalLinkDev = process.env.LINK_DEV_MODE;
+  beforeEach(() => {
+    process.env.LINK_SERVICE_URL = "http://127.0.0.1:1";
+    process.env.LINK_DEV_MODE = "true";
+  });
+  afterAll(() => {
+    if (originalLinkUrl === undefined) delete process.env.LINK_SERVICE_URL;
+    else process.env.LINK_SERVICE_URL = originalLinkUrl;
+    if (originalLinkDev === undefined) delete process.env.LINK_DEV_MODE;
+    else process.env.LINK_DEV_MODE = originalLinkDev;
+  });
+
+  const tgSignal = {
+    "telegram-chat": { provider: "telegram", config: { bot_token: "111:secret" } },
+  };
+  const waSignal = {
+    "whatsapp-chat": {
+      provider: "whatsapp",
+      config: {
+        access_token: "token",
+        app_secret: "secret",
+        phone_number_id: "999",
+        verify_token: "verify",
+      },
+    },
+  };
+
+  it("resolves telegram when only telegram signal is wired", async () => {
+    const result = await resolvePlatformCredentials("ws-1", tgSignal);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.credentials.kind).toBe("telegram");
+    expect(result[0]?.credentialId).toBe("telegram:111");
+  });
+
+  it("resolves whatsapp when only whatsapp signal is wired", async () => {
+    const result = await resolvePlatformCredentials("ws-1", waSignal);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.credentials.kind).toBe("whatsapp");
+  });
+
+  it("resolves BOTH when telegram + whatsapp signals coexist", async () => {
+    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...waSignal });
+    const kinds = result.map((r) => r.credentials.kind).sort();
+    expect(kinds).toEqual(["telegram", "whatsapp"]);
+  });
+
+  it("resolves empty array when no signals and Slack lookup fails", async () => {
+    const result = await resolvePlatformCredentials("ws-1", undefined);
+    expect(result).toEqual([]);
+  });
+
+  it("does NOT mutate signal config during resolution", async () => {
+    // Guards against regressions to the old bot_token_suffix stash side-effect
+    // that coupled credential resolution to route-lookup ordering.
+    const signals = { ...tgSignal };
+    const before = JSON.stringify(signals);
+    await resolvePlatformCredentials("ws-1", signals);
+    expect(JSON.stringify(signals)).toBe(before);
+  });
+
+  it("falls back to env vars when signal config is empty", async () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = "222:env-secret";
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "telegram-chat": { provider: "telegram", config: {} },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("telegram:222");
+    } finally {
+      if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    }
   });
 });

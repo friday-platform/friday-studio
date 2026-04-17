@@ -200,3 +200,101 @@ describe("POST /slack", () => {
     expect(res.status).toBe(500);
   });
 });
+
+// ─── WhatsApp verify handshake (GET) ──────────────────────────────────
+
+function makeWhatsappConfig(overrides: { verify_token?: string } = {}): MergedConfig {
+  return {
+    atlas: null,
+    workspace: {
+      version: "1.0",
+      workspace: { name: "test" },
+      signals: {
+        "whatsapp-chat": {
+          provider: "whatsapp" as const,
+          description: "WhatsApp inbound",
+          config: overrides,
+        },
+      },
+    },
+  };
+}
+
+function makeWhatsappChatSdkInstance(
+  handler?: (req: Request) => Promise<Response>,
+): ChatSdkInstance {
+  const webhooks: Record<string, unknown> = { atlas: vi.fn() };
+  if (handler) webhooks.whatsapp = handler;
+  return { chat: { webhooks } as unknown as Chat, teardown: vi.fn().mockResolvedValue(undefined) };
+}
+
+function getWhatsappVerify(app: ReturnType<typeof createPlatformSignalRoutes>, query: string) {
+  return app.request(`/whatsapp?${query}`, { method: "GET" });
+}
+
+describe("GET /whatsapp (verify handshake)", () => {
+  it("matches explicit verify_token in signal.config → routes to that workspace", async () => {
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("challenge-123", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [
+        { id: "ws-other", config: makeWhatsappConfig({ verify_token: "other-token" }) },
+        { id: "ws-target", config: makeWhatsappConfig({ verify_token: "expected-token" }) },
+      ],
+      () => Promise.resolve(makeWhatsappChatSdkInstance(handler)),
+    );
+    const app = createPlatformSignalRoutes(daemon);
+
+    const res = await getWhatsappVerify(
+      app,
+      "hub.mode=subscribe&hub.verify_token=expected-token&hub.challenge=challenge-123",
+    );
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-target");
+  });
+
+  it("falls back to the sole whatsapp workspace when no explicit match (env-based config)", async () => {
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("fallback-challenge", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      // Single workspace with config: {} — secret comes from env var
+      [{ id: "ws-solo", config: makeWhatsappConfig() }],
+      () => Promise.resolve(makeWhatsappChatSdkInstance(handler)),
+    );
+    const app = createPlatformSignalRoutes(daemon);
+
+    const res = await getWhatsappVerify(
+      app,
+      "hub.mode=subscribe&hub.verify_token=from-env&hub.challenge=fallback-challenge",
+    );
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-solo");
+  });
+
+  it("returns 403 when no workspace has a whatsapp signal at all", async () => {
+    const { daemon } = makeDaemon(
+      [{ id: "ws-nope", config: makeNonSlackConfig() }], // only http signal
+    );
+    const app = createPlatformSignalRoutes(daemon);
+
+    const res = await getWhatsappVerify(
+      app,
+      "hub.mode=subscribe&hub.verify_token=anything&hub.challenge=x",
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when hub.verify_token query param is missing", async () => {
+    const { daemon } = makeDaemon([{ id: "ws-solo", config: makeWhatsappConfig() }]);
+    const app = createPlatformSignalRoutes(daemon);
+
+    const res = await getWhatsappVerify(app, "hub.mode=subscribe&hub.challenge=x");
+
+    expect(res.status).toBe(400);
+  });
+});

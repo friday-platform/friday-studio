@@ -35,7 +35,6 @@ export interface ChatSdkInstanceConfig {
 
 export interface ChatSdkInstance {
   chat: Chat;
-  credentialId?: string;
   teardown: () => Promise<void>;
 }
 
@@ -45,12 +44,118 @@ export interface ResolvedCredentials {
 }
 
 /**
- * Resolve platform credentials for a workspace from the Link service.
- * Returns null when no credentials are wired or the token is pending.
+ * Resolve every platform credential a workspace has wired. Each provider is
+ * resolved independently, so a workspace with both Telegram and WhatsApp
+ * signals gets both adapters. Slack credentials live in the Link service
+ * (separate onboarding flow) — we always attempt the lookup but log when
+ * signal-based creds shadow an existing Slack app so it's visible.
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
-): Promise<ResolvedCredentials | null> {
+  signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+): Promise<ResolvedCredentials[]> {
+  const resolved: ResolvedCredentials[] = [];
+
+  if (signals) {
+    const telegramCreds = resolveTelegramCredentials(signals);
+    if (telegramCreds) resolved.push(telegramCreds);
+
+    const whatsappCreds = resolveWhatsappCredentials(signals);
+    if (whatsappCreds) resolved.push(whatsappCreds);
+  }
+
+  const slackCreds = await resolveSlackCredentials(workspaceId);
+  if (slackCreds) {
+    if (resolved.length === 0) {
+      resolved.push(slackCreds);
+    } else {
+      // Silently dropping Slack would hide a real configuration drift — a
+      // workspace that started Slack-only and later gained a Telegram signal
+      // would stop responding on Slack with no log.
+      logger.warn("slack_credential_shadowed_by_signal_creds", {
+        workspaceId,
+        activeProviders: resolved.map((r) => r.credentials.kind),
+      });
+    }
+  }
+
+  return resolved;
+}
+
+function resolveTelegramCredentials(
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+): ResolvedCredentials | null {
+  for (const signal of Object.values(signals)) {
+    if (signal.provider !== "telegram") continue;
+
+    const botToken =
+      (typeof signal.config?.bot_token === "string" ? signal.config.bot_token : null) ??
+      process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!botToken) {
+      logger.debug("telegram_no_bot_token", {
+        hint: "Set bot_token in signal config or TELEGRAM_BOT_TOKEN env var",
+      });
+      return null;
+    }
+
+    const webhookSecret =
+      (typeof signal.config?.webhook_secret === "string" ? signal.config.webhook_secret : null) ??
+      process.env.TELEGRAM_WEBHOOK_SECRET ??
+      "";
+
+    return {
+      credentials: {
+        kind: "telegram",
+        botToken,
+        secretToken: webhookSecret,
+        appId: botToken.split(":")[0] ?? "",
+      },
+      credentialId: `telegram:${botToken.split(":")[0]}`,
+    };
+  }
+  return null;
+}
+
+function resolveWhatsappCredentials(
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+): ResolvedCredentials | null {
+  for (const signal of Object.values(signals)) {
+    if (signal.provider !== "whatsapp") continue;
+
+    const cfg = signal.config ?? {};
+    const accessToken =
+      (typeof cfg.access_token === "string" ? cfg.access_token : null) ??
+      process.env.WHATSAPP_ACCESS_TOKEN;
+    const appSecret =
+      (typeof cfg.app_secret === "string" ? cfg.app_secret : null) ??
+      process.env.WHATSAPP_APP_SECRET;
+    const phoneNumberId =
+      (typeof cfg.phone_number_id === "string" ? cfg.phone_number_id : null) ??
+      process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const verifyToken =
+      (typeof cfg.verify_token === "string" ? cfg.verify_token : null) ??
+      process.env.WHATSAPP_VERIFY_TOKEN;
+
+    if (!accessToken || !appSecret || !phoneNumberId || !verifyToken) {
+      const missing: string[] = [];
+      if (!accessToken) missing.push("access_token / WHATSAPP_ACCESS_TOKEN");
+      if (!appSecret) missing.push("app_secret / WHATSAPP_APP_SECRET");
+      if (!phoneNumberId) missing.push("phone_number_id / WHATSAPP_PHONE_NUMBER_ID");
+      if (!verifyToken) missing.push("verify_token / WHATSAPP_VERIFY_TOKEN");
+      logger.debug("whatsapp_missing_credentials", { missing });
+      return null;
+    }
+
+    return {
+      credentials: { kind: "whatsapp", accessToken, appSecret, phoneNumberId, verifyToken },
+      credentialId: `whatsapp:${phoneNumberId}`,
+    };
+  }
+  return null;
+}
+
+async function resolveSlackCredentials(workspaceId: string): Promise<ResolvedCredentials | null> {
   const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
   const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${encodeURIComponent(workspaceId)}`;
 
@@ -62,7 +167,18 @@ export async function resolvePlatformCredentials(
     }
   }
 
-  const res = await fetch(url, { headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { headers });
+  } catch (error) {
+    // Link unreachable (dev without the service running, CI, transient net).
+    // Treat identically to 404 — no Slack app wired for this workspace.
+    logger.debug("chat_sdk_link_unreachable", {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 
   if (res.status === 404) {
     logger.debug("chat_sdk_no_credential_for_workspace", { workspaceId });
@@ -93,6 +209,7 @@ export async function resolvePlatformCredentials(
 
   return {
     credentials: {
+      kind: "slack",
       botToken: secret.access_token,
       signingSecret: secret.signing_secret,
       appId: app_id,
@@ -141,7 +258,12 @@ export function createMessageHandler(
 ): (thread: Thread, message: Message) => Promise<void> {
   return async (thread: Thread, message: Message): Promise<void> => {
     const adapterName = thread.adapter.name;
-    const sourceWasSet = stateAdapter && (adapterName === "slack" || adapterName === "discord");
+    const sourceWasSet =
+      stateAdapter &&
+      (adapterName === "slack" ||
+        adapterName === "discord" ||
+        adapterName === "telegram" ||
+        adapterName === "whatsapp");
     if (sourceWasSet) {
       stateAdapter.setSource(thread.id, adapterName);
     }
@@ -228,6 +350,27 @@ export function createMessageHandler(
 
     try {
       await thread.post(stream);
+    } catch (error) {
+      // Surface adapter-side post failures (e.g. Meta Graph API errors).
+      // Without this the stream silently swallows the error and the user
+      // sees no reply on their platform. Keep the first handful of stack
+      // frames so Sentry can group by call site; the adapter's own error
+      // message carries the provider-specific code (e.g. fbtrace_id on
+      // Meta, Slack error types) — docs/integrations/<provider>/README.md
+      // maps common codes to fixes.
+      const stack =
+        error instanceof Error && error.stack
+          ? error.stack.split("\n").slice(0, 8).join("\n")
+          : undefined;
+      logger.error("thread_post_failed", {
+        adapterName,
+        threadId: chatId,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack }
+            : String(error),
+      });
+      throw error;
     } finally {
       streamRegistry.finishStream(chatId);
     }
@@ -236,7 +379,7 @@ export function createMessageHandler(
 
 export function initializeChatSdkInstance(
   config: ChatSdkInstanceConfig,
-  credentials?: PlatformCredentials,
+  credentials?: PlatformCredentials | PlatformCredentials[],
 ): ChatSdkInstance {
   const { workspaceId, userId, signals, streamRegistry, triggerFn } = config;
 

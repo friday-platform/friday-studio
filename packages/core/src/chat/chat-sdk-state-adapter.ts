@@ -15,7 +15,10 @@ export class ChatSdkStateAdapter implements StateAdapter {
   private readonly userId: string;
   private readonly workspaceId: string;
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly threadSources = new Map<string, "atlas" | "slack" | "discord">();
+  private readonly threadSources = new Map<
+    string,
+    "atlas" | "slack" | "discord" | "telegram" | "whatsapp"
+  >();
 
   constructor(opts: { userId: string; workspaceId: string }) {
     this.userId = opts.userId;
@@ -23,7 +26,10 @@ export class ChatSdkStateAdapter implements StateAdapter {
   }
 
   /** Pre-set the source for a thread before subscribe creates the chat. */
-  setSource(threadId: string, source: "atlas" | "slack" | "discord"): void {
+  setSource(
+    threadId: string,
+    source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp",
+  ): void {
     this.threadSources.set(threadId, source);
   }
 
@@ -119,16 +125,28 @@ export class ChatSdkStateAdapter implements StateAdapter {
     return Promise.reject(new Error("not implemented"));
   }
 
+  // In-memory list backing for adapters that opt-in to persistMessageHistory
+  // (Telegram, WhatsApp). ChatStorage is the source of truth for chat
+  // messages; this Map caches them for Chat SDK's internal history lookups.
+  private readonly lists = new Map<string, { entries: unknown[]; maxLength?: number }>();
+
   appendToList(
-    _key: string,
-    _value: unknown,
-    _options?: { maxLength?: number; ttlMs?: number },
+    key: string,
+    value: unknown,
+    options?: { maxLength?: number; ttlMs?: number },
   ): Promise<void> {
-    return Promise.reject(new Error("not implemented"));
+    const existing = this.lists.get(key) ?? { entries: [], maxLength: options?.maxLength };
+    existing.entries.push(value);
+    if (options?.maxLength && existing.entries.length > options.maxLength) {
+      existing.entries = existing.entries.slice(-options.maxLength);
+    }
+    this.lists.set(key, existing);
+    return Promise.resolve();
   }
 
-  getList<T = unknown>(_key: string): Promise<T[]> {
-    return Promise.reject(new Error("not implemented"));
+  getList<T = unknown>(key: string): Promise<T[]> {
+    const entry = this.lists.get(key);
+    return Promise.resolve((entry?.entries ?? []) as T[]);
   }
 
   enqueue(_threadId: string, _entry: QueueEntry, _maxSize: number): Promise<number> {

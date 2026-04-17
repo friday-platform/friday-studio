@@ -17,10 +17,32 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
 const REPO_ROOT = process.cwd();
+
+/**
+ * Env files loaded by every daemon spawn. Deno's `--env-file` is LAST-wins
+ * on duplicate keys (verified empirically — the docs' "first one encountered
+ * is applied" reads backwards), so user-specific `~/.atlas/.env` is passed
+ * LAST to beat an accidentally-committed repo `.env`. Shell env still takes
+ * priority over both (Deno's "existing process env is not overwritten" rule).
+ *
+ * Without this, secrets configured in `~/.atlas/.env` (WHATSAPP_APP_SECRET,
+ * TELEGRAM_BOT_TOKEN, etc.) never reach the daemon's `process.env`, forcing
+ * users to paste plaintext credentials directly into `workspace.yml`.
+ */
+const ATLAS_HOME_ENV = path.join(homedir(), ".atlas", ".env");
+const REPO_ENV = path.join(REPO_ROOT, ".env");
+function envFileFlags(): string[] {
+  const flags: string[] = [];
+  if (existsSync(REPO_ENV)) flags.push(`--env-file=${REPO_ENV}`);
+  if (existsSync(ATLAS_HOME_ENV)) flags.push(`--env-file=${ATLAS_HOME_ENV}`);
+  return flags;
+}
 
 /** Directories whose changes should trigger a daemon restart. */
 const WATCH_TARGETS: readonly string[] = [
@@ -178,7 +200,7 @@ function spawnDaemon(): ChildProcess {
     "--unstable-worker-options",
     "--unstable-kv",
     "--unstable-raw-imports",
-    "--env-file",
+    ...envFileFlags(),
     "apps/atlas-cli/src/otel-bootstrap.ts",
     ...daemonArgs,
   ];
