@@ -1039,11 +1039,20 @@
       workspaceId={wsId}
       currentChatId={chatId}
       onSelect={switchToChat}
-      onDelete={(deletedId) => {
-        // When the user nukes the chat they're currently viewing, rotate
-        // the view off it — otherwise the UI would keep the old messages
-        // on-screen and the next turn would try to POST to a dead id.
-        if (deletedId === chatId) startNewChat();
+      onDelete={(deletedId, nextChatId) => {
+        // Only react when the user nuked the chat they're currently
+        // viewing — otherwise the rest of the list stays put and there's
+        // nothing to do here. When it IS the current chat, jump to the
+        // neighbor the panel picked (older-first, falling back to newer)
+        // so browsing history stays fluid. If the list is empty now,
+        // start a fresh chat instead of leaving a dead id on screen.
+        if (deletedId !== chatId) return;
+        if (nextChatId) {
+          // switchToChat already persists and kicks off rehydration.
+          switchToChat(nextChatId);
+        } else {
+          startNewChat();
+        }
       }}
     />
   </div>

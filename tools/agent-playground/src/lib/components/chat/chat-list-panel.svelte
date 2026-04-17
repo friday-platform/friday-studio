@@ -16,10 +16,11 @@
     workspaceId: string;
     currentChatId: string;
     onSelect: (chatId: string) => void;
-    /** Called after a successful delete. Used by the parent to move off
-     * the deleted chat — if the user deleted the currently-open one, the
-     * parent typically rotates to a fresh id and clears the message list. */
-    onDelete?: (chatId: string) => void;
+    /** Called after a successful delete with the deleted id and a neighbor
+     * to switch to — older sibling first (since the list is newest-first),
+     * newer if there's no older one. `null` means the list is now empty
+     * and the parent should fall back to a fresh chat. */
+    onDelete?: (chatId: string, nextChatId: string | null) => void;
   }
 
   const { workspaceId, currentChatId, onSelect, onDelete }: Props = $props();
@@ -230,8 +231,16 @@
       error = err instanceof Error ? err.message : String(err);
       return;
     }
+    // Pick the neighbor BEFORE we mutate the list, so we can tell the
+    // parent which chat to switch to if the deleted one was current.
+    // List is newest-first, so index+1 = older. Prefer older so the user
+    // keeps browsing backwards; fall back to newer when deleting the
+    // oldest entry, and null when the list becomes empty.
+    const idx = chats.findIndex((c) => c.id === chat.id);
+    const next =
+      idx >= 0 ? (chats[idx + 1] ?? chats[idx - 1] ?? null) : null;
     chats = chats.filter((c) => c.id !== chat.id);
-    onDelete?.(chat.id);
+    onDelete?.(chat.id, next ? next.id : null);
   }
 </script>
 
