@@ -17,7 +17,16 @@
   let addTab = $state<"create" | "upload">("create");
 
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
-  const visibleWorkspaces = $derived(workspacesQuery.data ?? []);
+  // Personal workspace is always pinned at the top; every other workspace
+  // follows in the backend's delivery order. The `ws.id === "user"` check
+  // matches the same identity used elsewhere in the playground.
+  const visibleWorkspaces = $derived(
+    [...(workspacesQuery.data ?? [])].sort((a, b) => {
+      if (a.id === "user") return -1;
+      if (b.id === "user") return 1;
+      return 0;
+    }),
+  );
 
   type NavItem = { label: string; href: string };
 
