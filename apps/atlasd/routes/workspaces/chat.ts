@@ -176,6 +176,18 @@ const workspaceChatRoutes = daemonFactory
     );
   })
 
+  .delete("/:chatId", async (c) => {
+    const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+
+    const result = await ChatStorage.deleteChat(chatId, workspaceId);
+    if (!result.ok) {
+      const status = result.error === "Chat not found" ? 404 : 500;
+      return c.json({ error: result.error }, status);
+    }
+    return c.body(null, 204);
+  })
+
   .post(
     "/:chatId/message",
     zValidator(

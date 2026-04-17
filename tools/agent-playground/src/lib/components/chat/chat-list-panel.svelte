@@ -16,9 +16,13 @@
     workspaceId: string;
     currentChatId: string;
     onSelect: (chatId: string) => void;
+    /** Called after a successful delete. Used by the parent to move off
+     * the deleted chat — if the user deleted the currently-open one, the
+     * parent typically rotates to a fresh id and clears the message list. */
+    onDelete?: (chatId: string) => void;
   }
 
-  const { workspaceId, currentChatId, onSelect }: Props = $props();
+  const { workspaceId, currentChatId, onSelect, onDelete }: Props = $props();
 
   const INITIAL_LIMIT = 20;
   const EXPAND_BATCH = 20;
@@ -202,6 +206,33 @@
     markOpened(chatId);
     onSelect(chatId);
   }
+
+  /**
+   * DELETE the chat on the daemon, then optimistically drop it from the
+   * in-memory list. `event.stopPropagation` is required because the row
+   * is also a click target — without it, deleting a chat would also
+   * select it (and likely re-fetch a 404 right after).
+   */
+  async function handleDelete(event: MouseEvent, chat: ChatListEntry): Promise<void> {
+    event.stopPropagation();
+    if (!confirm(`Delete chat "${chat.title ?? "Untitled"}"? This can't be undone.`)) return;
+    const url = `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chat.id)}`;
+    try {
+      const res = await fetch(url, { method: "DELETE" });
+      // 204 on success, 404 if the chat vanished between render and click
+      // (e.g. deleted from another tab). Either way the local list should
+      // drop the row — a 404 is already the desired end state.
+      if (!res.ok && res.status !== 404) {
+        error = `Delete failed: HTTP ${res.status}`;
+        return;
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      return;
+    }
+    chats = chats.filter((c) => c.id !== chat.id);
+    onDelete?.(chat.id);
+  }
 </script>
 
 <!--
@@ -225,10 +256,9 @@
   <ul class="chat-list">
     {#each visibleChats as chat (chat.id)}
       {@const unread = isUnread(chat)}
-      <li>
+      <li class="chat-row" class:active={chat.id === currentChatId}>
         <button
           class="chat-item"
-          class:active={chat.id === currentChatId}
           class:unread
           onclick={() => handleClick(chat.id)}
         >
@@ -242,6 +272,16 @@
               <span class="source-badge source-{chat.source}">{sourceLabel(chat.source)}</span>
             </div>
           </div>
+        </button>
+        <button
+          class="chat-delete"
+          onclick={(e) => handleDelete(e, chat)}
+          aria-label="Delete chat {chat.title ?? 'Untitled'}"
+          title="Delete chat"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
         </button>
       </li>
     {/each}
@@ -305,28 +345,69 @@
     scrollbar-width: thin;
   }
 
+  /* Row wraps the main click target (.chat-item) and the delete button so
+     they share a single hover/active state — from the user's POV it's one
+     row, but we need two independent buttons so a click on the X doesn't
+     also select the chat. */
+  .chat-row {
+    align-items: stretch;
+    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
+    display: flex;
+    position: relative;
+    transition: background-color 100ms ease;
+  }
+
+  .chat-row:hover {
+    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
+  }
+
+  .chat-row.active {
+    background-color: color-mix(in srgb, var(--color-primary), transparent 85%);
+  }
+
   .chat-item {
     align-items: flex-start;
     background: transparent;
     border: none;
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
     color: var(--color-text);
     cursor: pointer;
     display: flex;
+    flex: 1;
     font: inherit;
     gap: var(--size-2);
-    inline-size: 100%;
+    min-inline-size: 0;
     padding: var(--size-2) var(--size-3);
     text-align: start;
-    transition: background-color 100ms ease;
   }
 
-  .chat-item:hover {
-    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
+  .chat-delete {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 60%);
+    cursor: pointer;
+    display: flex;
+    flex-shrink: 0;
+    inline-size: 24px;
+    justify-content: center;
+    margin-block: 6px;
+    margin-inline-end: var(--size-2);
+    /* Hidden until the row is hovered so quiet rows stay tidy; still
+       keyboard-focusable for accessibility (see :focus-visible below). */
+    opacity: 0;
+    transition: opacity 100ms ease, color 100ms ease, background-color 100ms ease;
   }
 
-  .chat-item.active {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 85%);
+  .chat-row:hover .chat-delete,
+  .chat-delete:focus-visible {
+    opacity: 1;
+  }
+
+  .chat-delete:hover,
+  .chat-delete:focus-visible {
+    background-color: color-mix(in srgb, var(--color-error, #c93b3b), transparent 85%);
+    color: var(--color-error, #c93b3b);
   }
 
   .item-dot {

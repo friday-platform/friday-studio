@@ -1039,6 +1039,12 @@
       workspaceId={wsId}
       currentChatId={chatId}
       onSelect={switchToChat}
+      onDelete={(deletedId) => {
+        // When the user nukes the chat they're currently viewing, rotate
+        // the view off it — otherwise the UI would keep the old messages
+        // on-screen and the next turn would try to POST to a dead id.
+        if (deletedId === chatId) startNewChat();
+      }}
     />
   </div>
 </div>
