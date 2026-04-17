@@ -131,10 +131,14 @@ describe("StreamRegistry", () => {
   });
 
   describe("buffer overflow", () => {
-    it("drops oldest events when buffer exceeds MAX_EVENTS", () => {
+    // Overflow policy: once the buffer hits MAX_EVENTS we stop recording
+    // new chunks and mark the stream non-replayable. Evicting mid-stream
+    // would break `subscribe()`'s replay: dropping a `text-start` while
+    // keeping the following `text-delta` chunks crashes the AI SDK v6
+    // client with "Received text-delta for missing text part with ID".
+    it("stops recording events past MAX_EVENTS and flags replay disabled", () => {
       registry.createStream("chat-1");
 
-      // Fill buffer beyond max
       for (let i = 0; i < MAX_EVENTS + 100; i++) {
         registry.appendEvent("chat-1", makeEvent(i));
       }
@@ -142,11 +146,39 @@ describe("StreamRegistry", () => {
       const buffer = registry.getStream("chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.events).toHaveLength(MAX_EVENTS);
+      expect(buffer.replayDisabled).toBe(true);
 
-      // First event should be event-100 (dropped 0-99)
+      // First event must still be the very first chunk we pushed — the
+      // protocol-critical `*-start` events live at the head.
       const firstEvent = buffer.events[0];
       expect.assert(firstEvent !== undefined, "first event should exist");
-      expect(firstEvent).toMatchObject({ type: "text-delta", delta: "event-100" });
+      expect(firstEvent).toMatchObject({ type: "text-delta", delta: "event-0" });
+    });
+
+    it("still broadcasts post-overflow events to already-connected subscribers", () => {
+      registry.createStream("chat-1");
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+
+      for (let i = 0; i < MAX_EVENTS + 10; i++) {
+        registry.appendEvent("chat-1", makeEvent(i));
+      }
+
+      // Live subscriber sees every event regardless of buffer overflow —
+      // they already processed the earlier chunks via broadcast.
+      expect(received).toHaveLength(MAX_EVENTS + 10);
+    });
+
+    it("refuses new subscribers once replay is disabled", () => {
+      registry.createStream("chat-1");
+
+      for (let i = 0; i < MAX_EVENTS + 1; i++) {
+        registry.appendEvent("chat-1", makeEvent(i));
+      }
+
+      const result = registry.subscribe("chat-1", createController());
+      expect(result).toBe(false);
     });
   });
 

@@ -14,8 +14,25 @@ export interface StreamController {
   close(): void;
 }
 
-/** Maximum events to buffer per stream */
-const MAX_EVENTS = 1000;
+/**
+ * Maximum events to buffer per stream.
+ *
+ * Picked to comfortably cover real-world turns — long python runs that
+ * emit hundreds of stdout chunks, multi-tool plans, etc. — while still
+ * bounding memory: 50k events × ~500 bytes ≈ 25 MB per active chat,
+ * reaped after {@link FINISHED_TTL_MS} / {@link STALE_TTL_MS}.
+ *
+ * Previously 1000, which silently truncated the oldest events. That
+ * broke `resumeStream()` replay — `text-delta` chunks survived while
+ * their `text-start` got evicted, and the client rejected the stream
+ * with "Received text-delta for missing text part with ID '0'".
+ *
+ * Evicting mid-stream is fundamentally unsafe because the UI message
+ * protocol is positional (start → delta* → end). We now **stop
+ * buffering on overflow** and mark the stream non-replayable, so late
+ * subscribers get a clean 204 instead of a corrupt partial replay.
+ */
+const MAX_EVENTS = 50_000;
 /** TTL for finished streams (5 minutes) */
 const FINISHED_TTL_MS = 5 * 60 * 1000;
 /** TTL for stale active streams (30 minutes) */
@@ -27,6 +44,13 @@ export interface StreamBuffer {
   chatId: string;
   events: AtlasUIMessageChunk[];
   active: boolean;
+  /**
+   * True when the event buffer grew past {@link MAX_EVENTS} and we stopped
+   * recording new chunks. Live subscribers still receive events via the
+   * broadcast path, but late reconnects via `subscribe()` get refused so
+   * they don't replay a corrupt prefix.
+   */
+  replayDisabled: boolean;
   createdAt: number;
   lastEventAt: number;
   subscribers: Set<StreamController>;
@@ -100,6 +124,7 @@ export class StreamRegistry {
       chatId,
       events: [],
       active: true,
+      replayDisabled: false,
       createdAt: now,
       lastEventAt: now,
       subscribers: new Set(),
@@ -120,6 +145,13 @@ export class StreamRegistry {
   /**
    * Append event to buffer. Broadcasts to subscribers.
    * Returns false if stream doesn't exist or is inactive.
+   *
+   * Buffer overflow policy: we never evict recorded events. Dropping the
+   * oldest chunk of a `text-start → text-delta* → text-end` triple breaks
+   * the UI message protocol for any late subscriber that tries to replay.
+   * Instead, once we hit {@link MAX_EVENTS} we stop appending and flag
+   * the buffer as non-replayable; live subscribers keep receiving events
+   * via the broadcast below, but `subscribe()` refuses new joiners.
    */
   appendEvent(chatId: string, event: AtlasUIMessageChunk): boolean {
     const buffer = this.streams.get(chatId);
@@ -127,16 +159,21 @@ export class StreamRegistry {
       return false;
     }
 
-    buffer.events.push(event);
+    if (!buffer.replayDisabled && buffer.events.length >= MAX_EVENTS) {
+      buffer.replayDisabled = true;
+      logger.warn("stream_buffer_overflow_replay_disabled", {
+        chatId,
+        bufferedEvents: buffer.events.length,
+        limit: MAX_EVENTS,
+      });
+    }
+    if (!buffer.replayDisabled) {
+      buffer.events.push(event);
+    }
     buffer.lastEventAt = Date.now();
 
-    // Enforce buffer limit - drop oldest events
-    if (buffer.events.length > MAX_EVENTS) {
-      const overflow = buffer.events.length - MAX_EVENTS;
-      buffer.events.splice(0, overflow);
-    }
-
-    // Broadcast to all subscribers
+    // Broadcast to all subscribers regardless of buffer state — they've
+    // already seen every prior event and can keep processing this one.
     const encoder = new TextEncoder();
     const data = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 
@@ -153,11 +190,13 @@ export class StreamRegistry {
 
   /**
    * Subscribe a controller to a stream. Replays all buffered events immediately.
-   * Returns false if stream doesn't exist or is already finished.
+   * Returns false if stream doesn't exist, is already finished, or replay was
+   * disabled after a buffer overflow (replay would corrupt the UI message
+   * protocol state on the joining client).
    */
   subscribe(chatId: string, controller: StreamController): boolean {
     const buffer = this.streams.get(chatId);
-    if (!buffer?.active) {
+    if (!buffer?.active || buffer.replayDisabled) {
       return false;
     }
 

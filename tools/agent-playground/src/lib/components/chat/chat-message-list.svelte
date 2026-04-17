@@ -53,6 +53,25 @@
     return state === "output-error" || state === "output-denied";
   }
 
+  /** Threshold above which multi-tool runs collapse into a summary block. */
+  const COLLAPSE_THRESHOLD = 3;
+
+  /**
+   * Build a short summary for a collapsed tool-call group. Surfaces the
+   * total, any errors or running calls, and the most recent tool name so
+   * the user knows at a glance what happened without expanding.
+   */
+  function toolGroupSummary(calls: ToolCallDisplay[]): string {
+    const running = calls.filter((c) => isInProgress(c.state)).length;
+    const errored = calls.filter((c) => isError(c.state)).length;
+    const lastName = calls.at(-1)?.toolName ?? "";
+    const parts: string[] = [`${calls.length} tool calls`];
+    if (running > 0) parts.push(`${running} running`);
+    if (errored > 0) parts.push(`${errored} failed`);
+    if (lastName) parts.push(`last: ${lastName}`);
+    return parts.join(" · ");
+  }
+
   /**
    * Svelte action: inject a "Copy" button on every <pre> and <table> inside
    * a `.markdown-body` container. Runs after initial render and re-scans
@@ -220,6 +239,59 @@
   }
 </script>
 
+<!--
+  Single-card render for a tool call. Extracted so the two surrounding
+  branches (collapsed group vs inline list) can share the same body
+  without duplication.
+-->
+{#snippet toolCard(call: ToolCallDisplay)}
+  <div
+    class="tool-card"
+    class:in-progress={isInProgress(call.state)}
+    class:error={isError(call.state)}
+  >
+    <div class="tool-card-header">
+      <span class="tool-card-icon" aria-hidden="true">
+        {#if isInProgress(call.state)}
+          <span class="spinner"></span>
+        {:else if isError(call.state)}
+          ✗
+        {:else}
+          ✓
+        {/if}
+      </span>
+      <span class="tool-card-name">{call.toolName}</span>
+      <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
+      <span class="tool-card-status">
+        {#if isInProgress(call.state)}
+          running…
+        {:else if call.state === "output-available"}
+          {outputSummary(call.toolName, call.output)}
+        {:else if call.state === "output-error"}
+          {call.errorText ?? "failed"}
+        {:else if call.state === "output-denied"}
+          denied
+        {:else if call.state === "approval-requested"}
+          needs approval
+        {:else}
+          {call.state}
+        {/if}
+      </span>
+    </div>
+    {#if call.state === "output-available" && call.output !== undefined}
+      <details class="tool-card-details">
+        <summary>details</summary>
+        <pre>{@html formatRawOutput(call.output)}</pre>
+      </details>
+    {:else if call.state === "output-error" && call.input !== undefined}
+      <details class="tool-card-details">
+        <summary>input</summary>
+        <pre>{@html formatRawOutput(call.input)}</pre>
+      </details>
+    {/if}
+  </div>
+{/snippet}
+
 <div class="message-list" bind:this={containerEl}>
   {#each messages as message (message.id)}
     {#if message.scheduleProposal}
@@ -243,55 +315,43 @@
           <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
 
           {#if message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0}
-            <div class="tool-call-list">
-              {#each message.toolCalls as call (call.toolCallId || call.toolName)}
-                <div
-                  class="tool-card"
-                  class:in-progress={isInProgress(call.state)}
-                  class:error={isError(call.state)}
-                >
-                  <div class="tool-card-header">
-                    <span class="tool-card-icon" aria-hidden="true">
-                      {#if isInProgress(call.state)}
-                        <span class="spinner"></span>
-                      {:else if isError(call.state)}
-                        ✗
-                      {:else}
-                        ✓
-                      {/if}
-                    </span>
-                    <span class="tool-card-name">{call.toolName}</span>
-                    <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
-                    <span class="tool-card-status">
-                      {#if isInProgress(call.state)}
-                        running…
-                      {:else if call.state === "output-available"}
-                        {outputSummary(call.toolName, call.output)}
-                      {:else if call.state === "output-error"}
-                        {call.errorText ?? "failed"}
-                      {:else if call.state === "output-denied"}
-                        denied
-                      {:else if call.state === "approval-requested"}
-                        needs approval
-                      {:else}
-                        {call.state}
-                      {/if}
-                    </span>
-                  </div>
-                  {#if call.state === "output-available" && call.output !== undefined}
-                    <details class="tool-card-details">
-                      <summary>details</summary>
-                      <pre>{@html formatRawOutput(call.output)}</pre>
-                    </details>
-                  {:else if call.state === "output-error" && call.input !== undefined}
-                    <details class="tool-card-details">
-                      <summary>input</summary>
-                      <pre>{@html formatRawOutput(call.input)}</pre>
-                    </details>
-                  {/if}
+            {@const calls = message.toolCalls}
+            {@const anyRunning = calls.some((c) => isInProgress(c.state))}
+            {#if calls.length >= COLLAPSE_THRESHOLD}
+              <!--
+                Long tool runs (workspace creation, etc.) clutter the thread
+                when every step renders inline. Collapse into a single-line
+                summary that auto-opens while any call is running (so live
+                progress is always visible) and closes once the run settles.
+                The `open` binding re-reacts as `anyRunning` flips, so the
+                drawer animates open/closed without user interaction.
+              -->
+              <details class="tool-call-group" open={anyRunning}>
+                <summary class="tool-call-group-summary">
+                  <span class="tool-card-icon" aria-hidden="true">
+                    {#if anyRunning}
+                      <span class="spinner"></span>
+                    {:else if calls.some((c) => isError(c.state))}
+                      ✗
+                    {:else}
+                      ✓
+                    {/if}
+                  </span>
+                  <span class="tool-group-label">{toolGroupSummary(calls)}</span>
+                </summary>
+                <div class="tool-call-list">
+                  {#each calls as call (call.toolCallId || call.toolName)}
+                    {@render toolCard(call)}
+                  {/each}
                 </div>
-              {/each}
-            </div>
+              </details>
+            {:else}
+              <div class="tool-call-list">
+                {#each calls as call (call.toolCallId || call.toolName)}
+                  {@render toolCard(call)}
+                {/each}
+              </div>
+            {/if}
           {/if}
 
           {#if message.images && message.images.length > 0}
@@ -527,6 +587,59 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
+  }
+
+  /* Collapsible group wrapper (shown when a message has ≥ 3 tool calls). */
+  .tool-call-group {
+    background-color: light-dark(hsl(220 16% 95%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+  }
+
+  .tool-call-group[open] {
+    padding-block-end: var(--size-1-5);
+  }
+
+  .tool-call-group-summary {
+    align-items: center;
+    color: var(--color-text);
+    cursor: pointer;
+    display: flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-2);
+    list-style: none;
+    padding: var(--size-1-5) var(--size-2-5);
+    user-select: none;
+  }
+
+  .tool-call-group-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tool-call-group-summary::before {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    content: "▸";
+    flex-shrink: 0;
+    font-size: 10px;
+    transition: transform 100ms ease;
+  }
+
+  .tool-call-group[open] > .tool-call-group-summary::before {
+    transform: rotate(90deg);
+  }
+
+  .tool-group-label {
+    color: light-dark(hsl(220 10% 40%), color-mix(in srgb, var(--color-text), transparent 30%));
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* When nested inside the group, remove redundant outer card styles. */
+  .tool-call-group[open] > .tool-call-list {
+    border-block-start: 1px solid var(--color-border-1);
+    padding: var(--size-1-5);
   }
 
   .tool-card {
