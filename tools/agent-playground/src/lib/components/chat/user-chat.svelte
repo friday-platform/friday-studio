@@ -4,7 +4,6 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { DefaultChatTransport } from "ai";
   import { page } from "$app/state";
-  import { onMount } from "svelte";
   import {
     buildBacklogEntry,
     expandScheduleInput,
@@ -14,6 +13,7 @@
   import { workspaceQueries } from "$lib/queries";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
+  import ChatListPanel from "./chat-list-panel.svelte";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
@@ -84,8 +84,8 @@
    * OAuth return flow, query-client sidebar invalidation, resume-stream
    * abort wiring). It reuses the same backend contract:
    *
-   *   - `POST /api/workspaces/user/chat`  — first and follow-up turns
-   *   - `GET  /api/workspaces/user/chat/:chatId` — rehydrate on mount
+   *   - `POST /api/workspaces/<wsId>/chat`          — first and follow-up turns
+   *   - `GET  /api/workspaces/<wsId>/chat/:chatId`  — rehydrate on mount
    *
    * The request body shape is controlled via `prepareSendMessagesRequest`
    * and matches what `AtlasWebAdapter.handleWebhook` expects:
@@ -96,9 +96,14 @@
    * `/schedule` slash-command flow (task briefs expanded via smallLLM and
    * submitted to the FAST autopilot backlog) — that UX is playground-only
    * and never round-trips through the chat agent.
+   *
+   * `CHAT_API` and `STORAGE_KEY` are both derived from `wsId` so the chat
+   * view is scoped per-workspace. Without this every workspace's chat page
+   * would read/write against the `user` workspace, and localStorage would
+   * cross-pollinate chatIds across workspaces.
    */
-  const CHAT_API = "/api/daemon/api/workspaces/user/chat";
-  const STORAGE_KEY = "playground:lastChatId";
+  const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
+  const STORAGE_KEY = $derived(`playground:lastChatId:${wsId}`);
 
   // Chat identity. Initialized on mount: rehydrate from localStorage if a
   // persisted chatId exists, otherwise generate a fresh UUID. `ChatImpl` is
@@ -250,13 +255,26 @@
     }
   }
 
-  onMount(() => {
-    // Request geolocation eagerly — browser caches the permission
-    void requestLocation();
+  // Re-run on wsId change so each workspace gets its own chat lineage.
+  // Without this, navigating between /platform/<a>/chat and /platform/<b>/chat
+  // would keep whatever chatId was already in memory, and because CHAT_API is
+  // now workspace-scoped, the chat would try to fetch an id that doesn't
+  // belong to the current workspace. The `wsId` read here is what ties the
+  // effect to workspace changes; the rest of the body cleans state and
+  // rehydrates the per-workspace persisted chatId.
+  // Geolocation is requested on first message submit (handleSubmit), not
+  // eagerly — avoids the browser permission prompt on page load.
+  $effect(() => {
+    const _track = wsId; // explicit dependency on workspace route param
+    void _track;
+
+    localEvents = [];
+    initialMessages = [];
+    error = null;
+    rehydrationDone = false;
 
     const saved = getPersistedChatId();
     if (saved) {
-      // Start rehydration in background — show chat immediately
       chatId = saved;
       rehydrationDone = true;
       void rehydrateChat(saved);
@@ -580,11 +598,20 @@
     error = null;
   }
 
+  /** Switch to an existing chat (from the chat list panel). */
+  function switchToChat(targetChatId: string): void {
+    if (targetChatId === chatId) return;
+    localEvents = [];
+    initialMessages = [];
+    error = null;
+    chatId = targetChatId;
+    rehydrationDone = true;
+    persistChatId(targetChatId);
+    void rehydrateChat(targetChatId);
+  }
+
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (streaming) return;
-
-    // Request geolocation on first message (browser prompts once)
-    await requestLocation();
 
     // Intercept /schedule slash-command before it reaches the chat agent.
     const scheduleCmd = parseScheduleCommand(text);
@@ -691,6 +718,12 @@
       {systemPromptContext}
       {workspaceName}
       status={streaming ? "streaming" : (chat?.status ?? "idle")}
+    />
+
+    <ChatListPanel
+      workspaceId={wsId}
+      currentChatId={chatId}
+      onSelect={switchToChat}
     />
   </div>
 </div>
