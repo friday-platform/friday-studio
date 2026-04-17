@@ -112,6 +112,14 @@
   let initialMessages: AtlasUIMessage[] = $state([]);
   let rehydrationDone = $state(false);
   let rehydrating = $state(false);
+  /**
+   * Set when we rehydrate from localStorage — signals the "try to resume an
+   * in-flight stream" effect that this chatId may have a live turn on the
+   * server (user navigated away mid-response). The effect calls
+   * `chat.resumeStream()` once; the server returns 204 when no stream is
+   * active, so it's a no-op for finished chats.
+   */
+  let shouldResumeStream = $state(false);
 
   /**
    * Parallel "local event stream" for playground-specific UI that doesn't
@@ -264,6 +272,12 @@
   // rehydrates the per-workspace persisted chatId.
   // Geolocation is requested on first message submit (handleSubmit), not
   // eagerly — avoids the browser permission prompt on page load.
+  //
+  // `rehydrationDone` only flips AFTER rehydrateChat resolves. The Chat
+  // instance is $derived off it, so we get a single creation with the
+  // settled initialMessages — otherwise every message update during
+  // rehydrate would recreate the instance and discard any in-flight
+  // `chat.resumeStream()` call.
   $effect(() => {
     const _track = wsId; // explicit dependency on workspace route param
     void _track;
@@ -276,11 +290,14 @@
     const saved = getPersistedChatId();
     if (saved) {
       chatId = saved;
-      rehydrationDone = true;
-      void rehydrateChat(saved);
+      shouldResumeStream = true;
+      void rehydrateChat(saved).finally(() => {
+        rehydrationDone = true;
+      });
     } else {
       chatId = crypto.randomUUID();
       rehydrationDone = true;
+      shouldResumeStream = false;
     }
   });
 
@@ -323,6 +340,25 @@
     }
   });
 
+  // Resume an in-flight stream after rehydrate. Fires once per chatId that
+  // came from localStorage: if the user navigated away mid-response the
+  // server's StreamRegistry still has the buffered chunks. `resumeStream()`
+  // hits `GET /api/workspaces/<wsId>/chat/<chatId>/stream` — returns 204 when
+  // no active stream, otherwise replays everything since the turn started so
+  // the assistant's partial message flows in live and finishes normally.
+  // Without this, navigating back showed only the persisted user message and
+  // the in-flight assistant response was invisible until the next page load
+  // (which could be after the stream completed and the message was flushed
+  // to ChatStorage).
+  $effect(() => {
+    if (chat && shouldResumeStream) {
+      shouldResumeStream = false;
+      chat.resumeStream().catch(() => {
+        // Silent: the most common outcome is 204 (no active stream).
+      });
+    }
+  });
+
   // Propagate transport / Chat errors into the playground error banner.
   $effect(() => {
     if (chat?.error) {
@@ -331,6 +367,33 @@
   });
 
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
+
+  /**
+   * Messages composed while the assistant is still responding. We don't block
+   * the input during streaming — users should be able to keep composing —
+   * but `@ai-sdk/svelte`'s `sendMessage` can only fire one turn at a time.
+   * Buffer here, then flush from a `$effect` that watches `streaming`.
+   *
+   * Each queued entry is the exact `parts` array we'd have sent live — text
+   * + any attached/dropped images — so the flush path is identical to the
+   * submit path.
+   */
+  type QueuedMessageParts = Array<
+    | { type: "text"; text: string }
+    | { type: "file"; mediaType: string; url: string; filename?: string }
+  >;
+  let queuedMessages: QueuedMessageParts[] = $state([]);
+
+  // Flush queued messages when the current turn finishes. `sendMessage` is
+  // awaited sequentially so each queued entry becomes its own turn, matching
+  // the natural "user typed another thing" behavior.
+  $effect(() => {
+    if (streaming || queuedMessages.length === 0 || !chat) return;
+    const next = queuedMessages[0];
+    if (!next) return;
+    queuedMessages = queuedMessages.slice(1);
+    void chat.sendMessage({ role: "user", parts: next });
+  });
 
   /**
    * Extract the text content of an {@link AtlasUIMessage} for render. We
@@ -605,15 +668,17 @@
     initialMessages = [];
     error = null;
     chatId = targetChatId;
-    rehydrationDone = true;
+    rehydrationDone = false;
+    shouldResumeStream = true;
     persistChatId(targetChatId);
-    void rehydrateChat(targetChatId);
+    void rehydrateChat(targetChatId).finally(() => {
+      rehydrationDone = true;
+    });
   }
 
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
-    if (streaming) return;
-
     // Intercept /schedule slash-command before it reaches the chat agent.
+    // Run even during streaming — it's a client-only flow.
     const scheduleCmd = parseScheduleCommand(text);
     if (scheduleCmd) {
       void handleScheduleCommand(scheduleCmd.input);
@@ -627,10 +692,7 @@
     const allImages = [...inputImages, ...pendingImages];
     pendingImages = [];
 
-    const parts: Array<
-      | { type: "text"; text: string }
-      | { type: "file"; mediaType: string; url: string; filename?: string }
-    > = [];
+    const parts: QueuedMessageParts = [];
 
     if (text.length > 0) {
       parts.push({ type: "text", text });
@@ -647,10 +709,14 @@
 
     if (parts.length === 0) return;
 
-    void chat.sendMessage({
-      role: "user",
-      parts,
-    });
+    // Queue while the current turn is still streaming; the flush effect
+    // fires the next turn as soon as status returns to ready.
+    if (streaming) {
+      queuedMessages = [...queuedMessages, parts];
+      return;
+    }
+
+    void chat.sendMessage({ role: "user", parts });
   }
 </script>
 
@@ -707,7 +773,14 @@
       {/if}
 
       <div class="chat-input-area">
-        <ChatInput disabled={streaming} onsubmit={handleSubmit} />
+        {#if queuedMessages.length > 0}
+          <div class="queued-indicator">
+            {queuedMessages.length === 1
+              ? "1 message queued — will send when the assistant finishes"
+              : `${queuedMessages.length} messages queued — will send when the assistant finishes`}
+          </div>
+        {/if}
+        <ChatInput onsubmit={handleSubmit} />
       </div>
     </div>
 
@@ -823,6 +896,13 @@
     border-block-start: 1px solid var(--color-border-1);
     flex-shrink: 0;
     padding: var(--size-3) var(--size-4);
+  }
+
+  .queued-indicator {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-size: var(--font-size-1);
+    padding-block-end: var(--size-2);
+    text-align: center;
   }
 
 

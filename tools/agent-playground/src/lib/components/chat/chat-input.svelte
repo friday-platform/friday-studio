@@ -6,11 +6,10 @@
   }
 
   interface Props {
-    disabled?: boolean;
     onsubmit: (message: string, images: ImageAttachment[]) => void;
   }
 
-  const { disabled = false, onsubmit }: Props = $props();
+  const { onsubmit }: Props = $props();
 
   let value = $state("");
   let images: ImageAttachment[] = $state([]);
@@ -97,14 +96,14 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && hasContent && !disabled) {
+    if (e.key === "Enter" && !e.shiftKey && hasContent) {
       e.preventDefault();
       submit();
     }
   }
 
   function submit() {
-    if (!hasContent || disabled) return;
+    if (!hasContent) return;
     onsubmit(value.trim(), images);
     value = "";
     images = [];
@@ -181,7 +180,6 @@
     <button
       class="attach-button"
       onclick={() => fileInput?.click()}
-      {disabled}
       aria-label="Attach image"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -207,7 +205,6 @@
         class="mic-button"
         class:recording
         onclick={toggleRecording}
-        {disabled}
         aria-label={recording ? "Stop recording" : "Voice input"}
       >
         {#if recording}
@@ -227,13 +224,12 @@
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
-      {disabled}
       placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
       rows={1}
     ></textarea>
     <button
       class="send-button"
-      disabled={disabled || !hasContent}
+      disabled={!hasContent}
       onclick={submit}
       aria-label="Send message"
     >
