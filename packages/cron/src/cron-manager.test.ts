@@ -1,10 +1,22 @@
 import type { Logger } from "@atlas/logger";
-import { MemoryKVStorage } from "@atlas/storage";
+import { createKVStorage, type KVStorage } from "@atlas/storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CronManager } from "./cron-manager.ts";
 
 /** Silent logger — the cron manager only needs the call surface, not output. */
-const logger: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+function makeSilentLogger(): Logger {
+  const self: Logger = {
+    trace: () => {},
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    fatal: () => {},
+    child: () => self,
+  };
+  return self;
+}
+const logger = makeSilentLogger();
 
 /**
  * Drop an already-persisted timer into storage so we can exercise
@@ -12,7 +24,7 @@ const logger: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error:
  * a wakeup callback and fight the tick loop during the test).
  */
 async function seedTimer(
-  storage: MemoryKVStorage,
+  storage: KVStorage,
   timerKey: string,
   workspaceId: string,
   signalId: string,
@@ -27,7 +39,7 @@ async function seedTimer(
   });
 }
 
-async function listPersistedTimerKeys(storage: MemoryKVStorage): Promise<string[]> {
+async function listPersistedTimerKeys(storage: KVStorage): Promise<string[]> {
   const out: string[] = [];
   for await (const { key } of storage.list<unknown>([`cron_timers`])) {
     const last = key[key.length - 1];
@@ -37,12 +49,14 @@ async function listPersistedTimerKeys(storage: MemoryKVStorage): Promise<string[
 }
 
 describe("CronManager — orphan pruning", () => {
-  let storage: MemoryKVStorage;
+  let storage: KVStorage;
   let manager: CronManager;
 
-  beforeEach(() => {
-    storage = new MemoryKVStorage();
-    storage.initialize();
+  beforeEach(async () => {
+    // Factory returns an initialized KVStorage; going through it avoids
+    // the variance mismatch between MemoryKVStorage's `string[]` keys and
+    // the KVStorage interface's generic `U extends readonly ...`.
+    storage = await createKVStorage({ type: "memory" });
     manager = new CronManager(storage, logger);
   });
 

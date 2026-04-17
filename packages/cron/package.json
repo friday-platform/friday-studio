@@ -9,5 +9,5 @@
     "@atlas/workspace": "workspace:*",
     "cron-parser": "^5.5.0"
   },
-  "devDependencies": {}
+  "devDependencies": { "@atlas/logger": "workspace:*", "vitest": "^4.1.0" }
 }
