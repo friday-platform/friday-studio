@@ -106,4 +106,46 @@ describe("run_code — interactive-auth guidance and stream preservation", () =>
     expect(String(result.stderr)).toContain("stderr content");
     expect(result.exit_code).toBe(7);
   });
+
+  it("auto-extends the timeout past 30 s for interactive-auth commands", async () => {
+    // Script mentions `op`, which the regex matches — the default 30 s
+    // timeout should lift to the 120 s max so a real auth prompt has
+    // time to complete. We don't actually wait 120 s here; we just
+    // prove the logic path doesn't error on a quick op-mentioning
+    // script. The hint-branch test below separately pins the SIGKILL
+    // timeout message.
+    const tools = createRunCodeTool("test-session-auth-timeout", logger);
+    const run = getExecute(tools.run_code);
+
+    const result = await run({
+      language: "bash",
+      source: "# op item create: auth-requiring command\nsleep 0.1 && exit 0",
+    });
+
+    if (!hasKey(result, "exit_code")) {
+      throw new Error(`expected success shape, got ${JSON.stringify(result)}`);
+    }
+    expect(result.exit_code).toBe(0);
+  });
+
+  it("adds a 'didn't tap Authorize' hint when an auth command times out", async () => {
+    // Force a timeout by setting `timeout_ms: 1000` on a 3 s sleep that
+    // mentions `op`. The sigkill path should emit the interactive-auth
+    // hint that tells the LLM not to retry.
+    const tools = createRunCodeTool("test-session-auth-sigkill", logger);
+    const run = getExecute(tools.run_code);
+
+    const result = await run({
+      language: "bash",
+      source: "# op: script that outlives the explicit timeout\nsleep 3",
+      timeout_ms: 1_000,
+    });
+
+    if (!hasKey(result, "error")) {
+      throw new Error(`expected timeout error, got ${JSON.stringify(result)}`);
+    }
+    expect(String(result.error)).toContain("killed by timeout");
+    expect(String(result.error)).toContain("Authorize");
+    expect(String(result.error)).toContain("do not retry");
+  });
 });

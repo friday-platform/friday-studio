@@ -142,7 +142,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
   return {
     run_code: tool({
       description:
-        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s) and stdout/stderr size caps. Intended for trusted code; do not run hostile input. **No TTY**: commands that need interactive auth (`op item create/read/edit/delete`, `ssh`, `sudo`, `gpg`, `aws sso login`, `gh auth login`, `security`) can't prompt the user here — they will fail silently with empty stderr. Tell the user to run those in their terminal directly.",
+        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Default timeout is 30 s (max 120 s); scripts that invoke known interactive-auth commands (`op`, `ssh`, `sudo`, `gpg`, `security`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init`) auto-get the full 120 s budget so the user has room to approve on Watch / Touch ID. Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. If an auth-requiring command still times out or fails silently with empty stderr, it almost always means the user missed the approval prompt — tell them to run the command in their terminal directly instead of retrying.",
       inputSchema: RunCodeInput,
       execute: async ({ language, source, timeout_ms }): Promise<RunCodeSuccess | RunCodeError> => {
         const dir = scratchDir(sessionId);
@@ -166,7 +166,18 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
         }
 
         const command = spec.build(filePath);
-        const timeout = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+        // Interactive-auth commands (op / ssh / sudo / gpg / cloud CLI
+        // logins) need time for the 1Password / Keychain / SSO desktop
+        // helper to launch AND for the user to approve on Watch / Touch
+        // ID. That routinely takes 30-60 s from a cold start. Under the
+        // old 30 s default, we'd SIGKILL the process mid-handshake — the
+        // user would tap Authorize but op was already dead. Give those
+        // scripts the full MAX_TIMEOUT_MS by default; the LLM can still
+        // override with an explicit `timeout_ms`.
+        const defaultTimeout = TTY_AUTH_COMMAND_RE.test(source)
+          ? MAX_TIMEOUT_MS
+          : DEFAULT_TIMEOUT_MS;
+        const timeout = Math.min(timeout_ms ?? defaultTimeout, MAX_TIMEOUT_MS);
         const options: ExecOptions = {
           cwd: dir,
           timeout,
@@ -216,7 +227,15 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
               message?: string;
             };
             if (execErr.killed && execErr.signal === "SIGKILL") {
-              return { error: `run_code killed by timeout after ${timeout}ms` };
+              // Timeout on a known-auth command almost always means the
+              // user didn't tap Authorize in time (or the desktop helper
+              // never surfaced the prompt). The bare "killed by timeout"
+              // message is unactionable — steer the LLM toward telling
+              // the user to run the command in their own terminal.
+              const hint = TTY_AUTH_COMMAND_RE.test(source)
+                ? " — the script uses an interactive-auth command (op/ssh/sudo/…). The user probably didn't tap Authorize in time, or the 1Password / Keychain / SSO helper is stuck. Tell them to run the command in their terminal directly; do not retry."
+                : "";
+              return { error: `run_code killed by timeout after ${timeout}ms${hint}` };
             }
             const stdout = stringify(execErr.stdout);
             const stderr = stringify(execErr.stderr);
