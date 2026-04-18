@@ -8,6 +8,11 @@
 .atlas/
 .local-dev/
 
+# Per-user platform config loaded from process.cwd() at daemon startup —
+# holds model preferences, MCP creds, rate limits. Shared reference lives
+# at docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml.
+friday.yml
+
 # User agent development (keep the README, ignore agent subdirectories
 # except the curated set of FAST-built / hand-bootstrapped Python agents
 # that are checked in as canonical examples).
