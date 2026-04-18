@@ -14,6 +14,14 @@ export {
   type DatetimeContext,
   temporalGroundingMessage,
 } from "./src/grounding.ts";
+export {
+  type Catalog,
+  type CatalogEntry,
+  type CatalogProvider,
+  getCatalog,
+  type ModelInfo,
+  prewarmCatalog,
+} from "./src/model-catalog.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
 export {
   createPlatformModels,

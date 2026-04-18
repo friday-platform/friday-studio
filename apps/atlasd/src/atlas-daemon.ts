@@ -19,7 +19,7 @@ import {
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import { createPlatformModels, type PlatformModels } from "@atlas/llm";
+import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
@@ -441,6 +441,14 @@ export class AtlasDaemon {
     // can fire WorkspaceNotFoundError every cron interval.
     const knownWorkspaces = await this.workspaceManager.list({ includeSystem: true });
     await this.cronManager.start({ knownWorkspaceIds: new Set(knownWorkspaces.map((w) => w.id)) });
+
+    // Prewarm the model catalog so the Settings page dropdown renders
+    // instantly on first open. Fire-and-forget: failures here shouldn't
+    // block daemon startup — the on-demand `GET /api/config/models/catalog`
+    // call will retry the fetch at request time.
+    void prewarmCatalog().catch((error) => {
+      logger.warn("Model catalog prewarm failed", { error });
+    });
 
     // Initialize StreamRegistry
     this.streamRegistry = new StreamRegistry();

@@ -27,8 +27,28 @@
     configured: string | null;
   }
 
+  // Catalog shapes — match `packages/llm/src/model-catalog.ts`.
+  interface CatalogModel {
+    id: string;
+    displayName: string;
+  }
+  interface CatalogEntry {
+    provider: string;
+    credentialConfigured: boolean;
+    credentialEnvVar: string | null;
+    models: CatalogModel[];
+    error?: string;
+  }
+
+  // Sentinel values the <select> uses to represent non-model actions.
+  // Picked to be invalid as real `provider:model` ids so they can never
+  // collide with anything the catalog returns.
+  const DEFAULT_SENTINEL = "__default__";
+  const CUSTOM_SENTINEL = "__custom__";
+
   let rows: EnvRow[] = $state([]);
   let models: ModelInfo[] = $state([]);
+  let catalog: CatalogEntry[] = $state([]);
   // Per-role editable value. Empty string is the sentinel for "use default chain".
   let modelEdits: Record<ModelRole, string> = $state({
     labels: "",
@@ -36,12 +56,24 @@
     planner: "",
     conversational: "",
   });
+  // Per-role "custom mode" — when the user picks "— Custom model id —"
+  // from the dropdown we swap that role's <select> for a text input so
+  // they can type a fresh model id that isn't in the catalog yet.
+  let customMode: Record<ModelRole, boolean> = $state({
+    labels: false,
+    classifier: false,
+    planner: false,
+    conversational: false,
+  });
+
   let loadingEnv = $state(true);
   let loadingModels = $state(true);
+  let loadingCatalog = $state(true);
   let savingModels = $state(false);
   let saving = $state(false);
   let envError: string | null = $state(null);
   let modelsError: string | null = $state(null);
+  let catalogError: string | null = $state(null);
   let modelsSuccess: string | null = $state(null);
   let success: string | null = $state(null);
 
@@ -105,6 +137,114 @@
     } finally {
       loadingModels = false;
     }
+  }
+
+  async function loadCatalog(): Promise<void> {
+    loadingCatalog = true;
+    catalogError = null;
+    try {
+      const res = await fetch("/api/daemon/api/config/models/catalog");
+      if (!res.ok) {
+        catalogError = `Failed to load catalog (HTTP ${res.status})`;
+        return;
+      }
+      const data: unknown = await res.json();
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "entries" in data &&
+        Array.isArray((data as { entries: unknown }).entries)
+      ) {
+        catalog = (data as { entries: CatalogEntry[] }).entries;
+      } else {
+        catalog = [];
+      }
+    } catch (err) {
+      catalogError = err instanceof Error ? err.message : "Failed to load catalog";
+    } finally {
+      loadingCatalog = false;
+    }
+  }
+
+  // Providers the user can actually pick from — have credentials AND
+  // returned at least one model. A provider with credentials but a
+  // fetch error (e.g. Groq 401) gets surfaced in `catalogErrorsByProvider`
+  // and still appears as a disabled optgroup with a helpful tooltip.
+  const selectableCatalog = $derived.by(() =>
+    catalog.filter((e) => e.credentialConfigured && e.models.length > 0),
+  );
+
+  // Providers the user could unlock by adding an env var. Rendered in
+  // the "Locked" panel under the selects with a one-click link into
+  // the env section (?add=ENV_VAR_NAME deep-link — see openEnvForKey).
+  const lockedProviders = $derived.by(() =>
+    catalog.filter((e) => !e.credentialConfigured && e.credentialEnvVar !== null),
+  );
+
+  // Providers with credentials but a failing catalog fetch — e.g. a
+  // stale Groq key that returns 401. Their dropdown group is disabled
+  // with the error message; Custom input is still available.
+  const catalogFetchErrors = $derived.by(() =>
+    catalog.filter((e) => e.credentialConfigured && e.error && e.models.length === 0),
+  );
+
+  // Given a raw configured value like `anthropic:claude-sonnet-4.6`,
+  // figure out which dropdown option to preselect. If the value isn't
+  // in the catalog and isn't empty, we flip the role into custom mode
+  // so the text input shows the literal value instead of silently
+  // falling back to "— Use default —".
+  function optionValueForRole(role: ModelRole): string {
+    if (customMode[role]) return CUSTOM_SENTINEL;
+    const edit = modelEdits[role];
+    if (edit === "") return DEFAULT_SENTINEL;
+    const isInCatalog = selectableCatalog.some((e) =>
+      e.models.some((m) => m.id === edit),
+    );
+    return isInCatalog ? edit : CUSTOM_SENTINEL;
+  }
+
+  function handleRoleChange(role: ModelRole, value: string): void {
+    if (value === DEFAULT_SENTINEL) {
+      modelEdits[role] = "";
+      customMode[role] = false;
+      return;
+    }
+    if (value === CUSTOM_SENTINEL) {
+      customMode[role] = true;
+      // Leave existing modelEdits as-is so power users can edit what's there.
+      return;
+    }
+    modelEdits[role] = value;
+    customMode[role] = false;
+  }
+
+  // Clicking a locked-provider env-var hint scrolls to the Environment
+  // section, opens the <details> if collapsed, and focuses a pre-filled
+  // row for the requested key (adding one if it doesn't exist). Matches
+  // the `?add=KEY_NAME` deep-link handler further down — this is the
+  // in-page button path, the URL param is for share-links from chat etc.
+  function openEnvForKey(envVarName: string): void {
+    const detailsEl = document.querySelector<HTMLDetailsElement>(".env-details");
+    if (detailsEl && !detailsEl.open) detailsEl.open = true;
+
+    const existingIdx = rows.findIndex((r) => r.key === envVarName);
+    if (existingIdx === -1) {
+      rows = [...rows, { key: envVarName, value: "" }];
+    }
+
+    // Give Svelte a tick to render the new row, then scroll + focus.
+    setTimeout(() => {
+      const idx = rows.findIndex((r) => r.key === envVarName);
+      if (idx === -1) return;
+      const valueInputs = document.querySelectorAll<HTMLInputElement>(
+        ".env-row .col-value",
+      );
+      const input = valueInputs[idx];
+      if (input) {
+        input.scrollIntoView({ behavior: "smooth", block: "center" });
+        input.focus();
+      }
+    }, 0);
   }
 
   async function saveModels(): Promise<void> {
@@ -182,8 +322,23 @@
   }
 
   $effect(() => {
-    void loadEnv();
-    void loadModels();
+    void (async () => {
+      // Env loads first so the `?add=KEY` deep-link has rows to mutate
+      // when it runs below. Models + catalog are independent and run in
+      // parallel with each other after env resolves.
+      await loadEnv();
+      await Promise.all([loadModels(), loadCatalog()]);
+
+      // Deep link: `/settings?add=GROQ_API_KEY` opens the env-vars
+      // section with a new empty row pre-filled for `GROQ_API_KEY` and
+      // focuses its value input. Used by the Locked-provider hints to
+      // jump the user straight to "just paste the key".
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const addKey = params.get("add");
+        if (addKey) openEnvForKey(addKey);
+      }
+    })();
   });
 
   const ROLE_DESCRIPTIONS: Record<ModelInfo["role"], string> = {
@@ -240,6 +395,11 @@
       {#if modelsSuccess}
         <div class="success-banner">{modelsSuccess}</div>
       {/if}
+      {#if catalogError}
+        <div class="warn-banner">
+          Catalog load failed: {catalogError}. You can still type a model id below.
+        </div>
+      {/if}
       <div class="models-grid">
         {#each models as m (m.role)}
           <div class="model-card">
@@ -247,15 +407,54 @@
             <p class="model-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
             <label class="model-label">
               <span class="label-text">Configured value</span>
-              <input
-                type="text"
-                class="model-input"
-                bind:value={modelEdits[m.role]}
-                placeholder="(using default — blank)"
-                autocomplete="off"
-                spellcheck="false"
-                disabled={savingModels}
-              />
+              {#if customMode[m.role]}
+                <div class="custom-input-row">
+                  <input
+                    type="text"
+                    class="model-input"
+                    bind:value={modelEdits[m.role]}
+                    placeholder="provider:model-id"
+                    autocomplete="off"
+                    spellcheck="false"
+                    disabled={savingModels}
+                  />
+                  <button
+                    type="button"
+                    class="custom-back"
+                    onclick={() => { customMode[m.role] = false; modelEdits[m.role] = ""; }}
+                    title="Back to dropdown"
+                  >
+                    ← pick from list
+                  </button>
+                </div>
+              {:else if loadingCatalog && selectableCatalog.length === 0}
+                <div class="loading">Loading catalog…</div>
+              {:else}
+                <select
+                  class="model-select"
+                  value={optionValueForRole(m.role)}
+                  onchange={(e) => handleRoleChange(m.role, e.currentTarget.value)}
+                  disabled={savingModels}
+                >
+                  <option value={DEFAULT_SENTINEL}>
+                    — Use default{m.resolved.modelId ? ` (${m.resolved.provider}:${m.resolved.modelId})` : ""} —
+                  </option>
+                  {#each selectableCatalog as entry (entry.provider)}
+                    <optgroup label={entry.provider}>
+                      {#each entry.models as model (model.id)}
+                        <option value={model.id}>{model.displayName}</option>
+                      {/each}
+                    </optgroup>
+                  {/each}
+                  {#each catalogFetchErrors as entry (entry.provider)}
+                    <optgroup
+                      label={`${entry.provider} — ${entry.error ?? "catalog unavailable"}`}
+                      disabled
+                    ></optgroup>
+                  {/each}
+                  <option value={CUSTOM_SENTINEL}>— Custom model id —</option>
+                </select>
+              {/if}
             </label>
             <div class="model-resolved">
               <span class="resolved-label">Currently active:</span>
@@ -266,6 +465,30 @@
           </div>
         {/each}
       </div>
+
+      {#if lockedProviders.length > 0}
+        <div class="locked-panel">
+          <h3 class="locked-title">🔒 Locked — add a key to unlock</h3>
+          <ul class="locked-list">
+            {#each lockedProviders as entry (entry.provider)}
+              <li class="locked-row">
+                <span class="locked-provider">{entry.provider}</span>
+                <span class="locked-instruction">
+                  set <code>{entry.credentialEnvVar}</code>
+                </span>
+                <button
+                  type="button"
+                  class="locked-action"
+                  onclick={() => entry.credentialEnvVar && openEnvForKey(entry.credentialEnvVar)}
+                >
+                  Add key ↓
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
       <div class="actions">
         <Button variant="primary" onclick={saveModels} disabled={savingModels}>
           {savingModels ? "Saving…" : "Save models"}
@@ -634,5 +857,126 @@
     gap: var(--size-2);
     justify-content: flex-end;
     margin-block-start: var(--size-3);
+  }
+
+  .model-select {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .model-select:focus {
+    border-color: var(--color-primary);
+    outline: none;
+  }
+
+  .model-select:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .custom-input-row {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .custom-input-row .model-input {
+    flex: 1;
+  }
+
+  .custom-back {
+    background: transparent;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    padding: var(--size-1) var(--size-2);
+    white-space: nowrap;
+  }
+
+  .custom-back:hover {
+    color: var(--color-text);
+  }
+
+  .warn-banner {
+    background-color: color-mix(in srgb, var(--color-warning, #b88514), transparent 88%);
+    border: 1px solid color-mix(in srgb, var(--color-warning, #b88514), transparent 55%);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font-size: var(--font-size-1);
+    margin-block-end: var(--size-3);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .locked-panel {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    margin-block-start: var(--size-3);
+    padding: var(--size-3) var(--size-4);
+  }
+
+  .locked-title {
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+    margin: 0 0 var(--size-2);
+  }
+
+  .locked-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .locked-row {
+    align-items: center;
+    display: grid;
+    gap: var(--size-3);
+    grid-template-columns: minmax(6em, auto) 1fr auto;
+    padding-block: var(--size-1);
+  }
+
+  .locked-provider {
+    color: var(--color-text);
+    font-weight: var(--font-weight-5);
+  }
+
+  .locked-instruction {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-1);
+  }
+
+  .locked-instruction code {
+    background-color: var(--color-surface-3);
+    border-radius: var(--radius-1);
+    font-family: var(--font-family-mono, monospace);
+    font-size: inherit;
+    padding: 0 var(--size-1);
+  }
+
+  .locked-action {
+    background-color: var(--color-surface-3);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-primary);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-1) var(--size-3);
+    white-space: nowrap;
+  }
+
+  .locked-action:hover {
+    background-color: color-mix(in srgb, var(--color-primary), transparent 88%);
   }
 </style>

@@ -6,7 +6,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { createPlatformModels, PlatformModelsConfigError } from "@atlas/llm";
+import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -238,6 +238,43 @@ configRoutes.get(
     });
 
     return c.json({ success: true, models, configPath });
+  },
+);
+
+// Provider + model catalog used to populate the Settings page dropdown.
+// The response is served from a 1h in-memory cache in @atlas/llm;
+// daemon startup prewarms it so the first request is already warm.
+const catalogResponseSchema = z.object({
+  success: z.boolean(),
+  fetchedAt: z.number(),
+  entries: z.array(
+    z.object({
+      provider: z.string(),
+      credentialConfigured: z.boolean(),
+      credentialEnvVar: z.string().nullable(),
+      models: z.array(z.object({ id: z.string(), displayName: z.string() })),
+      error: z.string().optional(),
+    }),
+  ),
+});
+
+configRoutes.get(
+  "/models/catalog",
+  describeRoute({
+    tags: ["Config"],
+    summary: "Get the model catalog (providers + models + credential status)",
+    description:
+      "Returns a catalog entry per registered provider with its unlock env var, the list of language models available to it, and whether the caller currently has a credential configured. Used by the Settings page to render a dropdown instead of a free-text input. Cached 1h in memory.",
+    responses: {
+      200: {
+        description: "Catalog retrieved",
+        content: { "application/json": { schema: resolver(catalogResponseSchema) } },
+      },
+    },
+  }),
+  async (c) => {
+    const catalog = await getCatalog();
+    return c.json({ success: true, fetchedAt: catalog.fetchedAt, entries: catalog.entries });
   },
 );
 
