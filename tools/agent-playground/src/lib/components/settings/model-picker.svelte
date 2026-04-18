@@ -136,13 +136,6 @@
     catalog.reduce((n, e) => n + (e.credentialConfigured ? e.models.length : 0), 0),
   );
 
-  // Split providers into API vs local-runtime groups for the pill row.
-  // Right now "local runtime" is just claude-code (which shells out to
-  // the `claude` CLI); more CLI-backed providers would be added to this
-  // list rather than mixed in with API keys.
-  const apiProviders = $derived(catalog.filter((e) => e.provider !== "claude-code"));
-  const localProviders = $derived(catalog.filter((e) => e.provider === "claude-code"));
-
   function isSelected(provider: string, modelId: string): boolean {
     // `current.modelId` matches `model.id` directly — both are the raw
     // model identifier with no provider prefix (see ModelInfo in
@@ -216,7 +209,7 @@
         <span>All</span>
         <span class="pill-count">{totalModelCount}</span>
       </button>
-      {#each apiProviders as entry (entry.provider)}
+      {#each catalog as entry (entry.provider)}
         <button
           class="provider-pill"
           class:active={activeProvider === entry.provider}
@@ -231,33 +224,7 @@
           <span class="status-dot" class:locked={!entry.credentialConfigured}></span>
         </button>
       {/each}
-      {#if localProviders.length > 0}
-        <!-- Local-runtime providers (Claude Code) route through a CLI
-             binary rather than a hosted API. Visually sectioned off so
-             users don't read it as "yet another API provider". -->
-        <span class="pills-divider" aria-hidden="true">│</span>
-        <span class="pills-group-label">Local CLI</span>
-        {#each localProviders as entry (entry.provider)}
-          <button
-            class="provider-pill"
-            class:active={activeProvider === entry.provider}
-            class:is-locked={!entry.credentialConfigured}
-            onclick={() => { activeProvider = entry.provider; }}
-            title={`${entry.meta.name} — routes through the local \`claude\` CLI`}
-          >
-            <ProviderMark provider={entry.provider} letter={entry.meta.letter} size="sm" />
-            <span>{entry.meta.name}</span>
-            <span class="status-dot" class:locked={!entry.credentialConfigured}></span>
-          </button>
-        {/each}
-      {/if}
     </div>
-    {#if activeProviderEntry?.provider === "claude-code"}
-      <div class="provider-note">
-        Claude Code runs locally via the <code>claude</code> CLI. Pick which
-        Anthropic model the CLI should use for this slot.
-      </div>
-    {/if}
 
     {#if locked && activeProviderEntry}
       <div class="locked-banner">
@@ -336,12 +303,7 @@
           {#each catalog.filter((e) => e.credentialConfigured) as entry (entry.provider)}
             {@const rows = filtered.filter((r) => r.entry.provider === entry.provider)}
             {#if rows.length > 0}
-              <div class="provider-section-header">
-                {entry.meta.name}
-                {#if entry.provider === "claude-code"}
-                  <span class="provider-section-sub">routes via local <code>claude</code> CLI</span>
-                {/if}
-              </div>
+              <div class="provider-section-header">{entry.meta.name}</div>
               {#each rows as { entry: providerEntry, model } (model.id)}
                 <button
                   class="model-option"
@@ -514,54 +476,6 @@
     margin-left: 2px;
   }
 
-  .pills-divider {
-    color: var(--color-border-2, hsl(220 6% 24%));
-    font-size: 16px;
-    padding: 0 2px;
-    user-select: none;
-  }
-
-  .pills-group-label {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    padding: 5px 2px;
-    text-transform: uppercase;
-  }
-
-  .provider-note {
-    background: color-mix(in srgb, var(--color-primary, hsl(212 97% 58%)), transparent 92%);
-    border-bottom: 1px solid var(--color-border-1, hsl(220 6% 18%));
-    color: var(--color-text-dim, hsl(40 8% 68%));
-    font-size: 12px;
-    line-height: 1.5;
-    padding: 10px 20px;
-  }
-  .provider-note code {
-    background: var(--color-surface-4, hsl(220 8% 17%));
-    border-radius: 3px;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.92em;
-    padding: 1px 5px;
-  }
-
-  .provider-section-sub {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-sans, ui-sans-serif, system-ui);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: normal;
-    margin-left: 8px;
-    text-transform: none;
-  }
-  .provider-section-sub code {
-    background: var(--color-surface-4, hsl(220 8% 17%));
-    border-radius: 2px;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.95em;
-    padding: 0 4px;
-  }
 
   .status-dot {
     background: hsl(142 70% 55%);

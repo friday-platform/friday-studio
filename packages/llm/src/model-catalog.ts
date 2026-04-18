@@ -26,19 +26,20 @@ import { PROVIDER_ENV_VARS, type ValidProvider } from "./util.ts";
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 /**
- * Every provider the catalog reports on. `ValidProvider` covers the four
- * external providers; `claude-code` is a local wrapper around Anthropic
- * that shares the Anthropic API key and catalog but is invoked via a
- * different runtime path (see `packages/llm/src/claude-code.ts`).
+ * Every provider the catalog reports on. `claude-code` is intentionally
+ * excluded for now — it's a CLI wrapper around Anthropic's models and
+ * isn't a meaningful alternative to the hosted providers in the Settings
+ * picker. When we add a dedicated "Claude Code" role (wiring the
+ * claude-code agent's hardcoded `selectModel` to user config), we'll
+ * expose it again behind that role's scoped picker.
  */
-export type CatalogProvider = ValidProvider | "claude-code";
+export type CatalogProvider = ValidProvider;
 
 const CATALOG_PROVIDERS: readonly CatalogProvider[] = [
   "anthropic",
   "openai",
   "google",
   "groq",
-  "claude-code",
 ] as const;
 
 export interface ModelInfo {
@@ -101,15 +102,11 @@ const FETCH_TIMEOUT_MS = 3_000;
 /** One hour — models don't change intra-session. Prewarm covers first paint. */
 export const CACHE_TTL_MS = 60 * 60 * 1_000;
 
-// `claude-code` shares `ANTHROPIC_API_KEY` because it's a wrapper around
-// Anthropic's models; keep this explicit so `PROVIDER_ENV_VARS` can stay
-// scoped to the four external providers it describes today.
 const ENV_VAR_BY_CATALOG_PROVIDER: Record<CatalogProvider, string> = {
   anthropic: PROVIDER_ENV_VARS.anthropic,
   openai: PROVIDER_ENV_VARS.openai,
   google: PROVIDER_ENV_VARS.google,
   groq: PROVIDER_ENV_VARS.groq,
-  "claude-code": PROVIDER_ENV_VARS.anthropic,
 };
 
 /**
@@ -132,15 +129,6 @@ export const PROVIDER_META: Record<CatalogProvider, ProviderMeta> = {
   },
   google: { name: "Google", letter: "G", keyPrefix: "AIza", helpUrl: "aistudio.google.com/apikey" },
   groq: { name: "Groq", letter: "Q", keyPrefix: "gsk_", helpUrl: "console.groq.com/keys" },
-  "claude-code": {
-    name: "Claude Code",
-    letter: "C",
-    // claude-code wraps the Anthropic API under the hood, so it reuses
-    // ANTHROPIC_API_KEY — but the user never types a key *for* claude-code
-    // specifically, so no placeholder / help URL to show.
-    keyPrefix: null,
-    helpUrl: null,
-  },
 };
 
 // ─── Schemas ───────────────────────────────────────────────────────────────
@@ -204,7 +192,6 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     openai: [],
     google: [],
     groq: [],
-    "claude-code": [],
   };
   for (const m of models) {
     // Gateway uses `modelType: null` for most language models; explicit
@@ -214,10 +201,6 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     const rawId = stripGatewayProviderPrefix(modelId);
     if (provider === "anthropic") {
       out.anthropic.push({ id: rawId, displayName: m.name });
-      // claude-code wraps Anthropic's models; the ids are the same — both
-      // buckets share the raw id and the caller composes the full
-      // `provider:model` string with the correct Friday provider.
-      out["claude-code"].push({ id: rawId, displayName: m.name });
     } else if (provider === "openai") {
       out.openai.push({ id: rawId, displayName: m.name });
     } else if (provider === "vertex" && modelId.startsWith("google/gemini-")) {

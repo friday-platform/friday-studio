@@ -114,11 +114,6 @@ describe("model-catalog — gateway partitioning", () => {
     const anthropic = find(catalog, "anthropic");
     expect(anthropic.models.map((m) => m.id)).toEqual(["claude-sonnet-4.6", "claude-haiku-4.5"]);
 
-    // claude-code mirrors anthropic with the same raw ids (both buckets
-    // share Anthropic's models; consumers apply the right provider prefix).
-    const claudeCode = find(catalog, "claude-code");
-    expect(claudeCode.models.map((m) => m.id)).toEqual(["claude-sonnet-4.6", "claude-haiku-4.5"]);
-
     const openai = find(catalog, "openai");
     expect(openai.models.map((m) => m.id)).toEqual(["gpt-5.4"]);
 
@@ -145,11 +140,6 @@ describe("model-catalog — credential resolution", () => {
     expect(find(catalog, "google")).toMatchObject({
       credentialConfigured: false,
       credentialEnvVar: "GEMINI_API_KEY",
-    });
-    expect(find(catalog, "claude-code")).toMatchObject({
-      credentialConfigured: false,
-      // claude-code shares the anthropic key — the hint must point there.
-      credentialEnvVar: "ANTHROPIC_API_KEY",
     });
   });
 
