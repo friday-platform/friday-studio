@@ -200,7 +200,14 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     const { provider, modelId } = m.specification;
     const rawId = stripGatewayProviderPrefix(modelId);
     if (provider === "anthropic") {
-      out.anthropic.push({ id: rawId, displayName: m.name });
+      // Gateway advertises Anthropic models in semver form with dots
+      // (e.g. `claude-sonnet-4.6`), but Anthropic's direct API uses
+      // hyphens (`claude-sonnet-4-6`). We talk to Anthropic directly
+      // from the registry — translate here so picker-written IDs work
+      // end-to-end.
+      const apiId = rawId.replace(/\./g, "-");
+      if (!isAnthropicDirectApiId(apiId)) continue;
+      out.anthropic.push({ id: apiId, displayName: m.name });
     } else if (provider === "openai") {
       out.openai.push({ id: rawId, displayName: m.name });
     } else if (provider === "vertex" && modelId.startsWith("google/gemini-")) {
@@ -215,14 +222,55 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
 }
 
 /**
- * Groq returns everything on the account — including audio models
- * (whisper, playai-tts, …) that aren't valid chat completions. Filter
- * to language models by dropping known audio prefixes.
+ * Patterns for Groq model ids that aren't usable as conversational chat
+ * models. Empirically verified (see model-matrix QA): these either reject
+ * chat.completions calls, fall back to a different model, or aren't
+ * meaningful choices in a picker.
+ *
+ * - `whisper-*` / `distil-whisper-*` / `playai-tts-*` — audio in/out
+ * - `canopylabs/orpheus-*` — TTS
+ * - `llama-prompt-guard-*` / `gpt-oss-safeguard-*` — safety classifiers
+ * - `allam-*` — Arabic-only instruction model, not a general chat model
+ * - `groq/compound*` — Groq's agentic multi-tool endpoints, different API
+ * - `llama-4-scout-*` — current release rejects tool-call streaming
+ *
+ * Keep this list tight — when in doubt, keep a model in the catalog and
+ * let the user find out via an actionable error, rather than hiding it.
  */
+const GROQ_NON_CHAT_PATTERNS: RegExp[] = [
+  /^whisper-/,
+  /^distil-whisper-/,
+  /^playai-tts-/,
+  /^canopylabs\/orpheus-/,
+  /llama-prompt-guard-/,
+  /gpt-oss-safeguard-/,
+  /^allam-/,
+  /^groq\/compound/,
+  /^meta-llama\/llama-4-scout-/,
+];
+
 function filterGroqLanguageModels(ids: string[]): ModelInfo[] {
   return ids
-    .filter((id) => !/^whisper-|^playai-tts-|^distil-whisper-/.test(id))
+    .filter((id) => !GROQ_NON_CHAT_PATTERNS.some((re) => re.test(id)))
     .map((id) => ({ id, displayName: id }));
+}
+
+/**
+ * Anthropic gateway catalog leaks bare-version aliases that aren't real
+ * direct-API model ids (`claude-opus-4` without the trailing `-N`). Those
+ * route through the gateway's alias resolver but 404 on api.anthropic.com.
+ * Also drops the deprecated `claude-3-haiku` for the same reason.
+ *
+ * Pattern: the direct-API id always ends in `-<major>-<minor>` after the
+ * family name (e.g. `claude-sonnet-4-6`), so `claude-<family>-<N>` with no
+ * second hyphen-digit suffix is an alias. `claude-3-haiku` is explicit.
+ */
+const ANTHROPIC_ALIAS_DENYLIST = new Set(["claude-3-haiku"]);
+
+function isAnthropicDirectApiId(id: string): boolean {
+  if (ANTHROPIC_ALIAS_DENYLIST.has(id)) return false;
+  // Bare alias: `claude-<family>-<digit>` with nothing after.
+  return !/^claude-(opus|sonnet|haiku)-\d+$/.test(id);
 }
 
 // ─── Catalog assembly ──────────────────────────────────────────────────────

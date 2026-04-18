@@ -111,8 +111,10 @@ describe("model-catalog — gateway partitioning", () => {
 
     // Ids are raw model names (no provider prefix) — callers compose
     // the full `provider:model` string when they need it.
+    // Anthropic IDs are normalized from gateway semver form (dots) to the
+    // direct-API form (hyphens) — see groupGatewayModels.
     const anthropic = find(catalog, "anthropic");
-    expect(anthropic.models.map((m) => m.id)).toEqual(["claude-sonnet-4.6", "claude-haiku-4.5"]);
+    expect(anthropic.models.map((m) => m.id)).toEqual(["claude-sonnet-4-6", "claude-haiku-4-5"]);
 
     const openai = find(catalog, "openai");
     expect(openai.models.map((m) => m.id)).toEqual(["gpt-5.4"]);
