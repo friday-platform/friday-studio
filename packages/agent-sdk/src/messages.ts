@@ -272,6 +272,12 @@ export const MessageMetadataSchema = z.object({
   timestamp: z.iso.datetime().optional(),
   startTimestamp: z.iso.datetime().optional(),
   endTimestamp: z.iso.datetime().optional(),
+  // Which model produced this message. Recorded so subsequent turns can
+  // decide whether to replay model-specific parts (e.g. `reasoning`) back
+  // to the LLM — safe only when the current model matches what emitted
+  // them, otherwise providers may reject the payload.
+  provider: z.string().optional(),
+  modelId: z.string().optional(),
 });
 
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;

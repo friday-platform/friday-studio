@@ -701,14 +701,32 @@ For external services, use do_task. For artifact data, use artifacts_get.
 
         let errorEmitted = false;
 
+        const conversationalModel = platformModels.get("conversational");
+        // Strip `reasoning` parts from history messages that were produced
+        // by a different model than the one currently serving this turn.
+        // Replaying another model's reasoning back to the LLM either
+        // wastes tokens (same family) or gets rejected outright by
+        // providers that don't accept reasoning in input (e.g. Groq's
+        // llama-3.3 returns 400). Messages without a model tag are
+        // treated as "unknown origin" and stripped conservatively.
+        const sanitizedMessages = messages.map((m) => {
+          if (m.role !== "assistant") return m;
+          const fromSameModel =
+            m.metadata?.provider === conversationalModel.provider &&
+            m.metadata?.modelId === conversationalModel.modelId;
+          if (fromSameModel) return m;
+          const filteredParts = m.parts.filter((p) => p.type !== "reasoning");
+          return filteredParts.length === m.parts.length ? m : { ...m, parts: filteredParts };
+        });
+
         try {
           const result = streamText({
-            model: platformModels.get("conversational"),
+            model: conversationalModel,
             experimental_repairToolCall: repairToolCall,
             messages: [
               { role: ROLE_SYSTEM, content: systemPrompt },
               { role: ROLE_SYSTEM, content: datetimeMessage },
-              ...(await convertToModelMessages(messages)),
+              ...(await convertToModelMessages(sanitizedMessages)),
             ],
             tools: allTools,
             toolChoice: "auto",
@@ -754,7 +772,13 @@ For external services, use do_task. For artifact data, use artifacts_get.
                 if (metadata.part.type === "finish") {
                   endTimestamp = new Date().toISOString();
                 }
-                return { ...metadata, startTimestamp, endTimestamp };
+                return {
+                  ...metadata,
+                  startTimestamp,
+                  endTimestamp,
+                  provider: conversationalModel.provider,
+                  modelId: conversationalModel.modelId,
+                };
               },
             }),
           );
