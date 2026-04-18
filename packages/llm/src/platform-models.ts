@@ -12,12 +12,27 @@ import { traceModel } from "./tracing.ts";
 import { PROVIDER_ENV_VARS, type ValidProvider } from "./util.ts";
 
 /**
+ * A role's configured value. Accepts either a single model id
+ * (back-compat, equivalent to a one-element chain) or an explicit
+ * primary → fallback_1 → fallback_2 → … chain. When a chain is
+ * supplied the resolver tries entries in order and picks the first
+ * one whose credentials are present; if the whole user chain is
+ * uncredentialed the default chain takes over.
+ */
+export type PlatformModelConfig = string | readonly string[];
+
+/**
  * Minimal shape consumed by `createPlatformModels`. Structurally compatible
  * with `AtlasConfig` from `@atlas/config`, but declared locally to avoid a
  * dependency cycle (config → fsm-engine → llm).
  */
 export interface PlatformModelsInput {
-  models?: { labels?: string; classifier?: string; planner?: string; conversational?: string };
+  models?: {
+    labels?: PlatformModelConfig;
+    classifier?: PlatformModelConfig;
+    planner?: PlatformModelConfig;
+    conversational?: PlatformModelConfig;
+  };
 }
 
 /**
@@ -122,47 +137,86 @@ export class PlatformModelsConfigError extends Error {
 }
 
 /**
- * Resolve a single role. Returns the pre-traced model on success, or null (and
- * pushes into `errors`) on failure. User-configured values are strict: unknown
- * provider or missing credential fails startup. Default chains walk until a
- * credentialed entry is found; if the chain exhausts, an error is raised
- * against the last entry (the canonical fallback).
+ * Resolve a single role.
+ *
+ * Three shapes for `userValue`:
+ * - `undefined`: no user config, walk the default chain for this role.
+ * - `string`: back-compat single-model config. Strict — unknown provider,
+ *   format errors, or missing credentials fail startup.
+ * - `string[]`: explicit primary → fallback_n chain. Tries each entry in
+ *   order and returns the first credentialed one. Format errors on ANY
+ *   entry are strict (typo'd id is never silently skipped). Missing
+ *   credentials are tolerated as long as at least one entry has them;
+ *   if the whole user chain is uncredentialed, the default chain takes
+ *   over, same as if no user config were provided.
+ *
+ * Returns the pre-traced model on success, or null (and pushes into
+ * `errors`) on failure. Default-chain resolution also returns null + pushes
+ * a missing_credential error when no entry in the chain is credentialed.
  */
 function resolveRole(
   role: PlatformRole,
-  userValue: string | undefined,
+  userValue: string | readonly string[] | undefined,
   errors: ResolutionError[],
 ): LanguageModelV3 | null {
   if (userValue !== undefined) {
-    const parsed = parseModelId(userValue);
-    if (!parsed) {
-      errors.push({
-        role,
-        kind: "format",
-        value: userValue,
-        detail: "must be in 'provider:model' format (e.g., 'anthropic:claude-haiku-4-5')",
-      });
-      return null;
+    const chain = Array.isArray(userValue) ? userValue : [userValue];
+
+    // Pre-flight: every entry must at least parse and name a known
+    // provider. A typo or unknown-provider in a chain is always an error;
+    // silently skipping bad entries would mask user mistakes.
+    for (const entry of chain) {
+      const parsed = parseModelId(entry);
+      if (!parsed) {
+        errors.push({
+          role,
+          kind: "format",
+          value: entry,
+          detail: "must be in 'provider:model' format (e.g., 'anthropic:claude-haiku-4-5')",
+        });
+        return null;
+      }
+      if (!isRegistryProvider(parsed.provider)) {
+        errors.push({
+          role,
+          kind: "unknown_provider",
+          value: entry,
+          detail: `provider '${parsed.provider}' is not registered`,
+        });
+        return null;
+      }
     }
-    if (!isRegistryProvider(parsed.provider)) {
-      errors.push({
-        role,
-        kind: "unknown_provider",
-        value: userValue,
-        detail: `provider '${parsed.provider}' is not registered`,
-      });
-      return null;
+
+    // Walk the chain and pick the first credentialed entry. For a
+    // single-element chain this collapses to the old strict behavior
+    // (one entry, one credential check, error if missing).
+    for (const entry of chain) {
+      const parsed = parseModelId(entry);
+      if (parsed && hasCredential(parsed.provider)) {
+        return traceModel(
+          registry.languageModel(buildRegistryModelId(parsed.provider, parsed.model)),
+        );
+      }
     }
-    if (!hasCredential(parsed.provider)) {
-      errors.push({
-        role,
-        kind: "missing_credential",
-        value: userValue,
-        detail: "missing credentials",
-      });
-      return null;
+
+    // Chain exhausted with no credentials. For a 1-element chain we treat
+    // this as a hard error on the single value (matches prior strict
+    // behavior). For a multi-element chain we silently fall through to
+    // the default chain — the user asked for fallbacks, so failing over
+    // to the system default is the next-most-reasonable behavior.
+    if (chain.length === 1) {
+      const entry = chain[0];
+      if (entry !== undefined) {
+        errors.push({
+          role,
+          kind: "missing_credential",
+          value: entry,
+          detail: "missing credentials",
+        });
+        return null;
+      }
     }
-    return traceModel(registry.languageModel(buildRegistryModelId(parsed.provider, parsed.model)));
+    // Multi-entry chain exhausted → continue to default chain below.
   }
 
   const chain = DEFAULT_PLATFORM_MODELS[role];

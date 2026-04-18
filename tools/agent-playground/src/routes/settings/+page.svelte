@@ -1,90 +1,156 @@
 <!--
-  Settings — Models (editable, writes to friday.yml) + env vars (collapsed).
+  Settings — Models (with primary → fallback chain) + collapsible env vars.
 
-  Models section hits `GET /api/config/models` for the currently-resolved
-  (and configured) per-role model, and `PUT /api/config/models` to write
-  back. The PUT runs the same `createPlatformModels` validation the daemon
-  uses at boot, so bad provider/model IDs surface as a 400 with a message
-  instead of silently corrupting friday.yml. Changes take effect on next
-  daemon restart.
+  The models section renders a per-role card:
+    - left column: role name, description
+    - right column: <ModelChain> primary slot + up to 3 fallback slots
+      (draggable to reorder, "+ Add fallback" button below)
 
-  Env vars section is the existing `~/.atlas/.env` editor, collapsed by
-  default so it doesn't dominate the viewport.
+  Clicking a slot opens <ModelPicker> — a modal flyout with provider
+  pills, search, and an inline "Save & unlock" flow for locked providers
+  that writes directly to ~/.atlas/.env without leaving the modal.
+
+  Save button at the bottom PUTs `/api/config/models` with chains; the
+  daemon validates each entry via `createPlatformModels` before writing
+  friday.yml. Restart required for changes to take effect — banner
+  reminds the user after a successful save.
 
   @component
 -->
 <script lang="ts">
   import { Button } from "@atlas/ui";
+  import ModelChain from "$lib/components/settings/model-chain.svelte";
+  import ModelPicker from "$lib/components/settings/model-picker.svelte";
+
+  // ─── Types mirroring the daemon's route shapes ─────────────────────
+
+  type ModelRole = "labels" | "classifier" | "planner" | "conversational";
 
   interface EnvRow {
     key: string;
     value: string;
   }
-  type ModelRole = "labels" | "classifier" | "planner" | "conversational";
+
+  interface ModelChoice {
+    provider: string;
+    modelId: string;
+  }
+
   interface ModelInfo {
     role: ModelRole;
     resolved: { provider: string; modelId: string };
-    configured: string | null;
+    /** Raw friday.yml value. string = primary only; string[] = chain;
+     * null = use defaults. */
+    configured: string | string[] | null;
   }
 
-  // Catalog shapes — match `packages/llm/src/model-catalog.ts`.
   interface CatalogModel {
     id: string;
     displayName: string;
+  }
+  interface ProviderMeta {
+    name: string;
+    letter: string;
+    keyPrefix: string | null;
+    helpUrl: string | null;
   }
   interface CatalogEntry {
     provider: string;
     credentialConfigured: boolean;
     credentialEnvVar: string | null;
+    meta: ProviderMeta;
     models: CatalogModel[];
     error?: string;
   }
 
-  // Sentinel values the <select> uses to represent non-model actions.
-  // Picked to be invalid as real `provider:model` ids so they can never
-  // collide with anything the catalog returns.
-  const DEFAULT_SENTINEL = "__default__";
-  const CUSTOM_SENTINEL = "__custom__";
+  interface PickerState {
+    roleIdx: number;
+    slotIdx: number;
+    /** True when the user clicked "Add fallback" — the picker inserts a
+     * new slot on select rather than replacing an existing one. */
+    adding: boolean;
+  }
 
-  let rows: EnvRow[] = $state([]);
-  let models: ModelInfo[] = $state([]);
-  let catalog: CatalogEntry[] = $state([]);
-  // Per-role editable value. Empty string is the sentinel for "use default chain".
-  let modelEdits: Record<ModelRole, string> = $state({
-    labels: "",
-    classifier: "",
-    planner: "",
-    conversational: "",
-  });
-  // Per-role "custom mode" — when the user picks "— Custom model id —"
-  // from the dropdown we swap that role's <select> for a text input so
-  // they can type a fresh model id that isn't in the catalog yet.
-  let customMode: Record<ModelRole, boolean> = $state({
-    labels: false,
-    classifier: false,
-    planner: false,
-    conversational: false,
-  });
+  const ROLES: readonly ModelRole[] = [
+    "labels",
+    "classifier",
+    "planner",
+    "conversational",
+  ] as const;
 
+  const ROLE_DESCRIPTIONS: Record<ModelRole, string> = {
+    labels: "Short text generation — session titles, progress strings.",
+    classifier: "Structured output decisions — triage, routing.",
+    planner: "Multi-step synthesis with tool calls — workflow planning.",
+    conversational: "Streaming chat with tools and multi-turn memory.",
+  };
+
+  const ROLE_TITLES: Record<ModelRole, string> = {
+    labels: "Labels",
+    classifier: "Classifier",
+    planner: "Planner",
+    conversational: "Conversational",
+  };
+
+  /**
+   * Parse a raw `configured` value from `/api/config/models` into our
+   * internal chain representation. A bare string becomes a single-item
+   * chain; an array passes through; `null` (no override) becomes an
+   * empty chain, which the UI renders as "using defaults".
+   */
+  function parseChain(raw: string | string[] | null): ModelChoice[] {
+    if (raw === null) return [];
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const out: ModelChoice[] = [];
+    for (const entry of arr) {
+      const idx = entry.indexOf(":");
+      if (idx <= 0) continue; // malformed — drop silently
+      out.push({ provider: entry.slice(0, idx), modelId: entry.slice(idx + 1) });
+    }
+    return out;
+  }
+
+  function serializeChain(chain: ModelChoice[]): string | string[] | null {
+    if (chain.length === 0) return null;
+    const encoded = chain.map((c) => `${c.provider}:${c.modelId}`);
+    return encoded.length === 1 ? encoded[0] : encoded;
+  }
+
+  // ─── State ─────────────────────────────────────────────────────────
+
+  let envRows = $state<EnvRow[]>([]);
+  let models = $state<ModelInfo[]>([]);
+  let catalog = $state<CatalogEntry[]>([]);
+  // Per-role editable chain. Reflects the user's in-flight edits; flushed
+  // to friday.yml on Save.
+  let chains = $state<Record<ModelRole, ModelChoice[]>>({
+    labels: [],
+    classifier: [],
+    planner: [],
+    conversational: [],
+  });
+  let picker = $state<PickerState | null>(null);
+  let dirty = $state(false);
   let loadingEnv = $state(true);
   let loadingModels = $state(true);
   let loadingCatalog = $state(true);
+  let savingEnv = $state(false);
   let savingModels = $state(false);
-  let saving = $state(false);
-  let envError: string | null = $state(null);
-  let modelsError: string | null = $state(null);
-  let catalogError: string | null = $state(null);
-  let modelsSuccess: string | null = $state(null);
-  let success: string | null = $state(null);
+  let envError = $state<string | null>(null);
+  let modelsError = $state<string | null>(null);
+  let catalogError = $state<string | null>(null);
+  let successFlash = $state<string | null>(null);
 
-  async function loadEnv(): Promise<void> {
+  // ─── Loaders ───────────────────────────────────────────────────────
+
+  async function loadEnv(): Promise<EnvRow[]> {
     loadingEnv = true;
     envError = null;
     try {
       const res = await fetch("/api/daemon/api/config/env");
       if (!res.ok) {
         envError = `Failed to load env (HTTP ${res.status})`;
-        return;
+        return [];
       }
       const data: unknown = await res.json();
       if (
@@ -94,15 +160,17 @@
         typeof (data as { envVars: unknown }).envVars === "object" &&
         (data as { envVars: unknown }).envVars !== null
       ) {
-        const envVars = (data as { envVars: Record<string, unknown> }).envVars;
-        rows = Object.entries(envVars)
+        const rows = Object.entries((data as { envVars: Record<string, unknown> }).envVars)
           .map(([key, value]) => ({ key, value: String(value ?? "") }))
           .sort((a, b) => a.key.localeCompare(b.key));
-      } else {
-        rows = [];
+        envRows = rows;
+        return rows;
       }
+      envRows = [];
+      return [];
     } catch (err) {
-      envError = err instanceof Error ? err.message : "Failed to load env";
+      envError = err instanceof Error ? err.message : String(err);
+      return [];
     } finally {
       loadingEnv = false;
     }
@@ -125,15 +193,22 @@
         Array.isArray((data as { models: unknown }).models)
       ) {
         models = (data as { models: ModelInfo[] }).models;
-        // Seed the editor with whatever's in friday.yml (null = default).
+        const nextChains: Record<ModelRole, ModelChoice[]> = {
+          labels: [],
+          classifier: [],
+          planner: [],
+          conversational: [],
+        };
         for (const m of models) {
-          modelEdits[m.role] = m.configured ?? "";
+          nextChains[m.role] = parseChain(m.configured);
         }
-      } else {
-        models = [];
+        chains = nextChains;
+        // Server state is authoritative; any in-flight edits are now
+        // reset. Flipping dirty off reflects that.
+        dirty = false;
       }
     } catch (err) {
-      modelsError = err instanceof Error ? err.message : "Failed to load models";
+      modelsError = err instanceof Error ? err.message : String(err);
     } finally {
       loadingModels = false;
     }
@@ -156,109 +231,128 @@
         Array.isArray((data as { entries: unknown }).entries)
       ) {
         catalog = (data as { entries: CatalogEntry[] }).entries;
-      } else {
-        catalog = [];
       }
     } catch (err) {
-      catalogError = err instanceof Error ? err.message : "Failed to load catalog";
+      catalogError = err instanceof Error ? err.message : String(err);
     } finally {
       loadingCatalog = false;
     }
   }
 
-  // Providers the user can actually pick from — have credentials AND
-  // returned at least one model. A provider with credentials but a
-  // fetch error (e.g. Groq 401) gets surfaced in `catalogErrorsByProvider`
-  // and still appears as a disabled optgroup with a helpful tooltip.
-  const selectableCatalog = $derived.by(() =>
-    catalog.filter((e) => e.credentialConfigured && e.models.length > 0),
-  );
+  // ─── Chain mutations ───────────────────────────────────────────────
 
-  // Providers the user could unlock by adding an env var. Rendered in
-  // the "Locked" panel under the selects with a one-click link into
-  // the env section (?add=ENV_VAR_NAME deep-link — see openEnvForKey).
-  const lockedProviders = $derived.by(() =>
-    catalog.filter((e) => !e.credentialConfigured && e.credentialEnvVar !== null),
-  );
-
-  // Providers with credentials but a failing catalog fetch — e.g. a
-  // stale Groq key that returns 401. Their dropdown group is disabled
-  // with the error message; Custom input is still available.
-  const catalogFetchErrors = $derived.by(() =>
-    catalog.filter((e) => e.credentialConfigured && e.error && e.models.length === 0),
-  );
-
-  // Given a raw configured value like `anthropic:claude-sonnet-4.6`,
-  // figure out which dropdown option to preselect. If the value isn't
-  // in the catalog and isn't empty, we flip the role into custom mode
-  // so the text input shows the literal value instead of silently
-  // falling back to "— Use default —".
-  function optionValueForRole(role: ModelRole): string {
-    if (customMode[role]) return CUSTOM_SENTINEL;
-    const edit = modelEdits[role];
-    if (edit === "") return DEFAULT_SENTINEL;
-    const isInCatalog = selectableCatalog.some((e) =>
-      e.models.some((m) => m.id === edit),
-    );
-    return isInCatalog ? edit : CUSTOM_SENTINEL;
+  function updateChain(role: ModelRole, next: ModelChoice[]): void {
+    chains = { ...chains, [role]: next };
+    dirty = true;
+    successFlash = null;
   }
 
-  function handleRoleChange(role: ModelRole, value: string): void {
-    if (value === DEFAULT_SENTINEL) {
-      modelEdits[role] = "";
-      customMode[role] = false;
-      return;
-    }
-    if (value === CUSTOM_SENTINEL) {
-      customMode[role] = true;
-      // Leave existing modelEdits as-is so power users can edit what's there.
-      return;
-    }
-    modelEdits[role] = value;
-    customMode[role] = false;
+  function handleEditSlot(role: ModelRole, slotIdx: number): void {
+    const roleIdx = ROLES.indexOf(role);
+    picker = { roleIdx, slotIdx, adding: false };
   }
 
-  // Clicking a locked-provider env-var hint scrolls to the Environment
-  // section, opens the <details> if collapsed, and focuses a pre-filled
-  // row for the requested key (adding one if it doesn't exist). Matches
-  // the `?add=KEY_NAME` deep-link handler further down — this is the
-  // in-page button path, the URL param is for share-links from chat etc.
-  function openEnvForKey(envVarName: string): void {
-    const detailsEl = document.querySelector<HTMLDetailsElement>(".env-details");
-    if (detailsEl && !detailsEl.open) detailsEl.open = true;
+  function handleRemoveSlot(role: ModelRole, slotIdx: number): void {
+    const current = chains[role];
+    // Slot 0 is primary — remove-slot is only wired for fallbacks, but
+    // guard here too so we can't accidentally drop the primary.
+    if (slotIdx === 0) return;
+    const next = current.filter((_, i) => i !== slotIdx);
+    updateChain(role, next);
+  }
 
-    const existingIdx = rows.findIndex((r) => r.key === envVarName);
-    if (existingIdx === -1) {
-      rows = [...rows, { key: envVarName, value: "" }];
-    }
+  function handleReorder(role: ModelRole, from: number, to: number): void {
+    const current = chains[role].slice();
+    if (from < 0 || from >= current.length || to < 0 || to >= current.length) return;
+    const [moved] = current.splice(from, 1);
+    if (moved) current.splice(to, 0, moved);
+    updateChain(role, current);
+  }
 
-    // Give Svelte a tick to render the new row, then scroll + focus.
-    setTimeout(() => {
-      const idx = rows.findIndex((r) => r.key === envVarName);
-      if (idx === -1) return;
-      const valueInputs = document.querySelectorAll<HTMLInputElement>(
-        ".env-row .col-value",
-      );
-      const input = valueInputs[idx];
-      if (input) {
-        input.scrollIntoView({ behavior: "smooth", block: "center" });
-        input.focus();
+  function handleAddFallback(role: ModelRole): void {
+    const roleIdx = ROLES.indexOf(role);
+    const current = chains[role];
+    picker = { roleIdx, slotIdx: current.length, adding: true };
+  }
+
+  function handleOverrideDefault(role: ModelRole): void {
+    // "Override" is only visible when the chain is empty. We open the
+    // picker for slot 0 (primary) in add mode so selecting a model
+    // creates the first entry of an explicit chain.
+    const roleIdx = ROLES.indexOf(role);
+    picker = { roleIdx, slotIdx: 0, adding: true };
+  }
+
+  function handlePickerSelect(choice: ModelChoice | null): void {
+    if (!picker) return;
+    const role = ROLES[picker.roleIdx];
+    if (!role) return;
+
+    if (choice === null) {
+      // "Use default chain" — clear the entire override for this role.
+      updateChain(role, []);
+    } else {
+      const next = chains[role].slice();
+      if (picker.adding) {
+        next.splice(picker.slotIdx, 0, choice);
+      } else {
+        next[picker.slotIdx] = choice;
       }
-    }, 0);
+      updateChain(role, next);
+    }
+    picker = null;
   }
 
-  async function saveModels(): Promise<void> {
+  // ─── Save-key (inline unlock) ──────────────────────────────────────
+
+  /**
+   * Inline API-key save from the picker's locked-provider banner. Reads
+   * current .env, splices in the new key, PUTs the full map. Returns
+   * the updated catalog (with the newly-unlocked provider flipped) so
+   * the picker re-renders its pills immediately.
+   */
+  async function handleSaveApiKey(envVar: string, value: string): Promise<CatalogEntry[] | null> {
+    // Refresh rows so we don't clobber concurrent edits from another
+    // tab — the .env endpoint is full-rewrite, so staleness would be
+    // destructive.
+    const latest = await loadEnv();
+    const byKey = new Map(latest.map((r) => [r.key, r.value]));
+    byKey.set(envVar, value);
+    const payload = Object.fromEntries(byKey);
+
+    const putRes = await fetch("/api/daemon/api/config/env", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envVars: payload }),
+    });
+    if (!putRes.ok) {
+      const text = await putRes.text();
+      throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
+    }
+
+    successFlash = `Saved ${envVar} to ~/.atlas/.env. Restart the daemon to apply.`;
+    setTimeout(() => {
+      if (successFlash && successFlash.includes(envVar)) successFlash = null;
+    }, 4000);
+
+    // Reload the catalog so the provider we just unlocked flips to
+    // credentialConfigured: true. Also pull env rows in sync.
+    await Promise.all([loadCatalog(), loadEnv()]);
+    return catalog;
+  }
+
+  // ─── Save models + discard ─────────────────────────────────────────
+
+  async function handleSaveModels(): Promise<void> {
     savingModels = true;
     modelsError = null;
-    modelsSuccess = null;
+    successFlash = null;
     try {
-      // Null means "clear this field", empty string in the input also means that.
-      // Send both so an operator who types a value then clears it reverts to default.
-      const payload: Record<ModelRole, string | null> = {
-        labels: modelEdits.labels.trim() || null,
-        classifier: modelEdits.classifier.trim() || null,
-        planner: modelEdits.planner.trim() || null,
-        conversational: modelEdits.conversational.trim() || null,
+      const payload: Record<ModelRole, string | string[] | null> = {
+        labels: serializeChain(chains.labels),
+        classifier: serializeChain(chains.classifier),
+        planner: serializeChain(chains.planner),
+        conversational: serializeChain(chains.conversational),
       };
       const res = await fetch("/api/daemon/api/config/models", {
         method: "PUT",
@@ -274,23 +368,41 @@
         modelsError = msg;
         return;
       }
-      modelsSuccess =
-        "Saved to friday.yml. Restart the daemon for changes to take effect.";
+      successFlash = "Saved to friday.yml. Restart the daemon to apply.";
+      setTimeout(() => {
+        successFlash = null;
+      }, 4000);
       await loadModels();
     } catch (err) {
-      modelsError = err instanceof Error ? err.message : "Save failed";
+      modelsError = err instanceof Error ? err.message : String(err);
     } finally {
       savingModels = false;
     }
   }
 
+  function handleDiscard(): void {
+    // Re-derive chains from the last-loaded `models` response.
+    const next: Record<ModelRole, ModelChoice[]> = {
+      labels: [],
+      classifier: [],
+      planner: [],
+      conversational: [],
+    };
+    for (const m of models) next[m.role] = parseChain(m.configured);
+    chains = next;
+    dirty = false;
+    successFlash = null;
+  }
+
+  // ─── Env vars section ──────────────────────────────────────────────
+
   async function saveEnv(): Promise<void> {
-    saving = true;
+    savingEnv = true;
     envError = null;
-    success = null;
+    successFlash = null;
     try {
       const payload: Record<string, string> = {};
-      for (const row of rows) {
+      for (const row of envRows) {
         const k = row.key.trim();
         if (k.length === 0) continue;
         payload[k] = row.value;
@@ -301,54 +413,30 @@
         body: JSON.stringify({ envVars: payload }),
       });
       if (!res.ok) {
-        const body = await res.text();
-        envError = `Save failed (HTTP ${res.status}): ${body}`;
+        const text = await res.text();
+        envError = `Save failed (HTTP ${res.status}): ${text}`;
         return;
       }
-      success = "Saved. Changes take effect after daemon restart.";
+      successFlash = "Environment saved. Restart the daemon to apply.";
+      setTimeout(() => {
+        if (successFlash && successFlash.includes("Environment saved")) successFlash = null;
+      }, 4000);
     } catch (err) {
-      envError = err instanceof Error ? err.message : "Save failed";
+      envError = err instanceof Error ? err.message : String(err);
     } finally {
-      saving = false;
+      savingEnv = false;
     }
   }
 
-  function addRow(): void {
-    rows = [...rows, { key: "", value: "" }];
+  function addEnvRow(): void {
+    envRows = [...envRows, { key: "", value: "" }];
   }
 
-  function removeRow(index: number): void {
-    rows = rows.filter((_, i) => i !== index);
+  function removeEnvRow(index: number): void {
+    envRows = envRows.filter((_, i) => i !== index);
   }
 
-  $effect(() => {
-    void (async () => {
-      // Env loads first so the `?add=KEY` deep-link has rows to mutate
-      // when it runs below. Models + catalog are independent and run in
-      // parallel with each other after env resolves.
-      await loadEnv();
-      await Promise.all([loadModels(), loadCatalog()]);
-
-      // Deep link: `/settings?add=GROQ_API_KEY` opens the env-vars
-      // section with a new empty row pre-filled for `GROQ_API_KEY` and
-      // focuses its value input. Used by the Locked-provider hints to
-      // jump the user straight to "just paste the key".
-      if (typeof window !== "undefined") {
-        const params = new URLSearchParams(window.location.search);
-        const addKey = params.get("add");
-        if (addKey) openEnvForKey(addKey);
-      }
-    })();
-  });
-
-  const ROLE_DESCRIPTIONS: Record<ModelInfo["role"], string> = {
-    labels: "Short text generation (session titles, progress strings).",
-    classifier: "Structured output decisions (triage, routing).",
-    planner: "Multi-step synthesis with tool calls (workflow planning).",
-    conversational: "Streaming chat with tools and multi-turn memory.",
-  };
-
-  const isSecretKey = (k: string): boolean => {
+  function isSecretKey(k: string): boolean {
     const upper = k.toUpperCase();
     return (
       upper.includes("KEY") ||
@@ -356,627 +444,496 @@
       upper.includes("SECRET") ||
       upper.includes("PASSWORD")
     );
-  };
+  }
+
+  // ─── Derived ───────────────────────────────────────────────────────
+
+  const totalModelCount = $derived(
+    catalog.reduce((n, e) => n + (e.credentialConfigured ? e.models.length : 0), 0),
+  );
+  const connectedProviders = $derived(catalog.filter((e) => e.credentialConfigured).length);
+
+  const pickerRole = $derived(picker ? ROLES[picker.roleIdx] : null);
+  const pickerCurrent = $derived.by<ModelChoice | null>(() => {
+    if (!picker || !pickerRole) return null;
+    if (picker.adding) return null;
+    return chains[pickerRole][picker.slotIdx] ?? null;
+  });
+  const pickerSlotLabel = $derived(
+    picker ? (picker.slotIdx === 0 ? "primary" : `fallback ${picker.slotIdx}`) : "",
+  );
+  // Allow the picker to surface "Use default chain" only when the user
+  // is editing primary and the chain would become empty after that —
+  // i.e. the user is still on slot 0 with no fallbacks yet. In adding
+  // mode the intent is concrete, not "revert to defaults".
+  const pickerAllowDefault = $derived.by(() => {
+    if (!picker || !pickerRole) return false;
+    if (picker.adding) return false;
+    return picker.slotIdx === 0 && chains[pickerRole].length === 1;
+  });
+
+  // ─── Boot ──────────────────────────────────────────────────────────
+
+  $effect(() => {
+    void (async () => {
+      await loadEnv();
+      await Promise.all([loadModels(), loadCatalog()]);
+    })();
+  });
 </script>
 
 <div class="settings-root">
   <header class="page-header">
     <h1>Settings</h1>
     <p class="subtitle">
-      What the daemon resolved at startup. Per-role models come from <code>friday.yml</code>;
-      environment variables come from <code>~/.atlas/.env</code>. Both take effect on the
-      next daemon restart.
+      What the daemon resolved at startup. Per-role models come from
+      <code>friday.yml</code>; environment variables come from <code>~/.atlas/.env</code>.
+      Both take effect on the next daemon restart.
     </p>
   </header>
 
-  <!-- Models section -->
+  <!-- ─── Models section ────────────────────────────────────────── -->
   <section class="section">
-    <header class="section-header">
-      <h2>Models</h2>
-      <p class="section-sub">
-        Per-role routing. Format: <code>provider:model</code> (e.g.
-        <code>anthropic:claude-sonnet-4-6</code>). Leave blank to use the default chain.
-        Known providers: <code>anthropic</code>, <code>openai</code>, <code>google</code>,
-        <code>groq</code>, <code>claude-code</code>. Saved to <code>friday.yml</code>;
-        restart the daemon to apply.
-      </p>
-    </header>
+    <div class="section-header-row">
+      <div class="section-header">
+        <h2>Models</h2>
+        <p class="section-sub">
+          Per-role routing with an ordered fallback chain. The daemon tries the primary,
+          then each fallback in turn. Format stored as <code>provider:model</code> in
+          <code>friday.yml</code>.
+        </p>
+      </div>
+      <div class="section-meta">
+        {totalModelCount} models · {connectedProviders}/{catalog.length} connected
+      </div>
+    </div>
 
-    {#if loadingModels}
+    {#if loadingModels || loadingCatalog}
       <div class="loading">Loading models…</div>
     {:else if modelsError}
       <div class="error-banner" role="alert">
         <pre class="error-text">{modelsError}</pre>
-        <button class="dismiss" onclick={() => { modelsError = null; }}>Dismiss</button>
+        <button class="dismiss" onclick={() => (modelsError = null)}>Dismiss</button>
       </div>
-    {:else if models.length === 0}
-      <div class="empty">No models resolved.</div>
     {:else}
-      {#if modelsSuccess}
-        <div class="success-banner">{modelsSuccess}</div>
-      {/if}
       {#if catalogError}
         <div class="warn-banner">
-          Catalog load failed: {catalogError}. You can still type a model id below.
+          Catalog load failed: {catalogError}. You can still pick from resolved providers.
         </div>
       {/if}
-      <div class="models-grid">
+
+      <div class="roles-grid">
         {#each models as m (m.role)}
-          <div class="model-card">
-            <div class="model-role">{m.role}</div>
-            <p class="model-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
-            <label class="model-label">
-              <span class="label-text">Configured value</span>
-              {#if customMode[m.role]}
-                <div class="custom-input-row">
-                  <input
-                    type="text"
-                    class="model-input"
-                    bind:value={modelEdits[m.role]}
-                    placeholder="provider:model-id"
-                    autocomplete="off"
-                    spellcheck="false"
-                    disabled={savingModels}
-                  />
-                  <button
-                    type="button"
-                    class="custom-back"
-                    onclick={() => { customMode[m.role] = false; modelEdits[m.role] = ""; }}
-                    title="Back to dropdown"
-                  >
-                    ← pick from list
-                  </button>
-                </div>
-              {:else if loadingCatalog && selectableCatalog.length === 0}
-                <div class="loading">Loading catalog…</div>
-              {:else}
-                <select
-                  class="model-select"
-                  value={optionValueForRole(m.role)}
-                  onchange={(e) => handleRoleChange(m.role, e.currentTarget.value)}
-                  disabled={savingModels}
-                >
-                  <option value={DEFAULT_SENTINEL}>
-                    — Use default{m.resolved.modelId ? ` (${m.resolved.provider}:${m.resolved.modelId})` : ""} —
-                  </option>
-                  {#each selectableCatalog as entry (entry.provider)}
-                    <optgroup label={entry.provider}>
-                      {#each entry.models as model (model.id)}
-                        <option value={model.id}>{model.displayName}</option>
-                      {/each}
-                    </optgroup>
-                  {/each}
-                  {#each catalogFetchErrors as entry (entry.provider)}
-                    <optgroup
-                      label={`${entry.provider} — ${entry.error ?? "catalog unavailable"}`}
-                      disabled
-                    ></optgroup>
-                  {/each}
-                  <option value={CUSTOM_SENTINEL}>— Custom model id —</option>
-                </select>
-              {/if}
-            </label>
-            <div class="model-resolved">
-              <span class="resolved-label">Currently active:</span>
-              <span class="resolved-value">
-                {m.resolved.provider} / {m.resolved.modelId}
-              </span>
+          <div class="role-card">
+            <div class="role-head">
+              <span class="role-name-upper">{m.role}</span>
+              <span class="role-name">{ROLE_TITLES[m.role]}</span>
+              <p class="role-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
             </div>
+            <ModelChain
+              role={m.role}
+              chain={chains[m.role]}
+              resolved={m.resolved}
+              {catalog}
+              onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
+              onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
+              onReorder={(from, to) => handleReorder(m.role, from, to)}
+              onAddFallback={() => handleAddFallback(m.role)}
+              onOverrideDefault={() => handleOverrideDefault(m.role)}
+            />
           </div>
         {/each}
       </div>
 
-      {#if lockedProviders.length > 0}
-        <div class="locked-panel">
-          <h3 class="locked-title">🔒 Locked — add a key to unlock</h3>
-          <ul class="locked-list">
-            {#each lockedProviders as entry (entry.provider)}
-              <li class="locked-row">
-                <span class="locked-provider">{entry.provider}</span>
-                <span class="locked-instruction">
-                  set <code>{entry.credentialEnvVar}</code>
-                </span>
-                <button
-                  type="button"
-                  class="locked-action"
-                  onclick={() => entry.credentialEnvVar && openEnvForKey(entry.credentialEnvVar)}
-                >
-                  Add key ↓
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
-
       <div class="actions">
-        <Button variant="primary" onclick={saveModels} disabled={savingModels}>
+        {#if dirty}
+          <span class="unsaved-indicator">Unsaved changes</span>
+        {:else if successFlash}
+          <span class="success-flash">{successFlash}</span>
+        {/if}
+        <Button variant="secondary" onclick={handleDiscard} disabled={!dirty || savingModels}>
+          Discard
+        </Button>
+        <Button variant="primary" onclick={handleSaveModels} disabled={!dirty || savingModels}>
           {savingModels ? "Saving…" : "Save models"}
         </Button>
       </div>
     {/if}
   </section>
 
-  <!-- Env vars section (collapsed by default) -->
+  <!-- ─── Env vars section ───────────────────────────────────── -->
   <section class="section">
     <details class="env-details">
       <summary class="env-summary">
         <span class="section-h">Environment variables</span>
         <span class="env-count">
-          {loadingEnv ? "…" : `${rows.length} keys`}
+          {loadingEnv ? "…" : `${envRows.length} keys`}
         </span>
       </summary>
 
-      <p class="section-sub">
-        From <code>~/.atlas/.env</code>. Secrets (<em>KEY</em>, <em>TOKEN</em>,
-        <em>SECRET</em>, <em>PASSWORD</em>) render as password inputs.
-      </p>
+      <div class="env-body">
+        <p class="section-sub">
+          From <code>~/.atlas/.env</code>. Secrets (<em>KEY</em>, <em>TOKEN</em>,
+          <em>SECRET</em>, <em>PASSWORD</em>) render as password inputs.
+        </p>
 
-      {#if loadingEnv}
-        <div class="loading">Loading environment…</div>
-      {:else if envError}
-        <div class="error-banner" role="alert">
-          <span>{envError}</span>
-          <button class="dismiss" onclick={() => loadEnv()}>Retry</button>
-        </div>
-      {:else}
-        {#if success}
-          <div class="success-banner">{success}</div>
-        {/if}
-
-        <div class="env-table">
-          <div class="env-table-header">
-            <span class="col-key">Key</span>
-            <span class="col-value">Value</span>
-            <span class="col-action"></span>
+        {#if loadingEnv}
+          <div class="loading">Loading environment…</div>
+        {:else if envError}
+          <div class="error-banner" role="alert">
+            <span>{envError}</span>
+            <button class="dismiss" onclick={() => loadEnv()}>Retry</button>
           </div>
-          {#each rows as row, i (i)}
-            <div class="env-row">
-              <input
-                class="col-key"
-                type="text"
-                bind:value={row.key}
-                placeholder="VARIABLE_NAME"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <input
-                class="col-value"
-                type={isSecretKey(row.key) ? "password" : "text"}
-                bind:value={row.value}
-                placeholder="value"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <button
-                class="col-action remove"
-                onclick={() => removeRow(i)}
-                aria-label="Remove row"
-              >
-                ✕
-              </button>
+        {:else}
+          <div class="env-table">
+            <div class="env-table-header">
+              <span class="col-key">Key</span>
+              <span class="col-value">Value</span>
+              <span class="col-action"></span>
             </div>
-          {/each}
+            {#each envRows as row, i (i)}
+              <div class="env-row">
+                <input
+                  class="col-key"
+                  type="text"
+                  bind:value={row.key}
+                  placeholder="VARIABLE_NAME"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <input
+                  class="col-value"
+                  type={isSecretKey(row.key) ? "password" : "text"}
+                  bind:value={row.value}
+                  placeholder="value"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button
+                  class="col-action remove"
+                  onclick={() => removeEnvRow(i)}
+                  aria-label="Remove row"
+                >
+                  ✕
+                </button>
+              </div>
+            {/each}
+            {#if envRows.length === 0}
+              <div class="empty">No settings yet. Add one below.</div>
+            {/if}
+          </div>
 
-          {#if rows.length === 0}
-            <div class="empty">No settings yet. Add one below.</div>
-          {/if}
-        </div>
-
-        <div class="actions">
-          <Button variant="secondary" onclick={addRow} disabled={saving}>Add variable</Button>
-          <Button variant="primary" onclick={saveEnv} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      {/if}
+          <div class="actions">
+            <Button variant="secondary" onclick={addEnvRow} disabled={savingEnv}>
+              Add variable
+            </Button>
+            <Button variant="primary" onclick={saveEnv} disabled={savingEnv}>
+              {savingEnv ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        {/if}
+      </div>
     </details>
   </section>
 </div>
+
+{#if picker && pickerRole}
+  <ModelPicker
+    roleTitle={ROLE_TITLES[pickerRole]}
+    slotLabel={pickerSlotLabel}
+    current={pickerCurrent}
+    allowDefault={pickerAllowDefault}
+    {catalog}
+    saveApiKey={handleSaveApiKey}
+    onSelect={handlePickerSelect}
+    onClose={() => (picker = null)}
+  />
+{/if}
 
 <style>
   .settings-root {
     display: flex;
     flex-direction: column;
-    gap: var(--size-6);
-    max-inline-size: 900px;
-    padding: var(--size-6) var(--size-7);
+    gap: 28px;
+    margin: 0 auto;
+    max-width: 960px;
+    padding: 40px 28px 120px;
   }
 
   .page-header h1 {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-6);
-    margin-block-end: var(--size-1);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
   }
 
   .subtitle,
   .section-sub {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: var(--font-size-2);
-    line-height: 1.5;
+    color: var(--color-text-dim, hsl(40 8% 68%));
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+    max-width: 64ch;
   }
 
   .subtitle code,
   .section-sub code {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    font-size: var(--font-size-1);
-    padding: 0 var(--size-1);
+    background: var(--color-surface-3, hsl(220 8% 13%));
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 1px 6px;
   }
 
   .section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
+    gap: 16px;
   }
 
-  .section-header h2,
-  .section-h {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
+  .section-header-row {
+    align-items: baseline;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
   }
 
-  /* ─── Models ─────────────────────────────────────────────────────── */
-
-  .models-grid {
-    display: grid;
-    gap: var(--size-3);
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
-
-  .model-card {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
+  .section-header {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
-    padding: var(--size-3);
+    gap: 4px;
   }
 
-  .model-role {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.04em;
+  .section-header h2 {
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 0;
+  }
+
+  .section-meta {
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .roles-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr;
+  }
+
+  .role-card {
+    align-items: start;
+    background: var(--color-surface-2, hsl(220 8% 9%));
+    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    border-radius: 10px;
+    display: grid;
+    gap: 20px;
+    grid-template-columns: 200px 1fr;
+    padding: 16px 20px;
+    transition: border-color 120ms ease;
+  }
+  .role-card:hover {
+    border-color: var(--color-border-2, hsl(220 6% 24%));
+  }
+
+  .role-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .role-name-upper {
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-
-  .model-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
+  .role-name {
+    color: var(--color-text, hsl(40 12% 95%));
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .role-desc {
+    color: var(--color-text-dim, hsl(40 8% 68%));
+    font-size: 13px;
     line-height: 1.5;
-  }
-
-  .model-label {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .label-text {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-  }
-
-  .model-input {
-    background-color: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-1);
-    color: var(--color-text);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--font-size-2);
-    inline-size: 100%;
-    padding: var(--size-1) var(--size-2);
-  }
-
-  .model-input:focus {
-    border-color: var(--color-accent, var(--blue-2));
-    outline: none;
-  }
-
-  .model-input:disabled {
-    opacity: 0.5;
-  }
-
-  .model-resolved {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    display: flex;
-    flex-direction: column;
-    font-size: var(--font-size-1);
-    gap: var(--size-0-5);
-    padding: var(--size-1-5) var(--size-2);
-  }
-
-  .resolved-label {
-    font-weight: var(--font-weight-5);
-    opacity: 0.7;
-  }
-
-  .resolved-value {
-    font-family: var(--font-mono, ui-monospace, monospace);
-  }
-
-  .error-text {
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--font-size-1);
     margin: 0;
-    white-space: pre-wrap;
+    max-width: 28ch;
   }
 
-  /* ─── Env vars ───────────────────────────────────────────────────── */
-
-  .env-details {
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    padding: var(--size-3);
-  }
-
-  .env-details[open] {
-    padding-block-end: var(--size-4);
-  }
-
-  .env-summary {
+  .actions {
     align-items: center;
-    cursor: pointer;
     display: flex;
-    gap: var(--size-2);
-    list-style: none;
-    user-select: none;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
   }
 
-  .env-summary::-webkit-details-marker {
-    display: none;
+  .unsaved-indicator {
+    align-items: center;
+    color: hsl(38 92% 60%);
+    display: inline-flex;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    gap: 6px;
+    margin-right: auto;
   }
-
-  .env-summary::before {
-    content: "▶";
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: 0.75em;
-    transition: transform 150ms ease;
+  .unsaved-indicator::before {
+    background: hsl(38 92% 60%);
+    border-radius: 50%;
+    content: "";
+    height: 6px;
+    width: 6px;
   }
-
-  .env-details[open] > .env-summary::before {
-    transform: rotate(90deg);
-  }
-
-  .env-count {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-1);
-    margin-inline-start: auto;
+  .success-flash {
+    color: hsl(142 70% 55%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    margin-right: auto;
   }
 
   .loading,
   .empty {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-2);
-    padding: var(--size-4);
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    font-size: 13px;
+    padding: 16px;
     text-align: center;
   }
 
   .error-banner {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-error), transparent 85%);
-    border-radius: var(--radius-2);
-    color: var(--color-error);
+    background: color-mix(in srgb, hsl(4 86% 66%), transparent 85%);
+    border: 1px solid color-mix(in srgb, hsl(4 86% 66%), transparent 50%);
+    border-radius: 6px;
     display: flex;
-    font-size: var(--font-size-2);
-    gap: var(--size-3);
-    justify-content: space-between;
-    margin-block-start: var(--size-3);
-    padding: var(--size-3);
+    gap: 12px;
+    padding: 10px 14px;
   }
-
-  .success-banner {
-    background-color: color-mix(in srgb, var(--color-success, #4ade80), transparent 85%);
-    border-radius: var(--radius-2);
-    color: var(--color-success, #4ade80);
-    font-size: var(--font-size-2);
-    margin-block-start: var(--size-3);
-    padding: var(--size-3);
+  .error-text {
+    color: var(--color-text, hsl(40 12% 95%));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    margin: 0;
+    white-space: pre-wrap;
   }
-
   .dismiss {
     background: transparent;
-    border: 1px solid currentColor;
-    border-radius: var(--radius-1);
-    color: inherit;
+    border: 1px solid var(--color-border-2, hsl(220 6% 24%));
+    border-radius: 4px;
+    color: var(--color-text-dim, hsl(40 8% 68%));
     cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-2);
+    font-family: inherit;
+    font-size: 12px;
+    margin-left: auto;
+    padding: 3px 10px;
+  }
+
+  .warn-banner {
+    background: color-mix(in srgb, hsl(38 92% 60%), transparent 88%);
+    border: 1px solid color-mix(in srgb, hsl(38 92% 60%), transparent 55%);
+    border-radius: 6px;
+    color: var(--color-text, hsl(40 12% 95%));
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* ─── Env vars section ─── */
+
+  .env-details {
+    background: var(--color-surface-2, hsl(220 8% 9%));
+    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .env-summary {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    gap: 12px;
+    list-style: none;
+    padding: 16px 20px;
+    user-select: none;
+  }
+  .env-summary::-webkit-details-marker {
+    display: none;
+  }
+  .env-summary::before {
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    content: "▸";
+    font-size: 14px;
+    transition: transform 150ms ease;
+  }
+  .env-details[open] .env-summary::before {
+    transform: rotate(90deg);
+  }
+  .section-h {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .env-count {
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    margin-left: auto;
+  }
+
+  .env-body {
+    padding: 0 20px 20px;
   }
 
   .env-table {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
     display: flex;
     flex-direction: column;
-    margin-block-start: var(--size-3);
-    overflow: hidden;
-  }
-
-  .env-table-header,
-  .env-row {
-    align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
-    display: grid;
-    gap: var(--size-2);
-    grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr) 32px;
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .env-row:last-child {
-    border-block-end: none;
+    gap: 4px;
+    margin-top: 8px;
   }
 
   .env-table-header {
-    background-color: var(--color-surface-3);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.02em;
+    color: var(--color-text-faint, hsl(40 6% 48%));
+    display: grid;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    gap: 8px;
+    grid-template-columns: 1fr 1fr 32px;
+    padding: 4px 8px;
     text-transform: uppercase;
   }
 
-  .env-row input {
-    background-color: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-1);
-    color: var(--color-text);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--font-size-2);
-    inline-size: 100%;
-    padding: var(--size-1) var(--size-2);
+  .env-row {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 1fr 1fr 32px;
   }
 
-  .env-row input:focus {
-    border-color: var(--color-accent, var(--blue-2));
+  .env-row input {
+    background: var(--color-surface-3, hsl(220 8% 13%));
+    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    border-radius: 6px;
+    color: var(--color-text, hsl(40 12% 95%));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 13px;
     outline: none;
+    padding: 6px 10px;
+  }
+  .env-row input:focus {
+    border-color: var(--color-primary, hsl(212 97% 58%));
   }
 
   .col-action.remove {
     background: transparent;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    border-radius: 4px;
+    color: var(--color-text-faint, hsl(40 6% 48%));
     cursor: pointer;
-    font-size: var(--font-size-2);
-    padding: var(--size-1);
-    transition: color 150ms ease;
-  }
-
-  .col-action.remove:hover {
-    color: var(--color-error);
-  }
-
-  .actions {
-    display: flex;
-    gap: var(--size-2);
-    justify-content: flex-end;
-    margin-block-start: var(--size-3);
-  }
-
-  .model-select {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
     font-family: inherit;
-    font-size: var(--font-size-2);
-    padding: var(--size-2) var(--size-3);
+    font-size: 12px;
+    padding: 4px 6px;
   }
-
-  .model-select:focus {
-    border-color: var(--color-primary);
-    outline: none;
-  }
-
-  .model-select:disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
-
-  .custom-input-row {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  .custom-input-row .model-input {
-    flex: 1;
-  }
-
-  .custom-back {
-    background: transparent;
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-2);
-    white-space: nowrap;
-  }
-
-  .custom-back:hover {
-    color: var(--color-text);
-  }
-
-  .warn-banner {
-    background-color: color-mix(in srgb, var(--color-warning, #b88514), transparent 88%);
-    border: 1px solid color-mix(in srgb, var(--color-warning, #b88514), transparent 55%);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    font-size: var(--font-size-1);
-    margin-block-end: var(--size-3);
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .locked-panel {
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
-    margin-block-start: var(--size-3);
-    padding: var(--size-3) var(--size-4);
-  }
-
-  .locked-title {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    margin: 0 0 var(--size-2);
-  }
-
-  .locked-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .locked-row {
-    align-items: center;
-    display: grid;
-    gap: var(--size-3);
-    grid-template-columns: minmax(6em, auto) 1fr auto;
-    padding-block: var(--size-1);
-  }
-
-  .locked-provider {
-    color: var(--color-text);
-    font-weight: var(--font-weight-5);
-  }
-
-  .locked-instruction {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: var(--font-size-1);
-  }
-
-  .locked-instruction code {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    font-family: var(--font-family-mono, monospace);
-    font-size: inherit;
-    padding: 0 var(--size-1);
-  }
-
-  .locked-action {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-primary);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-3);
-    white-space: nowrap;
-  }
-
-  .locked-action:hover {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 88%);
+  .col-action.remove:hover {
+    background: var(--color-surface-4, hsl(220 8% 17%));
+    color: hsl(4 86% 66%);
   }
 </style>

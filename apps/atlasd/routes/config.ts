@@ -154,8 +154,14 @@ const modelInfoSchema = z.object({
   role: z.enum(PLATFORM_ROLES),
   /** What the daemon resolved at startup (from friday.yml OR default chain). */
   resolved: z.object({ provider: z.string(), modelId: z.string() }),
-  /** Raw `provider:model` string from friday.yml if set, else null (using default). */
-  configured: z.string().nullable(),
+  /**
+   * The raw value from friday.yml:
+   * - `null` → role unset (using default chain).
+   * - `string` → single model id ("primary only", back-compat shape).
+   * - `string[]` → explicit primary → fallback chain, rendered as is in
+   *   the UI's draggable slots.
+   */
+  configured: z.union([z.string(), z.array(z.string()), z.null()]),
 });
 const modelsGetResponseSchema = z.object({
   success: z.boolean(),
@@ -164,13 +170,24 @@ const modelsGetResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+/**
+ * A single role's configured value on the way into friday.yml. Same three
+ * shapes the daemon accepts — a bare string for back-compat / primary-only
+ * setups, an array for chains, `null` to clear.
+ */
+const roleValueSchema = z.union([z.string(), z.array(z.string()), z.null()]);
+
 const modelsPutRequestSchema = z.object({
-  /** Per-role `provider:model` strings. Empty string or null clears the entry (reverts to default). */
+  /**
+   * Per-role configuration. `string` for a single model (back-compat),
+   * `string[]` for a primary→fallback chain, `null`/empty to clear the
+   * entry and revert to the default chain.
+   */
   models: z.object({
-    labels: z.string().nullable().optional(),
-    classifier: z.string().nullable().optional(),
-    planner: z.string().nullable().optional(),
-    conversational: z.string().nullable().optional(),
+    labels: roleValueSchema.optional(),
+    classifier: roleValueSchema.optional(),
+    planner: roleValueSchema.optional(),
+    conversational: roleValueSchema.optional(),
   }),
 });
 const modelsPutResponseSchema = z.object({
@@ -229,12 +246,19 @@ configRoutes.get(
 
     const models = PLATFORM_ROLES.map((role: ModelRole) => {
       const m = ctx.platformModels.get(role);
-      const configured = configuredModels[role];
-      return {
-        role,
-        resolved: { provider: m.provider, modelId: m.modelId },
-        configured: typeof configured === "string" && configured.length > 0 ? configured : null,
-      };
+      const raw = configuredModels[role];
+      // Surface the exact shape from friday.yml so the UI can render the
+      // primary + fallback slots correctly. An array with one entry is
+      // semantically equivalent to a bare string but kept as-is to
+      // preserve the user's authored form.
+      let configured: string | string[] | null = null;
+      if (typeof raw === "string" && raw.length > 0) {
+        configured = raw;
+      } else if (Array.isArray(raw)) {
+        const filtered = raw.filter((v): v is string => typeof v === "string" && v.length > 0);
+        if (filtered.length > 0) configured = filtered;
+      }
+      return { role, resolved: { provider: m.provider, modelId: m.modelId }, configured };
     });
 
     return c.json({ success: true, models, configPath });
@@ -300,13 +324,28 @@ configRoutes.put(
   async (c) => {
     const { models: incoming } = c.req.valid("json");
 
-    // Build the new `models` map, skipping empty/null entries (they mean
-    // "use the default chain" which maps to "omit the key").
-    const newModels: Partial<Record<ModelRole, string>> = {};
+    // Build the new `models` map. Normalization rules:
+    //   - null / undefined / empty-string → omit the key (use default chain).
+    //   - string with content            → write as bare string.
+    //   - array with one usable entry    → collapse to bare string (cleaner
+    //                                      YAML, no semantic difference).
+    //   - array with multiple entries    → write as array; daemon will walk
+    //                                      the chain.
+    //   - array with zero usable entries → omit the key.
+    const newModels: Partial<Record<ModelRole, string | string[]>> = {};
     for (const role of PLATFORM_ROLES) {
       const value = incoming[role];
       if (typeof value === "string" && value.trim().length > 0) {
         newModels[role] = value.trim();
+      } else if (Array.isArray(value)) {
+        const cleaned = value
+          .map((v) => (typeof v === "string" ? v.trim() : ""))
+          .filter((v) => v.length > 0);
+        if (cleaned.length === 1) {
+          newModels[role] = cleaned[0];
+        } else if (cleaned.length > 1) {
+          newModels[role] = cleaned;
+        }
       }
     }
 

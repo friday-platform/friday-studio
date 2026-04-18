@@ -20,12 +20,15 @@ export {
   type CatalogProvider,
   getCatalog,
   type ModelInfo,
+  PROVIDER_META,
+  type ProviderMeta,
   prewarmCatalog,
 } from "./src/model-catalog.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
 export {
   createPlatformModels,
   DEFAULT_PLATFORM_MODELS,
+  type PlatformModelConfig,
   type PlatformModels,
   PlatformModelsConfigError,
   type PlatformModelsInput,

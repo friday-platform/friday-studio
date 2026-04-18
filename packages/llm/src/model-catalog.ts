@@ -42,10 +42,31 @@ const CATALOG_PROVIDERS: readonly CatalogProvider[] = [
 ] as const;
 
 export interface ModelInfo {
-  /** Fully-qualified model id in Friday's `provider:model` format. */
+  /**
+   * Raw model identifier (no provider prefix). Callers build the full
+   * `provider:model` id by concatenating `entry.provider + ":" + model.id`
+   * — doing that here would double-prefix when the caller already holds
+   * the provider separately (as the Settings chain picker does).
+   */
   id: string;
   /** Human-readable label for the dropdown. */
   displayName: string;
+}
+
+/**
+ * UI-only metadata for rendering the model picker. Lives here so the
+ * settings page + daemon agree on the same per-provider presentation.
+ */
+export interface ProviderMeta {
+  /** Human-readable name ("Anthropic", "OpenAI", …). */
+  name: string;
+  /** Single letter glyph shown in the provider badge (A / O / G / Q / C). */
+  letter: string;
+  /** Expected prefix on the user's API key — becomes the placeholder in
+   * the inline "Save & unlock" flow so typos surface visually. */
+  keyPrefix: string | null;
+  /** Where to get a key; rendered as prose in the locked banner. */
+  helpUrl: string | null;
 }
 
 export interface CatalogEntry {
@@ -57,6 +78,8 @@ export interface CatalogEntry {
    * `LITELLM_API_KEY` is set and covers all providers via the proxy.
    */
   credentialEnvVar: string | null;
+  /** Presentation hints for the picker. */
+  meta: ProviderMeta;
   /** Language models only — image / embedding / video / tts are filtered out. */
   models: ModelInfo[];
   /** Populated when a fetch failed so the UI can surface the reason. */
@@ -87,6 +110,37 @@ const ENV_VAR_BY_CATALOG_PROVIDER: Record<CatalogProvider, string> = {
   google: PROVIDER_ENV_VARS.google,
   groq: PROVIDER_ENV_VARS.groq,
   "claude-code": PROVIDER_ENV_VARS.anthropic,
+};
+
+/**
+ * Provider presentation metadata. Hand-maintained — updates should be
+ * rare (name / letter / key prefix / docs URL don't change often).
+ * Consumed by the Settings page model picker.
+ */
+export const PROVIDER_META: Record<CatalogProvider, ProviderMeta> = {
+  anthropic: {
+    name: "Anthropic",
+    letter: "A",
+    keyPrefix: "sk-ant-",
+    helpUrl: "console.anthropic.com/settings/keys",
+  },
+  openai: {
+    name: "OpenAI",
+    letter: "O",
+    keyPrefix: "sk-",
+    helpUrl: "platform.openai.com/api-keys",
+  },
+  google: { name: "Google", letter: "G", keyPrefix: "AIza", helpUrl: "aistudio.google.com/apikey" },
+  groq: { name: "Groq", letter: "Q", keyPrefix: "gsk_", helpUrl: "console.groq.com/keys" },
+  "claude-code": {
+    name: "Claude Code",
+    letter: "C",
+    // claude-code wraps the Anthropic API under the hood, so it reuses
+    // ANTHROPIC_API_KEY — but the user never types a key *for* claude-code
+    // specifically, so no placeholder / help URL to show.
+    keyPrefix: null,
+    helpUrl: null,
+  },
 };
 
 // ─── Schemas ───────────────────────────────────────────────────────────────
@@ -129,14 +183,13 @@ async function fetchGroq(apiKey: string): Promise<string[]> {
 // ─── Filters / normalization ───────────────────────────────────────────────
 
 /**
- * Gateway IDs look like `anthropic/claude-sonnet-4.6`; Friday speaks
- * `anthropic:claude-sonnet-4.6`. Strip the first path segment (it's the
- * gateway's provider namespace, not the model vendor) and re-prefix with
- * the Friday provider name.
+ * Gateway IDs look like `anthropic/claude-sonnet-4.6`. We store just the
+ * model portion (`claude-sonnet-4.6`) since callers already know which
+ * Friday provider bucket they're pulling from — stripping the first
+ * path segment is all we need here.
  */
-function toFridayId(fridayProvider: CatalogProvider, gatewayModelId: string): string {
-  const shortId = gatewayModelId.replace(/^[^/]+\//, "");
-  return `${fridayProvider}:${shortId}`;
+function stripGatewayProviderPrefix(gatewayModelId: string): string {
+  return gatewayModelId.replace(/^[^/]+\//, "");
 }
 
 /**
@@ -158,19 +211,21 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     // other types cover image / embedding / video / tts / reranker.
     if (m.modelType != null && m.modelType !== "language") continue;
     const { provider, modelId } = m.specification;
+    const rawId = stripGatewayProviderPrefix(modelId);
     if (provider === "anthropic") {
-      out.anthropic.push({ id: toFridayId("anthropic", modelId), displayName: m.name });
-      // claude-code wraps Anthropic's models; surface the same list under
-      // the claude-code: prefix so the LLM can target either runtime.
-      out["claude-code"].push({ id: toFridayId("claude-code", modelId), displayName: m.name });
+      out.anthropic.push({ id: rawId, displayName: m.name });
+      // claude-code wraps Anthropic's models; the ids are the same — both
+      // buckets share the raw id and the caller composes the full
+      // `provider:model` string with the correct Friday provider.
+      out["claude-code"].push({ id: rawId, displayName: m.name });
     } else if (provider === "openai") {
-      out.openai.push({ id: toFridayId("openai", modelId), displayName: m.name });
+      out.openai.push({ id: rawId, displayName: m.name });
     } else if (provider === "vertex" && modelId.startsWith("google/gemini-")) {
       // Google's Gemini models live under the gateway's `vertex` provider,
       // prefixed `google/`. We only want Gemini (not Imagen / Veo /
       // embeddings), and only language variants (not `-image` preview).
       if (/-image(-|$)/.test(modelId)) continue;
-      out.google.push({ id: toFridayId("google", modelId), displayName: m.name });
+      out.google.push({ id: rawId, displayName: m.name });
     }
   }
   return out;
@@ -184,7 +239,7 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
 function filterGroqLanguageModels(ids: string[]): ModelInfo[] {
   return ids
     .filter((id) => !/^whisper-|^playai-tts-|^distil-whisper-/.test(id))
-    .map((id) => ({ id: `groq:${id}`, displayName: id }));
+    .map((id) => ({ id, displayName: id }));
 }
 
 // ─── Catalog assembly ──────────────────────────────────────────────────────
@@ -260,6 +315,7 @@ async function fetchCatalog(): Promise<Catalog> {
       provider,
       credentialConfigured: cred.configured,
       credentialEnvVar: cred.envVar,
+      meta: PROVIDER_META[provider],
       models,
       ...(error ? { error } : {}),
     };

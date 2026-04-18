@@ -109,26 +109,23 @@ describe("model-catalog — gateway partitioning", () => {
 
     const catalog = await getCatalog();
 
+    // Ids are raw model names (no provider prefix) — callers compose
+    // the full `provider:model` string when they need it.
     const anthropic = find(catalog, "anthropic");
-    expect(anthropic.models.map((m) => m.id)).toEqual([
-      "anthropic:claude-sonnet-4.6",
-      "anthropic:claude-haiku-4.5",
-    ]);
+    expect(anthropic.models.map((m) => m.id)).toEqual(["claude-sonnet-4.6", "claude-haiku-4.5"]);
 
-    // claude-code mirrors anthropic with a re-prefixed id.
+    // claude-code mirrors anthropic with the same raw ids (both buckets
+    // share Anthropic's models; consumers apply the right provider prefix).
     const claudeCode = find(catalog, "claude-code");
-    expect(claudeCode.models.map((m) => m.id)).toEqual([
-      "claude-code:claude-sonnet-4.6",
-      "claude-code:claude-haiku-4.5",
-    ]);
+    expect(claudeCode.models.map((m) => m.id)).toEqual(["claude-sonnet-4.6", "claude-haiku-4.5"]);
 
     const openai = find(catalog, "openai");
-    expect(openai.models.map((m) => m.id)).toEqual(["openai:gpt-5.4"]);
+    expect(openai.models.map((m) => m.id)).toEqual(["gpt-5.4"]);
 
     // Google: only gemini-* text models via the `vertex` namespace.
     // `-image` variants must be dropped even when modelType=language.
     const google = find(catalog, "google");
-    expect(google.models.map((m) => m.id)).toEqual(["google:gemini-3-pro-preview"]);
+    expect(google.models.map((m) => m.id)).toEqual(["gemini-3-pro-preview"]);
 
     // Groq gets nothing from the gateway path; it's filled from the
     // direct-Groq fetch when a key is present (covered in another test).
@@ -185,8 +182,8 @@ describe("model-catalog — groq direct fetch", () => {
     const entry = find(catalog, "groq");
     expect(entry.credentialConfigured).toBe(true);
     expect(entry.models.map((m) => m.id)).toEqual([
-      "groq:llama-3.3-70b-versatile",
-      "groq:openai/gpt-oss-120b",
+      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-120b",
     ]);
     expect(entry.error).toBeUndefined();
   });
