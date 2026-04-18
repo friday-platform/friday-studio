@@ -269,10 +269,69 @@
     updateChain(role, current);
   }
 
+  /**
+   * The daemon reports `resolved.provider` in its LiteLLM-style registry
+   * form (e.g. `groq.chat`, `anthropic.messages`) — that's what the AI
+   * SDK surfaces off the LanguageModelV3. friday.yml and the catalog
+   * both speak the short form (`groq`, `anthropic`), so translate by
+   * stripping anything after the first dot. Verify the short form is an
+   * actual catalog provider before we promote — if it isn't (custom
+   * registry, unusual alias) we fall back to the explicit Override path
+   * so we can't accidentally serialize a bogus primary.
+   */
+  function toShortProvider(registryProvider: string): string | null {
+    const candidate = registryProvider.split(".")[0];
+    if (!candidate) return null;
+    if (catalog.some((e) => e.provider === candidate)) return candidate;
+    return null;
+  }
+
+  /**
+   * Add a fallback slot. Two entry paths:
+   *
+   *   1. Chain is non-empty → open picker for slot = chain.length, adding
+   *      mode. User picks a fallback, it appends to the chain.
+   *
+   *   2. Chain is empty (role is using defaults) → promote the daemon's
+   *      resolved model into slot 0 as an explicit primary, then open the
+   *      picker for the new slot 1. Net effect: "defaults + my fallback"
+   *      becomes an explicit two-entry chain where the primary mirrors
+   *      whatever was default at save time. User can change the primary
+   *      later by clicking its tile.
+   *
+   *      Edge case: if we can't translate `resolved.provider` to a known
+   *      catalog provider (unusual), we take the safer Override route
+   *      (picker for slot 0, empty chain) so the user picks their own
+   *      primary instead of getting a broken chain written to friday.yml.
+   */
   function handleAddFallback(role: ModelRole): void {
     const roleIdx = ROLES.indexOf(role);
     const current = chains[role];
-    picker = { roleIdx, slotIdx: current.length, adding: true };
+
+    if (current.length > 0) {
+      picker = { roleIdx, slotIdx: current.length, adding: true };
+      return;
+    }
+
+    const modelInfo = models.find((m) => m.role === role);
+    if (!modelInfo) {
+      picker = { roleIdx, slotIdx: 0, adding: true };
+      return;
+    }
+    const shortProvider = toShortProvider(modelInfo.resolved.provider);
+    if (!shortProvider) {
+      // Couldn't translate the resolved provider — fall back to the
+      // Override flow so the user picks an explicit primary instead of
+      // us writing something wrong.
+      picker = { roleIdx, slotIdx: 0, adding: true };
+      return;
+    }
+
+    // Pin the currently-resolved default as the explicit primary, then
+    // open the picker for the new fallback slot. Parent state picks up
+    // the dirty flag via updateChain.
+    updateChain(role, [{ provider: shortProvider, modelId: modelInfo.resolved.modelId }]);
+    picker = { roleIdx, slotIdx: 1, adding: true };
   }
 
   function handleOverrideDefault(role: ModelRole): void {

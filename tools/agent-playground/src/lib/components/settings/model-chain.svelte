@@ -75,7 +75,13 @@
 
   const usingDefaults = $derived(chain.length === 0);
   const displayChain = $derived(usingDefaults ? [resolved] : chain);
-  const canAddFallback = $derived(!usingDefaults && chain.length < MAX_CHAIN);
+  // "Add fallback" is always reachable, including from the default state
+  // where the visible primary is the daemon-resolved default. The parent's
+  // onAddFallback handler knows how to promote that resolved entry into
+  // an explicit chain when the first fallback is added. Cap at MAX_CHAIN
+  // either way.
+  const effectiveChainLength = $derived(usingDefaults ? 1 : chain.length);
+  const canAddFallback = $derived(effectiveChainLength < MAX_CHAIN);
 
   // Duplicate detection: any non-primary slot whose choice matches the
   // primary's provider:model is flagged. Duplicates are legal (friday.yml
@@ -218,7 +224,7 @@
   {#if canAddFallback}
     <button class="add-fallback" type="button" onclick={onAddFallback}>
       <span class="plus">＋</span>
-      Add fallback (slot {chain.length + 1})
+      Add fallback (slot {effectiveChainLength + 1})
     </button>
   {/if}
 </div>
