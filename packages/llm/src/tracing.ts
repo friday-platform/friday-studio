@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LanguageModelV3, LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { logger } from "@atlas/logger";
 import { type Span, withManualOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { wrapLanguageModel } from "ai";
 
@@ -90,6 +91,15 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
                 "llm.generation_latency_ms": latencyMs,
               });
             }
+
+            logger.info("LLM call", {
+              operation: "generate",
+              provider: model.provider,
+              modelId: model.modelId,
+              inputTokens: inTok,
+              outputTokens: outTok,
+              latencyMs: Math.round(latencyMs),
+            });
 
             if (store) {
               const startMs = t0 - store.scopeStartTime;
@@ -184,6 +194,14 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
                     span.end();
                     spanEnded = true;
                   }
+                  logger.info("LLM call", {
+                    operation: "stream",
+                    provider: model.provider,
+                    modelId: model.modelId,
+                    inputTokens: finishInTok,
+                    outputTokens: finishOutTok,
+                    latencyMs: Math.round(latencyMs),
+                  });
                   if (store) {
                     const startMs = t0 - store.scopeStartTime;
                     store.traces.push({
