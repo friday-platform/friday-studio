@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LanguageModelV3, LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import { logger } from "@atlas/logger";
 import { type Span, withManualOtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { wrapLanguageModel } from "ai";
 
@@ -48,39 +47,6 @@ function tryParseJson(raw: string): unknown {
   }
 }
 
-/** Single-line excerpt of a string, truncated to `max` chars (ellipsis if cut). */
-function preview(s: string, max = 120): string {
-  const oneLine = s.replace(/\s+/g, " ").trim();
-  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
-}
-
-/**
- * Extract a short preview of the most recent user message from an LLM
- * prompt. Used in per-call logs so a grep of "LLM call" lines is
- * eyeball-matchable to a specific chat turn.
- */
-function previewPrompt(promptMessages: ReadonlyArray<{ role: string; content: unknown }>): string {
-  for (let i = promptMessages.length - 1; i >= 0; i--) {
-    const msg = promptMessages[i];
-    if (!msg || msg.role !== "user") continue;
-    const content = msg.content;
-    if (typeof content === "string") return preview(content);
-    if (Array.isArray(content)) {
-      const text = content
-        .map((part) => {
-          if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
-            return part.text;
-          }
-          return "";
-        })
-        .filter(Boolean)
-        .join(" ");
-      if (text) return preview(text);
-    }
-  }
-  return "";
-}
-
 /**
  * Runs `fn` within an ALS scope that collects traces from traceModel-wrapped models.
  * Nested calls shadow the outer scope — inner traces go to the inner collector.
@@ -125,29 +91,12 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
               });
             }
 
-            const genText = result.content
-              .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
-              .map((c) => c.text)
-              .join("");
-            const genToolNames = result.content
-              .filter((c): c is Extract<typeof c, { type: "tool-call" }> => c.type === "tool-call")
-              .map((c) => c.toolName);
-
-            logger.info("LLM call", {
-              operation: "generate",
-              provider: model.provider,
-              modelId: model.modelId,
-              inputTokens: inTok,
-              outputTokens: outTok,
-              latencyMs: Math.round(latencyMs),
-              promptPreview: previewPrompt(params.prompt),
-              outputPreview: preview(genText),
-              toolCalls: genToolNames,
-            });
-
             if (store) {
               const startMs = t0 - store.scopeStartTime;
-              const text = genText;
+              const text = result.content
+                .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+                .map((c) => c.text)
+                .join("");
 
               const toolCalls = result.content
                 .filter(
@@ -205,21 +154,20 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
                 chunk: LanguageModelV3StreamPart,
                 controller: TransformStreamDefaultController<LanguageModelV3StreamPart>,
               ) {
-                // Accumulate text + tool-call metadata unconditionally —
-                // the per-call log preview (fired on `finish`) needs it
-                // whether or not an eval trace scope is active.
-                switch (chunk.type) {
-                  case "text-delta":
-                    text += chunk.delta;
-                    break;
-                  case "tool-input-start":
-                    toolCallOrder.push(chunk.id);
-                    toolCallsById.set(chunk.id, { name: chunk.toolName, inputJson: "" });
-                    break;
-                  case "tool-input-delta": {
-                    const tc = toolCallsById.get(chunk.id);
-                    if (tc) tc.inputJson += chunk.delta;
-                    break;
+                if (store) {
+                  switch (chunk.type) {
+                    case "text-delta":
+                      text += chunk.delta;
+                      break;
+                    case "tool-input-start":
+                      toolCallOrder.push(chunk.id);
+                      toolCallsById.set(chunk.id, { name: chunk.toolName, inputJson: "" });
+                      break;
+                    case "tool-input-delta": {
+                      const tc = toolCallsById.get(chunk.id);
+                      if (tc) tc.inputJson += chunk.delta;
+                      break;
+                    }
                   }
                 }
 
@@ -236,19 +184,6 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
                     span.end();
                     spanEnded = true;
                   }
-                  logger.info("LLM call", {
-                    operation: "stream",
-                    provider: model.provider,
-                    modelId: model.modelId,
-                    inputTokens: finishInTok,
-                    outputTokens: finishOutTok,
-                    latencyMs: Math.round(latencyMs),
-                    promptPreview: previewPrompt(params.prompt),
-                    outputPreview: preview(text),
-                    toolCalls: toolCallOrder
-                      .map((id) => toolCallsById.get(id)?.name)
-                      .filter((n): n is string => Boolean(n)),
-                  });
                   if (store) {
                     const startMs = t0 - store.scopeStartTime;
                     store.traces.push({
