@@ -142,16 +142,29 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
   return {
     run_code: tool({
       description:
-        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s, max 120 s). Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. Interactive-auth commands are REFUSED INSTANTLY — empirically, the desktop auth prompt (Watch, Touch ID, password) for `op item`/`op read`/`op vault`/`op document`/`op user`/`op signin`, `ssh host…`, `scp`, `sftp`, `sudo`, `gpg --decrypt|--sign|--encrypt`, `security unlock-keychain`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init` only surfaces after the sandbox kills the process. Tell the user to run those in their terminal directly and paste the output back. `op account list`, `op whoami`, `op --version`, `gpg --version`, etc. still run normally — they don't need vault / key auth.",
+        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s, max 120 s). Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. **Interactive-auth commands are refused**: `op item|read|vault|document|user|group|connect|signin`, `ssh host…`, `scp`, `sftp`, `sudo`, `gpg --decrypt|--sign|--encrypt`, `security unlock-keychain`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init`. The biometric/Watch/password prompt only surfaces *after* the sandbox kills the process, which is useless. EXCEPTION: `op` vault commands are allowed when `OP_SERVICE_ACCOUNT_TOKEN` is set in the env — service accounts authenticate non-interactively, so no prompt stalls. Read-only subcommands (`op account list`, `op whoami`, `op --version`, `gpg --version`) always run.",
       inputSchema: RunCodeInput,
       execute: async ({ language, source, timeout_ms }): Promise<RunCodeSuccess | RunCodeError> => {
-        // Refuse interactive-auth commands before we even create a
-        // scratch dir. See `TTY_AUTH_COMMAND_RE` above for the rationale
-        // — waiting for the timeout doesn't help, so we return instantly
-        // with a copy-paste-ready command for the user.
-        if (TTY_AUTH_COMMAND_RE.test(source)) {
-          logger.info("run_code refused (interactive auth)", { sessionId });
-          return { error: buildInteractiveAuthRefusal(source) };
+        // Refuse interactive-auth commands before we even create a scratch
+        // dir — waiting for the timeout doesn't help, return instantly
+        // with a copy-paste-ready command for the user. Escape hatch: if
+        // the user set `OP_SERVICE_ACCOUNT_TOKEN` in their env, `op`
+        // commands authenticate non-interactively via the token and we
+        // let them through. Other auth commands (ssh/sudo/gpg/cloud CLI)
+        // have no equivalent clean escape and stay refused.
+        const authMatch = TTY_AUTH_COMMAND_RE.exec(source);
+        if (authMatch) {
+          const hasOpServiceAccount = Boolean(process.env.OP_SERVICE_ACCOUNT_TOKEN);
+          const isOpCommand = authMatch[0].startsWith("op");
+          if (!(isOpCommand && hasOpServiceAccount)) {
+            logger.info("run_code refused (interactive auth)", {
+              sessionId,
+              matched: authMatch[0],
+              hasOpServiceAccount,
+            });
+            return { error: buildInteractiveAuthRefusal(source, { isOp: isOpCommand }) };
+          }
+          logger.info("run_code allowing op (service-account token present)", { sessionId });
         }
 
         const dir = scratchDir(sessionId);
@@ -302,22 +315,29 @@ const TTY_AUTH_COMMAND_RE = new RegExp(
  * the user a one-click copy button. Kept as a function so the tool
  * factory and the TTY-hint path can share wording.
  */
-function buildInteractiveAuthRefusal(source: string): string {
-  return (
+function buildInteractiveAuthRefusal(source: string, opts: { isOp: boolean }): string {
+  const header =
     "[run_code refused] This script invokes an interactive-auth command " +
-    "(op / ssh / sudo / gpg / aws sso / gh auth / gcloud / az / doctl). " +
-    "Those can't complete from this sandbox — empirically, the desktop " +
+    "that can't complete from this sandbox — empirically, the desktop " +
     "auth prompt (Watch, Touch ID, password) only surfaces after the " +
-    "process is killed, which is useless. Run the command in your " +
-    "terminal directly and paste the result back if needed.\n" +
-    "\n" +
-    "```bash\n" +
+    "process is killed, which is useless.";
+  const opEscape = opts.isOp
+    ? "\n\nTO MAKE THIS WORK FROM CHAT: `op` accepts a non-interactive " +
+      "**service-account token**. Create one at " +
+      "https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount, " +
+      "scope it to the vault(s) you want Friday to touch, then export " +
+      "`OP_SERVICE_ACCOUNT_TOKEN=ops_...` in Friday's env (Settings → " +
+      "Environment variables, or `~/.atlas/.env`). Restart the daemon and " +
+      "`run_code` will stop refusing `op` commands. Service-account auth " +
+      "has no biometric prompt, so there's nothing to stall."
+    : "";
+  const fallback =
+    "\n\nUntil then, run this in your terminal and paste the output back:\n" +
+    "\n```bash\n" +
     source.trim() +
     "\n```\n" +
-    "\n" +
-    "Do NOT retry from `run_code` — each retry triggers another auth " +
-    "prompt that can't be completed."
-  );
+    "\nDo NOT retry `run_code` — each retry triggers another auth prompt that can't be completed.";
+  return header + opEscape + fallback;
 }
 
 function buildSuccess(
