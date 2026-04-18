@@ -142,30 +142,17 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
   return {
     run_code: tool({
       description:
-        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Hard timeout (default 30 s, max 120 s). Stdout/stderr size caps at 100 KB each. Intended for trusted code; do not run hostile input. **Interactive-auth commands are refused**: `op item|read|vault|document|user|group|connect|signin`, `ssh host…`, `scp`, `sftp`, `sudo`, `gpg --decrypt|--sign|--encrypt`, `security unlock-keychain`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init`. The biometric/Watch/password prompt only surfaces *after* the sandbox kills the process, which is useless. EXCEPTION: `op` vault commands are allowed when `OP_SERVICE_ACCOUNT_TOKEN` is set in the env — service accounts authenticate non-interactively, so no prompt stalls. Read-only subcommands (`op account list`, `op whoami`, `op --version`, `gpg --version`) always run.",
+        "Execute a short script in Python, JavaScript (Deno), or bash and return stdout/stderr/exit code. Use this for ad-hoc computation, data munging, regex testing, or quick scripting when the user asks you to run something. Each session has an ephemeral scratch directory at `{scratch_dir}` — files written there persist across `run_code` calls in the same conversation so you can build up state across turns. No network access from inside the sandbox — use `web_fetch` for that. Default timeout 30 s (max 120 s); stdout/stderr size caps 100 KB each. Intended for trusted code; do not run hostile input. Interactive-auth commands (`op item|read|vault|document|user|group|connect|signin`, `ssh host…`, `scp`, `sftp`, `sudo`, `gpg --decrypt|--sign|--encrypt`, `security unlock-keychain`, `aws sso login`, `gh auth login`, `gcloud auth login`, `az login`, `doctl auth init`) are auto-wrapped under a pseudo-terminal via `script(1)` so 1Password / Keychain / SSO helpers surface their Watch/Touch ID/password prompt normally — same behavior as running in the user's terminal. These scripts automatically get the full 120 s budget. Because a PTY merges stderr into stdout, auth-command output comes back in `stdout` with `stderr` empty — that's expected, not a bug. If an auth command still fails, tell the user to approve on Watch when the prompt shows; do NOT retry without user confirmation (each retry triggers another approval request).",
       inputSchema: RunCodeInput,
       execute: async ({ language, source, timeout_ms }): Promise<RunCodeSuccess | RunCodeError> => {
-        // Refuse interactive-auth commands before we even create a scratch
-        // dir — waiting for the timeout doesn't help, return instantly
-        // with a copy-paste-ready command for the user. Escape hatch: if
-        // the user set `OP_SERVICE_ACCOUNT_TOKEN` in their env, `op`
-        // commands authenticate non-interactively via the token and we
-        // let them through. Other auth commands (ssh/sudo/gpg/cloud CLI)
-        // have no equivalent clean escape and stay refused.
-        const authMatch = TTY_AUTH_COMMAND_RE.exec(source);
-        if (authMatch) {
-          const hasOpServiceAccount = Boolean(process.env.OP_SERVICE_ACCOUNT_TOKEN);
-          const isOpCommand = authMatch[0].startsWith("op");
-          if (!(isOpCommand && hasOpServiceAccount)) {
-            logger.info("run_code refused (interactive auth)", {
-              sessionId,
-              matched: authMatch[0],
-              hasOpServiceAccount,
-            });
-            return { error: buildInteractiveAuthRefusal(source, { isOp: isOpCommand }) };
-          }
-          logger.info("run_code allowing op (service-account token present)", { sessionId });
-        }
+        // Does this script invoke a command that insists on a real TTY?
+        // If so, we'll wrap the child in `script(1)` to allocate a PTY.
+        // Without that, 1Password's desktop helper refuses to surface its
+        // Watch/Touch ID prompt while the op subprocess is alive — the
+        // prompt only appears post-SIGKILL, useless. Claude Code's Bash
+        // tool works for `op item create` because it inherits a PTY from
+        // the user's shell; we synthesize one here.
+        const needsPty = language === "bash" && TTY_AUTH_COMMAND_RE.test(source);
 
         const dir = scratchDir(sessionId);
         try {
@@ -187,8 +174,12 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
           return { error: `run_code write failed: ${message}` };
         }
 
-        const command = spec.build(filePath);
-        const timeout = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+        const rawCommand = spec.build(filePath);
+        const command = needsPty ? wrapWithPty(rawCommand) : rawCommand;
+        // Interactive-auth scripts get the full 120 s budget so the user
+        // has room to approve on Watch / Touch ID / password prompt.
+        const defaultTimeout = needsPty ? MAX_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+        const timeout = Math.min(timeout_ms ?? defaultTimeout, MAX_TIMEOUT_MS);
         const options: ExecOptions = {
           cwd: dir,
           timeout,
@@ -205,12 +196,18 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
         try {
           const result = await execAsync(command, options);
           const duration = Date.now() - started;
-          logger.info("run_code success", { sessionId, language: lang, duration });
+          logger.info("run_code success", { sessionId, language: lang, duration, pty: needsPty });
+          // PTY output merges stderr into stdout (that's how terminals
+          // work) and comes back with `\r\n` line endings plus a `^D\b\b`
+          // EOT echo from `script(1)` — clean those up so the LLM gets
+          // readable text.
+          const rawStdout = stringify(result.stdout);
+          const rawStderr = stringify(result.stderr);
           return buildSuccess(
             lang,
             dir,
-            stringify(result.stdout),
-            stringify(result.stderr),
+            needsPty ? stripPtyArtifacts(rawStdout) : rawStdout,
+            needsPty ? stripPtyArtifacts(rawStderr) : rawStderr,
             0,
             duration,
           );
@@ -252,7 +249,14 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
               duration,
               hadStderr: stderr.length > 0,
             });
-            return buildSuccess(lang, dir, stdout, stderr, exitCode, duration);
+            return buildSuccess(
+              lang,
+              dir,
+              needsPty ? stripPtyArtifacts(stdout) : stdout,
+              needsPty ? stripPtyArtifacts(stderr) : stderr,
+              exitCode,
+              duration,
+            );
           }
           const message = err instanceof Error ? err.message : String(err);
           return { error: `run_code execution failed: ${message}` };
@@ -273,24 +277,22 @@ function stringify(value: string | Buffer | undefined): string {
 }
 
 /**
- * Commands that demand interactive auth (biometrics, Watch approval,
- * password prompt) and in practice **cannot complete from this sandbox**.
+ * Commands that need a real TTY to complete their auth handshake.
  *
- * Empirical finding: even giving `op` the full 120 s timeout, the
- * 1Password desktop helper's Watch prompt lands *exactly* after SIGKILL,
- * not before — something about the exec lifecycle blocks the desktop app
- * from surfacing the prompt until the child dies. Waiting longer doesn't
- * fix it; it just makes the user wait N seconds to learn the same thing.
+ * Earlier finding: under plain `child_process.exec` (no PTY), 1Password's
+ * desktop helper refuses to surface its Watch/Touch ID prompt while the
+ * `op` subprocess is alive — the prompt only shows up post-SIGKILL, which
+ * is useless. Claude Code's Bash tool works fine for `op item create`
+ * because it inherits a PTY from the user's shell. We mirror that here
+ * by wrapping matched scripts in `script(1)` (see {@link wrapWithPty}),
+ * which allocates a synthetic PTY.
  *
- * So we refuse fast with a clear "run in your terminal" message and a
- * copy-paste command. Instant feedback beats a silent 120 s stare.
- *
- * The regex is narrow: for `op` we only catch subcommands that actually
- * need vault access (`item`, `read`, `document`, `vault`, `user`, `group`,
- * `connect`, `signin`). `op account list`, `op whoami`, `op --version`
- * read local config and still run. Similar targeting for `gpg`
- * (only the decrypt/sign/encrypt/clearsign verbs need keyring auth) —
- * `gpg --version` / `gpg --list-keys` stay untouched.
+ * The regex is narrow: for `op` we only catch vault-touching subcommands
+ * (`item`, `read`, `document`, `vault`, `user`, `group`, `connect`,
+ * `signin`) — `op account list`, `op whoami`, `op --version` don't need
+ * auth and run fine under plain exec. Similar targeting for `gpg` (only
+ * decrypt/sign/encrypt/clearsign verbs need keyring auth) — `gpg
+ * --version` / `gpg --list-keys` stay on the plain exec path.
  */
 const TTY_AUTH_COMMAND_RE = new RegExp(
   [
@@ -310,34 +312,54 @@ const TTY_AUTH_COMMAND_RE = new RegExp(
 );
 
 /**
- * Produce the "run this in your terminal" message. The source is echoed
- * inside a fenced code block so the playground's markdown renderer gives
- * the user a one-click copy button. Kept as a function so the tool
- * factory and the TTY-hint path can share wording.
+ * Wrap a bash command string with `script(1)` so it runs under a
+ * pseudo-terminal. macOS and util-linux (Linux) disagree on syntax, so
+ * branch on platform. On unknown platforms we fall back to the raw
+ * command — the caller will still try to run it, just without PTY help.
+ *
+ * Darwin: `script [-q] file [command ...]` — the command goes after the
+ *   output file, which we pin to `/dev/null`.
+ * Linux (util-linux): `script [-q] [-c "command"] file` — the command
+ *   is passed via `-c` because positional args aren't supported.
  */
-function buildInteractiveAuthRefusal(source: string, opts: { isOp: boolean }): string {
-  const header =
-    "[run_code refused] This script invokes an interactive-auth command " +
-    "that can't complete from this sandbox — empirically, the desktop " +
-    "auth prompt (Watch, Touch ID, password) only surfaces after the " +
-    "process is killed, which is useless.";
-  const opEscape = opts.isOp
-    ? "\n\nTO MAKE THIS WORK FROM CHAT: `op` accepts a non-interactive " +
-      "**service-account token**. Create one at " +
-      "https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount, " +
-      "scope it to the vault(s) you want Friday to touch, then export " +
-      "`OP_SERVICE_ACCOUNT_TOKEN=ops_...` in Friday's env (Settings → " +
-      "Environment variables, or `~/.atlas/.env`). Restart the daemon and " +
-      "`run_code` will stop refusing `op` commands. Service-account auth " +
-      "has no biometric prompt, so there's nothing to stall."
-    : "";
-  const fallback =
-    "\n\nUntil then, run this in your terminal and paste the output back:\n" +
-    "\n```bash\n" +
-    source.trim() +
-    "\n```\n" +
-    "\nDo NOT retry `run_code` — each retry triggers another auth prompt that can't be completed.";
-  return header + opEscape + fallback;
+function wrapWithPty(command: string): string {
+  if (process.platform === "darwin") {
+    return `/usr/bin/script -q /dev/null ${command}`;
+  }
+  if (process.platform === "linux") {
+    // Escape double-quotes in the command for -c wrapping.
+    const escaped = command.replace(/"/g, '\\"');
+    return `script -q -c "${escaped}" /dev/null`;
+  }
+  return command;
+}
+
+/**
+ * `script(1)` emits three artifacts we want gone from the captured output
+ * before it reaches the LLM:
+ *   1. A leading `^D` (EOT, `\x04`) followed by two backspaces (`\b\b`) —
+ *      the PTY's echo of the session-end marker. macOS only.
+ *   2. `\r\n` line endings (PTY line discipline), where the rest of the
+ *      tool expects plain `\n`.
+ *   3. Occasionally a trailing `\r` before EOF.
+ * Also drops any DEC SGR reset codes that op or other auth tools emit to
+ * clean up their prompt surface — they render fine in a real terminal,
+ * but look like garbage when pasted into a chat log.
+ */
+// Build regexes from character codes rather than literal \x escapes so
+// both deno-lint (no-control-regex) and biome (noControlCharactersInRegex)
+// stay happy. The bytes we strip are genuine control chars — EOT (0x04)
+// and ESC (0x1b) — that a PTY emits; the lint rules exist to flag
+// accidental ones, not intentional stripping.
+const PTY_EOT_PREFIX = new RegExp(`^${String.fromCharCode(0x04)}\\b\\b`);
+const ANSI_SGR = new RegExp(`${String.fromCharCode(0x1b)}\\[[\\d;]*m`, "g");
+
+function stripPtyArtifacts(raw: string): string {
+  return raw
+    .replace(PTY_EOT_PREFIX, "") // macOS ^D\b\b EOT echo
+    .replace(/\r\n/g, "\n") // PTY line endings → unix
+    .replace(/\r$/g, "") // trailing CR
+    .replace(ANSI_SGR, ""); // ANSI SGR (color/reset) escapes
 }
 
 function buildSuccess(

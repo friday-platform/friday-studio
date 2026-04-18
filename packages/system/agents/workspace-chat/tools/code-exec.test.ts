@@ -13,11 +13,6 @@ const logger: Logger = {
   child: vi.fn(),
 } as unknown as Logger;
 
-/**
- * Pull the `execute` implementation out of the AI-SDK tool wrapper so the
- * test can drive it directly. The wrapper's shape (`{ execute, ... }`)
- * changes with library versions, so narrow defensively instead of casting.
- */
 function getExecute(
   tool: unknown,
 ): (input: {
@@ -40,114 +35,94 @@ function hasKey<K extends string>(o: unknown, k: K): o is Record<K, unknown> {
   return typeof o === "object" && o !== null && k in o;
 }
 
-describe("run_code — interactive-auth refusal + stream preservation", () => {
-  it("refuses `op item create` instantly with the service-account escape hatch", async () => {
-    const prevToken = process.env.OP_SERVICE_ACCOUNT_TOKEN;
-    delete process.env.OP_SERVICE_ACCOUNT_TOKEN;
-    try {
-      const tools = createRunCodeTool("test-session-op-refuse", logger);
-      const run = getExecute(tools.run_code);
+describe("run_code — PTY wrap for interactive-auth commands", () => {
+  it("actually runs an `op`-mentioning bash script under a PTY and returns clean output", async () => {
+    // Darwin-only: `script(1)` syntax on Linux differs and the CI
+    // image may not have util-linux `script`. Skip there.
+    if (process.platform !== "darwin") return;
 
-      const started = Date.now();
-      const result = await run({
-        language: "bash",
-        source: 'op item create --category="Secure Note" --title="x" notesPlain="y"',
-      });
-      const duration = Date.now() - started;
-
-      if (!hasKey(result, "error"))
-        throw new Error(`expected refusal, got ${JSON.stringify(result)}`);
-      expect(String(result.error)).toContain("run_code refused");
-      // Refusal must explain the escape hatch so the user knows how to
-      // unblock the flow, not just "run it in your terminal".
-      expect(String(result.error)).toContain("OP_SERVICE_ACCOUNT_TOKEN");
-      expect(String(result.error)).toContain("service-account token");
-      expect(String(result.error)).toContain("op item create");
-      // Must be fast — 1 second max. Whole point is to avoid the silent
-      // 120 s wait the user was hitting before.
-      expect(duration).toBeLessThan(1_000);
-    } finally {
-      if (prevToken === undefined) delete process.env.OP_SERVICE_ACCOUNT_TOKEN;
-      else process.env.OP_SERVICE_ACCOUNT_TOKEN = prevToken;
-    }
-  });
-
-  it("ALLOWS `op item create` when OP_SERVICE_ACCOUNT_TOKEN is set", async () => {
-    const prev = process.env.OP_SERVICE_ACCOUNT_TOKEN;
-    process.env.OP_SERVICE_ACCOUNT_TOKEN = "ops_fake_token_for_test";
-    try {
-      const tools = createRunCodeTool("test-session-op-allowed", logger);
-      const run = getExecute(tools.run_code);
-
-      // We can't rely on op being installed or the token being valid in
-      // CI; what we CAN prove is that the refusal path is skipped. The
-      // source is a harmless `echo` that happens to mention `op item
-      // create` — the regex matches, service-account detection kicks in,
-      // and the script is allowed to run. Without the escape hatch we'd
-      // get a refusal error instead of an exit_code.
-      const result = await run({
-        language: "bash",
-        source: 'echo "service-account test: op item create would run"',
-      });
-
-      if (!hasKey(result, "exit_code")) {
-        throw new Error(`expected success shape, got ${JSON.stringify(result)}`);
-      }
-      expect(result.exit_code).toBe(0);
-    } finally {
-      if (prev === undefined) delete process.env.OP_SERVICE_ACCOUNT_TOKEN;
-      else process.env.OP_SERVICE_ACCOUNT_TOKEN = prev;
-    }
-  });
-
-  it("does NOT offer the service-account escape hatch for non-op commands", async () => {
-    // `ssh`/`sudo`/`gpg` don't have an OP_SERVICE_ACCOUNT_TOKEN analogue,
-    // so the refusal message must not suggest one — would just confuse
-    // the user with irrelevant instructions.
-    const tools = createRunCodeTool("test-session-ssh-refuse", logger);
+    const tools = createRunCodeTool("test-session-pty-op", logger);
     const run = getExecute(tools.run_code);
 
-    const result = await run({ language: "bash", source: "ssh deploy@prod 'uptime'" });
-    if (!hasKey(result, "error")) throw new Error("expected refusal");
-    expect(String(result.error)).toContain("run_code refused");
-    expect(String(result.error)).not.toContain("OP_SERVICE_ACCOUNT_TOKEN");
+    // Script mentions `op item` so the PTY-wrap path fires, but the
+    // actual command is a plain echo — we want to verify that under the
+    // PTY, output comes back clean (no `^D\b\b`, no `\r\n`) and the
+    // script still exits 0.
+    const result = await run({
+      language: "bash",
+      source: '# op item create would go here\necho "pty-clean-output"; exit 0',
+    });
+
+    if (!hasKey(result, "exit_code")) {
+      throw new Error(`expected success shape, got ${JSON.stringify(result)}`);
+    }
+    expect(result.exit_code).toBe(0);
+    // The ^D\b\b EOT echo that `script` emits must be stripped before
+    // the LLM sees it; so must any `\r\n` → `\n` normalization.
+    const stdout = String(result.stdout);
+    expect(stdout).toContain("pty-clean-output");
+    expect(stdout).not.toContain("\x04");
+    expect(stdout).not.toContain("\r\n");
   });
 
-  it("refuses `ssh host` and `sudo …` and `aws sso login`", async () => {
-    const tools = createRunCodeTool("test-session-multi-refuse", logger);
+  it("leaves non-auth scripts on the plain exec path (stderr preserved separately)", async () => {
+    const tools = createRunCodeTool("test-session-plain", logger);
     const run = getExecute(tools.run_code);
 
-    for (const source of [
-      "ssh deploy@prod 'uptime'",
-      "sudo rm /tmp/something",
-      "aws sso login --profile staging",
-      "gh auth login",
-      "gpg --decrypt file.gpg",
-    ]) {
-      const result = await run({ language: "bash", source });
-      if (!hasKey(result, "error")) throw new Error(`expected refusal for ${source}`);
-      expect(String(result.error)).toContain("run_code refused");
-    }
+    // No auth-command keyword → plain exec → stderr stays in stderr.
+    // Under a PTY, stderr would be merged into stdout, which would
+    // break the regression we already locked in for non-auth scripts.
+    const result = await run({
+      language: "bash",
+      source: 'echo "out" && echo "err" >&2 && exit 3',
+    });
+
+    if (!hasKey(result, "stderr")) throw new Error("expected success shape");
+    expect(String(result.stdout)).toContain("out");
+    expect(String(result.stderr)).toContain("err");
+    expect(result.exit_code).toBe(3);
   });
 
-  it("still runs `op account list` and `op whoami` (no vault auth)", async () => {
-    // The refusal regex is narrow: only matches op subcommands that touch
-    // the vault. `op account list` reads local config and must keep
-    // working from the sandbox.
+  it("still runs `op account list` / `op whoami` on the plain path (no PTY)", async () => {
+    // Those read local config and never block on auth. Must NOT be
+    // PTY-wrapped (no functional reason, and PTY-wrapping would merge
+    // their stderr into stdout unnecessarily).
     const tools = createRunCodeTool("test-session-op-read", logger);
     const run = getExecute(tools.run_code);
 
-    // We can't rely on `op` being installed in CI, so instead of running
-    // the real command, we use a shell that only mentions these safe
-    // subcommands as arguments to `echo` — that exercises the regex
-    // without needing op on PATH. If the regex falsely matched these,
-    // we'd get a refusal; since it doesn't, we get a normal exit 0.
     for (const source of [
       'echo "would run: op account list"',
       'echo "would run: op whoami"',
       'echo "would run: op --version"',
-      'echo "would run: gpg --version"',
     ]) {
+      const result = await run({ language: "bash", source });
+      if (!hasKey(result, "exit_code")) {
+        throw new Error(`expected success for ${source}, got ${JSON.stringify(result)}`);
+      }
+      expect(result.exit_code).toBe(0);
+    }
+  });
+
+  it("PTY-wraps every flagged command (op/ssh/sudo/gpg-decrypt/aws-sso/gh-auth) without refusing", async () => {
+    if (process.platform !== "darwin") return;
+    const tools = createRunCodeTool("test-session-pty-all", logger);
+    const run = getExecute(tools.run_code);
+
+    // Each of these matches the auth regex, so it goes through the PTY.
+    // We're not actually invoking the auth tool — just proving the
+    // script runs to exit 0 under PTY without being refused. `bash -c
+    // exit 0` inside a comment-scoped source satisfies the regex match
+    // and exits cleanly.
+    const sources = [
+      "# op item create\nexit 0",
+      "# ssh deploy@prod\nexit 0",
+      "# sudo reboot\nexit 0",
+      "# gpg --decrypt file\nexit 0",
+      "# aws sso login\nexit 0",
+      "# gh auth login\nexit 0",
+      "# gcloud auth login\nexit 0",
+    ];
+    for (const source of sources) {
       const result = await run({ language: "bash", source });
       if (!hasKey(result, "exit_code")) {
         throw new Error(`expected success for ${source}, got ${JSON.stringify(result)}`);
