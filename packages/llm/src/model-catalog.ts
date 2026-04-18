@@ -209,6 +209,7 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
       if (!isAnthropicDirectApiId(apiId)) continue;
       out.anthropic.push({ id: apiId, displayName: m.name });
     } else if (provider === "openai") {
+      if (!isOpenAiChatCapable(rawId)) continue;
       out.openai.push({ id: rawId, displayName: m.name });
     } else if (provider === "vertex" && modelId.startsWith("google/gemini-")) {
       // Google's Gemini models live under the gateway's `vertex` provider,
@@ -271,6 +272,29 @@ function isAnthropicDirectApiId(id: string): boolean {
   if (ANTHROPIC_ALIAS_DENYLIST.has(id)) return false;
   // Bare alias: `claude-<family>-<digit>` with nothing after.
   return !/^claude-(opus|sonnet|haiku)-\d+$/.test(id);
+}
+
+/**
+ * Patterns for OpenAI model ids that the gateway advertises but the
+ * direct OpenAI API rejects. Empirically verified (see model-matrix QA):
+ *
+ * - `*-instruct` — completion API, not chat
+ * - `*-search-preview` — requires tool binding, not general chat
+ * - `*-deep-research` — requires web_search / mcp tool binding
+ * - `gpt-<N>-chat` / `gpt-<N.N>-chat` — gateway-only aliases, OpenAI
+ *   returns "model does not exist"
+ * - `gpt-5.1-instant` / `gpt-5.1-thinking` — gateway-only aliases
+ */
+const OPENAI_NON_CHAT_PATTERNS: RegExp[] = [
+  /-instruct$/,
+  /-search-preview$/,
+  /-deep-research$/,
+  /^gpt-5(\.\d+)?-chat$/,
+  /^gpt-5\.1-(instant|thinking)$/,
+];
+
+function isOpenAiChatCapable(id: string): boolean {
+  return !OPENAI_NON_CHAT_PATTERNS.some((re) => re.test(id));
 }
 
 // ─── Catalog assembly ──────────────────────────────────────────────────────

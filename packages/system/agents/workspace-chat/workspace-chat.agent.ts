@@ -702,21 +702,32 @@ For external services, use do_task. For artifact data, use artifacts_get.
         let errorEmitted = false;
 
         const conversationalModel = platformModels.get("conversational");
-        // Strip `reasoning` parts from history messages that were produced
-        // by a different model than the one currently serving this turn.
-        // Replaying another model's reasoning back to the LLM either
-        // wastes tokens (same family) or gets rejected outright by
-        // providers that don't accept reasoning in input (e.g. Groq's
-        // llama-3.3 returns 400). Messages without a model tag are
-        // treated as "unknown origin" and stripped conservatively.
-        const sanitizedMessages = messages.map((m) => {
-          if (m.role !== "assistant") return m;
+        // Drop cross-model assistant messages that carry reasoning parts.
+        //
+        // Two providers fail in opposite ways when replayed across model
+        // boundaries:
+        //   - Groq (llama-3.3): rejects any `reasoning` in input with HTTP 400
+        //     "reasoning is not supported with this model".
+        //   - OpenAI Responses API (gpt-5*, o*): server-side msg/rs ID pairs
+        //     are co-dependent; stripping the reasoning part alone leaves
+        //     the message half of the pair orphaned, yielding
+        //     "Item 'msg_xxx' ... was provided without its required
+        //     'reasoning' item: 'rs_xxx'".
+        //
+        // The only replay shape every provider tolerates is "message not
+        // present at all", so we drop the whole turn rather than trying to
+        // surgically edit a multi-provider-incompatible shape. Same-model
+        // replays keep reasoning intact (tagged via MessageMetadata.provider
+        // + modelId on the originating turn). Untagged messages are treated
+        // as "unknown origin" — if they contain reasoning, drop them too.
+        const sanitizedMessages = messages.filter((m) => {
+          if (m.role !== "assistant") return true;
           const fromSameModel =
             m.metadata?.provider === conversationalModel.provider &&
             m.metadata?.modelId === conversationalModel.modelId;
-          if (fromSameModel) return m;
-          const filteredParts = m.parts.filter((p) => p.type !== "reasoning");
-          return filteredParts.length === m.parts.length ? m : { ...m, parts: filteredParts };
+          if (fromSameModel) return true;
+          const hasReasoning = m.parts.some((p) => p.type === "reasoning");
+          return !hasReasoning;
         });
 
         try {
