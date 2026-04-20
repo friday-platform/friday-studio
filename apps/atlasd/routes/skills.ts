@@ -488,6 +488,142 @@ export const skillsRoutes = daemonFactory
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
   })
+  // ─── CHECK UPSTREAM FOR UPDATE ─────────────────────────────────────────────
+  // Probes skills.sh for a newer archive of a remotely-installed skill by
+  // re-downloading and comparing the SHA-256 to the stored `source-hash`.
+  // Returns 200 with `hasUpdate=false` for locally-authored skills so the
+  // client can render a consistent "up to date" state without branching.
+  .get("/:namespace/:name/check-update", zValidator("param", NamespacedParams), async (c) => {
+    const { namespace, name } = c.req.valid("param");
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+    const fm = result.data.frontmatter as Record<string, unknown>;
+    const source = typeof fm.source === "string" ? fm.source : undefined;
+    const localHash = typeof fm["source-hash"] === "string" ? fm["source-hash"] : undefined;
+    if (!source || !source.startsWith("skills.sh/")) {
+      return c.json({ hasUpdate: false, remote: null, source: source ?? null, localHash: null });
+    }
+    const parts = source
+      .slice("skills.sh/".length)
+      .split("/")
+      .filter((p) => p.length > 0);
+    if (parts.length < 3) {
+      return c.json({ error: "Malformed skills.sh source in frontmatter" }, 400);
+    }
+    const [owner, repo, ...slugParts] = parts;
+    if (!owner || !repo || slugParts.length === 0) {
+      return c.json({ error: "Malformed skills.sh source in frontmatter" }, 400);
+    }
+    const slug = slugParts.join("/");
+    let downloaded: Awaited<ReturnType<typeof skillsShClient.download>>;
+    try {
+      downloaded = await skillsShClient.download(owner, repo, slug);
+    } catch (err) {
+      return c.json(
+        { error: `skills.sh download failed: ${err instanceof Error ? err.message : String(err)}` },
+        502,
+      );
+    }
+    return c.json({
+      hasUpdate: downloaded.hash !== localHash,
+      source,
+      localHash: localHash ?? null,
+      remote: { hash: downloaded.hash },
+    });
+  })
+  // ─── PULL UPDATE FROM UPSTREAM ─────────────────────────────────────────────
+  // Re-downloads the skill from skills.sh and publishes it under the existing
+  // namespace/name, bumping the version. Only valid for remotely-installed
+  // skills; locally-authored skills have no upstream to pull from.
+  .post("/:namespace/:name/update", zValidator("param", NamespacedParams), async (c) => {
+    if (!remoteInstallEnabled()) {
+      return c.json({ error: "Remote skill install is disabled" }, 403);
+    }
+    const auth = await requireUser();
+    if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+    const { namespace, name } = c.req.valid("param");
+    const existing = await SkillStorage.get(namespace, name);
+    if (!existing.ok) return c.json({ error: existing.error }, 500);
+    if (!existing.data) return c.json({ error: "Skill not found" }, 404);
+
+    const fm = existing.data.frontmatter as Record<string, unknown>;
+    const source = typeof fm.source === "string" ? fm.source : undefined;
+    if (!source || !source.startsWith("skills.sh/")) {
+      return c.json({ error: "Skill has no skills.sh source — nothing to update" }, 400);
+    }
+    const parts = source
+      .slice("skills.sh/".length)
+      .split("/")
+      .filter((p) => p.length > 0);
+    const [owner, repo, ...slugParts] = parts;
+    if (!owner || !repo || slugParts.length === 0) {
+      return c.json({ error: "Malformed skills.sh source in frontmatter" }, 400);
+    }
+    const slug = slugParts.join("/");
+
+    let downloaded: Awaited<ReturnType<typeof skillsShClient.download>>;
+    try {
+      downloaded = await skillsShClient.download(owner, repo, slug);
+    } catch (err) {
+      return c.json(
+        { error: `skills.sh download failed: ${err instanceof Error ? err.message : String(err)}` },
+        502,
+      );
+    }
+
+    const skillMdFile = downloaded.files.find(
+      (f) => f.path === "SKILL.md" || f.path.endsWith("/SKILL.md"),
+    );
+    if (!skillMdFile) {
+      return c.json({ error: "SKILL.md not found in downloaded archive" }, 400);
+    }
+    const parsed = parseSkillMd(skillMdFile.contents);
+    if (!parsed.ok) {
+      return c.json({ error: `SKILL.md parse failed: ${parsed.error}` }, 400);
+    }
+
+    const tmpDir = makeTempDir({ prefix: "atlas-update-" });
+    try {
+      for (const file of downloaded.files) {
+        if (file.path === "SKILL.md") continue;
+        const fullPath = join(tmpDir, file.path);
+        await mkdir(dirname(fullPath), { recursive: true });
+        await writeFile(fullPath, file.contents, "utf-8");
+      }
+      const hasOtherFiles = downloaded.files.some((f) => f.path !== "SKILL.md");
+      const archive = hasOtherFiles ? new Uint8Array(await packSkillArchive(tmpDir)) : undefined;
+
+      const frontmatter = { ...parsed.data.frontmatter, source, "source-hash": downloaded.hash };
+      const description =
+        typeof parsed.data.frontmatter.description === "string"
+          ? parsed.data.frontmatter.description
+          : existing.data.description;
+
+      const published = await SkillStorage.publish(namespace, name, auth.userId, {
+        description,
+        instructions: parsed.data.instructions,
+        frontmatter,
+        archive,
+        skillId: existing.data.skillId,
+      });
+      if (!published.ok) return c.json({ error: published.error }, 500);
+      invalidateLintCache(published.data.skillId);
+
+      return c.json({
+        updated: {
+          skillId: published.data.skillId,
+          namespace,
+          name: published.data.name,
+          version: published.data.version,
+          sourceHash: downloaded.hash,
+        },
+      });
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  })
   // ─── LIST ARCHIVE FILES ────────────────────────────────────────────────────
   .get("/:namespace/:name/files", zValidator("param", NamespacedParams), async (c) => {
     const { namespace, name } = c.req.valid("param");

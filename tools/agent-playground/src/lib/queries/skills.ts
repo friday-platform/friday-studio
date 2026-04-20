@@ -264,6 +264,77 @@ export function useInstallSkill() {
   }));
 }
 
+export interface CheckUpdateResult {
+  hasUpdate: boolean;
+  source: string | null;
+  localHash: string | null;
+  remote: { hash: string } | null;
+}
+
+/**
+ * Ask the daemon whether a newer version of this skill exists on skills.sh.
+ * Locally-authored skills always return `hasUpdate=false`. This is a
+ * mutation (not a query) because it's user-triggered — a background poll
+ * would burn rate limit on the skills.sh API and offers no benefit when
+ * the user doesn't have the skill open.
+ */
+export function useCheckSkillUpdate() {
+  return createMutation(() => ({
+    mutationFn: async (input: { namespace: string; name: string }): Promise<CheckUpdateResult> => {
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.name)}/check-update`,
+      );
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body === "object" && body !== null && "error" in body &&
+            typeof body.error === "string"
+            ? body.error
+            : `Failed to check for updates: ${res.status}`,
+        );
+      }
+      return (await res.json()) as CheckUpdateResult;
+    },
+  }));
+}
+
+/**
+ * Pull the latest skills.sh archive for an already-installed skill and
+ * publish it as a new version under the same namespace/name. Invalidates
+ * catalog + detail + file queries so the UI picks up the bump.
+ */
+export function useUpdateSkillFromSource() {
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: { namespace: string; name: string }) => {
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.name)}/update`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body === "object" && body !== null && "error" in body &&
+            typeof body.error === "string"
+            ? body.error
+            : `Update failed: ${res.status}`,
+        );
+      }
+      return (await res.json()) as { updated: { version: number; sourceHash: string } };
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
+      queryClient.invalidateQueries({
+        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+      });
+      queryClient.invalidateQueries({
+        queryKey: skillQueries.files(variables.namespace, variables.name).queryKey,
+      });
+    },
+  }));
+}
+
 /**
  * Mutation for updating a single file within a skill's archive.
  * Wraps `PUT /api/skills/:namespace/:name/files/:path` via daemon proxy.

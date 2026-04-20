@@ -23,7 +23,13 @@
   import SkillFileEditor from "$lib/components/skills/skill-file-editor.svelte";
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
   import { skillQueries } from "$lib/queries";
-  import { useDeleteSkill, useDisableSkill, usePublishSkill } from "$lib/queries/skills";
+  import {
+    useCheckSkillUpdate,
+    useDeleteSkill,
+    useDisableSkill,
+    usePublishSkill,
+    useUpdateSkillFromSource,
+  } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
   import { writable } from "svelte/store";
 
@@ -188,6 +194,51 @@
   // ---------------------------------------------------------------------------
 
   const uploadDialogOpen = writable(false);
+
+  // ---------------------------------------------------------------------------
+  // Pull from skills.sh source (only applies to remotely-installed skills)
+  // ---------------------------------------------------------------------------
+
+  const checkUpdateMut = useCheckSkillUpdate();
+  const updateSourceMut = useUpdateSkillFromSource();
+
+  /** Skills.sh provenance — populated from frontmatter when the skill was installed from a remote. */
+  const sourceRef = $derived.by(() => {
+    const raw = skill?.frontmatter?.source;
+    return typeof raw === "string" && raw.startsWith("skills.sh/") ? raw : null;
+  });
+
+  async function handleCheckUpdate() {
+    if (!skill || checkUpdateMut.isPending) return;
+    try {
+      const res = await checkUpdateMut.mutateAsync({ namespace, name });
+      if (res.hasUpdate) {
+        toast({
+          title: "Update available",
+          description: `A new version of @${namespace}/${name} is on skills.sh.`,
+        });
+      } else {
+        toast({ title: "Up to date", description: `@${namespace}/${name} matches skills.sh.` });
+      }
+    } catch (e) {
+      const err = e as Error;
+      toast({ title: "Update check failed", description: err.message, error: true });
+    }
+  }
+
+  async function handlePullUpdate() {
+    if (!skill || updateSourceMut.isPending) return;
+    try {
+      const res = await updateSourceMut.mutateAsync({ namespace, name });
+      toast({
+        title: "Skill updated",
+        description: `@${namespace}/${name} is now v${String(res.updated.version)}.`,
+      });
+    } catch (e) {
+      const err = e as Error;
+      toast({ title: "Update failed", description: err.message, error: true });
+    }
+  }
 </script>
 
 <svelte:window onbeforeunload={handleBeforeUnload} />
@@ -215,6 +266,27 @@
           {publishMut.isPending ? "Saving…" : "Save"}
         </Button>
       {:else}
+        {#if sourceRef}
+          <span class="source-hint" title={sourceRef}>from skills.sh</span>
+          <Button
+            size="small"
+            variant="secondary"
+            onclick={handleCheckUpdate}
+            disabled={checkUpdateMut.isPending}
+          >
+            {checkUpdateMut.isPending ? "Checking…" : "Check for updates"}
+          </Button>
+          {#if checkUpdateMut.data?.hasUpdate}
+            <Button
+              size="small"
+              variant="primary"
+              onclick={handlePullUpdate}
+              disabled={updateSourceMut.isPending}
+            >
+              {updateSourceMut.isPending ? "Updating…" : "Update"}
+            </Button>
+          {/if}
+        {/if}
         <Button size="small" variant="secondary" onclick={startEditing}>Edit</Button>
 
         <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
@@ -384,6 +456,12 @@
   .action-error {
     color: var(--color-error);
     font-size: var(--font-size-1);
+  }
+
+  .source-hint {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-1);
+    margin-inline-end: var(--size-2);
   }
 
   /* --- Editor / Preview ---------------------------------------------------- */
