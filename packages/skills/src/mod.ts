@@ -43,6 +43,7 @@ export type {
   SkillsShSkillEntry,
 } from "./skills-sh-client.ts";
 export {
+  isOfficialSource,
   SkillsShClient,
   SkillsShDownloadResultSchema,
   SkillsShFileSchema,

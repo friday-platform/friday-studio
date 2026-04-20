@@ -1,23 +1,35 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import process from "node:process";
 import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config";
 import {
   extractArchiveContents,
   extractSkillArchive,
   invalidateLintCache,
+  isOfficialSource,
   lintSkill,
   listArchiveFiles,
+  localAudit,
   packSkillArchive,
   parseSkillMd,
   readArchiveFile,
   SkillStorage,
+  SkillsShClient,
   validateSkillReferences,
 } from "@atlas/skills";
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { getCurrentUser } from "./me/adapter.ts";
+
+const skillsShClient = new SkillsShClient();
+
+/** Opt-out flag. Install is enabled by default; set to "false" to kill. */
+function remoteInstallEnabled(): boolean {
+  return process.env.ATLAS_ALLOW_REMOTE_SKILLS !== "false";
+}
 
 // ==============================================================================
 // Param / query schemas
@@ -77,6 +89,207 @@ export const skillsRoutes = daemonFactory
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ skills: result.data });
   })
+  // ─── SKILLS.SH SEARCH PROXY ────────────────────────────────────────────
+  // Thin wrapper over SkillsShClient.search that stamps each entry with a
+  // `tier` flag ("official" | "community") derived from the curated
+  // OFFICIAL_ORGS set. Kept unauthenticated so the Browse modal can run
+  // without token plumbing.
+  .get(
+    "/search",
+    zValidator(
+      "query",
+      z.object({
+        q: z.string().min(1),
+        limit: z.coerce.number().int().positive().max(50).optional(),
+      }),
+    ),
+    async (c) => {
+      if (!remoteInstallEnabled()) {
+        return c.json({ error: "Remote skill install is disabled" }, 403);
+      }
+      const { q, limit } = c.req.valid("query");
+      try {
+        const result = await skillsShClient.search(q, limit ?? 10);
+        return c.json({
+          query: result.query,
+          count: result.count,
+          durationMs: result.duration_ms,
+          skills: result.skills.map((s) => ({
+            ...s,
+            tier: isOfficialSource(s.source) ? ("official" as const) : ("community" as const),
+          })),
+        });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+      }
+    },
+  )
+  // ─── SKILLS.SH INSTALL ─────────────────────────────────────────────────
+  // Downloads a skill from skills.sh, runs local-audit + publish-time
+  // linter, and publishes under `@remote/<skillName>` (or a caller-chosen
+  // namespace). Critical audit findings and lint errors block install;
+  // warnings are returned in the response for the preview UI.
+  .post(
+    "/install",
+    zValidator(
+      "json",
+      z.object({
+        /** `owner/repo/slug` as accepted by skills.sh. */
+        source: z.string().min(3),
+        /** Optional workspace to auto-assign to after install. */
+        workspaceId: z.string().optional(),
+        /** Caller has reviewed the preview and accepts non-critical warnings. */
+        acknowledgeWarnings: z.boolean().optional(),
+        /** Override the target namespace. Defaults to "remote". */
+        targetNamespace: z.string().optional(),
+      }),
+    ),
+    async (c) => {
+      if (!remoteInstallEnabled()) {
+        return c.json({ error: "Remote skill install is disabled" }, 403);
+      }
+      const auth = await requireUser();
+      if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+      const { source, workspaceId, acknowledgeWarnings, targetNamespace } = c.req.valid("json");
+      const parts = source.split("/").filter((p) => p.length > 0);
+      if (parts.length < 3) {
+        return c.json({ error: "source must be owner/repo/slug" }, 400);
+      }
+      const [owner, repo, ...slugParts] = parts;
+      if (!owner || !repo || slugParts.length === 0) {
+        return c.json({ error: "source must be owner/repo/slug" }, 400);
+      }
+      const slug = slugParts.join("/");
+
+      let downloaded: Awaited<ReturnType<typeof skillsShClient.download>>;
+      try {
+        downloaded = await skillsShClient.download(owner, repo, slug);
+      } catch (err) {
+        return c.json(
+          {
+            error: `skills.sh download failed: ${err instanceof Error ? err.message : String(err)}`,
+          },
+          502,
+        );
+      }
+
+      const skillMdFile = downloaded.files.find(
+        (f) => f.path === "SKILL.md" || f.path.endsWith("/SKILL.md"),
+      );
+      if (!skillMdFile) {
+        return c.json({ error: "SKILL.md not found in downloaded archive" }, 400);
+      }
+      const parsed = parseSkillMd(skillMdFile.contents);
+      if (!parsed.ok) {
+        return c.json({ error: `SKILL.md parse failed: ${parsed.error}` }, 400);
+      }
+
+      const archiveMap: Record<string, string> = {};
+      for (const f of downloaded.files) {
+        if (f.path === "SKILL.md") continue;
+        archiveMap[f.path] = f.contents;
+      }
+      const audit = localAudit({ skillMd: skillMdFile.contents, archiveFiles: archiveMap });
+      if (audit.critical.length > 0) {
+        return c.json(
+          {
+            error: "Local audit blocked install",
+            auditCritical: audit.critical,
+            auditWarn: audit.warn,
+          },
+          400,
+        );
+      }
+      const sourceOfficial = isOfficialSource(`${owner}/${repo}`);
+      if (!sourceOfficial && audit.warn.length > 0 && !acknowledgeWarnings) {
+        return c.json(
+          {
+            error:
+              "Install requires acknowledgeWarnings=true for non-official sources with audit warnings",
+            auditWarn: audit.warn,
+          },
+          412,
+        );
+      }
+
+      const skillName =
+        typeof parsed.data.frontmatter.name === "string"
+          ? parsed.data.frontmatter.name
+          : slug.replace(/\//g, "-");
+      const description =
+        typeof parsed.data.frontmatter.description === "string"
+          ? parsed.data.frontmatter.description
+          : "";
+      const namespace = targetNamespace ?? "remote";
+
+      const tmpDir = makeTempDir({ prefix: "atlas-install-" });
+      try {
+        for (const file of downloaded.files) {
+          if (file.path === "SKILL.md") continue;
+          const fullPath = join(tmpDir, file.path);
+          await mkdir(dirname(fullPath), { recursive: true });
+          await writeFile(fullPath, file.contents, "utf-8");
+        }
+        const hasOtherFiles = downloaded.files.some((f) => f.path !== "SKILL.md");
+        const archive = hasOtherFiles ? new Uint8Array(await packSkillArchive(tmpDir)) : undefined;
+
+        const archiveFiles = downloaded.files.map((f) => f.path).filter((p) => p !== "SKILL.md");
+        const lint = lintSkill(
+          {
+            name: skillName,
+            frontmatter: parsed.data.frontmatter,
+            instructions: parsed.data.instructions,
+            archiveFiles,
+            archiveContents: archiveMap,
+          },
+          "publish",
+        );
+        if (lint.errors.length > 0) {
+          return c.json({ error: "Skill failed lint", lintErrors: lint.errors }, 400);
+        }
+
+        const frontmatter = {
+          ...parsed.data.frontmatter,
+          source: `skills.sh/${owner}/${repo}/${slug}`,
+          "source-hash": downloaded.hash,
+        };
+
+        const published = await SkillStorage.publish(namespace, skillName, auth.userId, {
+          description,
+          instructions: parsed.data.instructions,
+          frontmatter,
+          archive,
+        });
+        if (!published.ok) return c.json({ error: published.error }, 500);
+        invalidateLintCache(published.data.skillId);
+
+        const shouldAssign =
+          workspaceId !== undefined && (sourceOfficial || acknowledgeWarnings === true);
+        if (shouldAssign && workspaceId) {
+          await SkillStorage.assignSkill(published.data.skillId, workspaceId);
+        }
+
+        return c.json(
+          {
+            published: {
+              skillId: published.data.skillId,
+              namespace,
+              name: published.data.name,
+              version: published.data.version,
+            },
+            tier: sourceOfficial ? "official" : "community",
+            lintWarnings: lint.warnings,
+            auditWarn: audit.warn,
+            assignedTo: shouldAssign ? workspaceId : null,
+          },
+          201,
+        );
+      } finally {
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  )
   // ─── CREATE BLANK SKILL ────────────────────────────────────────────────────
   .post("/", async (c) => {
     const auth = await requireUser();

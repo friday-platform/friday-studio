@@ -75,7 +75,11 @@ export function sortByOfficialPriority(entries: SkillsShSkillEntry[]): SkillsShS
   });
 }
 
-function isOfficialSource(source: string): boolean {
+/**
+ * True if the skill source's owner is in the curated OFFICIAL_ORGS set.
+ * Exported for the install-route trust-tier decision.
+ */
+export function isOfficialSource(source: string): boolean {
   const normalised = source.toLowerCase().split("/")[0] ?? "";
   return OFFICIAL_ORGS.has(normalised);
 }

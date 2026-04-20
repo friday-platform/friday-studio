@@ -17,7 +17,7 @@
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries } from "$lib/queries";
-  import { useAssignSkill, useUnassignSkill } from "$lib/queries/skills";
+  import { useAssignSkill, useInstallSkill, useUnassignSkill } from "$lib/queries/skills";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const classifiedQuery = createQuery(() =>
@@ -26,6 +26,38 @@
 
   const assignMut = useAssignSkill();
   const unassignMut = useUnassignSkill();
+  const installMut = useInstallSkill();
+
+  let installSource = $state("");
+  let installAck = $state(false);
+  let installMessage = $state<string | null>(null);
+
+  async function doInstall(): Promise<void> {
+    const source = installSource.trim();
+    if (!source || !workspaceId) return;
+    installMessage = null;
+    try {
+      const res = await installMut.mutateAsync({
+        source,
+        workspaceId,
+        acknowledgeWarnings: installAck,
+      });
+      const tier = typeof res.tier === "string" ? res.tier : "unknown";
+      const warnCount = Array.isArray(res.lintWarnings) ? res.lintWarnings.length : 0;
+      const published = res.published as { name: string; version: number } | undefined;
+      installMessage = `Installed ${published?.name ?? source} (tier=${tier}, ${String(warnCount)} lint warnings).`;
+      installSource = "";
+    } catch (e) {
+      const err = e as Error & { data?: Record<string, unknown> };
+      const data = err.data;
+      const auditCritical =
+        data && Array.isArray(data.auditCritical) ? data.auditCritical.length : 0;
+      const lintErrors = data && Array.isArray(data.lintErrors) ? data.lintErrors.length : 0;
+      const detail = auditCritical > 0 ? ` (${String(auditCritical)} critical audit)` : "";
+      const lintDetail = lintErrors > 0 ? ` (${String(lintErrors)} lint errors)` : "";
+      installMessage = `${err.message ?? "Install failed"}${detail}${lintDetail}`;
+    }
+  }
 
   // Track per-skill pending state so clicking one row doesn't spinner the whole list.
   let pending = $state<Record<string, boolean>>({});
@@ -60,6 +92,36 @@
 <div class="skills-page">
   {#if workspaceId}
     <WorkspaceBreadcrumb {workspaceId} />
+
+    <!-- Inline install form. Accepts owner/repo/slug (as returned by skills.sh
+         /search). Server runs local audit + publish-time lint, auto-assigns
+         official sources to this workspace, requires the acknowledge box for
+         community sources with warnings. -->
+    <section class="install-section">
+      <div class="install-row">
+        <input
+          class="source-input"
+          type="text"
+          bind:value={installSource}
+          placeholder="Install from skills.sh — owner/repo/slug (e.g. anthropics/skills/pdf)"
+        />
+        <label class="ack">
+          <input type="checkbox" bind:checked={installAck} />
+          Accept non-critical warnings
+        </label>
+        <button
+          type="button"
+          class="install-btn"
+          disabled={$installMut.isPending || installSource.trim().length === 0}
+          onclick={doInstall}
+        >
+          {$installMut.isPending ? "Installing…" : "Install"}
+        </button>
+      </div>
+      {#if installMessage}
+        <p class="install-message">{installMessage}</p>
+      {/if}
+    </section>
   {/if}
 
   {#if classifiedQuery.isLoading}
@@ -167,6 +229,64 @@
     flex-direction: column;
     gap: var(--size-6);
     padding: var(--size-8) var(--size-10);
+  }
+
+  .install-section {
+    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
+    border-radius: var(--radius-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    padding: var(--size-4);
+  }
+
+  .install-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-3);
+  }
+
+  .source-input {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    flex-grow: 1;
+    font-family: var(--font-family-mono, monospace);
+    font-size: var(--font-size-1);
+    min-inline-size: 260px;
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .ack {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    display: flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-2);
+  }
+
+  .install-btn {
+    background: var(--color-primary, #6272ff);
+    border: none;
+    border-radius: var(--radius-2);
+    color: #fff;
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .install-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  .install-message {
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
+    font-size: var(--font-size-1);
+    margin: 0;
   }
 
   .section {

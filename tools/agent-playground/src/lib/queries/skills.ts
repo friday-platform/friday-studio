@@ -186,6 +186,86 @@ export function useUnassignSkill() {
 }
 
 /**
+ * Search skills.sh via the daemon proxy.
+ * Wraps `GET /api/skills/search?q=&limit=`.
+ * Not a TanStack query factory because callers typically debounce input.
+ */
+export async function searchSkillsSh(query: string, limit = 10) {
+  const res = await fetch(
+    `/api/daemon/api/skills/search?q=${encodeURIComponent(query)}&limit=${String(limit)}`,
+  );
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  const data = (await res.json()) as {
+    query: string;
+    count: number;
+    durationMs: number;
+    skills: Array<{
+      id: string;
+      skillId: string;
+      name: string;
+      installs: number;
+      source: string;
+      tier: "official" | "community";
+    }>;
+  };
+  return data;
+}
+
+export interface InstallSkillInput {
+  source: string;
+  workspaceId?: string;
+  acknowledgeWarnings?: boolean;
+  targetNamespace?: string;
+}
+
+/**
+ * Mutation to install a skill from skills.sh.
+ * Wraps `POST /api/skills/install`.
+ * Invalidates the workspace-skills query on success so the Skills page
+ * picks up the new assignment without a manual reload.
+ */
+export function useInstallSkill() {
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: InstallSkillInput) => {
+      const res = await fetch("/api/daemon/api/skills/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const body = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) {
+        const msg =
+          typeof body.error === "string" ? body.error : `Install failed: ${String(res.status)}`;
+        const err = new Error(msg) as Error & { data?: Record<string, unknown>; status?: number };
+        err.data = body;
+        err.status = res.status;
+        throw err;
+      }
+      return body;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
+      if (variables.workspaceId) {
+        queryClient.invalidateQueries({
+          queryKey: ["daemon", "workspace", variables.workspaceId, "skills"] as const,
+        });
+        queryClient.invalidateQueries({
+          queryKey: [
+            "daemon",
+            "workspace",
+            variables.workspaceId,
+            "skills",
+            "classified",
+          ] as const,
+        });
+      }
+    },
+  }));
+}
+
+/**
  * Mutation for updating a single file within a skill's archive.
  * Wraps `PUT /api/skills/:namespace/:name/files/:path` via daemon proxy.
  * Invalidates file content and skill queries on success.
