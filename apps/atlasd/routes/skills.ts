@@ -1162,9 +1162,27 @@ function replaceOutsideCode(text: string, pattern: RegExp, replacement: string):
   return parts.map((p) => (p.startsWith("```") ? p : p.replace(pattern, replacement))).join("");
 }
 
+/**
+ * Cached instructions from `@friday/authoring-skills`. Prepended to every
+ * LLM fix prompt so the model sees the agentskills.io + platform.claude.com
+ * best-practices spec when it rewrites. Cached for the daemon's lifetime
+ * since the skill's content rarely changes and the hot path is the lint
+ * panel in the UI.
+ */
+let authoringSkillCache: { instructions: string; version: number } | null = null;
+
+async function loadAuthoringSkillInstructions(): Promise<string | null> {
+  if (authoringSkillCache !== null) return authoringSkillCache.instructions;
+  const res = await SkillStorage.get("friday", "authoring-skills");
+  if (!res.ok || !res.data) return null;
+  authoringSkillCache = { instructions: res.data.instructions, version: res.data.version };
+  return authoringSkillCache.instructions;
+}
+
 async function llmFix(input: AutofixInput): Promise<AutofixResult> {
   const { rule, skill, platformModels } = input;
-  const prompt = buildFixPrompt(rule, skill);
+  const authoringGuide = await loadAuthoringSkillInstructions();
+  const prompt = buildFixPrompt(rule, skill, authoringGuide);
   try {
     const { text } = await generateText({
       model: platformModels.get("classifier"),
@@ -1208,11 +1226,26 @@ const FIX_PROMPTS: Record<string, string> = {
     "Rewrite the INSTRUCTIONS body to remove time-sensitive phrasing ('before August 2025', etc.) — wrap any superseded content in a <details>Old patterns</details> block. Return ONLY the rewritten instructions, inside <instructions>…</instructions> tags.",
 };
 
-function buildFixPrompt(rule: string, skill: AutofixInput["skill"]): string {
+function buildFixPrompt(
+  rule: string,
+  skill: AutofixInput["skill"],
+  authoringGuide: string | null,
+): string {
   const ruleInstruction =
     FIX_PROMPTS[rule] ??
     `The lint rule is "${rule}". Rewrite the minimum content needed to satisfy it. Return either the new description (plain text) or the new instructions wrapped in <instructions>…</instructions> tags.`;
+  const guideSection = authoringGuide
+    ? [
+        `=== BEGIN AGENT-SKILLS AUTHORING GUIDE ===`,
+        `Follow these rules. The current skill must end up conforming to them.`,
+        ``,
+        authoringGuide,
+        `=== END AGENT-SKILLS AUTHORING GUIDE ===`,
+        ``,
+      ]
+    : [];
   return [
+    ...guideSection,
     `You are fixing a single lint issue in an Agent Skill.`,
     `Rule to fix: ${rule}`,
     ``,
