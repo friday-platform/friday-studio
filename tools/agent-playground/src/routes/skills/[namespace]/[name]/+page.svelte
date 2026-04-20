@@ -28,6 +28,7 @@
     useDeleteSkill,
     useDisableSkill,
     usePublishSkill,
+    useSkillLint,
     useUpdateSkillFromSource,
   } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
@@ -196,6 +197,17 @@
   const uploadDialogOpen = writable(false);
 
   // ---------------------------------------------------------------------------
+  // Lint — publish-time rules run on the stored skill; results render in a
+  // collapsible panel so the user can see issues without leaving the page.
+  // ---------------------------------------------------------------------------
+
+  const lintQuery = useSkillLint(() => namespace, () => name);
+  const lintIssueCount = $derived(
+    (lintQuery.data?.errors.length ?? 0) + (lintQuery.data?.warnings.length ?? 0),
+  );
+  let lintOpen = $state(false);
+
+  // ---------------------------------------------------------------------------
   // Pull from skills.sh source (only applies to remotely-installed skills)
   // ---------------------------------------------------------------------------
 
@@ -266,6 +278,17 @@
           {publishMut.isPending ? "Saving…" : "Save"}
         </Button>
       {:else}
+        {#if lintIssueCount > 0}
+          <Button
+            size="small"
+            variant={(lintQuery.data?.errors.length ?? 0) > 0 ? "primary" : "secondary"}
+            onclick={() => {
+              lintOpen = !lintOpen;
+            }}
+          >
+            {lintIssueCount} issue{lintIssueCount === 1 ? "" : "s"}
+          </Button>
+        {/if}
         {#if sourceRef}
           <span class="source-hint" title={sourceRef}>from skills.sh</span>
           <Button
@@ -321,6 +344,25 @@
         {/if}
       {/if}
     </div>
+
+    {#if lintOpen && lintQuery.data}
+      <div class="lint-panel">
+        {#each lintQuery.data.errors as f (f.rule + f.message)}
+          <div class="lint-row lint-error">
+            <span class="lint-severity">error</span>
+            <span class="lint-rule">{f.rule}</span>
+            <span class="lint-msg">{f.message}</span>
+          </div>
+        {/each}
+        {#each lintQuery.data.warnings as f (f.rule + f.message)}
+          <div class="lint-row lint-{f.severity}">
+            <span class="lint-severity">{f.severity}</span>
+            <span class="lint-rule">{f.rule}</span>
+            <span class="lint-msg">{f.message}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     {#if editing}
       <div class="editor-pane">
@@ -462,6 +504,52 @@
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     font-size: var(--font-size-1);
     margin-inline-end: var(--size-2);
+  }
+
+  .lint-panel {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    padding: var(--size-3) var(--size-6) var(--size-4);
+  }
+
+  .lint-row {
+    align-items: baseline;
+    display: grid;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+    grid-template-columns: auto auto 1fr;
+  }
+
+  .lint-severity {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-6);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .lint-error .lint-severity {
+    color: var(--color-error);
+  }
+
+  .lint-warn .lint-severity {
+    color: var(--color-warning);
+  }
+
+  .lint-info .lint-severity {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+  }
+
+  .lint-rule {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-1);
+  }
+
+  .lint-msg {
+    color: var(--color-text);
   }
 
   /* --- Editor / Preview ---------------------------------------------------- */

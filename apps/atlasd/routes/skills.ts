@@ -488,6 +488,38 @@ export const skillsRoutes = daemonFactory
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
   })
+  // ─── LINT A PUBLISHED SKILL ────────────────────────────────────────────────
+  // Re-runs the publish-time linter against the current stored version so
+  // the UI can surface warnings/errors without re-uploading. Kept GET so the
+  // detail page can issue it alongside the catalog query.
+  .get("/:namespace/:name/lint", zValidator("param", NamespacedParams), async (c) => {
+    const { namespace, name } = c.req.valid("param");
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+    const skill = result.data;
+    const archiveMap: Record<string, string> = {};
+    const archiveFiles: string[] = [];
+    if (skill.archive) {
+      const extracted = await extractArchiveContents(skill.archive);
+      for (const [path, contents] of Object.entries(extracted)) {
+        if (path === "SKILL.md") continue;
+        archiveFiles.push(path);
+        archiveMap[path] = contents;
+      }
+    }
+    const lint = lintSkill(
+      {
+        name,
+        frontmatter: skill.frontmatter,
+        instructions: skill.instructions,
+        archiveFiles,
+        archiveContents: archiveMap,
+      },
+      "publish",
+    );
+    return c.json(lint);
+  })
   // ─── CHECK UPSTREAM FOR UPDATE ─────────────────────────────────────────────
   // Probes skills.sh for a newer archive of a remotely-installed skill by
   // re-downloading and comparing the SHA-256 to the stored `source-hash`.

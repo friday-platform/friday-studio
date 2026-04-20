@@ -6,7 +6,7 @@
  *
  * @module
  */
-import { createMutation, useQueryClient } from "@tanstack/svelte-query";
+import { createMutation, createQuery, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
 import { skillQueries } from "./skill-queries.ts";
@@ -261,6 +261,38 @@ export function useInstallSkill() {
         });
       }
     },
+  }));
+}
+
+export interface LintFinding {
+  rule: string;
+  message: string;
+  severity: "info" | "warn" | "error";
+}
+
+export interface LintResult {
+  warnings: LintFinding[];
+  errors: LintFinding[];
+}
+
+/**
+ * Re-runs the publish-time linter against the currently-stored skill.
+ * Surfaces warnings/errors in the UI without needing a re-upload. Kept
+ * as a `createQuery` because lint output is stable between edits and
+ * benefits from being invalidated when a publish succeeds.
+ */
+export function useSkillLint(namespace: () => string, name: () => string) {
+  return createQuery(() => ({
+    queryKey: ["daemon", "skills", namespace(), name(), "lint"] as const,
+    queryFn: async (): Promise<LintResult> => {
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(namespace())}/${encodeURIComponent(name())}/lint`,
+      );
+      if (!res.ok) throw new Error(`Lint failed: ${res.status}`);
+      return (await res.json()) as LintResult;
+    },
+    enabled: namespace().length > 0 && name().length > 0,
+    staleTime: 60_000,
   }));
 }
 
