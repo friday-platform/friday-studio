@@ -30,10 +30,15 @@ const WorkspacePlanV1ArtifactSchema = z.object({
   data: WorkspacePlanSchema,
 });
 
+// `z.lazy` defers the reference to `WorkspaceBlueprintSchema` until the first
+// parse call. Without this, any client-side import graph that loads this
+// module through @atlas/config (which @atlas/schemas/workspace.ts imports
+// from) triggers a TDZ ReferenceError — the schemas module is still
+// initializing when model.ts tries to use its export at top level.
 const WorkspacePlanV2ArtifactSchema = z.object({
   type: z.literal("workspace-plan"),
   version: z.literal(2),
-  data: WorkspaceBlueprintSchema,
+  data: z.lazy(() => WorkspaceBlueprintSchema),
 });
 
 const CalendarScheduleArtifactSchema = z.object({
