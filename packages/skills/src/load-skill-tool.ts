@@ -6,6 +6,7 @@ import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
 import { extractSkillArchive, injectSkillDir } from "./archive.ts";
+import { type LintFinding, lintCache, lintSkill } from "./skill-linter.ts";
 import { SkillStorage } from "./storage.ts";
 
 const LoadSkillInputSchema = z.object({
@@ -134,6 +135,7 @@ async function resolveGlobalSkill(
       instructions: string;
       frontmatter?: Record<string, unknown>;
       skillDir?: string;
+      lintWarnings?: LintFinding[];
     }
   | { error: string }
 > {
@@ -198,12 +200,28 @@ async function resolveGlobalSkill(
     hasArchive: !!skill.archive,
   });
 
+  // Load-time fast-pass lint: cached by skillId:version, invalidated
+  // automatically because version bumps on every publish / file-PUT.
+  let lintResult = lintCache.get(skill.skillId, skill.version);
+  if (!lintResult) {
+    lintResult = lintSkill(
+      {
+        name: skill.name ?? skillName,
+        frontmatter: skill.frontmatter,
+        instructions: skill.instructions,
+      },
+      "load",
+    );
+    lintCache.set(skill.skillId, skill.version, lintResult);
+  }
+
   const response: {
     name: string;
     description: string;
     instructions: string;
     frontmatter?: Record<string, unknown>;
     skillDir?: string;
+    lintWarnings?: LintFinding[];
   } = { name: skill.name ?? skillName, description: skill.description, instructions };
 
   if (Object.keys(skill.frontmatter).length > 0) {
@@ -212,6 +230,10 @@ async function resolveGlobalSkill(
 
   if (skillDir) {
     response.skillDir = skillDir;
+  }
+
+  if (lintResult.warnings.length > 0) {
+    response.lintWarnings = lintResult.warnings;
   }
 
   return response;

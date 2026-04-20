@@ -4,6 +4,8 @@ import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config"
 import {
   extractArchiveContents,
   extractSkillArchive,
+  invalidateLintCache,
+  lintSkill,
   listArchiveFiles,
   packSkillArchive,
   parseSkillMd,
@@ -252,6 +254,7 @@ export const skillsRoutes = daemonFactory
       });
 
       if (!publishResult.ok) return c.json({ error: publishResult.error }, 500);
+      invalidateLintCache(publishResult.data.skillId);
       return c.json({ path: filePath, version: publishResult.data.version });
     } finally {
       await rm(extractDir, { recursive: true, force: true }).catch(() => {});
@@ -314,8 +317,34 @@ export const skillsRoutes = daemonFactory
         }
       }
 
+      // Full-pass lint before persisting — returns warnings (non-blocking)
+      // and errors (blocking) based on agentskills.io + Anthropic rules.
+      // Reference-depth and broken-link checks need the extracted archive;
+      // re-use the just-extracted map if we have it, else skip depth checks.
+      let archiveContents: Record<string, string> | undefined;
+      if (input.instructions) {
+        const existing = await SkillStorage.get(namespace, name);
+        if (existing.ok && existing.data?.archive) {
+          archiveContents = await extractArchiveContents(new Uint8Array(existing.data.archive));
+        }
+      }
+      const lint = lintSkill(
+        {
+          name,
+          frontmatter: input.frontmatter ?? {},
+          instructions: input.instructions,
+          archiveFiles: archiveContents ? Object.keys(archiveContents) : undefined,
+          archiveContents,
+        },
+        "publish",
+      );
+      if (lint.errors.length > 0) {
+        return c.json({ error: "Skill failed lint", lintErrors: lint.errors }, 400);
+      }
+
       const result = await SkillStorage.publish(namespace, name, auth.userId, input);
       if (!result.ok) return c.json({ error: result.error }, 500);
+      invalidateLintCache(result.data.skillId);
       return c.json(
         {
           published: {
@@ -325,6 +354,7 @@ export const skillsRoutes = daemonFactory
             name: result.data.name,
             version: result.data.version,
           },
+          lintWarnings: lint.warnings,
         },
         201,
       );
@@ -455,6 +485,7 @@ export const skillsRoutes = daemonFactory
       const { disabled } = c.req.valid("json");
       const result = await SkillStorage.setDisabled(skillId, disabled);
       if (!result.ok) return c.json({ error: result.error }, 500);
+      invalidateLintCache(skillId);
       return c.json({ success: true });
     },
   )
