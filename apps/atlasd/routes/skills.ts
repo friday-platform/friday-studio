@@ -74,6 +74,16 @@ async function requireUser(): Promise<{ ok: true; userId: string } | { ok: false
   return { ok: true, userId: result.data.id };
 }
 
+/**
+ * The `@atlas/*` namespace is reserved for bundled system skills managed
+ * by `ensureSystemSkills()` (Phase 6). Mutating them via HTTP requires
+ * matching the bootstrap loader's sentinel user id — which interactive
+ * callers never hold. Returns true when the caller should be rejected.
+ */
+function isAtlasNamespaceBlockedForUser(namespace: string, userId: string): boolean {
+  return namespace === "atlas" && userId !== "system";
+}
+
 // ==============================================================================
 // Routes
 // ==============================================================================
@@ -427,6 +437,9 @@ export const skillsRoutes = daemonFactory
       namespace: c.req.param("namespace"),
       name: c.req.param("name"),
     });
+    if (params.success && isAtlasNamespaceBlockedForUser(params.data.namespace, auth.userId)) {
+      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    }
     if (!params.success) return c.json({ error: params.error.message }, 400);
     const { namespace, name } = params.data;
 
@@ -503,6 +516,9 @@ export const skillsRoutes = daemonFactory
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { namespace, name } = c.req.valid("param");
+      if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
+        return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+      }
       const input = c.req.valid("json");
 
       // Validate references against the text files that will actually be
@@ -579,6 +595,9 @@ export const skillsRoutes = daemonFactory
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name } = c.req.valid("param");
+    if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
+      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    }
     const formData = await c.req.formData();
     const file = formData.get("archive");
     const descriptionField = formData.get("description")?.toString();
@@ -670,6 +689,9 @@ export const skillsRoutes = daemonFactory
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name, version } = c.req.valid("param");
+    if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
+      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    }
     const result = await SkillStorage.deleteVersion(namespace, name, version);
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ success: true });

@@ -435,6 +435,15 @@ export class AtlasDaemon {
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
 
+    // Bootstrap @atlas/* system skills before any workspace chat gets a chance
+    // to ask for them. Idempotent — only republishes on content-hash mismatch.
+    try {
+      const { ensureSystemSkills } = await import("@atlas/system/skills/bootstrap");
+      await ensureSystemSkills();
+    } catch (error) {
+      logger.error("Failed to bootstrap @atlas system skills", { error });
+    }
+
     // Start CronManager — pass the live set of workspace ids so any
     // persisted timer pointing at a deleted workspace (e.g. one removed
     // outside the manager via direct rm) is pruned before the tick loop

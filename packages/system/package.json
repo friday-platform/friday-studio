@@ -9,7 +9,8 @@
     "./agents/conversation/tools": "./agents/conversation/tools/mod.ts",
     "./agents/fsm-workspace-creator/agent-classifier": "./agents/fsm-workspace-creator/agent-classifier.ts",
     "./agents/fsm-workspace-creator/enrichers/mcp-servers": "./agents/fsm-workspace-creator/enrichers/mcp-servers.ts",
-    "./agents/conversation/tools/connect-mcp-server": "./agents/conversation/tools/connect-mcp-server.ts"
+    "./agents/conversation/tools/connect-mcp-server": "./agents/conversation/tools/connect-mcp-server.ts",
+    "./skills/bootstrap": "./skills/bootstrap.ts"
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",

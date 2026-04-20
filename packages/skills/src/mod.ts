@@ -7,6 +7,8 @@ export {
   readArchiveFile,
   validateSkillReferences,
 } from "./archive.ts";
+// Canonical content hash for system-skill reconciliation.
+export { computeSkillHash } from "./content-hash.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
 export type {
