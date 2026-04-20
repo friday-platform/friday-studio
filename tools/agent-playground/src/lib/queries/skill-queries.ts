@@ -15,6 +15,12 @@ const WorkspaceSkillsResponseSchema = z.object({
   skills: z.array(SkillSummarySchema),
 });
 
+const ClassifiedSkillsResponseSchema = z.object({
+  assigned: z.array(SkillSummarySchema),
+  global: z.array(SkillSummarySchema),
+  other: z.array(SkillSummarySchema),
+});
+
 // ==============================================================================
 // SCHEMAS & TYPES
 // ==============================================================================
@@ -122,5 +128,45 @@ export const skillQueries = {
           }
         : skipToken,
       staleTime: 60_000,
+    }),
+
+  /**
+   * Classified catalog for a workspace: assigned here / global (unassigned) / other workspaces.
+   * Single round-trip replacement for per-skill assignment lookups.
+   */
+  classifiedWorkspaceSkills: (workspaceId: string | null) =>
+    queryOptions({
+      queryKey: ["daemon", "workspace", workspaceId, "skills", "classified"] as const,
+      queryFn: workspaceId
+        ? async () => {
+            const res = await fetch(
+              `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/skills/classified`,
+            );
+            if (!res.ok) throw new Error(`Failed to fetch classified skills: ${res.status}`);
+            return ClassifiedSkillsResponseSchema.parse(await res.json());
+          }
+        : skipToken,
+      staleTime: 30_000,
+    }),
+
+  /**
+   * Workspace IDs a skill is assigned to. Empty array ⇒ unassigned (global).
+   * Used by the workspace Skills page to split Assigned / Global / Other.
+   */
+  assignments: (skillId: string | null) =>
+    queryOptions({
+      queryKey: ["daemon", "skills", "assignments", skillId] as const,
+      queryFn: skillId
+        ? async () => {
+            const client = getDaemonClient();
+            const res = await client.skills.scoping[":skillId"].assignments.$get({
+              param: { skillId },
+            });
+            if (!res.ok) throw new Error(`Failed to fetch skill assignments: ${res.status}`);
+            const data = await res.json();
+            return data.workspaceIds as string[];
+          }
+        : skipToken,
+      staleTime: 30_000,
     }),
 };

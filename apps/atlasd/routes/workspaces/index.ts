@@ -2017,6 +2017,44 @@ const workspacesRoutes = daemonFactory
       const skills = await resolveVisibleSkills(workspaceId, SkillStorage);
       return c.json({ skills });
     },
+  )
+  // ─── CLASSIFIED WORKSPACE SKILLS ──────────────────────────────────────────
+  // Returns three disjoint buckets so the playground Skills page can render
+  // without per-skill N+1 assignment lookups:
+  //   - assigned:   skills explicitly assigned to this workspace
+  //   - global:     skills with zero assignments (visible everywhere)
+  //   - other:      skills assigned to some other workspace but not this one
+  //                 (offered as "available to assign here")
+  .get(
+    "/:workspaceId/skills/classified",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const listResult = await SkillStorage.list(undefined, undefined, true);
+      if (!listResult.ok) return c.json({ error: listResult.error }, 500);
+      const allSkills = listResult.data;
+
+      // Run assignment lookups in parallel — bounded by N skills, not N * latency.
+      const assignmentEntries = await Promise.all(
+        allSkills.map(async (skill) => {
+          const r = await SkillStorage.listAssignments(skill.skillId);
+          return [skill.skillId, r.ok ? r.data : []] as const;
+        }),
+      );
+      const assignmentsBySkill = new Map(assignmentEntries);
+
+      const assigned = [];
+      const global = [];
+      const other = [];
+      for (const skill of allSkills) {
+        const list = assignmentsBySkill.get(skill.skillId) ?? [];
+        if (list.length === 0) global.push(skill);
+        else if (list.includes(workspaceId)) assigned.push(skill);
+        else other.push(skill);
+      }
+
+      return c.json({ assigned, global, other });
+    },
   );
 
 export { workspacesRoutes };

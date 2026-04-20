@@ -121,6 +121,71 @@ export function useDeleteSkill() {
 }
 
 /**
+ * Mutation to assign a skill to a workspace.
+ * Wraps `POST /api/skills/scoping/:skillId/assignments` with {workspaceIds: [workspaceId]}.
+ */
+export function useAssignSkill() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: { skillId: string; workspaceId: string }) => {
+      const res = await client.skills.scoping[":skillId"].assignments.$post({
+        param: { skillId: input.skillId },
+        json: { workspaceIds: [input.workspaceId] },
+      });
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body === "object" &&
+            body !== null &&
+            "error" in body &&
+            typeof body.error === "string"
+            ? body.error
+            : `Failed to assign skill: ${res.status}`,
+        );
+      }
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", "assignments", variables.skillId] as const,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", variables.workspaceId, "skills"] as const,
+      });
+    },
+  }));
+}
+
+/**
+ * Mutation to unassign a skill from a workspace.
+ * Wraps `DELETE /api/skills/scoping/:skillId/assignments/:workspaceId`.
+ */
+export function useUnassignSkill() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: { skillId: string; workspaceId: string }) => {
+      const res = await client.skills.scoping[":skillId"].assignments[":workspaceId"].$delete({
+        param: { skillId: input.skillId, workspaceId: input.workspaceId },
+      });
+      if (!res.ok) throw new Error(`Failed to unassign skill: ${res.status}`);
+      return null;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", "assignments", variables.skillId] as const,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", variables.workspaceId, "skills"] as const,
+      });
+    },
+  }));
+}
+
+/**
  * Mutation for updating a single file within a skill's archive.
  * Wraps `PUT /api/skills/:namespace/:name/files/:path` via daemon proxy.
  * Invalidates file content and skill queries on success.
