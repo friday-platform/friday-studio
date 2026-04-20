@@ -40,6 +40,20 @@ export interface CreateLoadSkillToolOptions {
    * able to bypass scoping just because it doesn't appear in <available_skills>.
    */
   workspaceId?: string;
+
+  /**
+   * Per-job-step skill filter — Phase 7 of the skills-scoping plan.
+   *
+   * Array of `@namespace/name` refs permitted for the current FSM job step
+   * (in addition to any hardcoded skills passed above, which are always
+   * allowed). An empty array means "no workspace skills for this step".
+   * `null` / `undefined` means "no filter, inherit workspace visibility".
+   *
+   * When set, both the tool's `description` (the list of built-in skill IDs
+   * the LLM is told about) and the load-time check drop skills the step
+   * isn't authorized for.
+   */
+  jobFilter?: readonly string[] | null;
 }
 
 export interface LoadSkillToolResult {
@@ -60,7 +74,20 @@ export interface LoadSkillToolResult {
  * remove extracted skill archive directories.
  */
 export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): LoadSkillToolResult {
-  const { hardcodedSkills = [], workspaceId } = options;
+  const { hardcodedSkills = [], workspaceId, jobFilter } = options;
+  const jobFilterSet = jobFilter ? new Set(jobFilter) : null;
+
+  // `@atlas/*` skills are the system library — always visible, regardless of
+  // the step's `skills: [...]` filter, because they're the cross-step
+  // "how to author skills" / "how to create workspaces" utilities.
+  function isAllowedByJobFilter(ref: string): boolean {
+    if (!jobFilterSet) return true;
+    if (ref.startsWith("@atlas/")) return true;
+    return jobFilterSet.has(ref);
+  }
+
+  // Hardcoded skills bypass the filter — they're owned by the calling agent
+  // (e.g. conversation), not by the workspace skill catalog.
   const hardcodedIds = hardcodedSkills.map((s) => s.id);
 
   // Cache extracted skill dirs by "namespace/name/version" to avoid re-extracting
@@ -71,12 +98,18 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
     "Skills contain step-by-step guidance you should follow. " +
     "Check <available_skills> - if your task matches, load the skill first.";
 
+  const filterSuffix = jobFilter
+    ? ` (filtered for this step: ${[...jobFilter].join(", ") || "@atlas/* only"})`
+    : "";
+
   const description =
     hardcodedSkills.length > 0
       ? `${baseInstruction} Built-in skills: ${hardcodedIds.join(
           ", ",
-        )}. Workspace skills also available.`
-      : baseInstruction;
+        )}. Workspace skills also available${filterSuffix}.`
+      : jobFilter
+        ? `${baseInstruction} Workspace skills${filterSuffix}.`
+        : baseInstruction;
 
   const skillTool = tool({
     description,
@@ -97,6 +130,13 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
 
       // Tier 2: Global catalog
       if (name.startsWith("@") && name.includes("/")) {
+        if (!isAllowedByJobFilter(name)) {
+          logger.warn("skill_blocked_by_job_filter", {
+            skill: name,
+            jobFilter: [...(jobFilter ?? [])],
+          });
+          return { error: `Skill "${name}" is not allowed for this job step.` };
+        }
         return await resolveGlobalSkill(name, extractedDirs, workspaceId);
       }
 

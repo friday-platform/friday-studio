@@ -20,6 +20,14 @@ export const LLMActionSchema = z.object({
   model: z.string(),
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
+  /**
+   * Per-step skill filter. Empty array ⇒ this step sees no workspace-assigned
+   * skills (only globally-visible `@atlas/*` built-ins and any unassigned
+   * skills). Absent ⇒ inherit workspace-level visibility.
+   * List entries are `@namespace/name` refs as returned by
+   * `resolveVisibleSkills`.
+   */
+  skills: z.array(z.string()).optional(),
   outputTo: z.string().optional(),
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
@@ -41,6 +49,8 @@ export const AgentActionSchema = z.object({
   outputType: z.string().optional(),
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt: z.string().optional(),
+  /** Per-step skill filter — see LLMActionSchema.skills for semantics. */
+  skills: z.array(z.string()).optional(),
 });
 
 export const ActionSchema = z.discriminatedUnion("type", [

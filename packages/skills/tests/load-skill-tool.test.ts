@@ -263,3 +263,59 @@ describe("createLoadSkillTool — workspace scoping", () => {
     expect(result).toMatchObject({ name: "internal-tool" });
   });
 });
+
+// =============================================================================
+// Job-level filter (Phase 7)
+// =============================================================================
+
+describe("createLoadSkillTool — jobFilter", () => {
+  const SKILL_DATA = {
+    id: "skill-1",
+    skillId: "skill-1",
+    namespace: "tempest",
+    name: "allowed",
+    version: 1,
+    description: "An allowed skill",
+    descriptionManual: false,
+    disabled: false,
+    frontmatter: {},
+    instructions: "Allowed.",
+    archive: null,
+    createdBy: "user-1",
+    createdAt: new Date(),
+  } as const;
+
+  it("allows catalog skills that are in the jobFilter list", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    const tool = createLoadSkillTool({ jobFilter: ["@tempest/allowed"] });
+    const result = await exec(tool, "@tempest/allowed");
+    expect(result).toMatchObject({ name: "allowed" });
+  });
+
+  it("blocks catalog skills missing from the jobFilter list", async () => {
+    const getSpy = vi.spyOn(SkillStorage, "get");
+    const tool = createLoadSkillTool({ jobFilter: ["@tempest/other"] });
+    const result = await exec(tool, "@tempest/blocked");
+    expect(result).toMatchObject({
+      error: expect.stringContaining("not allowed for this job step"),
+    });
+    // Blocked before hitting the storage — no DB lookup at all.
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it("always allows @atlas/* even when not listed in jobFilter", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({
+      ok: true,
+      data: { ...SKILL_DATA, namespace: "atlas", name: "authoring-skills" },
+    });
+    const tool = createLoadSkillTool({ jobFilter: ["@tempest/other"] });
+    const result = await exec(tool, "@atlas/authoring-skills");
+    expect(result).toMatchObject({ name: "authoring-skills" });
+  });
+
+  it("reflects the filter in the tool description", () => {
+    const t = createLoadSkillTool({ jobFilter: ["@tempest/a", "@tempest/b"] });
+    expect(t.tool.description).toMatch(/filtered for this step/);
+    expect(t.tool.description).toContain("@tempest/a");
+  });
+});
