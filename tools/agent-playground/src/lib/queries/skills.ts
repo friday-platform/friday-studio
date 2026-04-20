@@ -425,16 +425,18 @@ export function useAutofixSkill() {
         published: { version: number };
       };
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
-      queryClient.invalidateQueries({
-        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+    onSuccess: async (_data, variables) => {
+      // Broad invalidate under the skill's key, then force-refetch the
+      // three active queries that feed the detail page — detail (version
+      // badge + markdown preview), lint (issues count + panel), versions
+      // (history dropdown). Without the explicit refetch the page looked
+      // stuck on old content until the user clicked away and back.
+      await queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
       });
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", variables.namespace, variables.name, "lint"] as const,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["daemon", "skills", variables.namespace, variables.name, "versions"] as const,
+      await queryClient.refetchQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
+        type: "active",
       });
     },
   }));
@@ -499,13 +501,13 @@ export function useUpdateSkillFromSource() {
       }
       return (await res.json()) as { updated: { version: number; sourceHash: string } };
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
-      queryClient.invalidateQueries({
-        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
       });
-      queryClient.invalidateQueries({
-        queryKey: skillQueries.files(variables.namespace, variables.name).queryKey,
+      await queryClient.refetchQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
+        type: "active",
       });
     },
   }));
@@ -542,12 +544,13 @@ export function useUpdateSkillFile() {
       }
       return UpdateSkillFileResponseSchema.parse(await res.json());
     },
-    onSuccess: (_data: unknown, variables: UpdateSkillFileInput) => {
-      queryClient.invalidateQueries({
-        queryKey: skillQueries.files(variables.namespace, variables.name).queryKey,
+    onSuccess: async (_data: unknown, variables: UpdateSkillFileInput) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
       });
-      queryClient.invalidateQueries({
-        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+      await queryClient.refetchQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name] as const,
+        type: "active",
       });
     },
   }));
