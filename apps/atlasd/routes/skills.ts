@@ -44,9 +44,16 @@ const AtNamespaceParam = z
   .regex(/^@[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     message: "Namespace must be @-prefixed kebab-case (e.g. @friday)",
   })
-  .refine((s) => !RESERVED_WORDS.some((w) => s.slice(1).includes(w)), {
-    message: `Must not contain reserved words: ${RESERVED_WORDS.join(", ")}`,
-  })
+  .refine(
+    (s) => {
+      // Hyphen-segment match, same rule as packages/config/src/skills.ts.
+      // Substring match falsely rejects legitimate namespaces like
+      // `@anthropics-skills` because they contain `anthropic`.
+      const segments = s.slice(1).split("-");
+      return !RESERVED_WORDS.some((w) => segments.includes(w));
+    },
+    { message: `Must not contain reserved words: ${RESERVED_WORDS.join(", ")}` },
+  )
   .transform((s) => s.slice(1));
 
 const NamespacedParams = z.object({ namespace: AtNamespaceParam, name: SkillNameSchema });
