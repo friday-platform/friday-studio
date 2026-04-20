@@ -17,6 +17,7 @@
  * @module
  */
 
+import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +43,7 @@ export const SYSTEM_SKILL_NAMESPACE = "friday" as const;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function findSkillDirs(root: string): Promise<string[]> {
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch {
