@@ -32,8 +32,12 @@ const logger = createLogger({ name: "system-skill-bootstrap" });
  */
 export const SYSTEM_USER_ID = "system" as const;
 
-/** Namespace every bundled skill lives under. */
-export const SYSTEM_SKILL_NAMESPACE = "atlas" as const;
+/**
+ * Namespace every bundled skill lives under. User-facing surfaces
+ * (skill picker, Context tab, chat) should never refer to "atlas" —
+ * the product is "Friday", "atlas" is the internal monorepo name.
+ */
+export const SYSTEM_SKILL_NAMESPACE = "friday" as const;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

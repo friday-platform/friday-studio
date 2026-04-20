@@ -77,12 +77,12 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
   const { hardcodedSkills = [], workspaceId, jobFilter } = options;
   const jobFilterSet = jobFilter ? new Set(jobFilter) : null;
 
-  // `@atlas/*` skills are the system library — always visible, regardless of
-  // the step's `skills: [...]` filter, because they're the cross-step
+  // `@friday/*` skills are the system library — always visible, regardless
+  // of the step's `skills: [...]` filter, because they're the cross-step
   // "how to author skills" / "how to create workspaces" utilities.
   function isAllowedByJobFilter(ref: string): boolean {
     if (!jobFilterSet) return true;
-    if (ref.startsWith("@atlas/")) return true;
+    if (ref.startsWith("@friday/")) return true;
     return jobFilterSet.has(ref);
   }
 
@@ -99,7 +99,7 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
     "Check <available_skills> - if your task matches, load the skill first.";
 
   const filterSuffix = jobFilter
-    ? ` (filtered for this step: ${[...jobFilter].join(", ") || "@atlas/* only"})`
+    ? ` (filtered for this step: ${[...jobFilter].join(", ") || "@friday/* only"})`
     : "";
 
   const description =

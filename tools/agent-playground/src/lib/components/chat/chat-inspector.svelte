@@ -700,7 +700,7 @@
                     <span class="skill-name-compact mono-sm">
                       {skill.namespace}/{skill.name}
                     </span>
-                    {#if skill.namespace === "atlas"}
+                    {#if skill.namespace === "friday"}
                       <span class="badge-system">system</span>
                     {/if}
                     {#if skill.disabled}

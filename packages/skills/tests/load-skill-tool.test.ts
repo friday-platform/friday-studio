@@ -303,13 +303,13 @@ describe("createLoadSkillTool — jobFilter", () => {
     expect(getSpy).not.toHaveBeenCalled();
   });
 
-  it("always allows @atlas/* even when not listed in jobFilter", async () => {
+  it("always allows @friday/* even when not listed in jobFilter", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({
       ok: true,
-      data: { ...SKILL_DATA, namespace: "atlas", name: "authoring-skills" },
+      data: { ...SKILL_DATA, namespace: "friday", name: "authoring-skills" },
     });
     const tool = createLoadSkillTool({ jobFilter: ["@tempest/other"] });
-    const result = await exec(tool, "@atlas/authoring-skills");
+    const result = await exec(tool, "@friday/authoring-skills");
     expect(result).toMatchObject({ name: "authoring-skills" });
   });
 

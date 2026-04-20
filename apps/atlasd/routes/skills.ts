@@ -36,13 +36,13 @@ function remoteInstallEnabled(): boolean {
 // ==============================================================================
 
 /**
- * Route params use /:namespace/:name where namespace arrives as "@atlas".
+ * Route params use /:namespace/:name where namespace arrives as "@friday".
  * This schema strips the leading "@" and validates the remainder.
  */
 const AtNamespaceParam = z
   .string()
   .regex(/^@[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: "Namespace must be @-prefixed kebab-case (e.g. @atlas)",
+    message: "Namespace must be @-prefixed kebab-case (e.g. @friday)",
   })
   .refine((s) => !RESERVED_WORDS.some((w) => s.slice(1).includes(w)), {
     message: `Must not contain reserved words: ${RESERVED_WORDS.join(", ")}`,
@@ -75,13 +75,13 @@ async function requireUser(): Promise<{ ok: true; userId: string } | { ok: false
 }
 
 /**
- * The `@atlas/*` namespace is reserved for bundled system skills managed
+ * The `@friday/*` namespace is reserved for bundled system skills managed
  * by `ensureSystemSkills()` (Phase 6). Mutating them via HTTP requires
  * matching the bootstrap loader's sentinel user id — which interactive
  * callers never hold. Returns true when the caller should be rejected.
  */
-function isAtlasNamespaceBlockedForUser(namespace: string, userId: string): boolean {
-  return namespace === "atlas" && userId !== "system";
+function isFridayNamespaceBlockedForUser(namespace: string, userId: string): boolean {
+  return namespace === "friday" && userId !== "system";
 }
 
 // ==============================================================================
@@ -300,8 +300,8 @@ export const skillsRoutes = daemonFactory
       }
     },
   )
-  // ─── FORK A @atlas SKILL ───────────────────────────────────────────────
-  // Users can't mutate `@atlas/*` directly (guarded above), but they can
+  // ─── FORK A @friday SKILL ───────────────────────────────────────────────
+  // Users can't mutate `@friday/*` directly (guarded above), but they can
   // fork one into their own namespace and edit that copy. When the caller
   // passes `workspaceId` we atomically swap the assignment from the
   // original to the fork so the workspace doesn't end up loading both.
@@ -332,13 +332,13 @@ export const skillsRoutes = daemonFactory
 
       const newNs = targetNamespace ?? "user-forks";
       const newName = targetName ?? name;
-      if (isAtlasNamespaceBlockedForUser(newNs, auth.userId)) {
-        return c.json({ error: "Cannot fork into the @atlas namespace" }, 403);
+      if (isFridayNamespaceBlockedForUser(newNs, auth.userId)) {
+        return c.json({ error: "Cannot fork into the @friday namespace" }, 403);
       }
 
       // Strip `source-hash` so the fork doesn't look like it came from a
       // repo-checked-in skill (which would confuse `ensureSystemSkills`
-      // if the fork ever lands under @atlas later).
+      // if the fork ever lands under @friday later).
       const { "source-hash": _sourceHash, ...forkedFrontmatter } = source.data.frontmatter;
       const forkedFrontmatterWithSource = {
         ...forkedFrontmatter,
@@ -535,8 +535,8 @@ export const skillsRoutes = daemonFactory
       namespace: c.req.param("namespace"),
       name: c.req.param("name"),
     });
-    if (params.success && isAtlasNamespaceBlockedForUser(params.data.namespace, auth.userId)) {
-      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    if (params.success && isFridayNamespaceBlockedForUser(params.data.namespace, auth.userId)) {
+      return c.json({ error: "The @friday namespace is reserved for bundled system skills" }, 403);
     }
     if (!params.success) return c.json({ error: params.error.message }, 400);
     const { namespace, name } = params.data;
@@ -614,8 +614,11 @@ export const skillsRoutes = daemonFactory
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { namespace, name } = c.req.valid("param");
-      if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
-        return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+      if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
+        return c.json(
+          { error: "The @friday namespace is reserved for bundled system skills" },
+          403,
+        );
       }
       const input = c.req.valid("json");
 
@@ -693,8 +696,8 @@ export const skillsRoutes = daemonFactory
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name } = c.req.valid("param");
-    if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
-      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
+      return c.json({ error: "The @friday namespace is reserved for bundled system skills" }, 403);
     }
     const formData = await c.req.formData();
     const file = formData.get("archive");
@@ -787,8 +790,8 @@ export const skillsRoutes = daemonFactory
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name, version } = c.req.valid("param");
-    if (isAtlasNamespaceBlockedForUser(namespace, auth.userId)) {
-      return c.json({ error: "The @atlas namespace is reserved for bundled system skills" }, 403);
+    if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
+      return c.json({ error: "The @friday namespace is reserved for bundled system skills" }, 403);
     }
     const result = await SkillStorage.deleteVersion(namespace, name, version);
     if (!result.ok) return c.json({ error: result.error }, 500);

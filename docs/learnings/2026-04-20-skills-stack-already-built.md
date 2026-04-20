@@ -34,7 +34,7 @@ Swappable adapter (`LocalSkillAdapter` SQLite vs `CortexSkillAdapter`) via `SKIL
 - `allowed-tools` is `z.string()` (comma-separated) — **not an array** — matches agentskills.io.
 - Known keys: `name`, `description`, `allowed-tools`, `context`, `agent`, `model`, `disable-model-invocation`, `user-invocable`, `argument-hint`, `license`, `compatibility`, `metadata`.
 
-Reserved word check: `RESERVED_WORDS = ["anthropic", "claude"]` in `packages/config/src/skills.ts`. **`atlas` is safe.**
+Reserved word check: `RESERVED_WORDS = ["anthropic", "claude"]` in `packages/config/src/skills.ts`. Bundled system skills publish under **`@friday`** — user-facing surfaces don't mention the internal monorepo name "atlas".
 
 ## Link validator
 
@@ -88,4 +88,4 @@ Install route + Browse UI + local audit are the remaining gaps.
 2. **skills.sh client is done** — build the install route + UI on top of it; don't re-implement HTTP or caching.
 3. **Frontmatter schema is spec-compliant** — extend via passthrough, don't rewrite.
 4. **Bootstrap uses direct `SkillStorage.publish()`** with a `SYSTEM_USER_ID` marker, not a fake session. HTTP routes stay auth-gated.
-5. **`@atlas` is the bundled namespace** (`system` is not reserved per se but avoid the confusion with kernel workspace). `anthropic` / `claude` are the only reserved substrings.
+5. **`@friday` is the user-facing bundled namespace.** The internal monorepo name is "atlas" — that stays internal (package names `@atlas/skills`, daemon `atlasd`, …) but anything a user sees (skill picker, chat badges, fork prompts) says "Friday". `anthropic` / `claude` are the only hard-reserved substrings in the namespace validator.
