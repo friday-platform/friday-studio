@@ -776,14 +776,30 @@
             if (msg.role !== "assistant") return true;
             return hasRenderableContent(msg);
           })
-          .map((msg) => ({
-            id: msg.id,
-            role: msg.role === "user" ? "user" : msg.role === "system" ? "system" : "assistant",
-            content: extractText(msg),
-            timestamp: Date.now(),
-            toolCalls: extractToolCalls(msg),
-            images: extractImages(msg),
-          }))
+          .map((msg) => {
+            const m = (typeof msg.metadata === "object" && msg.metadata !== null
+              ? msg.metadata
+              : {}) as Record<string, unknown>;
+            return {
+              id: msg.id,
+              role: (msg.role === "user"
+                ? "user"
+                : msg.role === "system"
+                  ? "system"
+                  : "assistant") as "user" | "assistant" | "system",
+              content: extractText(msg),
+              timestamp: Date.now(),
+              toolCalls: extractToolCalls(msg),
+              images: extractImages(msg),
+              metadata: {
+                agentId: typeof m.agentId === "string" ? m.agentId : undefined,
+                jobName: typeof m.jobName === "string" ? m.jobName : undefined,
+                provider: typeof m.provider === "string" ? m.provider : undefined,
+                modelId: typeof m.modelId === "string" ? m.modelId : undefined,
+                sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+              },
+            };
+          })
       : [];
     return [...chatMsgs, ...localEvents];
   });
@@ -1032,6 +1048,7 @@
       messages={displayedMessages}
       {systemPromptContext}
       {workspaceName}
+      workspaceId={wsId}
       status={streaming ? "streaming" : (chat?.status ?? "idle")}
     />
 

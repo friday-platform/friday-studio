@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import { tick } from "svelte";
+  import { skillQueries } from "$lib/queries";
   import type { ChatMessage, ToolCallDisplay } from "./types";
 
   interface Props {
@@ -8,6 +10,8 @@
     messages: ChatMessage[];
     systemPromptContext: { timestamp: string; systemMessages: string[] } | null;
     workspaceName: string;
+    /** Workspace id — drives the skills query for the Context tab. */
+    workspaceId?: string | null;
     status: string;
   }
 
@@ -17,8 +21,15 @@
     messages,
     systemPromptContext,
     workspaceName,
+    workspaceId,
     status,
   }: Props = $props();
+
+  // Skills visible to this workspace (Context tab). Disabled when panel
+  // closed or workspaceId unknown — no background fetches either way.
+  const workspaceSkillsQuery = createQuery(() =>
+    skillQueries.workspaceSkills(open && workspaceId ? workspaceId : null),
+  );
 
   let activeTab: "context" | "tools" | "timeline" | "waterfall" | "prompt" = $state("context");
   let inspectorWidth = $state(350);
@@ -357,6 +368,83 @@
     return null;
   });
 
+  /**
+   * Latest assistant metadata — powers the Context tab "Active agent + model"
+   * display. Walks from the end because the newest stamp is most accurate
+   * (older messages may pre-date agentId/jobName being stamped).
+   */
+  const latestAssistantMetadata = $derived.by(() => {
+    if (!open) return null;
+    for (let i = snapshotMessages.length - 1; i >= 0; i--) {
+      const m = snapshotMessages[i];
+      if (m?.role === "assistant" && m.metadata) {
+        return m.metadata;
+      }
+    }
+    return null;
+  });
+
+  /**
+   * Session-wide loaded skills. Aggregates `load_skill` tool calls across
+   * every assistant turn (not just the latest) so the Context tab still
+   * shows a skill that was loaded 10 turns ago. Keyed by skill name.
+   */
+  interface LoadedSkillEntry {
+    name: string;
+    firstTurn: number;
+    loadCount: number;
+    lastState: string;
+    lintWarnings: Array<{ rule: string; message: string; severity: string }>;
+  }
+  const loadedSkills = $derived.by(() => {
+    if (!open) return new Map<string, LoadedSkillEntry>();
+    const out = new Map<string, LoadedSkillEntry>();
+    let turnIdx = 0;
+    for (const msg of snapshotMessages) {
+      if (msg.role === "user") turnIdx++;
+      if (msg.role !== "assistant" || !msg.toolCalls) continue;
+      for (const tc of msg.toolCalls) {
+        if (tc.toolName !== "load_skill") continue;
+        const inp = typeof tc.input === "object" && tc.input !== null
+          ? (tc.input as Record<string, unknown>)
+          : {};
+        const nameRaw = typeof inp.name === "string" ? inp.name : null;
+        if (!nameRaw) continue;
+        const out_ = typeof tc.output === "object" && tc.output !== null
+          ? (tc.output as Record<string, unknown>)
+          : {};
+        const rawWarnings = Array.isArray(out_.lintWarnings) ? out_.lintWarnings : [];
+        const lintWarnings = rawWarnings.flatMap((w) => {
+          if (typeof w !== "object" || w === null) return [];
+          const wr = w as Record<string, unknown>;
+          if (typeof wr.rule !== "string" || typeof wr.message !== "string") return [];
+          return [{
+            rule: wr.rule,
+            message: wr.message,
+            severity: typeof wr.severity === "string" ? wr.severity : "warn",
+          }];
+        });
+        const prev = out.get(nameRaw);
+        if (prev) {
+          prev.loadCount += 1;
+          prev.lastState = tc.state;
+          if (lintWarnings.length > 0) prev.lintWarnings = lintWarnings;
+        } else {
+          out.set(nameRaw, {
+            name: nameRaw,
+            firstTurn: turnIdx,
+            loadCount: 1,
+            lastState: tc.state,
+            lintWarnings,
+          });
+        }
+      }
+    }
+    return out;
+  });
+
+  const visibleSkills = $derived(workspaceSkillsQuery.data ?? []);
+
   /** All unique tool names used across all assistant messages. */
   const usedTools = $derived.by(() => {
     if (!open) return new Set<string>();
@@ -547,6 +635,82 @@
             <dt>Tool Calls</dt>
             <dd>{allToolCalls.length}</dd>
           </dl>
+        </div>
+
+        <div class="section">
+          <h4>Active Agent</h4>
+          {#if latestAssistantMetadata}
+            <dl class="kv-list">
+              {#if latestAssistantMetadata.agentId}
+                <dt>Agent</dt>
+                <dd class="mono-sm">{latestAssistantMetadata.agentId}</dd>
+              {/if}
+              {#if latestAssistantMetadata.jobName}
+                <dt>Job</dt>
+                <dd class="mono-sm">{latestAssistantMetadata.jobName}</dd>
+              {/if}
+              {#if latestAssistantMetadata.provider}
+                <dt>Provider</dt>
+                <dd class="mono-sm">{latestAssistantMetadata.provider}</dd>
+              {/if}
+              {#if latestAssistantMetadata.modelId}
+                <dt>Model</dt>
+                <dd class="mono-sm">{latestAssistantMetadata.modelId}</dd>
+              {/if}
+              {#if !latestAssistantMetadata.agentId && !latestAssistantMetadata.modelId}
+                <dt>—</dt><dd>no metadata stamped yet</dd>
+              {/if}
+            </dl>
+          {:else}
+            <div class="empty">Waiting for first assistant response.</div>
+          {/if}
+        </div>
+
+        <div class="section">
+          <h4>Skills</h4>
+          {#if workspaceSkillsQuery.isLoading}
+            <div class="empty">Loading…</div>
+          {:else if visibleSkills.length === 0 && loadedSkills.size === 0}
+            <div class="empty">No skills visible.</div>
+          {:else}
+            {#if loadedSkills.size > 0}
+              <div class="sub-label">Loaded this session ({loadedSkills.size})</div>
+              <ul class="skill-list-compact">
+                {#each [...loadedSkills.values()] as entry (entry.name)}
+                  <li class="skill-row-compact">
+                    <span class="skill-name-compact mono-sm">{entry.name}</span>
+                    <span class="skill-meta">
+                      turn {entry.firstTurn}
+                      {#if entry.loadCount > 1}· ×{entry.loadCount}{/if}
+                    </span>
+                    {#if entry.lintWarnings.length > 0}
+                      <span class="stat warn" title={entry.lintWarnings.map((w) => `${w.rule}: ${w.message}`).join("\n")}>
+                        ⚠ {entry.lintWarnings.length}
+                      </span>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            {#if visibleSkills.length > 0}
+              <div class="sub-label">Available in workspace ({visibleSkills.length})</div>
+              <ul class="skill-list-compact">
+                {#each visibleSkills as skill (skill.skillId)}
+                  <li class="skill-row-compact">
+                    <span class="skill-name-compact mono-sm">
+                      {skill.namespace}/{skill.name}
+                    </span>
+                    {#if skill.namespace === "atlas"}
+                      <span class="badge-system">system</span>
+                    {/if}
+                    {#if skill.disabled}
+                      <span class="stat dim">disabled</span>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
         </div>
 
         {#if systemPromptContext}
@@ -1032,6 +1196,53 @@
     font-size: var(--font-size-1);
     padding: var(--size-4);
     text-align: center;
+  }
+
+  .sub-label {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-0);
+    letter-spacing: 0.03em;
+    margin-block: var(--size-2) var(--size-1);
+    text-transform: uppercase;
+  }
+
+  .skill-list-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .skill-row-compact {
+    align-items: center;
+    display: flex;
+    font-size: var(--font-size-0);
+    gap: var(--size-2);
+    padding: 2px 0;
+  }
+
+  .skill-name-compact {
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .skill-meta {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    flex-shrink: 0;
+    font-size: var(--font-size-0);
+  }
+
+  .badge-system {
+    background-color: color-mix(in srgb, var(--color-primary, #6272ff), transparent 80%);
+    border-radius: var(--radius-1);
+    color: var(--color-primary, #6272ff);
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: var(--font-weight-7);
+    letter-spacing: 0.04em;
+    padding: 1px 4px;
+    text-transform: uppercase;
   }
 
   /* Tools tab */

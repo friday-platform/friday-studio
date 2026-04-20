@@ -81,6 +81,19 @@ export interface ChatMessage {
   toolCalls?: ToolCallDisplay[];
   /** Image attachments from the user (data URLs from drag-drop / paste). */
   images?: ImageDisplay[];
+  /**
+   * Provider/model/agent metadata stamped by workspace-chat on the
+   * outgoing stream. Powers the chat-inspector Context tab's "Active
+   * agent + model" section. All fields are optional because legacy
+   * messages won't carry them.
+   */
+  metadata?: {
+    agentId?: string;
+    jobName?: string;
+    provider?: string;
+    modelId?: string;
+    sessionId?: string;
+  };
 }
 
 /**
