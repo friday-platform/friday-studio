@@ -28,7 +28,9 @@
     useDeleteSkill,
     useDisableSkill,
     usePublishSkill,
+    useRestoreSkillVersion,
     useSkillLint,
+    useSkillVersions,
     useUpdateSkillFromSource,
   } from "$lib/queries/skills";
   import { markClean, markDirty } from "$lib/stores/skill-editor-state.svelte";
@@ -208,6 +210,42 @@
   let lintOpen = $state(false);
 
   // ---------------------------------------------------------------------------
+  // Version history — every Save publishes a new row; this lists them and
+  // lets the user restore an older snapshot as a new version.
+  // ---------------------------------------------------------------------------
+
+  const versionsQuery = useSkillVersions(() => namespace, () => name);
+  const restoreMut = useRestoreSkillVersion();
+
+  function formatVersionDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      year: "2-digit",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  async function handleRestore(version: number) {
+    if (restoreMut.isPending) return;
+    const ok = confirm(
+      `Restore v${String(version)}? A new version will be published with that snapshot's content (history is preserved).`,
+    );
+    if (!ok) return;
+    try {
+      const res = await restoreMut.mutateAsync({ namespace, name, version });
+      toast({
+        title: "Version restored",
+        description: `Snapshot of v${String(version)} published as v${String(res.published.version)}.`,
+      });
+    } catch (e) {
+      toast({ title: "Restore failed", description: (e as Error).message, error: true });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Pull from skills.sh source (only applies to remotely-installed skills)
   // ---------------------------------------------------------------------------
 
@@ -278,6 +316,32 @@
           {publishMut.isPending ? "Saving…" : "Save"}
         </Button>
       {:else}
+        {#if skill}
+          <span class="version-badge" title={`Published v${String(skill.version)} · ${String(versionsQuery.data?.length ?? "?")} total`}>v{skill.version}</span>
+        {/if}
+        {#if (versionsQuery.data?.length ?? 0) > 1}
+          <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
+            {#snippet children()}
+              <DropdownMenu.Trigger class="versions-trigger">
+                History
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content>
+                {#each versionsQuery.data ?? [] as v (v.version)}
+                  <DropdownMenu.Item
+                    onclick={() => {
+                      if (v.version !== skill?.version) handleRestore(v.version);
+                    }}
+                    disabled={v.version === skill?.version || restoreMut.isPending}
+                  >
+                    v{v.version} · {formatVersionDate(v.createdAt)}{v.version === skill?.version
+                      ? " (current)"
+                      : ""}
+                  </DropdownMenu.Item>
+                {/each}
+              </DropdownMenu.Content>
+            {/snippet}
+          </DropdownMenu.Root>
+        {/if}
         {#if lintIssueCount > 0}
           <Button
             size="small"
@@ -504,6 +568,30 @@
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     font-size: var(--font-size-1);
     margin-inline-end: var(--size-2);
+  }
+
+  .version-badge {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 2px var(--size-1-5);
+  }
+
+  :global(.versions-trigger) {
+    background-color: transparent;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    padding: var(--size-1) var(--size-2);
+  }
+
+  :global(.versions-trigger:hover) {
+    background-color: var(--color-surface-2);
   }
 
   .lint-panel {

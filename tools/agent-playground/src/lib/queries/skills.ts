@@ -264,6 +264,86 @@ export function useInstallSkill() {
   }));
 }
 
+export interface SkillVersion {
+  version: number;
+  createdAt: string;
+  createdBy: string;
+}
+
+/**
+ * Version history for a skill. Every publish (including the auto-bump
+ * that happens when Save is clicked in the editor) creates a new row in
+ * the `skills` table keyed by (skill_id, version), so this is just a
+ * `listVersions` read of that history.
+ */
+export function useSkillVersions(namespace: () => string, name: () => string) {
+  return createQuery(() => ({
+    queryKey: ["daemon", "skills", namespace(), name(), "versions"] as const,
+    queryFn: async (): Promise<SkillVersion[]> => {
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(namespace())}/${encodeURIComponent(name())}/versions`,
+      );
+      if (!res.ok) throw new Error(`Failed to load versions: ${res.status}`);
+      const data = (await res.json()) as { versions: SkillVersion[] };
+      return data.versions;
+    },
+    enabled: namespace().length > 0 && name().length > 0,
+    staleTime: 30_000,
+  }));
+}
+
+/**
+ * Restore an older version by re-publishing its snapshot as a NEW version.
+ * We don't rewind — the history chain is append-only, so reverting to v2
+ * produces v5 with v2's content. Keeps audit clean.
+ */
+export function useRestoreSkillVersion() {
+  const queryClient = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      namespace: string;
+      name: string;
+      version: number;
+    }): Promise<{ published: { version: number } }> => {
+      const getRes = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.name)}/${String(input.version)}`,
+      );
+      if (!getRes.ok) throw new Error(`Failed to load v${String(input.version)}: ${getRes.status}`);
+      const { skill } = (await getRes.json()) as {
+        skill: { description: string; instructions: string; frontmatter: Record<string, unknown> };
+      };
+      const publishRes = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.name)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: skill.description,
+            instructions: skill.instructions,
+            descriptionManual: true,
+          }),
+        },
+      );
+      if (!publishRes.ok) {
+        const body: unknown = await publishRes.json().catch(() => ({}));
+        throw new Error(
+          typeof body === "object" && body !== null && "error" in body &&
+            typeof body.error === "string"
+            ? body.error
+            : `Restore failed: ${publishRes.status}`,
+        );
+      }
+      return (await publishRes.json()) as { published: { version: number } };
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
+      queryClient.invalidateQueries({
+        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+      });
+    },
+  }));
+}
+
 export interface LintFinding {
   rule: string;
   message: string;
