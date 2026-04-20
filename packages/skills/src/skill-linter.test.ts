@@ -43,12 +43,13 @@ describe("lintSkill — frontmatter", () => {
     expect(result.warnings.map((w) => w.rule)).toContain("description-person");
   });
 
-  it("warns when description lacks a 'Use when' trigger", () => {
+  it("info-flags description missing a 'Use when' trigger", () => {
     const result = lintSkill(
       mkInput({ frontmatter: { description: "Extracts text from PDF files." } }),
       "load",
     );
-    expect(result.warnings.map((w) => w.rule)).toContain("description-trigger");
+    const trigger = result.warnings.find((w) => w.rule === "description-trigger");
+    expect(trigger?.severity).toEqual("info");
   });
 
   it("errors on reserved substring in name", () => {
