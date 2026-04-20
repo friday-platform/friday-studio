@@ -22,6 +22,7 @@
   import { page } from "$app/state";
   import SkillFileEditor from "$lib/components/skills/skill-file-editor.svelte";
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
+  import VersionCompareDialog from "$lib/components/skills/version-compare-dialog.svelte";
   import { skillQueries } from "$lib/queries";
   import {
     FIXABLE_RULES,
@@ -252,18 +253,23 @@
     });
   }
 
+  /** Version the user is currently comparing against the current one. */
+  let compareVersion = $state<number | null>(null);
+
+  function openCompare(version: number) {
+    if (version === skill?.version) return;
+    compareVersion = version;
+  }
+
   async function handleRestore(version: number) {
     if (restoreMut.isPending) return;
-    const ok = confirm(
-      `Restore v${String(version)}? A new version will be published with that snapshot's content (history is preserved).`,
-    );
-    if (!ok) return;
     try {
       const res = await restoreMut.mutateAsync({ namespace, name, version });
       toast({
         title: "Version restored",
         description: `Snapshot of v${String(version)} published as v${String(res.published.version)}.`,
       });
+      compareVersion = null;
     } catch (e) {
       toast({ title: "Restore failed", description: (e as Error).message, error: true });
     }
@@ -353,13 +359,13 @@
                 {#each versionsQuery.data ?? [] as v (v.version)}
                   <DropdownMenu.Item
                     onclick={() => {
-                      if (v.version !== skill?.version) handleRestore(v.version);
+                      openCompare(v.version);
                     }}
-                    disabled={v.version === skill?.version || restoreMut.isPending}
+                    disabled={v.version === skill?.version}
                   >
                     v{v.version} · {formatVersionDate(v.createdAt)}{v.version === skill?.version
                       ? " (current)"
-                      : ""}
+                      : " — compare"}
                   </DropdownMenu.Item>
                 {/each}
               </DropdownMenu.Content>
@@ -524,6 +530,22 @@
     </Dialog.Content>
   {/snippet}
 </Dialog.Root>
+
+{#if compareVersion !== null && skill}
+  <VersionCompareDialog
+    {namespace}
+    {name}
+    currentVersion={skill.version}
+    currentDescription={skill.description ?? ""}
+    currentInstructions={skill.instructions ?? ""}
+    targetVersion={compareVersion}
+    restoring={restoreMut.isPending}
+    onclose={() => {
+      compareVersion = null;
+    }}
+    onrestore={handleRestore}
+  />
+{/if}
 
 <style>
   .skill-detail {

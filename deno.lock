@@ -137,6 +137,7 @@
     "npm:concurrently@*": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.5.0": "5.5.0",
+    "npm:diff@9": "9.0.0",
     "npm:dompurify@^3.3.3": "3.4.0",
     "npm:dotenv@17.4.0": "17.4.0",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.2.0",
@@ -5193,6 +5194,9 @@
         "dequal"
       ]
     },
+    "diff@9.0.0": {
+      "integrity": "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="
+    },
     "dompurify@3.4.0": {
       "integrity": "sha512-nolgK9JcaUXMSmW+j1yaSvaEaoXYHwWyGJlkoCTghc97KgGDDSnpoU/PlEnw63Ah+TGKFOyY+X5LnxaWbCSfXg==",
       "optionalDependencies": [
@@ -9453,6 +9457,7 @@
             "npm:@types/deno@2.5.0",
             "npm:ai@^6.0.158",
             "npm:codemirror@^6.0.2",
+            "npm:diff@9",
             "npm:dompurify@^3.3.3",
             "npm:eslint@^10.1.0",
             "npm:hono@4.12.12",

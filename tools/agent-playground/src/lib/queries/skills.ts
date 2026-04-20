@@ -270,6 +270,41 @@ export interface SkillVersion {
   createdBy: string;
 }
 
+export interface SkillVersionContent {
+  version: number;
+  description: string;
+  instructions: string;
+}
+
+/**
+ * Fetch a specific version's content so the version-compare dialog can
+ * diff it against the current version before the user commits to a
+ * restore. Versions are immutable so the cache lives forever in-session.
+ */
+export function useSkillAtVersion(
+  namespace: () => string,
+  name: () => string,
+  version: () => number | null,
+) {
+  return createQuery(() => ({
+    queryKey: ["daemon", "skills", namespace(), name(), "at-version", version() ?? 0] as const,
+    queryFn: async (): Promise<SkillVersionContent> => {
+      const v = version();
+      if (v === null) throw new Error("version is null");
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(namespace())}/${encodeURIComponent(name())}/${String(v)}`,
+      );
+      if (!res.ok) throw new Error(`Failed to load v${String(v)}: ${res.status}`);
+      const data = (await res.json()) as {
+        skill: { version: number; description: string; instructions: string };
+      };
+      return data.skill;
+    },
+    enabled: version() !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+  }));
+}
+
 /**
  * Version history for a skill. Every publish (including the auto-bump
  * that happens when Save is clicked in the editor) creates a new row in
