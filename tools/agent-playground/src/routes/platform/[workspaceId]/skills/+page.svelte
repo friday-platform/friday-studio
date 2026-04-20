@@ -112,10 +112,10 @@
         <button
           type="button"
           class="install-btn"
-          disabled={$installMut.isPending || installSource.trim().length === 0}
+          disabled={installMut.isPending || installSource.trim().length === 0}
           onclick={doInstall}
         >
-          {$installMut.isPending ? "Installing…" : "Install"}
+          {installMut.isPending ? "Installing…" : "Install"}
         </button>
       </div>
       {#if installMessage}
