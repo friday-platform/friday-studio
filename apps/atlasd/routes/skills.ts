@@ -300,6 +300,104 @@ export const skillsRoutes = daemonFactory
       }
     },
   )
+  // ─── FORK A @atlas SKILL ───────────────────────────────────────────────
+  // Users can't mutate `@atlas/*` directly (guarded above), but they can
+  // fork one into their own namespace and edit that copy. When the caller
+  // passes `workspaceId` we atomically swap the assignment from the
+  // original to the fork so the workspace doesn't end up loading both.
+  .post(
+    "/fork",
+    zValidator(
+      "json",
+      z.object({
+        namespace: z.string().min(1),
+        name: z.string().min(1),
+        /** Defaults to `user-forks`. Not validated beyond length because we
+         *  hand it straight to `SkillStorage.publish` which re-validates. */
+        targetNamespace: z.string().min(1).optional(),
+        /** Optional new name. Defaults to the original name. */
+        targetName: z.string().min(1).optional(),
+        /** When provided, reassigns this workspace from the source to the fork. */
+        workspaceId: z.string().min(1).optional(),
+      }),
+    ),
+    async (c) => {
+      const auth = await requireUser();
+      if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+      const { namespace, name, targetNamespace, targetName, workspaceId } = c.req.valid("json");
+      const source = await SkillStorage.get(namespace, name);
+      if (!source.ok) return c.json({ error: source.error }, 500);
+      if (!source.data) return c.json({ error: "Source skill not found" }, 404);
+
+      const newNs = targetNamespace ?? "user-forks";
+      const newName = targetName ?? name;
+      if (isAtlasNamespaceBlockedForUser(newNs, auth.userId)) {
+        return c.json({ error: "Cannot fork into the @atlas namespace" }, 403);
+      }
+
+      // Strip `source-hash` so the fork doesn't look like it came from a
+      // repo-checked-in skill (which would confuse `ensureSystemSkills`
+      // if the fork ever lands under @atlas later).
+      const { "source-hash": _sourceHash, ...forkedFrontmatter } = source.data.frontmatter;
+      const forkedFrontmatterWithSource = {
+        ...forkedFrontmatter,
+        "forked-from": `@${namespace}/${name}@v${String(source.data.version)}`,
+      };
+
+      const published = await SkillStorage.publish(newNs, newName, auth.userId, {
+        description: source.data.description,
+        instructions: source.data.instructions,
+        frontmatter: forkedFrontmatterWithSource,
+        archive: source.data.archive ? new Uint8Array(source.data.archive) : undefined,
+      });
+      if (!published.ok) return c.json({ error: published.error }, 500);
+
+      // Atomic-ish reassignment. If either step fails the caller sees the
+      // partial outcome in the response (we don't auto-rollback the publish
+      // — an orphan fork is less harmful than a partially-assigned skill).
+      const reassignment: {
+        unassignedFrom: string | null;
+        assignedTo: string | null;
+        error?: string;
+      } = { unassignedFrom: null, assignedTo: null };
+      if (workspaceId) {
+        const unassignResult = await SkillStorage.unassignSkill(source.data.skillId, workspaceId);
+        if (!unassignResult.ok) {
+          reassignment.error = `Unassign from source failed: ${unassignResult.error}`;
+        } else {
+          reassignment.unassignedFrom = source.data.skillId;
+        }
+        const assignResult = await SkillStorage.assignSkill(published.data.skillId, workspaceId);
+        if (!assignResult.ok) {
+          reassignment.error =
+            (reassignment.error ?? "") + ` Assign to fork failed: ${assignResult.error}`;
+        } else {
+          reassignment.assignedTo = published.data.skillId;
+        }
+      }
+      invalidateLintCache(published.data.skillId);
+
+      return c.json(
+        {
+          fork: {
+            skillId: published.data.skillId,
+            namespace: newNs,
+            name: published.data.name,
+            version: published.data.version,
+            forkedFrom: {
+              namespace,
+              name,
+              skillId: source.data.skillId,
+              version: source.data.version,
+            },
+          },
+          reassignment,
+        },
+        201,
+      );
+    },
+  )
   // ─── CREATE BLANK SKILL ────────────────────────────────────────────────────
   .post("/", async (c) => {
     const auth = await requireUser();
