@@ -24,6 +24,8 @@
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
   import { skillQueries } from "$lib/queries";
   import {
+    FIXABLE_RULES,
+    useAutofixSkill,
     useCheckSkillUpdate,
     useDeleteSkill,
     useDisableSkill,
@@ -208,6 +210,28 @@
     (lintQuery.data?.errors.length ?? 0) + (lintQuery.data?.warnings.length ?? 0),
   );
   let lintOpen = $state(false);
+
+  const autofixMut = useAutofixSkill();
+  /** Which finding is actively being fixed — keyed by rule:message so the
+   *  button only spins on the row the user clicked. */
+  let fixingKey = $state<string | null>(null);
+
+  async function handleFix(rule: string, message: string) {
+    const key = `${rule}:${message}`;
+    if (fixingKey !== null) return;
+    fixingKey = key;
+    try {
+      const res = await autofixMut.mutateAsync({ namespace, name, rule });
+      toast({
+        title: "Lint fix applied",
+        description: `${rule} — fixed via ${res.fixedBy}; published as v${String(res.published.version)}.`,
+      });
+    } catch (e) {
+      toast({ title: "Fix failed", description: (e as Error).message, error: true });
+    } finally {
+      fixingKey = null;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Version history — every Save publishes a new row; this lists them and
@@ -411,18 +435,22 @@
 
     {#if lintOpen && lintQuery.data}
       <div class="lint-panel">
-        {#each lintQuery.data.errors as f (f.rule + f.message)}
-          <div class="lint-row lint-error">
-            <span class="lint-severity">error</span>
-            <span class="lint-rule">{f.rule}</span>
-            <span class="lint-msg">{f.message}</span>
-          </div>
-        {/each}
-        {#each lintQuery.data.warnings as f (f.rule + f.message)}
+        {#each [...lintQuery.data.errors, ...lintQuery.data.warnings] as f (f.rule + f.message)}
+          {@const canFix = FIXABLE_RULES.has(f.rule)}
+          {@const key = `${f.rule}:${f.message}`}
           <div class="lint-row lint-{f.severity}">
             <span class="lint-severity">{f.severity}</span>
             <span class="lint-rule">{f.rule}</span>
             <span class="lint-msg">{f.message}</span>
+            {#if canFix}
+              <button
+                class="lint-fix"
+                disabled={fixingKey !== null}
+                onclick={() => handleFix(f.rule, f.message)}
+              >
+                {fixingKey === key ? "Fixing…" : "Fix"}
+              </button>
+            {/if}
           </div>
         {/each}
       </div>
@@ -607,7 +635,26 @@
     display: grid;
     font-size: var(--font-size-2);
     gap: var(--size-2);
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto auto 1fr auto;
+  }
+
+  .lint-fix {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    padding: 2px var(--size-2);
+  }
+
+  .lint-fix:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-surface-2), var(--color-text) 10%);
+  }
+
+  .lint-fix:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
   .lint-severity {

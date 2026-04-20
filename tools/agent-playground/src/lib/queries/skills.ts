@@ -376,6 +376,70 @@ export function useSkillLint(namespace: () => string, name: () => string) {
   }));
 }
 
+/**
+ * Rules the daemon knows how to auto-fix. All other rules surface in the
+ * lint panel without a "Fix" action.
+ */
+export const FIXABLE_RULES = new Set([
+  "path-style",
+  "description-length",
+  "description-person",
+  "description-trigger",
+  "description-missing",
+  "first-person",
+  "time-sensitive",
+]);
+
+export function useAutofixSkill() {
+  const queryClient = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      namespace: string;
+      name: string;
+      rule: string;
+    }): Promise<{
+      rule: string;
+      fixedBy: "deterministic" | "llm";
+      published: { version: number };
+    }> => {
+      const res = await fetch(
+        `/api/daemon/api/skills/@${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.name)}/autofix`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rule: input.rule }),
+        },
+      );
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body === "object" && body !== null && "error" in body &&
+            typeof body.error === "string"
+            ? body.error
+            : `Autofix failed: ${res.status}`,
+        );
+      }
+      return (await res.json()) as {
+        rule: string;
+        fixedBy: "deterministic" | "llm";
+        published: { version: number };
+      };
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: skillQueries.all() });
+      queryClient.invalidateQueries({
+        queryKey: skillQueries.detail(variables.namespace, variables.name).queryKey,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name, "lint"] as const,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "skills", variables.namespace, variables.name, "versions"] as const,
+      });
+    },
+  }));
+}
+
 export interface CheckUpdateResult {
   hasUpdate: boolean;
   source: string | null;

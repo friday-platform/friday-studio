@@ -20,6 +20,7 @@ import {
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { zValidator } from "@hono/zod-validator";
+import { generateText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { getCurrentUser } from "./me/adapter.ts";
@@ -260,9 +261,11 @@ export const skillsRoutes = daemonFactory
           },
           "publish",
         );
-        if (lint.errors.length > 0) {
-          return c.json({ error: "Skill failed lint", lintErrors: lint.errors }, 400);
-        }
+        // Lint findings — including errors — no longer block install. The
+        // user can review them on the skill detail page (via the lint
+        // viewer) and fix them explicitly. The linter still runs so the
+        // errors/warnings surface in the install response for clients
+        // that want to show a summary.
 
         const frontmatter = {
           ...parsed.data.frontmatter,
@@ -488,6 +491,79 @@ export const skillsRoutes = daemonFactory
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
   })
+  // ─── AUTO-FIX A LINT FINDING ───────────────────────────────────────────────
+  // Applies a one-shot fix for a single lint rule. Deterministic rules
+  // (path-style, backslash-to-forward) run as plain string transforms.
+  // Judgment-heavy rules (description wording, missing trigger clause) go
+  // through the platform `classifier` LLM with a strict prompt that only
+  // asks for the minimal rewrite of the affected field. The returned body
+  // is published as a new version — history is never rewound.
+  .post(
+    "/:namespace/:name/autofix",
+    zValidator("param", NamespacedParams),
+    zValidator(
+      "json",
+      z.object({
+        rule: z.string().min(1),
+        /** When true, compute the fix but don't publish. UI can preview. */
+        dryRun: z.boolean().optional(),
+      }),
+    ),
+    async (c) => {
+      const auth = await requireUser();
+      if (!auth.ok) return c.json({ error: auth.error }, 401);
+      const { namespace, name } = c.req.valid("param");
+      const { rule, dryRun } = c.req.valid("json");
+      const existing = await SkillStorage.get(namespace, name);
+      if (!existing.ok) return c.json({ error: existing.error }, 500);
+      if (!existing.data) return c.json({ error: "Skill not found" }, 404);
+      const skill = existing.data;
+
+      const fix = await computeAutofix({
+        rule,
+        skill: {
+          name,
+          description: skill.description,
+          instructions: skill.instructions,
+          frontmatter: skill.frontmatter,
+        },
+        platformModels: c.get("app").platformModels,
+      });
+      if (!fix.ok) return c.json({ error: fix.error }, fix.status ?? 400);
+
+      if (dryRun) {
+        return c.json({
+          rule,
+          before: { description: skill.description, instructions: skill.instructions },
+          after: { description: fix.description, instructions: fix.instructions },
+          fixedBy: fix.fixedBy,
+        });
+      }
+
+      const frontmatter = { ...skill.frontmatter, description: fix.description };
+      const published = await SkillStorage.publish(namespace, name, auth.userId, {
+        description: fix.description,
+        instructions: fix.instructions,
+        frontmatter,
+        archive: skill.archive,
+        skillId: skill.skillId,
+        descriptionManual: skill.descriptionManual,
+      });
+      if (!published.ok) return c.json({ error: published.error }, 500);
+      invalidateLintCache(published.data.skillId);
+
+      return c.json({
+        rule,
+        fixedBy: fix.fixedBy,
+        published: {
+          skillId: published.data.skillId,
+          namespace,
+          name: published.data.name,
+          version: published.data.version,
+        },
+      });
+    },
+  )
   // ─── LINT A PUBLISHED SKILL ────────────────────────────────────────────────
   // Re-runs the publish-time linter against the current stored version so
   // the UI can surface warnings/errors without re-uploading. Kept GET so the
@@ -1011,6 +1087,159 @@ export const skillsRoutes = daemonFactory
 // ==============================================================================
 // Helpers
 // ==============================================================================
+
+/** Rules fully resolvable by a local string transform — no LLM needed. */
+const DETERMINISTIC_RULES = new Set(["path-style", "description-length"]);
+
+interface AutofixInput {
+  rule: string;
+  skill: {
+    name: string;
+    description: string;
+    instructions: string;
+    frontmatter: Record<string, unknown>;
+  };
+  platformModels: import("@atlas/llm").PlatformModels;
+}
+
+type AutofixResult =
+  | {
+      ok: true;
+      description: string;
+      instructions: string;
+      /** "deterministic" for string transforms, "llm" for model-driven rewrites. */
+      fixedBy: "deterministic" | "llm";
+    }
+  | { ok: false; error: string; status?: 400 | 500 };
+
+/**
+ * Dispatch a lint finding to the right fix strategy. Deterministic fixes
+ * run in-process (fast + predictable); everything else hits the platform
+ * `classifier` model with a narrowly-scoped prompt.
+ */
+function computeAutofix(input: AutofixInput): Promise<AutofixResult> {
+  if (DETERMINISTIC_RULES.has(input.rule)) {
+    return Promise.resolve(deterministicFix(input));
+  }
+  return llmFix(input);
+}
+
+function deterministicFix(input: AutofixInput): AutofixResult {
+  const { rule, skill } = input;
+  switch (rule) {
+    case "path-style": {
+      // Replace Windows-style backslash paths with forward slashes, but
+      // only outside fenced code blocks (anti-examples must stay intact).
+      const fixed = replaceOutsideCode(skill.instructions, /\\/g, "/");
+      return {
+        ok: true,
+        description: skill.description,
+        instructions: fixed,
+        fixedBy: "deterministic",
+      };
+    }
+    case "description-length": {
+      // Trim to 1024 chars on a word boundary, add ellipsis if truncated.
+      const max = 1024;
+      if (skill.description.length <= max) {
+        return { ok: false, error: "Description is already within the limit", status: 400 };
+      }
+      const trimmed = skill.description.slice(0, max - 1).replace(/\s+\S*$/, "");
+      return {
+        ok: true,
+        description: `${trimmed}…`,
+        instructions: skill.instructions,
+        fixedBy: "deterministic",
+      };
+    }
+  }
+  return { ok: false, error: `No deterministic fix registered for rule "${rule}"`, status: 400 };
+}
+
+/** Replace `pattern` in text, skipping fenced ``` code blocks. */
+function replaceOutsideCode(text: string, pattern: RegExp, replacement: string): string {
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map((p) => (p.startsWith("```") ? p : p.replace(pattern, replacement))).join("");
+}
+
+async function llmFix(input: AutofixInput): Promise<AutofixResult> {
+  const { rule, skill, platformModels } = input;
+  const prompt = buildFixPrompt(rule, skill);
+  try {
+    const { text } = await generateText({
+      model: platformModels.get("classifier"),
+      prompt,
+      maxOutputTokens: 600,
+      abortSignal: AbortSignal.timeout(15_000),
+    });
+    const parsed = parseFixResponse(text);
+    if (!parsed) {
+      return {
+        ok: false,
+        error: "LLM returned an unparseable response — no fix applied.",
+        status: 400,
+      };
+    }
+    return {
+      ok: true,
+      description: parsed.description ?? skill.description,
+      instructions: parsed.instructions ?? skill.instructions,
+      fixedBy: "llm",
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `LLM fix failed: ${err instanceof Error ? err.message : String(err)}`,
+      status: 500,
+    };
+  }
+}
+
+const FIX_PROMPTS: Record<string, string> = {
+  "description-person":
+    "Rewrite the DESCRIPTION in third person (no 'I', 'you', 'this skill'). Keep meaning and length similar. Return ONLY the rewritten description, nothing else.",
+  "description-trigger":
+    "Rewrite the DESCRIPTION to include a clear 'Use when …' trigger clause so an agent knows when to invoke this skill. Return ONLY the rewritten description.",
+  "description-missing":
+    "Write a concise third-person description for this skill in <= 1024 chars, including a 'Use when …' clause. Return ONLY the description text.",
+  "first-person":
+    "Rewrite the INSTRUCTIONS body to remove first/second-person phrasing. Preserve structure, code blocks, and examples verbatim. Return ONLY the rewritten instructions, inside <instructions>…</instructions> tags.",
+  "time-sensitive":
+    "Rewrite the INSTRUCTIONS body to remove time-sensitive phrasing ('before August 2025', etc.) — wrap any superseded content in a <details>Old patterns</details> block. Return ONLY the rewritten instructions, inside <instructions>…</instructions> tags.",
+};
+
+function buildFixPrompt(rule: string, skill: AutofixInput["skill"]): string {
+  const ruleInstruction =
+    FIX_PROMPTS[rule] ??
+    `The lint rule is "${rule}". Rewrite the minimum content needed to satisfy it. Return either the new description (plain text) or the new instructions wrapped in <instructions>…</instructions> tags.`;
+  return [
+    `You are fixing a single lint issue in an Agent Skill.`,
+    `Rule to fix: ${rule}`,
+    ``,
+    `Current description:`,
+    skill.description || "(empty)",
+    ``,
+    `Current instructions (first 2000 chars):`,
+    skill.instructions.slice(0, 2000),
+    ``,
+    `Task:`,
+    ruleInstruction,
+  ].join("\n");
+}
+
+/**
+ * The model returns either:
+ *   - a plain line of text (description fix), or
+ *   - `<instructions>…</instructions>` block (body fix).
+ * Anything else yields `null` so the caller can error out safely.
+ */
+function parseFixResponse(text: string): { description?: string; instructions?: string } | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/<instructions>([\s\S]*?)<\/instructions>/);
+  if (match) return { instructions: match[1]?.trim() ?? "" };
+  if (trimmed.length === 0 || trimmed.length > 2048) return null;
+  return { description: trimmed };
+}
 
 function serveArchive(
   archive: Uint8Array | null,
