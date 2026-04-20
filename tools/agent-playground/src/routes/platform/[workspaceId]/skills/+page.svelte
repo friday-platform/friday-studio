@@ -35,7 +35,6 @@
   const installMut = useInstallSkill();
 
   let installSource = $state("");
-  let installAck = $state(false);
   let searchFocused = $state(false);
   /** Debounced copy of `installSource` — the TanStack query key. Without the
    *  debounce every keystroke fires a fetch. */
@@ -83,19 +82,14 @@
       const res = await installMut.mutateAsync({
         source,
         workspaceId,
-        acknowledgeWarnings: installAck,
       });
-      const tier = typeof res.tier === "string" ? res.tier : "unknown";
-      const warnCount = Array.isArray(res.lintWarnings) ? res.lintWarnings.length : 0;
       const published = res.published as
         | { namespace: string; name: string; version: number }
         | undefined;
       const ref = published ? `@${published.namespace}/${published.name}` : source;
       toast({
         title: "Skill installed",
-        description:
-          `${ref} (${tier}${warnCount > 0 ? `, ${String(warnCount)} lint warning${warnCount === 1 ? "" : "s"}` : ""}).` +
-          " Auto-assigned to this workspace.",
+        description: `${ref} — assigned to this workspace.`,
       });
       installSource = "";
     } catch (e) {
@@ -191,10 +185,6 @@
             </ul>
           {/if}
         </div>
-        <label class="ack">
-          <input type="checkbox" bind:checked={installAck} />
-          Accept non-critical warnings
-        </label>
         <button
           type="button"
           class="install-btn"
@@ -426,13 +416,6 @@
     font-size: var(--font-size-0);
   }
 
-  .ack {
-    align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    display: flex;
-    font-size: var(--font-size-1);
-    gap: var(--size-2);
-  }
 
   .install-btn {
     background: var(--color-primary, #6272ff);

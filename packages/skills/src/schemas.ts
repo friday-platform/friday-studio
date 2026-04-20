@@ -57,6 +57,13 @@ export const SkillSummarySchema = z.object({
   disabled: z.boolean(),
   latestVersion: z.number().int().positive(),
   createdAt: z.coerce.date(),
+  /**
+   * Origin of the skill — e.g. `skills.sh/anthropics/skills/mcp-builder` for
+   * remote installs, undefined for locally-authored skills. Pulled from the
+   * `source` frontmatter field at publish time. Used by the UI to show a
+   * provenance badge (e.g. "skills.sh") next to installed skills.
+   */
+  source: z.string().optional(),
 });
 
 /** Lightweight summary for listing */

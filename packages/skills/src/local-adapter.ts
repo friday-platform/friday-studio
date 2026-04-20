@@ -336,7 +336,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
     // Build a query that returns one row per skill_id with the latest version info
     let sql = `
-      SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
+      SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
       FROM skills s
       INNER JOIN (
         SELECT skill_id, MAX(version) as max_version
@@ -379,19 +379,24 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       disabled: number;
       latestVersion: number;
       created_at: string;
+      frontmatter: string;
     }[];
 
     return success(
-      rows.map((r) => ({
-        id: r.id,
-        skillId: r.skill_id,
-        namespace: r.namespace,
-        name: r.name,
-        description: r.description,
-        disabled: r.disabled !== 0,
-        latestVersion: r.latestVersion,
-        createdAt: new Date(r.created_at),
-      })),
+      rows.map((r) => {
+        const fm = safeParseFrontmatter(r.frontmatter);
+        return {
+          id: r.id,
+          skillId: r.skill_id,
+          namespace: r.namespace,
+          name: r.name,
+          description: r.description,
+          disabled: r.disabled !== 0,
+          latestVersion: r.latestVersion,
+          createdAt: new Date(r.created_at),
+          source: typeof fm.source === "string" ? fm.source : undefined,
+        };
+      }),
     );
   }
 
@@ -446,7 +451,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
     const db = await this.getDb();
     const rows = db
       .prepare(`
-        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
+        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
         FROM skills s
         INNER JOIN (
           SELECT skill_id, MAX(version) as max_version
@@ -468,7 +473,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
     const db = await this.getDb();
     const rows = db
       .prepare(`
-        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at
+        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
         FROM skills s
         INNER JOIN (
           SELECT skill_id, MAX(version) as max_version
@@ -544,9 +549,11 @@ interface SkillRow {
   disabled: number;
   latestVersion: number;
   created_at: string;
+  frontmatter?: string;
 }
 
 function rowToSummary(r: SkillRow): SkillSummary {
+  const fm = r.frontmatter ? safeParseFrontmatter(r.frontmatter) : {};
   return {
     id: r.id,
     skillId: r.skill_id,
@@ -556,5 +563,20 @@ function rowToSummary(r: SkillRow): SkillSummary {
     disabled: r.disabled !== 0,
     latestVersion: r.latestVersion,
     createdAt: new Date(r.created_at),
+    source: typeof fm.source === "string" ? fm.source : undefined,
   };
+}
+
+/**
+ * Defensive JSON.parse for the `frontmatter` column. We only need a plain
+ * record out; bad rows return `{}` so the list endpoint never 500s on a
+ * corrupt row (frontmatter is user-controlled input).
+ */
+function safeParseFrontmatter(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

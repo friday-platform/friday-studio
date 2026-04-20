@@ -148,9 +148,7 @@ export const skillsRoutes = daemonFactory
         source: z.string().min(3),
         /** Optional workspace to auto-assign to after install. */
         workspaceId: z.string().optional(),
-        /** Caller has reviewed the preview and accepts non-critical warnings. */
-        acknowledgeWarnings: z.boolean().optional(),
-        /** Override the target namespace. Defaults to "remote". */
+        /** Override the target namespace. Defaults to `<owner>-<repo>`. */
         targetNamespace: z.string().optional(),
       }),
     ),
@@ -161,7 +159,7 @@ export const skillsRoutes = daemonFactory
       const auth = await requireUser();
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
-      const { source, workspaceId, acknowledgeWarnings, targetNamespace } = c.req.valid("json");
+      const { source, workspaceId, targetNamespace } = c.req.valid("json");
       const parts = source.split("/").filter((p) => p.length > 0);
       if (parts.length < 3) {
         return c.json({ error: "source must be owner/repo/slug" }, 400);
@@ -212,16 +210,6 @@ export const skillsRoutes = daemonFactory
         );
       }
       const sourceOfficial = isOfficialSource(`${owner}/${repo}`);
-      if (!sourceOfficial && audit.warn.length > 0 && !acknowledgeWarnings) {
-        return c.json(
-          {
-            error:
-              "Install requires acknowledgeWarnings=true for non-official sources with audit warnings",
-            auditWarn: audit.warn,
-          },
-          412,
-        );
-      }
 
       const skillName =
         typeof parsed.data.frontmatter.name === "string"
@@ -284,9 +272,7 @@ export const skillsRoutes = daemonFactory
         if (!published.ok) return c.json({ error: published.error }, 500);
         invalidateLintCache(published.data.skillId);
 
-        const shouldAssign =
-          workspaceId !== undefined && (sourceOfficial || acknowledgeWarnings === true);
-        if (shouldAssign && workspaceId) {
+        if (workspaceId !== undefined) {
           await SkillStorage.assignSkill(published.data.skillId, workspaceId);
         }
 

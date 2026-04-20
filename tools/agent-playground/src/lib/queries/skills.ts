@@ -214,7 +214,6 @@ export async function searchSkillsSh(query: string, limit = 10) {
 export interface InstallSkillInput {
   source: string;
   workspaceId?: string;
-  acknowledgeWarnings?: boolean;
   targetNamespace?: string;
 }
 

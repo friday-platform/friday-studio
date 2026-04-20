@@ -102,6 +102,23 @@
     const slashIdx = path.lastIndexOf("/");
     return slashIdx >= 0 ? path.slice(slashIdx + 1) : path;
   }
+
+  /**
+   * Short provenance label from the `source` frontmatter field. Returns the
+   * origin host (e.g. `skills.sh`, `github.com`) so the sidebar can show a
+   * compact badge next to remotely-installed skills. Locally-authored skills
+   * have no `source` and render nothing.
+   */
+  function sourceLabel(source: string | undefined): string | null {
+    if (!source) return null;
+    if (source.startsWith("skills.sh/")) return "skills.sh";
+    if (source.startsWith("github.com/") || source.startsWith("https://github.com/")) {
+      return "github";
+    }
+    // Unknown scheme: show the first path segment.
+    const first = source.split("/")[0];
+    return first && first.length > 0 ? first : null;
+  }
 </script>
 
 <div class="skills-tree">
@@ -114,11 +131,16 @@
   {:else}
     <Tree.Root forceVisible {expanded}>
       {#each grouped as group (group.namespace)}
-        <Collapsible.Root defaultOpen={true}>
+        {@const containsActive = group.skills.some(
+          (s) => s.namespace === activeNamespace && s.name === activeName,
+        )}
+        <Collapsible.Root defaultOpen={containsActive}>
           <Collapsible.Trigger>
             {#snippet children(_open)}
               <span class="namespace-header">
-                @{group.namespace} <IconSmall.CaretDown />
+                <IconSmall.CaretDown />
+                <span class="namespace-label">{group.namespace}</span>
+                <span class="namespace-count">{group.skills.length}</span>
               </span>
             {/snippet}
           </Collapsible.Trigger>
@@ -128,6 +150,7 @@
           {@const ns = skill.namespace}
           {@const name = skill.name ?? ""}
           {@const isExpanded = activeNamespace === ns && activeName === name}
+          {@const src = sourceLabel(skill.source)}
 
           <Tree.Item id={skillId(ns, name)} hasChildren>
             <button
@@ -136,6 +159,9 @@
               onclick={() => handleSkillClick(ns, name)}
             >
               <span class="skill-label">{name}</span>
+              {#if src}
+                <span class="source-badge" title={skill.source}>{src}</span>
+              {/if}
               {#if skill.disabled}
                 <StatusBadge status="skipped" label="Disabled" />
               {/if}
@@ -232,15 +258,20 @@
   /* --- Namespace header ------------------------------------------------------ */
 
   .namespace-header {
+    align-items: center;
     block-size: var(--size-4);
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
     display: flex;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    margin-block-end: var(--size-1);
-    opacity: 0.6;
-    padding-inline: var(--size-2);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-6);
+    gap: var(--size-1);
+    letter-spacing: 0.04em;
+    margin-block-start: var(--size-2);
+    padding-inline: var(--size-1);
+    text-transform: uppercase;
 
     :global(svg) {
+      flex-shrink: 0;
       transform: rotate(-90deg);
       transition: transform 150ms ease;
     }
@@ -248,6 +279,19 @@
 
   :global([data-melt-collapsible-trigger][data-state="open"]) .namespace-header :global(svg) {
     transform: rotate(0deg);
+  }
+
+  .namespace-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .namespace-count {
+    color: color-mix(in srgb, var(--color-text), transparent 65%);
+    font-size: var(--font-size-0);
+    font-variant-numeric: tabular-nums;
   }
 
   /* --- Skill trigger --------------------------------------------------------- */
@@ -261,11 +305,13 @@
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-4);
     gap: var(--size-1);
     inline-size: 100%;
-    opacity: 0.8;
+    opacity: 0.85;
     padding: var(--size-1) var(--size-2);
+    /* Indent skills under the namespace header so the grouping is visible. */
+    padding-inline-start: var(--size-4);
     text-align: start;
     transition: background-color 100ms ease;
   }
@@ -276,6 +322,8 @@
   }
 
   .skill-trigger.expanded {
+    background-color: var(--color-surface-2);
+    font-weight: var(--font-weight-5);
     opacity: 1;
   }
 
@@ -284,6 +332,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .source-badge {
+    background-color: color-mix(in srgb, var(--color-accent-1, var(--color-text)), transparent 80%);
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    flex-shrink: 0;
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.02em;
+    padding: 1px var(--size-1);
   }
 
 
