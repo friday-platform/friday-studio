@@ -134,6 +134,21 @@ export const AtlasDataEventSchemas = {
     toVersion: z.string(),
     at: z.string(),
   }),
+  // Emitted by the load-time linter when a skill is loaded with quality issues.
+  // Non-fatal — the skill still loads, but consumers (e.g. the Context tab)
+  // can surface warnings inline.
+  "skill-lint-warning": z.object({
+    skillId: z.string(),
+    namespace: z.string(),
+    name: z.string(),
+    warnings: z.array(
+      z.object({
+        rule: z.string(),
+        message: z.string(),
+        severity: z.enum(["info", "warn", "error"]).default("warn"),
+      }),
+    ),
+  }),
 };
 
 // ── Standalone event schemas with type discriminant (leapfrog #3) ───────────
@@ -217,6 +232,7 @@ export type AtlasDataEvents = {
   "scratchpad-write": z.infer<(typeof AtlasDataEventSchemas)["scratchpad-write"]>;
   "skill-write": z.infer<(typeof AtlasDataEventSchemas)["skill-write"]>;
   "skill-rollback": z.infer<(typeof AtlasDataEventSchemas)["skill-rollback"]>;
+  "skill-lint-warning": z.infer<(typeof AtlasDataEventSchemas)["skill-lint-warning"]>;
 };
 
 /**
@@ -268,6 +284,10 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
 
 export const MessageMetadataSchema = z.object({
   agentId: z.string().optional(),
+  // FSM job name that produced the message. Powers the Context tab's
+  // "Active agent + job" display. Outermost wins — nested sub-agent calls
+  // surface via tool-progress events instead.
+  jobName: z.string().optional(),
   sessionId: z.string().optional(),
   timestamp: z.iso.datetime().optional(),
   startTimestamp: z.iso.datetime().optional(),

@@ -789,6 +789,7 @@ For external services, use do_task. For artifact data, use artifacts_get.
                   endTimestamp,
                   provider: conversationalModel.provider,
                   modelId: conversationalModel.modelId,
+                  agentId: "workspace-chat",
                 };
               },
             }),

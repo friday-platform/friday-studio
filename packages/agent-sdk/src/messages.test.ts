@@ -292,4 +292,45 @@ describe("validateAtlasUIMessages", () => {
     expect(validated).toHaveLength(1);
     expect(validated[0]?.role).toEqual("user");
   });
+
+  it("accepts jobName in metadata alongside agentId", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [{ type: "text", text: "Response" }],
+        metadata: { agentId: "workspace-chat", jobName: "fast-loop" },
+      },
+    ];
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated[0]?.metadata?.jobName).toEqual("fast-loop");
+  });
+
+  it("validates skill-lint-warning data event", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-skill-lint-warning",
+            data: {
+              skillId: "abc123",
+              namespace: "atlas",
+              name: "authoring-skills",
+              warnings: [{ rule: "body-lines", message: "body 550 lines > 500", severity: "warn" }],
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+    const validated = await validateAtlasUIMessages(messages);
+    const dataPart = validated[0]?.parts[0];
+    expect(dataPart?.type).toEqual("data-skill-lint-warning");
+    if (dataPart?.type === "data-skill-lint-warning") {
+      expect(dataPart.data.warnings).toHaveLength(1);
+      expect(dataPart.data.warnings[0]?.rule).toEqual("body-lines");
+    }
+  });
 });
