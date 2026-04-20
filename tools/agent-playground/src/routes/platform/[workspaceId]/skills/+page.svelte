@@ -13,6 +13,7 @@
 -->
 
 <script lang="ts">
+  import { toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
@@ -35,7 +36,6 @@
 
   let installSource = $state("");
   let installAck = $state(false);
-  let installMessage = $state<string | null>(null);
   let searchFocused = $state(false);
   /** Debounced copy of `installSource` — the TanStack query key. Without the
    *  debounce every keystroke fires a fetch. */
@@ -79,7 +79,6 @@
   async function doInstall(): Promise<void> {
     const source = installSource.trim();
     if (!source || !workspaceId) return;
-    installMessage = null;
     try {
       const res = await installMut.mutateAsync({
         source,
@@ -88,8 +87,16 @@
       });
       const tier = typeof res.tier === "string" ? res.tier : "unknown";
       const warnCount = Array.isArray(res.lintWarnings) ? res.lintWarnings.length : 0;
-      const published = res.published as { name: string; version: number } | undefined;
-      installMessage = `Installed ${published?.name ?? source} (tier=${tier}, ${String(warnCount)} lint warnings).`;
+      const published = res.published as
+        | { namespace: string; name: string; version: number }
+        | undefined;
+      const ref = published ? `@${published.namespace}/${published.name}` : source;
+      toast({
+        title: "Skill installed",
+        description:
+          `${ref} (${tier}${warnCount > 0 ? `, ${String(warnCount)} lint warning${warnCount === 1 ? "" : "s"}` : ""}).` +
+          " Auto-assigned to this workspace.",
+      });
       installSource = "";
     } catch (e) {
       const err = e as Error & { data?: Record<string, unknown> };
@@ -97,9 +104,13 @@
       const auditCritical =
         data && Array.isArray(data.auditCritical) ? data.auditCritical.length : 0;
       const lintErrors = data && Array.isArray(data.lintErrors) ? data.lintErrors.length : 0;
-      const detail = auditCritical > 0 ? ` (${String(auditCritical)} critical audit)` : "";
-      const lintDetail = lintErrors > 0 ? ` (${String(lintErrors)} lint errors)` : "";
-      installMessage = `${err.message ?? "Install failed"}${detail}${lintDetail}`;
+      const detail = auditCritical > 0 ? ` · ${String(auditCritical)} critical audit` : "";
+      const lintDetail = lintErrors > 0 ? ` · ${String(lintErrors)} lint errors` : "";
+      toast({
+        title: "Install failed",
+        description: `${err.message ?? "Unknown error"}${detail}${lintDetail}`,
+        error: true,
+      });
     }
   }
 
@@ -193,9 +204,6 @@
           {installMut.isPending ? "Installing…" : "Install"}
         </button>
       </div>
-      {#if installMessage}
-        <p class="install-message">{installMessage}</p>
-      {/if}
     </section>
   {/if}
 

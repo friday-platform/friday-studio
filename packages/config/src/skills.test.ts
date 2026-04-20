@@ -63,12 +63,22 @@ describe("NamespaceSchema", () => {
     expect(NamespaceSchema.safeParse(input).success).toBe(false);
   });
 
-  // Reserved words as substrings in namespaces
-  const substringCases = ["my-claude-org", "anthropic-dev"];
+  // Reserved words as whole hyphen-delimited segments
+  const reservedSegmentCases = ["my-claude-org", "anthropic-dev"];
   it.each(
-    substringCases.map((v) => ({ input: v })),
+    reservedSegmentCases.map((v) => ({ input: v })),
   )("rejects namespace containing reserved word: $input", ({ input }) => {
     expect(NamespaceSchema.safeParse(input).success).toBe(false);
+  });
+
+  // Substring-only matches (no hyphen boundary) are allowed — e.g. the
+  // `anthropics` GitHub org used by skills.sh contains "anthropic" but
+  // isn't the reserved word itself.
+  const substringAllowed = ["anthropics-skills", "claudeish", "my-anthropics-helper"];
+  it.each(
+    substringAllowed.map((v) => ({ input: v })),
+  )("accepts namespace with reserved substring but no reserved segment: $input", ({ input }) => {
+    expect(NamespaceSchema.safeParse(input).success).toBe(true);
   });
 });
 

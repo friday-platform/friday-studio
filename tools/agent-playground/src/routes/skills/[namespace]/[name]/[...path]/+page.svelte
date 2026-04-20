@@ -92,6 +92,27 @@
   function handleBeforeUnload(e: BeforeUnloadEvent) {
     if (editorDirty) e.preventDefault();
   }
+
+  /**
+   * Scroll to `#anchor` once the rendered markdown is in the DOM. Required
+   * because the route is loaded client-side from the skill archive — by
+   * the time the page mounts, the browser has already decided where to
+   * scroll (to the top, since the content didn't exist yet). We re-try
+   * after every fileContent + hash change.
+   */
+  const hash = $derived(page.url.hash);
+  $effect(() => {
+    if (!browser) return;
+    if (!fileContent) return;
+    if (!hash || hash.length < 2) return;
+    // Let the markdown HTML land in the DOM first, then scroll.
+    const id = decodeURIComponent(hash.slice(1));
+    // Use rAF to wait for layout after @html update.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 </script>
 
 <svelte:window onbeforeunload={handleBeforeUnload} />

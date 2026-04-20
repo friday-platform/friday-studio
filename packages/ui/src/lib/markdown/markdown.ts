@@ -11,15 +11,33 @@ const marked = new Marked({
   async: false,
 });
 
+/**
+ * GitHub-style heading → id slug. Strips inline markdown first so the
+ * anchor matches what users see. Powers both table-of-contents links
+ * and external deep-links like `?tab=reference#syscall-level-evasion`.
+ */
+function slugifyHeading(text: string): string {
+  return text
+    .replace(/<[^>]+>/g, "")
+    .replace(/[*_`~]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 const renderer = {
-  // Open links in a new tab
+  // Open links in a new tab — except in-page anchors (`#foo`), which must
+  // stay same-tab so clicking a TOC entry actually scrolls the page.
   link({ href, text }: { href: string; text: string }): string {
-    return `<a href="${href}" target="_blank">${text}</a>`;
+    const target = href.startsWith("#") ? "" : ' target="_blank"';
+    return `<a href="${href}"${target}>${text}</a>`;
   },
-  // H5/H6 → bold paragraph (matches old behavior)
   heading({ text, depth }: { text: string; depth: number }): string {
+    // H5/H6 → bold paragraph (matches prior behavior).
     if (depth >= 5) return `<p><strong>${text}</strong></p>\n`;
-    return `<h${depth}>${text}</h${depth}>\n`;
+    const id = slugifyHeading(text);
+    return `<h${depth}${id ? ` id="${id}"` : ""}>${text}</h${depth}>\n`;
   },
   // Strip horizontal rules (matches old behavior)
   hr(): string {

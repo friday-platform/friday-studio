@@ -231,7 +231,17 @@ export const skillsRoutes = daemonFactory
         typeof parsed.data.frontmatter.description === "string"
           ? parsed.data.frontmatter.description
           : "";
-      const namespace = targetNamespace ?? "remote";
+      // Default namespace encodes the skills.sh source as `<owner>-<repo>`
+      // (kebab-case, the only format `NamespaceSchema` accepts). This makes
+      // the skill's detail URL (`/skills/@ljagiello-ctf-skills/ctf-reverse`)
+      // self-documenting — you can see the origin without opening
+      // frontmatter. Callers can still override with `targetNamespace`.
+      const defaultNs = `${owner}-${repo}`
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+      const namespace = targetNamespace ?? defaultNs;
 
       const tmpDir = makeTempDir({ prefix: "atlas-install-" });
       try {

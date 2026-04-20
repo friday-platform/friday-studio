@@ -182,20 +182,33 @@ describe("markdownToHTML", () => {
     expect(result).toContain("<li>Second item</li>");
   });
 
-  it("H1", () => {
-    expect(markdownToHTML("# Header 1")).toContain("<h1>Header 1</h1>");
+  it("H1 gets a slug id", () => {
+    expect(markdownToHTML("# Header 1")).toContain('<h1 id="header-1">Header 1</h1>');
   });
 
-  it("H2", () => {
-    expect(markdownToHTML("## Header 2")).toContain("<h2>Header 2</h2>");
+  it("H2 gets a slug id", () => {
+    expect(markdownToHTML("## Header 2")).toContain('<h2 id="header-2">Header 2</h2>');
   });
 
-  it("H3", () => {
-    expect(markdownToHTML("### Header 3")).toContain("<h3>Header 3</h3>");
+  it("H3 gets a slug id", () => {
+    expect(markdownToHTML("### Header 3")).toContain('<h3 id="header-3">Header 3</h3>');
   });
 
-  it("H4", () => {
-    expect(markdownToHTML("#### Header 4")).toContain("<h4>Header 4</h4>");
+  it("H4 gets a slug id", () => {
+    expect(markdownToHTML("#### Header 4")).toContain('<h4 id="header-4">Header 4</h4>');
+  });
+
+  it("heading slug matches GitHub-style (strips punctuation and markdown)", () => {
+    expect(markdownToHTML("## Syscall-Level Evasion")).toContain(
+      'id="syscall-level-evasion"',
+    );
+    expect(markdownToHTML("## What's *new* here?")).toContain('id="what-s-new-here"');
+  });
+
+  it("in-page anchor links skip target=_blank", () => {
+    const html = markdownToHTML("[see](#foo) and [out](https://example.com)");
+    expect(html).toContain('<a href="#foo">see</a>');
+    expect(html).toContain('<a href="https://example.com" target="_blank">out</a>');
   });
 
   it("H5 to bold paragraph", () => {
@@ -343,7 +356,7 @@ This is your **single biggest savings lever**. Here's how bundling could work:
 
 Allstate and Progressive are the strongest candidates.`;
     const result = markdownToHTML(markdown);
-    expect(result).toContain("<h2>");
+    expect(result).toMatch(/<h2[^>]*>/);
     expect(result).toContain("<table>");
     expect(result).toContain("Bundle Type");
     expect(result).toContain("Auto + Renters");

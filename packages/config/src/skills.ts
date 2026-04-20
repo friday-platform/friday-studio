@@ -7,8 +7,17 @@ import { z } from "zod";
 /** Words prohibited in skill names and namespaces per the Agent Skills spec */
 export const RESERVED_WORDS = ["anthropic", "claude"] as const;
 
+/**
+ * True if any hyphen-delimited segment of `value` is a reserved word.
+ * Substring matching is intentionally avoided — "anthropics" (the GitHub org
+ * used for skills.sh) legitimately starts with "anthropic", and encoding
+ * `owner/repo` from skills.sh as `<owner>-<repo>` ("anthropics-skills")
+ * would otherwise be rejected. The spec's intent is to block spoofing like
+ * `@anthropic/foo`, not to ban the string "anthropic" everywhere.
+ */
 function containsReservedWord(value: string): boolean {
-  return RESERVED_WORDS.some((word) => value.includes(word));
+  const segments = value.toLowerCase().split("-");
+  return RESERVED_WORDS.some((word) => segments.includes(word));
 }
 
 const reservedWordMessage = `Must not contain reserved words: ${RESERVED_WORDS.join(", ")}`;
