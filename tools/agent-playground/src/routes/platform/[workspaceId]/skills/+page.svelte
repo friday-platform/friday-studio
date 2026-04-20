@@ -13,11 +13,16 @@
 -->
 
 <script lang="ts">
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries } from "$lib/queries";
-  import { useAssignSkill, useInstallSkill, useUnassignSkill } from "$lib/queries/skills";
+  import {
+    searchSkillsSh,
+    useAssignSkill,
+    useInstallSkill,
+    useUnassignSkill,
+  } from "$lib/queries/skills";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const classifiedQuery = createQuery(() =>
@@ -31,6 +36,45 @@
   let installSource = $state("");
   let installAck = $state(false);
   let installMessage = $state<string | null>(null);
+  let searchFocused = $state(false);
+  /** Debounced copy of `installSource` — the TanStack query key. Without the
+   *  debounce every keystroke fires a fetch. */
+  let searchQuery = $state("");
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+  function handleSourceInput(e: Event): void {
+    const v = (e.currentTarget as HTMLInputElement).value;
+    installSource = v;
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      searchQuery = v.trim();
+    }, 200);
+  }
+
+  /**
+   * Autocomplete query over skills.sh. Only fires when the user is actively
+   * typing something short enough to be a search term (not already a full
+   * `owner/repo/slug`) — once they paste a 3-segment ref, skip search.
+   */
+  const searchSuggestions = createQuery(() =>
+    queryOptions({
+      queryKey: ["skillssh-search", searchQuery] as const,
+      queryFn:
+        searchQuery.length >= 2 && searchQuery.split("/").filter(Boolean).length < 3
+          ? () => searchSkillsSh(searchQuery, 8)
+          : skipToken,
+      staleTime: 60_000,
+    }),
+  );
+  const suggestions = $derived(searchSuggestions.data?.skills ?? []);
+  const showSuggestions = $derived(
+    searchFocused && installSource.trim().length >= 2 && suggestions.length > 0,
+  );
+
+  function pickSuggestion(id: string): void {
+    installSource = id;
+    searchQuery = id; // clears the suggestions (3-segment ref disables the query)
+    searchFocused = false;
+  }
 
   async function doInstall(): Promise<void> {
     const source = installSource.trim();
@@ -99,12 +143,43 @@
          community sources with warnings. -->
     <section class="install-section">
       <div class="install-row">
-        <input
-          class="source-input"
-          type="text"
-          bind:value={installSource}
-          placeholder="Install from skills.sh — owner/repo/slug (e.g. anthropics/skills/pdf)"
-        />
+        <div class="source-wrapper">
+          <input
+            class="source-input"
+            type="text"
+            value={installSource}
+            oninput={handleSourceInput}
+            onfocus={() => (searchFocused = true)}
+            onblur={() => setTimeout(() => (searchFocused = false), 150)}
+            placeholder="Install from skills.sh — type to search (e.g. pdf, react, sql)"
+            autocomplete="off"
+          />
+          {#if searchFocused && installSource.trim().length >= 2 && searchSuggestions.isFetching}
+            <div class="search-status">Searching skills.sh…</div>
+          {/if}
+          {#if showSuggestions}
+            <ul class="suggestions">
+              {#each suggestions as s (s.id)}
+                <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                <li
+                  class="suggestion"
+                  class:official={s.tier === "official"}
+                  onmousedown={(e) => {
+                    e.preventDefault();
+                    pickSuggestion(s.id);
+                  }}
+                >
+                  <span class="sugg-name">{s.name}</span>
+                  <span class="sugg-src">{s.source}</span>
+                  <span class="sugg-meta">
+                    <span class="tier-tag">{s.tier}</span>
+                    <span class="installs">{s.installs.toLocaleString()} installs</span>
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
         <label class="ack">
           <input type="checkbox" bind:checked={installAck} />
           Accept non-critical warnings
@@ -247,16 +322,100 @@
     gap: var(--size-3);
   }
 
+  .source-wrapper {
+    flex-grow: 1;
+    min-inline-size: 280px;
+    position: relative;
+  }
+
   .source-input {
     background: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     color: var(--color-text);
-    flex-grow: 1;
     font-family: var(--font-family-mono, monospace);
     font-size: var(--font-size-1);
-    min-inline-size: 260px;
+    inline-size: 100%;
     padding: var(--size-2) var(--size-3);
+  }
+
+  .search-status {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-0);
+    padding: var(--size-1) var(--size-3);
+  }
+
+  .suggestions {
+    background: var(--color-surface-1, var(--color-surface-2));
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    inset-block-start: calc(100% + 4px);
+    inset-inline: 0;
+    margin: 0;
+    max-block-size: 280px;
+    overflow-y: auto;
+    padding: var(--size-1);
+    position: absolute;
+    z-index: 20;
+  }
+
+  .suggestion {
+    align-items: baseline;
+    cursor: pointer;
+    display: grid;
+    gap: var(--size-1) var(--size-2);
+    grid-template-columns: auto 1fr auto;
+    padding: var(--size-2);
+    border-radius: var(--radius-1);
+  }
+
+  .suggestion:hover {
+    background-color: color-mix(in srgb, var(--color-primary, #6272ff), transparent 85%);
+  }
+
+  .sugg-name {
+    font-family: var(--font-family-mono, monospace);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+  }
+
+  .sugg-src {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-family: var(--font-family-mono, monospace);
+    font-size: var(--font-size-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sugg-meta {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .tier-tag {
+    border-radius: var(--radius-1);
+    font-size: 9px;
+    font-weight: var(--font-weight-7);
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    text-transform: uppercase;
+    background-color: color-mix(in srgb, var(--color-text), transparent 80%);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+  }
+
+  .suggestion.official .tier-tag {
+    background-color: color-mix(in srgb, var(--color-success, #4caf50), transparent 80%);
+    color: var(--color-success, #4caf50);
+  }
+
+  .installs {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-size: var(--font-size-0);
   }
 
   .ack {
