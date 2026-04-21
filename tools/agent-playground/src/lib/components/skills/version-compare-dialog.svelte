@@ -41,6 +41,19 @@
   }: Props = $props();
 
   const open = writable(true);
+
+  // Melt's Dialog closes itself on ESC / overlay click by flipping `open`
+  // to false. Without propagating that back up, the parent's state stays
+  // set and a re-open with the same version is a no-op (the {#if}
+  // doesn't flap). Subscribe + tear down on unmount so a fresh click
+  // actually re-mounts the dialog.
+  $effect(() => {
+    const unsubscribe = open.subscribe((v) => {
+      if (!v) onclose();
+    });
+    return unsubscribe;
+  });
+
   const older = useSkillAtVersion(
     () => namespace,
     () => name,
