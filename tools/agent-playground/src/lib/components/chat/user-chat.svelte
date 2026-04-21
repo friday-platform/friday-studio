@@ -649,7 +649,11 @@
         if (step.toSend === null || !chat) break;
         queuedMessages = step.remainder;
         try {
-          await chat.sendMessage({ role: "user", parts: step.toSend });
+          await chat.sendMessage({
+            role: "user",
+            parts: step.toSend,
+            metadata: { timestamp: new Date().toISOString() },
+          });
         } catch {
           // Error surfaces via the `chat.error` effect; don't loop on it.
           break;
@@ -791,6 +795,62 @@
     });
   }
 
+  // Stable per-message first-seen fallback for messages whose metadata
+  // carries no timestamp (legacy user messages written before we started
+  // stamping, with no following assistant turn to borrow from). A plain
+  // Map keeps the value constant across $derived reruns; Date.now() inline
+  // would drift on every render and every such message would show "now".
+  const firstSeenMs = new Map<string, number>();
+
+  function extractMetadataTimestamp(msg: AtlasUIMessage): number | null {
+    const md = msg.metadata ?? {};
+    const iso = md.startTimestamp ?? md.timestamp ?? md.endTimestamp;
+    if (typeof iso === "string" && iso.length > 0) {
+      const t = new Date(iso).getTime();
+      if (!Number.isNaN(t)) return t;
+    }
+    return null;
+  }
+
+  // Assign a timestamp to every rendered message. Messages whose metadata
+  // carries a stamp use it directly; messages without one (typically old
+  // user messages) borrow the next message's stamp — a user turn is always
+  // immediately followed by its assistant reply, so borrowing forward gives
+  // a timestamp off by a second or two rather than hours.
+  function assignTimestamps(rawMessages: readonly AtlasUIMessage[]): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const msg of rawMessages) {
+      const t = extractMetadataTimestamp(msg);
+      if (t !== null) out.set(msg.id, t);
+    }
+    for (let i = 0; i < rawMessages.length; i++) {
+      const msg = rawMessages[i];
+      if (!msg) continue;
+      if (out.has(msg.id)) continue;
+      for (let j = i + 1; j < rawMessages.length; j++) {
+        const next = rawMessages[j];
+        if (!next) continue;
+        const t = out.get(next.id);
+        if (t !== undefined) {
+          out.set(msg.id, t);
+          break;
+        }
+      }
+    }
+    for (const msg of rawMessages) {
+      if (out.has(msg.id)) continue;
+      const seen = firstSeenMs.get(msg.id);
+      if (seen !== undefined) {
+        out.set(msg.id, seen);
+      } else {
+        const now = Date.now();
+        firstSeenMs.set(msg.id, now);
+        out.set(msg.id, now);
+      }
+    }
+    return out;
+  }
+
   /**
    * Derive the unified display list: real chat turns from the AI SDK plus
    * playground-local events (schedule proposals, system toasts). Chat
@@ -812,37 +872,36 @@
    * up with a live status card before the first text-delta arrives.
    */
   const displayedMessages: ChatMessage[] = $derived.by(() => {
-    const chatMsgs: ChatMessage[] = chat
-      ? chat.messages
-          .filter((msg) => {
-            if (msg.role !== "assistant") return true;
-            return hasRenderableContent(msg);
-          })
-          .map((msg) => {
-            const m = (typeof msg.metadata === "object" && msg.metadata !== null
-              ? msg.metadata
-              : {}) as Record<string, unknown>;
-            return {
-              id: msg.id,
-              role: (msg.role === "user"
-                ? "user"
-                : msg.role === "system"
-                  ? "system"
-                  : "assistant") as "user" | "assistant" | "system",
-              content: extractText(msg),
-              timestamp: Date.now(),
-              toolCalls: extractToolCalls(msg),
-              images: extractImages(msg),
-              metadata: {
-                agentId: typeof m.agentId === "string" ? m.agentId : undefined,
-                jobName: typeof m.jobName === "string" ? m.jobName : undefined,
-                provider: typeof m.provider === "string" ? m.provider : undefined,
-                modelId: typeof m.modelId === "string" ? m.modelId : undefined,
-                sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
-              },
-            };
-          })
-      : [];
+    if (!chat) return [...localEvents];
+    const rawMessages = chat.messages.filter((msg) => {
+      if (msg.role !== "assistant") return true;
+      return hasRenderableContent(msg);
+    });
+    const timestamps = assignTimestamps(rawMessages);
+    const chatMsgs: ChatMessage[] = rawMessages.map((msg) => {
+      const m = (typeof msg.metadata === "object" && msg.metadata !== null
+        ? msg.metadata
+        : {}) as Record<string, unknown>;
+      return {
+        id: msg.id,
+        role: (msg.role === "user"
+          ? "user"
+          : msg.role === "system"
+            ? "system"
+            : "assistant") as "user" | "assistant" | "system",
+        content: extractText(msg),
+        timestamp: timestamps.get(msg.id) ?? Date.now(),
+        toolCalls: extractToolCalls(msg),
+        images: extractImages(msg),
+        metadata: {
+          agentId: typeof m.agentId === "string" ? m.agentId : undefined,
+          jobName: typeof m.jobName === "string" ? m.jobName : undefined,
+          provider: typeof m.provider === "string" ? m.provider : undefined,
+          modelId: typeof m.modelId === "string" ? m.modelId : undefined,
+          sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+        },
+      };
+    });
     return [...chatMsgs, ...localEvents];
   });
 
@@ -1004,7 +1063,11 @@
       return;
     }
 
-    void chat.sendMessage({ role: "user", parts });
+    void chat.sendMessage({
+      role: "user",
+      parts,
+      metadata: { timestamp: new Date().toISOString() },
+    });
   }
 </script>
 
