@@ -1,13 +1,13 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exportAll, exportGlobalSkills, importAll, importBundle, importGlobalSkills } from "@atlas/bundle";
-import {
-  buildWorkspaceBundleBytes,
-  isOnDiskWorkspace,
-  materializeImportedMemory,
-} from "./bundle-helpers.ts";
-import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
+import {
+  exportAll,
+  exportGlobalSkills,
+  importAll,
+  importBundle,
+  importGlobalSkills,
+} from "@atlas/bundle";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
@@ -58,6 +58,12 @@ import {
 } from "../../src/services/slack-auto-wire.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
+import {
+  buildWorkspaceBundleBytes,
+  isOnDiskWorkspace,
+  materializeImportedMemory,
+} from "./bundle-helpers.ts";
+import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 import { resourceRoutes } from "./resources.ts";
 import {
@@ -775,7 +781,10 @@ const workspacesRoutes = daemonFactory
     const modeParam = c.req.query("mode");
     const mode: "definition" | "migration" = modeParam === "migration" ? "migration" : "definition";
     const includeParam = c.req.query("include") ?? "";
-    const includeGlobalSkills = includeParam.split(",").map((s) => s.trim()).includes("global-skills");
+    const includeGlobalSkills = includeParam
+      .split(",")
+      .map((s) => s.trim())
+      .includes("global-skills");
     const bundleLogger = createLogger({ component: "workspace-bundle-all-export" });
     try {
       const ctx = c.get("app");
@@ -786,12 +795,20 @@ const workspacesRoutes = daemonFactory
 
       for (const ws of all) {
         if (!(await isOnDiskWorkspace(ws.path))) {
-          skipped.push({ id: ws.id, name: ws.name, reason: "virtual workspace — no on-disk directory" });
+          skipped.push({
+            id: ws.id,
+            name: ws.name,
+            reason: "virtual workspace — no on-disk directory",
+          });
           continue;
         }
         const cfg = await manager.getWorkspaceConfig(ws.id);
         if (!cfg) {
-          skipped.push({ id: ws.id, name: ws.name, reason: "failed to load workspace configuration" });
+          skipped.push({
+            id: ws.id,
+            name: ws.name,
+            reason: "failed to load workspace configuration",
+          });
           continue;
         }
         try {
@@ -802,9 +819,7 @@ const workspacesRoutes = daemonFactory
             config: cfg,
             mode,
             logger: bundleLogger,
-            ...(mode === "migration"
-              ? { memoryDir: join(getAtlasHome(), "memory", ws.id) }
-              : {}),
+            ...(mode === "migration" ? { memoryDir: join(getAtlasHome(), "memory", ws.id) } : {}),
           });
           bundles.push({ id: ws.id, name: built.name, bundleBytes: built.bundleBytes });
         } catch (err) {
@@ -910,12 +925,7 @@ const workspacesRoutes = daemonFactory
         }
       }
 
-      return c.json({
-        manifest: result.manifest,
-        imported,
-        errors,
-        globalSkills,
-      });
+      return c.json({ manifest: result.manifest, imported, errors, globalSkills });
     } catch (error) {
       const errorMessage = stringifyError(error);
       importLogger.error("Bundle-all import failed", { error: errorMessage });
@@ -2239,6 +2249,119 @@ const workspacesRoutes = daemonFactory
       const { workspaceId } = c.req.valid("param");
       const skills = await resolveVisibleSkills(workspaceId, SkillStorage);
       return c.json({ skills });
+    },
+  )
+  // ─── CLASSIFIED WORKSPACE SKILLS ──────────────────────────────────────────
+  // Returns disjoint buckets so the playground Skills page can render
+  // without per-skill N+1 assignment lookups:
+  //   - assigned: skills workspace-level assigned to this workspace
+  //               (job_name IS NULL)
+  //   - global:   skills with zero assignments at any layer
+  //   - other:    skills assigned somewhere else but not here
+  //
+  // Job-level rows for THIS workspace are excluded — they're surfaced on
+  // the per-job detail route.
+  .get(
+    "/:workspaceId/skills/classified",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const listResult = await SkillStorage.list(undefined, undefined, true);
+      if (!listResult.ok) return c.json({ error: listResult.error }, 500);
+      const allSkills = listResult.data;
+
+      const wsAssignedResult = await SkillStorage.listAssigned(workspaceId);
+      const wsAssignedIds = new Set(
+        (wsAssignedResult.ok ? wsAssignedResult.data : []).map((s) => s.skillId),
+      );
+
+      const assignmentEntries = await Promise.all(
+        allSkills.map(async (skill) => {
+          const r = await SkillStorage.listAssignments(skill.skillId);
+          return [skill.skillId, r.ok ? r.data : []] as const;
+        }),
+      );
+      const assignmentsBySkill = new Map(assignmentEntries);
+
+      const assigned: typeof allSkills = [];
+      const global: typeof allSkills = [];
+      const other: typeof allSkills = [];
+      for (const skill of allSkills) {
+        const list = assignmentsBySkill.get(skill.skillId) ?? [];
+        if (list.length === 0) {
+          global.push(skill);
+        } else if (wsAssignedIds.has(skill.skillId)) {
+          assigned.push(skill);
+        } else {
+          other.push(skill);
+        }
+      }
+
+      return c.json({ assigned, global, other });
+    },
+  )
+  // ─── JOB SKILLS (for /platform/:ws/jobs/:jobName) ─────────────────────────
+  .get(
+    "/:workspaceId/jobs/:jobName/skills",
+    zValidator("param", z.object({ workspaceId: z.string().min(1), jobName: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId, jobName } = c.req.valid("param");
+
+      const [catalogResult, inheritedSkills, jobAssignedResult] = await Promise.all([
+        SkillStorage.list(undefined, undefined, true),
+        resolveVisibleSkills(workspaceId, SkillStorage),
+        SkillStorage.listAssignmentsForJob(workspaceId, jobName),
+      ]);
+      if (!catalogResult.ok) return c.json({ error: catalogResult.error }, 500);
+
+      const catalog = catalogResult.data;
+      const jobAssigned = jobAssignedResult.ok ? jobAssignedResult.data : [];
+
+      const inheritedIds = new Set(inheritedSkills.map((s) => s.skillId));
+      const jobIds = new Set(jobAssigned.map((s) => s.skillId));
+
+      const workspaceInherited = inheritedSkills.filter((s) => s.namespace !== "friday");
+      const jobSpecific = jobAssigned;
+      const friday: typeof catalog = [];
+      const available: typeof catalog = [];
+
+      for (const skill of catalog) {
+        if (skill.name === null || skill.name === "" || skill.disabled) continue;
+        if (skill.namespace === "friday") {
+          friday.push(skill);
+          continue;
+        }
+        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) continue;
+        available.push(skill);
+      }
+
+      return c.json({ workspaceInherited, jobSpecific, friday, available });
+    },
+  )
+  // ─── PER-JOB SKILL BREAKDOWN (for /platform/:ws/skills) ───────────────────
+  .get(
+    "/:workspaceId/skills/job-breakdown",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace =
+        (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
+      if (!workspace) return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      const jobNames = Object.keys(config?.workspace?.jobs ?? {});
+
+      const entries = await Promise.all(
+        jobNames.map(async (jobName) => {
+          const r = await SkillStorage.listAssignmentsForJob(workspace.id, jobName);
+          return { jobName, skills: r.ok ? r.data : [] };
+        }),
+      );
+
+      const byJob = entries.filter((e) => e.skills.length > 0);
+      return c.json({ byJob });
     },
   );
 
