@@ -13,11 +13,13 @@
 -->
 
 <script lang="ts">
-  import { toast } from "@atlas/ui";
+  import { Dialog, toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import SkillLoader from "$lib/components/skills/skill-loader.svelte";
+  import SkillsShImport from "$lib/components/skills/skills-sh-import.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries } from "$lib/queries";
   import {
@@ -26,6 +28,7 @@
     useInstallSkill,
     useUnassignSkill,
   } from "$lib/queries/skills";
+  import { writable } from "svelte/store";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const classifiedQuery = createQuery(() =>
@@ -38,24 +41,19 @@
 
   let installSource = $state("");
   let searchFocused = $state(false);
-  /** Bound to the install-from-skills.sh textbox so the `?addSkill=true`
-   *  deep-link handler can focus it without relying on querySelector. */
-  let installInputEl = $state<HTMLInputElement | null>(null);
 
-  /**
-   * Deep-link handler for `?addSkill=true` — the workspace sidebar's
-   * "Add skill" button goes through this URL param, and without a
-   * listener the link was a no-op. On arrival we scroll the install
-   * input into view, focus it, and strip the query param so a refresh
-   * doesn't keep re-triggering the flow.
-   */
+  // --- Add Skill dialog (Upload + Import tabs, same UX as the global /skills page)
+  // Triggered by `?addSkill=true` from the workspace sidebar button, so the
+  // user gets the full picker instead of just being dumped at the inline
+  // search input. Imports via this dialog auto-assign to the workspace.
+  const addDialogOpen = writable(false);
+  let addMode = $state<"upload" | "import">("upload");
+
   $effect(() => {
     if (!browser) return;
     if (page.url.searchParams.get("addSkill") !== "true") return;
-    requestAnimationFrame(() => {
-      installInputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
-      installInputEl?.focus();
-    });
+    addMode = "upload";
+    addDialogOpen.set(true);
     const url = new URL(page.url.href);
     url.searchParams.delete("addSkill");
     goto(url.pathname + url.search, { replaceState: true, noScroll: true });
@@ -174,7 +172,6 @@
       <div class="install-row">
         <div class="source-wrapper">
           <input
-            bind:this={installInputEl}
             class="source-input"
             type="text"
             value={installSource}
@@ -319,6 +316,62 @@
     </section>
   {/if}
 </div>
+
+<Dialog.Root open={addDialogOpen}>
+  {#snippet children()}
+    <Dialog.Content size="auto">
+      <Dialog.Close />
+
+      {#snippet header()}
+        <Dialog.Title>Add skill</Dialog.Title>
+        <Dialog.Description>
+          Upload a folder you authored, or import one from skills.sh. Either way it lands
+          in this workspace.
+        </Dialog.Description>
+      {/snippet}
+
+      <div class="add-tabs" role="tablist">
+        <button
+          type="button"
+          class="tab"
+          class:active={addMode === "upload"}
+          role="tab"
+          aria-selected={addMode === "upload"}
+          onclick={() => {
+            addMode = "upload";
+          }}
+        >
+          Upload file / folder
+        </button>
+        <button
+          type="button"
+          class="tab"
+          class:active={addMode === "import"}
+          role="tab"
+          aria-selected={addMode === "import"}
+          onclick={() => {
+            addMode = "import";
+          }}
+        >
+          Import from skills.sh
+        </button>
+      </div>
+
+      {#if addMode === "upload"}
+        <SkillLoader inline onclose={() => addDialogOpen.set(false)} />
+      {:else if workspaceId}
+        <SkillsShImport
+          {workspaceId}
+          onclose={() => addDialogOpen.set(false)}
+        />
+      {/if}
+
+      {#snippet footer()}
+        <Dialog.Cancel>Cancel</Dialog.Cancel>
+      {/snippet}
+    </Dialog.Content>
+  {/snippet}
+</Dialog.Root>
 
 <style>
   .skills-page {
@@ -614,5 +667,38 @@
     overflow: hidden;
     padding-block-start: var(--size-1);
     padding-inline-start: calc(8px + var(--size-3));
+  }
+
+  /* --- Add Skill dialog tabs (same visual as /skills layout) --- */
+
+  .add-tabs {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    gap: var(--size-1);
+    inline-size: min(720px, 92vw);
+    justify-content: center;
+    margin-block-end: var(--size-4);
+    padding-block-end: var(--size-2);
+  }
+
+  .tab {
+    background: transparent;
+    border: none;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    margin-block-end: -2px;
+    padding-block: var(--size-1);
+    padding-inline: var(--size-3);
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .tab:hover { color: var(--color-text); }
+
+  .tab.active {
+    border-block-end-color: var(--color-text);
+    color: var(--color-text);
   }
 </style>

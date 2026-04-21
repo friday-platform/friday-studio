@@ -17,9 +17,11 @@
 
   interface Props {
     onclose?: () => void;
+    /** When set, the imported skill is auto-assigned to this workspace. */
+    workspaceId?: string;
   }
 
-  const { onclose }: Props = $props();
+  const { onclose, workspaceId }: Props = $props();
 
   const installMut = useInstallSkill();
 
@@ -62,17 +64,23 @@
     const src = source.trim();
     if (!src) return;
     try {
-      const res = await installMut.mutateAsync({ source: src });
+      const res = await installMut.mutateAsync(
+        workspaceId ? { source: src, workspaceId } : { source: src },
+      );
       const published = res.published as
         | { namespace: string; name: string; version: number }
         | undefined;
       const ref = published ? `@${published.namespace}/${published.name}` : src;
       toast({
         title: "Skill imported",
-        description: `${ref} added to the global catalog.`,
+        description: workspaceId
+          ? `${ref} — assigned to this workspace.`
+          : `${ref} added to the global catalog.`,
       });
       onclose?.();
-      if (published) goto(`/skills/${published.namespace}/${published.name}`);
+      if (published && !workspaceId) {
+        goto(`/skills/${published.namespace}/${published.name}`);
+      }
     } catch (e) {
       const err = e as Error;
       toast({ title: "Import failed", description: err.message, error: true });
