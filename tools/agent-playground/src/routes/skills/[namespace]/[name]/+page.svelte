@@ -302,6 +302,10 @@
     const raw = skill?.frontmatter?.source;
     return typeof raw === "string" && raw.startsWith("skills.sh/") ? raw : null;
   });
+  /** Public skills.sh URL for the provenance link — swap the leading
+   *  `skills.sh/` segment for `https://skills.sh/` and keep the rest of
+   *  the path intact. */
+  const sourceUrl = $derived(sourceRef ? `https://${sourceRef}` : null);
 
   async function handleCheckUpdate() {
     if (!skill || checkUpdateMut.isPending) return;
@@ -398,8 +402,16 @@
             {lintIssueCount} issue{lintIssueCount === 1 ? "" : "s"}
           </Button>
         {/if}
-        {#if sourceRef}
-          <span class="source-hint" title={sourceRef}>from skills.sh</span>
+        {#if sourceRef && sourceUrl}
+          <a
+            class="source-hint"
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={sourceRef}
+          >
+            from skills.sh ↗
+          </a>
           <Button
             size="small"
             variant="secondary"
@@ -631,6 +643,13 @@
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     font-size: var(--font-size-1);
     margin-inline-end: var(--size-2);
+    text-decoration: none;
+    transition: color 120ms ease;
+  }
+
+  .source-hint:hover {
+    color: var(--color-text);
+    text-decoration: underline;
   }
 
   .version-badge {
