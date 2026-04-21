@@ -443,33 +443,50 @@ export const skillsRoutes = daemonFactory
     const { skillId } = c.req.valid("param");
     const result = await SkillStorage.listAssignments(skillId);
     if (!result.ok) return c.json({ error: result.error }, 500);
+    // `workspaceIds` is DISTINCT across layers — the same workspace can have
+    // both a workspace-level row and one or more job-level rows. Callers that
+    // need the per-job breakdown should hit the job detail endpoint.
     return c.json({ workspaceIds: result.data });
   })
   .post(
     "/scoping/:skillId/assignments",
     zValidator("param", SkillIdParam),
-    zValidator("json", z.object({ workspaceIds: z.array(z.string().min(1)) })),
+    zValidator(
+      "json",
+      z.object({
+        // Additive shape: each assignment targets either a workspace
+        // (workspace-level, `jobName` absent) or a specific job inside it
+        // (`jobName` present). Writes are idempotent at both layers.
+        assignments: z
+          .array(
+            z.object({ workspaceId: z.string().min(1), jobName: z.string().min(1).optional() }),
+          )
+          .min(1),
+      }),
+    ),
     async (c) => {
       const { skillId } = c.req.valid("param");
-      const { workspaceIds } = c.req.valid("json");
+      const { assignments } = c.req.valid("json");
 
-      // Try every workspace independently. The caller learns exactly which
-      // assignments succeeded and which failed instead of stopping at the
-      // first error and leaving partial state with no signal.
+      // Try every assignment independently. The caller learns exactly which
+      // succeeded and which failed instead of stopping at the first error and
+      // leaving partial state with no signal.
       const results = await Promise.all(
-        workspaceIds.map(async (workspaceId) => {
-          const result = await SkillStorage.assignSkill(skillId, workspaceId);
+        assignments.map(async ({ workspaceId, jobName }) => {
+          const result = jobName
+            ? await SkillStorage.assignToJob(skillId, workspaceId, jobName)
+            : await SkillStorage.assignSkill(skillId, workspaceId);
           return result.ok
-            ? { workspaceId, ok: true as const }
-            : { workspaceId, ok: false as const, error: result.error };
+            ? { workspaceId, jobName, ok: true as const }
+            : { workspaceId, jobName, ok: false as const, error: result.error };
         }),
       );
 
-      const assigned: string[] = [];
-      const failed: { workspaceId: string; error: string }[] = [];
+      const assigned: { workspaceId: string; jobName?: string }[] = [];
+      const failed: { workspaceId: string; jobName?: string; error: string }[] = [];
       for (const r of results) {
-        if (r.ok) assigned.push(r.workspaceId);
-        else failed.push({ workspaceId: r.workspaceId, error: r.error });
+        if (r.ok) assigned.push({ workspaceId: r.workspaceId, jobName: r.jobName });
+        else failed.push({ workspaceId: r.workspaceId, jobName: r.jobName, error: r.error });
       }
 
       // 200 all succeeded; 207 partial; 500 nothing succeeded
@@ -483,6 +500,23 @@ export const skillsRoutes = daemonFactory
     async (c) => {
       const { skillId, workspaceId } = c.req.valid("param");
       const result = await SkillStorage.unassignSkill(skillId, workspaceId);
+      if (!result.ok) return c.json({ error: result.error }, 500);
+      return c.body(null, 204);
+    },
+  )
+  .delete(
+    "/scoping/:skillId/assignments/:workspaceId/:jobName",
+    zValidator(
+      "param",
+      z.object({
+        skillId: z.string().min(1),
+        workspaceId: z.string().min(1),
+        jobName: z.string().min(1),
+      }),
+    ),
+    async (c) => {
+      const { skillId, workspaceId, jobName } = c.req.valid("param");
+      const result = await SkillStorage.unassignFromJob(skillId, workspaceId, jobName);
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.body(null, 204);
     },

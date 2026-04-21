@@ -2019,12 +2019,22 @@ const workspacesRoutes = daemonFactory
     },
   )
   // ─── CLASSIFIED WORKSPACE SKILLS ──────────────────────────────────────────
-  // Returns three disjoint buckets so the playground Skills page can render
+  // Returns disjoint buckets so the playground Skills page can render
   // without per-skill N+1 assignment lookups:
-  //   - assigned:   skills explicitly assigned to this workspace
-  //   - global:     skills with zero assignments (visible everywhere)
-  //   - other:      skills assigned to some other workspace but not this one
-  //                 (offered as "available to assign here")
+  //   - assigned:   skills workspace-level assigned to this workspace
+  //                 (job_name IS NULL)
+  //   - global:     skills with zero assignments at any layer
+  //                 (visible to every workspace and job)
+  //   - other:      skills assigned at some non-null layer to some other
+  //                 workspace and NOT to this one (offered as "available
+  //                 to assign here")
+  //
+  // Job-level rows for THIS workspace are intentionally excluded from the
+  // three buckets — they're surfaced on the per-job detail route. A skill
+  // that's only (ws, job-a) shows up in `assigned` here ONLY if it also
+  // has a workspace-level row; otherwise it appears in `other` (since the
+  // workspace-wide view shouldn't present job-scoped skills as
+  // "workspace-assigned").
   .get(
     "/:workspaceId/skills/classified",
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
@@ -2034,7 +2044,16 @@ const workspacesRoutes = daemonFactory
       if (!listResult.ok) return c.json({ error: listResult.error }, 500);
       const allSkills = listResult.data;
 
-      // Run assignment lookups in parallel — bounded by N skills, not N * latency.
+      // Two parallel dimensions per skill:
+      //   1. any-layer assignments across all workspaces (listAssignments,
+      //      DISTINCT workspace_id) — used to detect global vs scoped.
+      //   2. workspace-level-only assignments to THIS workspace
+      //      (listAssigned returns only rows with job_name IS NULL).
+      const wsAssignedResult = await SkillStorage.listAssigned(workspaceId);
+      const wsAssignedIds = new Set(
+        (wsAssignedResult.ok ? wsAssignedResult.data : []).map((s) => s.skillId),
+      );
+
       const assignmentEntries = await Promise.all(
         allSkills.map(async (skill) => {
           const r = await SkillStorage.listAssignments(skill.skillId);
@@ -2048,9 +2067,13 @@ const workspacesRoutes = daemonFactory
       const other = [];
       for (const skill of allSkills) {
         const list = assignmentsBySkill.get(skill.skillId) ?? [];
-        if (list.length === 0) global.push(skill);
-        else if (list.includes(workspaceId)) assigned.push(skill);
-        else other.push(skill);
+        if (list.length === 0) {
+          global.push(skill);
+        } else if (wsAssignedIds.has(skill.skillId)) {
+          assigned.push(skill);
+        } else {
+          other.push(skill);
+        }
       }
 
       return c.json({ assigned, global, other });

@@ -369,6 +369,76 @@ export class WorkspaceRuntime {
     }
   }
 
+  /** Tracks jobs we've already warned about to avoid log spam on hot-reload. */
+  private warnedJobs = new Set<string>();
+
+  /**
+   * D.1: surface two classes of drift between `jobs.*.skills` in YAML and
+   * the skill_assignments table:
+   *
+   *   1. A ref doesn't match any skill in the catalog — declarative intent
+   *      mentions a skill that doesn't exist. Probably a typo or a skill
+   *      that needs installing.
+   *   2. The ref exists in the catalog but there's no `(skillId, ws, jobName)`
+   *      row — YAML declared intent but the scoping API hasn't been used
+   *      to create the assignment. Useful when someone hand-edits YAML
+   *      and expects it to take effect without going through the UI/CLI.
+   *
+   * Declarative-only: warnings don't block job registration or auto-create
+   * assignments. Fires once per (workspace, job) per runtime lifetime.
+   */
+  private async warnOnDeclarativeJobSkills(jobName: string, refs: string[]): Promise<void> {
+    const key = `${this.workspace.id}/${jobName}`;
+    if (this.warnedJobs.has(key)) return;
+    this.warnedJobs.add(key);
+
+    try {
+      const [catalogResult, assignedResult] = await Promise.all([
+        SkillStorage.list(undefined, undefined, true),
+        SkillStorage.listAssignmentsForJob(this.workspace.id, jobName),
+      ]);
+
+      const catalog = catalogResult.ok ? catalogResult.data : [];
+      const assignedRefs = new Set(
+        (assignedResult.ok ? assignedResult.data : []).map((s) => `@${s.namespace}/${s.name}`),
+      );
+      const catalogRefs = new Set(
+        catalog
+          .filter((s) => s.name !== null && s.name !== "")
+          .map((s) => `@${s.namespace}/${s.name}`),
+      );
+
+      const unresolved = refs.filter((r) => !catalogRefs.has(r));
+      const missingAssignments = refs.filter((r) => catalogRefs.has(r) && !assignedRefs.has(r));
+
+      for (const ref of unresolved) {
+        logger.warn("jobs.*.skills ref not in catalog", {
+          workspaceId: this.workspace.id,
+          jobName,
+          ref,
+          hint: "Declarative only; no assignment will be created. Install the skill or remove the ref.",
+        });
+      }
+
+      if (missingAssignments.length > 0) {
+        logger.warn("jobs.*.skills declares refs with no matching assignments", {
+          workspaceId: this.workspace.id,
+          jobName,
+          declared: refs.length,
+          unassigned: missingAssignments.length,
+          refs: missingAssignments,
+          hint: "Use the Job Skills UI (/platform/:ws/jobs/:jobName) or the scoping API to create the assignments.",
+        });
+      }
+    } catch (error) {
+      logger.debug("Failed to run declarative skills audit", {
+        workspaceId: this.workspace.id,
+        jobName,
+        error: stringifyError(error),
+      });
+    }
+  }
+
   constructor(
     workspace: WorkspaceRuntimeInit,
     config: MergedConfig,
@@ -529,6 +599,13 @@ export class WorkspaceRuntime {
       });
 
       this.emitJobDefined(jobName);
+
+      // D.1: declarative `jobs.*.skills` field — warn when refs don't match
+      // the catalog or when zero matching DB rows exist (no scoping API
+      // sync). Best-effort; failures don't block job registration.
+      if (jobSpec.skills && jobSpec.skills.length > 0) {
+        void this.warnOnDeclarativeJobSkills(jobName, jobSpec.skills);
+      }
 
       logger.debug("Registered inline FSM job from config", {
         jobName,

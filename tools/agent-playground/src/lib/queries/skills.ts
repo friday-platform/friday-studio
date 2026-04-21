@@ -121,18 +121,26 @@ export function useDeleteSkill() {
 }
 
 /**
- * Mutation to assign a skill to a workspace.
- * Wraps `POST /api/skills/scoping/:skillId/assignments` with {workspaceIds: [workspaceId]}.
+ * Mutation to assign a skill to a workspace OR a specific job inside it.
+ *
+ * Wraps `POST /api/skills/scoping/:skillId/assignments` with
+ * `{ assignments: [{ workspaceId, jobName? }] }`. Omit `jobName` for a
+ * workspace-level assignment (visible to every job); pass `jobName` to
+ * scope the assignment to a single job inside the workspace.
  */
 export function useAssignSkill() {
   const client = getDaemonClient();
   const queryClient = useQueryClient();
 
   return createMutation(() => ({
-    mutationFn: async (input: { skillId: string; workspaceId: string }) => {
+    mutationFn: async (input: { skillId: string; workspaceId: string; jobName?: string }) => {
       const res = await client.skills.scoping[":skillId"].assignments.$post({
         param: { skillId: input.skillId },
-        json: { workspaceIds: [input.workspaceId] },
+        json: {
+          assignments: [
+            { workspaceId: input.workspaceId, ...(input.jobName ? { jobName: input.jobName } : {}) },
+          ],
+        },
       });
       if (!res.ok) {
         const body: unknown = await res.json().catch(() => ({}));
@@ -154,20 +162,48 @@ export function useAssignSkill() {
       queryClient.invalidateQueries({
         queryKey: ["daemon", "workspace", variables.workspaceId, "skills"] as const,
       });
+      if (variables.jobName) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            "daemon",
+            "workspace",
+            variables.workspaceId,
+            "jobs",
+            variables.jobName,
+            "skills",
+          ] as const,
+        });
+      }
     },
   }));
 }
 
 /**
- * Mutation to unassign a skill from a workspace.
- * Wraps `DELETE /api/skills/scoping/:skillId/assignments/:workspaceId`.
+ * Mutation to unassign a skill from a workspace (workspace-level) or a
+ * specific (workspace, jobName) pair. Workspace-level unassigns leave
+ * job-level rows intact — to strip a skill from a job, pass `jobName`.
+ *
+ * Wraps `DELETE /api/skills/scoping/:skillId/assignments/:workspaceId[/:jobName]`.
  */
 export function useUnassignSkill() {
   const client = getDaemonClient();
   const queryClient = useQueryClient();
 
   return createMutation(() => ({
-    mutationFn: async (input: { skillId: string; workspaceId: string }) => {
+    mutationFn: async (input: { skillId: string; workspaceId: string; jobName?: string }) => {
+      if (input.jobName) {
+        const res = await client.skills.scoping[":skillId"].assignments[":workspaceId"][
+          ":jobName"
+        ].$delete({
+          param: {
+            skillId: input.skillId,
+            workspaceId: input.workspaceId,
+            jobName: input.jobName,
+          },
+        });
+        if (!res.ok) throw new Error(`Failed to unassign skill from job: ${res.status}`);
+        return null;
+      }
       const res = await client.skills.scoping[":skillId"].assignments[":workspaceId"].$delete({
         param: { skillId: input.skillId, workspaceId: input.workspaceId },
       });
@@ -181,6 +217,18 @@ export function useUnassignSkill() {
       queryClient.invalidateQueries({
         queryKey: ["daemon", "workspace", variables.workspaceId, "skills"] as const,
       });
+      if (variables.jobName) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            "daemon",
+            "workspace",
+            variables.workspaceId,
+            "jobs",
+            variables.jobName,
+            "skills",
+          ] as const,
+        });
+      }
     },
   }));
 }
