@@ -179,7 +179,10 @@
         {#if entry}
           <ProviderMark provider={entry.provider} letter={entry.meta.letter} />
         {:else}
-          <ProviderMark provider={choice.provider} letter={choice.provider.charAt(0).toUpperCase()} />
+          <ProviderMark
+            provider={choice.provider}
+            letter={choice.provider.charAt(0).toUpperCase()}
+          />
         {/if}
         <div class="model-info">
           <span class="model-name">{displayName}</span>
@@ -216,9 +219,7 @@
   {/each}
 
   {#if warnIndices.size > 0}
-    <div class="warn-pill">
-      Fallback matches primary — duplicates provide no failover benefit.
-    </div>
+    <div class="warn-pill">Fallback matches primary — duplicates provide no failover benefit.</div>
   {/if}
 
   {#if canAddFallback}

@@ -546,8 +546,10 @@
     <h1>Settings</h1>
     <p class="subtitle">
       What the daemon resolved at startup. Per-role models come from
-      <code>friday.yml</code>; environment variables come from <code>~/.atlas/.env</code>.
-      Both take effect on the next daemon restart.
+      <code>friday.yml</code>
+      ; environment variables come from
+      <code>~/.atlas/.env</code>
+      . Both take effect on the next daemon restart.
     </p>
   </header>
 
@@ -557,9 +559,11 @@
       <div class="section-header">
         <h2>Models</h2>
         <p class="section-sub">
-          Per-role routing with an ordered fallback chain. The daemon tries the primary,
-          then each fallback in turn. Format stored as <code>provider:model</code> in
-          <code>friday.yml</code>.
+          Per-role routing with an ordered fallback chain. The daemon tries the primary, then each
+          fallback in turn. Format stored as <code>provider:model</code>
+          in
+          <code>friday.yml</code>
+          .
         </p>
       </div>
       <div class="section-meta">
@@ -632,8 +636,16 @@
 
       <div class="env-body">
         <p class="section-sub">
-          From <code>~/.atlas/.env</code>. Secrets (<em>KEY</em>, <em>TOKEN</em>,
-          <em>SECRET</em>, <em>PASSWORD</em>) render as password inputs.
+          From <code>~/.atlas/.env</code>
+          . Secrets (
+          <em>KEY</em>
+          ,
+          <em>TOKEN</em>
+          ,
+          <em>SECRET</em>
+          ,
+          <em>PASSWORD</em>
+          ) render as password inputs.
         </p>
 
         {#if loadingEnv}

@@ -2,26 +2,30 @@
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery } from "@tanstack/svelte-query";
-  import { DefaultChatTransport } from "ai";
   import { page } from "$app/state";
+  import { workspaceQueries } from "$lib/queries";
   import {
     buildBacklogEntry,
     expandScheduleInput,
     parseScheduleCommand,
     submitBacklogEntry,
   } from "$lib/scheduling/fast-task-scheduler";
-  import { workspaceQueries } from "$lib/queries";
-  import { nextQueueStep } from "./chat-queue.ts";
-  import { nextSpeechChunk } from "./chat-tts.ts";
+  import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatListPanel from "./chat-list-panel.svelte";
+  import ChatMessageList from "./chat-message-list.svelte";
+  import { nextQueueStep } from "./chat-queue.ts";
+  import { nextSpeechChunk } from "./chat-tts.ts";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
+  import { GetChatResponseSchema } from "./types";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
   const workspaceName = $derived(
-    (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
-      ?? wsId,
+    ((configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as
+      | string
+      | undefined) ?? wsId,
   );
 
   let inspectorOpen = $state(false);
@@ -62,7 +66,10 @@
 
   function handleChatDragLeave(e: DragEvent) {
     // Only dismiss if leaving the container (not entering a child)
-    if (e.currentTarget instanceof HTMLElement && !e.currentTarget.contains(e.relatedTarget as Node)) {
+    if (
+      e.currentTarget instanceof HTMLElement &&
+      !e.currentTarget.contains(e.relatedTarget as Node)
+    ) {
       chatDragOver = false;
     }
   }
@@ -74,9 +81,6 @@
       pendingImages = [...pendingImages, { id: crypto.randomUUID(), file, dataUrl }];
     }
   }
-  import ChatMessageList from "./chat-message-list.svelte";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
-  import { GetChatResponseSchema } from "./types";
 
   /**
    * Playground chat wired to the `user` workspace via `@ai-sdk/svelte`'s
@@ -169,7 +173,10 @@
     if (locationRequested) return Promise.resolve();
     locationRequested = true;
     return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(); return; }
+      if (!navigator.geolocation) {
+        resolve();
+        return;
+      }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           cachedLocation = {
@@ -178,7 +185,9 @@
           };
           resolve();
         },
-        () => { resolve(); },
+        () => {
+          resolve();
+        },
         { timeout: 5000, maximumAge: 300000 },
       );
     });
@@ -352,13 +361,7 @@
         // chatId and optional datetime context — it pulls history server-
         // side from ChatStorage. Sending the full `msgs` array would be
         // wasteful bandwidth on long threads.
-        return {
-          body: {
-            id,
-            message: msgs.at(-1),
-            datetime: buildDatetime(),
-          },
-        };
+        return { body: { id, message: msgs.at(-1), datetime: buildDatetime() } };
       },
     }),
   );
@@ -604,10 +607,7 @@
       // the runtime loop stays small. Null `toSend` means "hold" — exit
       // and let the wsId-tracked $effect below re-kick when state changes.
       while (true) {
-        const step = nextQueueStep(queuedMessages, {
-          streaming,
-          hasChat: chat !== null,
-        });
+        const step = nextQueueStep(queuedMessages, { streaming, hasChat: chat !== null });
         if (step.toSend === null || !chat) break;
         queuedMessages = step.remainder;
         try {
@@ -744,7 +744,11 @@
       const t = (p as { type: unknown }).type;
       if (typeof t !== "string") return false;
       return (
-        t === "text" || t === "file" || t === "reasoning" || t === "dynamic-tool" || t.startsWith("tool-")
+        t === "text" ||
+        t === "file" ||
+        t === "reasoning" ||
+        t === "dynamic-tool" ||
+        t.startsWith("tool-")
       );
     });
   }
@@ -823,12 +827,7 @@
     const thinkingId = crypto.randomUUID();
     localEvents = [
       ...localEvents,
-      {
-        id: thinkingId,
-        role: "system",
-        content: "Expanding task brief...",
-        timestamp: Date.now(),
-      },
+      { id: thinkingId, role: "system", content: "Expanding task brief...", timestamp: Date.now() },
     ];
 
     try {
@@ -992,7 +991,14 @@
       {#each pendingImages as img (img.id)}
         <div class="pending-image">
           <img src={img.dataUrl} alt={img.file.name} />
-          <button onclick={() => { pendingImages = pendingImages.filter(i => i.id !== img.id); }} aria-label="Remove">✕</button>
+          <button
+            onclick={() => {
+              pendingImages = pendingImages.filter((i) => i.id !== img.id);
+            }}
+            aria-label="Remove"
+          >
+            ✕
+          </button>
         </div>
       {/each}
     </div>
@@ -1003,9 +1009,7 @@
     <span class="workspace-badge">{workspaceName}</span>
     <span class="header-spacer"></span>
     {#if chat && chat.messages.length > 0}
-      <button class="new-chat-button" onclick={startNewChat} disabled={streaming}>
-        New Chat
-      </button>
+      <button class="new-chat-button" onclick={startNewChat} disabled={streaming}>New Chat</button>
     {/if}
   </header>
 
@@ -1086,7 +1090,7 @@
 
   .chat-header {
     align-items: center;
-    background-color: var(--color-surface-1);
+    background-color: var(--surface);
     border-block-end: 1px solid var(--color-border-1);
     display: flex;
     flex-shrink: 0;

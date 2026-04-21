@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { Collapsible, Dialog, IconSmall } from "@atlas/ui";
+  import { Collapsible, Dialog, IconLarge, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
   import { workspaceQueries } from "$lib/queries";
+  import type { Component } from "svelte";
   import { writable } from "svelte/store";
 
   const pathname = $derived(page.url.pathname);
@@ -28,15 +29,16 @@
     }),
   );
 
-  type NavItem = { label: string; href: string };
+  type NavItem = { label: string; href: string; icon: Component };
 
   const toolLinks: NavItem[] = [
-    { label: "Memory", href: "/memory" },
-    { label: "Improvements", href: "/improvements" },
-    { label: "Agent Tester", href: "/agents/built-in" },
-    { label: "Job Inspector", href: "/inspector" },
-    { label: "Skills", href: "/skills" },
-    { label: "Settings", href: "/settings" },
+    { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
+    { label: "Memory", href: "/memory", icon: IconLarge.Write },
+    { label: "Improvements", href: "/improvements", icon: IconLarge.Target },
+    { label: "Agent Tester", href: "/agents/built-in", icon: IconLarge.Chip },
+    { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
+    { label: "Skills", href: "/skills", icon: IconLarge.Compass },
+    { label: "Settings", href: "/settings", icon: IconLarge.Gear },
   ];
 
   function isToolActive(href: string): boolean {
@@ -57,8 +59,8 @@
   }
 </script>
 
-<nav class="sidebar">
-  <header class="sidebar-header">
+<header class="sidebar">
+  <div class="sidebar-header">
     <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="-4.1 -0.2 26 26">
       <path
         d="M9.9375 14.9014C10.344 14.9014 10.6738 15.2312 10.6738 15.6377V20.2383C10.6737 23.1855 8.28412 25.5751 5.33691 25.5752C2.38962 25.5752 0.000158184 23.1855 0 20.2383C0 17.2909 2.38953 14.9014 5.33691 14.9014H9.9375ZM11.1377 0C14.8218 0.00013192 17.8086 2.98674 17.8086 6.6709C17.8086 10.3551 14.8218 13.3417 11.1377 13.3418H5.21289C4.80079 13.3418 4.46696 13.0078 4.4668 12.5957V6.6709C4.4668 2.98666 7.45346 0 11.1377 0Z"
@@ -66,28 +68,21 @@
       />
     </svg>
     <h1>Friday</h1>
-    <span class="spacer"></span>
-    <span class="status-dot-wrapper">
-      <button
-        class="status-dot"
-        class:connected={daemonHealth.connected}
-        class:disconnected={!daemonHealth.connected && !daemonHealth.loading}
-        class:loading={daemonHealth.loading}
-        aria-label={daemonHealth.connected ? "Daemon connected" : "Daemon unreachable"}
-        onclick={() => {
-          if (!daemonHealth.connected) showTooltip = !showTooltip;
-        }}
-      ></button>
-      {#if showTooltip && !daemonHealth.connected}
-        <div class="tooltip" role="tooltip">
-          <p>Daemon unreachable. Start it with:</p>
-          <code>deno task atlas daemon start --detached</code>
-        </div>
-      {/if}
-    </span>
-  </header>
+  </div>
 
-  <div class="sidebar-nav">
+  <nav class="sidebar-nav">
+    <ul class="section-list">
+      {#each toolLinks as link (link.href)}
+        {@const Icon = link.icon}
+        <li>
+          <a href={link.href} class="nav-item" class:active={isToolActive(link.href)}>
+            <Icon />
+            {link.label}
+          </a>
+        </li>
+      {/each}
+    </ul>
+
     <Collapsible.Root defaultOpen={true}>
       <Collapsible.Trigger>
         {#snippet children(_open)}
@@ -102,7 +97,7 @@
             {@const active = activeWorkspaceId === ws.id}
             <li>
               <a href="/platform/{ws.id}" class="nav-item" class:active>
-                <span class="dot" style:background-color={dotColor(ws.metadata?.color)}></span>
+                <span class="dot" style:--dot-color={dotColor(ws.metadata?.color)}></span>
                 <span class="text">
                   {ws.displayName}
                 </span>
@@ -153,89 +148,83 @@
           {/each}
 
           <li>
-            <button
-              class="nav-item as-button"
-              onclick={() => addDialogOpen.set(true)}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M6.625 3.875H5.1125C4.42905 3.875 3.875 4.42905 3.875 5.1125V6.625M12.125 9.375V10.8875C12.125 11.571 11.571 12.125 10.8875 12.125H9.375M9.375 3.875H10.8875C11.571 3.875 12.125 4.42905 12.125 5.1125V6.625M6.625 12.125H5.1125C4.42905 12.125 3.875 11.571 3.875 10.8875V9.375"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                />
-              </svg>
+            <button class="nav-item as-button" onclick={() => addDialogOpen.set(true)}>
+              <IconLarge.OpenSquare />
               Add Space
             </button>
           </li>
         </ul>
       </Collapsible.Content>
     </Collapsible.Root>
+  </nav>
 
-    <Collapsible.Root defaultOpen={true}>
-      <Collapsible.Trigger>
-        {#snippet children(_open)}
-          <span class="section-trigger">
-            Tools <IconSmall.CaretDown />
-          </span>
-        {/snippet}
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        <ul class="section-list">
-          {#each toolLinks as link (link.href)}
-            <li>
-              <a href={link.href} class="nav-item" class:active={isToolActive(link.href)}>
-                {link.label}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </Collapsible.Content>
-    </Collapsible.Root>
-  </div>
-</nav>
+  <div class="footer">
+    <a href="https://platform.hellofriday.ai/docs" target="_blank">Docs</a>
 
-<Dialog.Root open={addDialogOpen} onOpenChange={({ next }) => { if (!next) addTab = "create"; return next; }}>
-  {#snippet children()}
-    <Dialog.Content>
-      <Dialog.Close />
+    <span class="status-wrapper">
+      <button
+        class="status"
+        onclick={() => {
+          if (!daemonHealth.connected) showTooltip = !showTooltip;
+        }}
+      >
+        <span
+          class:connected={daemonHealth.connected}
+          class:disconnected={!daemonHealth.connected && !daemonHealth.loading}
+          class:loading={daemonHealth.loading}
+        ></span>
 
-      {#snippet header()}
-        <Dialog.Title>Add space</Dialog.Title>
-        <Dialog.Description>
-          Your agents, jobs, and signals. Ready to run.
-        </Dialog.Description>
-        <div class="tab-bar">
-          <button class="tab" class:active={addTab === "create"} onclick={() => addTab = "create"}>
-            Create New
-          </button>
-          <button class="tab" class:active={addTab === "upload"} onclick={() => addTab = "upload"}>
-            Upload File
-          </button>
+        {daemonHealth.connected ? "Online" : "Offline"}
+      </button>
+
+      {#if showTooltip && !daemonHealth.connected}
+        <div class="tooltip" role="tooltip">
+          <p>Daemon unreachable. Start it with:</p>
+          <code>deno task atlas daemon start --detached</code>
         </div>
-      {/snippet}
-
-      {#if addTab === "create"}
-        <CreateWorkspaceForm onclose={() => addDialogOpen.set(false)} />
-      {:else}
-        <WorkspaceLoader inline onclose={() => addDialogOpen.set(false)} />
       {/if}
+    </span>
+  </div>
+</header>
 
-      {#snippet footer()}
-        <Dialog.Cancel>Cancel</Dialog.Cancel>
-      {/snippet}
-    </Dialog.Content>
-  {/snippet}
+<Dialog.Root
+  open={addDialogOpen}
+  onOpenChange={({ next }) => {
+    if (!next) addTab = "create";
+    return next;
+  }}
+>
+  <Dialog.Content>
+    <Dialog.Close />
+
+    {#snippet header()}
+      <Dialog.Title>Add space</Dialog.Title>
+      <Dialog.Description>Your agents, jobs, and signals. Ready to run.</Dialog.Description>
+      <div class="tab-bar">
+        <button class="tab" class:active={addTab === "create"} onclick={() => (addTab = "create")}>
+          Create New
+        </button>
+        <button class="tab" class:active={addTab === "upload"} onclick={() => (addTab = "upload")}>
+          Upload File
+        </button>
+      </div>
+    {/snippet}
+
+    {#if addTab === "create"}
+      <CreateWorkspaceForm onclose={() => addDialogOpen.set(false)} />
+    {:else}
+      <WorkspaceLoader inline onclose={() => addDialogOpen.set(false)} />
+    {/if}
+
+    {#snippet footer()}
+      <Dialog.Cancel>Cancel</Dialog.Cancel>
+    {/snippet}
+  </Dialog.Content>
 </Dialog.Root>
 
 <style>
   .sidebar {
-    background-color: var(--color-surface-2);
+    background-color: var(--surface-dark);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -263,66 +252,7 @@
     }
   }
 
-  .spacer {
-    flex: 1;
-  }
-
-  .status-dot-wrapper {
-    position: relative;
-  }
-
-  .status-dot {
-    background-color: var(--color-border-2);
-    block-size: 8px;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    inline-size: 8px;
-    padding: 0;
-    transition: background-color 200ms ease;
-  }
-
-  .status-dot.connected {
-    background-color: var(--color-success);
-  }
-
-  .status-dot.disconnected {
-    background-color: var(--color-error);
-  }
-
-  .status-dot.loading {
-    background-color: var(--color-border-2);
-  }
-
-  .tooltip {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    font-size: var(--font-size-1);
-    inset-block-start: calc(100% + var(--size-2));
-    inset-inline-end: 0;
-    padding: var(--size-3);
-    position: absolute;
-    white-space: nowrap;
-    z-index: 10;
-
-    p {
-      color: color-mix(in srgb, var(--color-text), transparent 30%);
-      margin-block-end: var(--size-1);
-    }
-
-    code {
-      background-color: var(--color-surface-1);
-      border-radius: var(--radius-1);
-      color: var(--color-text);
-      display: block;
-      font-size: var(--font-size-1);
-      padding: var(--size-1) var(--size-2);
-    }
-  }
-
   /* --- Tab bar (Add space dialog) --- */
-
   .tab-bar {
     display: flex;
     gap: var(--size-1);
@@ -381,7 +311,6 @@
   .section-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
     padding-inline: var(--size-1);
     padding-block-end: var(--size-2);
 
@@ -392,64 +321,84 @@
 
   .nav-item {
     align-items: center;
-    block-size: var(--size-6);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    block-size: var(--size-7-5);
+    border-radius: var(--radius-2-5);
+    color: var(--text);
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
-    gap: var(--size-1);
+    gap: var(--size-2);
     inline-size: 100%;
     outline: none;
     padding-inline: var(--size-2-5) var(--size-2);
     position: relative;
+    transition: 100ms ease all;
 
     :global(svg) {
-      opacity: 0.5;
+      opacity: 0.4;
+      transition: 100ms ease all;
+
+      @media (prefers-color-scheme: light) {
+        opacity: 0.6;
+      }
     }
-  }
 
-  .nav-item .text {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-wrap: nowrap;
-  }
+    .text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-wrap: nowrap;
+    }
 
-  .nav-item.active {
-    background-color: hsl(0 0 100% / 0.05);
+    &.active {
+      background-color: var(--surface);
+      color: var(--text-bright);
 
-    :global(svg) {
-      color: var(--blue-2);
-      opacity: 1;
+      :global(svg) {
+        opacity: 1;
+      }
+
+      @media (prefers-color-scheme: light) {
+        background-color: color-mix(in srgb, black 5%, transparent);
+      }
     }
   }
 
   .dot {
-    block-size: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    inline-size: 8px;
+    align-items: center;
+    aspect-ratio: 1;
+    block-size: var(--size-5);
+    display: flex;
+    justify-content: center;
+
+    &:after {
+      aspect-ratio: 1;
+      background-color: var(--dot-color);
+      block-size: var(--size-2);
+      border-radius: var(--radius-round);
+      content: "";
+      flex-shrink: 0;
+      inline-size: var(--size-2);
+    }
   }
 
   .as-button {
-    all: unset;
     align-items: center;
-    block-size: var(--size-6);
     border-radius: var(--radius-2);
     color: color-mix(in srgb, var(--color-text), transparent 20%);
     cursor: pointer;
     display: flex;
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    gap: var(--size-1);
     inline-size: 100%;
     outline: none;
     padding-inline: var(--size-2-5) var(--size-2);
     position: relative;
 
     :global(svg) {
-      opacity: 0.5;
+      opacity: 0.4;
+
+      @media (prefers-color-scheme: light) {
+        opacity: 0.6;
+      }
     }
   }
 
@@ -458,12 +407,13 @@
   .sub-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--size-0-5);
     margin-block-start: var(--size-0-5);
 
     .nav-item {
-      font-weight: var(--font-weight-4);
-      padding-inline-start: var(--size-7);
+      block-size: var(--size-6-5);
+      color: var(--text-faded);
+      font-weight: var(--font-weight-4-5);
+      padding-inline-start: var(--size-10);
     }
 
     .nav-item.active {
@@ -472,4 +422,98 @@
     }
   }
 
+  .footer {
+    align-items: center;
+    background: linear-gradient(to top, var(--surface-dark) 50%, transparent);
+    display: flex;
+    gap: var(--size-3);
+    inset-block-end: 0;
+    margin-block: auto 0;
+    padding-block: var(--size-6);
+    padding-inline: var(--size-6);
+    position: sticky;
+
+    a {
+      align-items: center;
+      background-color: var(--surface);
+      border-radius: var(--radius-round);
+      block-size: var(--size-7);
+      display: inline flex;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-5-5);
+      justify-content: center;
+      padding-inline: var(--size-2-5);
+      transition: all 200ms ease;
+
+      &:hover {
+        background-color: color-mix(in srgb, var(--surface), var(--text) 10%);
+      }
+
+      @media (prefers-color-scheme: light) {
+        background-color: color-mix(in srgb, black 5%, transparent);
+
+        &:hover {
+          background-color: color-mix(in srgb, black 10%, transparent);
+        }
+      }
+    }
+  }
+
+  .status-wrapper {
+    position: relative;
+  }
+
+  .status {
+    align-items: center;
+    color: var(--text);
+    display: flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-1-5);
+
+    span {
+      background-color: var(--green-primary);
+      border-radius: var(--radius-round);
+      block-size: var(--size-1-5);
+      inline-size: var(--size-1-5);
+
+      &.connected {
+        background-color: var(--green-primary);
+      }
+
+      &.disconnected {
+        background-color: var(--red-primary);
+      }
+
+      /* &.loading {
+        background-color: var(--color-border-2);
+      } */
+    }
+  }
+
+  .tooltip {
+    background-color: var(--color-surface-3);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    font-size: var(--font-size-1);
+    inset-block-start: calc(100% + var(--size-2));
+    inset-inline-end: 0;
+    padding: var(--size-3);
+    position: absolute;
+    white-space: nowrap;
+    z-index: 10;
+
+    p {
+      color: color-mix(in srgb, var(--color-text), transparent 30%);
+      margin-block-end: var(--size-1);
+    }
+
+    code {
+      background-color: var(--color-surface-1);
+      border-radius: var(--radius-1);
+      color: var(--color-text);
+      display: block;
+      font-size: var(--font-size-1);
+      padding: var(--size-1) var(--size-2);
+    }
+  }
 </style>

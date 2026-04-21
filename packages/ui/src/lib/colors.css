@@ -1,0 +1,83 @@
+/*
+ * Color tokens.
+ *
+ * rgb() values are the sRGB fallback.
+ * color(display-p3 ...) overrides apply on P3-capable displays.
+ * Hex values are preserved as comments so each token is traceable to its
+ * design-source hex and its paired P3 coordinate.
+ *
+ * Uses modern rgb() syntax (space-separated, slash for alpha) per
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/rgb
+ */
+
+:root {
+  /* Surfaces — light */
+  --surface-dark: rgb(244 242 241); /* #F4F2F1 */
+  --surface: rgb(255 255 255); /* #FFF */
+  --surface-bright: rgb(244 242 241); /* #F4F2F1 */
+
+  /* Text — light */
+  --text-bright: rgb(24 28 47); /* #171C30 */
+  --text: rgb(70 73 89); /* #45495A */
+  --text-faded: rgb(116 119 130); /* #737783 */
+
+  /* Primary — light */
+  --yellow-primary: rgb(255 182 12); /* #FFB200 */
+  --red-primary: rgb(204 44 0); /* #DE0400 */
+  --blue-primary: rgb(2 64 135); /* #00418C */
+  --green-primary: rgb(15 164 40); /* #00A700 */
+}
+
+@media (color-gamut: p3) {
+  :root {
+    --surface-dark: color(display-p3 0.9569 0.949 0.9451); /* #F4F2F1 */
+    --surface: color(display-p3 1 1 1); /* #FFF */
+    --surface-bright: color(display-p3 0.9569 0.949 0.9451); /* #F4F2F1 */
+
+    --text-bright: color(display-p3 0.0941 0.1098 0.1843); /* #171C30 */
+    --text: color(display-p3 0.2745 0.2863 0.349); /* #45495A */
+    --text-faded: color(display-p3 0.4549 0.4667 0.5098); /* #737783 */
+
+    --yellow-primary: color(display-p3 1 0.7137 0.0471); /* #FFB200 */
+    --red-primary: color(display-p3 0.8 0.1736 0); /* #DE0400 */
+    --blue-primary: color(display-p3 0.0078 0.251 0.5294); /* #00418C */
+    --green-primary: color(display-p3 0.0607 0.6426 0.1577); /* #00A700 */
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Surfaces — dark */
+    --surface-dark: rgb(20 20 20); /* #141414 */
+    --surface: rgb(27 28 29); /* #1B1C1D */
+    --surface-bright: rgb(40 41 42); /* #28292A */
+
+    /* Text — dark */
+    --text-bright: rgb(242 240 232); /* #F2F0E7 */
+    --text: rgb(199 198 191); /* #C7C6BE */
+    --text-faded: rgb(134 134 131); /* #868683 */
+
+    /* Primary — dark */
+    --yellow-primary: rgb(254 210 67); /* #FFD000 */
+    --red-primary: rgb(255 96 68); /* #FF5035 */
+    --blue-primary: rgb(54 197 240); /* #00C8F5 */
+    --green-primary: rgb(59 232 146); /* #00EC89 */
+  }
+}
+
+@media (prefers-color-scheme: dark) and (color-gamut: p3) {
+  :root {
+    --surface-dark: color(display-p3 0.08 0.08 0.08); /* #141414 */
+    --surface: color(display-p3 0.1059 0.1098 0.1137); /* #1B1C1D */
+    --surface-bright: color(display-p3 0.1569 0.1608 0.1647); /* #28292A */
+
+    --text-bright: color(display-p3 0.949 0.9412 0.9098); /* #F2F0E7 */
+    --text: color(display-p3 0.7804 0.7765 0.749); /* #C7C6BE */
+    --text-faded: color(display-p3 0.5259 0.5259 0.5141); /* #868683 */
+
+    --yellow-primary: color(display-p3 0.9961 0.8235 0.2627); /* #FFD000 */
+    --red-primary: color(display-p3 1 0.3782 0.2685); /* #FF5035 */
+    --blue-primary: color(display-p3 0.2118 0.7725 0.9412); /* #00C8F5 */
+    --green-primary: color(display-p3 0.2314 0.9098 0.5725); /* #00EC89 */
+  }
+}

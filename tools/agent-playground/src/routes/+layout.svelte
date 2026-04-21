@@ -3,11 +3,13 @@
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
+  import "@atlas/ui/colors.css";
+  import "@atlas/ui/markdown.css";
   import "../app.css";
+  import favicon from "$lib/assets/favicon.png";
   import Cheatsheet from "$lib/components/shared/cheatsheet.svelte";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
-  import favicon from "$lib/assets/favicon.png";
 
   const { children } = $props();
 
@@ -64,7 +66,7 @@
 
 <style>
   .app-shell {
-    background-color: var(--color-surface-2);
+    background-color: var(--surface-dark);
     block-size: 100dvh;
     display: grid;
     grid-template-columns: var(--size-56) 1fr;
@@ -84,9 +86,8 @@
   }
 
   .app-content {
-    background-color: var(--color-surface-1);
+    background-color: var(--surface);
     border-radius: var(--radius-7);
-    box-shadow: var(--shadow-canvas);
     min-block-size: 100%;
     min-inline-size: 0;
     overflow: auto;

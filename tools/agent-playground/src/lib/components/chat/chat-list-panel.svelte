@@ -166,9 +166,7 @@
     };
   });
 
-  const visibleChats = $derived(
-    expanded ? chats : chats.slice(0, INITIAL_LIMIT),
-  );
+  const visibleChats = $derived(expanded ? chats : chats.slice(0, INITIAL_LIMIT));
 
   function formatRelativeTime(iso: string): string {
     const then = new Date(iso).getTime();
@@ -237,8 +235,7 @@
     // keeps browsing backwards; fall back to newer when deleting the
     // oldest entry, and null when the list becomes empty.
     const idx = chats.findIndex((c) => c.id === chat.id);
-    const next =
-      idx >= 0 ? (chats[idx + 1] ?? chats[idx - 1] ?? null) : null;
+    const next = idx >= 0 ? (chats[idx + 1] ?? chats[idx - 1] ?? null) : null;
     chats = chats.filter((c) => c.id !== chat.id);
     onDelete?.(chat.id, next ? next.id : null);
   }
@@ -266,11 +263,7 @@
     {#each visibleChats as chat (chat.id)}
       {@const unread = isUnread(chat)}
       <li class="chat-row" class:active={chat.id === currentChatId}>
-        <button
-          class="chat-item"
-          class:unread
-          onclick={() => handleClick(chat.id)}
-        >
+        <button class="chat-item" class:unread onclick={() => handleClick(chat.id)}>
           <span class="item-dot" aria-hidden="true"></span>
           <div class="item-body">
             <div class="item-top">
@@ -288,8 +281,19 @@
           aria-label="Delete chat {chat.title ?? 'Untitled'}"
           title="Delete chat"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 3L9 9M9 3L3 9"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
       </li>
@@ -305,7 +309,7 @@
 
 <style>
   .chat-list-panel {
-    background-color: var(--color-surface-2);
+    background-color: var(--surface);
     border-inline-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
@@ -405,7 +409,10 @@
     /* Hidden until the row is hovered so quiet rows stay tidy; still
        keyboard-focusable for accessibility (see :focus-visible below). */
     opacity: 0;
-    transition: opacity 100ms ease, color 100ms ease, background-color 100ms ease;
+    transition:
+      opacity 100ms ease,
+      color 100ms ease,
+      background-color 100ms ease;
   }
 
   .chat-row:hover .chat-delete,

@@ -28,12 +28,18 @@
   import InspectorSessionSidebar from "$lib/components/inspector/inspector-session-sidebar.svelte";
   import InspectorWorkspacePicker from "$lib/components/inspector/inspector-workspace-picker.svelte";
   import WaterfallTimeline from "$lib/components/inspector/waterfall-timeline.svelte";
-  import SignalInputForm from "$lib/components/workspace/signal-input-form.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
+  import SignalInputForm from "$lib/components/workspace/signal-input-form.svelte";
   import WorkspaceJobSelector from "$lib/components/workspace/workspace-job-selector.svelte";
   import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
   import { createInspectorState, type ResolvedStepAgent } from "$lib/inspector-state.svelte";
-  import { AGENT_TYPE_LABELS, jobQueries, sessionQueries, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "$lib/queries";
+  import {
+    AGENT_TYPE_LABELS,
+    jobQueries,
+    sessionQueries,
+    WorkspaceAgentDefsResponseSchema,
+    workspaceQueries,
+  } from "$lib/queries";
   import type { WorkspaceAgentDef } from "$lib/queries";
 
   /** URL is the source of truth for workspace, job, session, and selected step. */
@@ -85,7 +91,9 @@
   const resolvedStepAgent = $derived.by((): ResolvedStepAgent | null => {
     const block = selectedBlock;
     if (!block) return null;
-    const stepConfig = block.stateId ? fsmSteps.find((s) => s.stateId === block.stateId) : undefined;
+    const stepConfig = block.stateId
+      ? fsmSteps.find((s) => s.stateId === block.stateId)
+      : undefined;
     const agentDef = workspaceAgentDefs[block.agentName];
     if (!stepConfig && !agentDef) return null;
     const rawType = agentDef?.type ?? "unknown";
@@ -99,8 +107,8 @@
 
   /** Combined error from inspector trigger phase and query failures. */
   const errorMessage = $derived(
-    inspector.error
-      ?? (sessionViewQuery.error ? `Session load failed: ${sessionViewQuery.error.message}` : null),
+    inspector.error ??
+      (sessionViewQuery.error ? `Session load failed: ${sessionViewQuery.error.message}` : null),
   );
 
   /** Execution state: trigger phase OR active stream. */
@@ -235,7 +243,11 @@
     return deriveSignalDetails(jobConfig);
   });
 
-  async function handleRun(signalId: string, payload: Record<string, unknown>, skipStates: string[]) {
+  async function handleRun(
+    signalId: string,
+    payload: Record<string, unknown>,
+    skipStates: string[],
+  ) {
     if (!workspaceId) return;
     const sessionId = await inspector.run(workspaceId, signalId, payload, skipStates);
     if (sessionId) {
@@ -249,7 +261,9 @@
   async function handleStop() {
     if (urlSessionId) {
       try {
-        await fetch(`/api/daemon/api/sessions/${encodeURIComponent(urlSessionId)}`, { method: "DELETE" });
+        await fetch(`/api/daemon/api/sessions/${encodeURIComponent(urlSessionId)}`, {
+          method: "DELETE",
+        });
       } catch {
         // Best effort
       }
@@ -297,7 +311,9 @@
   async function handleRerunSubmit(dialogOpen: { set: (v: boolean) => void }) {
     if (!workspaceId || !primarySignal) return;
     dialogOpen.set(false);
-    const sessionId = await inspector.run(workspaceId, primarySignal.name, rerunPayload, [...inspector.disabledSteps]);
+    const sessionId = await inspector.run(workspaceId, primarySignal.name, rerunPayload, [
+      ...inspector.disabledSteps,
+    ]);
     if (sessionId) {
       const url = new URL(page.url);
       url.searchParams.set("session", sessionId);
@@ -398,7 +414,9 @@
                       <SignalInputForm
                         schema={primarySchema}
                         values={rerunPayload}
-                        onChange={(v) => { rerunPayload = v; }}
+                        onChange={(v) => {
+                          rerunPayload = v;
+                        }}
                       />
                     {/if}
                     <div class="rerun-actions">
@@ -542,7 +560,7 @@
     flex: 0 0 48px;
     padding-inline: var(--size-2);
     gap: var(--size-2);
-    background: var(--color-surface-1);
+    background: var(--surface);
   }
 
   .toolbar-start {

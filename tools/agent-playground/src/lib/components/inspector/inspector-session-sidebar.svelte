@@ -152,7 +152,7 @@
 
 <style>
   .session-sidebar {
-    background: var(--color-surface-1);
+    background: var(--surface);
     border-inline-start: 1px solid color-mix(in srgb, var(--color-text), transparent 85%);
     display: flex;
     flex-direction: column;
