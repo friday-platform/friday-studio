@@ -5,6 +5,11 @@
 are omitted. Complements `docs/plans/2026-04-17-remaining-chat-and-fast-work.md`
 (which covers 3.1 / 3.2 / 4.3 / 4.5 — not duplicated here).
 
+**Successor doc:** `docs/plans/2026-04-21-launch-readiness.md` captures
+the 2026-04-21 strategic reset (keep core closed, open-source the
+standard distribution; the three bodies of work required for launch).
+B.1, B.6, C.1 from this backlog are load-bearing for that plan.
+
 Priority tags: **P0** blocker, **P1** near-term, **P2** follow-up.
 
 **Progress legend** (last synced 2026-04-21 against `declaw` tip
