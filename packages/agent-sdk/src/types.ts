@@ -263,6 +263,13 @@ export const AgentSessionDataSchema = z.object({
   workspaceName: z.string().optional().describe("Human-readable workspace name"),
   userId: z.string().optional(),
   streamId: z.string().optional(),
+  /**
+   * Populated when the session runs inside a specific job. Feeds the
+   * additive skill-scoping resolver so the agent sees workspace +
+   * global + job-level skills. Absent ⇒ workspace-level + global only
+   * (chat, conversation, ad-hoc runs).
+   */
+  jobName: z.string().optional(),
   datetime: z
     .object({
       timezone: z.string(),

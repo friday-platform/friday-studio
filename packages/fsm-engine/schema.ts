@@ -21,11 +21,15 @@ export const LLMActionSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
   /**
-   * Per-step skill filter. Empty array ⇒ this step sees no workspace-assigned
-   * skills (only globally-visible `@atlas/*` built-ins and any unassigned
-   * skills). Absent ⇒ inherit workspace-level visibility.
-   * List entries are `@namespace/name` refs as returned by
-   * `resolveVisibleSkills`.
+   * @experimental — step-level skill filter. **Not enforced at runtime today.**
+   * The additive job-scoping model (job-level `skills:` in workspace.yml)
+   * covers the 95% case. This field is preserved for a future power-user
+   * escape hatch to further narrow what a single FSM step can load, but
+   * the engine currently ignores it.
+   *
+   * When reactivated, semantics would be: empty array ⇒ no workspace skills
+   * for this step; absent ⇒ inherit job/workspace visibility; populated ⇒
+   * whitelist within the job's resolved set.
    */
   skills: z.array(z.string()).optional(),
   outputTo: z.string().optional(),
@@ -49,7 +53,7 @@ export const AgentActionSchema = z.object({
   outputType: z.string().optional(),
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt: z.string().optional(),
-  /** Per-step skill filter — see LLMActionSchema.skills for semantics. */
+  /** @experimental — see LLMActionSchema.skills. Not enforced at runtime today. */
   skills: z.array(z.string()).optional(),
 });
 

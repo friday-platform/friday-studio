@@ -222,6 +222,7 @@
     "npm:vite-plugin-compression2@^2.5.3": "2.5.3",
     "npm:vite@^7.3.1": "7.3.2_@types+node@25.6.0_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
     "npm:vite@^7.3.2": "7.3.2_@types+node@25.6.0_tsx@4.21.0_yaml@2.8.3_picomatch@4.0.4",
+    "npm:vitest@*": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.0_vite@7.3.2__@types+node@25.6.0__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
     "npm:vitest@^4.1.0": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.0_vite@7.3.2__@types+node@25.6.0__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
     "npm:vitest@^4.1.4": "4.1.4_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.0_vite@7.3.2__@types+node@25.6.0__tsx@4.21.0__yaml@2.8.3__picomatch@4.0.4_tsx@4.21.0_yaml@2.8.3",
     "npm:ws@^8.20.0": "8.20.0",

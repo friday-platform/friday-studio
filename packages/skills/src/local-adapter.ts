@@ -37,11 +37,20 @@ CREATE TABLE IF NOT EXISTS skills (
 CREATE TABLE IF NOT EXISTS skill_assignments (
   skill_id TEXT NOT NULL,
   workspace_id TEXT NOT NULL,
+  job_name TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (skill_id, workspace_id)
+  PRIMARY KEY (skill_id, workspace_id, job_name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace ON skill_assignments(workspace_id);
+-- Partial unique index: prevents duplicate workspace-level rows under
+-- SQLite's "NULL is distinct in PRIMARY KEY" semantics. Job-level rows
+-- (job_name IS NOT NULL) rely on the composite PK for uniqueness.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_assignments_workspace_unique
+  ON skill_assignments (skill_id, workspace_id)
+  WHERE job_name IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace_job
+  ON skill_assignments (workspace_id, job_name);
 `;
 
 /** One-time cleanup of tables introduced by an earlier iteration of this feature. */
@@ -70,26 +79,76 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       this.db.exec(SCHEMA);
       this.db.exec(DROP_LEGACY);
       this.dropLegacyAssignmentColumn(this.db);
+      this.addJobNameColumn(this.db);
     }
     return this.db;
   }
 
-  /** Drop pinned_version from skill_assignments if a previous iteration added it. */
+  /**
+   * Add `job_name` column + partial unique index to an existing
+   * skill_assignments table. SQLite can't alter a PRIMARY KEY in
+   * place, so this rebuilds the table: create new, copy rows with
+   * `NULL AS job_name`, drop old, rename.
+   *
+   * Idempotent — early-returns if the column already exists. Wrapped
+   * in BEGIN/COMMIT so a partial failure doesn't leave a
+   * half-migrated table.
+   */
+  private addJobNameColumn(db: Database): void {
+    const cols = db.prepare("PRAGMA table_info(skill_assignments)").all() as { name: string }[];
+    if (cols.some((c) => c.name === "job_name")) return;
+
+    db.exec(`
+      BEGIN;
+      CREATE TABLE skill_assignments_new (
+        skill_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        job_name TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (skill_id, workspace_id, job_name)
+      );
+      INSERT INTO skill_assignments_new (skill_id, workspace_id, job_name, created_at)
+        SELECT skill_id, workspace_id, NULL AS job_name, created_at FROM skill_assignments;
+      DROP TABLE skill_assignments;
+      ALTER TABLE skill_assignments_new RENAME TO skill_assignments;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_assignments_workspace_unique
+        ON skill_assignments (skill_id, workspace_id)
+        WHERE job_name IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace_job
+        ON skill_assignments (workspace_id, job_name);
+      COMMIT;
+    `);
+  }
+
+  /**
+   * Drop pinned_version from skill_assignments if a previous iteration added it.
+   * Runs BEFORE `addJobNameColumn` so a table with both pinned_version AND
+   * job_name (unlikely but possible mid-upgrade) ends up with just job_name.
+   */
   private dropLegacyAssignmentColumn(db: Database): void {
     const cols = db.prepare("PRAGMA table_info(skill_assignments)").all() as { name: string }[];
     if (cols.some((c) => c.name === "pinned_version")) {
+      const hasJobName = cols.some((c) => c.name === "job_name");
+      const selectClause = hasJobName
+        ? "skill_id, workspace_id, job_name, created_at"
+        : "skill_id, workspace_id, NULL AS job_name, created_at";
       db.exec(`
         CREATE TABLE skill_assignments_new (
           skill_id TEXT NOT NULL,
           workspace_id TEXT NOT NULL,
+          job_name TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          PRIMARY KEY (skill_id, workspace_id)
+          PRIMARY KEY (skill_id, workspace_id, job_name)
         );
-        INSERT INTO skill_assignments_new (skill_id, workspace_id, created_at)
-          SELECT skill_id, workspace_id, created_at FROM skill_assignments;
+        INSERT INTO skill_assignments_new (skill_id, workspace_id, job_name, created_at)
+          SELECT ${selectClause} FROM skill_assignments;
         DROP TABLE skill_assignments;
         ALTER TABLE skill_assignments_new RENAME TO skill_assignments;
-        CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace ON skill_assignments(workspace_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_assignments_workspace_unique
+          ON skill_assignments (skill_id, workspace_id)
+          WHERE job_name IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_skill_assignments_workspace_job
+          ON skill_assignments (workspace_id, job_name);
       `);
     }
   }
@@ -471,6 +530,9 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
   async listAssigned(workspaceId: string): Promise<Result<SkillSummary[], string>> {
     const db = await this.getDb();
+    // Workspace-level only — job-level rows (job_name IS NOT NULL) are
+    // listed separately via listAssignmentsForJob() so they remain
+    // isolated to their owning job.
     const rows = db
       .prepare(`
         SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
@@ -482,6 +544,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
         ) latest ON s.skill_id = latest.skill_id AND s.version = latest.max_version
         INNER JOIN skill_assignments sa ON s.skill_id = sa.skill_id
         WHERE sa.workspace_id = ?
+          AND sa.job_name IS NULL
           AND s.name IS NOT NULL
           AND s.description != ''
           AND s.disabled = 0
@@ -503,17 +566,21 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
   async unassignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>> {
     const db = await this.getDb();
-    db.prepare("DELETE FROM skill_assignments WHERE skill_id = ? AND workspace_id = ?").run(
-      skillId,
-      workspaceId,
-    );
+    // Workspace-level only — job-level assignments survive unless the
+    // caller explicitly unassigns them via unassignFromJob().
+    db.prepare(
+      "DELETE FROM skill_assignments WHERE skill_id = ? AND workspace_id = ? AND job_name IS NULL",
+    ).run(skillId, workspaceId);
     return success(undefined);
   }
 
   async listAssignments(skillId: string): Promise<Result<string[], string>> {
     const db = await this.getDb();
+    // DISTINCT because a skill can have a workspace-level row AND one
+    // or more job-level rows in the same workspace; callers expect
+    // one entry per workspace.
     const rows = db
-      .prepare("SELECT workspace_id FROM skill_assignments WHERE skill_id = ?")
+      .prepare("SELECT DISTINCT workspace_id FROM skill_assignments WHERE skill_id = ?")
       .all(skillId) as { workspace_id: string }[];
     return success(rows.map((r) => r.workspace_id));
   }

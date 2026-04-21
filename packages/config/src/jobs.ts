@@ -14,6 +14,7 @@ import {
   // SuccessConfigSchema,  // Currently unused
   SupervisionLevel,
 } from "./base.ts";
+import { SkillRefSchema } from "./skills.ts";
 
 // ==============================================================================
 // TRIGGER SPECIFICATION
@@ -144,6 +145,21 @@ export const JobSpecificationSchema = z
     inputs: SchemaObjectSchema.optional().describe(
       "JSON Schema for job inputs, exposed as tool parameters in workspace chat",
     ),
+
+    // Job-level skill assignments (additive to workspace-level skills).
+    // DECLARATIVE only in v1 — no YAML-reconcile hook today. Setting this
+    // in workspace.yml warns at parse time if no matching skill_assignments
+    // row exists in the DB. Use the scoping API (UI / CLI) to create
+    // actual assignments. `@friday/*` is always available regardless of
+    // this list.
+    skills: z
+      .array(SkillRefSchema)
+      .optional()
+      .describe(
+        "Declarative intent: skills this job should have access to in " +
+          "addition to workspace-level skills. Not auto-applied — use the " +
+          "scoping API to create assignments.",
+      ),
 
     // Execution - either agent-based or FSM-based
     execution: JobExecutionSchema.optional().describe("Agent-based execution pipeline"),
