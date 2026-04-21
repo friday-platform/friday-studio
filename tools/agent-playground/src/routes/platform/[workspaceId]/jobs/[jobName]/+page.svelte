@@ -15,7 +15,7 @@
 -->
 
 <script lang="ts">
-  import { toast } from "@atlas/ui";
+  import { markdownToHTML, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
@@ -112,6 +112,10 @@
 
   $effect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && selected) {
+        selected = null;
+        return;
+      }
       if (e.key !== "/") return;
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -337,48 +341,39 @@
 
 {#if selected}
   {@const sel = selected}
-  <div
+  <button
+    type="button"
     class="drawer-overlay"
     onclick={() => (selected = null)}
-    onkeydown={(e) => (e.key === "Escape" ? (selected = null) : null)}
-    role="button"
-    tabindex="-1"
-    aria-label="Close"
+    aria-label="Close drawer"
+  ></button>
+  <aside
+    class="drawer"
+    role="dialog"
+    aria-label="Skill details"
   >
-    <aside
-      class="drawer"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-      role="dialog"
-      tabindex="-1"
-      aria-label="Skill details"
-    >
-      <header class="drawer-head">
-        <div>
-          <div class="drawer-kicker">Skill</div>
-          <div class="drawer-title">
-            <span class="dim">{sel.namespace}/</span><span class="solid">{sel.name}</span>
-          </div>
+    <header class="drawer-head">
+      <div>
+        <div class="drawer-kicker">Skill</div>
+        <div class="drawer-title">
+          <span class="dim">{sel.namespace}/</span><span class="solid">{sel.name}</span>
         </div>
-        <button type="button" class="drawer-close" onclick={() => (selected = null)} aria-label="Close">
-          ✕
-        </button>
-      </header>
-      <div class="drawer-desc">{sel.description}</div>
-      <dl class="drawer-meta">
-        <dt>Version</dt><dd>v{sel.latestVersion}</dd>
-        <dt>Namespace</dt><dd>{sel.namespace}</dd>
-        {#if sel.source}
-          <dt>Source</dt><dd>{sourceLabel(sel.source)}</dd>
-        {:else}
-          <dt>Source</dt><dd>available</dd>
-        {/if}
-      </dl>
-      <footer class="drawer-foot">
-        <a href="/skills/{sel.namespace}/{sel.name}" class="drawer-link">Open skill page →</a>
-      </footer>
-    </aside>
-  </div>
+      </div>
+      <button type="button" class="drawer-close" onclick={() => (selected = null)} aria-label="Close">
+        ✕
+      </button>
+    </header>
+    <!-- Description is authored markdown — render it, don't dump the raw string. -->
+    <div class="drawer-desc markdown-body">{@html markdownToHTML(sel.description)}</div>
+    <dl class="drawer-meta">
+      <dt>Version</dt><dd>v{sel.latestVersion}</dd>
+      <dt>Namespace</dt><dd>{sel.namespace}</dd>
+      <dt>Source</dt><dd>{sel.source ? sourceLabel(sel.source) : "available"}</dd>
+    </dl>
+    <footer class="drawer-foot">
+      <a href="/skills/{sel.namespace}/{sel.name}" class="drawer-link">Open skill page →</a>
+    </footer>
+  </aside>
 {/if}
 
 <style>
@@ -701,9 +696,10 @@
 
   .drawer-overlay {
     background: rgba(0, 0, 0, 0.5);
-    display: flex;
+    border: none;
+    cursor: default;
     inset: 0;
-    justify-content: flex-end;
+    padding: 0;
     position: fixed;
     z-index: 50;
   }
@@ -715,9 +711,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
-    inline-size: min(440px, 96vw);
+    inline-size: min(480px, 96vw);
+    inset-block: 0;
+    inset-inline-end: 0;
     overflow-y: auto;
     padding: var(--size-5);
+    position: fixed;
+    z-index: 51;
   }
 
   .drawer-head {
@@ -757,8 +757,71 @@
     border-radius: var(--radius-2);
     color: var(--color-text);
     font-size: var(--font-size-3);
-    line-height: 1.6;
-    padding: var(--size-3);
+    line-height: 1.55;
+    padding: var(--size-3) var(--size-4);
+  }
+
+  /* Most skill descriptions are authored markdown (bold, lists, inline
+     code, paragraphs) — style them so they read like prose rather than a
+     single wrapped blob. Scoped to .drawer-desc.markdown-body so it
+     doesn't leak into other markdown surfaces. */
+  .drawer-desc.markdown-body :global(p) {
+    margin: 0 0 var(--size-2);
+  }
+  .drawer-desc.markdown-body :global(p:last-child) {
+    margin-block-end: 0;
+  }
+  .drawer-desc.markdown-body :global(ul),
+  .drawer-desc.markdown-body :global(ol) {
+    margin: 0 0 var(--size-2);
+    padding-inline-start: var(--size-5);
+  }
+  .drawer-desc.markdown-body :global(li) {
+    margin-block-end: var(--size-1);
+  }
+  .drawer-desc.markdown-body :global(li) :global(p) {
+    margin: 0;
+  }
+  .drawer-desc.markdown-body :global(strong) {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  .drawer-desc.markdown-body :global(code) {
+    background: var(--color-surface-3);
+    border-radius: var(--radius-1);
+    font-family: var(--font-family-monospace);
+    font-size: 0.9em;
+    padding: 1px 4px;
+  }
+  .drawer-desc.markdown-body :global(pre) {
+    background: var(--color-surface-3);
+    border-radius: var(--radius-2);
+    margin: 0 0 var(--size-2);
+    overflow-x: auto;
+    padding: var(--size-2-5) var(--size-3);
+  }
+  .drawer-desc.markdown-body :global(pre) :global(code) {
+    background: transparent;
+    padding: 0;
+  }
+  .drawer-desc.markdown-body :global(h1),
+  .drawer-desc.markdown-body :global(h2),
+  .drawer-desc.markdown-body :global(h3),
+  .drawer-desc.markdown-body :global(h4) {
+    font-size: var(--font-size-4);
+    font-weight: 600;
+    margin: var(--size-2) 0 var(--size-1);
+  }
+  .drawer-desc.markdown-body :global(a) {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .drawer-desc.markdown-body :global(blockquote) {
+    border-inline-start: 2px solid var(--color-border-1);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    margin: 0 0 var(--size-2);
+    padding-inline-start: var(--size-3);
   }
 
   .drawer-meta {
