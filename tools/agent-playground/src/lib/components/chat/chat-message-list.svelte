@@ -12,9 +12,16 @@
       messageId: string,
       proposal?: ScheduleProposal,
     ) => void;
+    /**
+     * When true, renders a placeholder assistant bubble with animated
+     * dots at the bottom of the list — for the "submitted, no response
+     * yet" window. Parent hides this as soon as the real assistant
+     * message starts producing text or tool-call content.
+     */
+    thinking?: boolean;
   }
 
-  const { messages, onScheduleAction }: Props = $props();
+  const { messages, onScheduleAction, thinking = false }: Props = $props();
 
   let containerEl: HTMLDivElement | undefined = $state();
 
@@ -426,6 +433,22 @@
     {/if}
   {/each}
 
+  {#if thinking}
+    <!-- Placeholder assistant bubble shown between send and first-token.
+         Replaced in-place by the real assistant message as soon as text
+         or a tool-call arrives. Same layout as .message.assistant so
+         there's no visual jump when the swap happens. -->
+    <div class="message assistant thinking-bubble" role="status" aria-live="polite">
+      <span class="role-badge">Friday</span>
+      <div class="message-content thinking-content">
+        <span class="thinking-dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+        <span class="thinking-label">Thinking…</span>
+      </div>
+    </div>
+  {/if}
+
   {#if messages.length === 0}
     <div class="empty-state">
       <p>Send a message to start a conversation.</p>
@@ -461,6 +484,39 @@
 
   .message.assistant {
     align-self: flex-start;
+  }
+
+  /* Thinking placeholder — same footprint as a real assistant bubble so
+     swapping it for the real message doesn't visually jump. */
+  .thinking-content {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    display: inline-flex;
+    font-style: italic;
+    gap: var(--size-2);
+  }
+  .thinking-dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .thinking-dots span {
+    animation: msg-thinking-bounce 1.2s infinite ease-in-out;
+    background: currentColor;
+    block-size: 5px;
+    border-radius: 50%;
+    display: inline-block;
+    inline-size: 5px;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes msg-thinking-bounce {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dots span { animation: none; opacity: 0.7; }
   }
 
   .role-badge {

@@ -1057,16 +1057,11 @@
         <div class="rehydrating-indicator">Loading conversation...</div>
       {/if}
 
-      <ChatMessageList messages={displayedMessages} onScheduleAction={handleScheduleAction} />
-
-      {#if thinking}
-        <div class="thinking-indicator" role="status" aria-live="polite">
-          <span class="thinking-dots" aria-hidden="true">
-            <span></span><span></span><span></span>
-          </span>
-          <span class="thinking-label">Friday is thinking…</span>
-        </div>
-      {/if}
+      <ChatMessageList
+        messages={displayedMessages}
+        onScheduleAction={handleScheduleAction}
+        {thinking}
+      />
 
       {#if error}
         <div class="error-banner" role="alert">
@@ -1191,46 +1186,6 @@
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-4);
     text-align: center;
-  }
-
-  /* ─── "Friday is thinking" indicator (pre-first-token window) ────────── */
-
-  .thinking-indicator {
-    align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    display: inline-flex;
-    font-size: var(--font-size-2);
-    gap: var(--size-2);
-    margin-inline-start: var(--size-4);
-    padding-block: var(--size-2);
-  }
-
-  .thinking-dots {
-    display: inline-flex;
-    gap: 3px;
-  }
-  .thinking-dots span {
-    animation: thinking-bounce 1.2s infinite ease-in-out;
-    background: currentColor;
-    block-size: 5px;
-    border-radius: 50%;
-    display: inline-block;
-    inline-size: 5px;
-  }
-  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
-  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
-
-  @keyframes thinking-bounce {
-    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-    30% { opacity: 1; transform: translateY(-3px); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .thinking-dots span { animation: none; opacity: 0.7; }
-  }
-
-  .thinking-label {
-    font-style: italic;
   }
 
   .error-banner {
