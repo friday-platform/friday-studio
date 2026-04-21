@@ -58,7 +58,7 @@
 
 <Dialog.Root open={addDialogOpen}>
   {#snippet children()}
-    <Dialog.Content>
+    <Dialog.Content size="auto">
       <Dialog.Close />
 
       {#snippet header()}
@@ -155,7 +155,9 @@
     border-block-end: 1px solid var(--color-border-1);
     display: flex;
     gap: var(--size-1);
-    inline-size: 100%;
+    /* Dialog.Content uses size="auto" (no max-inline-size) — claim a
+       predictable wide box so both tab contents have breathing room. */
+    inline-size: min(720px, 92vw);
     justify-content: center;
     margin-block-end: var(--size-4);
     padding-block-end: var(--size-2);
