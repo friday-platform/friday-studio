@@ -72,10 +72,10 @@
   }
 
   const ROLES: readonly ModelRole[] = [
-    "labels",
-    "classifier",
-    "planner",
     "conversational",
+    "planner",
+    "classifier",
+    "labels",
   ] as const;
 
   const ROLE_DESCRIPTIONS: Record<ModelRole, string> = {
@@ -192,7 +192,10 @@
         "models" in data &&
         Array.isArray((data as { models: unknown }).models)
       ) {
-        models = (data as { models: ModelInfo[] }).models;
+        const fetched = (data as { models: ModelInfo[] }).models;
+        models = [...fetched].sort(
+          (a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role),
+        );
         const nextChains: Record<ModelRole, ModelChoice[]> = {
           labels: [],
           classifier: [],
