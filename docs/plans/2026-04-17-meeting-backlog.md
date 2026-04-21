@@ -107,13 +107,17 @@ lives in `/platform/:ws/+page.svelte` and `/platform/:ws/sessions/
 widgets. The Jobs-tab polish on Personal (hide entirely vs. meaningful
 empty state) isn't done yet.
 
-### B.4 ☐ Workspace creation from the chat (P1)
-**Status:** not started. Related to C.1 — wiring the planner into chat
-is the prerequisite.
+### B.4 ✅ Workspace creation from the chat (P1)
 "Create a workspace called X" should work from the Personal chat. Empty
-workspace with just a name, then the user layers config. Related to
-3.1 in the other plan (better creation skill), but the entry path
-through chat is the user-visible affordance.
+workspace with just a name, then the user layers config.
+
+**Status:** shipped. `99f9892b27` added a `<workspace_management>`
+section to the workspace-chat system prompt that instructs Friday to
+`load_skill @friday/workspace-api` and call `POST /api/workspaces/create`
+via `run_code` (e.g. `deno eval 'fetch(...)'`). No new tool — the
+pre-existing `workspace-api` skill covers it. QA'd end-to-end in Chrome.
+Full planner wiring (C.1) stays open as a follow-up for richer
+"create a workspace for X" prompts.
 
 ### B.5 ✅ Finish admin-mode gating (`ATLAS_EXPOSE_KERNEL`) (P1)
 The env var exists but the system / kernel workspace still leaks into
@@ -129,22 +133,19 @@ route and `routes/memory/index.ts`. Chat SDK instance also honours it.
 Kernel stays hidden in the default mode; direct URLs filtered at the
 API boundary.
 
-### B.6 ◐ Bundle / export feature — Michal (P1)
+### B.6 ✅ Bundle / export feature — Michal (P1)
 Ship two export scopes:
 1. **Per-workspace** — single archive with workspace.yml + skills +
    agents + memory snapshot.
 2. **Whole-Friday** — the full distribution a user can hand to someone
    else: workspaces, skills, agents, env template (no secrets).
 
-**Distribution end-goal:** upload an archive, everything from LCF's box
-reproduces on mine. Lays the foundation for B.7.
-
-**Status:** in-flight on `origin/design/workspace-bundles` (not yet
-merged to `declaw`). Landed on that branch: `@atlas/bundle` package
-with Hasher + Lockfile (`16ff6df7a9`), `exportBundle`/`importBundle`
-with integrity verification (`4266f7c0eb`), daemon `/bundle` +
-`/import-bundle` routes (`f08601d379`), end-to-end smoke test
-(`8f5a71ef4b`). Design docs in `docs/bundles/`.
+**Status:** shipped. Merged via PR #2899 (`ba6dca122e`, content-addressed
+packaging) + PR #2974 (`9c993762f5`, follow-up). `@atlas/bundle` package
+(`bundle.ts`, `bundle-all.ts`, `global-skills.ts`, `hasher.ts`,
+`lockfile.ts`) and daemon routes — `GET /:workspaceId/bundle`,
+`GET /bundle-all`, `POST /import-bundle` — are live on `declaw`. Lays
+the groundwork for B.7.
 
 ### B.7 ☐ Workspace / skill registry ("community spaces") (P2)
 **Status:** not started. Gated on B.6 landing first.
@@ -333,24 +334,29 @@ jobs-list skills breakdown (`84ab940441`).
 - B.7 registry
 - E.2–E.4 memory follow-ups
 
-### Sync as of 2026-04-21
+### Sync as of 2026-04-21 (second pass, evening)
 
-**Done:** A.4, B.2, B.5, D.1, H.1 (5).
-**Partial:** A.3, B.3, B.6, G.2, H.3 (5).
-**Not started:** A.1, A.2, B.1, B.4, B.7, C.1, C.2, E.1, E.2, E.3,
-E.4, F.1, F.2, G.1, H.2 (15 — two of which, B.1 and C.1, are the
-outstanding P0s).
+Two items moved since the morning sync:
+- **B.4** shipped via `99f9892b27` (prompt-only; reuses the existing
+  `@friday/workspace-api` skill + daemon HTTP API instead of a new tool).
+- **B.6** merged to `declaw` via PR #2899 + PR #2974.
+
+**Done:** A.4, B.2, B.4, B.5, B.6, D.1, H.1 (7).
+**Partial:** A.3, B.3, G.2, H.3 (4).
+**Not started:** A.1, A.2, B.1, B.7, C.1, C.2, E.1, E.2, E.3, E.4,
+F.1, F.2, G.1, H.2 (14 — B.1 and C.1 are the outstanding P0s).
 
 **Revised picks for the next pickup:**
 1. **B.1** `.atlas/` → CWD (still the P0 blocker; nothing moved).
-2. **C.1** wire `workspace-planner` into chat (P0; agent exists,
-   just needs the tool-exposure glue).
+2. **C.1** wire `workspace-planner` into chat (P0; richer than the
+   B.4 prompt path — needed for "create a workspace for X" where
+   the planner should blueprint jobs/signals, not just stub a
+   blank one).
 3. **A.3** upgrade the thinking bubble to a persistent "working on
    X" badge that survives long async dispatch after tool cards
    finish.
 4. **G.1** Discord adapter — ready for Sarah.
-5. **B.6** land the `origin/design/workspace-bundles` branch onto
-   `declaw` (the package + routes + tests are done there).
+5. **B.7** workspace/skill registry — B.6 is now unblocked.
 
 ---
 
