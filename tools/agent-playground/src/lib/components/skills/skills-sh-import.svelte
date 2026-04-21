@@ -108,7 +108,7 @@
               <span class="sugg-name">{s.name}</span>
               <span class="sugg-src">{s.source}</span>
               <span class="sugg-meta">
-                <span class="tier-tag">{s.tier}</span>
+                <span class="tier-tag tier-{s.tier}">{s.tier}</span>
                 <span class="installs">{s.installs.toLocaleString()} installs</span>
               </span>
             </button>
@@ -216,13 +216,24 @@
   }
 
   .tier-tag {
-    background-color: color-mix(in srgb, var(--color-text), transparent 85%);
     border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
+    letter-spacing: 0.04em;
     padding: 1px var(--size-1);
     text-transform: uppercase;
+  }
+
+  /* OFFICIAL — green, signals a trusted/curated source. */
+  .tier-official {
+    background-color: color-mix(in oklch, var(--color-success, #238636), transparent 80%);
+    color: color-mix(in oklch, var(--color-success, #238636), var(--color-text) 40%);
+  }
+
+  /* COMMUNITY — blue, signals user-contributed. Distinct from official. */
+  .tier-community {
+    background-color: color-mix(in oklch, var(--color-accent-blue, #1f6feb), transparent 80%);
+    color: color-mix(in oklch, var(--color-accent-blue, #1f6feb), var(--color-text) 40%);
   }
 
   .installs {

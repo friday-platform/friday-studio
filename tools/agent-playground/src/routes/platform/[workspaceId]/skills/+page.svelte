@@ -168,7 +168,6 @@
                 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                 <li
                   class="suggestion"
-                  class:official={s.tier === "official"}
                   onmousedown={(e) => {
                     e.preventDefault();
                     pickSuggestion(s.id);
@@ -177,7 +176,7 @@
                   <span class="sugg-name">{s.name}</span>
                   <span class="sugg-src">{s.source}</span>
                   <span class="sugg-meta">
-                    <span class="tier-tag">{s.tier}</span>
+                    <span class="tier-tag tier-{s.tier}">{s.tier}</span>
                     <span class="installs">{s.installs.toLocaleString()} installs</span>
                   </span>
                 </li>
@@ -402,13 +401,18 @@
     letter-spacing: 0.04em;
     padding: 1px 5px;
     text-transform: uppercase;
-    background-color: color-mix(in srgb, var(--color-text), transparent 80%);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
   }
 
-  .suggestion.official .tier-tag {
-    background-color: color-mix(in srgb, var(--color-success, #4caf50), transparent 80%);
-    color: var(--color-success, #4caf50);
+  /* OFFICIAL — green, signals a trusted/curated source. */
+  .tier-official {
+    background-color: color-mix(in oklch, var(--color-success, #238636), transparent 80%);
+    color: color-mix(in oklch, var(--color-success, #238636), var(--color-text) 40%);
+  }
+
+  /* COMMUNITY — blue, signals user-contributed. Distinct from official. */
+  .tier-community {
+    background-color: color-mix(in oklch, var(--color-accent-blue, #1f6feb), transparent 80%);
+    color: color-mix(in oklch, var(--color-accent-blue, #1f6feb), var(--color-text) 40%);
   }
 
   .installs {
