@@ -422,6 +422,44 @@
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
 
   /**
+   * "Working on it" indicator: shown after the user sends a message but
+   * before anything renders in the assistant bubble. Flips off as soon as
+   * the last assistant message has real content (text tokens or a tool
+   * call card) — at that point the user has visible feedback and the
+   * typing dots would just be noise.
+   */
+  const thinking = $derived.by<boolean>(() => {
+    if (!chat) return false;
+    if (chat.status === "submitted") return true;
+    if (chat.status !== "streaming") return false;
+    const last = chat.messages.at(-1);
+    if (!last || last.role !== "assistant") return true;
+    const hasText =
+      Array.isArray(last.parts) &&
+      last.parts.some(
+        (p: unknown) =>
+          typeof p === "object" &&
+          p !== null &&
+          "type" in p &&
+          (p as { type: string }).type === "text" &&
+          "text" in p &&
+          typeof (p as { text: unknown }).text === "string" &&
+          ((p as { text: string }).text.length > 0),
+      );
+    const hasToolCall =
+      Array.isArray(last.parts) &&
+      last.parts.some(
+        (p: unknown) =>
+          typeof p === "object" &&
+          p !== null &&
+          "type" in p &&
+          typeof (p as { type: string }).type === "string" &&
+          (p as { type: string }).type.startsWith("tool-"),
+      );
+    return !hasText && !hasToolCall;
+  });
+
+  /**
    * Session id of the in-flight turn, extracted from the server's
    * `data-session-start` chunk on the current assistant message. Used by
    * the Stop button to DELETE `/api/sessions/<id>`, which triggers the
@@ -1021,6 +1059,15 @@
 
       <ChatMessageList messages={displayedMessages} onScheduleAction={handleScheduleAction} />
 
+      {#if thinking}
+        <div class="thinking-indicator" role="status" aria-live="polite">
+          <span class="thinking-dots" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          <span class="thinking-label">Friday is thinking…</span>
+        </div>
+      {/if}
+
       {#if error}
         <div class="error-banner" role="alert">
           {error}
@@ -1144,6 +1191,46 @@
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-4);
     text-align: center;
+  }
+
+  /* ─── "Friday is thinking" indicator (pre-first-token window) ────────── */
+
+  .thinking-indicator {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    display: inline-flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+    margin-inline-start: var(--size-4);
+    padding-block: var(--size-2);
+  }
+
+  .thinking-dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .thinking-dots span {
+    animation: thinking-bounce 1.2s infinite ease-in-out;
+    background: currentColor;
+    block-size: 5px;
+    border-radius: 50%;
+    display: inline-block;
+    inline-size: 5px;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes thinking-bounce {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dots span { animation: none; opacity: 0.7; }
+  }
+
+  .thinking-label {
+    font-style: italic;
   }
 
   .error-banner {
