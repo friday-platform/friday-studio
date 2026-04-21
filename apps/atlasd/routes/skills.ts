@@ -219,10 +219,7 @@ export const skillsRoutes = daemonFactory
       }
       const sourceOfficial = isOfficialSource(`${owner}/${repo}`);
 
-      const skillName =
-        typeof parsed.data.frontmatter.name === "string"
-          ? parsed.data.frontmatter.name
-          : slug.replace(/\//g, "-");
+      const skillName = skillNameFromFrontmatter(parsed.data.frontmatter, slug);
       const description =
         typeof parsed.data.frontmatter.description === "string"
           ? parsed.data.frontmatter.description
@@ -238,6 +235,32 @@ export const skillsRoutes = daemonFactory
         .replace(/-+/g, "-")
         .replace(/^-|-$/g, "");
       const namespace = targetNamespace ?? defaultNs;
+
+      // Refuse to silently overwrite an already-installed skill. Without
+      // this guard, `SkillStorage.publish` would reuse the existing
+      // skill_id and bump the version — users expect a fresh import
+      // starts at v1, and if they want the newest upstream content the
+      // "Check for updates" flow on the detail page already handles
+      // that and preserves history properly.
+      {
+        const existing = await SkillStorage.get(
+          namespace,
+          skillNameFromFrontmatter(parsed.data.frontmatter, slug),
+        );
+        if (existing.ok && existing.data) {
+          return c.json(
+            {
+              error: `Skill @${namespace}/${existing.data.name} is already installed (v${String(existing.data.version)}). Use "Check for updates" on the skill page to pull a newer version, or delete it first to re-import fresh.`,
+              alreadyInstalled: {
+                namespace,
+                name: existing.data.name,
+                version: existing.data.version,
+              },
+            },
+            409,
+          );
+        }
+      }
 
       const tmpDir = makeTempDir({ prefix: "atlas-install-" });
       try {
@@ -1087,6 +1110,15 @@ export const skillsRoutes = daemonFactory
 // ==============================================================================
 // Helpers
 // ==============================================================================
+
+/**
+ * Resolve the canonical skill `name` for a skills.sh install — prefers the
+ * `name` field from SKILL.md frontmatter, otherwise derives from the URL
+ * slug by replacing slashes with hyphens so it remains kebab-case-valid.
+ */
+function skillNameFromFrontmatter(frontmatter: Record<string, unknown>, slug: string): string {
+  return typeof frontmatter.name === "string" ? frontmatter.name : slug.replace(/\//g, "-");
+}
 
 /** Rules fully resolvable by a local string transform — no LLM needed. */
 const DETERMINISTIC_RULES = new Set(["path-style", "description-length"]);
