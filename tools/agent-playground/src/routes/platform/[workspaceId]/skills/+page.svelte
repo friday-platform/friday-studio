@@ -34,6 +34,9 @@
   const classifiedQuery = createQuery(() =>
     skillQueries.classifiedWorkspaceSkills(workspaceId),
   );
+  const jobBreakdownQuery = createQuery(() =>
+    skillQueries.jobSkillsBreakdown(workspaceId),
+  );
 
   const assignMut = useAssignSkill();
   const unassignMut = useUnassignSkill();
@@ -158,6 +161,7 @@
   const assigned = $derived(classifiedQuery.data?.assigned ?? []);
   const global = $derived(classifiedQuery.data?.global ?? []);
   const other = $derived(classifiedQuery.data?.other ?? []);
+  const jobBreakdown = $derived(jobBreakdownQuery.data?.byJob ?? []);
 </script>
 
 <div class="skills-page">
@@ -281,6 +285,41 @@
         </div>
       {/if}
     </section>
+
+    <!-- Job-scoped — per-job breakdown (read-only; edits flow via the job
+         detail page). Omitted entirely when no job has job-specific skills. -->
+    {#if jobBreakdown.length > 0}
+      <section class="section">
+        <header>
+          <h2>Job-scoped</h2>
+          <span class="count">{jobBreakdown.length}</span>
+        </header>
+        <p class="section-intro">
+          Skills pinned to a specific job. Edit on the
+          <a href="/platform/{workspaceId}/jobs">Jobs</a> page — select a job, then Manage skills.
+        </p>
+        <div class="job-group-list">
+          {#each jobBreakdown as group (group.jobName)}
+            <div class="job-group">
+              <a class="job-header" href="/platform/{workspaceId}/jobs/{group.jobName}">
+                <span class="job-dot"></span>
+                <span class="job-label">{group.jobName}</span>
+                <span class="count">{group.skills.length}</span>
+              </a>
+              <ul class="job-skill-list">
+                {#each group.skills as skill (skill.skillId)}
+                  <li class="job-skill">
+                    <a href="/skills/{skill.namespace}/{skill.name}">
+                      {skill.namespace}/{skill.name}
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     <!-- Available to assign here (currently elsewhere) -->
     <section class="section">
@@ -727,5 +766,78 @@
   .tab.active {
     border-block-end-color: var(--color-text);
     color: var(--color-text);
+  }
+
+  /* ─── Job-scoped section ──────────────────────────────────────────────── */
+
+  .section-intro {
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    font-size: var(--font-size-2);
+    line-height: 1.5;
+    margin: 0;
+    max-inline-size: 72ch;
+  }
+
+  .job-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+  }
+
+  .job-group {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    display: flex;
+    flex-direction: column;
+    padding: var(--size-3) var(--size-4);
+  }
+
+  .job-header {
+    align-items: center;
+    color: var(--color-text);
+    display: flex;
+    gap: var(--size-2);
+    padding-block-end: var(--size-2);
+    text-decoration: none;
+  }
+
+  .job-header:hover .job-label {
+    text-decoration: underline;
+  }
+
+  .job-dot {
+    background-color: var(--color-accent);
+    block-size: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 6px;
+  }
+
+  .job-label {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+  }
+
+  .job-skill-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--size-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .job-skill a {
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
+    text-decoration: none;
+  }
+
+  .job-skill a:hover {
+    color: var(--color-text);
+    text-decoration: underline;
   }
 </style>

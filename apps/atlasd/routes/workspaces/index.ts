@@ -2078,6 +2078,90 @@ const workspacesRoutes = daemonFactory
 
       return c.json({ assigned, global, other });
     },
+  )
+  // ─── JOB SKILLS (for /platform/:ws/jobs/:jobName) ─────────────────────────
+  // Returns four buckets for the job detail Skills panel. Additive semantics:
+  // each bucket is disjoint by construction (job rows are filtered out of
+  // workspaceInherited; @friday/* is filtered out of everywhere else so it
+  // doesn't double-count when a @friday skill is also assigned).
+  //
+  //   - workspaceInherited: workspace-level + global skills (read-only here;
+  //                          managed on the Workspace Skills page)
+  //   - jobSpecific:        skills assigned specifically to (ws, jobName)
+  //                          — editable on this page
+  //   - available:          catalog skills not yet in either layer, offered
+  //                          for quick job-level assignment
+  //   - friday:             `@friday/*` skills — always visible regardless
+  //                          of assignments (kernel library bypass)
+  .get(
+    "/:workspaceId/jobs/:jobName/skills",
+    zValidator("param", z.object({ workspaceId: z.string().min(1), jobName: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId, jobName } = c.req.valid("param");
+
+      const [catalogResult, inheritedSkills, jobAssignedResult] = await Promise.all([
+        SkillStorage.list(undefined, undefined, true),
+        resolveVisibleSkills(workspaceId, SkillStorage),
+        SkillStorage.listAssignmentsForJob(workspaceId, jobName),
+      ]);
+      if (!catalogResult.ok) return c.json({ error: catalogResult.error }, 500);
+
+      const catalog = catalogResult.data;
+      const jobAssigned = jobAssignedResult.ok ? jobAssignedResult.data : [];
+
+      // Partition the catalog against the three scoping layers.
+      const inheritedIds = new Set(inheritedSkills.map((s) => s.skillId));
+      const jobIds = new Set(jobAssigned.map((s) => s.skillId));
+
+      const workspaceInherited = inheritedSkills.filter((s) => s.namespace !== "friday");
+      const jobSpecific = jobAssigned;
+      const friday: typeof catalog = [];
+      const available: typeof catalog = [];
+
+      for (const skill of catalog) {
+        if (skill.name === null || skill.name === "" || skill.disabled) continue;
+        if (skill.namespace === "friday") {
+          friday.push(skill);
+          continue;
+        }
+        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) continue;
+        available.push(skill);
+      }
+
+      return c.json({ workspaceInherited, jobSpecific, friday, available });
+    },
+  )
+  // ─── PER-JOB SKILL BREAKDOWN (for /platform/:ws/skills) ───────────────────
+  // Lists every job in the workspace alongside the skills pinned to
+  // `(workspaceId, jobName)`. Used as a read-only summary on the Workspace
+  // Skills page; edits flow through the per-job detail page.
+  //
+  // Jobs with zero job-specific rows are omitted — the summary is only
+  // useful when job-level scoping is actively in use.
+  .get(
+    "/:workspaceId/skills/job-breakdown",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace =
+        (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
+      if (!workspace) return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      const jobNames = Object.keys(config?.workspace?.jobs ?? {});
+
+      const entries = await Promise.all(
+        jobNames.map(async (jobName) => {
+          const r = await SkillStorage.listAssignmentsForJob(workspace.id, jobName);
+          return { jobName, skills: r.ok ? r.data : [] };
+        }),
+      );
+
+      const byJob = entries.filter((e) => e.skills.length > 0);
+      return c.json({ byJob });
+    },
   );
 
 export { workspacesRoutes };

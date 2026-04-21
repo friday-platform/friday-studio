@@ -21,6 +21,21 @@ const ClassifiedSkillsResponseSchema = z.object({
   other: z.array(SkillSummarySchema),
 });
 
+const JobSkillsResponseSchema = z.object({
+  workspaceInherited: z.array(SkillSummarySchema),
+  jobSpecific: z.array(SkillSummarySchema),
+  friday: z.array(SkillSummarySchema),
+  available: z.array(SkillSummarySchema),
+});
+export type JobSkillsResponse = z.infer<typeof JobSkillsResponseSchema>;
+
+const JobSkillsBreakdownResponseSchema = z.object({
+  byJob: z.array(
+    z.object({ jobName: z.string(), skills: z.array(SkillSummarySchema) }),
+  ),
+});
+export type JobSkillsBreakdown = z.infer<typeof JobSkillsBreakdownResponseSchema>;
+
 // ==============================================================================
 // SCHEMAS & TYPES
 // ==============================================================================
@@ -167,6 +182,59 @@ export const skillQueries = {
             return data.workspaceIds as string[];
           }
         : skipToken,
+      staleTime: 30_000,
+    }),
+
+  /**
+   * Four-bucket view of skills for a specific job inside a workspace:
+   *   - `workspaceInherited` — baseline (workspace-level + global, ex-@friday)
+   *   - `jobSpecific`        — rows pinned to (ws, jobName), editable here
+   *   - `friday`             — @friday/* bypass set (always available)
+   *   - `available`          — catalog candidates not yet in either layer
+   *
+   * Drives the /platform/:ws/jobs/:jobName Skills panel.
+   */
+  /**
+   * Read-only per-job breakdown of job-specific skill assignments for a
+   * workspace. Drives the "Job-scoped" section on the Workspace Skills page.
+   * Writes flow through the per-job detail page (jobSkills).
+   */
+  jobSkillsBreakdown: (workspaceId: string | null) =>
+    queryOptions({
+      queryKey: ["daemon", "workspace", workspaceId, "skills", "job-breakdown"] as const,
+      queryFn: workspaceId
+        ? async () => {
+            const res = await fetch(
+              `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/skills/job-breakdown`,
+            );
+            if (!res.ok)
+              throw new Error(`Failed to fetch job skills breakdown: ${res.status}`);
+            return JobSkillsBreakdownResponseSchema.parse(await res.json());
+          }
+        : skipToken,
+      staleTime: 30_000,
+    }),
+
+  jobSkills: (workspaceId: string | null, jobName: string | null) =>
+    queryOptions({
+      queryKey: [
+        "daemon",
+        "workspace",
+        workspaceId,
+        "jobs",
+        jobName,
+        "skills",
+      ] as const,
+      queryFn:
+        workspaceId && jobName
+          ? async () => {
+              const res = await fetch(
+                `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/jobs/${encodeURIComponent(jobName)}/skills`,
+              );
+              if (!res.ok) throw new Error(`Failed to fetch job skills: ${res.status}`);
+              return JobSkillsResponseSchema.parse(await res.json());
+            }
+          : skipToken,
       staleTime: 30_000,
     }),
 };

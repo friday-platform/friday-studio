@@ -318,6 +318,11 @@
 
                   <DropdownMenu.Content>
                     <DropdownMenu.Item
+                      onclick={() => goto(`/platform/${workspaceId}/jobs/${job.id}`)}
+                    >
+                      Manage skills
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
                       onclick={() => goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
                     >
                       Open in Job Inspector
