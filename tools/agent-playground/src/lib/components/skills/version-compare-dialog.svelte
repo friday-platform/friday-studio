@@ -91,7 +91,7 @@
 
 <Dialog.Root {open}>
   {#snippet children()}
-    <Dialog.Content>
+    <Dialog.Content size="auto">
       <Dialog.Close />
 
       {#snippet header()}
@@ -153,10 +153,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
+    /* Dialog uses `size="auto"` (no max-inline-size) — explicitly claim a
+       wide-but-bounded box here so long SKILL.md bodies render with enough
+       horizontal room for the diff to be legible. */
+    inline-size: min(1100px, 90vw);
     /* Dialog content is already scroll-managed; keep diffs tall but bounded. */
-    max-block-size: 60vh;
+    max-block-size: 70vh;
     overflow-y: auto;
     padding: var(--size-2) 0;
+    text-align: start;
   }
 
   section {
