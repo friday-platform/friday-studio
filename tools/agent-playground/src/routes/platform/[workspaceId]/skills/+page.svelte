@@ -599,6 +599,33 @@
     text-decoration: none;
   }
 
+  /* Stretched link: make the whole `.skill-row` clickable. The anchor
+     is only one line tall, so its ::after pseudo fills the row (which
+     is position: relative). Description + tag get pointer-events:none
+     so clicks pass through to the link; buttons opt back in via their
+     own pointer-events + z-index. */
+  .row-main::after {
+    content: "";
+    cursor: pointer;
+    inset: 0;
+    position: absolute;
+    z-index: 0;
+  }
+
+  .row-description,
+  .row-tag {
+    pointer-events: none;
+    position: relative;
+    user-select: text;
+    z-index: 1;
+  }
+
+  .row-action {
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
+  }
+
   .skill-dot {
     block-size: 8px;
     border-radius: 50%;
