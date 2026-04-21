@@ -129,3 +129,96 @@ describe("exportBundle + importBundle round-trip", () => {
     expect(result.mismatches).toEqual(["skill:hello"]);
   });
 });
+
+describe("exportBundle/importBundle memory (migration mode)", () => {
+  let workDir: string;
+  let memoryDir: string;
+  let importDir: string;
+
+  beforeEach(async () => {
+    workDir = await mkdtemp(join(tmpdir(), "bundle-mem-src-"));
+    memoryDir = await mkdtemp(join(tmpdir(), "bundle-mem-home-"));
+    importDir = await mkdtemp(join(tmpdir(), "bundle-mem-dst-"));
+    await rm(importDir, { recursive: true, force: true });
+    await seedWorkspace(workDir);
+    await mkdir(join(memoryDir, "narrative", "backlog"), { recursive: true });
+    await writeFile(
+      join(memoryDir, "narrative", "backlog", "MEMORY.md"),
+      "# Backlog\n- task 1\n- task 2\n",
+    );
+    await writeFile(
+      join(memoryDir, "narrative", "backlog", "entries.jsonl"),
+      '{"id":"e1","body":"task 1"}\n{"id":"e2","body":"task 2"}\n',
+    );
+    await mkdir(join(memoryDir, "narrative", "notes"), { recursive: true });
+    await writeFile(join(memoryDir, "narrative", "notes", "MEMORY.md"), "# Notes\n");
+  });
+  afterEach(async () => {
+    await rm(workDir, { recursive: true, force: true });
+    await rm(memoryDir, { recursive: true, force: true });
+    await rm(importDir, { recursive: true, force: true });
+  });
+
+  it("round-trips narrative memory only in migration mode", async () => {
+    const zipBytes = await exportBundle({
+      workspaceDir: workDir,
+      workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+      mode: "migration",
+      workspace: { name: "demo", version: "1.0.0" },
+      memoryDir,
+    });
+
+    const result = await importBundle({ zipBytes, targetDir: importDir });
+    const memoryPrimitives = result.primitives.filter((p) => p.kind === "memory");
+    expect(memoryPrimitives.map((p) => p.name).sort()).toEqual(["backlog", "notes"]);
+
+    const mdBytes = await readFile(join(importDir, "memory", "backlog", "MEMORY.md"), "utf-8");
+    expect(mdBytes).toContain("Backlog");
+    const jsonl = await readFile(join(importDir, "memory", "backlog", "entries.jsonl"), "utf-8");
+    expect(jsonl.split("\n")).toHaveLength(3);
+  });
+
+  it("definition mode ignores memoryDir — no memory entries in bundle", async () => {
+    const zipBytes = await exportBundle({
+      workspaceDir: workDir,
+      workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+      mode: "definition",
+      workspace: { name: "demo", version: "1.0.0" },
+      memoryDir,
+    });
+    const result = await importBundle({ zipBytes, targetDir: importDir });
+    expect(result.primitives.filter((p) => p.kind === "memory")).toEqual([]);
+  });
+
+  it("skips empty narrative dirs (no orphan lockfile entries)", async () => {
+    await mkdir(join(memoryDir, "narrative", "empty-one"), { recursive: true });
+    const zipBytes = await exportBundle({
+      workspaceDir: workDir,
+      workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+      mode: "migration",
+      workspace: { name: "demo", version: "1.0.0" },
+      memoryDir,
+    });
+    const result = await importBundle({ zipBytes, targetDir: importDir });
+    const memoryNames = result.primitives.filter((p) => p.kind === "memory").map((p) => p.name);
+    expect(memoryNames).not.toContain("empty-one");
+    expect(memoryNames.sort()).toEqual(["backlog", "notes"]);
+  });
+
+  it("detects tampered memory on import", async () => {
+    const JSZip = (await import("jszip")).default;
+    const zipBytes = await exportBundle({
+      workspaceDir: workDir,
+      workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+      mode: "migration",
+      workspace: { name: "demo", version: "1.0.0" },
+      memoryDir,
+    });
+    const zip = await JSZip.loadAsync(zipBytes);
+    zip.file("memory/backlog/MEMORY.md", "tampered\n");
+    const tampered = new Uint8Array(await zip.generateAsync({ type: "uint8array" }));
+    await expect(importBundle({ zipBytes: tampered, targetDir: importDir })).rejects.toThrow(
+      /integrity check failed for memory/,
+    );
+  });
+});

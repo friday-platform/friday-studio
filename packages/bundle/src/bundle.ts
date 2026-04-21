@@ -13,6 +13,14 @@ export interface ExportOptions {
   /** Workspace identity for the lockfile. */
   workspace: { name: string; version: string };
   platformDeps?: Lockfile["platformDeps"];
+  /**
+   * Optional path to the workspace's narrative memory dir
+   * (`~/.atlas/memory/<wid>/`). Included only in `mode: migration`.
+   * Expected layout: `<memoryDir>/narrative/<name>/{MEMORY.md,entries.jsonl}`.
+   * The bundle embeds it under `memory/<name>/...` and records a digest per
+   * narrative in `snapshots.memory`.
+   */
+  memoryDir?: string;
 }
 
 export interface ImportOptions {
@@ -23,7 +31,7 @@ export interface ImportOptions {
 
 export interface ImportResult {
   lockfile: Lockfile;
-  primitives: { kind: "skill" | "agent"; name: string; path: string }[];
+  primitives: { kind: "skill" | "agent" | "memory"; name: string; path: string }[];
 }
 
 async function listPrimitiveDirs(dir: string): Promise<string[]> {
@@ -80,6 +88,33 @@ export async function exportBundle(opts: ExportOptions): Promise<Uint8Array> {
     }
   }
 
+  // Phase 3: embed narrative memory in migration-mode bundles. Source is
+  // `<memoryDir>/narrative/<name>/...`, embedded in the zip under `memory/<name>/`,
+  // digest recorded in `snapshots.memory[<name>]`.
+  //
+  // Empty narrative dirs are skipped: the zip carries files only (no empty
+  // dirs), so a snapshot entry for an empty narrative would point at a path
+  // that doesn't exist in the archive, and `hashPrimitive` on import would
+  // ENOENT. The target workspace will recreate narrative dirs on first
+  // write, so losing empty placeholders is fine.
+  const memorySnapshots: Record<string, { backend: string; digest: string; path: string }> = {};
+  if (opts.mode === "migration" && opts.memoryDir) {
+    const narrativeRoot = join(opts.memoryDir, "narrative");
+    for (const name of await listPrimitiveDirs(narrativeRoot)) {
+      const narrativeDir = join(narrativeRoot, name);
+      const files: string[] = [];
+      await walkFilesRecursive(narrativeDir, narrativeDir, files);
+      if (files.length === 0) continue;
+      const { hash } = await hashPrimitive(narrativeDir);
+      const embedBase = `memory/${name}`;
+      memorySnapshots[name] = { backend: "filesystem", digest: hash, path: embedBase };
+      for (const rel of files) {
+        const content = await readFile(join(narrativeDir, ...rel.split("/")));
+        zip.file(`${embedBase}/${rel}`, content);
+      }
+    }
+  }
+
   const lockfile: Lockfile = {
     schemaVersion: 1,
     mode: opts.mode,
@@ -87,7 +122,7 @@ export async function exportBundle(opts: ExportOptions): Promise<Uint8Array> {
     ...(opts.platformDeps ? { platformDeps: opts.platformDeps } : {}),
     primitives: { skills, agents },
     ...(opts.mode === "migration"
-      ? { snapshots: { memory: {}, resources: {}, history: null } }
+      ? { snapshots: { memory: memorySnapshots, resources: {}, history: null } }
       : {}),
   };
 
@@ -153,6 +188,18 @@ export async function importBundle(opts: ImportOptions): Promise<ImportResult> {
       }
       primitives.push({ kind: "agent", name, path: pin.path });
     }
+    if (lockfile.mode === "migration" && lockfile.snapshots) {
+      for (const [name, pin] of Object.entries(lockfile.snapshots.memory)) {
+        const primitiveDir = join(stagingDir, pin.path);
+        const { hash } = await hashPrimitive(primitiveDir);
+        if (hash !== pin.digest) {
+          throw new Error(
+            `importBundle: integrity check failed for memory "${name}": expected ${pin.digest}, got ${hash}`,
+          );
+        }
+        primitives.push({ kind: "memory", name, path: pin.path });
+      }
+    }
 
     await rm(opts.targetDir, { recursive: true, force: true });
     await rename(stagingDir, opts.targetDir);
@@ -177,6 +224,12 @@ export async function verifyWorkspace(
   for (const [name, pin] of Object.entries(lockfile.primitives.agents)) {
     const { hash } = await hashPrimitive(join(workspaceDir, pin.path));
     if (hash !== pin.hash) mismatches.push(`agent:${name}`);
+  }
+  if (lockfile.mode === "migration" && lockfile.snapshots) {
+    for (const [name, pin] of Object.entries(lockfile.snapshots.memory)) {
+      const { hash } = await hashPrimitive(join(workspaceDir, pin.path));
+      if (hash !== pin.digest) mismatches.push(`memory:${name}`);
+    }
   }
   return { ok: mismatches.length === 0, mismatches };
 }

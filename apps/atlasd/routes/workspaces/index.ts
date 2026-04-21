@@ -1,6 +1,12 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exportBundle, importBundle } from "@atlas/bundle";
+import { exportAll, exportGlobalSkills, importAll, importBundle, importGlobalSkills } from "@atlas/bundle";
+import {
+  buildWorkspaceBundleBytes,
+  isOnDiskWorkspace,
+  materializeImportedMemory,
+} from "./bundle-helpers.ts";
+import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { WorkspaceConfig } from "@atlas/config";
@@ -150,44 +156,7 @@ export function extractJobIntegrations(
  * This ensures those refs are present so the credential extraction flow
  * can detect and resolve them during export/import.
  */
-export function injectBundledAgentRefs(config: WorkspaceConfig): WorkspaceConfig {
-  const agents = config.agents;
-  if (!agents) return config;
-
-  let needsUpdate = false;
-  const updatedAgents: Record<string, (typeof agents)[string]> = {};
-
-  for (const [id, agent] of Object.entries(agents)) {
-    if (agent.type !== "atlas") {
-      updatedAgents[id] = agent;
-      continue;
-    }
-
-    const entry = bundledAgentsRegistry[agent.agent];
-    if (!entry) {
-      updatedAgents[id] = agent;
-      continue;
-    }
-
-    const missingRefs: Record<string, { from: "link"; provider: string; key: string }> = {};
-    for (const field of entry.requiredConfig) {
-      if (field.from !== "link") continue;
-      if (agent.env?.[field.envKey]) continue;
-      missingRefs[field.envKey] = { from: "link", provider: field.provider, key: field.key };
-    }
-
-    if (Object.keys(missingRefs).length === 0) {
-      updatedAgents[id] = agent;
-      continue;
-    }
-
-    needsUpdate = true;
-    updatedAgents[id] = { ...agent, env: { ...agent.env, ...missingRefs } };
-  }
-
-  if (!needsUpdate) return config;
-  return { ...config, agents: updatedAgents };
-}
+export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 
 // Zod schemas for parsing Ledger version data per resource type.
 // Ledger stores schema/data as `unknown` — parse here instead of casting.
@@ -794,6 +763,165 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: "Failed to add workspaces" }, 500);
     }
   })
+  // Export every non-virtual workspace into a single archive. The archive
+  // contains one regular bundle zip per workspace under `workspaces/`, plus a
+  // top-level `manifest.yml`. `global/{skills,memory}` slots are reserved for
+  // later (currently null in the manifest). System/kernel workspaces are
+  // skipped because they have no on-disk layout — `isOnDiskWorkspace` filters
+  // them by `stat()`.
+  //
+  // Declared BEFORE `/:workspaceId` so the static path wins the Hono match.
+  .get("/bundle-all", async (c) => {
+    const modeParam = c.req.query("mode");
+    const mode: "definition" | "migration" = modeParam === "migration" ? "migration" : "definition";
+    const includeParam = c.req.query("include") ?? "";
+    const includeGlobalSkills = includeParam.split(",").map((s) => s.trim()).includes("global-skills");
+    const bundleLogger = createLogger({ component: "workspace-bundle-all-export" });
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const all = await manager.list({ includeSystem: false });
+      const bundles: Array<{ id: string; name: string; bundleBytes: Uint8Array }> = [];
+      const skipped: Array<{ id: string; name: string; reason: string }> = [];
+
+      for (const ws of all) {
+        if (!(await isOnDiskWorkspace(ws.path))) {
+          skipped.push({ id: ws.id, name: ws.name, reason: "virtual workspace — no on-disk directory" });
+          continue;
+        }
+        const cfg = await manager.getWorkspaceConfig(ws.id);
+        if (!cfg) {
+          skipped.push({ id: ws.id, name: ws.name, reason: "failed to load workspace configuration" });
+          continue;
+        }
+        try {
+          const built = await buildWorkspaceBundleBytes({
+            workspaceId: ws.id,
+            workspaceName: ws.name,
+            workspacePath: ws.path,
+            config: cfg,
+            mode,
+            logger: bundleLogger,
+            ...(mode === "migration"
+              ? { memoryDir: join(getAtlasHome(), "memory", ws.id) }
+              : {}),
+          });
+          bundles.push({ id: ws.id, name: built.name, bundleBytes: built.bundleBytes });
+        } catch (err) {
+          skipped.push({ id: ws.id, name: ws.name, reason: stringifyError(err) });
+        }
+      }
+
+      let globalSkillsBytes: Uint8Array | undefined;
+      let globalSkillsStatus = "not-requested";
+      if (includeGlobalSkills) {
+        const skillsDbPath = join(getAtlasHome(), "skills.db");
+        const exported = await exportGlobalSkills({ skillsDbPath });
+        if (exported.bytes) {
+          globalSkillsBytes = exported.bytes;
+          globalSkillsStatus = "included";
+        } else {
+          globalSkillsStatus = "missing-source-db";
+        }
+      }
+
+      const archive = await exportAll({
+        workspaces: bundles,
+        mode,
+        ...(globalSkillsBytes ? { global: { skills: globalSkillsBytes } } : {}),
+      });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const filename = `atlas-full-export-${date}.zip`;
+      return new Response(new Uint8Array(archive), {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "X-Atlas-Bundled-Workspaces": String(bundles.length),
+          "X-Atlas-Skipped-Workspaces": String(skipped.length),
+          "X-Atlas-Global-Skills": globalSkillsStatus,
+        },
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      return c.json({ error: `Failed to bundle all workspaces: ${errorMessage}` }, 500);
+    }
+  })
+  // Import every workspace from a full-instance archive. Body is multipart
+  // with a single "bundle" file field (same shape as /import-bundle). Each
+  // inner per-workspace bundle is imported via the regular importBundle path,
+  // then registered with the workspace manager. No collision detection — each
+  // imported workspace gets a fresh auto-generated ID; duplicates by name are
+  // preserved, mirroring /import-bundle.
+  .post("/import-bundle-all", async (c) => {
+    const importLogger = createLogger({ component: "workspace-bundle-all-import" });
+    try {
+      const form = await c.req.formData();
+      const file = form.get("bundle");
+      if (!(file instanceof File)) {
+        return c.json({ error: "Missing 'bundle' file in multipart form" }, 400);
+      }
+      const zipBytes = new Uint8Array(await file.arrayBuffer());
+
+      const atlasHome = getAtlasHome();
+      const workspacesRoot = join(atlasHome, "workspaces");
+      await mkdir(workspacesRoot, { recursive: true });
+
+      const result = await importAll({ zipBytes, workspacesRoot });
+
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const imported: Array<{
+        workspaceId: string;
+        name: string;
+        path: string;
+        memory?: { kind: string; path?: string; reason?: string };
+      }> = [];
+      const errors: Array<{ name: string; error: string }> = [...result.errors];
+      for (const entry of result.imported) {
+        try {
+          const registered = await manager.registerWorkspace(entry.path, { name: entry.name });
+          const memory = await materializeImportedMemory({
+            importedWorkspaceDir: entry.path,
+            atlasHome,
+            newWorkspaceId: registered.workspace.id,
+          });
+          imported.push({
+            workspaceId: registered.workspace.id,
+            name: entry.name,
+            path: entry.path,
+            memory,
+          });
+        } catch (err) {
+          errors.push({ name: entry.name, error: stringifyError(err) });
+        }
+      }
+
+      let globalSkills:
+        | { kind: string; targetPath?: string; sideloadedAs?: string; bytesWritten?: number }
+        | undefined;
+      if (result.globalSkillsBytes) {
+        try {
+          const skillsDbPath = join(atlasHome, "skills.db");
+          const gs = await importGlobalSkills({ zipBytes: result.globalSkillsBytes, skillsDbPath });
+          globalSkills = gs.status;
+        } catch (err) {
+          errors.push({ name: "global.skills", error: stringifyError(err) });
+        }
+      }
+
+      return c.json({
+        manifest: result.manifest,
+        imported,
+        errors,
+        globalSkills,
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      importLogger.error("Bundle-all import failed", { error: errorMessage });
+      return c.json({ error: `Failed to import bundle-all: ${errorMessage}` }, 500);
+    }
+  })
   // Get workspace details
   .get("/:workspaceId", async (c) => {
     const workspaceId = c.req.param("workspaceId");
@@ -962,53 +1090,16 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
 
-      // Reuse the /export credential-stripping chain: resolve legacy refs,
-      // drop unresolvables, convert to provider-keyed refs.
-      const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
-      const credentials = extractCredentials(configWithAgentRefs);
-      const legacyRefs = credentials.filter(
-        (cred): cred is CredentialUsage & { credentialId: string } =>
-          !cred.provider && !!cred.credentialId,
-      );
-      const providerMap: Record<string, string> = {};
-      const unresolvedPaths: string[] = [];
-      const legacyResults = await Promise.allSettled(
-        legacyRefs.map(async (ref) => {
-          const credential = await fetchLinkCredential(ref.credentialId, bundleLogger);
-          return { credentialId: ref.credentialId, provider: credential.provider, path: ref.path };
-        }),
-      );
-      for (const [i, result] of legacyResults.entries()) {
-        const ref = legacyRefs[i];
-        if (!ref) continue;
-        if (result.status === "fulfilled") {
-          providerMap[result.value.credentialId] = result.value.provider;
-        } else if (
-          result.reason instanceof LinkCredentialNotFoundError ||
-          result.reason instanceof LinkCredentialExpiredError
-        ) {
-          unresolvedPaths.push(ref.path);
-        } else {
-          throw result.reason;
-        }
-      }
-      let workspaceToExport = configWithAgentRefs;
-      if (unresolvedPaths.length > 0) {
-        workspaceToExport = stripCredentialRefs(workspaceToExport, unresolvedPaths);
-      }
-      const portableConfig = toProviderRefs(workspaceToExport, providerMap);
-      const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
-      const exportConfig = { ...portableConfig, workspace: workspaceIdentity };
-      const workspaceYml = stringify(exportConfig, { indent: 2, lineWidth: 100 });
-
-      const bundleBytes = await exportBundle({
-        workspaceDir: workspace.path,
-        workspaceYml,
+      const { bundleBytes } = await buildWorkspaceBundleBytes({
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePath: workspace.path,
+        config,
         mode,
-        workspace: {
-          name: portableConfig.workspace.name ?? workspace.name,
-          version: (portableConfig.version as string | undefined) ?? "1.0.0",
-        },
+        logger: bundleLogger,
+        ...(mode === "migration"
+          ? { memoryDir: join(getAtlasHome(), "memory", workspace.id) }
+          : {}),
       });
 
       const sanitizedName = workspace.name.replace(/[^a-zA-Z0-9-_]/g, "-").replace(/-+/g, "-");
@@ -1053,11 +1144,21 @@ const workspacesRoutes = daemonFactory
         name: result.lockfile.workspace.name,
       });
 
+      // If the bundle carried migration-mode memory, relocate it from the
+      // imported workspace dir to `<atlasHome>/memory/<new-id>/narrative/`
+      // where the daemon expects it.
+      const memory = await materializeImportedMemory({
+        importedWorkspaceDir: targetDir,
+        atlasHome,
+        newWorkspaceId: registered.workspace.id,
+      });
+
       return c.json({
         workspaceId: registered.workspace.id,
         path: targetDir,
         name: result.lockfile.workspace.name,
         primitives: result.primitives,
+        memory,
       });
     } catch (error) {
       const errorMessage = stringifyError(error);
@@ -2138,151 +2239,6 @@ const workspacesRoutes = daemonFactory
       const { workspaceId } = c.req.valid("param");
       const skills = await resolveVisibleSkills(workspaceId, SkillStorage);
       return c.json({ skills });
-    },
-  )
-  // ─── CLASSIFIED WORKSPACE SKILLS ──────────────────────────────────────────
-  // Returns disjoint buckets so the playground Skills page can render
-  // without per-skill N+1 assignment lookups:
-  //   - assigned:   skills workspace-level assigned to this workspace
-  //                 (job_name IS NULL)
-  //   - global:     skills with zero assignments at any layer
-  //                 (visible to every workspace and job)
-  //   - other:      skills assigned at some non-null layer to some other
-  //                 workspace and NOT to this one (offered as "available
-  //                 to assign here")
-  //
-  // Job-level rows for THIS workspace are intentionally excluded from the
-  // three buckets — they're surfaced on the per-job detail route. A skill
-  // that's only (ws, job-a) shows up in `assigned` here ONLY if it also
-  // has a workspace-level row; otherwise it appears in `other` (since the
-  // workspace-wide view shouldn't present job-scoped skills as
-  // "workspace-assigned").
-  .get(
-    "/:workspaceId/skills/classified",
-    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const listResult = await SkillStorage.list(undefined, undefined, true);
-      if (!listResult.ok) return c.json({ error: listResult.error }, 500);
-      const allSkills = listResult.data;
-
-      // Two parallel dimensions per skill:
-      //   1. any-layer assignments across all workspaces (listAssignments,
-      //      DISTINCT workspace_id) — used to detect global vs scoped.
-      //   2. workspace-level-only assignments to THIS workspace
-      //      (listAssigned returns only rows with job_name IS NULL).
-      const wsAssignedResult = await SkillStorage.listAssigned(workspaceId);
-      const wsAssignedIds = new Set(
-        (wsAssignedResult.ok ? wsAssignedResult.data : []).map((s) => s.skillId),
-      );
-
-      const assignmentEntries = await Promise.all(
-        allSkills.map(async (skill) => {
-          const r = await SkillStorage.listAssignments(skill.skillId);
-          return [skill.skillId, r.ok ? r.data : []] as const;
-        }),
-      );
-      const assignmentsBySkill = new Map(assignmentEntries);
-
-      const assigned = [];
-      const global = [];
-      const other = [];
-      for (const skill of allSkills) {
-        const list = assignmentsBySkill.get(skill.skillId) ?? [];
-        if (list.length === 0) {
-          global.push(skill);
-        } else if (wsAssignedIds.has(skill.skillId)) {
-          assigned.push(skill);
-        } else {
-          other.push(skill);
-        }
-      }
-
-      return c.json({ assigned, global, other });
-    },
-  )
-  // ─── JOB SKILLS (for /platform/:ws/jobs/:jobName) ─────────────────────────
-  // Returns four buckets for the job detail Skills panel. Additive semantics:
-  // each bucket is disjoint by construction (job rows are filtered out of
-  // workspaceInherited; @friday/* is filtered out of everywhere else so it
-  // doesn't double-count when a @friday skill is also assigned).
-  //
-  //   - workspaceInherited: workspace-level + global skills (read-only here;
-  //                          managed on the Workspace Skills page)
-  //   - jobSpecific:        skills assigned specifically to (ws, jobName)
-  //                          — editable on this page
-  //   - available:          catalog skills not yet in either layer, offered
-  //                          for quick job-level assignment
-  //   - friday:             `@friday/*` skills — always visible regardless
-  //                          of assignments (kernel library bypass)
-  .get(
-    "/:workspaceId/jobs/:jobName/skills",
-    zValidator("param", z.object({ workspaceId: z.string().min(1), jobName: z.string().min(1) })),
-    async (c) => {
-      const { workspaceId, jobName } = c.req.valid("param");
-
-      const [catalogResult, inheritedSkills, jobAssignedResult] = await Promise.all([
-        SkillStorage.list(undefined, undefined, true),
-        resolveVisibleSkills(workspaceId, SkillStorage),
-        SkillStorage.listAssignmentsForJob(workspaceId, jobName),
-      ]);
-      if (!catalogResult.ok) return c.json({ error: catalogResult.error }, 500);
-
-      const catalog = catalogResult.data;
-      const jobAssigned = jobAssignedResult.ok ? jobAssignedResult.data : [];
-
-      // Partition the catalog against the three scoping layers.
-      const inheritedIds = new Set(inheritedSkills.map((s) => s.skillId));
-      const jobIds = new Set(jobAssigned.map((s) => s.skillId));
-
-      const workspaceInherited = inheritedSkills.filter((s) => s.namespace !== "friday");
-      const jobSpecific = jobAssigned;
-      const friday: typeof catalog = [];
-      const available: typeof catalog = [];
-
-      for (const skill of catalog) {
-        if (skill.name === null || skill.name === "" || skill.disabled) continue;
-        if (skill.namespace === "friday") {
-          friday.push(skill);
-          continue;
-        }
-        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) continue;
-        available.push(skill);
-      }
-
-      return c.json({ workspaceInherited, jobSpecific, friday, available });
-    },
-  )
-  // ─── PER-JOB SKILL BREAKDOWN (for /platform/:ws/skills) ───────────────────
-  // Lists every job in the workspace alongside the skills pinned to
-  // `(workspaceId, jobName)`. Used as a read-only summary on the Workspace
-  // Skills page; edits flow through the per-job detail page.
-  //
-  // Jobs with zero job-specific rows are omitted — the summary is only
-  // useful when job-level scoping is actively in use.
-  .get(
-    "/:workspaceId/skills/job-breakdown",
-    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const ctx = c.get("app");
-      const manager = ctx.getWorkspaceManager();
-      const workspace =
-        (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
-      if (!workspace) return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-
-      const config = await manager.getWorkspaceConfig(workspace.id);
-      const jobNames = Object.keys(config?.workspace?.jobs ?? {});
-
-      const entries = await Promise.all(
-        jobNames.map(async (jobName) => {
-          const r = await SkillStorage.listAssignmentsForJob(workspace.id, jobName);
-          return { jobName, skills: r.ok ? r.data : [] };
-        }),
-      );
-
-      const byJob = entries.filter((e) => e.skills.length > 0);
-      return c.json({ byJob });
     },
   );
 

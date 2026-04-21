@@ -4595,7 +4595,8 @@
       "integrity": "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="
     },
     "@xmldom/xmldom@0.9.9": {
-      "integrity": "sha512-qycIHAucxy/LXAYIjmLmtQ8q9GPnMbnjG1KXhWm9o5sCr6pOYDATkMPiTNa6/v8eELyqOQ2FsEqeoFYmgv/gJg=="
+      "integrity": "sha512-qycIHAucxy/LXAYIjmLmtQ8q9GPnMbnjG1KXhWm9o5sCr6pOYDATkMPiTNa6/v8eELyqOQ2FsEqeoFYmgv/gJg==",
+      "deprecated": true
     },
     "accepts@2.0.0": {
       "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
@@ -9090,6 +9091,16 @@
       "packages/bucketlist-cs": {
         "packageJson": {
           "dependencies": [
+            "npm:vitest@^4.1.0",
+            "npm:zod@^4.3.5"
+          ]
+        }
+      },
+      "packages/bundle": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@jsr/std__yaml@^1.0.10",
+            "npm:jszip@^3.10.1",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
