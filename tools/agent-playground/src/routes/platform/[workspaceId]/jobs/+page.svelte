@@ -28,12 +28,60 @@
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
-  import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
+  import {
+    integrationQueries,
+    skillQueries,
+    workspaceQueries,
+    type IntegrationStatus,
+  } from "$lib/queries";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
+
+  // Per-job skill pins — one round-trip for the whole page (vs N per-job
+  // fanout). Workspace-level and @friday/* skills come from
+  // `classifiedWorkspaceSkills` (same endpoint the Workspace Skills
+  // page already hits) so every job card can show an accurate
+  // "+ N inherited" count.
+  const jobBreakdownQuery = createQuery(() =>
+    skillQueries.jobSkillsBreakdown(workspaceId),
+  );
+  const classifiedSkillsQuery = createQuery(() =>
+    skillQueries.classifiedWorkspaceSkills(workspaceId),
+  );
+
+  const inheritedCount = $derived.by((): number => {
+    const c = classifiedSkillsQuery.data;
+    if (!c) return 0;
+    // Workspace-inherited visibility = workspace-level assignments
+    // (`assigned`) + any-workspace-visible globals (`global`). Matches
+    // what the job detail page groups as "Workspace-inherited" + the
+    // @friday/* bypass, minus the namespace split.
+    return c.assigned.length + c.global.length;
+  });
+
+  const jobSkillsMap = $derived.by((): Map<string, { skillId: string; namespace: string; name: string | null }[]> => {
+    const map = new Map<string, { skillId: string; namespace: string; name: string | null }[]>();
+    for (const entry of jobBreakdownQuery.data?.byJob ?? []) {
+      map.set(
+        entry.jobName,
+        entry.skills.map((s) => ({
+          skillId: s.skillId,
+          namespace: s.namespace,
+          name: s.name,
+        })),
+      );
+    }
+    return map;
+  });
+
+  function skillsForJob(
+    jobId: string,
+  ): { skillId: string; namespace: string; name: string | null }[] {
+    return jobSkillsMap.get(jobId) ?? [];
+  }
 
   const topology = $derived.by(() => {
     const data = configQuery.data;
@@ -305,6 +353,7 @@
         {@const jobContracts = contractsForJob(job.id)}
         {@const jobAgents = agentsForJob(job.id)}
         {@const jobSignals = signalsForJob(job.id)}
+        {@const jobPinned = skillsForJob(job.id)}
         <div class="job-card" id="job-{job.id}">
           <div class="card-header">
             <h2 class="job-title">{job.title}</h2>
@@ -397,6 +446,50 @@
               </div>
             </div>
           {/if}
+
+          <div class="skills-section">
+            <div class="skills-header">
+              <h3 class="section-label">Skills</h3>
+              <a
+                class="manage-link"
+                href="/platform/{workspaceId}/jobs/{job.id}"
+                title="Manage pinned skills for this job"
+              >
+                Manage →
+              </a>
+            </div>
+            <div class="skills-summary">
+              <span class="skills-count">
+                <span class="dot pin"></span>
+                {jobPinned.length} pinned
+              </span>
+              {#if inheritedCount > 0}
+                <span class="skills-count muted">
+                  <span class="dot ws"></span>
+                  +{inheritedCount} inherited
+                </span>
+              {/if}
+            </div>
+            {#if jobPinned.length > 0}
+              <div class="skills-list">
+                {#each jobPinned as skill (skill.skillId)}
+                  <a
+                    class="skill-chip"
+                    href="/skills/{skill.namespace}/{skill.name}"
+                    title={`${skill.namespace}/${skill.name}`}
+                  >
+                    <span class="chip-ns">{skill.namespace}</span>
+                    <span class="chip-slash">/</span>
+                    <span class="chip-name">{skill.name}</span>
+                  </a>
+                {/each}
+              </div>
+            {:else if inheritedCount === 0}
+              <p class="skills-empty">
+                No skills yet. <a href="/platform/{workspaceId}/jobs/{job.id}">Pin one →</a>
+              </p>
+            {/if}
+          </div>
 
           {#if jobSignals.length > 0}
             <div class="signals-section">
@@ -634,6 +727,94 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* ---- Skills section ---- */
+
+  .skills-section {
+    border-block-start: 1px solid var(--color-border-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    padding-block-start: var(--size-4);
+  }
+
+  .skills-header {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .manage-link {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-1);
+    margin-inline-start: auto;
+    text-decoration: none;
+  }
+  .manage-link:hover {
+    color: var(--color-accent);
+  }
+
+  .skills-summary {
+    color: var(--color-text);
+    display: flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-3);
+  }
+
+  .skills-count {
+    align-items: center;
+    display: inline-flex;
+    gap: var(--size-1);
+  }
+  .skills-count.muted {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+  }
+  .skills-count .dot {
+    block-size: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    inline-size: 6px;
+  }
+  .skills-count .dot.pin { background: var(--color-accent); }
+  .skills-count .dot.ws { background: var(--color-success); }
+
+  .skills-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1-5);
+  }
+
+  .skill-chip {
+    align-items: center;
+    background: color-mix(in srgb, var(--color-accent), transparent 88%);
+    border: 1px solid color-mix(in srgb, var(--color-accent), transparent 70%);
+    border-radius: var(--radius-1);
+    color: var(--color-text);
+    display: inline-flex;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
+    gap: 1px;
+    padding: 1px var(--size-2);
+    text-decoration: none;
+    transition: background 80ms ease;
+  }
+  .skill-chip:hover {
+    background: color-mix(in srgb, var(--color-accent), transparent 78%);
+  }
+  .chip-ns { color: color-mix(in srgb, var(--color-text), transparent 40%); }
+  .chip-slash { color: color-mix(in srgb, var(--color-text), transparent 55%); }
+  .chip-name { color: var(--color-text); font-weight: 500; }
+
+  .skills-empty {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-1);
+    margin: 0;
+  }
+  .skills-empty a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .skills-empty a:hover { text-decoration: underline; }
 
   /* ---- Signals section ---- */
 
