@@ -1,9 +1,33 @@
 <script lang="ts">
-  import { markdownToHTML } from "@atlas/ui";
+  import { DropdownMenu, markdownToHTML } from "@atlas/ui";
   import { tick } from "svelte";
   import { jsonHighlighter } from "./json-highlighter";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
+
+  /**
+   * Human-readable message timestamp for the per-message "…" menu.
+   *   • < 12 h old  → time only (e.g. "12:26 PM")
+   *   • ≥ 12 h old  → date + time (e.g. "Apr 20, 12:26 PM")
+   * 12h is arbitrary but matches the user's phrasing: "time or date and
+   * time if it's older than 12h".
+   */
+  const TIME_FMT = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  function formatMessageTimestamp(timestamp: number): string {
+    const ageMs = Date.now() - timestamp;
+    const date = new Date(timestamp);
+    if (ageMs < 12 * 60 * 60 * 1000) return TIME_FMT.format(date);
+    return DATETIME_FMT.format(date);
+  }
 
   interface Props {
     messages: ChatMessage[];
@@ -428,6 +452,34 @@
               <div class="message-content">{message.content}</div>
             {/if}
           {/if}
+
+          <!-- Per-message overflow menu. Holds the timestamp today; later
+               actions (branch, read aloud, copy, etc.) hang off the same
+               Content. User/assistant only — system messages stay quiet. -->
+          <div class="message-actions">
+            <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
+              {#snippet children()}
+                <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle cx="4" cy="8" r="1.25" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+                    <circle cx="12" cy="8" r="1.25" fill="currentColor" />
+                  </svg>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content>
+                  <DropdownMenu.Label>
+                    {formatMessageTimestamp(message.timestamp)}
+                  </DropdownMenu.Label>
+                </DropdownMenu.Content>
+              {/snippet}
+            </DropdownMenu.Root>
+          </div>
         {/if}
       </div>
     {/if}
@@ -484,6 +536,43 @@
 
   .message.assistant {
     align-self: flex-start;
+  }
+
+  /* Per-message overflow menu. Sits just below the bubble, dims until
+     the row is hovered so it doesn't compete with message content. */
+  .message-actions {
+    display: flex;
+    gap: var(--size-1);
+    opacity: 0.45;
+    padding-block-start: 2px;
+    transition: opacity 120ms ease;
+  }
+  .message:hover .message-actions,
+  .message-actions:focus-within {
+    opacity: 1;
+  }
+  .message.user .message-actions {
+    justify-content: flex-end;
+  }
+
+  .message-actions :global(.message-menu-trigger) {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-1);
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    cursor: pointer;
+    display: inline-flex;
+    inline-size: 24px;
+    block-size: 20px;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .message-actions :global(.message-menu-trigger:hover),
+  .message-actions :global(.message-menu-trigger[data-state="open"]) {
+    background: color-mix(in srgb, var(--color-text), transparent 92%);
+    color: var(--color-text);
   }
 
   /* Thinking placeholder — same footprint as a real assistant bubble so
