@@ -230,6 +230,24 @@
 </div>
 
 <style>
+  /*
+   * Atlas exposes surface-1/2/3 + text + border-1/2 + accent + success/warning
+   * via light-dark(). The original styles reached for surface-4 / text-faint /
+   * text-dim / border-strong / font-mono / color-primary — none of those
+   * tokens exist in packages/ui/src/lib/tokens.css. CSS custom-property
+   * fallbacks kicked in with hardcoded dark values, which meant this
+   * component rendered "dark" regardless of `prefers-color-scheme`.
+   *
+   * Replacements:
+   *   surface-4        → color-mix on the emphasized background (one step
+   *                      above surface-3 in both modes)
+   *   text-faint / dim → color-mix on --color-text with transparency — same
+   *                      pattern other playground pages use
+   *   border-strong    → --color-border-2 (darker edge in both modes)
+   *   color-primary    → --color-accent
+   *   font-mono        → --font-family-monospace
+   */
+
   .role-chain {
     display: flex;
     flex-direction: column;
@@ -239,8 +257,8 @@
 
   .chain-item {
     align-items: center;
-    background: var(--color-surface-3, hsl(220 8% 13%));
-    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
     border-radius: 6px;
     display: grid;
     gap: 8px;
@@ -252,34 +270,34 @@
       border-color 120ms ease;
   }
   .chain-item.is-primary {
-    background: var(--color-surface-4, hsl(220 8% 17%));
-    border-color: var(--color-border-2, hsl(220 6% 24%));
+    background: var(--color-surface-3);
+    border-color: var(--color-border-2);
   }
   .chain-item.is-dragging {
     opacity: 0.4;
   }
   .chain-item.is-drop-target {
-    border-color: var(--color-primary, hsl(212 97% 58%));
-    box-shadow: inset 0 0 0 1px var(--color-primary, hsl(212 97% 58%));
+    border-color: var(--color-accent);
+    box-shadow: inset 0 0 0 1px var(--color-accent);
   }
   .chain-item.warn {
-    border-color: color-mix(in srgb, hsl(38 92% 60%), transparent 55%);
+    border-color: color-mix(in srgb, var(--color-warning), transparent 55%);
   }
 
   .chain-slot {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     letter-spacing: 0.04em;
     text-align: center;
   }
   .chain-slot.is-primary {
-    color: var(--color-text, hsl(40 12% 95%));
+    color: var(--color-text);
     font-weight: 600;
   }
 
   .chain-drag {
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     cursor: grab;
     font-size: 14px;
     line-height: 1;
@@ -314,10 +332,10 @@
     text-align: left;
   }
   .model-tile:hover .model-name {
-    color: var(--color-text, hsl(40 12% 95%));
+    color: var(--color-text);
   }
   .chain-item.is-default .model-name {
-    color: var(--color-text-dim, hsl(40 8% 68%));
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
   }
 
   .model-info {
@@ -327,36 +345,36 @@
     min-width: 0;
   }
   .model-name {
-    color: var(--color-text, hsl(40 12% 95%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--color-text);
+    font-family: var(--font-family-monospace);
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .model-provider {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     letter-spacing: 0.02em;
   }
 
   .status-dot {
-    background: hsl(142 70% 55%);
+    background: var(--color-success);
     border-radius: 50%;
     flex-shrink: 0;
     height: 6px;
     width: 6px;
   }
   .status-dot.locked {
-    background: hsl(40 6% 55%);
+    background: color-mix(in srgb, var(--color-text), transparent 55%);
   }
 
   .default-pill {
-    border: 1px solid var(--color-border-2, hsl(220 6% 24%));
+    border: 1px solid var(--color-border-2);
     border-radius: 999px;
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-family: var(--font-family-monospace);
     font-size: 10px;
     letter-spacing: 0.1em;
     padding: 1px 8px;
@@ -373,7 +391,7 @@
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     cursor: pointer;
     font-family: inherit;
     font-size: 12px;
@@ -383,8 +401,8 @@
       color 120ms ease;
   }
   .chain-btn:hover {
-    background: var(--color-surface-4, hsl(220 8% 17%));
-    color: var(--color-text, hsl(40 12% 95%));
+    background: var(--color-surface-3);
+    color: var(--color-text);
   }
   .chain-btn.override {
     padding: 4px 10px;
@@ -393,9 +411,9 @@
   .add-fallback {
     align-items: center;
     background: transparent;
-    border: 1px dashed var(--color-border-2, hsl(220 6% 24%));
+    border: 1px dashed var(--color-border-2);
     border-radius: 6px;
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     cursor: pointer;
     display: flex;
     font-family: inherit;
@@ -408,8 +426,8 @@
       color 120ms;
   }
   .add-fallback:hover {
-    border-color: var(--color-border-strong, hsl(220 6% 34%));
-    color: var(--color-text-dim, hsl(40 8% 68%));
+    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
   }
   .plus {
     font-size: 16px;
@@ -418,15 +436,15 @@
 
   .warn-pill {
     align-items: center;
-    color: hsl(38 92% 60%);
+    color: var(--color-warning);
     display: inline-flex;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     gap: 6px;
     margin-top: 2px;
   }
   .warn-pill::before {
-    background: hsl(38 92% 60%);
+    background: var(--color-warning);
     border-radius: 50%;
     content: "";
     height: 6px;

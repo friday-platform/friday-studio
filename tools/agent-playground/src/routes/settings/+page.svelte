@@ -728,7 +728,7 @@
 
   .subtitle,
   .section-sub {
-    color: var(--color-text-dim, hsl(40 8% 68%));
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
     font-size: 13px;
     line-height: 1.55;
     margin: 0;
@@ -737,7 +737,7 @@
 
   .subtitle code,
   .section-sub code {
-    background: var(--color-surface-3, hsl(220 8% 13%));
+    background: var(--color-surface-3);
     border-radius: 4px;
     font-size: 12px;
     padding: 1px 6px;
@@ -770,8 +770,8 @@
   }
 
   .section-meta {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     white-space: nowrap;
   }
@@ -784,8 +784,8 @@
 
   .role-card {
     align-items: start;
-    background: var(--color-surface-2, hsl(220 8% 9%));
-    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
     border-radius: 10px;
     display: grid;
     gap: 20px;
@@ -794,7 +794,7 @@
     transition: border-color 120ms ease;
   }
   .role-card:hover {
-    border-color: var(--color-border-2, hsl(220 6% 24%));
+    border-color: var(--color-border-2);
   }
 
   .role-head {
@@ -803,20 +803,20 @@
     gap: 6px;
   }
   .role-name-upper {
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   .role-name {
-    color: var(--color-text, hsl(40 12% 95%));
+    color: var(--color-text);
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.01em;
   }
   .role-desc {
-    color: var(--color-text-dim, hsl(40 8% 68%));
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
     font-size: 13px;
     line-height: 1.5;
     margin: 0;
@@ -833,30 +833,30 @@
 
   .unsaved-indicator {
     align-items: center;
-    color: hsl(38 92% 60%);
+    color: var(--color-warning);
     display: inline-flex;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     gap: 6px;
     margin-right: auto;
   }
   .unsaved-indicator::before {
-    background: hsl(38 92% 60%);
+    background: var(--color-warning);
     border-radius: 50%;
     content: "";
     height: 6px;
     width: 6px;
   }
   .success-flash {
-    color: hsl(142 70% 55%);
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--color-success);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     margin-right: auto;
   }
 
   .loading,
   .empty {
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     font-size: 13px;
     padding: 16px;
     text-align: center;
@@ -864,25 +864,25 @@
 
   .error-banner {
     align-items: center;
-    background: color-mix(in srgb, hsl(4 86% 66%), transparent 85%);
-    border: 1px solid color-mix(in srgb, hsl(4 86% 66%), transparent 50%);
+    background: color-mix(in srgb, var(--color-error), transparent 85%);
+    border: 1px solid color-mix(in srgb, var(--color-error), transparent 50%);
     border-radius: 6px;
     display: flex;
     gap: 12px;
     padding: 10px 14px;
   }
   .error-text {
-    color: var(--color-text, hsl(40 12% 95%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--color-text);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     margin: 0;
     white-space: pre-wrap;
   }
   .dismiss {
     background: transparent;
-    border: 1px solid var(--color-border-2, hsl(220 6% 24%));
+    border: 1px solid var(--color-border-2);
     border-radius: 4px;
-    color: var(--color-text-dim, hsl(40 8% 68%));
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
     cursor: pointer;
     font-family: inherit;
     font-size: 12px;
@@ -891,10 +891,10 @@
   }
 
   .warn-banner {
-    background: color-mix(in srgb, hsl(38 92% 60%), transparent 88%);
-    border: 1px solid color-mix(in srgb, hsl(38 92% 60%), transparent 55%);
+    background: color-mix(in srgb, var(--color-warning), transparent 88%);
+    border: 1px solid color-mix(in srgb, var(--color-warning), transparent 55%);
     border-radius: 6px;
-    color: var(--color-text, hsl(40 12% 95%));
+    color: var(--color-text);
     font-size: 12px;
     padding: 8px 12px;
   }
@@ -902,8 +902,8 @@
   /* ─── Env vars section ─── */
 
   .env-details {
-    background: var(--color-surface-2, hsl(220 8% 9%));
-    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
     border-radius: 10px;
     overflow: hidden;
   }
@@ -920,7 +920,7 @@
     display: none;
   }
   .env-summary::before {
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     content: "▸";
     font-size: 14px;
     transition: transform 150ms ease;
@@ -933,8 +933,8 @@
     font-weight: 600;
   }
   .env-count {
-    color: var(--color-text-faint, hsl(40 6% 48%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     margin-left: auto;
   }
@@ -951,9 +951,9 @@
   }
 
   .env-table-header {
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     display: grid;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-family-monospace);
     font-size: 12px;
     gap: 8px;
     grid-template-columns: 1fr 1fr 32px;
@@ -968,31 +968,31 @@
   }
 
   .env-row input {
-    background: var(--color-surface-3, hsl(220 8% 13%));
-    border: 1px solid var(--color-border-1, hsl(220 6% 18%));
+    background: var(--color-surface-3);
+    border: 1px solid var(--color-border-1);
     border-radius: 6px;
-    color: var(--color-text, hsl(40 12% 95%));
-    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--color-text);
+    font-family: var(--font-family-monospace);
     font-size: 13px;
     outline: none;
     padding: 6px 10px;
   }
   .env-row input:focus {
-    border-color: var(--color-primary, hsl(212 97% 58%));
+    border-color: var(--color-accent);
   }
 
   .col-action.remove {
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: var(--color-text-faint, hsl(40 6% 48%));
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
     cursor: pointer;
     font-family: inherit;
     font-size: 12px;
     padding: 4px 6px;
   }
   .col-action.remove:hover {
-    background: var(--color-surface-4, hsl(220 8% 17%));
-    color: hsl(4 86% 66%);
+    background: color-mix(in srgb, var(--color-text), transparent 92%);
+    color: var(--color-error);
   }
 </style>
