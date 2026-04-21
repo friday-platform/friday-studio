@@ -9,7 +9,14 @@
 
 <script lang="ts">
   import { browser } from "$app/environment";
-  import { Button, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import {
+    Button,
+    MarkdownRendered,
+    highlightCode,
+    languageFromPath,
+    markdownToHTML,
+    toast,
+  } from "@atlas/ui";
   import DOMPurify from "dompurify";
   import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate, goto } from "$app/navigation";
@@ -29,6 +36,15 @@
   }));
 
   const fileContent = $derived(fileContentQuery.data?.content ?? null);
+
+  /** Markdown files get the full prose renderer; everything else is code. */
+  const isMarkdown = $derived(path.toLowerCase().endsWith(".md"));
+  /** Shiki language id, or null for plain-text fallback. */
+  const codeLang = $derived(isMarkdown ? null : languageFromPath(path));
+  const highlightedCode = $derived.by(() => {
+    if (isMarkdown || fileContent === null) return null;
+    return highlightCode(fileContent, codeLang);
+  });
 
   // ---------------------------------------------------------------------------
   // Edit mode (URL-driven via ?edit query param)
@@ -150,12 +166,22 @@
             ondirtychange={handleDirtyChange}
           />
         </div>
-      {:else}
+      {:else if isMarkdown}
         <div class="preview-content">
           <MarkdownRendered>
             {@html browser ? DOMPurify.sanitize(markdownToHTML(fileContent)) : markdownToHTML(fileContent)}
           </MarkdownRendered>
         </div>
+      {:else if highlightedCode}
+        <!-- Shiki emits a full <pre><code>…</code></pre>; DOMPurify keeps
+             the inline-style colors it adds for syntax highlighting. -->
+        <div class="code-preview">
+          {@html browser ? DOMPurify.sanitize(highlightedCode) : highlightedCode}
+        </div>
+      {:else}
+        <!-- Unknown file type: render as plain text so users can still read
+             it rather than seeing a broken markdown render. -->
+        <pre class="code-preview plain">{fileContent}</pre>
       {/if}
     {/if}
   </div>
@@ -197,6 +223,34 @@
     overflow-y: auto;
     padding: var(--size-2) var(--size-8) var(--size-6);
     scrollbar-width: thin;
+  }
+
+  .code-preview {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-3);
+    flex: 1;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-1);
+    line-height: var(--font-lineheight-1);
+    margin: var(--size-3) var(--size-6) var(--size-6);
+    overflow: auto;
+    padding: var(--size-4);
+    scrollbar-width: thin;
+    white-space: pre;
+
+    :global(pre) {
+      background: transparent;
+      margin: 0;
+      padding: 0;
+    }
+    :global(code) {
+      background: transparent;
+      padding: 0;
+    }
+  }
+
+  .code-preview.plain {
+    color: var(--color-text);
   }
 
   .status-text {

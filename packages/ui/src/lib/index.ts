@@ -8,6 +8,7 @@ export { default as JsonHighlight } from "./json-highlight.svelte";
 export { default as MarkdownRendered } from "./markdown/markdown-rendered.svelte";
 export { markdownToHTML } from "./markdown/markdown.js";
 export { jsonHighlighter } from "./json-highlighter.js";
+export { codeHighlighter, highlightCode, languageFromPath } from "./code-highlighter.js";
 export { toast, NotificationPortal } from "./notification/index.js";
 export type { ToastData } from "./notification/index.js";
 export { Page } from "./page/index.js";
