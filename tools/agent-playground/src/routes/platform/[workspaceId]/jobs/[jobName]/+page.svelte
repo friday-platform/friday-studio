@@ -16,11 +16,16 @@
 
 <script lang="ts">
   import { markdownToHTML, toast } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries, workspaceQueries } from "$lib/queries";
-  import { useAssignSkill, useUnassignSkill } from "$lib/queries/skills";
+  import {
+    searchSkillsSh,
+    useAssignSkill,
+    useInstallSkill,
+    useUnassignSkill,
+  } from "$lib/queries/skills";
 
   type Source = "job" | "workspace" | "friday";
   interface SkillRow {
@@ -40,6 +45,7 @@
 
   const assignMut = useAssignSkill();
   const unassignMut = useUnassignSkill();
+  const installMut = useInstallSkill();
 
   const jobTitle = $derived.by(() => {
     const cfg = configQuery.data?.config;
@@ -109,6 +115,90 @@
 
   // Optimistic dim while attach/detach round-trips.
   let pending = $state<Record<string, boolean>>({});
+
+  // ─── skills.sh install experience (mirrors /platform/:ws/skills) ───────
+  // Same UX as the Workspace Skills page: input with a typeahead dropdown
+  // of skills.sh matches; selecting a suggestion fills the input;
+  // pressing "Install" pulls the skill into the catalog. Only difference:
+  // on this page we follow up with a job-level assignment instead of
+  // workspace-level, so the installed skill lands pinned to THIS job.
+
+  let installSource = $state("");
+  let searchFocused = $state(false);
+  let searchQuery = $state("");
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+
+  function handleSourceInput(e: Event): void {
+    const v = (e.currentTarget as HTMLInputElement).value;
+    installSource = v;
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      searchQuery = v.trim();
+    }, 200);
+  }
+
+  const searchSuggestions = createQuery(() =>
+    queryOptions({
+      queryKey: ["skillssh-search-job", searchQuery] as const,
+      queryFn:
+        searchQuery.length >= 2 && searchQuery.split("/").filter(Boolean).length < 3
+          ? () => searchSkillsSh(searchQuery, 8)
+          : skipToken,
+      staleTime: 60_000,
+    }),
+  );
+  const suggestions = $derived(searchSuggestions.data?.skills ?? []);
+  const showSuggestions = $derived(
+    searchFocused && installSource.trim().length >= 2 && suggestions.length > 0,
+  );
+
+  function pickSuggestion(id: string): void {
+    installSource = id;
+    searchQuery = id;
+    searchFocused = false;
+  }
+
+  async function doInstall(): Promise<void> {
+    const source = installSource.trim();
+    if (!source || !workspaceId || !jobName) return;
+    try {
+      // Install WITHOUT workspaceId — we don't want a workspace-level
+      // assignment; we want the skill pinned to THIS job only.
+      const res = (await installMut.mutateAsync({ source })) as {
+        published?: { skillId: string; namespace: string; name: string; version: number };
+      };
+      const published = res.published;
+      const ref = published ? `@${published.namespace}/${published.name}` : source;
+      if (!published?.skillId) {
+        toast({
+          title: "Installed",
+          description: `${ref} — in catalog, but couldn't auto-pin. Attach from Catalog below.`,
+        });
+        installSource = "";
+        return;
+      }
+      await assignMut.mutateAsync({ skillId: published.skillId, workspaceId, jobName });
+      toast({
+        title: "Installed + pinned",
+        description: `${ref} → ${jobName}`,
+      });
+      installSource = "";
+      searchQuery = "";
+    } catch (e) {
+      const err = e as Error & { data?: Record<string, unknown> };
+      const data = err.data;
+      const auditCritical =
+        data && Array.isArray(data.auditCritical) ? data.auditCritical.length : 0;
+      const lintErrors = data && Array.isArray(data.lintErrors) ? data.lintErrors.length : 0;
+      const detail = auditCritical > 0 ? ` · ${String(auditCritical)} critical audit` : "";
+      const lintDetail = lintErrors > 0 ? ` · ${String(lintErrors)} lint errors` : "";
+      toast({
+        title: "Install failed",
+        description: `${err.message ?? "Unknown error"}${detail}${lintDetail}`,
+        error: true,
+      });
+    }
+  }
 
   $effect(() => {
     function onKey(e: KeyboardEvent) {
@@ -192,6 +282,59 @@
       <p class="page-subtitle">{jobDescription}</p>
     {/if}
   </header>
+
+  <!-- Install-from-skills.sh — mirrors /platform/:ws/skills. The only
+       behavioural difference: installing here auto-pins the new skill to
+       THIS job (workspaceId + jobName) instead of making it visible to
+       the whole workspace. -->
+  <section class="install-section">
+    <div class="install-row">
+      <div class="source-wrapper">
+        <input
+          class="source-input"
+          type="text"
+          value={installSource}
+          oninput={handleSourceInput}
+          onfocus={() => (searchFocused = true)}
+          onblur={() => setTimeout(() => (searchFocused = false), 150)}
+          placeholder="Install from skills.sh — type to search (e.g. pdf, react, sql)"
+          autocomplete="off"
+        />
+        {#if searchFocused && installSource.trim().length >= 2 && searchSuggestions.isFetching}
+          <div class="search-status">Searching skills.sh…</div>
+        {/if}
+        {#if showSuggestions}
+          <ul class="suggestions">
+            {#each suggestions as s (s.id)}
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+              <li
+                class="suggestion"
+                onmousedown={(e) => {
+                  e.preventDefault();
+                  pickSuggestion(s.id);
+                }}
+              >
+                <span class="sugg-name">{s.name}</span>
+                <span class="sugg-src">{s.source}</span>
+                <span class="sugg-meta">
+                  <span class="tier-tag tier-{s.tier}">{s.tier}</span>
+                  <span class="installs">{s.installs.toLocaleString()} installs</span>
+                </span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <button
+        type="button"
+        class="install-btn"
+        disabled={installMut.isPending || installSource.trim().length === 0}
+        onclick={doInstall}
+      >
+        {installMut.isPending ? "Installing…" : "Install + pin"}
+      </button>
+    </div>
+  </section>
 
   {#if jobSkillsQuery.isLoading}
     <div class="empty"><p>Loading skills…</p></div>
@@ -301,7 +444,10 @@
       </div>
 
       {#if catalogRows.length === 0}
-        <div class="empty inline"><p>All catalog skills already visible</p></div>
+        <div class="empty inline">
+          <p>All catalog skills already visible</p>
+          <span class="hint">Install a new one from skills.sh above.</span>
+        </div>
       {:else if catalogFiltered.length === 0}
         <div class="empty inline"><p>No matches</p></div>
       {:else}
@@ -497,6 +643,142 @@
     flex-shrink: 0;
   }
 
+  /* ─── Install from skills.sh (shared UX w/ /platform/:ws/skills) ─────── */
+
+  .install-section {
+    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
+    border-radius: var(--radius-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    padding: var(--size-3);
+  }
+
+  .install-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-3);
+  }
+
+  .source-wrapper {
+    flex-grow: 1;
+    min-inline-size: 280px;
+    position: relative;
+  }
+
+  .source-input {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font-family: var(--font-family-monospace, monospace);
+    font-size: var(--font-size-2);
+    inline-size: 100%;
+    padding: var(--size-2) var(--size-3);
+  }
+  .source-input:focus {
+    border-color: var(--color-accent);
+    outline: none;
+  }
+
+  .search-status {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-0);
+    padding: var(--size-1) var(--size-3);
+  }
+
+  .suggestions {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    inset-block-start: calc(100% + 4px);
+    inset-inline: 0;
+    list-style: none;
+    margin: 0;
+    max-block-size: 280px;
+    overflow-y: auto;
+    padding: var(--size-1);
+    position: absolute;
+    z-index: 20;
+  }
+
+  .suggestion {
+    align-items: baseline;
+    border-radius: var(--radius-1);
+    cursor: pointer;
+    display: grid;
+    gap: var(--size-1) var(--size-2);
+    grid-template-columns: auto 1fr auto;
+    padding: var(--size-2);
+  }
+  .suggestion:hover {
+    background: color-mix(in srgb, var(--color-accent), transparent 88%);
+  }
+
+  .sugg-name {
+    font-family: var(--font-family-monospace, monospace);
+    font-size: var(--font-size-2);
+    font-weight: 600;
+  }
+
+  .sugg-src {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-family: var(--font-family-monospace, monospace);
+    font-size: var(--font-size-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sugg-meta {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .tier-tag {
+    border-radius: var(--radius-1);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    text-transform: uppercase;
+  }
+  .tier-official {
+    background: color-mix(in oklch, var(--color-success), transparent 80%);
+    color: color-mix(in oklch, var(--color-success), var(--color-text) 40%);
+  }
+  .tier-community {
+    background: color-mix(in oklch, var(--color-accent), transparent 80%);
+    color: color-mix(in oklch, var(--color-accent), var(--color-text) 40%);
+  }
+
+  .installs {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-size: var(--font-size-0);
+  }
+
+  .install-btn {
+    background: var(--color-accent);
+    border: none;
+    border-radius: var(--radius-2);
+    color: white;
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    font-weight: 500;
+    padding: var(--size-2) var(--size-4);
+    transition: opacity 80ms ease;
+  }
+  .install-btn:hover:not(:disabled) { opacity: 0.88; }
+  .install-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
   /* ─── Row ──────────────────────────────────────────────────────────────── */
 
   .row {
@@ -625,6 +907,7 @@
     font-family: var(--font-family-monospace);
     letter-spacing: 0.02em;
   }
+
 
   /* ─── Actions ──────────────────────────────────────────────────────────── */
 
