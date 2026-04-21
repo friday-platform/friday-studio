@@ -297,7 +297,7 @@ export const skillsRoutes = daemonFactory
             tier: sourceOfficial ? "official" : "community",
             lintWarnings: lint.warnings,
             auditWarn: audit.warn,
-            assignedTo: shouldAssign ? workspaceId : null,
+            assignedTo: workspaceId ?? null,
           },
           201,
         );
