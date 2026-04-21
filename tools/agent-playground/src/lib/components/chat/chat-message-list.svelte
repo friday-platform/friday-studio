@@ -5,13 +5,9 @@
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
 
-  /**
-   * Human-readable message timestamp for the per-message "…" menu.
-   *   • < 12 h old  → time only (e.g. "12:26 PM")
-   *   • ≥ 12 h old  → date + time (e.g. "Apr 20, 12:26 PM")
-   * 12h is arbitrary but matches the user's phrasing: "time or date and
-   * time if it's older than 12h".
-   */
+  // Message timestamp for the per-message "…" menu.
+  //   • same calendar day → "Today, 12:31 PM"
+  //   • any other day     → "Apr 20, 11:31 PM"
   const TIME_FMT = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -23,9 +19,13 @@
     minute: "2-digit",
   });
   function formatMessageTimestamp(timestamp: number): string {
-    const ageMs = Date.now() - timestamp;
     const date = new Date(timestamp);
-    if (ageMs < 12 * 60 * 60 * 1000) return TIME_FMT.format(date);
+    const now = new Date();
+    const sameDay =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+    if (sameDay) return `Today, ${TIME_FMT.format(date)}`;
     return DATETIME_FMT.format(date);
   }
 
