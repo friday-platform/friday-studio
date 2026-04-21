@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { exportBundle, importBundle } from "@atlas/bundle";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { WorkspaceConfig } from "@atlas/config";
@@ -941,6 +942,127 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: errorMessage }, 404);
       }
       return c.json({ error: `Failed to export workspace: ${errorMessage}` }, 500);
+    }
+  })
+  // Export workspace as a zip bundle (POC — definition-mode only for now)
+  .get("/:workspaceId/bundle", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const modeParam = c.req.query("mode");
+    const mode: "definition" | "migration" = modeParam === "migration" ? "migration" : "definition";
+    const bundleLogger = createLogger({ component: "workspace-bundle-export" });
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
+      }
+
+      // Reuse the /export credential-stripping chain: resolve legacy refs,
+      // drop unresolvables, convert to provider-keyed refs.
+      const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
+      const credentials = extractCredentials(configWithAgentRefs);
+      const legacyRefs = credentials.filter(
+        (cred): cred is CredentialUsage & { credentialId: string } =>
+          !cred.provider && !!cred.credentialId,
+      );
+      const providerMap: Record<string, string> = {};
+      const unresolvedPaths: string[] = [];
+      const legacyResults = await Promise.allSettled(
+        legacyRefs.map(async (ref) => {
+          const credential = await fetchLinkCredential(ref.credentialId, bundleLogger);
+          return { credentialId: ref.credentialId, provider: credential.provider, path: ref.path };
+        }),
+      );
+      for (const [i, result] of legacyResults.entries()) {
+        const ref = legacyRefs[i];
+        if (!ref) continue;
+        if (result.status === "fulfilled") {
+          providerMap[result.value.credentialId] = result.value.provider;
+        } else if (
+          result.reason instanceof LinkCredentialNotFoundError ||
+          result.reason instanceof LinkCredentialExpiredError
+        ) {
+          unresolvedPaths.push(ref.path);
+        } else {
+          throw result.reason;
+        }
+      }
+      let workspaceToExport = configWithAgentRefs;
+      if (unresolvedPaths.length > 0) {
+        workspaceToExport = stripCredentialRefs(workspaceToExport, unresolvedPaths);
+      }
+      const portableConfig = toProviderRefs(workspaceToExport, providerMap);
+      const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
+      const exportConfig = { ...portableConfig, workspace: workspaceIdentity };
+      const workspaceYml = stringify(exportConfig, { indent: 2, lineWidth: 100 });
+
+      const bundleBytes = await exportBundle({
+        workspaceDir: workspace.path,
+        workspaceYml,
+        mode,
+        workspace: {
+          name: portableConfig.workspace.name ?? workspace.name,
+          version: (portableConfig.version as string | undefined) ?? "1.0.0",
+        },
+      });
+
+      const sanitizedName = workspace.name.replace(/[^a-zA-Z0-9-_]/g, "-").replace(/-+/g, "-");
+      const filename = `${sanitizedName}.zip`;
+      return new Response(new Uint8Array(bundleBytes), {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      if (errorMessage.includes("not found")) {
+        return c.json({ error: errorMessage }, 404);
+      }
+      return c.json({ error: `Failed to bundle workspace: ${errorMessage}` }, 500);
+    }
+  })
+  // Import a workspace from a zip bundle.
+  // Body: multipart/form-data with a single "bundle" file field.
+  .post("/import-bundle", async (c) => {
+    const importLogger = createLogger({ component: "workspace-bundle-import" });
+    try {
+      const form = await c.req.formData();
+      const file = form.get("bundle");
+      if (!(file instanceof File)) {
+        return c.json({ error: "Missing 'bundle' file in multipart form" }, 400);
+      }
+      const zipBytes = new Uint8Array(await file.arrayBuffer());
+
+      const atlasHome = getAtlasHome();
+      const importRoot = join(atlasHome, "workspaces");
+      await mkdir(importRoot, { recursive: true });
+      const uniqueSuffix = Date.now().toString(36);
+      const targetDir = join(importRoot, `imported-${uniqueSuffix}`);
+
+      const result = await importBundle({ zipBytes, targetDir });
+
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const registered = await manager.registerWorkspace(targetDir, {
+        name: result.lockfile.workspace.name,
+      });
+
+      return c.json({
+        workspaceId: registered.workspace.id,
+        path: targetDir,
+        name: result.lockfile.workspace.name,
+        primitives: result.primitives,
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      importLogger.error("Bundle import failed", { error: errorMessage });
+      return c.json({ error: `Failed to import bundle: ${errorMessage}` }, 500);
     }
   })
   // Get workspace configuration
