@@ -52,14 +52,29 @@
     skillQueries.classifiedWorkspaceSkills(workspaceId),
   );
 
-  const inheritedCount = $derived.by((): number => {
+  // Split the classified-skills response into the same groups the job
+  // detail page uses, so the summary can surface "workspace" and "always"
+  // separately (the latter is the @friday/* bypass — useful context).
+  interface SharedSkillRow {
+    skillId: string;
+    namespace: string;
+    name: string | null;
+  }
+  const workspaceInheritedSkills = $derived.by((): SharedSkillRow[] => {
     const c = classifiedSkillsQuery.data;
-    if (!c) return 0;
-    // Workspace-inherited visibility = workspace-level assignments
-    // (`assigned`) + any-workspace-visible globals (`global`). Matches
-    // what the job detail page groups as "Workspace-inherited" + the
-    // @friday/* bypass, minus the namespace split.
-    return c.assigned.length + c.global.length;
+    if (!c) return [];
+    // Workspace-level (assigned) + any non-friday globals. @friday/* is
+    // its own bucket so the UI can signal "always available" distinctly.
+    return [...c.assigned, ...c.global.filter((s) => s.namespace !== "friday")].map(
+      (s) => ({ skillId: s.skillId, namespace: s.namespace, name: s.name }),
+    );
+  });
+  const fridaySkills = $derived.by((): SharedSkillRow[] => {
+    const c = classifiedSkillsQuery.data;
+    if (!c) return [];
+    return c.global
+      .filter((s) => s.namespace === "friday")
+      .map((s) => ({ skillId: s.skillId, namespace: s.namespace, name: s.name }));
   });
 
   const jobSkillsMap = $derived.by((): Map<string, { skillId: string; namespace: string; name: string | null }[]> => {
@@ -354,6 +369,8 @@
         {@const jobAgents = agentsForJob(job.id)}
         {@const jobSignals = signalsForJob(job.id)}
         {@const jobPinned = skillsForJob(job.id)}
+        {@const totalVisible =
+          jobPinned.length + workspaceInheritedSkills.length + fridaySkills.length}
         <div class="job-card" id="job-{job.id}">
           <div class="card-header">
             <h2 class="job-title">{job.title}</h2>
@@ -450,6 +467,7 @@
           <div class="skills-section">
             <div class="skills-header">
               <h3 class="section-label">Skills</h3>
+              <span class="skills-total">{totalVisible} visible</span>
               <a
                 class="manage-link"
                 href="/platform/{workspaceId}/jobs/{job.id}"
@@ -458,36 +476,80 @@
                 Manage →
               </a>
             </div>
-            <div class="skills-summary">
-              <span class="skills-count">
-                <span class="dot pin"></span>
-                {jobPinned.length} pinned
-              </span>
-              {#if inheritedCount > 0}
-                <span class="skills-count muted">
-                  <span class="dot ws"></span>
-                  +{inheritedCount} inherited
-                </span>
-              {/if}
-            </div>
-            {#if jobPinned.length > 0}
-              <div class="skills-list">
-                {#each jobPinned as skill (skill.skillId)}
-                  <a
-                    class="skill-chip"
-                    href="/skills/{skill.namespace}/{skill.name}"
-                    title={`${skill.namespace}/${skill.name}`}
-                  >
-                    <span class="chip-ns">{skill.namespace}</span>
-                    <span class="chip-slash">/</span>
-                    <span class="chip-name">{skill.name}</span>
-                  </a>
-                {/each}
-              </div>
-            {:else if inheritedCount === 0}
+
+            {#if totalVisible === 0}
               <p class="skills-empty">
                 No skills yet. <a href="/platform/{workspaceId}/jobs/{job.id}">Pin one →</a>
               </p>
+            {:else}
+              {#if jobPinned.length > 0}
+                <div class="skills-group">
+                  <span class="group-label">
+                    <span class="dot pin"></span>
+                    Pinned to this job
+                    <span class="group-count">{jobPinned.length}</span>
+                  </span>
+                  <div class="skills-list">
+                    {#each jobPinned as skill (skill.skillId)}
+                      <a
+                        class="skill-chip chip-pin"
+                        href="/skills/{skill.namespace}/{skill.name}"
+                        title={`${skill.namespace}/${skill.name}`}
+                      >
+                        <span class="chip-ns">{skill.namespace}</span>
+                        <span class="chip-slash">/</span>
+                        <span class="chip-name">{skill.name}</span>
+                      </a>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {#if workspaceInheritedSkills.length > 0}
+                <div class="skills-group">
+                  <span class="group-label">
+                    <span class="dot ws"></span>
+                    Inherited from workspace
+                    <span class="group-count">{workspaceInheritedSkills.length}</span>
+                  </span>
+                  <div class="skills-list">
+                    {#each workspaceInheritedSkills as skill (skill.skillId)}
+                      <a
+                        class="skill-chip chip-ws"
+                        href="/skills/{skill.namespace}/{skill.name}"
+                        title={`${skill.namespace}/${skill.name}`}
+                      >
+                        <span class="chip-ns">{skill.namespace}</span>
+                        <span class="chip-slash">/</span>
+                        <span class="chip-name">{skill.name}</span>
+                      </a>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {#if fridaySkills.length > 0}
+                <div class="skills-group">
+                  <span class="group-label">
+                    <span class="dot friday"></span>
+                    Always available
+                    <span class="group-count">{fridaySkills.length}</span>
+                  </span>
+                  <div class="skills-list">
+                    {#each fridaySkills as skill (skill.skillId)}
+                      <a
+                        class="skill-chip chip-friday"
+                        href="/skills/{skill.namespace}/{skill.name}"
+                        title={`${skill.namespace}/${skill.name}`}
+                      >
+                        <span class="chip-ns">{skill.namespace}</span>
+                        <span class="chip-slash">/</span>
+                        <span class="chip-name">{skill.name}</span>
+                      </a>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             {/if}
           </div>
 
@@ -734,7 +796,7 @@
     border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
-    gap: var(--size-2);
+    gap: var(--size-3);
     padding-block-start: var(--size-4);
   }
 
@@ -742,6 +804,12 @@
     align-items: baseline;
     display: flex;
     gap: var(--size-2);
+  }
+
+  .skills-total {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
   }
 
   .manage-link {
@@ -754,29 +822,40 @@
     color: var(--color-accent);
   }
 
-  .skills-summary {
-    color: var(--color-text);
+  .skills-group {
     display: flex;
-    font-size: var(--font-size-1);
-    gap: var(--size-3);
+    flex-direction: column;
+    gap: var(--size-1-5);
   }
 
-  .skills-count {
+  .group-label {
     align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: inline-flex;
-    gap: var(--size-1);
+    font-size: var(--font-size-1);
+    gap: var(--size-1-5);
   }
-  .skills-count.muted {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-  }
-  .skills-count .dot {
+
+  .group-label .dot {
     block-size: 6px;
     border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
     inline-size: 6px;
   }
-  .skills-count .dot.pin { background: var(--color-accent); }
-  .skills-count .dot.ws { background: var(--color-success); }
+  .group-label .dot.pin { background: var(--color-accent); }
+  .group-label .dot.ws { background: var(--color-success); }
+  .group-label .dot.friday { background: var(--color-warning); }
+
+  .group-count {
+    background: var(--color-surface-3, rgba(255,255,255,0.06));
+    border-radius: 999px;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-0);
+    margin-inline-start: var(--size-1);
+    padding: 0 var(--size-1-5);
+  }
 
   .skills-list {
     display: flex;
@@ -786,8 +865,7 @@
 
   .skill-chip {
     align-items: center;
-    background: color-mix(in srgb, var(--color-accent), transparent 88%);
-    border: 1px solid color-mix(in srgb, var(--color-accent), transparent 70%);
+    border: 1px solid transparent;
     border-radius: var(--radius-1);
     color: var(--color-text);
     display: inline-flex;
@@ -798,8 +876,26 @@
     text-decoration: none;
     transition: background 80ms ease;
   }
-  .skill-chip:hover {
+  .skill-chip.chip-pin {
+    background: color-mix(in srgb, var(--color-accent), transparent 88%);
+    border-color: color-mix(in srgb, var(--color-accent), transparent 70%);
+  }
+  .skill-chip.chip-pin:hover {
     background: color-mix(in srgb, var(--color-accent), transparent 78%);
+  }
+  .skill-chip.chip-ws {
+    background: color-mix(in srgb, var(--color-success), transparent 88%);
+    border-color: color-mix(in srgb, var(--color-success), transparent 70%);
+  }
+  .skill-chip.chip-ws:hover {
+    background: color-mix(in srgb, var(--color-success), transparent 78%);
+  }
+  .skill-chip.chip-friday {
+    background: color-mix(in srgb, var(--color-warning), transparent 88%);
+    border-color: color-mix(in srgb, var(--color-warning), transparent 70%);
+  }
+  .skill-chip.chip-friday:hover {
+    background: color-mix(in srgb, var(--color-warning), transparent 78%);
   }
   .chip-ns { color: color-mix(in srgb, var(--color-text), transparent 40%); }
   .chip-slash { color: color-mix(in srgb, var(--color-text), transparent 55%); }
