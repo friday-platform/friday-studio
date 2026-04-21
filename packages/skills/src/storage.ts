@@ -39,6 +39,21 @@ export interface SkillStorageAdapter {
   assignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>>;
   unassignSkill(skillId: string, workspaceId: string): Promise<Result<void, string>>;
   listAssignments(skillId: string): Promise<Result<string[], string>>;
+
+  // Job-level assignments — additive to workspace-level.
+  // `(workspaceId, jobName)` forms the scope; jobs in the same workspace
+  // cannot see each other's assigned skills.
+  assignToJob(skillId: string, workspaceId: string, jobName: string): Promise<Result<void, string>>;
+  unassignFromJob(
+    skillId: string,
+    workspaceId: string,
+    jobName: string,
+  ): Promise<Result<void, string>>;
+  /** Skills assigned *only* to (workspaceId, jobName). Workspace-level rows excluded. */
+  listAssignmentsForJob(
+    workspaceId: string,
+    jobName: string,
+  ): Promise<Result<SkillSummary[], string>>;
 }
 
 function createSkillStorageAdapter(): SkillStorageAdapter {
@@ -92,4 +107,7 @@ export const SkillStorage: SkillStorageAdapter = {
   assignSkill: (...args) => getStorage().assignSkill(...args),
   unassignSkill: (...args) => getStorage().unassignSkill(...args),
   listAssignments: (...args) => getStorage().listAssignments(...args),
+  assignToJob: (...args) => getStorage().assignToJob(...args),
+  unassignFromJob: (...args) => getStorage().unassignFromJob(...args),
+  listAssignmentsForJob: (...args) => getStorage().listAssignmentsForJob(...args),
 };

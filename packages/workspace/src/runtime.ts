@@ -1613,6 +1613,7 @@ export class WorkspaceRuntime {
                 datetime,
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
                 foregroundWorkspaceIds,
+                jobName: job.name,
                 // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
                 // keeping the FSM onEvent callback clean (FSMEvent types only)
                 onStreamEvent: signal._context?.onStreamEvent,

@@ -128,6 +128,10 @@ const AgentSessionDataSchema = z.object({
     .optional(),
   memoryContextKey: z.string().optional(),
   foregroundWorkspaceIds: z.array(z.string()).optional(),
+  /** FSM job name — threaded through so the agent-context builder can
+   *  resolve job-level skill assignments. Must stay in sync with
+   *  AgentSessionDataSchema in packages/agent-sdk/src/types.ts. */
+  jobName: z.string().optional(),
 });
 
 /**

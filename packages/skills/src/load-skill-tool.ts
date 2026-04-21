@@ -6,6 +6,7 @@ import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
 import { extractSkillArchive, injectSkillDir } from "./archive.ts";
+import { resolveVisibleSkills } from "./resolve.ts";
 import { type LintFinding, lintCache, lintSkill } from "./skill-linter.ts";
 import { SkillStorage } from "./storage.ts";
 
@@ -31,15 +32,25 @@ export interface CreateLoadSkillToolOptions {
   hardcodedSkills?: readonly HardcodedSkill[];
 
   /**
-   * When set, the tool refuses to load any catalog skill that is assigned
-   * to a different workspace. Skills with no assignments (global) and skills
-   * assigned to this workspace are allowed.
+   * When set, the tool refuses to load any catalog skill that is not in the
+   * visible set for this workspace (optionally narrowed to `jobName` — see
+   * below). Visibility is computed via `resolveVisibleSkills` so the tool
+   * and prompt see the *same* set — invariant enforced by
+   * `tests/drift-invariant.test.ts`.
    *
    * This is defense in depth: the agent's prompt should already only list
    * resolved skills, but a hallucinated or injected skill name shouldn't be
    * able to bypass scoping just because it doesn't appear in <available_skills>.
    */
   workspaceId?: string;
+
+  /**
+   * When set (alongside `workspaceId`), job-level assigned skills become
+   * visible in addition to workspace-level + global. Without `jobName`,
+   * only workspace-level and global skills are visible — job-level rows
+   * assigned to some *other* job in the same workspace would be blocked.
+   */
+  jobName?: string;
 
   /**
    * Per-job-step skill filter — Phase 7 of the skills-scoping plan.
@@ -74,7 +85,7 @@ export interface LoadSkillToolResult {
  * remove extracted skill archive directories.
  */
 export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): LoadSkillToolResult {
-  const { hardcodedSkills = [], workspaceId, jobFilter } = options;
+  const { hardcodedSkills = [], workspaceId, jobName, jobFilter } = options;
   const jobFilterSet = jobFilter ? new Set(jobFilter) : null;
 
   // `@friday/*` skills are the system library — always visible, regardless
@@ -137,7 +148,7 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
           });
           return { error: `Skill "${name}" is not allowed for this job step.` };
         }
-        return await resolveGlobalSkill(name, extractedDirs, workspaceId);
+        return await resolveGlobalSkill(name, extractedDirs, workspaceId, jobName);
       }
 
       const sources = [hardcodedSkills.length > 0 ? "built-in" : null, "global catalog"]
@@ -168,6 +179,7 @@ async function resolveGlobalSkill(
   ref: string,
   extractedDirs: Map<string, string>,
   workspaceId?: string,
+  jobName?: string,
 ): Promise<
   | {
       name: string;
@@ -200,14 +212,22 @@ async function resolveGlobalSkill(
     return { error: `skill ${ref} not found` };
   }
 
-  // Defense in depth: enforce workspace scoping at load time too. The prompt
-  // filter is the primary gate, but a hallucinated/injected skill name
-  // shouldn't be able to slip through just because it bypasses the prompt.
+  // Defense in depth: enforce workspace + job scoping at load time. The
+  // prompt filter is the primary gate, but a hallucinated/injected skill
+  // name shouldn't be able to slip through. Using resolveVisibleSkills
+  // guarantees the tool sees the *exact* same set as <available_skills>
+  // in the prompt — the drift invariant in
+  // `tests/drift-invariant.test.ts` locks this down.
   if (workspaceId) {
-    const assignments = await SkillStorage.listAssignments(result.data.skillId);
-    if (assignments.ok && assignments.data.length > 0 && !assignments.data.includes(workspaceId)) {
-      logger.warn("skill_not_visible", { skill: ref, workspaceId });
-      return { error: `Skill "${ref}" is not available in this workspace` };
+    const visible = await resolveVisibleSkills(workspaceId, SkillStorage, { jobName });
+    const visibleIds = new Set(visible.map((s) => s.skillId));
+    if (!visibleIds.has(result.data.skillId)) {
+      logger.warn("skill_not_visible", { skill: ref, workspaceId, jobName });
+      return {
+        error: jobName
+          ? `Skill "${ref}" is not available in this job.`
+          : `Skill "${ref}" is not available in this workspace.`,
+      };
     }
   }
 

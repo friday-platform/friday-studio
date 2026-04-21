@@ -102,8 +102,11 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       let resolvedSkills: AgentSkill[] | undefined;
 
       if (agent.useWorkspaceSkills) {
-        // Resolve visible skills: unassigned (global) ∪ directly assigned
-        const visibleSummaries = await resolveVisibleSkills(sessionData.workspaceId, SkillStorage);
+        // Resolve visible skills: unassigned (global) ∪ workspace-assigned
+        // ∪ job-assigned (when the session carries a jobName).
+        const visibleSummaries = await resolveVisibleSkills(sessionData.workspaceId, SkillStorage, {
+          jobName: sessionData.jobName,
+        });
 
         const availableSkills = visibleSummaries.map((s) => ({
           name: `@${s.namespace}/${s.name}`,
@@ -171,6 +174,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           if (!allTools.load_skill) {
             const { tool: loadSkill, cleanup } = createLoadSkillTool({
               workspaceId: sessionData.workspaceId,
+              jobName: sessionData.jobName,
             });
             allTools.load_skill = loadSkill;
             cleanupSkills = cleanup;

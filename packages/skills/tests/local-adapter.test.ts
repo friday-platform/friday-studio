@@ -527,4 +527,150 @@ describe("LocalSkillAdapter", () => {
       expect(result.data?.descriptionManual).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Job-level assignments (PR #2 Phase B)
+  // ---------------------------------------------------------------------------
+
+  describe("job-level assignments", () => {
+    async function seedSkill(name: string): Promise<string> {
+      const result = await adapter.publish("team", name, "u", {
+        description: `Skill ${name}`,
+        instructions: ".",
+      });
+      if (!result.ok) throw new Error(`seed failed: ${result.error}`);
+      return result.data.skillId;
+    }
+
+    it("assignToJob adds a job-level row (workspace-level rows unaffected)", async () => {
+      const skillId = await seedSkill("only-me");
+
+      await adapter.assignSkill(skillId, "ws-1"); // workspace-level
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+
+      // Workspace-level listing still sees the workspace row
+      const ws = await adapter.listAssigned("ws-1");
+      expect(ws.ok && ws.data.some((s) => s.skillId === skillId)).toBe(true);
+
+      // Job-level listing sees the job row
+      const job = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(job.ok && job.data.some((s) => s.skillId === skillId)).toBe(true);
+    });
+
+    it("listAssignmentsForJob does not leak other jobs' rows", async () => {
+      const a = await seedSkill("a-only");
+      const b = await seedSkill("b-only");
+
+      await adapter.assignToJob(a, "ws-1", "job-a");
+      await adapter.assignToJob(b, "ws-1", "job-b");
+
+      const forA = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(forA.ok).toBe(true);
+      if (!forA.ok) return;
+      expect(forA.data.map((s) => s.skillId)).toEqual([a]);
+
+      const forB = await adapter.listAssignmentsForJob("ws-1", "job-b");
+      expect(forB.ok).toBe(true);
+      if (!forB.ok) return;
+      expect(forB.data.map((s) => s.skillId)).toEqual([b]);
+    });
+
+    it("listAssigned (workspace-level) ignores job-level rows", async () => {
+      // A.1.5 query audit regression: listAssigned used to leak job rows.
+      const skillId = await seedSkill("job-only");
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+
+      const ws = await adapter.listAssigned("ws-1");
+      expect(ws.ok).toBe(true);
+      if (!ws.ok) return;
+      expect(ws.data.some((s) => s.skillId === skillId)).toBe(false);
+    });
+
+    it("unassignSkill (workspace-level) leaves job-level rows intact", async () => {
+      // A.1.5 query audit regression: unassignSkill used to nuke job rows.
+      const skillId = await seedSkill("keep-job-row");
+
+      await adapter.assignSkill(skillId, "ws-1");
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+
+      await adapter.unassignSkill(skillId, "ws-1");
+
+      const ws = await adapter.listAssigned("ws-1");
+      expect(ws.ok && ws.data.some((s) => s.skillId === skillId)).toBe(false);
+
+      const job = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(job.ok && job.data.some((s) => s.skillId === skillId)).toBe(true);
+    });
+
+    it("unassignFromJob removes a specific job row only", async () => {
+      const skillId = await seedSkill("dual-job");
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+      await adapter.assignToJob(skillId, "ws-1", "job-b");
+
+      await adapter.unassignFromJob(skillId, "ws-1", "job-a");
+
+      const a = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(a.ok && a.data.some((s) => s.skillId === skillId)).toBe(false);
+
+      const b = await adapter.listAssignmentsForJob("ws-1", "job-b");
+      expect(b.ok && b.data.some((s) => s.skillId === skillId)).toBe(true);
+    });
+
+    it("listAssignments returns DISTINCT workspace ids across mixed layers", async () => {
+      // A.1.5 regression: dual workspace+job rows used to duplicate in output.
+      const skillId = await seedSkill("mixed");
+      await adapter.assignSkill(skillId, "ws-1");
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+      await adapter.assignToJob(skillId, "ws-1", "job-b");
+
+      const assignments = await adapter.listAssignments(skillId);
+      expect(assignments.ok).toBe(true);
+      if (!assignments.ok) return;
+      expect(assignments.data).toEqual(["ws-1"]);
+    });
+
+    it("assignSkill is idempotent at the workspace level", async () => {
+      // The partial unique index on (skill_id, workspace_id) WHERE job_name
+      // IS NULL prevents duplicate workspace rows even across INSERT OR
+      // IGNORE races.
+      const skillId = await seedSkill("idempotent-ws");
+
+      const first = await adapter.assignSkill(skillId, "ws-1");
+      const second = await adapter.assignSkill(skillId, "ws-1");
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+
+      const assignments = await adapter.listAssignments(skillId);
+      expect(assignments.ok).toBe(true);
+      if (!assignments.ok) return;
+      expect(assignments.data).toEqual(["ws-1"]);
+    });
+
+    it("assignToJob is idempotent for the same (ws, job)", async () => {
+      const skillId = await seedSkill("idempotent-job");
+      const first = await adapter.assignToJob(skillId, "ws-1", "job-a");
+      const second = await adapter.assignToJob(skillId, "ws-1", "job-a");
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+
+      const job = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(job.ok).toBe(true);
+      if (!job.ok) return;
+      const count = job.data.filter((s) => s.skillId === skillId).length;
+      expect(count).toBe(1);
+    });
+
+    it("deleteSkill removes workspace AND job rows", async () => {
+      const skillId = await seedSkill("delete-me");
+      await adapter.assignSkill(skillId, "ws-1");
+      await adapter.assignToJob(skillId, "ws-1", "job-a");
+
+      await adapter.deleteSkill(skillId);
+
+      const ws = await adapter.listAssigned("ws-1");
+      expect(ws.ok && ws.data.some((s) => s.skillId === skillId)).toBe(false);
+      const job = await adapter.listAssignmentsForJob("ws-1", "job-a");
+      expect(job.ok && job.data.some((s) => s.skillId === skillId)).toBe(false);
+    });
+  });
 });

@@ -24,6 +24,7 @@ function createMockSkillAdapter(
   overrides: Partial<{
     listUnassigned: SkillStorageAdapter["listUnassigned"];
     listAssigned: SkillStorageAdapter["listAssigned"];
+    listAssignmentsForJob: SkillStorageAdapter["listAssignmentsForJob"];
   }> = {},
 ): SkillStorageAdapter {
   return {
@@ -36,6 +37,11 @@ function createMockSkillAdapter(
       overrides.listAssigned ??
       vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
+        .mockResolvedValue({ ok: true, data: [] }),
+    listAssignmentsForJob:
+      overrides.listAssignmentsForJob ??
+      vi
+        .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
         .mockResolvedValue({ ok: true, data: [] }),
     // Unused methods
     create: vi.fn(),
@@ -51,6 +57,8 @@ function createMockSkillAdapter(
     assignSkill: vi.fn(),
     unassignSkill: vi.fn(),
     listAssignments: vi.fn(),
+    assignToJob: vi.fn(),
+    unassignFromJob: vi.fn(),
   };
 }
 
@@ -143,5 +151,80 @@ describe("resolveVisibleSkills", () => {
 
     expect(result).toHaveLength(1);
     expect(result.at(0)?.skillId).toBe("sk-overlap");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Job-level layer (additive)
+  // ---------------------------------------------------------------------------
+
+  it("does not call listAssignmentsForJob when jobName is omitted", async () => {
+    const jobFn = vi
+      .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+      .mockResolvedValue({ ok: true, data: [] });
+    const skills = createMockSkillAdapter({ listAssignmentsForJob: jobFn });
+
+    await resolveVisibleSkills(WS, skills);
+
+    expect(jobFn).not.toHaveBeenCalled();
+  });
+
+  it("unions global + workspace + job-level skills when jobName is set", async () => {
+    const globalSkill = makeSummary({ skillId: "sk-global" });
+    const wsSkill = makeSummary({ skillId: "sk-ws" });
+    const jobSkill = makeSummary({ skillId: "sk-job" });
+
+    const skills = createMockSkillAdapter({
+      listUnassigned: vi
+        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+        .mockResolvedValue({ ok: true, data: [globalSkill] }),
+      listAssigned: vi
+        .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
+        .mockResolvedValue({ ok: true, data: [wsSkill] }),
+      listAssignmentsForJob: vi
+        .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+        .mockResolvedValue({ ok: true, data: [jobSkill] }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills, { jobName: "daily-summary" });
+
+    expect(result.map((s) => s.skillId).sort()).toEqual(["sk-global", "sk-job", "sk-ws"]);
+  });
+
+  it("deduplicates a skill assigned at both workspace and job levels", async () => {
+    const shared = makeSummary({ skillId: "sk-shared" });
+
+    const skills = createMockSkillAdapter({
+      listUnassigned: vi
+        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+        .mockResolvedValue({ ok: true, data: [] }),
+      listAssigned: vi
+        .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
+        .mockResolvedValue({ ok: true, data: [shared] }),
+      listAssignmentsForJob: vi
+        .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+        .mockResolvedValue({ ok: true, data: [shared] }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills, { jobName: "x" });
+
+    expect(result).toHaveLength(1);
+    expect(result.at(0)?.skillId).toBe("sk-shared");
+  });
+
+  it("continues when listAssignmentsForJob fails", async () => {
+    const wsSkill = makeSummary({ skillId: "sk-ws" });
+
+    const skills = createMockSkillAdapter({
+      listAssigned: vi
+        .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
+        .mockResolvedValue({ ok: true, data: [wsSkill] }),
+      listAssignmentsForJob: vi
+        .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+        .mockResolvedValue({ ok: false, error: "db error" }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills, { jobName: "x" });
+
+    expect(result.map((s) => s.skillId)).toEqual(["sk-ws"]);
   });
 });

@@ -1162,13 +1162,19 @@ export class FSMEngine {
               outputTo: action.outputTo,
             });
 
-            // Resolve workspace-scoped skills (unassigned ∪ directly assigned).
+            // Resolve workspace-scoped skills with optional job-level layer.
+            // The FSM definition's id IS the job name in workspace.yml — the
+            // FSMEngine is built per-job, so `this._definition.id` is the
+            // authoritative source even if `sig._context.jobName` is missing
+            // (e.g. older callers).
+            //
             // LLM actions outside a workspace context get an empty list — we
             // don't fall back to the unfiltered catalog because that would leak
             // skills assigned to other workspaces into this LLM call.
             const workspaceId = sig._context?.workspaceId;
+            const jobName = this._definition.id;
             const skills: SkillSummary[] = workspaceId
-              ? await resolveVisibleSkills(workspaceId, SkillStorage)
+              ? await resolveVisibleSkills(workspaceId, SkillStorage, { jobName })
               : [];
             if (!workspaceId) {
               logger.warn("LLM action without workspaceId — skill list empty", {
@@ -1177,6 +1183,7 @@ export class FSMEngine {
             }
             logger.debug("Resolved workspace skills", {
               workspaceId,
+              jobName,
               skillCount: skills.length,
               skillNames: skills.map((s) => s.name),
             });
@@ -1189,7 +1196,7 @@ export class FSMEngine {
             let cleanupSkills: (() => Promise<void>) | undefined;
             if (skills.length > 0) {
               // Cast to Tool to avoid deep type instantiation issues with AI SDK generics
-              const { tool: loadSkill, cleanup } = createLoadSkillTool({ workspaceId });
+              const { tool: loadSkill, cleanup } = createLoadSkillTool({ workspaceId, jobName });
               baseTools.load_skill = loadSkill as Tool;
               cleanupSkills = cleanup;
             }

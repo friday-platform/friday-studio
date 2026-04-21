@@ -217,9 +217,43 @@ describe("createLoadSkillTool — workspace scoping", () => {
     createdAt: new Date(),
   };
 
+  const SUMMARY = {
+    id: "skill-1",
+    skillId: "skill-1",
+    namespace: "atlas",
+    name: "internal-tool",
+    description: "Internal tool",
+    disabled: false,
+    latestVersion: 1,
+    createdAt: new Date(),
+  };
+
+  /**
+   * Helper: mock the three resolver inputs so resolveVisibleSkills
+   * returns a predictable set for the defense-in-depth check.
+   */
+  function mockVisibility(opts: {
+    unassigned?: (typeof SUMMARY)[];
+    assigned?: (typeof SUMMARY)[];
+    jobAssigned?: (typeof SUMMARY)[];
+  }) {
+    vi.spyOn(SkillStorage, "listUnassigned").mockResolvedValue({
+      ok: true,
+      data: opts.unassigned ?? [],
+    });
+    vi.spyOn(SkillStorage, "listAssigned").mockResolvedValue({
+      ok: true,
+      data: opts.assigned ?? [],
+    });
+    vi.spyOn(SkillStorage, "listAssignmentsForJob").mockResolvedValue({
+      ok: true,
+      data: opts.jobAssigned ?? [],
+    });
+  }
+
   it("loads an unassigned (global) skill in any workspace", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
-    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({ ok: true, data: [] });
+    mockVisibility({ unassigned: [SUMMARY] });
 
     const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
     const result = await exec(tool, "@atlas/internal-tool");
@@ -229,10 +263,7 @@ describe("createLoadSkillTool — workspace scoping", () => {
 
   it("loads a skill assigned to the current workspace", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
-    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({
-      ok: true,
-      data: ["ws-1", "ws-2"],
-    });
+    mockVisibility({ assigned: [SUMMARY] });
 
     const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
     const result = await exec(tool, "@atlas/internal-tool");
@@ -240,9 +271,10 @@ describe("createLoadSkillTool — workspace scoping", () => {
     expect(result).toMatchObject({ name: "internal-tool" });
   });
 
-  it("blocks a skill that is assigned to other workspaces only", async () => {
+  it("blocks a skill not in the visible set for this workspace", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
-    vi.spyOn(SkillStorage, "listAssignments").mockResolvedValue({ ok: true, data: ["ws-other"] });
+    // Visible set is empty — skill-1 is not there.
+    mockVisibility({});
 
     const tool = createLoadSkillTool({ hardcodedSkills: [], workspaceId: "ws-1" });
     const result = await exec(tool, "@atlas/internal-tool");
@@ -254,13 +286,47 @@ describe("createLoadSkillTool — workspace scoping", () => {
 
   it("skips the scoping check entirely when no workspaceId is provided", async () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
-    const listSpy = vi.spyOn(SkillStorage, "listAssignments");
+    const unassignedSpy = vi.spyOn(SkillStorage, "listUnassigned");
 
     const tool = createLoadSkillTool({ hardcodedSkills: [] });
     const result = await exec(tool, "@atlas/internal-tool");
 
-    expect(listSpy).not.toHaveBeenCalled();
+    expect(unassignedSpy).not.toHaveBeenCalled();
     expect(result).toMatchObject({ name: "internal-tool" });
+  });
+
+  // ─── Job-level scoping (PR #2 core) ────────────────────────────────────────
+
+  it("loads a skill assigned to the current (workspace, job)", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    mockVisibility({ jobAssigned: [SUMMARY] });
+
+    const tool = createLoadSkillTool({
+      hardcodedSkills: [],
+      workspaceId: "ws-1",
+      jobName: "job-a",
+    });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(result).toMatchObject({ name: "internal-tool" });
+  });
+
+  it("blocks a skill only assigned to a different job in the same workspace", async () => {
+    vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: SKILL_DATA });
+    // listAssignmentsForJob is called with ("ws-1", "job-b"), returns empty —
+    // the skill lives under (ws-1, job-a) and shouldn't leak.
+    mockVisibility({});
+
+    const tool = createLoadSkillTool({
+      hardcodedSkills: [],
+      workspaceId: "ws-1",
+      jobName: "job-b",
+    });
+    const result = await exec(tool, "@atlas/internal-tool");
+
+    expect(result).toHaveProperty("error");
+    const error = (result as { error: string }).error;
+    expect(error).toContain("not available in this job");
   });
 });
 

@@ -585,6 +585,69 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
     return success(rows.map((r) => r.workspace_id));
   }
 
+  // ─── JOB-LEVEL ASSIGNMENTS ──────────────────────────────────────────────────
+
+  async assignToJob(
+    skillId: string,
+    workspaceId: string,
+    jobName: string,
+  ): Promise<Result<void, string>> {
+    const db = await this.getDb();
+    try {
+      db.prepare(
+        "INSERT OR IGNORE INTO skill_assignments (skill_id, workspace_id, job_name) VALUES (?, ?, ?)",
+      ).run(skillId, workspaceId, jobName);
+      return success(undefined);
+    } catch (e) {
+      return fail(stringifyError(e));
+    }
+  }
+
+  async unassignFromJob(
+    skillId: string,
+    workspaceId: string,
+    jobName: string,
+  ): Promise<Result<void, string>> {
+    const db = await this.getDb();
+    try {
+      db.prepare(
+        "DELETE FROM skill_assignments WHERE skill_id = ? AND workspace_id = ? AND job_name = ?",
+      ).run(skillId, workspaceId, jobName);
+      return success(undefined);
+    } catch (e) {
+      return fail(stringifyError(e));
+    }
+  }
+
+  async listAssignmentsForJob(
+    workspaceId: string,
+    jobName: string,
+  ): Promise<Result<SkillSummary[], string>> {
+    const db = await this.getDb();
+    // Job-level only — workspace-level (job_name IS NULL) rows come
+    // back through listAssigned(). Callers that want the union for a
+    // given (workspace, job) should compose with resolveVisibleSkills.
+    const rows = db
+      .prepare(`
+        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
+        FROM skills s
+        INNER JOIN (
+          SELECT skill_id, MAX(version) as max_version
+          FROM skills
+          GROUP BY skill_id
+        ) latest ON s.skill_id = latest.skill_id AND s.version = latest.max_version
+        INNER JOIN skill_assignments sa ON s.skill_id = sa.skill_id
+        WHERE sa.workspace_id = ?
+          AND sa.job_name = ?
+          AND s.name IS NOT NULL
+          AND s.description != ''
+          AND s.disabled = 0
+        ORDER BY s.namespace, s.name
+      `)
+      .all(workspaceId, jobName) as SkillRow[];
+    return success(rows.map(rowToSummary));
+  }
+
   private rowToSkill(row: unknown): Skill {
     const r = SkillDbRowSchema.parse(row);
     return {
