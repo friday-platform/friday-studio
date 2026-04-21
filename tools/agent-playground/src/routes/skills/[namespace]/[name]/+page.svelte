@@ -253,12 +253,27 @@
     });
   }
 
-  /** Version the user is currently comparing against the current one. */
-  let compareVersion = $state<number | null>(null);
+  /**
+   * Target of the compare dialog, stamped with the namespace/name it was
+   * opened for. Keying on the tuple means navigating to a different skill
+   * causes `compareVersion` below to evaluate to `null` synchronously —
+   * no race where the dialog stays mounted and the child fetches the
+   * wrong version (which 404s if the new skill has fewer revisions).
+   */
+  let compareState = $state<{ ns: string; name: string; version: number } | null>(null);
+  const compareVersion = $derived(
+    compareState && compareState.ns === namespace && compareState.name === name
+      ? compareState.version
+      : null,
+  );
 
   function openCompare(version: number) {
     if (version === skill?.version) return;
-    compareVersion = version;
+    compareState = { ns: namespace, name, version };
+  }
+
+  function closeCompare() {
+    compareState = null;
   }
 
   async function handleRestore(version: number) {
@@ -269,7 +284,7 @@
         title: "Version restored",
         description: `Snapshot of v${String(version)} published as v${String(res.published.version)}.`,
       });
-      compareVersion = null;
+      compareState = null;
     } catch (e) {
       toast({ title: "Restore failed", description: (e as Error).message, error: true });
     }
@@ -540,9 +555,7 @@
     currentInstructions={skill.instructions ?? ""}
     targetVersion={compareVersion}
     restoring={restoreMut.isPending}
-    onclose={() => {
-      compareVersion = null;
-    }}
+    onclose={closeCompare}
     onrestore={handleRestore}
   />
 {/if}
