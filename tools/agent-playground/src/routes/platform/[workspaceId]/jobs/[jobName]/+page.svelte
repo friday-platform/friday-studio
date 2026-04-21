@@ -23,6 +23,7 @@
   import {
     searchSkillsSh,
     useAssignSkill,
+    useDeleteSkill,
     useInstallSkill,
     useUnassignSkill,
   } from "$lib/queries/skills";
@@ -46,6 +47,7 @@
   const assignMut = useAssignSkill();
   const unassignMut = useUnassignSkill();
   const installMut = useInstallSkill();
+  const deleteSkillMut = useDeleteSkill();
 
   const jobTitle = $derived.by(() => {
     const cfg = configQuery.data?.config;
@@ -239,6 +241,29 @@
     pending = { ...pending, [skill.skillId]: true };
     try {
       await unassignMut.mutateAsync({ skillId: skill.skillId, workspaceId, jobName });
+
+      // The additive-visibility model treats zero-assignment skills as
+      // globally visible — which would make a just-detached skill
+      // reappear in the "workspace-inherited" bucket immediately. The
+      // user's mental model on this page is "Detach = I'm done with
+      // this skill here", so if removing the job row leaves the skill
+      // with no assignments anywhere, uninstall it from the catalog.
+      // Skills still pinned to other workspaces or jobs are left alone.
+      const res = await fetch(
+        `/api/daemon/api/skills/scoping/${encodeURIComponent(skill.skillId)}/assignments`,
+      );
+      if (res.ok) {
+        const body = (await res.json()) as { workspaceIds: string[] };
+        if (body.workspaceIds.length === 0) {
+          await deleteSkillMut.mutateAsync(skill.skillId);
+          toast({
+            title: "Detached + uninstalled",
+            description: `${skill.namespace}/${skill.name} — nothing else used it.`,
+          });
+          return;
+        }
+      }
+
       toast({ title: "Detached", description: `${skill.namespace}/${skill.name}` });
     } catch (e) {
       toast({

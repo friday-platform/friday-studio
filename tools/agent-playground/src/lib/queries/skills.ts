@@ -116,6 +116,11 @@ export function useDeleteSkill() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: skillQueries.all() });
+      // Deleting a skill affects every workspace's visible-skills, job-skills,
+      // and classified buckets — those queries live under the "workspace"
+      // key, not "skills". Invalidate the whole family so each surface
+      // refetches once the skill is gone.
+      queryClient.invalidateQueries({ queryKey: ["daemon", "workspace"] });
     },
   }));
 }
