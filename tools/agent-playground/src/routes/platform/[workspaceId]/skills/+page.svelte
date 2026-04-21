@@ -15,6 +15,8 @@
 <script lang="ts">
   import { toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
+  import { browser } from "$app/environment";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries } from "$lib/queries";
@@ -36,6 +38,28 @@
 
   let installSource = $state("");
   let searchFocused = $state(false);
+  /** Bound to the install-from-skills.sh textbox so the `?addSkill=true`
+   *  deep-link handler can focus it without relying on querySelector. */
+  let installInputEl = $state<HTMLInputElement | null>(null);
+
+  /**
+   * Deep-link handler for `?addSkill=true` — the workspace sidebar's
+   * "Add skill" button goes through this URL param, and without a
+   * listener the link was a no-op. On arrival we scroll the install
+   * input into view, focus it, and strip the query param so a refresh
+   * doesn't keep re-triggering the flow.
+   */
+  $effect(() => {
+    if (!browser) return;
+    if (page.url.searchParams.get("addSkill") !== "true") return;
+    requestAnimationFrame(() => {
+      installInputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+      installInputEl?.focus();
+    });
+    const url = new URL(page.url.href);
+    url.searchParams.delete("addSkill");
+    goto(url.pathname + url.search, { replaceState: true, noScroll: true });
+  });
   /** Debounced copy of `installSource` — the TanStack query key. Without the
    *  debounce every keystroke fires a fetch. */
   let searchQuery = $state("");
@@ -150,6 +174,7 @@
       <div class="install-row">
         <div class="source-wrapper">
           <input
+            bind:this={installInputEl}
             class="source-input"
             type="text"
             value={installSource}
