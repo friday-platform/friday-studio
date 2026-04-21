@@ -39,24 +39,27 @@
     <span class="status-text">No workspaces found</span>
   {:else}
     {#each workspaces as ws (ws.id)}
-      <div class="workspace-group">
+      <div class="workspace-card" class:workspace-card-empty={ws.jobs.length === 0}>
+        <div class="workspace-card-header">
+          <h3 class="workspace-name">{ws.displayName}</h3>
+          {#if ws.description}
+            <p class="workspace-description">{ws.description}</p>
+          {/if}
+        </div>
         {#if ws.jobs.length > 0}
-          <div class="workspace-card">
-            <div class="workspace-card-header">
-              <h3 class="workspace-name">{ws.displayName}</h3>
-              {#if ws.description}
-                <p class="workspace-description">{ws.description}</p>
-              {/if}
-            </div>
-            {#each ws.jobs as job (job.id)}
-              <button class="job-row" onclick={() => selectJob(ws.id, job.id)}>
-                <span class="job-title">{job.title || humanizeStepName(job.id)}</span>
-                <span class="job-arrow"><IconSmall.CaretRight /></span>
-              </button>
-            {/each}
-          </div>
+          {#each ws.jobs as job (job.id)}
+            <button class="job-row" onclick={() => selectJob(ws.id, job.id)}>
+              <span class="job-title">{job.title || humanizeStepName(job.id)}</span>
+              <span class="job-arrow"><IconSmall.CaretRight /></span>
+            </button>
+          {/each}
         {:else}
-          <span class="status-text">No jobs configured</span>
+          <!-- Zero-jobs workspaces aren't hidden — user still wants to see that
+               the workspace exists; they just can't run anything here yet. -->
+          <a class="job-row job-row-empty" href="/platform/{ws.id}/jobs">
+            <span class="job-title">No jobs configured — add one</span>
+            <span class="job-arrow"><IconSmall.CaretRight /></span>
+          </a>
         {/if}
       </div>
     {/each}
@@ -92,18 +95,17 @@
     line-height: var(--font-lineheight-3);
   }
 
-  .workspace-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
-
   .workspace-card {
     background: var(--color-surface-1);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-4);
     display: flex;
     flex-direction: column;
+  }
+
+  .workspace-card-empty {
+    background: color-mix(in srgb, var(--color-surface-1), transparent 40%);
+    border-style: dashed;
   }
 
   .workspace-card-header {
@@ -154,6 +156,14 @@
   .job-row:hover {
     background: color-mix(in srgb, var(--color-text), transparent 93%);
     border-radius: var(--radius-2);
+  }
+
+  .job-row-empty {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+  }
+  .job-row-empty .job-title {
+    font-weight: var(--font-weight-4);
+    font-style: italic;
   }
 
   .job-title {

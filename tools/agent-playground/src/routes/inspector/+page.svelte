@@ -618,11 +618,17 @@
 
   .hero-dag {
     flex: 1 1 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Stop flex-centering the hero content — when the workspace picker
+       grows beyond the viewport (many spaces), flex centering clipped
+       the top rows above the scroll origin and the user couldn't reach
+       them. Grid with `start center` stays horizontally centered without
+       cross-axis clipping, and the scrollable box grows naturally. */
+    display: grid;
+    justify-items: center;
+    align-content: start;
     min-block-size: 120px;
     overflow: auto;
+    padding-block: var(--size-6);
   }
 
   .run-card-wrapper {
