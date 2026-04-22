@@ -168,7 +168,7 @@ describe("composeSkills", () => {
 
 describe("composeTools", () => {
   it("returns primary tools unchanged when foreground tool sets is empty", () => {
-    const primary: AtlasTools = { do_task: makeTool("primary do_task") };
+    const primary: AtlasTools = { delegate: makeTool("primary delegate") };
     const result = composeTools(primary, []);
     expect(result).toBe(primary);
   });
@@ -177,13 +177,13 @@ describe("composeTools", () => {
     const primaryTool = makeTool("primary version");
     const fgTool = makeTool("foreground version");
 
-    const primary: AtlasTools = { do_task: primaryTool };
-    const foregroundToolSets = [{ workspaceId: "ws-fg", tools: { do_task: fgTool } }];
+    const primary: AtlasTools = { delegate: primaryTool };
+    const foregroundToolSets = [{ workspaceId: "ws-fg", tools: { delegate: fgTool } }];
 
     const result = composeTools(primary, foregroundToolSets);
 
-    expect(result.do_task).toBe(primaryTool);
-    expect(Object.keys(result)).toEqual(["do_task"]);
+    expect(result.delegate).toBe(primaryTool);
+    expect(Object.keys(result)).toEqual(["delegate"]);
   });
 
   it("includes foreground-only tools", () => {

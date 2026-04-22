@@ -2,7 +2,7 @@
  * Maps FSMEvent (from @atlas/fsm-engine) to SessionHistoryEvent payload format.
  *
  * This module converts runtime FSM events to the session history schema format
- * for persistence. Extracted from workspace-runtime for reuse by do_task.
+ * for persistence.
  */
 
 import type { FSMEvent, ToolCall, ToolResult } from "@atlas/fsm-engine";

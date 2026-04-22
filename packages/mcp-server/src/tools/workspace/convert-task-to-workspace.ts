@@ -16,11 +16,13 @@ export function registerConvertTaskToWorkspaceTool(server: McpServer, ctx: ToolC
     {
       description:
         "Convert a successful task execution into a reusable workspace with signals. " +
-        "Use the artifactId from do_task response to reference the task execution.",
+        "Use the artifactId from a delegate or agent_<id> tool response to reference the task execution.",
       inputSchema: {
         taskResultId: z
           .string()
-          .describe("Task execution result ID (artifact ID from do_task response)"),
+          .describe(
+            "Task execution result ID (artifact ID from a delegate or agent_<id> tool response)",
+          ),
         workspaceName: z.string().describe("Name for the new workspace"),
         signalType: z
           .enum(["http", "schedule"])

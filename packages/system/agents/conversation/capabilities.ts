@@ -7,7 +7,7 @@ import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
  *
  * Three-tier structure:
  * 1. `<builtin_capabilities>` - Tools every agent gets for free. No capability ID needed.
- * 2. `<bundled_agents>` - Zero-config agents, always available via do_task.
+ * 2. `<bundled_agents>` - Zero-config agents, always available as `agent_<id>` tools.
  * 3. `<mcp_servers>` - External integrations requiring configuration.
  *
  * The builtin section guides the LLM toward `capabilities: []` when built-in tools suffice.
@@ -60,7 +60,7 @@ Select a capability when:
 </builtin_capabilities>
 
 <bundled_agents>
-<!-- Check here FIRST. Zero-config, always available via do_task. -->
+<!-- Check here FIRST. Zero-config, always available as agent_<id> tools. -->
 ${agentsXml}
 </bundled_agents>
 

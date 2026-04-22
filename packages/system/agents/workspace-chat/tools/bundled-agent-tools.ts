@@ -1,8 +1,7 @@
 /**
  * Factory wrapping an `AtlasAgent` as an AI SDK `tool({...})` so the workspace
  * chat parent (and, via the delegate's tool-set thunk, the child) can invoke
- * Friday's bundled agents directly in one step instead of routing through
- * `do_task` → planner → FSM.
+ * Friday's bundled agents directly in one step.
  *
  * ## Tool naming
  *

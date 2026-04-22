@@ -50,12 +50,12 @@ function getTypeGuardError(
       return null;
     case "external_ref":
       return {
-        error: `"${slug}" is an external resource (${entry.provider}). Use do_task to interact with it.`,
-        hint: `Example: do_task({ intent: '...' })`,
+        error: `"${slug}" is an external resource (${entry.provider}). Use delegate or an agent_<id> tool to interact with it.`,
+        hint: `Example: delegate({ goal: '...' })`,
       };
     case "artifact_ref":
       return {
-        error: `"${slug}" is a read-only file. Use artifacts_get to access it, or do_task with the data-analyst agent for queries.`,
+        error: `"${slug}" is a read-only file. Use artifacts_get to access it, or agent_data-analyst for queries.`,
       };
     default:
       entry satisfies never;

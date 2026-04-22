@@ -114,7 +114,7 @@ describe("buildResourceGuidance", () => {
     );
   });
 
-  it("replaces resource_link_ref instruction with do_task when tool is unavailable", () => {
+  it("replaces resource_link_ref instruction with delegate when tool is unavailable", () => {
     const resources: ResourceEntry[] = [
       {
         type: "external_ref",
@@ -132,7 +132,7 @@ describe("buildResourceGuidance", () => {
     });
 
     expect(result).toContain("- my_sheet (google-sheets, unregistered): Some sheet");
-    expect(result).toContain("→ Use do_task to create and register this resource.");
+    expect(result).toContain("→ Use delegate to create and register this resource.");
     expect(result).not.toContain("resource_link_ref");
   });
 
@@ -156,7 +156,7 @@ describe("buildResourceGuidance", () => {
     expect(result).toContain(
       "→ Create this resource using google-sheets MCP tools, then call resource_link_ref",
     );
-    expect(result).not.toContain("do_task");
+    expect(result).not.toContain("delegate");
   });
 
   it("preserves default behavior when options is omitted", () => {
@@ -177,7 +177,7 @@ describe("buildResourceGuidance", () => {
 
     expect(withoutOptions).toBe(withUndefined);
     expect(withoutOptions).toContain("resource_link_ref");
-    expect(withoutOptions).not.toContain("do_task");
+    expect(withoutOptions).not.toContain("delegate");
   });
 
   it("omits artifact-ref entries with artifactType unavailable", () => {

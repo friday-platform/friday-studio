@@ -20,7 +20,7 @@ function formatRowCount(count: number): string {
 /**
  * Options for tool-aware resource guidance rendering.
  * @property availableTools - When provided, instructions are adapted to the caller's tool surface.
- *   e.g. if `resource_link_ref` is absent, unregistered external refs emit `do_task` guidance instead.
+ *   e.g. if `resource_link_ref` is absent, unregistered external refs emit `delegate` guidance instead.
  */
 export interface ResourceGuidanceOptions {
   availableTools?: readonly string[];
@@ -90,7 +90,7 @@ export function buildResourceGuidance(
           !options?.availableTools || options.availableTools.includes("resource_link_ref");
         const instruction = hasLinkRef
           ? `→ Create this resource using ${r.provider} MCP tools, then call resource_link_ref with the URL/ID to register it.`
-          : `→ Use do_task to create and register this resource.`;
+          : `→ Use delegate to create and register this resource.`;
         lines.push(
           `- ${r.slug} (${r.provider}, unregistered): ${r.description}`,
           `  ${instruction}`,
