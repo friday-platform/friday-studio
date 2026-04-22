@@ -16,7 +16,7 @@ at build time and always available in every Atlas installation.
 3. **Protected**: Cannot be deleted without explicit force option
 4. **Identified by**:
    - `metadata.system = true` field
-   - `system://` path prefix (e.g., `system://atlas-conversation`)
+   - `system://` path prefix (e.g., `system://system`)
    - Known IDs defined in `SystemWorkspaceId` type
 
 ### Implementation
@@ -25,45 +25,29 @@ at build time and always available in every Atlas installation.
 
 ```
 packages/system/workspaces/
-├── conversation.yml     # Atlas conversation workspace
-├── monitoring.yml       # System monitoring workspace (future)
+├── system.yml          # Kernel system workspace
 └── mod.ts              # Build-time import module
-```
-
-#### YAML Definition
-
-System workspaces are defined as standard workspace YAML files:
-
-```yaml
-version: "1.0"
-workspace:
-  id: "atlas-conversation"
-  name: "Friday Conversation"
-  description: "System workspace for interactive Friday conversations"
-signals:
-  conversation-started:
-    provider: "system"
-    description: "Triggered when a new conversation begins"
-# ... rest of configuration
 ```
 
 #### Build-Time Import
 
-The `packages/system/workspaces/mod.ts` file imports all YAML files at build time:
+The `packages/system/workspaces/mod.ts` file imports each YAML file and exposes it via
+`SYSTEM_WORKSPACES`:
 
 ```typescript
-import conversationYaml from "./conversation.yml" with { type: "text" };
-import { parse } from "@std/yaml";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import { parse } from "@std/yaml";
+
+const systemYaml = readFileSync(fileURLToPath(new URL("./system.yml", import.meta.url)), "utf-8");
 
 export const SYSTEM_WORKSPACES = {
-  "atlas-conversation": WorkspaceConfigSchema.parse(parse(conversationYaml)),
+  system: WorkspaceConfigSchema.parse(parse(systemYaml)),
 } as const;
 
 export type SystemWorkspaceId = keyof typeof SYSTEM_WORKSPACES;
 ```
-
-This requires the `--unstable-raw-imports` flag in Deno configuration.
 
 ### Registration
 
@@ -84,14 +68,10 @@ System workspaces can be accessed like any other workspace:
 
 ```typescript
 // Find by ID
-const conversationWorkspace = await manager.find({
-  id: "atlas-conversation",
-});
+const systemWorkspace = await manager.find({ id: "system" });
 
 // List all workspaces including system ones
-const allWorkspaces = await manager.list({
-  includeSystem: true,
-});
+const allWorkspaces = await manager.list({ includeSystem: true });
 ```
 
 #### Configuration Loading
@@ -99,7 +79,7 @@ const allWorkspaces = await manager.list({
 When loading configuration for a system workspace, the embedded config is returned directly:
 
 ```typescript
-const config = await manager.getWorkspaceConfig("atlas-conversation");
+const config = await manager.getWorkspaceConfig("system");
 // Returns the embedded configuration object
 ```
 
@@ -111,45 +91,22 @@ const config = await manager.getWorkspaceConfig("atlas-conversation");
 4. **Type Safety**: Build-time validation ensures configurations are valid
 5. **Performance**: No runtime file I/O for system workspace configs
 
-### Migration from Virtual Workspaces
-
-System workspaces replace the previous "virtual workspace" concept:
-
-- **Before**: Virtual workspaces with special `virtual://` prefix and runtime loading
-- **After**: System workspaces with `system://` prefix and build-time embedding
-
-The migration simplifies the codebase by:
-
-- Removing special case handling throughout the system
-- Eliminating dynamic configuration loading for built-in workspaces
-- Providing compile-time guarantees about system workspace validity
-
 ### Adding New System Workspaces
 
 To add a new system workspace:
 
 1. Create a new YAML file in `packages/system/workspaces/`
-2. Import it in `packages/system/workspaces/mod.ts`
+2. Read it in `packages/system/workspaces/mod.ts`
 3. Add it to the `SYSTEM_WORKSPACES` const
 4. The workspace will be automatically available after rebuild
 
-Example:
-
-```typescript
-// In mod.ts
-import monitoringYaml from "./monitoring.yml" with { type: "text" };
-
-export const SYSTEM_WORKSPACES = {
-  "atlas-conversation": /* ... */,
-  "atlas-monitoring": WorkspaceConfigSchema.parse(parse(monitoringYaml)),
-} as const;
-```
-
 ## System Agents
 
-The `agents/` directory contains system-level agents that provide core Atlas functionality:
+The `agents/` directory contains system-level agents that provide core Atlas functionality.
+Currently registered system agents:
 
-- `conversation-agent.ts`: Handles interactive conversations within the Atlas system
+- `workspace-chat`: Powers per-workspace direct chat (the user-facing chat surface)
+- `workspace-improver`: System workspace for self-modification flows
 
-These agents are designed to work with system workspaces and provide essential platform
-capabilities.
+These agents are registered in `packages/core/src/agent-loader/adapters/system-adapter.ts` and
+exposed via `packages/system/agents/mod.ts`.
