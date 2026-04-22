@@ -18,7 +18,7 @@
   @component
 -->
 <script lang="ts">
-  import { Button } from "@atlas/ui";
+  import { Button, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
 
@@ -542,6 +542,168 @@
       await Promise.all([loadModels(), loadCatalog()]);
     })();
   });
+
+  // ─── Backup & restore ──────────────────────────────────────────────
+  //
+  // Export: GET /api/workspaces/bundle-all[?mode=migration&include=global-skills]
+  // Import workspace (single): POST /api/workspaces/import-bundle
+  // Import full archive:       POST /api/workspaces/import-bundle-all
+  //
+  // Daemon filters virtual/kernel workspaces (system, atlas-conversation)
+  // server-side — no client-side filtering needed.
+
+  interface ImportedEntry {
+    workspaceId?: string;
+    name?: string;
+    path?: string;
+    memory?: { kind: string; path?: string; reason?: string };
+  }
+
+  interface ImportSummary {
+    ok: boolean;
+    imported: ImportedEntry[];
+    errors: { name?: string; error?: string }[];
+    globalSkills?: { kind?: string } | null;
+    raw?: unknown;
+    message?: string;
+  }
+
+  let includeMemory = $state(false);
+  let includeGlobalSkills = $state(false);
+  let exporting = $state(false);
+
+  let singleFileEl: HTMLInputElement | null = $state(null);
+  let singleBusy = $state(false);
+  let singleResult = $state<ImportSummary | null>(null);
+
+  let fullFileEl: HTMLInputElement | null = $state(null);
+  let fullBusy = $state(false);
+  let fullResult = $state<ImportSummary | null>(null);
+
+  async function handleExportAll() {
+    if (exporting) return;
+    exporting = true;
+    try {
+      const params = new URLSearchParams();
+      if (includeMemory) params.set("mode", "migration");
+      if (includeGlobalSkills) params.set("include", "global-skills");
+      const qs = params.toString();
+      const url = `/api/daemon/api/workspaces/bundle-all${qs ? `?${qs}` : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const body = await res.text();
+        toast({
+          title: `Export failed: ${body.slice(0, 200)}`,
+          error: true,
+        });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const nameMatch = /filename="([^"]+)"/.exec(disposition);
+      const filename = nameMatch?.[1] ?? `atlas-full-export.zip`;
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(href);
+      const bundled = res.headers.get("x-atlas-bundled-workspaces") ?? "?";
+      toast({ title: `Downloaded ${bundled} workspace(s)` });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: `Export failed: ${msg}`, error: true });
+    } finally {
+      exporting = false;
+    }
+  }
+
+  async function postBundle(url: string, file: File): Promise<ImportSummary> {
+    const form = new FormData();
+    form.set("bundle", file);
+    const res = await fetch(url, { method: "POST", body: form });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      return {
+        ok: false,
+        imported: [],
+        errors: [],
+        message: typeof body.error === "string" ? body.error : `HTTP ${res.status}`,
+        raw: body,
+      };
+    }
+    return {
+      ok: true,
+      imported: Array.isArray(body.imported)
+        ? (body.imported as ImportedEntry[])
+        : body.workspaceId
+          ? [
+              {
+                workspaceId: String(body.workspaceId),
+                name: typeof body.name === "string" ? body.name : undefined,
+                path: typeof body.path === "string" ? body.path : undefined,
+                memory:
+                  body.memory && typeof body.memory === "object"
+                    ? (body.memory as ImportedEntry["memory"])
+                    : undefined,
+              },
+            ]
+          : [],
+      errors: Array.isArray(body.errors) ? (body.errors as { name?: string; error?: string }[]) : [],
+      globalSkills: (body.globalSkills as { kind?: string } | null | undefined) ?? null,
+      raw: body,
+    };
+  }
+
+  async function handleImportSingle() {
+    const file = singleFileEl?.files?.[0];
+    if (!file || singleBusy) return;
+    singleBusy = true;
+    singleResult = null;
+    try {
+      singleResult = await postBundle("/api/daemon/api/workspaces/import-bundle", file);
+      if (singleResult.ok) toast({ title: `Imported: ${singleResult.imported[0]?.name ?? "workspace"}` });
+      else toast({ title: singleResult.message ?? "Import failed", error: true });
+    } finally {
+      singleBusy = false;
+    }
+  }
+
+  async function handleImportFull() {
+    const file = fullFileEl?.files?.[0];
+    if (!file || fullBusy) return;
+    fullBusy = true;
+    fullResult = null;
+    try {
+      fullResult = await postBundle("/api/daemon/api/workspaces/import-bundle-all", file);
+      if (fullResult.ok) {
+        const n = fullResult.imported.length;
+        const errs = fullResult.errors.length;
+        toast({ title: `Imported ${n} workspace(s)${errs ? ` — ${errs} error(s)` : ""}` });
+      } else {
+        toast({ title: fullResult.message ?? "Import failed", error: true });
+      }
+    } finally {
+      fullBusy = false;
+    }
+  }
+
+  /** Translate a raw server status into a human-readable phrase. `null` means
+   * "nothing worth showing". Kept inside this component since the raw strings
+   * are a private protocol between the daemon and this UI. */
+  function memoryLabel(kind: string | undefined): string | null {
+    if (kind === "moved") return "notes imported";
+    if (kind === "sideloaded") return "notes saved separately — existing data preserved";
+    return null;
+  }
+
+  function globalSkillsLabel(kind: string | undefined): string | null {
+    if (kind === "imported") return "skills library imported";
+    if (kind === "skipped-existing")
+      return "skills library saved separately — existing library preserved";
+    if (kind === "integrity-failed") return "skills library failed integrity check";
+    return null;
+  }
 </script>
 
 <div class="settings-root">
@@ -708,6 +870,133 @@
         {/if}
       </div>
     </details>
+  </section>
+
+  <!-- ─── Backup & restore section ─────────────────────────────── -->
+  <section class="section">
+    <div class="section-header-row">
+      <div class="section-header">
+        <h2>Backup &amp; restore</h2>
+        <p class="section-sub">
+          Export your workspaces as a portable zip, and re-import them on another machine.
+          Imports never overwrite existing data — if a conflict is detected, the incoming copy
+          lands next to the existing one so you can merge manually.
+        </p>
+      </div>
+    </div>
+
+    <div class="backup-grid">
+      <!-- Export -->
+      <div class="backup-card">
+        <h3 class="backup-h">Export all workspaces</h3>
+        <p class="backup-sub">
+          Download every workspace as a single zip you can import on another machine.
+        </p>
+        <label class="backup-check">
+          <input type="checkbox" bind:checked={includeMemory} />
+          <span>Include notes &amp; memory</span>
+        </label>
+        <label class="backup-check">
+          <input type="checkbox" bind:checked={includeGlobalSkills} />
+          <span>Include your skills library</span>
+        </label>
+        <div class="backup-actions">
+          <Button onclick={handleExportAll} disabled={exporting}>
+            {exporting ? "Building…" : "Download full export"}
+          </Button>
+        </div>
+      </div>
+
+      <!-- Import single -->
+      <div class="backup-card">
+        <h3 class="backup-h">Import a workspace</h3>
+        <p class="backup-sub">
+          Pick a zip downloaded from a single workspace. It becomes a new workspace here.
+        </p>
+        <input
+          bind:this={singleFileEl}
+          type="file"
+          accept=".zip,application/zip"
+          class="backup-file"
+        />
+        <div class="backup-actions">
+          <Button onclick={handleImportSingle} disabled={singleBusy}>
+            {singleBusy ? "Importing…" : "Import workspace"}
+          </Button>
+        </div>
+        {#if singleResult}
+          <div class="backup-result" class:err={!singleResult.ok}>
+            {#if singleResult.ok}
+              <div>Imported: <strong>{singleResult.imported[0]?.name ?? "?"}</strong></div>
+              {#if memoryLabel(singleResult.imported[0]?.memory?.kind)}
+                <div class="muted">{memoryLabel(singleResult.imported[0]?.memory?.kind)}</div>
+              {/if}
+            {:else}
+              {singleResult.message ?? "Failed"}
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Import full archive -->
+      <div class="backup-card">
+        <h3 class="backup-h">Import a full archive</h3>
+        <p class="backup-sub">
+          Pick a full-export zip. Every workspace inside gets imported, along with any skills
+          library or memory the archive carried.
+        </p>
+        <input
+          bind:this={fullFileEl}
+          type="file"
+          accept=".zip,application/zip"
+          class="backup-file"
+        />
+        <div class="backup-actions">
+          <Button onclick={handleImportFull} disabled={fullBusy}>
+            {fullBusy ? "Importing…" : "Import full archive"}
+          </Button>
+        </div>
+        {#if fullResult}
+          <div class="backup-result" class:err={!fullResult.ok}>
+            {#if fullResult.ok}
+              <div>
+                <strong>{fullResult.imported.length}</strong>
+                workspace(s) imported
+              </div>
+              {#if fullResult.imported.length > 0}
+                <ul class="backup-list">
+                  {#each fullResult.imported as entry, i (i)}
+                    <li>
+                      <strong>{entry.name ?? "?"}</strong>
+                      {#if memoryLabel(entry.memory?.kind)}
+                        <span class="muted"> — {memoryLabel(entry.memory?.kind)}</span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+              {#if globalSkillsLabel(fullResult.globalSkills?.kind)}
+                <div class="muted">
+                  {globalSkillsLabel(fullResult.globalSkills?.kind)}
+                </div>
+              {/if}
+              {#if fullResult.errors.length > 0}
+                <div class="backup-errors">
+                  <strong>{fullResult.errors.length} error(s):</strong>
+                  <ul class="backup-list">
+                    {#each fullResult.errors as e, i (i)}
+                      <li><strong>{e.name ?? "?"}</strong>: {e.error ?? "?"}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+            {:else}
+              {fullResult.message ?? "Failed"}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
   </section>
 </div>
 
@@ -1009,5 +1298,87 @@
   .col-action.remove:hover {
     background: color-mix(in srgb, var(--color-text), transparent 92%);
     color: var(--color-error);
+  }
+
+  .backup-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    padding: 0 20px 20px;
+  }
+  .backup-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+  }
+  .backup-h {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .backup-sub {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: 12px;
+    line-height: 1.45;
+    margin: 0;
+  }
+  .backup-check {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    font-size: 13px;
+    gap: 8px;
+  }
+  .backup-check em {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    font-style: normal;
+    font-size: 11px;
+  }
+  .backup-file {
+    background: var(--color-surface-3);
+    border: 1px dashed var(--color-border-1);
+    border-radius: 6px;
+    color: var(--color-text);
+    font-size: 12px;
+    padding: 8px;
+  }
+  .backup-actions {
+    display: flex;
+    justify-content: flex-start;
+  }
+  .backup-result {
+    background: var(--color-surface-3);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 4px;
+    color: var(--color-text);
+    font-family: var(--font-family-monospace);
+    font-size: 12px;
+    margin: 0;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .backup-result.err {
+    border-left-color: var(--color-error);
+  }
+  .backup-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+  }
+  .backup-list li {
+    font-size: 12px;
+    padding: 3px 0;
+  }
+  .backup-errors {
+    color: var(--color-error);
+    margin-top: 8px;
+  }
+  .muted {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
   }
 </style>

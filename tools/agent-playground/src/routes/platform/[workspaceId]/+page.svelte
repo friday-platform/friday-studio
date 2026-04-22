@@ -196,7 +196,7 @@
   }
 
   /** Download the workspace config as a YAML file. */
-  function exportWorkspace() {
+  function exportWorkspaceConfig() {
     if (!configQuery.data) return;
     const yamlStr = stringify(configQuery.data.config);
     const blob = new Blob([yamlStr], { type: "text/yaml" });
@@ -206,6 +206,43 @@
     a.download = "workspace.yml";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Download the workspace as a portable zip bundle (workspace.yml + skills/ +
+   * agents/, optionally including narrative memory in migration mode). The
+   * daemon's route streams `application/zip`; we capture as a blob and trigger
+   * a browser download with the server's Content-Disposition filename.
+   */
+  async function downloadWorkspaceBundle(mode: "definition" | "migration") {
+    if (!workspaceId) return;
+    const qs = mode === "migration" ? "?mode=migration" : "";
+    const url = `/api/daemon/api/workspaces/${workspaceId}/bundle${qs}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errBody = await res.text();
+        toast({
+          title: `Download failed: ${errBody.slice(0, 200)}`,
+          error: true,
+        });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const nameMatch = /filename="([^"]+)"/.exec(disposition);
+      const filename = nameMatch?.[1] ?? `${workspaceId}.zip`;
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(href);
+      toast({ title: "Workspace downloaded" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: `Download failed: ${msg}`, error: true });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -266,8 +303,14 @@
             </DropdownMenu.Trigger>
 
             <DropdownMenu.Content>
-              <DropdownMenu.Item onclick={exportWorkspace}>
-                Export
+              <DropdownMenu.Item onclick={exportWorkspaceConfig}>
+                Export configuration
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("definition")}>
+                Download workspace
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("migration")}>
+                Download workspace with notes &amp; memory
               </DropdownMenu.Item>
               <DropdownMenu.Separator />
               <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
