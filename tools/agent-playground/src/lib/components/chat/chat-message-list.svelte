@@ -135,6 +135,38 @@
   }
 
   /**
+   * Per-delegate latch keyed by the delegate's `toolCallId`. Mirrors the
+   * `userToggledGroups` pattern but scoped to a single delegate card so
+   * one delegate's toggle doesn't affect a sibling delegate in the same
+   * message. Without this, the auto-collapse-when-children-finish behavior
+   * would steamroll a user who manually expanded a completed delegate to
+   * inspect what its sub-agent did.
+   */
+  let userToggledDelegates: Map<string, boolean> = $state(new Map());
+
+  function handleDelegateToggleClick(
+    e: MouseEvent,
+    delegateToolCallId: string,
+    childrenRunning: boolean,
+  ) {
+    e.preventDefault();
+    const prev = userToggledDelegates.get(delegateToolCallId);
+    const currentOpen = prev ?? childrenRunning;
+    const next = new Map(userToggledDelegates);
+    next.set(delegateToolCallId, !currentOpen);
+    userToggledDelegates = next;
+  }
+
+  /**
+   * True iff any reconstructed delegate child is still mid-execution.
+   * Drives the auto-expand behavior on a delegate `<details>` — open
+   * while any child is running, collapse once they all settle.
+   */
+  function childrenAnyRunning(children: ToolCallDisplay[]): boolean {
+    return children.some((c) => isInProgress(c.state));
+  }
+
+  /**
    * Build a short summary for a collapsed tool-call group. Surfaces the
    * total, any errors or running calls, and the most recent tool name so
    * the user knows at a glance what happened without expanding.
@@ -320,54 +352,97 @@
 <!--
   Single-card render for a tool call. Extracted so the two surrounding
   branches (collapsed group vs inline list) can share the same body
-  without duplication.
+  without duplication. Recurses into `call.children` for delegate cards
+  so a delegate's reconstructed sub-agent tool calls render nested
+  beneath its header.
 -->
-{#snippet toolCard(call: ToolCallDisplay)}
-  <div
-    class="tool-card"
-    class:in-progress={isInProgress(call.state)}
-    class:error={isError(call.state)}
-  >
-    <div class="tool-card-header">
-      <span class="tool-card-icon" aria-hidden="true">
-        {#if isInProgress(call.state)}
-          <span class="spinner"></span>
-        {:else if isError(call.state)}
-          ✗
-        {:else}
-          ✓
-        {/if}
-      </span>
-      <span class="tool-card-name">{call.toolName}</span>
-      <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
-      <span class="tool-card-status">
-        {#if isInProgress(call.state)}
-          running…
-        {:else if call.state === "output-available"}
-          {outputSummary(call.toolName, call.output)}
-        {:else if call.state === "output-error"}
-          {call.errorText ?? "failed"}
-        {:else if call.state === "output-denied"}
-          denied
-        {:else if call.state === "approval-requested"}
-          needs approval
-        {:else}
-          {call.state}
-        {/if}
-      </span>
-    </div>
-    {#if call.state === "output-available" && call.output !== undefined}
-      <details class="tool-card-details">
-        <summary>details</summary>
-        <pre>{@html formatRawOutput(call.output)}</pre>
-      </details>
-    {:else if call.state === "output-error" && call.input !== undefined}
-      <details class="tool-card-details">
-        <summary>input</summary>
-        <pre>{@html formatRawOutput(call.input)}</pre>
-      </details>
+{#snippet toolCardHeaderContent(call: ToolCallDisplay)}
+  <span class="tool-card-icon" aria-hidden="true">
+    {#if isInProgress(call.state)}
+      <span class="spinner"></span>
+    {:else if isError(call.state)}
+      ✗
+    {:else}
+      ✓
     {/if}
-  </div>
+  </span>
+  <span class="tool-card-name">{call.toolName}</span>
+  <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
+  <span class="tool-card-status">
+    {#if isInProgress(call.state)}
+      running…
+    {:else if call.state === "output-available"}
+      {outputSummary(call.toolName, call.output)}
+    {:else if call.state === "output-error"}
+      {call.errorText ?? "failed"}
+    {:else if call.state === "output-denied"}
+      denied
+    {:else if call.state === "approval-requested"}
+      needs approval
+    {:else}
+      {call.state}
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet toolCardOutputDrawer(call: ToolCallDisplay)}
+  {#if call.state === "output-available" && call.output !== undefined}
+    <details class="tool-card-details">
+      <summary>details</summary>
+      <pre>{@html formatRawOutput(call.output)}</pre>
+    </details>
+  {:else if call.state === "output-error" && call.input !== undefined}
+    <details class="tool-card-details">
+      <summary>input</summary>
+      <pre>{@html formatRawOutput(call.input)}</pre>
+    </details>
+  {/if}
+{/snippet}
+
+{#snippet toolCard(call: ToolCallDisplay)}
+  {#if call.children && call.children.length > 0}
+    <!--
+      Delegate card: wrap the header in <summary> so clicking it toggles
+      visibility of the reconstructed children. Auto-expand while any child
+      is running so the user can watch sub-agent progress live; collapse
+      once all children settle. `userToggledDelegates` latches a manual
+      click so the auto-collapse on completion doesn't slam the drawer
+      shut while the user is reading.
+    -->
+    {@const childrenRunning = childrenAnyRunning(call.children)}
+    {@const userChoice = userToggledDelegates.get(call.toolCallId)}
+    {@const isOpen = userChoice ?? childrenRunning}
+    <details
+      class="tool-card with-children"
+      class:in-progress={isInProgress(call.state)}
+      class:error={isError(call.state)}
+      open={isOpen}
+    >
+      <summary
+        class="tool-card-header"
+        onclick={(e) => handleDelegateToggleClick(e, call.toolCallId, childrenRunning)}
+      >
+        {@render toolCardHeaderContent(call)}
+      </summary>
+      <div class="tool-call-children">
+        {#each call.children as child (child.toolCallId || child.toolName)}
+          {@render toolCard(child)}
+        {/each}
+      </div>
+      {@render toolCardOutputDrawer(call)}
+    </details>
+  {:else}
+    <div
+      class="tool-card"
+      class:in-progress={isInProgress(call.state)}
+      class:error={isError(call.state)}
+    >
+      <div class="tool-card-header">
+        {@render toolCardHeaderContent(call)}
+      </div>
+      {@render toolCardOutputDrawer(call)}
+    </div>
+  {/if}
 {/snippet}
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
@@ -855,6 +930,69 @@
   .tool-card.error {
     border-color: light-dark(hsl(10 80% 70%), color-mix(in srgb, var(--color-error), transparent 50%));
     background-color: light-dark(hsl(10 80% 95%), color-mix(in srgb, var(--color-error), transparent 90%));
+  }
+
+  /* Delegate cards reuse `.tool-card` chrome but render as a <details> so
+     their reconstructed children can be folded/expanded under the header. */
+  .tool-card.with-children {
+    padding: 0;
+  }
+
+  .tool-card.with-children > summary.tool-card-header {
+    cursor: pointer;
+    list-style: none;
+    padding: var(--size-1-5) var(--size-2-5);
+    user-select: none;
+  }
+
+  .tool-card.with-children > summary.tool-card-header::-webkit-details-marker {
+    display: none;
+  }
+
+  /* Disclosure caret matches the `.tool-call-group-summary` pattern so the
+     two collapsible affordances feel like the same control. */
+  .tool-card.with-children > summary.tool-card-header::before {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    content: "▸";
+    flex-shrink: 0;
+    font-size: 10px;
+    transition: transform 100ms ease;
+  }
+
+  .tool-card.with-children[open] > summary.tool-card-header::before {
+    transform: rotate(90deg);
+  }
+
+  /* Nested children container — indented and bordered on the leading edge
+     so the delegation boundary is visually obvious.
+
+     Chromium's `<details>` does NOT apply a `display: none` UA rule to
+     non-summary children when closed — it relies on shadow-DOM slotting,
+     which our light-DOM-rendered children bypass. Explicitly hide them
+     when the delegate is collapsed so the auto-collapse-after-done
+     behavior is actually visible. */
+  .tool-card.with-children > .tool-call-children {
+    border-inline-start: 2px solid var(--color-border-2, var(--color-border-1));
+    display: none;
+    flex-direction: column;
+    gap: var(--size-1);
+    margin-inline-start: var(--size-3);
+    padding: var(--size-1-5) 0 var(--size-1-5) var(--size-2);
+  }
+  .tool-card.with-children[open] > .tool-call-children {
+    display: flex;
+  }
+
+  /* The output-drawer <details> inside a delegate card needs its own padding
+     since `.tool-card.with-children` zeros the parent padding. Hide the
+     drawer entirely when the delegate is collapsed (same shadow-DOM
+     bypass workaround as the children container above). */
+  .tool-card.with-children > .tool-card-details {
+    display: none;
+  }
+  .tool-card.with-children[open] > .tool-card-details {
+    display: block;
+    padding: 0 var(--size-2-5) var(--size-1-5);
   }
 
   .tool-card-header {
