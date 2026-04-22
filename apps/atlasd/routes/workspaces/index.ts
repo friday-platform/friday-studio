@@ -63,6 +63,7 @@ import {
   isOnDiskWorkspace,
   materializeImportedMemory,
 } from "./bundle-helpers.ts";
+import { DEFAULT_WORKSPACE_MEMORY } from "./default-workspace-config.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 import { resourceRoutes } from "./resources.ts";
@@ -332,6 +333,11 @@ const workspacesRoutes = daemonFactory
       }
 
       let validatedConfig = validationResult.data;
+
+      // Apply default memory baseline when the caller didn't provide any.
+      if (!validatedConfig.memory || validatedConfig.memory.own.length === 0) {
+        validatedConfig = { ...validatedConfig, memory: DEFAULT_WORKSPACE_MEMORY };
+      }
 
       // Inject missing credential refs from bundled agent registry so that
       // agents requiring OAuth credentials are detected during import.
