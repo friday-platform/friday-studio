@@ -1776,7 +1776,7 @@ export class AtlasDaemon {
   /**
    * Start the daemon-scoped Discord Gateway listener when all three env vars
    * are present. We don't gate on workspace signals — a user can add a
-   * discord signal later without a daemon restart, and the /platform/discord
+   * discord signal later without a daemon restart, and the /signals/discord
    * route already returns 404 if a message arrives before a workspace is
    * wired. Missing env is a no-op (info log only); we don't fail boot.
    */
@@ -1794,7 +1794,7 @@ export class AtlasDaemon {
 
     const service = new DiscordGatewayService({
       credentials: { botToken, publicKey, applicationId },
-      forwardUrl: `http://localhost:${this.port}/platform/discord`,
+      forwardUrl: `http://localhost:${this.port}/signals/discord`,
       logger: logger.child({ component: "discord-gateway-service" }),
     });
     this.discordGatewayService = service;

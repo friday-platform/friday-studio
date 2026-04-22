@@ -5,7 +5,7 @@ reads `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID`
 from env vars (all-or-nothing, partial env → null + `discord_missing_credentials`
 log). At daemon startup, `DiscordGatewayService` opens ONE Gateway WebSocket per
 daemon (not per workspace) in forwarding mode — every event is HTTP-POSTed to
-`/platform/discord`, which routes it to the workspace's `DiscordAdapter`.
+`/signals/discord`, which routes it to the workspace's `DiscordAdapter`.
 Per-listener session runs 12h, respawns on clean exit, 30s-sleeps on thrown
 error, stops-hard on auth failure. Coexists with Slack / Telegram / WhatsApp.
 **Branch**: `declaw`
@@ -95,7 +95,7 @@ lsof -i:8080 -sTCP:LISTEN -t | xargs kill
 
 **Expect**:
 - Daemon logs `discord_gateway_service_started` with the `forwardUrl`
-  (should be `http://localhost:<daemonPort>/platform/discord`) and
+  (should be `http://localhost:<daemonPort>/signals/discord`) and
   `applicationId`
 - Within ~5s the adapter's `Discord Gateway connected` log appears (info
   level, emitted from the discord.js client `ClientReady` event)

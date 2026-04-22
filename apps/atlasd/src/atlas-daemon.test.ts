@@ -55,7 +55,7 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
   });
 
   it("starts the service whenever all three env vars are present — no workspace precondition", async () => {
-    // The /platform/discord route handles "no workspace" with 404, so gating
+    // The /signals/discord route handles "no workspace" with 404, so gating
     // startup on a discord signal would block users from adding one later
     // without a daemon restart.
     process.env.DISCORD_BOT_TOKEN = "t";

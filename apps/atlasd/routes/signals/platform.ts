@@ -108,8 +108,11 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
   });
 
   // ─── Discord ───────────────────────────────────────────────────────
-  // The daemon runs ONE Gateway connection (`DiscordGatewayService`) that
-  // HTTP-POSTs every event here with the `x-discord-gateway-token` header.
+  // Internal atlasd route: /signals/discord. The daemon runs ONE Gateway
+  // connection (`DiscordGatewayService`) that HTTP-POSTs every event to
+  // `http://localhost:<port>/signals/discord` with the
+  // `x-discord-gateway-token` header — no webhook-tunnel involved; the
+  // daemon talks to itself.
   // Forward-compat: raw Interactions POSTs (PING, commands) are also accepted
   // — the per-workspace adapter's `handleWebhook` branches internally on the
   // token header vs signature header.

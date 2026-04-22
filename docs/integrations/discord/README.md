@@ -23,7 +23,7 @@ Discord Gateway                            ┌── atlasd (daemon-scoped) ─�
    WebSocket ◀──── 12h persistent ─────────┤   └─ forwards each event via HTTP  │
                                            │                       │             │
                                            │                       ▼             │
-                                           │  POST /platform/discord             │
+                                           │  POST /signals/discord              │
                                            │   ├─ finds workspace by signal      │
                                            │   ├─ getOrCreateChatSdkInstance     │
                                            │   └─ chat.webhooks.discord(req)     │
@@ -41,16 +41,17 @@ over the Gateway WebSocket — Discord's HTTP Interactions endpoint only
 receives slash commands and button clicks, which we don't wire (see
 [Known limitations](#known-limitations)).
 
-The daemon opens **ONE** Gateway connection at startup (as long as all
-three env vars are set and at least one workspace has a `discord`
-signal). Each inbound event is HTTP-POSTed to the daemon's own
-`/platform/discord` route, which looks up the target workspace and hands
-the raw request to `chat.webhooks.discord` — exactly like the
-Slack/Telegram/WhatsApp webhook flow. The service runs each listener
-session for 12 hours, respawns immediately on clean exit, and waits 30 s
-before respawning on thrown errors. Auth failures (`invalid token`,
-`401`, `Unauthorized`) stop the service permanently to avoid Discord
-rate-limiting the token.
+The daemon opens **ONE** Gateway connection at startup as long as all
+three env vars are set. (No workspace-signal precondition — if no
+workspace is wired yet, the `/signals/discord` route will 404 any inbound
+event until one is added.) Each inbound event is HTTP-POSTed to the
+daemon's own `/signals/discord` route, which looks up the target
+workspace and hands the raw request to `chat.webhooks.discord` — exactly
+like the Slack/Telegram/WhatsApp webhook flow. The service runs each
+listener session for 12 hours, respawns immediately on clean exit, and
+waits 30 s before respawning on thrown errors. Auth failures (`invalid
+token`, `401`, `Unauthorized`) stop the service permanently to avoid
+Discord rate-limiting the token.
 
 Because the service is daemon-scoped, each inbound message lands on a
 **fresh** workspace runtime via `getOrCreateChatSdkInstance` — there's no
@@ -60,7 +61,7 @@ long-lived per-workspace FSM being reused across signals.
 
 We use the adapter's **forwarding mode** — we pass
 `startGatewayListener(..., webhookUrl)` with
-`webhookUrl = http://localhost:<daemonPort>/platform/discord`. Every raw
+`webhookUrl = http://localhost:<daemonPort>/signals/discord`. Every raw
 Gateway event is HTTP-POSTed back to our own route, which handles
 workspace routing and dispatch. The per-workspace adapter's
 `handleWebhook` (see

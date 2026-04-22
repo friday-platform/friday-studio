@@ -61,7 +61,7 @@ describe("DiscordGatewayService", () => {
 
     const service = new DiscordGatewayService({
       credentials,
-      forwardUrl: "http://localhost:12345/platform/discord",
+      forwardUrl: "http://localhost:12345/signals/discord",
       logger: makeSilentLogger(),
       adapterFactory: () => adapter,
     });
@@ -70,7 +70,7 @@ describe("DiscordGatewayService", () => {
     await vi.waitFor(() => expect(start).toHaveBeenCalled());
 
     const [, , , webhookUrl] = start.mock.calls[0] ?? [];
-    expect(webhookUrl).toBe("http://localhost:12345/platform/discord");
+    expect(webhookUrl).toBe("http://localhost:12345/signals/discord");
 
     await service.stop();
   });
@@ -105,7 +105,7 @@ describe("DiscordGatewayService", () => {
 
     const service = new DiscordGatewayService({
       credentials,
-      forwardUrl: "http://localhost:1/platform/discord",
+      forwardUrl: "http://localhost:1/signals/discord",
       logger: makeSilentLogger(),
       adapterFactory: () => adapter,
     });
@@ -127,7 +127,7 @@ describe("DiscordGatewayService", () => {
     const errorSpy = vi.spyOn(logger, "error");
     const service = new DiscordGatewayService({
       credentials,
-      forwardUrl: "http://localhost:1/platform/discord",
+      forwardUrl: "http://localhost:1/signals/discord",
       logger,
       adapterFactory: () => adapter,
     });
@@ -160,7 +160,7 @@ describe("DiscordGatewayService", () => {
     const adapter = makeFakeAdapter(start);
     const service = new DiscordGatewayService({
       credentials,
-      forwardUrl: "http://localhost:1/platform/discord",
+      forwardUrl: "http://localhost:1/signals/discord",
       logger: makeSilentLogger(),
       adapterFactory: () => adapter,
     });

@@ -1,7 +1,7 @@
 /**
  * Daemon-scoped Discord Gateway supervisor. One instance per daemon owns the
  * WebSocket connection to Discord; every inbound event is forwarded as an HTTP
- * POST to `/platform/discord`, where the per-workspace adapter handles it on a
+ * POST to `/signals/discord`, where the per-workspace adapter handles it on a
  * freshly-woken ChatSdkInstance — mirroring the Slack/Telegram/WhatsApp
  * webhook path.
  */
@@ -20,7 +20,7 @@ import {
 
 export interface DiscordGatewayServiceDeps {
   credentials: { botToken: string; publicKey: string; applicationId: string };
-  /** `http://localhost:<daemonPort>/platform/discord` — where Gateway events are forwarded. */
+  /** `http://localhost:<daemonPort>/signals/discord` — where Gateway events are forwarded. */
   forwardUrl: string;
   logger: Logger;
   /**
