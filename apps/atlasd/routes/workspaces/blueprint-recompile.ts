@@ -145,14 +145,19 @@ export async function applyBlueprint(
   const ymlPath = join(workspace.path, "workspace.yml");
   await writeFile(ymlPath, yaml, "utf-8");
 
-  // Update workspace metadata
+  // Update workspace metadata + shadow name (keeps registry aligned with yml,
+  // so bundle export and other registry-name readers don't go stale).
   const newMetadata = {
     ...workspace.metadata,
     blueprintArtifactId: artifactId,
     blueprintRevision: revision,
     ...opts?.extraMetadata,
   };
-  await manager.updateWorkspaceStatus(workspace.id, workspace.status, { metadata: newMetadata });
+  const blueprintName = blueprint.workspace.name;
+  await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
+    metadata: newMetadata,
+    ...(blueprintName && blueprintName !== workspace.name ? { name: blueprintName } : {}),
+  });
 
   // Destroy runtime if active — forces reload on next request
   const runtime = ctx.getWorkspaceRuntime(workspace.id);

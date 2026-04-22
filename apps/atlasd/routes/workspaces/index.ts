@@ -1303,6 +1303,14 @@ const workspacesRoutes = daemonFactory
 
           await writeFile(workspaceYmlPath, yamlConfig, "utf-8");
 
+          // Keep the registry's shadow `name` in sync with the yml. UI and
+          // bundle export otherwise disagree: UI reads config.workspace.name,
+          // bundle filename reads registry name.
+          const ymlName = validatedConfig.workspace.name;
+          if (ymlName && ymlName !== workspace.name) {
+            await manager.updateWorkspaceStatus(workspace.id, workspace.status, { name: ymlName });
+          }
+
           const runtime = ctx.getWorkspaceRuntime(workspace.id);
           if (runtime) {
             await ctx.destroyWorkspaceRuntime(workspace.id);
