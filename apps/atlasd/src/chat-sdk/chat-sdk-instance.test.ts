@@ -21,11 +21,18 @@ vi.mock("@atlas/core/chat/storage", () => ({
 }));
 
 import process from "node:process";
-import type { Message, Thread } from "chat";
+import type { Logger } from "@atlas/logger";
+import { DiscordAdapter } from "@chat-adapter/discord";
+import type { Message, Thread, WebhookOptions } from "chat";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
-import { createMessageHandler, resolvePlatformCredentials } from "./chat-sdk-instance.ts";
+import {
+  createMessageHandler,
+  initializeChatSdkInstance,
+  resolvePlatformCredentials,
+  superviseDiscordGateway,
+} from "./chat-sdk-instance.ts";
 
 function makeMessage(overrides?: Partial<Message>): Message {
   return {
@@ -612,5 +619,213 @@ describe("resolvePlatformCredentials", () => {
     const result = await resolvePlatformCredentials("ws-1", slackSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials.kind).toBe("slack");
+  });
+});
+
+function makeSilentLogger(): Logger {
+  const noop = vi.fn();
+  const logger: Logger = {
+    trace: noop,
+    debug: noop,
+    info: noop,
+    warn: noop,
+    error: noop,
+    fatal: noop,
+    child: () => logger,
+  };
+  return logger;
+}
+
+type GatewayStub = ReturnType<typeof vi.fn<DiscordAdapter["startGatewayListener"]>>;
+
+function makeFakeDiscordAdapter(startGatewayListener: GatewayStub): DiscordAdapter {
+  const proto = Object.create(DiscordAdapter.prototype) as DiscordAdapter;
+  Object.defineProperty(proto, "startGatewayListener", {
+    value: startGatewayListener,
+    writable: true,
+    configurable: true,
+  });
+  return proto;
+}
+
+describe("superviseDiscordGateway", () => {
+  it("respawns after a clean listener exit", async () => {
+    let calls = 0;
+    // Two runs: first resolves quickly (duration elapsed), second blocks
+    // until aborted — proves the supervisor re-invoked startGatewayListener
+    // after the first listener settled cleanly.
+    const start = vi.fn(
+      // deno-lint-ignore require-await
+      async (
+        options: WebhookOptions,
+        _duration?: number,
+        abortSignal?: AbortSignal,
+      ): Promise<Response> => {
+        if (!options.waitUntil) throw new Error("test requires waitUntil");
+        const n = ++calls;
+        if (n === 1) {
+          options.waitUntil(Promise.resolve());
+        } else {
+          options.waitUntil(
+            new Promise<void>((resolve) => {
+              abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+            }),
+          );
+        }
+        return new Response();
+      },
+    );
+    const adapter = makeFakeDiscordAdapter(start);
+
+    const supervisor = superviseDiscordGateway(adapter, makeSilentLogger());
+    // Let the microtask queue drain enough for the second iteration to start.
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+    await supervisor.stop();
+  });
+
+  it("stops on auth error without retrying", async () => {
+    // deno-lint-ignore require-await
+    const start = vi.fn(async (): Promise<Response> => {
+      throw new Error("An invalid token was provided.");
+    });
+    const adapter = makeFakeDiscordAdapter(start);
+
+    const logger = makeSilentLogger();
+    const errorSpy = vi.spyOn(logger, "error");
+    const supervisor = superviseDiscordGateway(adapter, logger);
+    await supervisor.stop();
+
+    // Exactly one attempt; no 30s retry wait was triggered.
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "discord_gateway_auth_failed",
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it("stop() aborts mid-run and waits for the in-flight listener to settle", async () => {
+    let settled = false;
+    const start = vi.fn(
+      // deno-lint-ignore require-await
+      async (
+        options: WebhookOptions,
+        _duration?: number,
+        abortSignal?: AbortSignal,
+      ): Promise<Response> => {
+        if (!options.waitUntil) throw new Error("test requires waitUntil");
+        options.waitUntil(
+          new Promise<void>((resolve) => {
+            abortSignal?.addEventListener(
+              "abort",
+              () => {
+                // Simulate adapter teardown work after the abort — stop()
+                // must wait for this to finish, not return on .abort().
+                setTimeout(() => {
+                  settled = true;
+                  resolve();
+                }, 20);
+              },
+              { once: true },
+            );
+          }),
+        );
+        return new Response();
+      },
+    );
+    const adapter = makeFakeDiscordAdapter(start);
+    const supervisor = superviseDiscordGateway(adapter, makeSilentLogger());
+    // Ensure startGatewayListener has been invoked before we stop.
+    await vi.waitFor(() => expect(start).toHaveBeenCalled());
+
+    await supervisor.stop();
+    expect(settled).toBe(true);
+  });
+});
+
+describe("initializeChatSdkInstance — Discord Gateway wiring", () => {
+  const discordEnvKeys = ["DISCORD_BOT_TOKEN", "DISCORD_PUBLIC_KEY", "DISCORD_APPLICATION_ID"];
+  const originalEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of discordEnvKeys) {
+      originalEnv[key] = process.env[key];
+    }
+  });
+  afterAll(() => {
+    for (const key of discordEnvKeys) {
+      const original = originalEnv[key];
+      if (original === undefined) delete process.env[key];
+      else process.env[key] = original;
+    }
+  });
+
+  function makeInstanceConfig() {
+    return {
+      workspaceId: "ws-discord-gw",
+      userId: "u-1",
+      streamRegistry: new StreamRegistry(),
+      triggerFn: makeTriggerFn([]),
+    };
+  }
+
+  it("does NOT start the supervisor when no Discord adapter is present", async () => {
+    const startSpy = vi.spyOn(DiscordAdapter.prototype, "startGatewayListener");
+    try {
+      const instance = await initializeChatSdkInstance(makeInstanceConfig());
+      await instance.teardown();
+      expect(startSpy).not.toHaveBeenCalled();
+    } finally {
+      startSpy.mockRestore();
+    }
+  });
+
+  it("awaits chat.initialize() BEFORE the first startGatewayListener call", async () => {
+    process.env.DISCORD_BOT_TOKEN = "t";
+    process.env.DISCORD_PUBLIC_KEY = "a".repeat(64);
+    process.env.DISCORD_APPLICATION_ID = "app";
+
+    // Stub startGatewayListener to hold open until abort — we only care about
+    // the call-order invariant here, not about running multiple iterations.
+    const startSpy = vi
+      .spyOn(DiscordAdapter.prototype, "startGatewayListener")
+      // deno-lint-ignore require-await
+      .mockImplementation(async function (
+        this: DiscordAdapter,
+        options: WebhookOptions,
+        _duration?: number,
+        abortSignal?: AbortSignal,
+      ): Promise<Response> {
+        // Assert: by the time the adapter sees a call, chat.initialize() must
+        // have run. The adapter's internal `chat` property is set by
+        // `adapter.initialize(chat)` inside `Chat.ensureInitialized`. If the
+        // caller skipped `chat.initialize()`, this field would still be null
+        // and the real adapter would short-circuit with HTTP 500.
+        expect((this as unknown as { chat: unknown }).chat).not.toBeNull();
+        options.waitUntil?.(
+          new Promise<void>((resolve) => {
+            abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+          }),
+        );
+        return new Response();
+      });
+
+    try {
+      const instance = await initializeChatSdkInstance(
+        {
+          ...makeInstanceConfig(),
+          signals: { "discord-chat": { provider: "discord", config: {} } },
+        },
+        {
+          kind: "discord",
+          botToken: "t",
+          publicKey: "a".repeat(64),
+          applicationId: "app",
+        },
+      );
+      await vi.waitFor(() => expect(startSpy).toHaveBeenCalled());
+      await instance.teardown();
+    } finally {
+      startSpy.mockRestore();
+    }
   });
 });

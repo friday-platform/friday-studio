@@ -8,8 +8,9 @@ import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { ChatSdkStateAdapter } from "@atlas/core/chat/chat-sdk-state-adapter";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { fetchLinkCredential } from "@atlas/core/mcp-registry/credential-resolver";
-import { createLogger } from "@atlas/logger";
+import { createLogger, type Logger } from "@atlas/logger";
 import { signalToStream, type TriggerFn } from "@atlas/workspace/signal-to-stream";
+import { DiscordAdapter } from "@chat-adapter/discord";
 import type { Message, StreamEvent, Thread } from "chat";
 import { Chat } from "chat";
 import { z } from "zod";
@@ -441,10 +442,104 @@ export function createMessageHandler(
   };
 }
 
-export function initializeChatSdkInstance(
+const DISCORD_GATEWAY_DURATION_MS = 12 * 60 * 60 * 1000;
+const DISCORD_GATEWAY_RETRY_DELAY_MS = 30_000;
+
+/**
+ * Authentication failures — stop the supervisor hard. Retrying with a bad
+ * bot token risks Discord rate-limiting or banning the token. Matches error
+ * messages raised by discord.js `client.login` (e.g. "An invalid token was
+ * provided.") and Discord API 401 responses.
+ */
+function isDiscordAuthError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /invalid token|unauthor|\b401\b/i.test(message);
+}
+
+/** Resolves early if the signal aborts, otherwise after `ms` ticks. */
+function cancellableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Supervise a DiscordAdapter's Gateway WebSocket listener for the lifetime
+ * of a ChatSdkInstance. The underlying adapter's `startGatewayListener`
+ * returns a Response almost immediately and hands the long-running work to
+ * `options.waitUntil`; we capture that inner promise and await it as the
+ * real loop boundary. On clean exit (duration elapsed) we respawn
+ * immediately. On thrown error we wait 30s then respawn — discord.js
+ * handles transient reconnects internally, so no exponential backoff is
+ * needed. Auth errors stop the supervisor permanently to avoid token bans.
+ */
+export function superviseDiscordGateway(
+  adapter: DiscordAdapter,
+  log: Logger,
+): { stop: () => Promise<void> } {
+  const controller = new AbortController();
+  let currentListenerPromise: Promise<unknown> | undefined;
+
+  const loop = async (): Promise<void> => {
+    while (!controller.signal.aborted) {
+      let listenerPromise: Promise<unknown> | undefined;
+      try {
+        await adapter.startGatewayListener(
+          {
+            waitUntil: (task: Promise<unknown>) => {
+              listenerPromise = task;
+              currentListenerPromise = task;
+            },
+          },
+          DISCORD_GATEWAY_DURATION_MS,
+          controller.signal,
+        );
+        if (listenerPromise) {
+          await listenerPromise;
+        }
+      } catch (error) {
+        if (isDiscordAuthError(error)) {
+          log.error("discord_gateway_auth_failed", { error });
+          break;
+        }
+        log.warn("discord_gateway_listener_error", { error });
+        await cancellableSleep(DISCORD_GATEWAY_RETRY_DELAY_MS, controller.signal);
+      }
+    }
+  };
+
+  const loopPromise = loop();
+  loopPromise.catch((error) => {
+    log.error("discord_gateway_supervisor_crashed", { error });
+  });
+
+  return {
+    stop: async () => {
+      controller.abort();
+      // Wait for the in-flight listener AND the loop itself to settle so no
+      // orphan WebSocket outlives teardown. Swallow rejections — they were
+      // already logged inside the loop.
+      await Promise.allSettled([currentListenerPromise, loopPromise]);
+    },
+  };
+}
+
+export async function initializeChatSdkInstance(
   config: ChatSdkInstanceConfig,
   credentials?: PlatformCredentials | PlatformCredentials[],
-): ChatSdkInstance {
+): Promise<ChatSdkInstance> {
   const { workspaceId, userId, signals, streamRegistry, triggerFn } = config;
 
   const adapters = buildChatSdkAdapters({ workspaceId, signals, credentials, streamRegistry });
@@ -466,16 +561,38 @@ export function initializeChatSdkInstance(
   chat.onNewMention(handler);
   chat.onSubscribedMessage(handler);
 
-  logger.info("chat_sdk_instance_created", { workspaceId, adapters: Object.keys(adapters) });
+  // Discord Gateway is inbound-only, so chat.ensureInitialized never fires
+  // lazily (it's driven by outbound webhook handling). Explicitly initialize
+  // here to wire `adapter.chat` before the supervisor's first
+  // `startGatewayListener` call — otherwise the listener returns 500.
+  const discordAdapter = adapters.discord;
+  let discordSupervisor: { stop: () => Promise<void> } | null = null;
+  if (discordAdapter instanceof DiscordAdapter) {
+    await chat.initialize();
+    discordSupervisor = superviseDiscordGateway(discordAdapter, logger);
+  }
+
+  logger.info("chat_sdk_instance_created", {
+    workspaceId,
+    adapters: Object.keys(adapters),
+    discordGateway: discordSupervisor !== null,
+  });
 
   return {
     chat,
     teardown: async () => {
-      // chat.shutdown() fans out adapter.disconnect() to every adapter
-      // (including SlackAdapter, which holds a WebClient HTTP keep-alive
-      // pool and lookup caches) and finishes by calling
-      // stateAdapter.disconnect(). Without this, every connect/disconnect/
-      // destroy cycle leaks a SlackAdapter until GC.
+      // Stop the Gateway supervisor BEFORE chat.shutdown() so the listener
+      // exits cleanly while the adapter's internal `chat` reference is still
+      // valid. chat.shutdown() then fans out adapter.disconnect() to every
+      // adapter (including SlackAdapter's WebClient keep-alive pool and
+      // lookup caches) and finishes by calling stateAdapter.disconnect().
+      if (discordSupervisor) {
+        try {
+          await discordSupervisor.stop();
+        } catch (error) {
+          logger.error("discord_gateway_supervisor_stop_failed", { workspaceId, error });
+        }
+      }
       try {
         await chat.shutdown();
       } catch (error) {
