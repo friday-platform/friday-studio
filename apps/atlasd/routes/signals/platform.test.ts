@@ -175,6 +175,37 @@ describe("POST /slack", () => {
     expect(body.error).toBe("Missing api_app_id in payload");
   });
 
+  it("echoes challenge on url_verification without needing a workspace or adapter", async () => {
+    // Slack's initial Event Subscriptions handshake. No api_app_id, no
+    // signature, so the route answers before touching workspace lookup or
+    // the Chat SDK. Matches signal-gateway's slack_perapp.go behavior.
+    const { daemon } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postSlack(app, {
+      token: "verify-token",
+      challenge: "challenge-xyz-123",
+      type: "url_verification",
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("challenge-xyz-123");
+    expect(res.headers.get("content-type")?.toLowerCase()).toContain("text/plain");
+  });
+
+  it("returns 400 on invalid JSON body", async () => {
+    const { daemon } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await app.request("/slack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json at all",
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("Invalid JSON body");
+  });
+
   it("returns 404 when workspace has no slack adapter in Chat SDK", async () => {
     const { daemon } = makeDaemon(
       [{ id: "ws-abc", config: makeConfig("A012ABCD0A0") }],

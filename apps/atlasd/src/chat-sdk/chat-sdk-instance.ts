@@ -45,10 +45,11 @@ export interface ResolvedCredentials {
 
 /**
  * Resolve every platform credential a workspace has wired. Each provider is
- * resolved independently, so a workspace with both Telegram and WhatsApp
- * signals gets both adapters. Slack credentials live in the Link service
- * (separate onboarding flow) — we always attempt the lookup but log when
- * signal-based creds shadow an existing Slack app so it's visible.
+ * resolved independently from workspace.yml signal config + env vars — so a
+ * workspace with any combination of Slack, Telegram, WhatsApp signals gets all
+ * three adapters. Signal-based (BYO) credentials are the authoritative source;
+ * the Link service is consulted only for Slack and only when no slack signal
+ * credentials resolved, as a fallback for managed/OAuth-installed Slack apps.
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
@@ -62,22 +63,16 @@ export async function resolvePlatformCredentials(
 
     const whatsappCreds = resolveWhatsappCredentials(signals);
     if (whatsappCreds) resolved.push(whatsappCreds);
-  }
 
-  const slackCreds = await resolveSlackCredentials(workspaceId);
-  if (slackCreds) {
-    if (resolved.length === 0) {
-      resolved.push(slackCreds);
-    } else {
-      // Silently dropping Slack would hide a real configuration drift — a
-      // workspace that started Slack-only and later gained a Telegram signal
-      // would stop responding on Slack with no log.
-      logger.warn("slack_credential_shadowed_by_signal_creds", {
-        workspaceId,
-        activeProviders: resolved.map((r) => r.credentials.kind),
-      });
+    const slackSignalCreds = resolveSlackFromSignals(signals);
+    if (slackSignalCreds) {
+      resolved.push(slackSignalCreds);
+      return resolved;
     }
   }
+
+  const slackLinkCreds = await resolveSlackFromLink(workspaceId);
+  if (slackLinkCreds) resolved.push(slackLinkCreds);
 
   return resolved;
 }
@@ -155,7 +150,46 @@ function resolveWhatsappCredentials(
   return null;
 }
 
-async function resolveSlackCredentials(workspaceId: string): Promise<ResolvedCredentials | null> {
+function resolveSlackFromSignals(
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+): ResolvedCredentials | null {
+  for (const signal of Object.values(signals)) {
+    if (signal.provider !== "slack") continue;
+
+    const botToken =
+      (typeof signal.config?.bot_token === "string" ? signal.config.bot_token : null) ??
+      process.env.SLACK_BOT_TOKEN;
+    if (!botToken) {
+      logger.debug("slack_signal_no_bot_token", {
+        hint: "Set bot_token in signal config or SLACK_BOT_TOKEN env var",
+      });
+      return null;
+    }
+
+    const signingSecret =
+      (typeof signal.config?.signing_secret === "string" ? signal.config.signing_secret : null) ??
+      process.env.SLACK_SIGNING_SECRET;
+    if (!signingSecret) {
+      logger.debug("slack_signal_no_signing_secret", {
+        hint: "Set signing_secret in signal config or SLACK_SIGNING_SECRET env var",
+      });
+      return null;
+    }
+
+    const appId =
+      (typeof signal.config?.app_id === "string" ? signal.config.app_id : null) ??
+      process.env.SLACK_APP_ID ??
+      "";
+
+    return {
+      credentials: { kind: "slack", botToken, signingSecret, appId },
+      credentialId: appId ? `slack:${appId}` : `slack:${botToken.slice(-8)}`,
+    };
+  }
+  return null;
+}
+
+async function resolveSlackFromLink(workspaceId: string): Promise<ResolvedCredentials | null> {
   const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
   const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${encodeURIComponent(workspaceId)}`;
 

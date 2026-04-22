@@ -15,6 +15,11 @@ const logger = createLogger({ component: "platform-signal-route" });
 
 const SlackAppIdSchema = z.object({ api_app_id: z.string() });
 
+const SlackUrlVerificationSchema = z.object({
+  type: z.literal("url_verification"),
+  challenge: z.string(),
+});
+
 /** Minimal shape of a WhatsApp webhook POST payload used for workspace routing. */
 const WhatsAppWebhookPayloadSchema = z.object({
   entry: z
@@ -43,9 +48,31 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     const slackRequest = c.req.raw.clone();
     const rawBody = await c.req.text();
 
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      logger.warn("slack_signal_invalid_json", { bodyPreview: rawBody.slice(0, 200) });
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    // Slack sends this during Event Subscriptions URL registration. It has no
+    // api_app_id and no signature we can verify against a workspace — Slack
+    // just wants the `challenge` value echoed. Mirrors signal-gateway's
+    // handlePerAppSlackWebhook; keeps atlasd self-sufficient for dev setups
+    // that don't run the Go gateway.
+    const urlVerify = SlackUrlVerificationSchema.safeParse(parsed);
+    if (urlVerify.success) {
+      logger.info("slack_url_verification_challenge");
+      return new Response(urlVerify.data.challenge, {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
     let appId: string;
     try {
-      appId = SlackAppIdSchema.parse(JSON.parse(rawBody)).api_app_id;
+      appId = SlackAppIdSchema.parse(parsed).api_app_id;
     } catch {
       logger.warn("slack_signal_missing_app_id", { bodyPreview: rawBody.slice(0, 200) });
       return c.json({ error: "Missing api_app_id in payload" }, 400);

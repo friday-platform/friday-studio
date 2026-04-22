@@ -50,7 +50,21 @@ export const SlackProviderConfigSchema = z.strictObject({
   app_id: z
     .string()
     .optional()
-    .describe("Slack app ID — populated by auto-wire after workspace creation"),
+    .describe(
+      "Slack app ID — required for inbound webhook routing (matched against api_app_id). Populated by auto-wire for managed installs, or set explicitly for BYO.",
+    ),
+  bot_token: z
+    .string()
+    .optional()
+    .describe(
+      "Slack bot token (xoxb-...). Falls back to SLACK_BOT_TOKEN env var. When set, overrides any Link-managed credentials for this workspace.",
+    ),
+  signing_secret: z
+    .string()
+    .optional()
+    .describe(
+      "Slack signing secret for x-slack-signature verification. Falls back to SLACK_SIGNING_SECRET env var.",
+    ),
 });
 export type SlackProviderConfig = z.infer<typeof SlackProviderConfigSchema>;
 

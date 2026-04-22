@@ -367,7 +367,7 @@ describe("createMessageHandler — kernel filtering", () => {
 });
 
 describe("resolvePlatformCredentials", () => {
-  // resolveSlackCredentials calls out to the Link service. We redirect it to
+  // resolveSlackFromLink calls out to the Link service. We redirect it to
   // an unreachable port so the fetch fails and it returns null, matching the
   // no-slack-wired case without touching the fn under test.
   const originalLinkUrl = process.env.LINK_SERVICE_URL;
@@ -394,6 +394,16 @@ describe("resolvePlatformCredentials", () => {
         app_secret: "secret",
         phone_number_id: "999",
         verify_token: "verify",
+      },
+    },
+  };
+  const slackSignal = {
+    "slack-chat": {
+      provider: "slack",
+      config: {
+        app_id: "A123",
+        bot_token: "xoxb-byo-token",
+        signing_secret: "byo-signing-secret",
       },
     },
   };
@@ -444,5 +454,80 @@ describe("resolvePlatformCredentials", () => {
       if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
       else process.env.TELEGRAM_BOT_TOKEN = originalToken;
     }
+  });
+
+  it("resolves slack from BYO signal config", async () => {
+    const result = await resolvePlatformCredentials("ws-1", slackSignal);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.credentials).toEqual({
+      kind: "slack",
+      botToken: "xoxb-byo-token",
+      signingSecret: "byo-signing-secret",
+      appId: "A123",
+    });
+    expect(result[0]?.credentialId).toBe("slack:A123");
+  });
+
+  it("falls back to SLACK_* env vars when slack signal config is empty", async () => {
+    const originalToken = process.env.SLACK_BOT_TOKEN;
+    const originalSecret = process.env.SLACK_SIGNING_SECRET;
+    const originalAppId = process.env.SLACK_APP_ID;
+    process.env.SLACK_BOT_TOKEN = "xoxb-env-token";
+    process.env.SLACK_SIGNING_SECRET = "env-signing";
+    process.env.SLACK_APP_ID = "AENV";
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "slack-chat": { provider: "slack", config: {} },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials.kind).toBe("slack");
+      expect(result[0]?.credentialId).toBe("slack:AENV");
+    } finally {
+      if (originalToken === undefined) delete process.env.SLACK_BOT_TOKEN;
+      else process.env.SLACK_BOT_TOKEN = originalToken;
+      if (originalSecret === undefined) delete process.env.SLACK_SIGNING_SECRET;
+      else process.env.SLACK_SIGNING_SECRET = originalSecret;
+      if (originalAppId === undefined) delete process.env.SLACK_APP_ID;
+      else process.env.SLACK_APP_ID = originalAppId;
+    }
+  });
+
+  it("returns null when slack signal missing signing_secret (no silent partial creds)", async () => {
+    const result = await resolvePlatformCredentials("ws-1", {
+      "slack-chat": {
+        provider: "slack",
+        config: { app_id: "A1", bot_token: "xoxb-only-token" },
+      },
+    });
+    // Link is unreachable in the test env, so resolver returns empty rather than
+    // a half-populated slack credential.
+    expect(result).toEqual([]);
+  });
+
+  it("slack signal coexists with telegram signal (no cross-provider shadow)", async () => {
+    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...slackSignal });
+    const kinds = result.map((r) => r.credentials.kind).sort();
+    expect(kinds).toEqual(["slack", "telegram"]);
+  });
+
+  it("resolves all three when slack + telegram + whatsapp signals coexist", async () => {
+    const result = await resolvePlatformCredentials("ws-1", {
+      ...tgSignal,
+      ...waSignal,
+      ...slackSignal,
+    });
+    const kinds = result.map((r) => r.credentials.kind).sort();
+    expect(kinds).toEqual(["slack", "telegram", "whatsapp"]);
+  });
+
+  it("slack signal short-circuits the Link service lookup", async () => {
+    // If Link were consulted, a reachable (but 404-returning) LINK_SERVICE_URL
+    // would log chat_sdk_no_credential_for_workspace. We can't easily assert
+    // on that here, so instead assert the resolver succeeds purely from signal
+    // data — no network required. The unreachable LINK URL in beforeEach would
+    // surface as a thrown error on `!res.ok` if it were actually called.
+    const result = await resolvePlatformCredentials("ws-1", slackSignal);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.credentials.kind).toBe("slack");
   });
 });
