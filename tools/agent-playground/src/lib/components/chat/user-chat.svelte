@@ -273,6 +273,14 @@
 
       // The server returns AI SDK v6 UIMessage-shaped entries (parts array);
       // parse them defensively into AtlasUIMessage[].
+      //
+      // Stamp `state: "done"` on every rehydrated assistant message — a
+      // message loaded from disk is by definition past its live turn, so
+      // the `extractToolCalls` reducer's crash fallback can promote any
+      // still-in-progress delegate children to `output-error` instead of
+      // rendering ghost spinners (AI SDK v6 doesn't set a top-level
+      // `state` field on its own, so without this stamp the fallback
+      // rule would never fire on reload).
       const rehydrated: AtlasUIMessage[] = [];
       for (const msg of parsed.data.messages) {
         if (
@@ -287,7 +295,9 @@
         ) {
           // We trust the server-side validator — it ran
           // `validateAtlasUIMessages` on write, so the shape is valid.
-          rehydrated.push(msg as unknown as AtlasUIMessage);
+          const stamped =
+            msg.role === "assistant" ? { ...msg, state: "done" as const } : msg;
+          rehydrated.push(stamped as unknown as AtlasUIMessage);
         }
       }
 

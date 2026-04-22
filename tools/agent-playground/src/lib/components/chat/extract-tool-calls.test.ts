@@ -19,12 +19,24 @@ import { extractToolCalls } from "./extract-tool-calls.ts";
 // the prefix. Tests assert against the namespaced form.
 // ---------------------------------------------------------------------------
 
-function makeMessage(parts: unknown[]): AtlasUIMessage {
+function makeMessage(parts: unknown[], extra: Record<string, unknown> = {}): AtlasUIMessage {
   return {
     id: "msg-1",
     role: "assistant",
     parts,
+    ...extra,
   } as unknown as AtlasUIMessage;
+}
+
+/** Build a `data-delegate-chunk` envelope wrapping a synthetic `delegate-end` terminator. */
+function delegateEndEnvelope(delegateToolCallId: string, pendingToolCallIds: string[]) {
+  return {
+    type: "data-delegate-chunk",
+    data: {
+      delegateToolCallId,
+      chunk: { type: "delegate-end", pendingToolCallIds },
+    },
+  };
 }
 
 /** Top-level `tool-delegate` part in the shape AI SDK v6 writes to `msg.parts`. */
@@ -281,6 +293,209 @@ describe("extractToolCalls", () => {
       ]);
       const [only] = extractToolCalls(msg);
       expect(only?.children).toEqual([]);
+    });
+  });
+
+  describe("Task #7 — delegate-end terminator + parent-state crash fallback", () => {
+    it("delegate-end promotes listed pending children to output-error 'interrupted'; siblings unchanged", () => {
+      // d1 has two children: c1 (mid-stream, listed in delegate-end) and
+      // c2 (cleanly completed). The terminator must only touch c1.
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+        envelope("d1", toolInputStart("d1::c2", "run_code")),
+        envelope("d1", toolInputAvailable("d1::c2", "run_code", { code: "y" })),
+        envelope("d1", toolOutputAvailable("d1::c2", { ok: true })),
+        delegateEndEnvelope("d1", ["d1::c1"]),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [c1, c2] = parent?.children ?? [];
+      expect(c1?.toolCallId).toBe("d1::c1");
+      expect(c1?.state).toBe("output-error");
+      expect(c1?.errorText).toBe("interrupted");
+      expect(c2?.toolCallId).toBe("d1::c2");
+      expect(c2?.state).toBe("output-available");
+      expect(c2?.errorText).toBeUndefined();
+    });
+
+    it("delegate-end never clobbers terminal-state children", () => {
+      // Pathological: delegate-end claims a child is pending, but the child
+      // already reached output-available. Trust the terminal state.
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+        envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
+        delegateEndEnvelope("d1", ["d1::c1"]),
+      ]);
+      const [parent] = extractToolCalls(msg);
+      const [c1] = parent?.children ?? [];
+      expect(c1?.state).toBe("output-available");
+      expect(c1?.errorText).toBeUndefined();
+    });
+
+    it("delegate-end across multiple delegates only touches its own children", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        delegatePart("d2", "input-available"),
+        envelope("d1", toolInputStart("d1::a", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1::a", "web_fetch", { url: "x" })),
+        envelope("d2", toolInputStart("d2::b", "run_code")),
+        envelope("d2", toolInputAvailable("d2::b", "run_code", { code: "y" })),
+        delegateEndEnvelope("d1", ["d1::a"]),
+      ]);
+      const [first, second] = extractToolCalls(msg);
+      const [d1Child] = first?.children ?? [];
+      const [d2Child] = second?.children ?? [];
+      expect(d1Child?.state).toBe("output-error");
+      expect(d1Child?.errorText).toBe("interrupted");
+      expect(d2Child?.state).toBe("input-available");
+      expect(d2Child?.errorText).toBeUndefined();
+    });
+
+    it("parent.state === 'done' fallback promotes all in-progress children when no delegate-end seen", () => {
+      // Crash-simulated: parent reached 'done' but no delegate-end ever
+      // arrived. Both in-progress children get interrupted.
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          // c1 stuck at input-streaming (no input-available)
+          envelope("d1", toolInputStart("d1::c2", "run_code")),
+          envelope("d1", toolInputAvailable("d1::c2", "run_code", { code: "y" })),
+          // c2 stuck at input-available (no output)
+        ],
+        { state: "done" },
+      );
+      const [parent] = extractToolCalls(msg);
+      const [c1, c2] = parent?.children ?? [];
+      expect(c1?.state).toBe("output-error");
+      expect(c1?.errorText).toBe("interrupted");
+      expect(c2?.state).toBe("output-error");
+      expect(c2?.errorText).toBe("interrupted");
+    });
+
+    it("parent.state === 'done' fallback leaves terminal-state children untouched", () => {
+      // Regression: a completed child under a 'done' parent without a
+      // delegate-end must stay output-available.
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
+        ],
+        { state: "done" },
+      );
+      const [parent] = extractToolCalls(msg);
+      const [c1] = parent?.children ?? [];
+      expect(c1?.state).toBe("output-available");
+      expect(c1?.errorText).toBeUndefined();
+    });
+
+    it("rule ordering: delegate-end takes precedence over parent.state fallback", () => {
+      // Two delegates under a 'done' parent: dA has explicit delegate-end,
+      // dB does not. Both still produce 'interrupted' on their pending
+      // children, but via different rules.
+      const msg = makeMessage(
+        [
+          delegatePart("dA", "input-available"),
+          delegatePart("dB", "input-available"),
+          envelope("dA", toolInputStart("dA::c1", "web_fetch")),
+          envelope("dA", toolInputAvailable("dA::c1", "web_fetch", { url: "x" })),
+          envelope("dB", toolInputStart("dB::c1", "run_code")),
+          envelope("dB", toolInputAvailable("dB::c1", "run_code", { code: "y" })),
+          delegateEndEnvelope("dA", ["dA::c1"]),
+        ],
+        { state: "done" },
+      );
+      const [pa, pb] = extractToolCalls(msg);
+      const [aChild] = pa?.children ?? [];
+      const [bChild] = pb?.children ?? [];
+      expect(aChild?.state).toBe("output-error");
+      expect(aChild?.errorText).toBe("interrupted");
+      expect(bChild?.state).toBe("output-error");
+      expect(bChild?.errorText).toBe("interrupted");
+    });
+
+    it("parent.state === 'done' does nothing when a delegate-end was already received (even with empty pendingToolCallIds)", () => {
+      // delegate-end with [] means the delegate completed cleanly with no
+      // pending children. The fallback rule must not second-guess it — a
+      // still-streaming child here is genuinely unfinished, not crashed.
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
+          delegateEndEnvelope("d1", []),
+        ],
+        { state: "done" },
+      );
+      const [parent] = extractToolCalls(msg);
+      const [c1] = parent?.children ?? [];
+      expect(c1?.state).toBe("output-available");
+      expect(c1?.errorText).toBeUndefined();
+    });
+
+    it("data-delegate-ledger parts remain ignored even with the new rules in play", () => {
+      // Regression on Task #3's filter: ledger parts must not be interpreted
+      // as terminators or otherwise affect the new rules.
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          {
+            type: "data-delegate-ledger",
+            data: {
+              delegateToolCallId: "d1",
+              toolsUsed: [
+                {
+                  toolCallId: "c1",
+                  name: "web_fetch",
+                  input: {},
+                  outcome: "success",
+                  stepIndex: 0,
+                  durationMs: 0,
+                },
+              ],
+            },
+          },
+        ],
+        { state: "done" },
+      );
+      const [parent] = extractToolCalls(msg);
+      const [c1] = parent?.children ?? [];
+      // No delegate-end → fallback applies → child gets interrupted.
+      expect(c1?.state).toBe("output-error");
+      expect(c1?.errorText).toBe("interrupted");
+    });
+
+    it("malformed delegate-end (non-array pendingToolCallIds) is ignored — fallback still applies", () => {
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          {
+            type: "data-delegate-chunk",
+            data: {
+              delegateToolCallId: "d1",
+              chunk: { type: "delegate-end", pendingToolCallIds: "not-an-array" },
+            },
+          },
+        ],
+        { state: "done" },
+      );
+      const [parent] = extractToolCalls(msg);
+      const [c1] = parent?.children ?? [];
+      // Malformed terminator is dropped → no delegate-end seen → fallback
+      // promotes the in-progress child.
+      expect(c1?.state).toBe("output-error");
+      expect(c1?.errorText).toBe("interrupted");
     });
   });
 });

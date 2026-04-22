@@ -12,12 +12,22 @@
  *      entries, and attaches them to the matching top-level delegate
  *      entry's `children` field.
  *
+ * After grouping, two reconciliation rules finalize the tree (Task #7):
+ *   - **`delegate-end` terminator (authoritative):** if the proxy writer's
+ *     synthetic `{ type: "delegate-end", pendingToolCallIds }` chunk is
+ *     present for a delegate, every listed (namespaced) child still in a
+ *     non-terminal state is promoted to `output-error` with
+ *     `errorText: "interrupted"`. Terminal children are never clobbered.
+ *   - **`parent.state === "done"` crash fallback:** if the parent message
+ *     reached its terminal lifecycle state but no `delegate-end` arrived
+ *     for a given delegate (catastrophic crash before the server-side
+ *     `finally` could write the terminator), every still-in-progress child
+ *     under that delegate is promoted to `output-error` with
+ *     `errorText: "interrupted"`. Only applies to delegates without an
+ *     explicit terminator — the rule never overrides `delegate-end`.
+ *
  * `data-delegate-ledger` parts are intentionally filtered out — they exist
  * for a future reflection layer, not the UI tree.
- *
- * NOTE (Task #3 scope): this reducer does NOT handle `delegate-end`
- * terminators or `parent.state === "done"` crash fallbacks. Those rules
- * land in Task #7.
  *
  * @module
  */
@@ -161,8 +171,46 @@ function applyChunk(acc: ChildAccumulator, chunk: unknown): void {
 }
 
 /**
- * Extract tool-call parts from an {@link AtlasUIMessage} in stream order
- * and reconstruct any nested delegate children.
+ * Children whose state is irreversibly resolved. The reconciliation rules
+ * never overwrite these — both the explicit `delegate-end` terminator and
+ * the `parent.state === "done"` fallback are last-write-wins safety nets,
+ * not authority over actual outcome chunks.
+ */
+const TERMINAL_CHILD_STATES = new Set<ToolCallDisplay["state"]>([
+  "output-available",
+  "output-error",
+  "output-denied",
+]);
+
+/**
+ * Promote a non-terminal child to `output-error` with `errorText: "interrupted"`.
+ * No-op if the child is already terminal.
+ */
+function interruptChild(child: ToolCallDisplay): void {
+  if (TERMINAL_CHILD_STATES.has(child.state)) return;
+  child.state = "output-error";
+  child.errorText = "interrupted";
+}
+
+/**
+ * Read the parent message's lifecycle state. AI SDK v6's `UIMessage` does
+ * not type a top-level `state` field, but downstream layers (chat
+ * persistence, hand-built crash-test fixtures) may stamp one — we read
+ * defensively. Returns `true` only when the message has explicitly
+ * reached its terminal turn.
+ */
+function isMessageDone(msg: AtlasUIMessage): boolean {
+  if (typeof msg !== "object" || msg === null) return false;
+  if (!("state" in msg)) return false;
+  const state = (msg as { state?: unknown }).state;
+  return state === "done";
+}
+
+/**
+ * Extract tool-call parts from an {@link AtlasUIMessage} in stream order,
+ * reconstruct any nested delegate children, and reconcile their final
+ * states using the `delegate-end` terminator and `parent.state === "done"`
+ * crash fallback rules.
  *
  * See module doc for pass semantics. `data-delegate-ledger` parts are
  * silently dropped — they surface via a separate reflection-layer path.
@@ -181,7 +229,10 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   }
 
   // Pass 2: group `data-delegate-chunk` envelopes by `delegateToolCallId`.
+  // `delegate-end` chunks are routed to a separate map (the terminator
+  // rule operates on them, not the per-child accumulator).
   const grouped = new Map<string, ChildAccumulator>();
+  const delegateEndPending = new Map<string, string[]>();
   for (const part of msg.parts) {
     if (typeof part !== "object" || part === null || !("type" in part)) continue;
     if (part.type !== "data-delegate-chunk") continue;
@@ -199,6 +250,24 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       grouped.set(delegateToolCallId, acc);
     }
     const chunk = "chunk" in part.data ? part.data.chunk : undefined;
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      "type" in chunk &&
+      chunk.type === "delegate-end"
+    ) {
+      // Malformed terminators (missing or non-array `pendingToolCallIds`)
+      // are dropped entirely — better to fall through to the
+      // `parent.state === "done"` rule than to falsely register a
+      // valid-but-empty terminator that suppresses it.
+      if ("pendingToolCallIds" in chunk && Array.isArray(chunk.pendingToolCallIds)) {
+        const pending = chunk.pendingToolCallIds.filter(
+          (id): id is string => typeof id === "string",
+        );
+        delegateEndPending.set(delegateToolCallId, pending);
+      }
+      continue;
+    }
     applyChunk(acc, chunk);
   }
 
@@ -207,6 +276,27 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
     const parent = byToolCallId.get(delegateToolCallId);
     if (!parent) continue;
     parent.children = [...acc.values()];
+  }
+
+  // Reconciliation rules. `delegate-end` is checked first; the
+  // parent-state fallback only applies to delegates that did NOT receive
+  // an explicit terminator (even an empty one).
+  const parentDone = isMessageDone(msg);
+  for (const [delegateToolCallId, parent] of byToolCallId) {
+    if (parent.toolName !== "delegate") continue;
+    const children = parent.children;
+    if (!children) continue;
+    if (delegateEndPending.has(delegateToolCallId)) {
+      const pending = delegateEndPending.get(delegateToolCallId) ?? [];
+      const pendingSet = new Set(pending);
+      for (const child of children) {
+        if (pendingSet.has(child.toolCallId)) interruptChild(child);
+      }
+      continue;
+    }
+    if (parentDone) {
+      for (const child of children) interruptChild(child);
+    }
   }
 
   return calls;
