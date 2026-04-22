@@ -2,8 +2,7 @@
  * Pipeline orchestrator: prompt -> WorkspaceBlueprint.
  *
  * Sequences all planner steps internally so consumer shells (workspace-planner,
- * do-task, proto CLI) call one function instead of replicating ~250 lines of
- * step wiring.
+ * proto CLI) call one function instead of replicating ~250 lines of step wiring.
  */
 
 import type { ValidatedJSONSchema } from "@atlas/core/artifacts";

@@ -107,7 +107,7 @@ export function formatMessage(
       }
     }
 
-    // Step descriptions from do_task execution (e.g., "Explores your Notion workspace...")
+    // Step descriptions from sub-agent execution (e.g., "Explores your Notion workspace...")
     // Only step-start events have stepIndex — skip phase indicators like "Planning..."
     if (part.type === "data-tool-progress" && part.data.stepIndex != null) {
       return {
@@ -118,7 +118,7 @@ export function formatMessage(
       };
     }
 
-    // Inner tool calls from sub-agent execution (e.g., Notion searches inside do_task)
+    // Inner tool calls from sub-agent execution (e.g., Notion searches inside delegate)
     if (part.type === "data-inner-tool-call") {
       // Only show completed calls — started events would duplicate entries
       if (part.data.status !== "completed") return undefined;
@@ -134,21 +134,6 @@ export function formatMessage(
               ...(part.data.result ? { result: part.data.result } : {}),
             }
           : undefined,
-      };
-    }
-
-    if (part.type === "tool-do_task") {
-      const input = part.input;
-      const intentText =
-        input && typeof input === "object" && "intent" in input && typeof input.intent === "string"
-          ? input.intent
-          : undefined;
-      return {
-        type: "intent",
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        content: "do_task",
-        details: intentText ? { text: intentText } : part,
       };
     }
 

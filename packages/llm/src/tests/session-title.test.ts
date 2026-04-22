@@ -88,7 +88,7 @@ it("generateSessionTitle - fallback prefers intent from signal.data over jobName
 it("generateSessionTitle - fallback uses task from signal.data", async () => {
   const result = await generateSessionTitle(
     makeInput({
-      signal: { type: "do-task", id: "task-456", data: { task: "Generate quarterly report" } },
+      signal: { type: "task-runner", id: "task-456", data: { task: "Generate quarterly report" } },
       _llm: mockLLM(new Error("API error")),
     }),
   );
