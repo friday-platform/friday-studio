@@ -126,6 +126,13 @@ export class AtlasDaemon {
     new Map();
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  /**
+   * Workspaces that should NOT be reaped by the idle timeout, regardless of
+   * session activity. Populated for adapters whose liveness is an outbound
+   * long-lived connection (currently only Discord Gateway — Slack/Telegram/
+   * WhatsApp are inbound-HTTP and can be re-woken by the platform webhook).
+   */
+  public preventIdleWorkspaces: Set<string> = new Set();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
@@ -1247,6 +1254,20 @@ export class AtlasDaemon {
     }
   }
 
+  /**
+   * Pin a workspace against idle reaping. Called when an outbound long-lived
+   * connection is wired (e.g. Discord Gateway) whose presence is not
+   * observable via session/execution activity.
+   */
+  registerPreventIdle(workspaceId: string): void {
+    this.preventIdleWorkspaces.add(workspaceId);
+  }
+
+  /** Release a previously-registered idle pin. Idempotent. */
+  releasePreventIdle(workspaceId: string): void {
+    this.preventIdleWorkspaces.delete(workspaceId);
+  }
+
   /** Cached per workspace; torn down when the runtime is destroyed. */
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
     const existing = this.chatSdkInstances.get(workspaceId);
@@ -1286,6 +1307,15 @@ export class AtlasDaemon {
       logger.warn("chat_sdk_credential_resolution_failed", { workspaceId, error });
     }
 
+    // Pin against idle reaping as soon as we know a Discord Gateway will be
+    // wired. This MUST happen before awaiting initializeChatSdkInstance —
+    // credential resolution + chat.initialize() + supervisor spawn can together
+    // exceed a single reaper cycle, and the supervisor's live WebSocket is
+    // invisible to the session/execution heuristic.
+    if (credentials?.some((c) => c.kind === "discord")) {
+      this.registerPreventIdle(workspaceId);
+    }
+
     const instanceConfig: ChatSdkInstanceConfig = {
       workspaceId,
       userId,
@@ -1304,6 +1334,7 @@ export class AtlasDaemon {
         );
         return { sessionId: session.id };
       },
+      releasePreventIdle: (id) => this.releasePreventIdle(id),
     };
 
     const instance = await initializeChatSdkInstance(instanceConfig, credentials);
@@ -1518,6 +1549,14 @@ export class AtlasDaemon {
     const runtime = this.runtimes.get(workspaceId);
     if (!runtime) return;
 
+    // Workspaces pinned by an outbound long-lived connection (e.g. Discord
+    // Gateway) must not be reaped. No re-arm: the pin stays until teardown,
+    // and any other wake-path (webhook, cron, signal) will resetIdleTimeout.
+    if (this.preventIdleWorkspaces.has(workspaceId)) {
+      logger.debug("Skipping idle reap for pinned workspace", { workspaceId });
+      return;
+    }
+
     const sessions = runtime.getSessions();
     const hasActiveSessions = sessions.some(
       (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
@@ -1631,6 +1670,11 @@ export class AtlasDaemon {
     this.runtimes.delete(workspaceId);
 
     await this.evictChatSdkInstance(workspaceId);
+
+    // Belt-and-braces: clear any dangling idle pin even if teardown's finally
+    // block failed to release it. Without this a broken teardown could leave
+    // a zombie flag that permanently exempts the workspace ID from reaping.
+    this.preventIdleWorkspaces.delete(workspaceId);
 
     // Unregister runtime from WorkspaceManager
     const manager = this.getWorkspaceManager();
@@ -1791,6 +1835,10 @@ export class AtlasDaemon {
       clearTimeout(timeoutId);
     }
     this.idleTimeouts.clear();
+
+    // All workspaces are being torn down — drop any remaining pins so a
+    // diagnostic log of `preventIdleWorkspaces.size` doesn't misreport leaks.
+    this.preventIdleWorkspaces.clear();
 
     // Stop SSE health check
     if (this.sseHealthCheckInterval) {

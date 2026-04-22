@@ -876,3 +876,53 @@ describe("initializeChatSdkInstance — Discord Gateway wiring", () => {
     }
   });
 });
+
+describe("initializeChatSdkInstance — releasePreventIdle wiring", () => {
+  it("invokes releasePreventIdle on teardown with the workspace id", async () => {
+    const release = vi.fn<(id: string) => void>();
+    const instance = await initializeChatSdkInstance({
+      workspaceId: "ws-release-happy",
+      userId: "u-1",
+      streamRegistry: new StreamRegistry(),
+      triggerFn: makeTriggerFn([]),
+      releasePreventIdle: release,
+    });
+
+    await instance.teardown();
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith("ws-release-happy");
+  });
+
+  it("still invokes releasePreventIdle when chat.shutdown() throws", async () => {
+    const release = vi.fn<(id: string) => void>();
+    const instance = await initializeChatSdkInstance({
+      workspaceId: "ws-release-shutdown-throws",
+      userId: "u-1",
+      streamRegistry: new StreamRegistry(),
+      triggerFn: makeTriggerFn([]),
+      releasePreventIdle: release,
+    });
+
+    // Force chat.shutdown to throw AFTER the inner catch would normally
+    // swallow it. Replacing the method with one that throws synchronously
+    // proves the outer finally still fires. The existing inner catch logs
+    // and swallows, but we also verify defense-in-depth here: if a future
+    // change removes the inner catch, the pin must still be released.
+    const shutdownSpy = vi
+      .spyOn(instance.chat, "shutdown")
+      // deno-lint-ignore require-await
+      .mockImplementation(async () => {
+        throw new Error("boom from chat.shutdown");
+      });
+
+    try {
+      await instance.teardown();
+    } finally {
+      shutdownSpy.mockRestore();
+    }
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith("ws-release-shutdown-throws");
+  });
+});

@@ -32,6 +32,12 @@ export interface ChatSdkInstanceConfig {
   streamRegistry: StreamRegistry;
   triggerFn: TriggerFn;
   exposeKernel?: boolean;
+  /**
+   * Called from teardown's finally block to drop any idle-reaper pin the
+   * daemon set when the instance was built. Optional so test fixtures and
+   * non-daemon callers don't have to wire it.
+   */
+  releasePreventIdle?: (workspaceId: string) => void;
 }
 
 export interface ChatSdkInstance {
@@ -595,19 +601,28 @@ export async function initializeChatSdkInstance(
       // valid. chat.shutdown() then fans out adapter.disconnect() to every
       // adapter (including SlackAdapter's WebClient keep-alive pool and
       // lookup caches) and finishes by calling stateAdapter.disconnect().
-      if (discordSupervisor) {
-        try {
-          await discordSupervisor.stop();
-        } catch (error) {
-          logger.error("discord_gateway_supervisor_stop_failed", { workspaceId, error });
-        }
-      }
+      //
+      // The outer try/finally guarantees the idle-reaper pin is released even
+      // if supervisor.stop() or chat.shutdown() throw past their inner
+      // catches — a zombie pin would permanently exempt the workspace from
+      // reaping.
       try {
-        await chat.shutdown();
-      } catch (error) {
-        logger.error("chat_sdk_instance_teardown_failed", { workspaceId, error });
+        if (discordSupervisor) {
+          try {
+            await discordSupervisor.stop();
+          } catch (error) {
+            logger.error("discord_gateway_supervisor_stop_failed", { workspaceId, error });
+          }
+        }
+        try {
+          await chat.shutdown();
+        } catch (error) {
+          logger.error("chat_sdk_instance_teardown_failed", { workspaceId, error });
+        }
+        logger.info("chat_sdk_instance_torn_down", { workspaceId });
+      } finally {
+        config.releasePreventIdle?.(workspaceId);
       }
-      logger.info("chat_sdk_instance_torn_down", { workspaceId });
     },
   };
 }
