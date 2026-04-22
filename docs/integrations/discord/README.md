@@ -15,19 +15,24 @@ incoming messages, and they flow into the same pipeline the web chat uses.
 ## How it works
 
 ```
-Discord Gateway                            ┌── atlasd ─────────────────┐
-                                           │                            │
-  MESSAGE_CREATE / MESSAGE_UPDATE          │  ChatSdkInstance           │
-     │                                     │   │                        │
-     ▼                                     │   ├─ superviseDiscordGateway
-   WebSocket ◀──── 12h persistent ─────────┤   │   (respawns on exit)   │
-                                           │   ▼                        │
-                                           │  DiscordAdapter            │
-                                           │   (Vercel Chat SDK)        │
-                                           │   • author.bot filter      │
-                                           │   • MessageContent intent  │
-                                           │   • fires "chat"           │
-                                           └────────────────────────────┘
+Discord Gateway                            ┌── atlasd (daemon-scoped) ─────────┐
+                                           │                                    │
+  MESSAGE_CREATE / MESSAGE_UPDATE          │  DiscordGatewayService             │
+     │                                     │   ├─ one WebSocket per daemon      │
+     ▼                                     │   ├─ startGatewayListener(url)     │
+   WebSocket ◀──── 12h persistent ─────────┤   └─ forwards each event via HTTP  │
+                                           │                       │             │
+                                           │                       ▼             │
+                                           │  POST /platform/discord             │
+                                           │   ├─ finds workspace by signal      │
+                                           │   ├─ getOrCreateChatSdkInstance     │
+                                           │   └─ chat.webhooks.discord(req)     │
+                                           │                       │             │
+                                           │                       ▼             │
+                                           │  DiscordAdapter (per workspace)     │
+                                           │   • handleForwardedGatewayEvent     │
+                                           │   • fires "chat" signal             │
+                                           └─────────────────────────────────────┘
 ```
 
 Unlike Slack / Telegram / WhatsApp, Discord's inbound path does **not** use
@@ -36,31 +41,36 @@ over the Gateway WebSocket — Discord's HTTP Interactions endpoint only
 receives slash commands and button clicks, which we don't wire (see
 [Known limitations](#known-limitations)).
 
-The daemon opens one Gateway connection per workspace that has a
-`discord` signal and valid env-var credentials. The supervisor runs the
-listener for 12 hours at a time, respawns immediately on clean exit, and
-waits 30 s before respawning on thrown errors. Auth failures
-(`invalid token`, `401`, `Unauthorized`) stop the supervisor permanently
-to avoid Discord rate-limiting the token.
+The daemon opens **ONE** Gateway connection at startup (as long as all
+three env vars are set and at least one workspace has a `discord`
+signal). Each inbound event is HTTP-POSTed to the daemon's own
+`/platform/discord` route, which looks up the target workspace and hands
+the raw request to `chat.webhooks.discord` — exactly like the
+Slack/Telegram/WhatsApp webhook flow. The service runs each listener
+session for 12 hours, respawns immediately on clean exit, and waits 30 s
+before respawning on thrown errors. Auth failures (`invalid token`,
+`401`, `Unauthorized`) stop the service permanently to avoid Discord
+rate-limiting the token.
 
-## Architecture note: Gateway legacy mode vs upstream cron forwarding
+Because the service is daemon-scoped, each inbound message lands on a
+**fresh** workspace runtime via `getOrCreateChatSdkInstance` — there's no
+long-lived per-workspace FSM being reused across signals.
 
-The upstream adapter README documents a **serverless** pattern where a
-Vercel cron hits a `/api/discord/gateway` route every 9 minutes, and
-`startGatewayListener` forwards raw Gateway events to a `webhookUrl`
-for processing in short-lived function invocations. We do **not** use
-that pattern.
+## Architecture note: forwarding mode
 
-Friday runs atlasd as a long-lived process, so we pass
-`startGatewayListener` **no `webhookUrl`** and let it take the legacy,
-in-process branch — see `setupLegacyGatewayHandlers` in
-`opensrc/repos/github.com/vercel/chat/packages/adapter-discord/src/index.ts`
-(called from around line 1720). That branch attaches handlers directly to
-the `discord.js` `Client` and routes events through the adapter's own
-`chat.handleIncomingMessage` hook rather than POSTing them back to our
-own HTTP surface. The supervisor in
-`apps/atlasd/src/chat-sdk/chat-sdk-instance.ts` just keeps that listener
-alive for the lifetime of the `ChatSdkInstance`.
+We use the adapter's **forwarding mode** — we pass
+`startGatewayListener(..., webhookUrl)` with
+`webhookUrl = http://localhost:<daemonPort>/platform/discord`. Every raw
+Gateway event is HTTP-POSTed back to our own route, which handles
+workspace routing and dispatch. The per-workspace adapter's
+`handleWebhook` (see
+`opensrc/repos/github.com/vercel/chat/packages/adapter-discord/src/index.ts:168-182`)
+branches on the `x-discord-gateway-token` header to distinguish forwarded
+events from raw Interactions payloads.
+
+This is the same pattern the upstream adapter README documents for
+serverless environments — we just run it on a long-lived daemon instead.
+The service lives at `apps/atlasd/src/discord-gateway-service.ts`.
 
 ## Known limitations
 

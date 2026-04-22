@@ -107,6 +107,58 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     }
   });
 
+  // ─── Discord ───────────────────────────────────────────────────────
+  // The daemon runs ONE Gateway connection (`DiscordGatewayService`) that
+  // HTTP-POSTs every event here with the `x-discord-gateway-token` header.
+  // Forward-compat: raw Interactions POSTs (PING, commands) are also accepted
+  // — the per-workspace adapter's `handleWebhook` branches internally on the
+  // token header vs signature header.
+  //
+  // Routing: one bot per daemon means we short-circuit to the single workspace
+  // with a `discord` signal. If multiple workspaces have one, we log-warn and
+  // pick the first — proper multi-workspace routing is a separate task.
+  app.post("/discord", async (c) => {
+    const discordRequest = c.req.raw.clone();
+
+    const candidates = await listWorkspacesByProvider(daemon, "discord");
+    if (candidates.length === 0) {
+      logger.warn("discord_no_workspace");
+      return c.json({ error: "No workspace configured for Discord" }, 404);
+    }
+    if (candidates.length > 1) {
+      logger.warn("discord_multiple_workspaces_ambiguous", {
+        candidates,
+        picked: candidates[0],
+      });
+    }
+    const workspaceId = candidates[0];
+    if (!workspaceId) {
+      return c.json({ error: "No workspace configured for Discord" }, 404);
+    }
+
+    logger.info("discord_signal_received", { workspaceId });
+
+    let chat: Chat;
+    try {
+      chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
+    } catch (error) {
+      logger.error("discord_chat_sdk_instance_failed", { error, workspaceId });
+      return c.json({ error: "Failed to initialize Chat SDK" }, 500);
+    }
+
+    if (!chat.webhooks.discord) {
+      logger.warn("discord_no_adapter_for_workspace", { workspaceId });
+      return c.json({ error: "No Discord adapter configured for this workspace" }, 404);
+    }
+
+    try {
+      return await chat.webhooks.discord(discordRequest);
+    } catch (error) {
+      logger.error("discord_webhook_handler_failed", { error, workspaceId });
+      return new Response("Internal error", { status: 500 });
+    }
+  });
+
   // ─── Telegram ──────────────────────────────────────────────────────
   // Internal atlasd route: /signals/telegram/<token_suffix>
   // External tunnel URL (what you set in Telegram's setWebhook):

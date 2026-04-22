@@ -232,6 +232,141 @@ describe("POST /slack", () => {
   });
 });
 
+// ─── Discord forwarded Gateway events (POST) ──────────────────────────
+
+function makeDiscordConfig(): MergedConfig {
+  return {
+    atlas: null,
+    workspace: {
+      version: "1.0",
+      workspace: { name: "test" },
+      signals: {
+        "discord-chat": {
+          provider: "discord" as const,
+          description: "Discord inbound",
+          config: {},
+        },
+      },
+    },
+  };
+}
+
+function makeDiscordChatSdkInstance(
+  handler?: (req: Request) => Promise<Response>,
+): ChatSdkInstance {
+  const webhooks: Record<string, unknown> = { atlas: vi.fn() };
+  if (handler) webhooks.discord = handler;
+  return { chat: { webhooks } as unknown as Chat, teardown: vi.fn().mockResolvedValue(undefined) };
+}
+
+const forwardedGatewayBody = {
+  type: "GATEWAY_MESSAGE_CREATE",
+  timestamp: 1730_000_000_000,
+  data: {
+    id: "msg-id",
+    content: "hello",
+    author: { id: "user-1", bot: false, username: "alice" },
+    channel_id: "channel-1",
+  },
+};
+
+const forwardedHeaders = {
+  "Content-Type": "application/json",
+  "x-discord-gateway-token": "bot-token",
+};
+
+function postDiscord(
+  app: ReturnType<typeof createPlatformSignalRoutes>,
+  body: unknown = forwardedGatewayBody,
+  headers: Record<string, string> = forwardedHeaders,
+) {
+  return app.request("/discord", { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+describe("POST /discord", () => {
+  it("routes to the single discord workspace and preserves the forwarded token header + body", async () => {
+    let capturedRequest: Request | undefined;
+    let capturedBody: string | undefined;
+    const discordHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockImplementation(async (req) => {
+        capturedRequest = req;
+        capturedBody = await req.text();
+        return new Response("ok", { status: 200 });
+      });
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-discord", config: makeDiscordConfig() }],
+      () => Promise.resolve(makeDiscordChatSdkInstance(discordHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-discord");
+    expect(discordHandler).toHaveBeenCalledOnce();
+    expect(capturedBody).toBe(JSON.stringify(forwardedGatewayBody));
+    expect(capturedRequest?.headers.get("x-discord-gateway-token")).toBe("bot-token");
+    expect(capturedRequest?.headers.get("content-type")).toBe("application/json");
+  });
+
+  it("returns 404 when no workspace has a discord signal", async () => {
+    const { daemon } = makeDaemon([{ id: "ws-other", config: makeNonSlackConfig() }]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("No workspace configured for Discord");
+  });
+
+  it("returns 404 when the discord workspace has no discord adapter in Chat SDK", async () => {
+    const { daemon } = makeDaemon(
+      [{ id: "ws-discord", config: makeDiscordConfig() }],
+      () => Promise.resolve(makeDiscordChatSdkInstance()),
+    );
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("No Discord adapter configured for this workspace");
+  });
+
+  it("returns 500 when Chat SDK instance creation fails", async () => {
+    const { daemon } = makeDaemon([{ id: "ws-discord", config: makeDiscordConfig() }], () =>
+      Promise.reject(new Error("credential resolution failed")),
+    );
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(500);
+  });
+
+  it("logs and picks the first candidate when multiple workspaces have a discord signal", async () => {
+    const discordHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [
+        { id: "ws-a", config: makeDiscordConfig() },
+        { id: "ws-b", config: makeDiscordConfig() },
+      ],
+      () => Promise.resolve(makeDiscordChatSdkInstance(discordHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(200);
+    // First match wins (single-workspace short-circuit; documented limitation).
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-a");
+  });
+});
+
 // ─── WhatsApp verify handshake (GET) ──────────────────────────────────
 
 function makeWhatsappConfig(overrides: { verify_token?: string } = {}): MergedConfig {

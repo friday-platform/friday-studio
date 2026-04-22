@@ -3,11 +3,11 @@
 **Context**: Bring-your-own Discord credentials — `resolvePlatformCredentials`
 reads `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID`
 from env vars (all-or-nothing, partial env → null + `discord_missing_credentials`
-log). `initializeChatSdkInstance` calls `chat.initialize()` explicitly when a
-`DiscordAdapter` is present and spins up `superviseDiscordGateway`, which keeps
-a Gateway WebSocket open for 12h per run and respawns on clean exit / 30s-sleep
-on thrown error / stops-hard on auth failure. Coexists with Slack / Telegram /
-WhatsApp.
+log). At daemon startup, `DiscordGatewayService` opens ONE Gateway WebSocket per
+daemon (not per workspace) in forwarding mode — every event is HTTP-POSTed to
+`/platform/discord`, which routes it to the workspace's `DiscordAdapter`.
+Per-listener session runs 12h, respawns on clean exit, 30s-sleeps on thrown
+error, stops-hard on auth failure. Coexists with Slack / Telegram / WhatsApp.
 **Branch**: `declaw`
 **Date**: 2026-04-22
 **Related docs**: `docs/integrations/discord/README.md` (user setup guide)
@@ -78,13 +78,15 @@ tail -f ~/.atlas/logs/global.log | grep -iE "discord|chat_sdk|gateway"
 
 ## Cases
 
-### 1. Gateway connects on workspace init
+### 1. Gateway connects on daemon start
 
 **Smoke candidate — strong.** Deterministic, runs in ~10s, covers the whole
-BYO resolve + supervisor startup path with no human Discord interaction.
+BYO resolve + daemon-scoped service startup path with no human Discord
+interaction.
 
-**Trigger**: Restart the daemon with `DISCORD_*` env vars set and a workspace
-containing a `discord-chat` signal:
+**Trigger**: Restart the daemon with `DISCORD_*` env vars set. (No workspace
+signal precondition — the service starts as long as env is present. An
+inbound message before a workspace is wired returns 404 at the route.)
 
 ```bash
 lsof -i:8080 -sTCP:LISTEN -t | xargs kill
@@ -92,25 +94,23 @@ lsof -i:8080 -sTCP:LISTEN -t | xargs kill
 ```
 
 **Expect**:
-- Daemon logs `chat_sdk_instance_created` for the test workspace with
-  `adapters` including `"discord"` and `discordGateway: true`
+- Daemon logs `discord_gateway_service_started` with the `forwardUrl`
+  (should be `http://localhost:<daemonPort>/platform/discord`) and
+  `applicationId`
 - Within ~5s the adapter's `Discord Gateway connected` log appears (info
-  level, emitted from `setupLegacyGatewayHandlers` in the adapter)
-- **No** `discord_missing_credentials`, `discord_gateway_auth_failed`, or
+  level, emitted from the discord.js client `ClientReady` event)
+- **No** `discord_gateway_not_configured`, `discord_gateway_auth_failed`, or
   `discord_gateway_listener_error` in the log tail
 - Bot shows as **Online** in the test Discord server's member list
 
 **If broken**:
-- `discord_missing_credentials` with a `missing` array → one or more of
+- `discord_gateway_not_configured` → one or more of
   `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID` not
   present in the env the daemon inherits. `dev:playground` reads
   `~/.atlas/.env` — verify the vars are actually written there, not just
   exported in your shell
-- `chat_sdk_instance_created` fires but `discordGateway: false` → no
-  `discord` signal on the workspace, or the resolver returned null (check
-  logs one line earlier for `discord_missing_credentials`)
 - `discord_gateway_auth_failed` → bot token is wrong or was regenerated
-  without updating `~/.atlas/.env`. Supervisor stops permanently; restart
+  without updating `~/.atlas/.env`. Service stops permanently; restart
   the daemon after fixing
 - No `Discord Gateway connected` log within ~30s and no error → Gateway
   WebSocket blocked at the network layer; see Case 5's broken-network path
@@ -173,14 +173,14 @@ the daemon. Then DM both bots at roughly the same time.
 
 **Expect**:
 - `chat_sdk_instance_created` log shows `adapters` containing both
-  `"discord"` and `"slack"` (or `"telegram"`) plus `"atlas"`, and
-  `discordGateway: true`
+  `"discord"` and `"slack"` (or `"telegram"`) plus `"atlas"`
 - Both DMs produce separate chats in http://localhost:5200/platform/user/chat
   — one with the **DISCORD** badge, one with **SLACK** / **TELEGRAM**
 - Both bots reply independently; no cross-talk (a Slack user message doesn't
   trigger the Discord bot or vice versa)
-- Only one Gateway connection is opened (one `Discord Gateway connected`
-  log line per workspace, not per signal or per platform)
+- Only one Gateway connection is opened daemon-wide (one
+  `discord_gateway_service_started` + one `Discord Gateway connected` log
+  line, not per workspace or per signal)
 
 **If broken**:
 - Only one platform works → `resolvePlatformCredentials` short-circuited;
@@ -193,43 +193,39 @@ the daemon. Then DM both bots at roughly the same time.
 - Two `Discord Gateway connected` logs per workspace restart → supervisor
   is being double-instantiated; regression in `initializeChatSdkInstance`
 
-### 5. Clean teardown — no orphan WebSocket
+### 5. Clean teardown — no orphan WebSocket on daemon shutdown
 
-**Trigger**: With the test workspace running (Gateway connected per Case 1),
-delete the workspace:
+**Trigger**: With the daemon running and the Gateway connected (per Case 1),
+stop the daemon:
 
 ```bash
-curl -X DELETE http://localhost:8080/api/workspaces/<workspace-id>
+deno task atlas daemon stop
+# or: pkill -f atlasd
 ```
 
-Or remove its directory from `~/.atlas/workspaces/` and restart the daemon.
-
 **Expect**:
-- Daemon log shows `chat_sdk_instance_torn_down` for the workspace within
-  ~1–2s of the delete
-- **No** `discord_gateway_supervisor_stop_failed` error
-- **No** further `discord_gateway_listener_error` or `Discord Gateway
-  connected` logs for that workspace after teardown (no zombie supervisor)
+- Daemon log shows `discord_gateway_service_stopped` within ~1–2s of the
+  stop
+- **No** `Error stopping Discord Gateway service` entry
 - Bot transitions to **Offline** in the Discord server within ~30s (Discord's
   presence timeout after the WebSocket closes)
-- No WebSocket file descriptors leaked:
+- No WebSocket file descriptors leaked before the daemon exits:
 
   ```bash
   lsof -p $(pgrep -f atlasd) | grep -i 'gateway.discord'
-  # expect: no matches after teardown
+  # expect: no matches while the stop is in flight
   ```
 
 **If broken**:
-- `discord_gateway_supervisor_stop_failed` → the supervisor's
+- `Error stopping Discord Gateway service` → the service's
   `Promise.allSettled` path failed. Inspect the embedded error — usually
   means the listener threw during its in-flight `startGatewayListener`
   call and the rejection leaked past the catch block in the loop
-- Bot stays Online for more than ~60s after teardown → supervisor didn't
+- Bot stays Online for more than ~60s after stop → service didn't
   actually abort; the `AbortController` signal isn't being threaded through
-  to `startGatewayListener`. Regression in the supervisor's `stop()` flow
-- `chat_sdk_instance_torn_down` never fires → teardown path itself hung;
-  `chat.shutdown()` is blocking on something (likely an in-flight adapter
-  operation), unrelated to Discord
+  to `startGatewayListener`. Regression in the service's `stop()` flow
+- Daemon process lingers after `daemon stop` → shutdown path itself hung;
+  something upstream of the service stop is blocking
 
 ## Cleanup
 
