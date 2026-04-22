@@ -93,6 +93,8 @@ export class DiscordGatewayService {
     this.controller.abort();
     await Promise.allSettled([this.currentListenerPromise, this.loopPromise]);
     this.loopPromise = null;
+    // release adapter so the discord.js Client underneath is GC-eligible
+    this.adapter = null;
     this.deps.logger.info("discord_gateway_service_stopped");
   }
 

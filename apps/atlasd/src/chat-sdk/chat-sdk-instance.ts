@@ -153,6 +153,13 @@ function resolveWhatsappCredentials(
   return null;
 }
 
+/**
+ * Resolves the per-workspace Discord credentials. The resulting `DiscordAdapter`
+ * (built by `buildChatSdkAdapters`) is used for **inbound forwarded Gateway
+ * events** (via `chat.webhooks.discord` on `/signals/discord` POSTs) and
+ * **outbound `postMessage`** replies. It does NOT own a Gateway connection —
+ * that's the daemon-scoped `DiscordGatewayService`'s job.
+ */
 function resolveDiscordCredentials(
   signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
