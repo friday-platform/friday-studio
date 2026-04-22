@@ -92,6 +92,15 @@ const PLATFORM_TOOL_ALLOWLIST = new Set([
   "state_append",
   "state_filter",
   "state_lookup",
+  // Memory — adapter-agnostic; validated against workspace.yml memory.own / mounts
+  // in the tool handler, so FSM jobs can only write corpora the workspace declares.
+  "memory_save",
+  "memory_read",
+  "memory_remove",
+  // Narrative-specific aliases (kept for backward compat)
+  "memory_narrative_append",
+  "memory_narrative_read",
+  "memory_narrative_forget",
 ]);
 
 const FSMStateSchema = z.object({ state: z.string() });
