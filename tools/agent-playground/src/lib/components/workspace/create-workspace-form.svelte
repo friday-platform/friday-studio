@@ -21,9 +21,8 @@
   let loading = $state(false);
 
   const STANDARD_MEMORY = [
-    { name: "user-profile", type: "long_term", strategy: "narrative" },
-    { name: "notes", type: "long_term", strategy: "narrative" },
-    { name: "scratchpad", type: "scratchpad", strategy: "narrative" },
+    { name: "notes", type: "short_term", strategy: "narrative" },
+    { name: "memory", type: "long_term", strategy: "narrative" },
   ];
 
   async function handleSubmit(e: Event) {
@@ -107,7 +106,7 @@
   </div>
 
   <p class="hint">
-    Creates a workspace with standard memory (user-profile, notes, scratchpad).
+    Creates a workspace with standard memory (notes, memory).
     You can add agents, jobs, and signals later.
   </p>
 
