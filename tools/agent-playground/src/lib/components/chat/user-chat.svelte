@@ -361,7 +361,11 @@
         // chatId and optional datetime context — it pulls history server-
         // side from ChatStorage. Sending the full `msgs` array would be
         // wasteful bandwidth on long threads.
-        return { body: { id, message: msgs.at(-1), datetime: buildDatetime() } };
+        const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
+        if (wsId !== "user") {
+          body.foreground_workspace_ids = ["user"];
+        }
+        return { body };
       },
     }),
   );

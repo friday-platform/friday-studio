@@ -4,12 +4,9 @@ workspace:
   description: "Your default personal workspace"
 memory:
   own:
-    - name: user-profile
-      type: long_term
-      strategy: narrative
     - name: notes
-      type: long_term
+      type: short_term
       strategy: narrative
-    - name: scratchpad
-      type: scratchpad
+    - name: memory
+      type: long_term
       strategy: narrative
