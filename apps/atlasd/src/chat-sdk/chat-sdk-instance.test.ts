@@ -703,6 +703,28 @@ describe("superviseDiscordGateway", () => {
     );
   });
 
+  it("treats structured DiscordAPIError (code=TokenInvalid, status=401) as auth error", async () => {
+    // Mimic the shape discord.js / @discordjs/rest throws — message text
+    // alone won't always include "invalid token", so the supervisor also
+    // inspects `.code` / `.status` to recognize auth failures and avoid
+    // retrying with a bad token.
+    // deno-lint-ignore require-await
+    const start = vi.fn(async (): Promise<Response> => {
+      const err: Error & { code?: string; status?: number } = new Error(
+        "Discord API error",
+      );
+      err.code = "TokenInvalid";
+      err.status = 401;
+      throw err;
+    });
+    const adapter = makeFakeDiscordAdapter(start);
+
+    const supervisor = superviseDiscordGateway(adapter, makeSilentLogger());
+    await supervisor.stop();
+
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
   it("stop() aborts mid-run and waits for the in-flight listener to settle", async () => {
     let settled = false;
     const start = vi.fn(
@@ -739,6 +761,31 @@ describe("superviseDiscordGateway", () => {
 
     await supervisor.stop();
     expect(settled).toBe(true);
+  });
+
+  it("does not respawn the listener when abort fires during the 30s retry backoff", async () => {
+    // Non-auth throw → supervisor enters cancellableSleep. If that sleep
+    // ignored the abort signal, stop() would have to wait ~30s AND a second
+    // listener would spawn after. Assert: exactly one call and fast stop.
+    // deno-lint-ignore require-await
+    const start = vi.fn(async (): Promise<Response> => {
+      throw new Error("transient websocket failure");
+    });
+    const adapter = makeFakeDiscordAdapter(start);
+    const supervisor = superviseDiscordGateway(adapter, makeSilentLogger());
+
+    // Wait for the (rejected) first call to complete and the supervisor to
+    // enter its backoff sleep.
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+
+    const stopStart = Date.now();
+    await supervisor.stop();
+    const stopElapsed = Date.now() - stopStart;
+
+    // Cancellable sleep should release immediately on abort; we give plenty
+    // of headroom for slow CI. A non-cancellable setTimeout would block ~30s.
+    expect(stopElapsed).toBeLessThan(1000);
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });
 

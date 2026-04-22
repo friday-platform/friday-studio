@@ -447,13 +447,22 @@ const DISCORD_GATEWAY_RETRY_DELAY_MS = 30_000;
 
 /**
  * Authentication failures — stop the supervisor hard. Retrying with a bad
- * bot token risks Discord rate-limiting or banning the token. Matches error
- * messages raised by discord.js `client.login` (e.g. "An invalid token was
- * provided.") and Discord API 401 responses.
+ * bot token risks Discord rate-limiting or banning the token. Checks three
+ * shapes that discord.js / @discordjs/rest can surface:
+ *   - `DiscordAPIError` with `.code === "TokenInvalid"` or `.status === 401`
+ *   - Gateway WebSocket close code 4004 (`.code === 4004`) for auth failure
+ *   - Plain `Error("An invalid token was provided.")` from `client.login`
  */
 function isDiscordAuthError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return /invalid token|unauthor|\b401\b/i.test(message);
+  if (err instanceof Error) {
+    const code = "code" in err ? err.code : undefined;
+    const status = "status" in err ? err.status : undefined;
+    if (code === "TokenInvalid" || code === 4004 || status === 401) {
+      return true;
+    }
+    return /invalid token|unauthor|\b401\b/i.test(err.message);
+  }
+  return /invalid token|unauthor|\b401\b/i.test(String(err));
 }
 
 /** Resolves early if the signal aborts, otherwise after `ms` ticks. */
