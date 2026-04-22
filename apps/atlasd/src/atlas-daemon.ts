@@ -1167,7 +1167,14 @@ export class AtlasDaemon {
                   hasActiveExecutions = orchestrator.hasActiveExecutions();
                 }
 
-                if (!hasActiveSessions && !hasActiveExecutions) {
+                if (this.preventIdleWorkspaces.has(workspaceId)) {
+                  // Pinned workspaces (e.g. Discord Gateway supervisor) must
+                  // survive session completion — otherwise the outbound
+                  // WebSocket goes offline right after the first reply.
+                  logger.debug("Session completed for pinned workspace; keeping runtime", {
+                    workspaceId,
+                  });
+                } else if (!hasActiveSessions && !hasActiveExecutions) {
                   // Apply any deferred workspace.yml changes BEFORE destroying
                   // the runtime — handleWorkspaceConfigChange itself will
                   // tear it down and re-load from the (now updated) config.
@@ -1487,6 +1494,11 @@ export class AtlasDaemon {
     let oldestWorkspace: string | null = null;
 
     for (const [workspaceId, runtime] of this.runtimes) {
+      // Pinned workspaces (e.g. Discord Gateway supervisor) must not be
+      // evicted even under max-concurrent pressure — better to refuse new
+      // workspace creation than to kill a live outbound connection.
+      if (this.preventIdleWorkspaces.has(workspaceId)) continue;
+
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
         (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,

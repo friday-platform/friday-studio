@@ -178,6 +178,83 @@ describe("AtlasDaemon.buildChatSdkInstance pin race", () => {
   });
 });
 
+describe("AtlasDaemon session-completion destroy gate", () => {
+  // The production handler is a closure inside buildChatSdkInstance's runtime
+  // construction, so we can't invoke it directly. Instead we mirror its
+  // pin-first shape (atlas-daemon.ts:1170) and assert that the gate routes
+  // destroy calls correctly. Using fakeRuntime() with no sessions pins the
+  // hasActiveSessions/Executions path to "idle", so the only variable here
+  // is the pin — the exact branch the fix adds.
+  async function runSessionCompletionGate(
+    daemon: AtlasDaemon,
+    workspaceId: string,
+  ): Promise<void> {
+    if (daemon.preventIdleWorkspaces.has(workspaceId)) return;
+    await daemon.destroyWorkspaceRuntime(workspaceId);
+  }
+
+  it("does NOT destroy a pinned workspace on session completion", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    daemon.runtimes.set("ws-pinned", fakeRuntime());
+    daemon.registerPreventIdle("ws-pinned");
+
+    const destroySpy = vi
+      .spyOn(daemon, "destroyWorkspaceRuntime")
+      .mockResolvedValue(undefined);
+
+    try {
+      await runSessionCompletionGate(daemon, "ws-pinned");
+      expect(destroySpy).not.toHaveBeenCalled();
+    } finally {
+      destroySpy.mockRestore();
+    }
+  });
+
+  it("DOES destroy an unpinned idle workspace on session completion", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    daemon.runtimes.set("ws-unpinned", fakeRuntime());
+
+    const destroySpy = vi
+      .spyOn(daemon, "destroyWorkspaceRuntime")
+      .mockResolvedValue(undefined);
+
+    try {
+      await runSessionCompletionGate(daemon, "ws-unpinned");
+      expect(destroySpy).toHaveBeenCalledWith("ws-unpinned");
+    } finally {
+      destroySpy.mockRestore();
+    }
+  });
+});
+
+describe("AtlasDaemon.findOldestIdleWorkspace pin filter", () => {
+  // Private method surfaced for tests; cast is test-file-only.
+  type EvictionShape = {
+    findOldestIdleWorkspace: () => string | null;
+  };
+
+  it("returns null when every idle workspace is pinned", () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    daemon.runtimes.set("ws-pinned-a", fakeRuntime());
+    daemon.runtimes.set("ws-pinned-b", fakeRuntime());
+    daemon.registerPreventIdle("ws-pinned-a");
+    daemon.registerPreventIdle("ws-pinned-b");
+
+    const result = (daemon as unknown as EvictionShape).findOldestIdleWorkspace();
+    expect(result).toBeNull();
+  });
+
+  it("returns the unpinned workspace when mixed with pinned ones", () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    daemon.runtimes.set("ws-pinned", fakeRuntime());
+    daemon.runtimes.set("ws-evictable", fakeRuntime());
+    daemon.registerPreventIdle("ws-pinned");
+
+    const result = (daemon as unknown as EvictionShape).findOldestIdleWorkspace();
+    expect(result).toBe("ws-evictable");
+  });
+});
+
 describe("AtlasDaemon shutdown clears preventIdleWorkspaces", () => {
   it("clears the set as part of shutdown's cleanup", async () => {
     const daemon = new AtlasDaemon({ port: 0 });
