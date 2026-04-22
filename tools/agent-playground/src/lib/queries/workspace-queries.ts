@@ -69,7 +69,7 @@ export const AGENT_TYPE_LABELS: Record<string, string> = {
 // NOTE: Do NOT add "system" here — LCF explicitly wants the kernel workspace
 // visible in the playground when ATLAS_EXPOSE_KERNEL=1 is set. The daemon's
 // workspace list endpoint handles the kernel filter server-side.
-const HIDDEN_WORKSPACES = new Set(["atlas-conversation", "friday-conversation"]);
+const HIDDEN_WORKSPACES = new Set(["friday-conversation"]);
 
 // ==============================================================================
 // QUERY FACTORIES

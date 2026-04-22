@@ -401,15 +401,13 @@ describe("SessionHistoryStorage", () => {
       await SessionHistoryStorage.createSessionRecord(createMetadataInput(session1));
       await SessionHistoryStorage.createSessionRecord({
         ...createMetadataInput(session2),
-        workspaceId: "atlas-conversation",
+        workspaceId: "system",
       });
 
-      const result = await SessionHistoryStorage.listSessions({
-        excludeWorkspaceIds: ["atlas-conversation"],
-      });
+      const result = await SessionHistoryStorage.listSessions({ excludeWorkspaceIds: ["system"] });
 
       assert(result.ok);
-      expect(result.data.sessions.every((s) => s.workspaceId !== "atlas-conversation")).toBe(true);
+      expect(result.data.sessions.every((s) => s.workspaceId !== "system")).toBe(true);
     });
   });
 

@@ -503,8 +503,8 @@ export class WorkspaceRuntime {
       );
     }
 
-    // Skip chat injection for the system conversation workspace
-    const SKIP_CHAT_INJECTION = new Set(["atlas-conversation", "system"]);
+    // Skip chat injection for the kernel system workspace
+    const SKIP_CHAT_INJECTION = new Set(["system"]);
 
     if (!SKIP_CHAT_INJECTION.has(this.workspace.id)) {
       // Auto-inject chat signal + handle-chat job for workspace direct chat
@@ -1073,9 +1073,7 @@ export class WorkspaceRuntime {
 
         // Create "running" activity item (skip conversations)
         const isConversation =
-          this.workspace.id === "atlas-conversation" ||
-          this.workspace.id === "friday-conversation" ||
-          job.name === "handle-chat";
+          this.workspace.id === "friday-conversation" || job.name === "handle-chat";
         if (this.options.activityStorage && !isConversation) {
           if (!this.createdByUserId) {
             logger.warn("Skipping activity creation: workspace has no createdByUserId", {

@@ -128,7 +128,7 @@ describe("createDelegateProxyWriter", () => {
       {
         type: "tool-input-available",
         toolCallId: "child-1",
-        toolName: "do_task",
+        toolName: "task_runner",
         input: { ask: "go" },
       },
       { type: "tool-output-available", toolCallId: "child-1", output: { ok: true } },

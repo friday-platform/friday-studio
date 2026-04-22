@@ -139,7 +139,7 @@ export function systemAgent(
 
   return SystemAgentConfigSchema.parse({
     type: "system",
-    agent: overrides.agent ?? "conversation",
+    agent: overrides.agent ?? "workspace-chat",
     description: overrides.description ?? "Test system agent",
     ...(hasConfig && {
       config: {

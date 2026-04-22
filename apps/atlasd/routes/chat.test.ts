@@ -200,7 +200,7 @@ describe("GET /api/chat/:chatId — resolveChat with legacy fallback", () => {
   test("falls back to global path for legacy chat", async () => {
     const legacyChat = {
       id: "chat-legacy",
-      workspaceId: "atlas-conversation",
+      workspaceId: "friday-conversation",
       userId: "user-123",
       title: "Legacy Chat",
       messages: [{ role: "user", content: "old" }],

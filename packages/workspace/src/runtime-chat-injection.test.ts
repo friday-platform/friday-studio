@@ -113,10 +113,10 @@ describe("workspace direct chat injection", () => {
     await runtime.shutdown();
   });
 
-  it("skips chat injection for atlas-conversation workspace", async () => {
+  it("skips chat injection for the kernel system workspace", async () => {
     const config = createMinimalConfig();
 
-    const runtime = new WorkspaceRuntime({ id: "atlas-conversation" }, config, {
+    const runtime = new WorkspaceRuntime({ id: "system" }, config, {
       workspacePath: testDir,
       lazy: true,
       platformModels: stubPlatformModels,

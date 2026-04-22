@@ -549,8 +549,8 @@
   // Import workspace (single): POST /api/workspaces/import-bundle
   // Import full archive:       POST /api/workspaces/import-bundle-all
   //
-  // Daemon filters virtual/kernel workspaces (system, atlas-conversation)
-  // server-side — no client-side filtering needed.
+  // Daemon filters virtual/kernel workspaces (system) server-side — no
+  // client-side filtering needed.
 
   interface ImportedEntry {
     workspaceId?: string;

@@ -155,7 +155,7 @@ function makeDelegate(
   const w = writer ?? makeWriter();
   const tools: AtlasTools = overrideTools ?? {
     web_search: dummyTool,
-    do_task: dummyTool,
+    task_runner: dummyTool,
     delegate: dummyTool, // intentionally present to verify it gets stripped
   };
   const log = logger ?? makeLogger();
@@ -350,7 +350,7 @@ describe("createDelegateTool", () => {
 
     const { delegateTool } = makeDelegate({
       web_search: dummyTool,
-      do_task: dummyTool,
+      task_runner: dummyTool,
       delegate: dummyTool,
       file_read: dummyTool,
     });
@@ -359,7 +359,7 @@ describe("createDelegateTool", () => {
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
     expect(tools).toBeDefined();
     expect(Object.keys(tools ?? {}).sort()).toEqual(
-      ["do_task", "file_read", "finish", "web_search"].sort(),
+      ["task_runner", "file_read", "finish", "web_search"].sort(),
     );
     expect("delegate" in (tools ?? {})).toBe(false);
   });
@@ -431,7 +431,7 @@ describe("createDelegateTool", () => {
           // but tool-call alone is enough for the ledger to have outcome:success.)
         },
         {
-          toolCalls: [{ toolCallId: "c3", toolName: "do_task", input: { ask: "summarize" } }],
+          toolCalls: [{ toolCallId: "c3", toolName: "task_runner", input: { ask: "summarize" } }],
           finish: { ok: true, answer: "done" },
         },
       ],
@@ -454,7 +454,7 @@ describe("createDelegateTool", () => {
         {
           type: "tool-input-available",
           toolCallId: "c3",
-          toolName: "do_task",
+          toolName: "task_runner",
           input: { ask: "summarize" },
         },
         { type: "tool-output-available", toolCallId: "c3", output: { summary: "ok" } },
@@ -470,7 +470,7 @@ describe("createDelegateTool", () => {
       expect(Object.keys(entry).sort()).toEqual(["name", "outcome"]);
     }
     expect(result.toolsUsed.map((e) => e.name).sort()).toEqual(
-      ["do_task", "web_fetch", "web_search"].sort(),
+      ["task_runner", "web_fetch", "web_search"].sort(),
     );
     for (const entry of result.toolsUsed) {
       expect(entry.outcome).toBe("success");
