@@ -10,16 +10,14 @@
  *   { ok: false, reason, toolsUsed: [{name, outcome}] } — task failed/impossible
  *
  * Alongside the compact result, the delegate emits one `data-delegate-ledger`
- * event before returning. The ledger carries per-child `{toolCallId, name,
- * input, outcome, summary, stepIndex, durationMs}` — full richness for a
- * future reflection layer — while the tool result stays outline-only
- * (`{name, outcome}`) so future LLM turns don't pay for the ledger in tokens.
- *
- * Task #6 will move the ledger emission into a `finally` block so it also
- * fires on abort/throw, along with the `delegate-end` terminator.
+ * event from a `finally` block so it always fires — clean finish, abort, or
+ * thrown error. The `finally` also writes a single synthetic terminator chunk
+ * (`{type: "delegate-end", pendingToolCallIds: string[]}`) listing any child
+ * `toolCallId`s that started but never received a terminal chunk, so reducers
+ * downstream can recover children stuck in `input-streaming`/`input-available`.
  */
 
-import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { truncateForLedger } from "@atlas/utils";
@@ -112,6 +110,16 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       const ledger = new Map<string, DelegateLedgerEntry>();
       // Per-call start timestamps (captured from `tool-input-available` chunks).
       const startedAt = new Map<string, number>();
+      // Per-call terminal arrival flag (`tool-output-available`/`tool-output-error`).
+      // A child id present in `startedAt` but absent here at finally-time is "pending"
+      // and lands in `delegate-end.pendingToolCallIds` (namespaced).
+      const terminated = new Set<string>();
+
+      let finishInput: FinishInput | undefined;
+      let finalText = "";
+      let textError: Error | undefined;
+      let abortReason: string | undefined;
+      let executionError: Error | undefined;
 
       try {
         const inheritedTools = toolSetThunk();
@@ -147,31 +155,35 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         // arrival to the first terminal chunk per call. Tee decouples the
         // branches, so in-process observation does not back-pressure the
         // parent's writer (and vice-versa).
+        //
+        // The parent branch is forwarded chunk-by-chunk (not via `proxy.merge`)
+        // so we can `await` the forwarding's completion. Without that await,
+        // the synthetic `delegate-end` written in `finally` could be enqueued
+        // before the merge promise has finished draining, breaking the
+        // "delegate-end is the final data-delegate-chunk" invariant.
         const uiStream = result.toUIMessageStream<AtlasUIMessage>();
         const [observerBranch, parentBranch] = uiStream.tee();
-        const observerDone = observeChunkTimings(observerBranch, startedAt, ledger);
-        proxy.merge(parentBranch);
+        const observerDone = observeChunkTimings(observerBranch, startedAt, terminated, ledger);
+        const forwardDone = forwardThroughProxy(parentBranch, proxy);
 
         // Resolve steps first so we can populate `toolsUsed` even when
         // `result.text` rejects (e.g. AI_NoOutputGeneratedError from a
         // tool-call-only stream).
         const steps = await result.steps;
-        let finalText = "";
-        let textError: Error | undefined;
         try {
           finalText = await result.text;
         } catch (err) {
           textError = err instanceof Error ? err : new Error(String(err));
         }
 
-        // Wait for the observer to finish so every `tool-output-available` /
-        // `tool-output-error` chunk has landed before we emit the ledger.
+        // Wait for the observer AND the parent forward to finish so every
+        // child chunk has been enqueued upstream before we emit the terminator.
         await observerDone;
+        await forwardDone;
 
         // Walk steps to fill name / input / stepIndex / outcome / summary.
         // Steps are the authoritative source for these (chunks can be reordered
         // or duplicated on replay); chunks only contributed timing.
-        let finishInput: FinishInput | undefined;
         for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
           const step = steps[stepIndex];
           if (!step) continue;
@@ -214,42 +226,99 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             }
           }
         }
+      } catch (err) {
+        executionError = err instanceof Error ? err : new Error(String(err));
+        logger.warn("delegate execute caught error", {
+          delegateToolCallId: toolCallId,
+          message: executionError.message,
+        });
+      } finally {
+        // Compute pending child toolCallIds (started but never terminated).
+        // Emit them in namespaced form to match the on-wire envelope shape.
+        const pendingToolCallIds: string[] = [];
+        for (const childId of startedAt.keys()) {
+          if (!terminated.has(childId)) {
+            pendingToolCallIds.push(`${toolCallId}::${childId}`);
+          }
+        }
 
-        // Emit the full ledger out-of-band before returning. Task #6 will
-        // move this into a `finally` so abort/throw also flush it.
+        // If the parent's abortSignal fired, capture a stable reason. We do
+        // this here (not in catch) because streamText may not throw on abort —
+        // it can simply truncate the stream cleanly.
+        if (!executionError && abortSignal?.aborted) {
+          abortReason = "delegate aborted";
+        }
+
+        // Single synthetic terminator. Always the final data-delegate-chunk
+        // for this delegateToolCallId on the non-crash path. We write directly
+        // to the parent (bypassing the proxy's per-chunk wrap) because the
+        // delegate-end envelope is its own wire shape — the proxy is what we
+        // emit it *as*, not what we route it through.
+        writer.write({
+          type: "data-delegate-chunk",
+          data: {
+            delegateToolCallId: toolCallId,
+            chunk: { type: "delegate-end", pendingToolCallIds },
+          },
+        });
+
+        // Full ledger ridealong. Always emitted, even with partial accumulator
+        // contents on abort/throw — downstream truthsource for "what ran".
         const ledgerEntries = [...ledger.values()];
         writer.write({
           type: "data-delegate-ledger",
           data: { delegateToolCallId: toolCallId, toolsUsed: ledgerEntries },
         });
 
-        const toolsUsed: DelegateToolsUsedEntry[] = ledgerEntries.map(({ name, outcome }) => ({
-          name,
-          outcome,
-        }));
-
-        if (finishInput) {
-          if (finishInput.ok) {
-            return { ok: true, answer: finishInput.answer, toolsUsed };
-          }
-          return { ok: false, reason: finishInput.reason, toolsUsed };
-        }
-        if (textError) {
-          return { ok: false, reason: textError.message, toolsUsed };
-        }
-        return { ok: true, answer: finalText, toolsUsed };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.warn("delegate execute caught error", { delegateToolCallId: toolCallId, message });
-        const toolsUsed: DelegateToolsUsedEntry[] = [...ledger.values()].map(
-          ({ name, outcome }) => ({ name, outcome }),
-        );
-        return { ok: false, reason: message, toolsUsed };
-      } finally {
+        // Terminal — late writes/merges from any straggler are silently dropped.
         proxy.close();
       }
+
+      const toolsUsed: DelegateToolsUsedEntry[] = [...ledger.values()].map(({ name, outcome }) => ({
+        name,
+        outcome,
+      }));
+
+      if (executionError) {
+        return { ok: false, reason: executionError.message, toolsUsed };
+      }
+      if (finishInput) {
+        if (finishInput.ok) {
+          return { ok: true, answer: finishInput.answer, toolsUsed };
+        }
+        return { ok: false, reason: finishInput.reason, toolsUsed };
+      }
+      if (abortReason) {
+        return { ok: false, reason: abortReason, toolsUsed };
+      }
+      if (textError) {
+        return { ok: false, reason: textError.message, toolsUsed };
+      }
+      return { ok: true, answer: finalText, toolsUsed };
     },
   });
+}
+
+/**
+ * Drain `stream` and forward each chunk through `proxy.write` in order. We
+ * use the proxy (rather than `proxy.merge`) so we can `await` completion —
+ * `merge` is fire-and-forget per the AI SDK contract, which would race the
+ * synthetic `delegate-end` we emit afterwards.
+ */
+async function forwardThroughProxy(
+  stream: ReadableStream<AtlasUIMessageChunk>,
+  proxy: { write(chunk: AtlasUIMessageChunk): void },
+): Promise<void> {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value !== undefined) proxy.write(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 /**
@@ -259,11 +328,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
  *
  * Writes directly into `ledger` so timing is present whether or not the
  * matching step has been walked yet (step walking populates name/input/etc.
- * after this settles).
+ * after this settles). Also marks `terminated` so the delegate's `finally`
+ * can compute `pendingToolCallIds` for the synthetic `delegate-end` chunk.
  */
 async function observeChunkTimings(
   stream: ReadableStream<unknown>,
   startedAt: Map<string, number>,
+  terminated: Set<string>,
   ledger: Map<string, DelegateLedgerEntry>,
 ): Promise<void> {
   const reader = stream.getReader();
@@ -279,6 +350,7 @@ async function observeChunkTimings(
       if (type === "tool-input-available") {
         if (!startedAt.has(toolCallId)) startedAt.set(toolCallId, Date.now());
       } else if (type === "tool-output-available" || type === "tool-output-error") {
+        terminated.add(toolCallId);
         const start = startedAt.get(toolCallId);
         if (start === undefined) continue;
         const existing = ledger.get(toolCallId);

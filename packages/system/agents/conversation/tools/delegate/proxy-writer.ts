@@ -10,11 +10,15 @@
  * `finish` tool chunks are filtered out — the delegate consumes `finish` from
  * `result.toolResults` and does not surface it as a child tool call in the UI.
  *
- * Lifecycle: opens in "open" state. After the delegate's `execute()` returns,
- * the delegate calls `close()`, which transitions the proxy to "closed".
- * Late writes in the closed state are silently dropped (debug-logged).
- * Task #6 will extend this with a `delegate-end` terminator and ledger
- * emission inside the close transition.
+ * Lifecycle (three states):
+ *   - `open`     — `write()` envelope-wraps and forwards; `merge(stream)` reads,
+ *                  envelope-wraps each chunk, and forwards to the parent.
+ *   - `merging`  — internal state while at least one `merge(stream)` call is
+ *                  still draining its source. `write()` is still permitted.
+ *   - `closed`   — terminal. Late `write()` and `merge()` calls silently drop
+ *                  their input and emit one `logger.debug` per drop. Never
+ *                  throws. Set by the delegate's `finally` after `execute()`
+ *                  has emitted its terminator + ledger.
  */
 
 import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
@@ -30,7 +34,10 @@ interface ProxyDeps {
 }
 
 export interface DelegateProxyWriter extends UIMessageStreamWriter<AtlasUIMessage> {
+  /** Transition to the terminal `closed` state. Idempotent. */
   close(): void;
+  /** For tests / diagnostics. */
+  readonly state: "open" | "merging" | "closed";
 }
 
 /**
@@ -39,7 +46,8 @@ export interface DelegateProxyWriter extends UIMessageStreamWriter<AtlasUIMessag
 export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter {
   const { parent, delegateToolCallId, logger } = deps;
 
-  let state: "open" | "closed" = "open";
+  let lifecycle: "open" | "closed" = "open";
+  let activeMerges = 0;
   const finishToolCallIds = new Set<string>();
 
   const shouldDrop = (chunk: AtlasUIMessageChunk): boolean => {
@@ -73,9 +81,14 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
   };
 
   const proxy: DelegateProxyWriter = {
+    get state() {
+      if (lifecycle === "closed") return "closed";
+      return activeMerges > 0 ? "merging" : "open";
+    },
+
     write(chunk) {
-      if (state === "closed") {
-        logger.debug("delegate proxy writer received write after close", { delegateToolCallId });
+      if (lifecycle === "closed") {
+        logger.debug("late write after delegate close", { delegateToolCallId });
         return;
       }
       if (shouldDrop(chunk)) {
@@ -85,15 +98,21 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
     },
 
     merge(stream) {
-      if (state === "closed") {
-        logger.debug("delegate proxy writer received merge after close", { delegateToolCallId });
+      if (lifecycle === "closed") {
+        logger.debug("late merge after delegate close", { delegateToolCallId });
+        // Cancel the source so its producer doesn't leak on the floor.
+        stream.cancel().catch(() => {});
         return;
       }
+      activeMerges++;
       const transformed = stream.pipeThrough(
         new TransformStream<AtlasUIMessageChunk, AtlasUIMessageChunk>({
           transform: (chunk, controller) => {
             if (shouldDrop(chunk)) return;
             controller.enqueue(namespaceAndWrap(chunk));
+          },
+          flush: () => {
+            activeMerges--;
           },
         }),
       );
@@ -103,7 +122,7 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
     onError: parent.onError,
 
     close() {
-      state = "closed";
+      lifecycle = "closed";
     },
   };
 

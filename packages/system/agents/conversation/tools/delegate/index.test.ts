@@ -146,13 +146,19 @@ const dummyTool = tool({
   execute: () => Promise.resolve({ ok: true }),
 });
 
-function makeDelegate(overrideTools?: AtlasTools, writer?: MockWriter) {
+function makeDelegate(
+  overrideTools?: AtlasTools,
+  writer?: MockWriter,
+  abortSignal?: AbortSignal,
+  logger?: Logger,
+) {
   const w = writer ?? makeWriter();
   const tools: AtlasTools = overrideTools ?? {
     web_search: dummyTool,
     do_task: dummyTool,
     delegate: dummyTool, // intentionally present to verify it gets stripped
   };
+  const log = logger ?? makeLogger();
   const delegateTool = createDelegateTool(
     {
       writer: w,
@@ -169,13 +175,13 @@ function makeDelegate(overrideTools?: AtlasTools, writer?: MockWriter) {
         },
       },
       platformModels: createStubPlatformModels(),
-      logger: makeLogger(),
-      abortSignal: undefined,
+      logger: log,
+      abortSignal,
       repairToolCall,
     },
     () => tools,
   );
-  return { delegateTool, writer: w };
+  return { delegateTool, writer: w, logger: log };
 }
 
 async function runDelegate(
@@ -243,17 +249,19 @@ describe("createDelegateTool", () => {
       toolsUsed: [{ name: "web_search", outcome: "success" }],
     });
 
-    // Drain the merged stream so we can inspect what the proxy forwarded.
-    expect(writer.merged.length).toBe(1);
-    const [mergedStream] = writer.merged;
-    if (!mergedStream) throw new Error("expected merged stream");
-    const drained = await drain(mergedStream);
-
-    // Every forwarded chunk must be a data-delegate-chunk envelope.
-    for (const chunk of drained) {
-      expect(chunk.type).toBe("data-delegate-chunk");
-    }
-    const envelopedToolCallIds = drained
+    // The delegate forwards each child chunk via writer.write() (not merge)
+    // so the synthetic delegate-end terminator emitted in `finally` lands
+    // strictly after all child chunks. Inspect those writes for envelope
+    // wrapping + namespacing.
+    const delegateChunks = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c) =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-chunk",
+      );
+    // At least one envelope (the child tool chunks) plus the terminator.
+    expect(delegateChunks.length).toBeGreaterThan(1);
+    const envelopedToolCallIds = delegateChunks
       .map((c) => extractInnerToolCallId(c))
       .filter((v): v is string => v !== undefined);
     // `web_search` chunks get namespaced; `finish` chunks are dropped.
@@ -308,7 +316,7 @@ describe("createDelegateTool", () => {
       throwOnText: new Error("boom"),
     });
 
-    const { delegateTool } = makeDelegate();
+    const { delegateTool, writer } = makeDelegate();
     const result = await runDelegate(delegateTool);
 
     expect(result.ok).toBe(false);
@@ -317,6 +325,20 @@ describe("createDelegateTool", () => {
       expect(result.toolsUsed).toEqual([{ name: "web_search", outcome: "success" }]);
     }
     // execute() did not throw — assertion above implies that.
+
+    // The `finally` block in `execute()` must always emit a delegate-end
+    // terminator and a delegate-ledger event, even when result.text rejects.
+    const terminators = writer.writes
+      .map((w) => w.chunk)
+      .filter((c) => extractDelegateEndPending(c) !== undefined);
+    expect(terminators).toHaveLength(1);
+    const ledgerWrites = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c) =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-ledger",
+      );
+    expect(ledgerWrites).toHaveLength(1);
   });
 
   it("strips delegate from the child tool set and injects finish", async () => {
@@ -547,8 +569,14 @@ describe("createDelegateTool", () => {
     if (!ledgerWrite) throw new Error("expected ledger write");
     const ledgerData = extractLedgerData(ledgerWrite.chunk);
 
-    // What the reducer reconstructs from forwarded envelopes.
-    const forwardedEnvelopes = writer.merged[0] ? await drain(writer.merged[0]) : [];
+    // What the reducer reconstructs from forwarded envelopes — delegate now
+    // forwards each child chunk via writer.write() so we mine those.
+    const forwardedEnvelopes = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c) =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-chunk",
+      );
     const reconstructed = reconstructFromEnvelopes(forwardedEnvelopes);
 
     expect(ledgerData).toBeDefined();
@@ -605,27 +633,21 @@ describe("createDelegateTool", () => {
     const result = await runDelegate(delegateTool);
     expect(result.ok).toBe(true);
 
-    // Drain forwarded envelopes so they show up alongside the ledger when we
-    // assemble the synthetic message.
-    const forwardedEnvelopes = writer.merged[0] ? await drain(writer.merged[0]) : [];
-    const ledgerWrites = writer.writes
-      .map((w) => w.chunk)
-      .filter(
-        (c) =>
-          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-ledger",
-      );
-
-    // Build the message the chat-storage layer would persist: every data-*
-    // chunk maps 1:1 to a data-* part with the same payload.
+    // Both the forwarded envelopes and the ledger now land in writer.writes —
+    // delegate forwards each child chunk via writer.write() so we walk those
+    // in order to reconstruct what chat-storage would persist.
     const dataParts: Array<Record<string, unknown>> = [];
-    for (const env of forwardedEnvelopes) {
-      if (typeof env === "object" && env !== null && "type" in env && "data" in env) {
-        dataParts.push({ type: env.type, data: env.data });
-      }
-    }
-    for (const led of ledgerWrites) {
-      if (typeof led === "object" && led !== null && "type" in led && "data" in led) {
-        dataParts.push({ type: led.type, data: led.data });
+    for (const w of writer.writes) {
+      const chunk = w.chunk;
+      if (
+        typeof chunk === "object" &&
+        chunk !== null &&
+        "type" in chunk &&
+        "data" in chunk &&
+        typeof chunk.type === "string" &&
+        chunk.type.startsWith("data-")
+      ) {
+        dataParts.push({ type: chunk.type, data: chunk.data });
       }
     }
 
@@ -657,19 +679,212 @@ describe("createDelegateTool", () => {
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("abort cascade — parent abort flushes delegate-end with the in-flight child id and a partial ledger", async () => {
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    // Stream emits one tool-input-available for c1 then closes WITHOUT a
+    // terminal chunk for c1 — simulating the streamText call being cut short
+    // by the parent's abort signal. The mocked `result.text` rejects with the
+    // abort error the AI SDK would surface in real life.
+    setupMockStreamText(captured, {
+      // Steps include c1 so the ledger walker can pick up name + outcome.
+      steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search", input: { q: "x" } }] }],
+      finalText: "",
+      throwOnText: new Error("aborted"),
+      streamChunks: [
+        {
+          type: "tool-input-available",
+          toolCallId: "c1",
+          toolName: "web_search",
+          input: { q: "x" },
+        },
+        // No tool-output-available / tool-output-error for c1 — c1 is in-flight.
+      ],
+    });
+
+    const ac = new AbortController();
+    const { delegateTool, writer } = makeDelegate(undefined, undefined, ac.signal);
+    // Fire the abort before invoking — emulates the parent's signal having
+    // already flipped by the time `finally` checks `aborted`.
+    ac.abort();
+    const result = await runDelegate(delegateTool);
+
+    // (a) Child's streamText received the abort signal.
+    expect(captured.args?.abortSignal).toBe(ac.signal);
+
+    // (b) Proxy received a delegate-end envelope listing the in-flight
+    // (namespaced) toolCallId.
+    const terminators = writer.writes
+      .map((w) => w.chunk)
+      .map((c) => extractDelegateEndPending(c))
+      .filter((p): p is string[] => p !== undefined);
+    expect(terminators).toHaveLength(1);
+    expect(terminators[0]).toEqual(["del-call-1::c1"]);
+
+    // (c) data-delegate-ledger event was written with the partial ledger.
+    const ledgerWrites = writer.writes
+      .map((w) => w.chunk)
+      .map((c) => extractLedgerData(c))
+      .filter((d): d is LedgerData => d !== undefined);
+    expect(ledgerWrites).toHaveLength(1);
+    expect(ledgerWrites[0]?.toolsUsed.map((e) => e.toolCallId)).toEqual(["c1"]);
+
+    // (d) Delegate returned ok=false without throwing.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Either the captured abort reason or the textError message is acceptable —
+      // both are exercised by this fixture. Either way: a non-empty reason.
+      expect(result.reason.length).toBeGreaterThan(0);
+      expect(result.toolsUsed).toEqual([{ name: "web_search", outcome: "success" }]);
+    }
+  });
+
+  it("aborted persistence round-trip: reloaded message has exactly one delegate-end with the in-flight ids", async () => {
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      // Two children started; only c1 terminates. c2 is in-flight at "abort" time.
+      steps: [
+        {
+          toolCalls: [
+            { toolCallId: "c1", toolName: "web_search", input: { q: "ok" } },
+            { toolCallId: "c2", toolName: "web_fetch", input: { url: "u" } },
+          ],
+        },
+      ],
+      finalText: "",
+      throwOnText: new Error("aborted"),
+      streamChunks: [
+        {
+          type: "tool-input-available",
+          toolCallId: "c1",
+          toolName: "web_search",
+          input: { q: "ok" },
+        },
+        { type: "tool-output-available", toolCallId: "c1", output: { hits: 2 } },
+        {
+          type: "tool-input-available",
+          toolCallId: "c2",
+          toolName: "web_fetch",
+          input: { url: "u" },
+        },
+        // No terminal chunk for c2.
+      ],
+    });
+
+    const ac = new AbortController();
+    const { delegateTool, writer } = makeDelegate(undefined, undefined, ac.signal);
+    ac.abort();
+    const result = await runDelegate(delegateTool);
+    expect(result.ok).toBe(false);
+
+    // Compose the persisted message exactly as chat-storage would build it
+    // from data-* chunks observed on the wire — delegate forwards every child
+    // chunk via writer.write() (not merge) so they all live in writer.writes.
+    const dataParts: Array<Record<string, unknown>> = [];
+    for (const w of writer.writes) {
+      const chunk = w.chunk;
+      if (
+        typeof chunk === "object" &&
+        chunk !== null &&
+        "type" in chunk &&
+        "data" in chunk &&
+        typeof chunk.type === "string" &&
+        chunk.type.startsWith("data-")
+      ) {
+        dataParts.push({ type: chunk.type, data: chunk.data });
+      }
+    }
+
+    const messages = [
+      {
+        id: "msg-abort-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "delegated and aborted" }, ...dataParts],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated).toHaveLength(1);
+    const reloaded = validated[0];
+    if (!reloaded) throw new Error("expected reloaded message");
+
+    // Exactly one delegate-end chunk after reload, and it lists the in-flight
+    // child id (namespaced).
+    const delegateChunks = reloaded.parts.filter((p) => p.type === "data-delegate-chunk");
+    const reloadedTerminators = delegateChunks
+      .map((p) => {
+        if (p.type !== "data-delegate-chunk") return undefined;
+        const inner = p.data?.chunk;
+        if (typeof inner !== "object" || inner === null) return undefined;
+        if (!("type" in inner) || inner.type !== "delegate-end") return undefined;
+        const pending = (inner as { pendingToolCallIds?: unknown }).pendingToolCallIds;
+        return Array.isArray(pending) ? pending : undefined;
+      })
+      .filter((p): p is unknown[] => p !== undefined);
+    expect(reloadedTerminators).toHaveLength(1);
+    expect(reloadedTerminators[0]).toEqual(["del-call-1::c2"]);
+
+    // Ledger present after reload, listing both children.
+    const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
+    expect(ledgerParts).toHaveLength(1);
+    const ledgerPart = ledgerParts[0];
+    if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
+    expect(ledgerPart.data.toolsUsed.map((e) => e.toolCallId).sort()).toEqual(["c1", "c2"]);
+  });
+
+  it("delegate-end is the last data-delegate-chunk written for the delegateToolCallId on the happy path", async () => {
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [
+        {
+          toolCalls: [{ toolCallId: "c1", toolName: "web_search" }],
+          finish: { ok: true, answer: "ok" },
+        },
+      ],
+      finalText: "",
+      streamChunks: [
+        { type: "tool-input-available", toolCallId: "c1", toolName: "web_search", input: {} },
+        { type: "tool-output-available", toolCallId: "c1", output: { hits: 1 } },
+      ],
+    });
+    const { delegateTool, writer } = makeDelegate();
+    await runDelegate(delegateTool);
+
+    // All envelopes land in writer.writes in chronological order. The
+    // terminator must be the last data-delegate-chunk written for this
+    // delegateToolCallId.
+    const allDelegateChunks = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c) =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-chunk",
+      );
+    const lastDelegateChunk = allDelegateChunks[allDelegateChunks.length - 1];
+    expect(lastDelegateChunk).toBeDefined();
+    if (!lastDelegateChunk) throw new Error("expected last delegate chunk");
+    expect(extractDelegateEndPending(lastDelegateChunk)).toEqual([]);
+  });
 });
 
 // ─── Local helpers (after the test for readability) ─────────────────────────
 
-async function drain<T>(stream: ReadableStream<T>): Promise<T[]> {
-  const out: T[] = [];
-  const reader = stream.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value !== undefined) out.push(value);
-  }
-  return out;
+/**
+ * Pull `pendingToolCallIds` out of a `data-delegate-chunk` envelope whose
+ * inner chunk is a synthetic `delegate-end` terminator. Returns undefined
+ * for any other chunk shape (text deltas, regular tool chunks, ledger).
+ */
+function extractDelegateEndPending(envelope: AtlasUIMessageChunk): string[] | undefined {
+  if (typeof envelope !== "object" || envelope === null) return undefined;
+  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") return undefined;
+  const data = (envelope as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const inner = (data as { chunk?: unknown }).chunk;
+  if (typeof inner !== "object" || inner === null) return undefined;
+  if (!("type" in inner) || inner.type !== "delegate-end") return undefined;
+  const pending = (inner as { pendingToolCallIds?: unknown }).pendingToolCallIds;
+  if (!Array.isArray(pending)) return undefined;
+  return pending.filter((id): id is string => typeof id === "string");
 }
 
 /**
