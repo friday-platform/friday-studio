@@ -13,6 +13,7 @@ import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { Adapter } from "chat";
 import type { StreamRegistry } from "../stream-registry.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
+import { toDiscordLogger } from "./discord-logger.ts";
 
 const logger = createLogger({ component: "chat-sdk-adapter-factory" });
 
@@ -57,6 +58,7 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         botToken: creds.botToken,
         publicKey: creds.publicKey,
         applicationId: creds.applicationId,
+        logger: toDiscordLogger(logger.child({ component: "discord" })),
       });
   }
 }

@@ -210,6 +210,11 @@ server, and `@mentions` obviously require a channel to mention in.
 3. To `@mention` the bot in a channel, make sure the bot can read that
    channel (check role permissions) and post `@<bot-name> ping`.
 
+## What to expect
+
+- Bot replies to `@mention`s appear in a Discord thread off the original
+  message, not inline in the channel.
+
 ## Troubleshooting
 
 **Bot is online in Discord but silent on every message.**
