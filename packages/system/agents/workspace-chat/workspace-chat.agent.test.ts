@@ -1,8 +1,10 @@
-import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
+import { bundledAgents } from "@atlas/bundled-agents";
 import { createStubPlatformModels, type smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { ResourceEntry } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
+import type { UIMessageStreamWriter } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@atlas/llm", async () => {
@@ -11,6 +13,7 @@ vi.mock("@atlas/llm", async () => {
 });
 
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import {
   type ArtifactSummary,
   buildSkillsSection,
@@ -538,5 +541,91 @@ describe("computeOrphanedArtifacts", () => {
   it("returns empty array when no artifacts exist", () => {
     const orphans = computeOrphanedArtifacts([], []);
     expect(orphans).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// primaryTools composition — bundled agents + delegate + no do_task
+// ---------------------------------------------------------------------------
+describe("primaryTools composition (Wave 3c)", () => {
+  /** Build an env dict that satisfies every bundled agent's required keys. */
+  function envSatisfyingAllAgents(): Record<string, string> {
+    const env: Record<string, string> = {};
+    for (const agent of bundledAgents) {
+      for (const field of agent.environmentConfig?.required ?? []) {
+        env[field.name] = "stub-value";
+      }
+    }
+    return env;
+  }
+
+  function makeDeps(env: Record<string, string>) {
+    const writeFn = vi.fn();
+    return {
+      writer: { write: writeFn } as unknown as UIMessageStreamWriter<AtlasUIMessage>,
+      session: { sessionId: "s1", workspaceId: "w1" },
+      platformModels: stubPlatformModels,
+      abortSignal: undefined,
+      env,
+      logger: makeLogger(),
+    };
+  }
+
+  it("spread of createAgentTool(agent, deps) registers agent_<id> for every bundled agent when env satisfies required keys", () => {
+    const deps = makeDeps(envSatisfyingAllAgents());
+    const bundledAgentTools: AtlasTools = Object.assign(
+      {},
+      ...bundledAgents.map((agent) => createAgentTool(agent, deps)),
+    );
+
+    for (const agent of bundledAgents) {
+      expect(bundledAgentTools).toHaveProperty(`agent_${agent.metadata.id}`);
+    }
+  });
+
+  it("spread of createAgentTool omits agents whose required env keys are missing", () => {
+    const deps = makeDeps({});
+    const bundledAgentTools: AtlasTools = Object.assign(
+      {},
+      ...bundledAgents.map((agent) => createAgentTool(agent, deps)),
+    );
+
+    const agentsWithRequiredKeys = bundledAgents.filter(
+      (a) => (a.environmentConfig?.required?.length ?? 0) > 0,
+    );
+    for (const agent of agentsWithRequiredKeys) {
+      expect(bundledAgentTools).not.toHaveProperty(`agent_${agent.metadata.id}`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// System prompt — ranking rubric, no do_task
+// ---------------------------------------------------------------------------
+describe("system prompt ranking rubric", () => {
+  // Vitest does not honor the `with { type: "text" }` import attribute, so
+  // `SYSTEM_PROMPT` resolves to the path string, not the file content. Read
+  // the file directly so content-level assertions run against the real text.
+  async function readPromptText(): Promise<string> {
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const url = new URL("./prompt.txt", import.meta.url);
+    return readFile(fileURLToPath(url), "utf8");
+  }
+
+  it("prompt.txt contains direct-tools → agent_* → delegate ordering", async () => {
+    const prompt = await readPromptText();
+    expect(prompt).toMatch(/Prefer direct tools.*agent_\*.*delegate/s);
+  });
+
+  it("prompt.txt mentions both delegate and agent_* tools", async () => {
+    const prompt = await readPromptText();
+    expect(prompt).toContain("agent_*");
+    expect(prompt).toContain("delegate");
+  });
+
+  it("prompt.txt does not contain do_task references", async () => {
+    const prompt = await readPromptText();
+    expect(prompt).not.toContain("do_task");
   });
 });

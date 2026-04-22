@@ -235,8 +235,8 @@
     ) {
       return obj.path;
     }
-    if (toolName === "do_task" && typeof obj.intent === "string") {
-      return obj.intent.length > 60 ? `${obj.intent.slice(0, 60)}…` : obj.intent;
+    if (toolName === "delegate" && typeof obj.goal === "string") {
+      return obj.goal.length > 60 ? `${obj.goal.slice(0, 60)}…` : obj.goal;
     }
     if (toolName === "load_skill" && typeof obj.name === "string") {
       return obj.name;

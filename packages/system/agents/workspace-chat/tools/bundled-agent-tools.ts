@@ -67,6 +67,24 @@ const DefaultPromptInputSchema = z.object({
 });
 
 /**
+ * Detect whether a Zod schema produces a JSON Schema with `type: "object"` at
+ * the root. Anthropic rejects tool input schemas whose root uses `oneOf` /
+ * `anyOf` without an explicit `type` (`tools.N.custom.input_schema.type:
+ * Field required`), which Zod emits for top-level discriminated unions like
+ * the `gh` / `bb` / `jira` deterministic agents. In those cases the agent
+ * handler accepts the prompt as a free-form string and parses the JSON
+ * itself, so the wrapper falls back to {@link DefaultPromptInputSchema}.
+ */
+function hasObjectRoot(schema: z.ZodSchema): boolean {
+  try {
+    const json = z.toJSONSchema(schema) as Record<string, unknown>;
+    return json.type === "object";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Wrap a bundled `AtlasAgent` as an AI SDK tool. Returns `{ agent_<id>: tool }`
  * when env requirements are met, or `{}` when any required env key is missing.
  */
@@ -85,7 +103,9 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
     return {};
   }
 
-  const inputSchema = atlasAgent.metadata.inputSchema ?? DefaultPromptInputSchema;
+  const declaredSchema = atlasAgent.metadata.inputSchema;
+  const inputSchema =
+    declaredSchema && hasObjectRoot(declaredSchema) ? declaredSchema : DefaultPromptInputSchema;
 
   return {
     [toolName]: tool({

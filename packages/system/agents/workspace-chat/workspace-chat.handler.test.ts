@@ -32,15 +32,14 @@ const mockTraceModel = vi.hoisted(() => vi.fn());
 const mockSmallLLM = vi.hoisted(() => vi.fn());
 const mockBuildTemporalFacts = vi.hoisted(() => vi.fn());
 const mockGetDefaultProviderOpts = vi.hoisted(() => vi.fn());
-const mockGetAtlasDaemonUrl = vi.hoisted(() => vi.fn());
 const mockValidateAtlasUIMessages = vi.hoisted(() => vi.fn());
 const mockPipeUIMessageStream = vi.hoisted(() => vi.fn());
 const mockFetchLinkSummary = vi.hoisted(() => vi.fn());
 const mockFormatIntegrationsSection = vi.hoisted(() => vi.fn());
 const mockFetchUserIdentitySection = vi.hoisted(() => vi.fn());
 const mockCreateConnectServiceTool = vi.hoisted(() => vi.fn());
-const mockCreateWorkspaceDoTask = vi.hoisted(() => vi.fn());
 const mockCreateJobTools = vi.hoisted(() => vi.fn());
+const mockCreateAgentTool = vi.hoisted(() => vi.fn(() => ({})));
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockCreateUIMessageStream = vi.hoisted(() => vi.fn());
@@ -121,8 +120,6 @@ vi.mock("@atlas/llm", async (importOriginal) => {
   };
 });
 
-vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: mockGetAtlasDaemonUrl }));
-
 vi.mock("@atlas/skills", () => ({
   SkillStorage: { list: mockSkillStorageList },
   createLoadSkillTool: mockCreateLoadSkillTool,
@@ -142,7 +139,9 @@ vi.mock("../conversation/tools/connect-service.ts", () => ({
   createConnectServiceTool: mockCreateConnectServiceTool,
 }));
 
-vi.mock("./tools/do-task.ts", () => ({ createWorkspaceDoTask: mockCreateWorkspaceDoTask }));
+vi.mock("@atlas/bundled-agents", () => ({ bundledAgents: [] }));
+
+vi.mock("./tools/bundled-agent-tools.ts", () => ({ createAgentTool: mockCreateAgentTool }));
 
 vi.mock("./tools/job-tools.ts", () => ({ createJobTools: mockCreateJobTools }));
 
@@ -268,11 +267,8 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
 
   // Tools
   mockCreateConnectServiceTool.mockReturnValue({ description: "connect" });
-  mockCreateWorkspaceDoTask.mockReturnValue({ description: "do_task" });
   mockCreateJobTools.mockReturnValue({});
-
-  // Daemon URL
-  mockGetAtlasDaemonUrl.mockReturnValue("http://localhost:8080");
+  mockCreateAgentTool.mockReturnValue({});
 
   // ChatStorage
   mockSetSystemPromptContext.mockResolvedValue({ ok: true });
@@ -356,15 +352,14 @@ describe("workspace-chat handler", () => {
     mockSmallLLM.mockReset();
     mockBuildTemporalFacts.mockReset();
     mockGetDefaultProviderOpts.mockReset();
-    mockGetAtlasDaemonUrl.mockReset();
     mockValidateAtlasUIMessages.mockReset();
     mockPipeUIMessageStream.mockReset();
     mockFetchLinkSummary.mockReset();
     mockFormatIntegrationsSection.mockReset();
     mockFetchUserIdentitySection.mockReset();
     mockCreateConnectServiceTool.mockReset();
-    mockCreateWorkspaceDoTask.mockReset();
     mockCreateJobTools.mockReset();
+    mockCreateAgentTool.mockReset();
     mockStreamText.mockReset();
     mockCreateUIMessageStream.mockReset();
     mockConvertToModelMessages.mockReset();

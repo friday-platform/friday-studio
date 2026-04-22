@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import {
   closePendingToolParts,
@@ -7,10 +8,10 @@ import {
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
 import { ArtifactTypeSchema } from "@atlas/core/artifacts";
-import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
@@ -20,7 +21,6 @@ import {
   smallLLM,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { ResourceEntry } from "@atlas/resources";
 import { buildResourceGuidance, createLedgerClient } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
@@ -49,8 +49,8 @@ import {
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { artifactTools } from "./tools/artifact-tools.ts";
+import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
-import { createWorkspaceDoTask } from "./tools/do-task.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
@@ -519,31 +519,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           connectServiceTool.connect_service = createConnectServiceTool(providerIds);
         }
 
-        // Resource adapter — shared by resource tools and do_task sub-tasks
+        // Resource adapter — shared by resource tools
         const resourceAdapter = createLedgerClient();
-
-        // do_task (workspace-scoped if config available, standard otherwise)
-        const doTaskSession = {
-          sessionId: session.sessionId || `session-${Date.now()}`,
-          workspaceId,
-          streamId: session.streamId,
-          userId: session.userId,
-          daemonUrl: getAtlasDaemonUrl(),
-          datetime: session.datetime,
-          resourceAdapter,
-          artifactStorage: ArtifactStorage,
-        };
-        const fallbackConfig: WorkspaceConfig = {
-          version: "1.0",
-          workspace: { name: workspaceDetails.name },
-        };
-        const doTaskTool = createWorkspaceDoTask(
-          wsConfig ?? fallbackConfig,
-          writer,
-          doTaskSession,
-          logger,
-          abortSignal,
-        );
 
         // load_skill
         const loadSkillResult = createLoadSkillTool({ workspaceId });
@@ -620,7 +597,40 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           () => allToolsRef,
         );
 
+        // Bundled-agent tools (`agent_<id>`) give the LLM direct one-step
+        // access to Friday's specialist agents (web, gh, data-analyst, etc.)
+        // without routing through a planner. Each wrapper self-gates on its
+        // declared `environmentConfig.required` keys against `process.env`;
+        // agents whose credentials are missing return `{}` and don't appear
+        // in the composed tool set. Spread before direct/job/resource tools
+        // so any name collision (there shouldn't be — `agent_` prefix) lets
+        // direct tools win.
+        const processEnv = Object.fromEntries(
+          Object.entries(process.env).filter(
+            (e): e is [string, string] => typeof e[1] === "string",
+          ),
+        );
+        const agentToolDeps = {
+          writer,
+          session: {
+            sessionId: adHocSessionId,
+            workspaceId,
+            streamId: session.streamId,
+            userId: session.userId,
+            datetime: session.datetime,
+          },
+          platformModels,
+          abortSignal,
+          env: processEnv,
+          logger,
+        };
+        const bundledAgentTools: AtlasTools = Object.assign(
+          {},
+          ...bundledAgents.map((agent) => createAgentTool(agent, agentToolDeps)),
+        );
+
         const primaryTools: AtlasTools = {
+          ...bundledAgentTools,
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
@@ -630,7 +640,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...webSearchTool,
           ...runCodeTool,
           ...fileIOTools,
-          do_task: doTaskTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
@@ -653,8 +662,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         if (hasDocuments) {
           resourceSectionParts.push(`<resources>
-Use resource_read/resource_write for direct document operations — faster than do_task or job tools.
-For external services, use do_task. For artifact data, use artifacts_get.
+Use resource_read/resource_write for direct document operations — faster than delegate or job tools.
+For external services, use the matching \`agent_*\` specialist or \`delegate\`. For artifact data, use artifacts_get.
 </resources>`);
         }
 
