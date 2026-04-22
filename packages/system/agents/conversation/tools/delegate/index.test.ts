@@ -300,7 +300,7 @@ describe("createDelegateTool", () => {
     });
   });
 
-  it("returns ok=false with the exception message when child throws", async () => {
+  it("returns ok=false with the exception message when child throws, populating toolsUsed from steps", async () => {
     const captured: CapturedStreamTextArgs = { args: undefined };
     setupMockStreamText(captured, {
       steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
@@ -314,6 +314,7 @@ describe("createDelegateTool", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("boom");
+      expect(result.toolsUsed).toEqual([{ name: "web_search", outcome: "success" }]);
     }
     // execute() did not throw — assertion above implies that.
   });

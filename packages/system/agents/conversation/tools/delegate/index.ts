@@ -20,7 +20,7 @@ import type { Logger } from "@atlas/logger";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { FINISH_TOOL_NAME, type FinishInput, finishTool } from "./finish-tool.ts";
+import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
 const DELEGATE_TOOL_NAME = "delegate";
@@ -117,7 +117,17 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
         proxy.merge(result.toUIMessageStream<AtlasUIMessage>());
 
-        const [steps, finalText] = await Promise.all([result.steps, result.text]);
+        // Resolve steps first so we can populate `toolsUsed` even when
+        // `result.text` rejects (e.g. AI_NoOutputGeneratedError from a
+        // tool-call-only stream).
+        const steps = await result.steps;
+        let finalText = "";
+        let textError: Error | undefined;
+        try {
+          finalText = await result.text;
+        } catch (err) {
+          textError = err instanceof Error ? err : new Error(String(err));
+        }
 
         // Build an outcome map keyed by toolCallId so we can promote a
         // success to error if the same call later surfaces as `tool-error`.
@@ -131,15 +141,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             } else if (part.type === "tool-error") {
               outcomeByCallId.set(part.toolCallId, { name: part.toolName, outcome: "error" });
             } else if (part.type === "tool-result" && part.toolName === FINISH_TOOL_NAME) {
-              const parsed = z
-                .discriminatedUnion("ok", [
-                  z.object({ ok: z.literal(true), answer: z.string() }),
-                  z.object({ ok: z.literal(false), reason: z.string() }),
-                ])
-                .safeParse(part.output);
-              if (parsed.success) {
-                finishInput = parsed.data;
-              }
+              finishInput = parseFinishInput(part.output);
             }
           }
         }
@@ -152,6 +154,9 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             return { ok: true, answer: finishInput.answer, toolsUsed: collectedToolsUsed };
           }
           return { ok: false, reason: finishInput.reason, toolsUsed: collectedToolsUsed };
+        }
+        if (textError) {
+          return { ok: false, reason: textError.message, toolsUsed: collectedToolsUsed };
         }
         return { ok: true, answer: finalText, toolsUsed: collectedToolsUsed };
       } catch (err) {
