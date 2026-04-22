@@ -565,6 +565,109 @@ describe("resolvePlatformCredentials", () => {
     }
   });
 
+  it("resolves discord entirely from signal config with env empty", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: undefined,
+      DISCORD_PUBLIC_KEY: undefined,
+      DISCORD_APPLICATION_ID: undefined,
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: {
+            bot_token: "cfg-bot",
+            public_key: "cfg-pub",
+            application_id: "cfg-app",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "cfg-bot",
+        publicKey: "cfg-pub",
+        applicationId: "cfg-app",
+      });
+      expect(result[0]?.credentialId).toBe("discord:cfg-app");
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null when only bot_token is in config and env is empty (all-or-nothing)", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: undefined,
+      DISCORD_PUBLIC_KEY: undefined,
+      DISCORD_APPLICATION_ID: undefined,
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: { bot_token: "only-this" },
+        },
+      });
+      expect(result).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("resolves discord from mixed config + env (per-field fallback)", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: undefined,
+      DISCORD_PUBLIC_KEY: "env-pub",
+      DISCORD_APPLICATION_ID: undefined,
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: { bot_token: "cfg-bot", application_id: "cfg-app" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "cfg-bot",
+        publicKey: "env-pub",
+        applicationId: "cfg-app",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("config wins over env when both are set", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: "env-bot",
+      DISCORD_PUBLIC_KEY: "env-pub",
+      DISCORD_APPLICATION_ID: "env-app",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: {
+            bot_token: "cfg-bot",
+            public_key: "cfg-pub",
+            application_id: "cfg-app",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "cfg-bot",
+        publicKey: "cfg-pub",
+        applicationId: "cfg-app",
+      });
+    } finally {
+      restore();
+    }
+  });
+
   it.each([
     ["DISCORD_BOT_TOKEN" as const],
     ["DISCORD_PUBLIC_KEY" as const],

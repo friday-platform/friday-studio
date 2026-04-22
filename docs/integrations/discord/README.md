@@ -9,8 +9,9 @@ incoming messages, and they flow into the same pipeline the web chat uses.
 > **BYO only.** Discord is currently only available as a
 > **bring-your-own** integration — you create the app yourself at
 > [discord.com/developers/applications](https://discord.com/developers/applications)
-> and paste the credentials into `~/.atlas/.env`. There is no managed
-> *Connect Discord* button in the workspace settings UI yet.
+> and declare the credentials either inline in `workspace.yml` or via
+> `~/.atlas/.env`. There is no managed *Connect Discord* button in the
+> workspace settings UI yet.
 
 ## How it works
 
@@ -41,17 +42,22 @@ over the Gateway WebSocket — Discord's HTTP Interactions endpoint only
 receives slash commands and button clicks, which we don't wire (see
 [Known limitations](#known-limitations)).
 
-The daemon opens **ONE** Gateway connection at startup as long as all
-three env vars are set. (No workspace-signal precondition — if no
-workspace is wired yet, the `/signals/discord` route will 404 any inbound
-event until one is added.) Each inbound event is HTTP-POSTed to the
-daemon's own `/signals/discord` route, which looks up the target
-workspace and hands the raw request to `chat.webhooks.discord` — exactly
-like the Slack/Telegram/WhatsApp webhook flow. The service runs each
-listener session for 12 hours, respawns immediately on clean exit, and
-waits 30 s before respawning on thrown errors. Auth failures (`invalid
-token`, `401`, `Unauthorized`) stop the service permanently to avoid
-Discord rate-limiting the token.
+The daemon opens **ONE** Gateway connection at startup. At boot it
+scans every workspace's `workspace.yml` for a `discord` signal and uses
+the first one whose `config` (merged with env fallbacks) yields full
+creds; if no workspace resolves it falls back to the three `DISCORD_*`
+env vars directly, so a "daemon-default bot" still works without any
+workspace yaml. (If multiple workspaces resolve to *different* creds the
+daemon logs `discord_gateway_multi_workspace_conflict` and uses the
+first workspace's creds — single-bot is a current limitation, see
+[Known limitations](#known-limitations).) Each inbound event is
+HTTP-POSTed to the daemon's own `/signals/discord` route, which looks up
+the target workspace and hands the raw request to
+`chat.webhooks.discord` — exactly like the Slack/Telegram/WhatsApp
+webhook flow. The service runs each listener session for 12 hours,
+respawns immediately on clean exit, and waits 30 s before respawning on
+thrown errors. Auth failures (`invalid token`, `401`, `Unauthorized`)
+stop the service permanently to avoid Discord rate-limiting the token.
 
 Because the service is daemon-scoped, each inbound message lands on a
 **fresh** workspace runtime via `getOrCreateChatSdkInstance` — there's no
@@ -87,19 +93,22 @@ The service lives at `apps/atlasd/src/discord-gateway-service.ts`.
   additionally requires account verification and an intent review — below
   that threshold it's just a checkbox. See
   [Discord's privileged intents docs](https://support-dev.discord.com/hc/en-us/articles/6207308062871).
-- **`DISCORD_PUBLIC_KEY` is required but unused in messaging-only mode.**
-  The adapter's constructor calls `ValidationError` sync if any of
-  `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, or `DISCORD_APPLICATION_ID`
-  is missing, so you still have to set the public key. It's only
-  actually consumed for Ed25519 signature verification on HTTP
+- **Public key is required but unused in messaging-only mode.** The
+  adapter's constructor throws `ValidationError` sync if any of
+  `bot_token` / `public_key` / `application_id` (or their `DISCORD_*` env
+  equivalents) is missing, so you still have to set the public key —
+  either in the signal's `config` block or as `DISCORD_PUBLIC_KEY`. It's
+  only actually consumed for Ed25519 signature verification on HTTP
   Interactions — which we don't use — but the workspace will fail to
   initialize without it. Our resolver logs `discord_missing_credentials`
-  and returns `null` on partial env, which is quieter than the adapter's
-  synchronous crash.
-- **No per-workspace credential isolation.** All three env vars are
-  process-global, so every workspace with a `discord` signal in the same
-  daemon shares the same bot. If you want two independent bots, run two
-  daemons.
+  and returns `null` on partial values, which is quieter than the
+  adapter's synchronous crash.
+- **No per-workspace credential isolation (yet).** The daemon opens a
+  single Gateway WebSocket per process. If two workspaces declare
+  different Discord creds, the daemon picks the first workspace's creds
+  + warns — the second bot will not receive events. If you want two
+  independent bots, run two daemons. True multi-bot support is a
+  deferred enhancement.
 
 ## Prerequisites
 
@@ -147,8 +156,28 @@ triggers the signal.
 
 ## Step 4 — Save the credentials
 
-Paste the three values into `~/.atlas/.env` so the daemon picks them up
-on every restart:
+You have two paths. **Signal config wins over env** when both are set,
+matching Slack/Telegram/WhatsApp.
+
+**Option A — `workspace.yml` (recommended).** Declare the creds inline
+in the workspace's `workspace.yml`. No env vars required; creds live
+with the workspace.
+
+```yaml
+signals:
+  discord-chat:
+    title: "Chat via Discord"
+    description: "Receives DMs and @mentions from Discord"
+    provider: discord
+    config:
+      bot_token: MTIzNDU2Nzg5...
+      public_key: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+      application_id: "1234567890123456789"
+```
+
+**Option B — `~/.atlas/.env`.** Paste the three values into your env
+file so every workspace with a `discord` signal picks them up on daemon
+restart:
 
 ```bash
 # Append to ~/.atlas/.env (create the file if it doesn't exist)
@@ -157,8 +186,11 @@ DISCORD_PUBLIC_KEY=abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567
 DISCORD_APPLICATION_ID=1234567890123456789
 ```
 
-All three are required, even though `DISCORD_PUBLIC_KEY` isn't used at
-runtime in messaging-only mode (see [Known limitations](#known-limitations)).
+You can mix the two — e.g. `bot_token` in `workspace.yml` and
+`DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID` in env. The resolver
+fills each field config-first, env-fallback. All three must resolve to
+non-empty values, even though `public_key` isn't used at runtime in
+messaging-only mode (see [Known limitations](#known-limitations)).
 
 If you're on the Tempest team, also save them to 1Password (vault
 *Engineering*, item `Discord App — <app-name>`) so you don't lose them
@@ -168,8 +200,8 @@ if your laptop gets wiped.
 
 Open the workspace's `workspace.yml` (usually
 `~/.atlas/workspaces/<name>/workspace.yml`) and add a `discord-chat`
-signal. All credentials come from `~/.atlas/.env`, so the config block
-is intentionally empty:
+signal. Credentials can go inline in the `config` block (Option A above)
+or be left empty to fall back to `~/.atlas/.env` (Option B):
 
 ```yaml
 signals:
@@ -178,10 +210,12 @@ signals:
     description: "Receives DMs and @mentions from Discord"
     provider: discord
     config: {}
+    # Or declare creds inline — config wins over env:
+    # config:
+    #   bot_token: MTIzNDU2Nzg5...
+    #   public_key: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+    #   application_id: "1234567890123456789"
 ```
-
-The resolver reads credentials exclusively from
-`DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID`.
 
 Save and restart the daemon so the new workspace.yml is picked up:
 
@@ -241,11 +275,11 @@ update `DISCORD_BOT_TOKEN` in `~/.atlas/.env`, and restart the daemon
 (the supervisor doesn't re-arm without a restart).
 
 **Daemon did not crash but Discord features don't work.**
-If any one of `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, or
-`DISCORD_APPLICATION_ID` is missing, the resolver logs
-`discord_missing_credentials` (debug level) with the list of missing
-vars and returns `null` — so the adapter is never constructed and no
-Gateway supervisor runs. Check:
+If any one of `bot_token` / `public_key` / `application_id` is missing
+from both the signal config AND the corresponding `DISCORD_*` env var,
+the resolver logs `discord_missing_credentials` (debug level) with the
+list of missing fields and returns `null` — so the adapter is never
+constructed and no Gateway supervisor runs. Check:
 
 ```bash
 tail ~/.atlas/logs/global.log | grep discord_missing_credentials

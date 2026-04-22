@@ -9,6 +9,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AtlasDaemon } from "./atlas-daemon.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 
+type WorkspaceManagerStub = {
+  list: (...args: unknown[]) => Promise<{ id: string }[]>;
+  getWorkspaceConfig: (id: string) => Promise<
+    | {
+        workspace: {
+          signals: Record<string, { provider: string; config?: Record<string, unknown> }>;
+        };
+      }
+    | null
+  >;
+};
+
+function stubWorkspaceManager(
+  daemon: AtlasDaemon,
+  workspaces: {
+    id: string;
+    signals?: Record<string, { provider: string; config?: Record<string, unknown> }>;
+  }[],
+): void {
+  const manager: WorkspaceManagerStub = {
+    list: () => Promise.resolve(workspaces.map((w) => ({ id: w.id }))),
+    getWorkspaceConfig: (id: string) => {
+      const match = workspaces.find((w) => w.id === id);
+      if (!match?.signals) return Promise.resolve(null);
+      return Promise.resolve({ workspace: { signals: match.signals } });
+    },
+  };
+  (daemon as unknown as { workspaceManager: WorkspaceManagerStub }).workspaceManager = manager;
+}
+
 const discordEnvKeys = [
   "DISCORD_BOT_TOKEN",
   "DISCORD_PUBLIC_KEY",
@@ -44,8 +74,13 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
     discordGatewayService: DiscordGatewayService | null;
   };
 
-  it("does NOT start the service when env vars are missing", async () => {
+  function stubPort(daemon: AtlasDaemon): void {
+    Object.defineProperty(daemon, "port", { get: () => 12345, configurable: true });
+  }
+
+  it("does NOT start the service when env vars are missing and no workspace has discord creds", async () => {
     const daemon = new AtlasDaemon({ port: 0 });
+    stubWorkspaceManager(daemon, []);
     const startSpy = vi.spyOn(DiscordGatewayService.prototype, "start").mockResolvedValue();
 
     await (daemon as unknown as GatewayShape).maybeStartDiscordGateway();
@@ -54,20 +89,14 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
     expect((daemon as unknown as GatewayShape).discordGatewayService).toBeNull();
   });
 
-  it("starts the service whenever all three env vars are present — no workspace precondition", async () => {
-    // The /signals/discord route handles "no workspace" with 404, so gating
-    // startup on a discord signal would block users from adding one later
-    // without a daemon restart.
-    process.env.DISCORD_BOT_TOKEN = "t";
-    process.env.DISCORD_PUBLIC_KEY = "k";
-    process.env.DISCORD_APPLICATION_ID = "a";
+  it("falls back to env vars when no workspace resolves discord creds", async () => {
+    process.env.DISCORD_BOT_TOKEN = "env-bot";
+    process.env.DISCORD_PUBLIC_KEY = "env-pub";
+    process.env.DISCORD_APPLICATION_ID = "env-app";
 
     const daemon = new AtlasDaemon({ port: 0 });
-    // `daemon.port` throws unless the server started; stub the getter.
-    Object.defineProperty(daemon, "port", {
-      get: () => 12345,
-      configurable: true,
-    });
+    stubPort(daemon);
+    stubWorkspaceManager(daemon, []);
     const startSpy = vi.spyOn(DiscordGatewayService.prototype, "start").mockResolvedValue();
 
     await (daemon as unknown as GatewayShape).maybeStartDiscordGateway();
@@ -76,6 +105,75 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
     expect((daemon as unknown as GatewayShape).discordGatewayService).toBeInstanceOf(
       DiscordGatewayService,
     );
+  });
+
+  it("uses workspace signal config creds when a workspace declares them inline", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    stubPort(daemon);
+    stubWorkspaceManager(daemon, [
+      {
+        id: "ws-cfg",
+        signals: {
+          "discord-chat": {
+            provider: "discord",
+            config: {
+              bot_token: "cfg-bot",
+              public_key: "cfg-pub",
+              application_id: "cfg-app",
+            },
+          },
+        },
+      },
+    ]);
+
+    const startSpy = vi.spyOn(DiscordGatewayService.prototype, "start").mockResolvedValue();
+
+    await (daemon as unknown as GatewayShape).maybeStartDiscordGateway();
+
+    expect(startSpy).toHaveBeenCalledOnce();
+    const service = (daemon as unknown as GatewayShape).discordGatewayService;
+    expect(service).toBeInstanceOf(DiscordGatewayService);
+    const deps = (service as unknown as { deps: { credentials: Record<string, string> } }).deps;
+    expect(deps.credentials).toEqual({
+      botToken: "cfg-bot",
+      publicKey: "cfg-pub",
+      applicationId: "cfg-app",
+    });
+  });
+
+  it("warns and uses the first workspace's creds when two workspaces declare different bot tokens", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    stubPort(daemon);
+    stubWorkspaceManager(daemon, [
+      {
+        id: "ws-a",
+        signals: {
+          "discord-chat": {
+            provider: "discord",
+            config: { bot_token: "bot-a", public_key: "pub", application_id: "app" },
+          },
+        },
+      },
+      {
+        id: "ws-b",
+        signals: {
+          "discord-chat": {
+            provider: "discord",
+            config: { bot_token: "bot-b", public_key: "pub", application_id: "app" },
+          },
+        },
+      },
+    ]);
+
+    const startSpy = vi.spyOn(DiscordGatewayService.prototype, "start").mockResolvedValue();
+
+    await (daemon as unknown as GatewayShape).maybeStartDiscordGateway();
+
+    expect(startSpy).toHaveBeenCalledOnce();
+    const service = (daemon as unknown as GatewayShape).discordGatewayService;
+    const deps = (service as unknown as { deps: { credentials: Record<string, string> } }).deps;
+    // First workspace wins; operators see the warn log but the bot still starts.
+    expect(deps.credentials.botToken).toBe("bot-a");
   });
 });
 

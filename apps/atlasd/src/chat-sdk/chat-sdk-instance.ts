@@ -159,22 +159,34 @@ function resolveWhatsappCredentials(
  * events** (via `chat.webhooks.discord` on `/signals/discord` POSTs) and
  * **outbound `postMessage`** replies. It does NOT own a Gateway connection —
  * that's the daemon-scoped `DiscordGatewayService`'s job.
+ *
+ * Credentials are resolved config-first, env-fallback — matching the Telegram
+ * / Slack / WhatsApp pattern. A workspace with all three fields set inline in
+ * `workspace.yml` needs no `DISCORD_*` env vars; an empty `config: {}` pulls
+ * from env; partial config falls back field-by-field.
  */
-function resolveDiscordCredentials(
+export function resolveDiscordCredentials(
   signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
   for (const signal of Object.values(signals)) {
     if (signal.provider !== "discord") continue;
 
-    const botToken = process.env.DISCORD_BOT_TOKEN;
-    const publicKey = process.env.DISCORD_PUBLIC_KEY;
-    const applicationId = process.env.DISCORD_APPLICATION_ID;
+    const cfg = signal.config ?? {};
+    const botToken =
+      (typeof cfg.bot_token === "string" ? cfg.bot_token : null) ??
+      process.env.DISCORD_BOT_TOKEN;
+    const publicKey =
+      (typeof cfg.public_key === "string" ? cfg.public_key : null) ??
+      process.env.DISCORD_PUBLIC_KEY;
+    const applicationId =
+      (typeof cfg.application_id === "string" ? cfg.application_id : null) ??
+      process.env.DISCORD_APPLICATION_ID;
 
     if (!botToken || !publicKey || !applicationId) {
       const missing: string[] = [];
-      if (!botToken) missing.push("DISCORD_BOT_TOKEN");
-      if (!publicKey) missing.push("DISCORD_PUBLIC_KEY");
-      if (!applicationId) missing.push("DISCORD_APPLICATION_ID");
+      if (!botToken) missing.push("bot_token / DISCORD_BOT_TOKEN");
+      if (!publicKey) missing.push("public_key / DISCORD_PUBLIC_KEY");
+      if (!applicationId) missing.push("application_id / DISCORD_APPLICATION_ID");
       logger.debug("discord_missing_credentials", { missing });
       return null;
     }

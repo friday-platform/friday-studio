@@ -82,7 +82,22 @@ export const TelegramProviderConfigSchema = z.strictObject({
 });
 export type TelegramProviderConfig = z.infer<typeof TelegramProviderConfigSchema>;
 
-export const DiscordProviderConfigSchema = z.strictObject({});
+export const DiscordProviderConfigSchema = z.strictObject({
+  bot_token: z
+    .string()
+    .optional()
+    .describe("Discord bot token. Falls back to DISCORD_BOT_TOKEN env var."),
+  public_key: z
+    .string()
+    .optional()
+    .describe(
+      "Discord application public key (64-char hex). Falls back to DISCORD_PUBLIC_KEY env var.",
+    ),
+  application_id: z
+    .string()
+    .optional()
+    .describe("Discord application ID. Falls back to DISCORD_APPLICATION_ID env var."),
+});
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
 export const WhatsAppProviderConfigSchema = z.strictObject({

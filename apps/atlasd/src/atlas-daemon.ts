@@ -82,6 +82,7 @@ import {
   type ChatSdkInstance,
   type ChatSdkInstanceConfig,
   initializeChatSdkInstance,
+  resolveDiscordCredentials,
   resolvePlatformCredentials,
 } from "./chat-sdk/chat-sdk-instance.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
@@ -1774,31 +1775,93 @@ export class AtlasDaemon {
   }
 
   /**
-   * Start the daemon-scoped Discord Gateway listener when all three env vars
-   * are present. We don't gate on workspace signals — a user can add a
-   * discord signal later without a daemon restart, and the /signals/discord
-   * route already returns 404 if a message arrives before a workspace is
-   * wired. Missing env is a no-op (info log only); we don't fail boot.
+   * Start the daemon-scoped Discord Gateway listener.
+   *
+   * Resolution order mirrors the config-first / env-fallback shape of the
+   * other chat providers:
+   *   1. Walk every workspace with a `discord` signal and try
+   *      `resolveDiscordCredentials`. Pick the first workspace whose signal
+   *      config (merged with env fallbacks) yields full creds.
+   *   2. If no workspace resolves, fall back to reading the three
+   *      `DISCORD_*` env vars directly (keeps the "daemon-default bot" dev
+   *      workflow — no workspace yaml required).
+   *   3. If neither path resolves, log `discord_gateway_not_configured`
+   *      and skip — same no-op as today.
+   *
+   * Single-bot limitation: if multiple workspaces resolve to *different*
+   * creds we log a warn and use the first workspace's creds. True multi-bot
+   * (one listener per unique cred set) is a deferred P2.
    */
   private async maybeStartDiscordGateway(): Promise<void> {
-    const botToken = process.env.DISCORD_BOT_TOKEN;
-    const publicKey = process.env.DISCORD_PUBLIC_KEY;
-    const applicationId = process.env.DISCORD_APPLICATION_ID;
-
-    if (!botToken || !publicKey || !applicationId) {
+    const resolved = await this.resolveDiscordGatewayCredentials();
+    if (!resolved) {
       logger.info("discord_gateway_not_configured", {
-        hint: "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID to enable Discord",
+        hint: "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID or declare a discord signal with bot_token/public_key/application_id in workspace.yml",
       });
       return;
     }
 
     const service = new DiscordGatewayService({
-      credentials: { botToken, publicKey, applicationId },
+      credentials: resolved,
       forwardUrl: `http://localhost:${this.port}/signals/discord`,
       logger: logger.child({ component: "discord-gateway-service" }),
     });
     this.discordGatewayService = service;
     await service.start();
+  }
+
+  private async resolveDiscordGatewayCredentials(): Promise<
+    { botToken: string; publicKey: string; applicationId: string } | null
+  > {
+    const manager = this.workspaceManager;
+    const workspaceResolved: {
+      workspaceId: string;
+      creds: { botToken: string; publicKey: string; applicationId: string };
+    }[] = [];
+
+    if (manager) {
+      const workspaces = await manager.list({ includeSystem: true });
+      for (const workspace of workspaces) {
+        const config = await manager.getWorkspaceConfig(workspace.id);
+        const signals = config?.workspace.signals;
+        if (!signals) continue;
+        const hasDiscord = Object.values(signals).some((s) => s.provider === "discord");
+        if (!hasDiscord) continue;
+
+        const creds = resolveDiscordCredentials(signals);
+        if (!creds || creds.credentials.kind !== "discord") continue;
+        const { botToken, publicKey, applicationId } = creds.credentials;
+        workspaceResolved.push({
+          workspaceId: workspace.id,
+          creds: { botToken, publicKey, applicationId },
+        });
+      }
+    }
+
+    if (workspaceResolved.length > 0) {
+      const first = workspaceResolved[0];
+      if (!first) return null;
+      const conflict = workspaceResolved.find(
+        (w) =>
+          w.creds.botToken !== first.creds.botToken ||
+          w.creds.publicKey !== first.creds.publicKey ||
+          w.creds.applicationId !== first.creds.applicationId,
+      );
+      if (conflict) {
+        logger.warn("discord_gateway_multi_workspace_conflict", {
+          selectedWorkspaceId: first.workspaceId,
+          conflictingWorkspaceId: conflict.workspaceId,
+          hint: "Only one Discord bot listener is started per daemon. To run multiple bots, run multiple daemons.",
+        });
+      }
+      return first.creds;
+    }
+
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    const publicKey = process.env.DISCORD_PUBLIC_KEY;
+    const applicationId = process.env.DISCORD_APPLICATION_ID;
+    if (!botToken || !publicKey || !applicationId) return null;
+    return { botToken, publicKey, applicationId };
   }
 
   async shutdown(): Promise<void> {

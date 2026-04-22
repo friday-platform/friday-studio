@@ -1,13 +1,18 @@
 # QA Plan: Discord BYO Credentials (end-to-end)
 
 **Context**: Bring-your-own Discord credentials — `resolvePlatformCredentials`
-reads `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID`
-from env vars (all-or-nothing, partial env → null + `discord_missing_credentials`
-log). At daemon startup, `DiscordGatewayService` opens ONE Gateway WebSocket per
-daemon (not per workspace) in forwarding mode — every event is HTTP-POSTed to
-`/signals/discord`, which routes it to the workspace's `DiscordAdapter`.
-Per-listener session runs 12h, respawns on clean exit, 30s-sleeps on thrown
-error, stops-hard on auth failure. Coexists with Slack / Telegram / WhatsApp.
+reads `bot_token` / `public_key` / `application_id` from the signal config
+first, falling back to `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` /
+`DISCORD_APPLICATION_ID` env vars per-field (all-or-nothing, partial resolve →
+null + `discord_missing_credentials` log). At daemon startup,
+`DiscordGatewayService` opens ONE Gateway WebSocket per daemon (not per
+workspace) in forwarding mode — the daemon scans workspaces for a `discord`
+signal first and uses the first one whose config+env resolves, falling back to
+the `DISCORD_*` env vars directly if no workspace resolved. Every event is
+HTTP-POSTed to `/signals/discord`, which routes it to the workspace's
+`DiscordAdapter`. Per-listener session runs 12h, respawns on clean exit,
+30s-sleeps on thrown error, stops-hard on auth failure. Coexists with Slack /
+Telegram / WhatsApp.
 **Branch**: `declaw`
 **Date**: 2026-04-22
 **Related docs**: `docs/integrations/discord/README.md` (user setup guide)
@@ -34,8 +39,12 @@ error, stops-hard on auth failure. Coexists with Slack / Telegram / WhatsApp.
 
 After setup, you should have:
 - Discord application created, Bot Token, Public Key, Application ID
-- `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID` set in
-  `~/.atlas/.env`
+- Credentials declared in ONE of:
+  - the `discord-chat` signal's `config` block in the test workspace's
+    `workspace.yml` (`bot_token` / `public_key` / `application_id`), OR
+  - `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID` in
+    `~/.atlas/.env`
+  (Config wins over env field-by-field — the two forms can also be mixed.)
 - **Message Content Intent** toggled ON in the Developer Portal's **Bot** page
 - Bot invited to a test server with at least Read Messages / Send Messages /
   Read Message History permissions
@@ -53,9 +62,12 @@ Rough path:
 2. Copy Application ID + Public Key from **General Information**
 3. **Bot** page → Reset Token → copy bot token
 4. **Bot** page → toggle **Message Content Intent** on
-5. Add `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID` to
-   `~/.atlas/.env`
-6. Create Friday workspace (playground UI or CLI), add to its `workspace.yml`:
+5. Either put `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`,
+   `DISCORD_APPLICATION_ID` in `~/.atlas/.env`, or plan to put them inline in
+   the workspace.yml `config:` block in step 6
+6. Create Friday workspace (playground UI or CLI), add to its `workspace.yml`
+   (env-only form — swap `config: {}` for the inline variant if you prefer
+   Option A from the README):
    ```yaml
    signals:
      discord-chat:
@@ -63,6 +75,11 @@ Rough path:
        description: "Receives DMs and @mentions from Discord"
        provider: discord
        config: {}
+       # Inline alternative (config wins over env):
+       # config:
+       #   bot_token: MTIzNDU2Nzg5...
+       #   public_key: abcdef1234...
+       #   application_id: "1234567890123456789"
    ```
 7. Restart daemon so the new workspace.yml is picked up
 8. **OAuth2 → URL Generator**: scope `bot`, permissions
@@ -83,9 +100,11 @@ tail -f ~/.atlas/logs/global.log | grep -iE "discord|chat_sdk|gateway"
 BYO resolve + daemon-scoped service startup path with no human Discord
 interaction.
 
-**Trigger**: Restart the daemon with `DISCORD_*` env vars set. (No workspace
-signal precondition — the service starts as long as env is present. An
-inbound message before a workspace is wired returns 404 at the route.)
+**Trigger**: Restart the daemon with credentials declared in either a
+workspace's `discord` signal config (preferred) or in `~/.atlas/.env`. The
+daemon scans workspaces first and only falls back to env when no workspace
+resolves to full creds. (An inbound message before a workspace is wired still
+returns 404 at the route.)
 
 ```bash
 lsof -i:8080 -sTCP:LISTEN -t | xargs kill
@@ -103,11 +122,13 @@ lsof -i:8080 -sTCP:LISTEN -t | xargs kill
 - Bot shows as **Online** in the test Discord server's member list
 
 **If broken**:
-- `discord_gateway_not_configured` → one or more of
-  `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID` not
-  present in the env the daemon inherits. `dev:playground` reads
-  `~/.atlas/.env` — verify the vars are actually written there, not just
-  exported in your shell
+- `discord_gateway_not_configured` → no workspace's `discord` signal resolved
+  to full creds AND the `DISCORD_*` env-var fallback also didn't resolve.
+  `dev:playground` reads `~/.atlas/.env` — verify the env vars (or the
+  workspace.yml `config:` fields) are actually written there, not just
+  exported in your shell. `discord_gateway_multi_workspace_conflict` (warn
+  level) fires if two workspaces declare *different* bot creds — only the
+  first workspace's creds are used
 - `discord_gateway_auth_failed` → bot token is wrong or was regenerated
   without updating `~/.atlas/.env`. Service stops permanently; restart
   the daemon after fixing
