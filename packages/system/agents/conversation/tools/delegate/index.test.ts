@@ -7,7 +7,7 @@
  */
 
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { repairToolCall } from "@atlas/agent-sdk";
+import { repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
@@ -394,6 +394,269 @@ describe("createDelegateTool", () => {
       ]),
     );
   });
+
+  it("emits data-delegate-ledger with all seven fields while result.toolsUsed stays outline-only", async () => {
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [
+        {
+          toolCalls: [
+            { toolCallId: "c1", toolName: "web_search", input: { query: "foo" } },
+            { toolCallId: "c2", toolName: "web_fetch", input: { url: "https://x" } },
+          ],
+          // Provide per-call tool-result parts so the step walker can fill summary.
+          // (setupMockStreamText only produces finish's tool-result, not per-call —
+          // but tool-call alone is enough for the ledger to have outcome:success.)
+        },
+        {
+          toolCalls: [{ toolCallId: "c3", toolName: "do_task", input: { ask: "summarize" } }],
+          finish: { ok: true, answer: "done" },
+        },
+      ],
+      finalText: "",
+      streamChunks: [
+        {
+          type: "tool-input-available",
+          toolCallId: "c1",
+          toolName: "web_search",
+          input: { query: "foo" },
+        },
+        { type: "tool-output-available", toolCallId: "c1", output: { hits: 3 } },
+        {
+          type: "tool-input-available",
+          toolCallId: "c2",
+          toolName: "web_fetch",
+          input: { url: "https://x" },
+        },
+        { type: "tool-output-available", toolCallId: "c2", output: { status: 200 } },
+        {
+          type: "tool-input-available",
+          toolCallId: "c3",
+          toolName: "do_task",
+          input: { ask: "summarize" },
+        },
+        { type: "tool-output-available", toolCallId: "c3", output: { summary: "ok" } },
+      ],
+    });
+
+    const { delegateTool, writer } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    // Outline projection — only name + outcome, no other fields.
+    expect(result.toolsUsed).toHaveLength(3);
+    for (const entry of result.toolsUsed) {
+      expect(Object.keys(entry).sort()).toEqual(["name", "outcome"]);
+    }
+    expect(result.toolsUsed.map((e) => e.name).sort()).toEqual(
+      ["do_task", "web_fetch", "web_search"].sort(),
+    );
+    for (const entry of result.toolsUsed) {
+      expect(entry.outcome).toBe("success");
+    }
+
+    // Exactly one data-delegate-ledger event with all seven fields per entry.
+    const ledgerWrites = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c): c is AtlasUIMessageChunk & { type: "data-delegate-ledger" } =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-ledger",
+      );
+    expect(ledgerWrites).toHaveLength(1);
+    const ledger = ledgerWrites[0];
+    if (!ledger) throw new Error("unreachable");
+    const ledgerData = extractLedgerData(ledger);
+    expect(ledgerData?.delegateToolCallId).toBe("del-call-1");
+    expect(ledgerData?.toolsUsed).toHaveLength(3);
+    for (const entry of ledgerData?.toolsUsed ?? []) {
+      expect(Object.keys(entry).sort()).toEqual(
+        ["durationMs", "input", "name", "outcome", "stepIndex", "summary", "toolCallId"].sort(),
+      );
+      expect(typeof entry.durationMs).toBe("number");
+      expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+    }
+    // Outline and full ledger agree on counts, names, and outcomes.
+    const outlineSorted = [...result.toolsUsed].sort((a, b) => a.name.localeCompare(b.name));
+    const fullSorted = [...(ledgerData?.toolsUsed ?? [])].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    expect(outlineSorted.map((e) => e.name)).toEqual(fullSorted.map((e) => e.name));
+    expect(outlineSorted.map((e) => e.outcome)).toEqual(fullSorted.map((e) => e.outcome));
+
+    // stepIndex reflects mock step ordering: c1,c2 in step 0, c3 in step 1.
+    const byId = new Map(ledgerData?.toolsUsed.map((e) => [e.toolCallId, e]));
+    expect(byId.get("c1")?.stepIndex).toBe(0);
+    expect(byId.get("c2")?.stepIndex).toBe(0);
+    expect(byId.get("c3")?.stepIndex).toBe(1);
+
+    // `finish` tool never appears in the ledger.
+    expect(ledgerData?.toolsUsed.some((e) => e.name === "finish")).toBe(false);
+  });
+
+  it("ledger wire shape matches what a reducer would reconstruct from forwarded data-delegate-chunk envelopes", async () => {
+    // Same fixture sequence used both for direct ledger emission and for
+    // downstream reducers that replay data-delegate-chunk envelopes. The shape
+    // the ledger carries must be what the reducer can reconstruct on
+    // `{tools called, ordering, toolCallId, stepIndex, outcomes}`.
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [
+        { toolCalls: [{ toolCallId: "c1", toolName: "web_search", input: { q: "a" } }] },
+        {
+          toolCalls: [{ toolCallId: "c2", toolName: "web_fetch", input: { u: "b" } }],
+          toolErrors: [{ toolCallId: "c2", toolName: "web_fetch", error: "boom" }],
+          finish: { ok: false, reason: "upstream 404" },
+        },
+      ],
+      finalText: "",
+      streamChunks: [
+        {
+          type: "tool-input-available",
+          toolCallId: "c1",
+          toolName: "web_search",
+          input: { q: "a" },
+        },
+        { type: "tool-output-available", toolCallId: "c1", output: { hits: 1 } },
+        {
+          type: "tool-input-available",
+          toolCallId: "c2",
+          toolName: "web_fetch",
+          input: { u: "b" },
+        },
+        { type: "tool-output-error", toolCallId: "c2", errorText: "boom" },
+      ],
+    });
+
+    const { delegateTool, writer } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(result.ok).toBe(false);
+    expect(result.toolsUsed).toEqual(
+      expect.arrayContaining([
+        { name: "web_search", outcome: "success" },
+        { name: "web_fetch", outcome: "error" },
+      ]),
+    );
+
+    const ledgerWrite = writer.writes.find(
+      (w) =>
+        typeof w.chunk === "object" &&
+        w.chunk !== null &&
+        "type" in w.chunk &&
+        w.chunk.type === "data-delegate-ledger",
+    );
+    if (!ledgerWrite) throw new Error("expected ledger write");
+    const ledgerData = extractLedgerData(ledgerWrite.chunk);
+
+    // What the reducer reconstructs from forwarded envelopes.
+    const forwardedEnvelopes = writer.merged[0] ? await drain(writer.merged[0]) : [];
+    const reconstructed = reconstructFromEnvelopes(forwardedEnvelopes);
+
+    expect(ledgerData).toBeDefined();
+    if (!ledgerData) throw new Error("unreachable");
+
+    // Agreement on the shape the reducer can reconstruct.
+    const ledgerSorted = [...ledgerData.toolsUsed].sort((a, b) =>
+      a.toolCallId.localeCompare(b.toolCallId),
+    );
+    const reconstructedSorted = [...reconstructed].sort((a, b) =>
+      a.toolCallId.localeCompare(b.toolCallId),
+    );
+    expect(ledgerSorted.map((e) => e.toolCallId)).toEqual(
+      reconstructedSorted.map((e) => e.toolCallId),
+    );
+    expect(ledgerSorted.map((e) => e.name)).toEqual(reconstructedSorted.map((e) => e.name));
+    expect(ledgerSorted.map((e) => e.outcome)).toEqual(reconstructedSorted.map((e) => e.outcome));
+    // stepIndex agreement: reducer derives it from the chunk ordering; the
+    // ledger derives it from step walking. For this fixture both end up with
+    // c1 at the 0th call and c2 at the 1st.
+    const ledgerOrdering = ledgerSorted.map((e) => ({ id: e.toolCallId, step: e.stepIndex }));
+    expect(ledgerOrdering).toEqual([
+      { id: "c1", step: 0 },
+      { id: "c2", step: 1 },
+    ]);
+  });
+
+  it("clean-finish persistence round-trip: ledger survives validateAtlasUIMessages", async () => {
+    // Run the delegate with a clean finish, gather the writer's writes into a
+    // synthetic message's parts[], then validate via validateAtlasUIMessages
+    // (the same path chat persistence uses on load) and assert the
+    // data-delegate-ledger part round-trips intact.
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [
+        {
+          toolCalls: [{ toolCallId: "c1", toolName: "web_search", input: { q: "x" } }],
+          finish: { ok: true, answer: "all good" },
+        },
+      ],
+      finalText: "",
+      streamChunks: [
+        {
+          type: "tool-input-available",
+          toolCallId: "c1",
+          toolName: "web_search",
+          input: { q: "x" },
+        },
+        { type: "tool-output-available", toolCallId: "c1", output: { hits: 7 } },
+      ],
+    });
+
+    const { delegateTool, writer } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+    expect(result.ok).toBe(true);
+
+    // Drain forwarded envelopes so they show up alongside the ledger when we
+    // assemble the synthetic message.
+    const forwardedEnvelopes = writer.merged[0] ? await drain(writer.merged[0]) : [];
+    const ledgerWrites = writer.writes
+      .map((w) => w.chunk)
+      .filter(
+        (c) =>
+          typeof c === "object" && c !== null && "type" in c && c.type === "data-delegate-ledger",
+      );
+
+    // Build the message the chat-storage layer would persist: every data-*
+    // chunk maps 1:1 to a data-* part with the same payload.
+    const dataParts: Array<Record<string, unknown>> = [];
+    for (const env of forwardedEnvelopes) {
+      if (typeof env === "object" && env !== null && "type" in env && "data" in env) {
+        dataParts.push({ type: env.type, data: env.data });
+      }
+    }
+    for (const led of ledgerWrites) {
+      if (typeof led === "object" && led !== null && "type" in led && "data" in led) {
+        dataParts.push({ type: led.type, data: led.data });
+      }
+    }
+
+    const messages = [
+      {
+        id: "msg-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "delegated" }, ...dataParts],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated).toHaveLength(1);
+    const reloaded = validated[0];
+    if (!reloaded) throw new Error("expected reloaded message");
+    const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
+    expect(ledgerParts).toHaveLength(1);
+    const ledgerPart = ledgerParts[0];
+    if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
+    expect(ledgerPart.data.delegateToolCallId).toBe("del-call-1");
+    expect(ledgerPart.data.toolsUsed).toHaveLength(1);
+    const entry = ledgerPart.data.toolsUsed[0];
+    if (!entry) throw new Error("expected ledger entry");
+    expect(entry.toolCallId).toBe("c1");
+    expect(entry.name).toBe("web_search");
+    expect(entry.outcome).toBe("success");
+    expect(entry.stepIndex).toBe(0);
+    expect(typeof entry.durationMs).toBe("number");
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+  });
 });
 
 // ─── Local helpers (after the test for readability) ─────────────────────────
@@ -423,4 +686,80 @@ function extractInnerToolCallId(envelope: AtlasUIMessageChunk): string | undefin
   if (typeof inner !== "object" || inner === null) return undefined;
   const id = (inner as { toolCallId?: unknown }).toolCallId;
   return typeof id === "string" ? id : undefined;
+}
+
+interface LedgerData {
+  delegateToolCallId: string;
+  toolsUsed: Array<{
+    toolCallId: string;
+    name: string;
+    input: unknown;
+    outcome: "success" | "error";
+    summary?: string;
+    stepIndex: number;
+    durationMs: number;
+  }>;
+}
+
+function extractLedgerData(chunk: AtlasUIMessageChunk): LedgerData | undefined {
+  if (typeof chunk !== "object" || chunk === null) return undefined;
+  if (!("type" in chunk) || chunk.type !== "data-delegate-ledger") return undefined;
+  if (!("data" in chunk)) return undefined;
+  const data = chunk.data;
+  if (typeof data !== "object" || data === null) return undefined;
+  if (!("delegateToolCallId" in data) || typeof data.delegateToolCallId !== "string") {
+    return undefined;
+  }
+  if (!("toolsUsed" in data) || !Array.isArray(data.toolsUsed)) return undefined;
+  return { delegateToolCallId: data.delegateToolCallId, toolsUsed: data.toolsUsed };
+}
+
+/**
+ * Mimics the per-delegate accumulator the playground reducer (Task 3) will
+ * run on forwarded `data-delegate-chunk` envelopes. Returns one entry per
+ * unique inner toolCallId carrying `{toolCallId, name, outcome, stepIndex}`
+ * — the subset the ledger and the reducer must agree on.
+ */
+function reconstructFromEnvelopes(
+  envelopes: AtlasUIMessageChunk[],
+): Array<{ toolCallId: string; name: string; outcome: "success" | "error"; stepIndex: number }> {
+  const calls = new Map<
+    string,
+    { toolCallId: string; name: string; outcome: "success" | "error"; stepIndex: number }
+  >();
+  let nextStepIndex = 0;
+  for (const envelope of envelopes) {
+    if (typeof envelope !== "object" || envelope === null) continue;
+    if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") continue;
+    const data = (envelope as { data?: unknown }).data;
+    if (typeof data !== "object" || data === null) continue;
+    const inner = (data as { chunk?: unknown }).chunk;
+    if (typeof inner !== "object" || inner === null) continue;
+    if (!("type" in inner) || !("toolCallId" in inner)) continue;
+    const innerType = inner.type;
+    const namespacedId = inner.toolCallId;
+    if (typeof innerType !== "string" || typeof namespacedId !== "string") continue;
+    // Strip the `${delegateToolCallId}::` prefix to get back to the original
+    // child toolCallId for direct comparison with the ledger.
+    const childId = namespacedId.includes("::")
+      ? (namespacedId.split("::")[1] ?? namespacedId)
+      : namespacedId;
+    if (innerType === "tool-input-available") {
+      const toolName =
+        "toolName" in inner && typeof inner.toolName === "string" ? inner.toolName : "";
+      if (toolName === "finish") continue;
+      if (!calls.has(childId)) {
+        calls.set(childId, {
+          toolCallId: childId,
+          name: toolName,
+          outcome: "success",
+          stepIndex: nextStepIndex++,
+        });
+      }
+    } else if (innerType === "tool-output-error") {
+      const entry = calls.get(childId);
+      if (entry) entry.outcome = "error";
+    }
+  }
+  return [...calls.values()];
 }

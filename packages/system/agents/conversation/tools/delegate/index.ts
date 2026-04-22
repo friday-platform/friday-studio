@@ -9,14 +9,20 @@
  *   { ok: true,  answer, toolsUsed: [{name, outcome}] } — task succeeded
  *   { ok: false, reason, toolsUsed: [{name, outcome}] } — task failed/impossible
  *
- * This is the tracer-bullet implementation. Task #5 will add the full
- * `data-delegate-ledger` event; Task #6 will add abort handling and the
- * `delegate-end` terminator.
+ * Alongside the compact result, the delegate emits one `data-delegate-ledger`
+ * event before returning. The ledger carries per-child `{toolCallId, name,
+ * input, outcome, summary, stepIndex, durationMs}` — full richness for a
+ * future reflection layer — while the tool result stays outline-only
+ * (`{name, outcome}`) so future LLM turns don't pay for the ledger in tokens.
+ *
+ * Task #6 will move the ledger emission into a `finally` block so it also
+ * fires on abort/throw, along with the `delegate-end` terminator.
  */
 
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
@@ -62,6 +68,21 @@ export interface DelegateDeps {
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
 
+/**
+ * Full ledger entry — one per child tool call (excluding `finish`).
+ * Rides on `data-delegate-ledger` out-of-band so future LLM turns don't
+ * pay for it in tokens.
+ */
+export interface DelegateLedgerEntry {
+  toolCallId: string;
+  name: string;
+  input: unknown;
+  outcome: "success" | "error";
+  summary?: string;
+  stepIndex: number;
+  durationMs: number;
+}
+
 export type DelegateResult =
   | { ok: true; answer: string; toolsUsed: DelegateToolsUsedEntry[] }
   | { ok: false; reason: string; toolsUsed: DelegateToolsUsedEntry[] };
@@ -85,7 +106,12 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         logger,
       });
 
-      const collectedToolsUsed: DelegateToolsUsedEntry[] = [];
+      // Accumulator keyed by the child's original (non-namespaced) toolCallId.
+      // The outline projection (name+outcome) lands in the tool result;
+      // the full entries ride on the out-of-band data-delegate-ledger event.
+      const ledger = new Map<string, DelegateLedgerEntry>();
+      // Per-call start timestamps (captured from `tool-input-available` chunks).
+      const startedAt = new Map<string, number>();
 
       try {
         const inheritedTools = toolSetThunk();
@@ -115,7 +141,16 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           providerOptions: getDefaultProviderOpts("anthropic"),
         });
 
-        proxy.merge(result.toUIMessageStream<AtlasUIMessage>());
+        // Tee the child's UIMessage stream: one branch flows through the proxy
+        // to the parent (and eventually to the SSE sink); the other drains
+        // in-process so we can stamp `durationMs` from `tool-input-available`
+        // arrival to the first terminal chunk per call. Tee decouples the
+        // branches, so in-process observation does not back-pressure the
+        // parent's writer (and vice-versa).
+        const uiStream = result.toUIMessageStream<AtlasUIMessage>();
+        const [observerBranch, parentBranch] = uiStream.tee();
+        const observerDone = observeChunkTimings(observerBranch, startedAt, ledger);
+        proxy.merge(parentBranch);
 
         // Resolve steps first so we can populate `toolsUsed` even when
         // `result.text` rejects (e.g. AI_NoOutputGeneratedError from a
@@ -129,43 +164,145 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           textError = err instanceof Error ? err : new Error(String(err));
         }
 
-        // Build an outcome map keyed by toolCallId so we can promote a
-        // success to error if the same call later surfaces as `tool-error`.
-        const outcomeByCallId = new Map<string, DelegateToolsUsedEntry>();
+        // Wait for the observer to finish so every `tool-output-available` /
+        // `tool-output-error` chunk has landed before we emit the ledger.
+        await observerDone;
+
+        // Walk steps to fill name / input / stepIndex / outcome / summary.
+        // Steps are the authoritative source for these (chunks can be reordered
+        // or duplicated on replay); chunks only contributed timing.
         let finishInput: FinishInput | undefined;
-        for (const step of steps) {
+        for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+          const step = steps[stepIndex];
+          if (!step) continue;
           for (const part of step.content) {
-            if (part.type === "tool-call") {
-              if (part.toolName === FINISH_TOOL_NAME) continue;
-              outcomeByCallId.set(part.toolCallId, { name: part.toolName, outcome: "success" });
-            } else if (part.type === "tool-error") {
-              outcomeByCallId.set(part.toolCallId, { name: part.toolName, outcome: "error" });
+            if (part.type === "tool-call" && part.toolName !== FINISH_TOOL_NAME) {
+              const existing = ledger.get(part.toolCallId);
+              ledger.set(part.toolCallId, {
+                toolCallId: part.toolCallId,
+                name: part.toolName,
+                input: part.input,
+                outcome: existing?.outcome ?? "success",
+                summary: existing?.summary,
+                stepIndex,
+                durationMs: existing?.durationMs ?? 0,
+              });
+            } else if (part.type === "tool-result" && part.toolName !== FINISH_TOOL_NAME) {
+              const existing = ledger.get(part.toolCallId);
+              if (existing) {
+                existing.outcome = "success";
+                existing.summary = truncateForLedger(part.output, 200);
+              }
+            } else if (part.type === "tool-error" && part.toolName !== FINISH_TOOL_NAME) {
+              const existing = ledger.get(part.toolCallId);
+              if (existing) {
+                existing.outcome = "error";
+                existing.summary = truncateForLedger(part.error, 200);
+              } else {
+                ledger.set(part.toolCallId, {
+                  toolCallId: part.toolCallId,
+                  name: part.toolName,
+                  input: part.input,
+                  outcome: "error",
+                  summary: truncateForLedger(part.error, 200),
+                  stepIndex,
+                  durationMs: 0,
+                });
+              }
             } else if (part.type === "tool-result" && part.toolName === FINISH_TOOL_NAME) {
               finishInput = parseFinishInput(part.output);
             }
           }
         }
-        for (const entry of outcomeByCallId.values()) {
-          collectedToolsUsed.push(entry);
-        }
+
+        // Emit the full ledger out-of-band before returning. Task #6 will
+        // move this into a `finally` so abort/throw also flush it.
+        const ledgerEntries = [...ledger.values()];
+        writer.write({
+          type: "data-delegate-ledger",
+          data: { delegateToolCallId: toolCallId, toolsUsed: ledgerEntries },
+        });
+
+        const toolsUsed: DelegateToolsUsedEntry[] = ledgerEntries.map(({ name, outcome }) => ({
+          name,
+          outcome,
+        }));
 
         if (finishInput) {
           if (finishInput.ok) {
-            return { ok: true, answer: finishInput.answer, toolsUsed: collectedToolsUsed };
+            return { ok: true, answer: finishInput.answer, toolsUsed };
           }
-          return { ok: false, reason: finishInput.reason, toolsUsed: collectedToolsUsed };
+          return { ok: false, reason: finishInput.reason, toolsUsed };
         }
         if (textError) {
-          return { ok: false, reason: textError.message, toolsUsed: collectedToolsUsed };
+          return { ok: false, reason: textError.message, toolsUsed };
         }
-        return { ok: true, answer: finalText, toolsUsed: collectedToolsUsed };
+        return { ok: true, answer: finalText, toolsUsed };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn("delegate execute caught error", { delegateToolCallId: toolCallId, message });
-        return { ok: false, reason: message, toolsUsed: collectedToolsUsed };
+        const toolsUsed: DelegateToolsUsedEntry[] = [...ledger.values()].map(
+          ({ name, outcome }) => ({ name, outcome }),
+        );
+        return { ok: false, reason: message, toolsUsed };
       } finally {
         proxy.close();
       }
     },
   });
+}
+
+/**
+ * Drain the child's UIMessage stream in-process, stamping `durationMs` from
+ * `tool-input-available` arrival to the first terminal chunk per child tool
+ * call. Skips the synthetic `finish` tool — it never appears in the ledger.
+ *
+ * Writes directly into `ledger` so timing is present whether or not the
+ * matching step has been walked yet (step walking populates name/input/etc.
+ * after this settles).
+ */
+async function observeChunkTimings(
+  stream: ReadableStream<unknown>,
+  startedAt: Map<string, number>,
+  ledger: Map<string, DelegateLedgerEntry>,
+): Promise<void> {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (typeof value !== "object" || value === null) continue;
+      if (!("type" in value) || !("toolCallId" in value)) continue;
+      const { type, toolCallId } = value;
+      if (typeof type !== "string" || typeof toolCallId !== "string") continue;
+      if ("toolName" in value && value.toolName === FINISH_TOOL_NAME) continue;
+      if (type === "tool-input-available") {
+        if (!startedAt.has(toolCallId)) startedAt.set(toolCallId, Date.now());
+      } else if (type === "tool-output-available" || type === "tool-output-error") {
+        const start = startedAt.get(toolCallId);
+        if (start === undefined) continue;
+        const existing = ledger.get(toolCallId);
+        if (existing && existing.durationMs > 0) continue;
+        const durationMs = Math.max(0, Date.now() - start);
+        if (existing) {
+          existing.durationMs = durationMs;
+        } else {
+          // Placeholder — step walking will fill the rest. stepIndex left at 0
+          // until the step loop overwrites it.
+          const toolName =
+            "toolName" in value && typeof value.toolName === "string" ? value.toolName : "";
+          ledger.set(toolCallId, {
+            toolCallId,
+            name: toolName,
+            input: undefined,
+            outcome: type === "tool-output-error" ? "error" : "success",
+            stepIndex: 0,
+            durationMs,
+          });
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }

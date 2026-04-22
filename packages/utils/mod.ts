@@ -249,6 +249,71 @@ export function truncateUnicode(str: string | undefined, maxLength: number, elli
   return codePoints.slice(0, contentLen).join("") + ellipsis;
 }
 
+/**
+ * Renders an arbitrary value as a compact string suitable for a
+ * delegate ledger entry (e.g. `toolsUsed[].input` / `.summary`).
+ *
+ * - Strings pass through unchanged except for truncation.
+ * - Objects and arrays are stringified via JSON.stringify with binaries,
+ *   streams, and cycles replaced first so no reader ever sees `[object
+ *   Object]`, a stack overflow, or a raw Buffer dump.
+ * - Any serialization failure (throwing getter, weird proxy) is swallowed
+ *   and rendered as `"[unserializable]"` rather than propagating.
+ *
+ * @param value - Any value to render.
+ * @param maxChars - Maximum output length in Unicode code points, including
+ *   the trailing `"…"` when truncation occurs (default 200).
+ */
+export function truncateForLedger(value: unknown, maxChars = 200): string {
+  let rendered: string;
+  try {
+    if (typeof value === "string") {
+      rendered = value;
+    } else {
+      const safe = replaceUnserializable(value);
+      const json = JSON.stringify(safe);
+      rendered = json ?? "[unserializable]";
+    }
+  } catch {
+    return "[unserializable]";
+  }
+  return truncateUnicode(rendered, maxChars, "…");
+}
+
+/**
+ * Walks a value and replaces nodes that JSON.stringify can't represent
+ * faithfully (`Uint8Array`, `Blob`, `ReadableStream`, circular refs) with
+ * short string markers. Leaves everything else untouched.
+ */
+function replaceUnserializable(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (value instanceof Uint8Array) {
+    return "[binary]";
+  }
+  // Blob is defined in the browser/Deno globals but may be absent in some
+  // runtimes — guard by checking the global first.
+  if (typeof Blob !== "undefined" && value instanceof Blob) {
+    return "[binary]";
+  }
+  if (typeof ReadableStream !== "undefined" && value instanceof ReadableStream) {
+    return "[stream]";
+  }
+  if (seen.has(value)) {
+    return "[circular]";
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((v) => replaceUnserializable(v, seen));
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = replaceUnserializable(v, seen);
+  }
+  return out;
+}
+
 export const ColorSchema = z
   .enum(["yellow", "purple", "red", "blue", "green", "brown"])
   .catch("yellow");
