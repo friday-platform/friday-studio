@@ -108,7 +108,7 @@ Chat SDK SlackAdapter. 400 missing app_id, 404 no workspace match.
 
 ## Chat (global)
 
-Mount: `/api/chat`. Default workspace: `user`.
+Mount: `/api/chat`. Default workspace: `atlas-conversation`.
 
 - `GET /` — list recent. Query `limit`, `cursor`.
 - `POST /` — create + stream. Body: `{ id, message: AtlasUIMessage, datetime? }`. Header `X-Workspace-Id`. SSE response.
