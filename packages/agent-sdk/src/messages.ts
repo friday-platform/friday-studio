@@ -101,6 +101,29 @@ export const AtlasDataEventSchemas = {
     input: z.string().optional(),
     result: z.string().optional(),
   }),
+  /**
+   * Envelope-wrapped chunk from a delegate sub-agent's stream. `chunk` is
+   * either a namespaced AI SDK `UIMessageChunk` or a synthetic
+   * `{ type: "delegate-end", pendingToolCallIds: string[] }` terminator —
+   * left as `unknown` to avoid duplicating the entire `UIMessageChunk` tagged
+   * union here.
+   */
+  "delegate-chunk": z.object({ delegateToolCallId: z.string(), chunk: z.unknown() }),
+  /** Final ledger of tools used during a delegate sub-agent run. */
+  "delegate-ledger": z.object({
+    delegateToolCallId: z.string(),
+    toolsUsed: z.array(
+      z.object({
+        toolCallId: z.string(),
+        name: z.string(),
+        input: z.unknown(),
+        outcome: z.enum(["success", "error"]),
+        summary: z.string().optional(),
+        stepIndex: z.number(),
+        durationMs: z.number(),
+      }),
+    ),
+  }),
   "action-summary": z.object({ summary: z.string() }),
   // Adapter write events — leapfrog #3 (observable mutations)
   "memory-write": z.object({
@@ -226,6 +249,8 @@ export type AtlasDataEvents = {
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;
+  "delegate-chunk": z.infer<(typeof AtlasDataEventSchemas)["delegate-chunk"]>;
+  "delegate-ledger": z.infer<(typeof AtlasDataEventSchemas)["delegate-ledger"]>;
   "action-summary": z.infer<(typeof AtlasDataEventSchemas)["action-summary"]>;
   "memory-write": z.infer<(typeof AtlasDataEventSchemas)["memory-write"]>;
   "memory-rollback": z.infer<(typeof AtlasDataEventSchemas)["memory-rollback"]>;

@@ -306,6 +306,62 @@ describe("validateAtlasUIMessages", () => {
     expect(validated[0]?.metadata?.jobName).toEqual("fast-loop");
   });
 
+  it("validates delegate-chunk and delegate-ledger data events", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-delegate-chunk",
+            data: {
+              delegateToolCallId: "tc-delegate-1",
+              chunk: { type: "text-delta", id: "t1", delta: "hello" },
+            },
+          },
+          {
+            type: "data-delegate-chunk",
+            data: {
+              delegateToolCallId: "tc-delegate-1",
+              chunk: { type: "delegate-end", pendingToolCallIds: ["tc-x"] },
+            },
+          },
+          {
+            type: "data-delegate-ledger",
+            data: {
+              delegateToolCallId: "tc-delegate-1",
+              toolsUsed: [
+                {
+                  toolCallId: "tc-inner-1",
+                  name: "search",
+                  input: { query: "hello" },
+                  outcome: "success",
+                  summary: "found 3 results",
+                  stepIndex: 0,
+                  durationMs: 123,
+                },
+              ],
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    const chunkPart = validated[0]?.parts[0];
+    const terminatorPart = validated[0]?.parts[1];
+    const ledgerPart = validated[0]?.parts[2];
+    expect(chunkPart?.type).toEqual("data-delegate-chunk");
+    expect(terminatorPart?.type).toEqual("data-delegate-chunk");
+    expect(ledgerPart?.type).toEqual("data-delegate-ledger");
+    if (ledgerPart?.type === "data-delegate-ledger") {
+      expect(ledgerPart.data.delegateToolCallId).toEqual("tc-delegate-1");
+      expect(ledgerPart.data.toolsUsed).toHaveLength(1);
+      expect(ledgerPart.data.toolsUsed[0]?.outcome).toEqual("success");
+    }
+  });
+
   it("validates skill-lint-warning data event", async () => {
     const messages = [
       {
