@@ -29,9 +29,14 @@
     return JSON.stringify(parsed, null, 2);
   }
 
-  /** Get display data for non-inner-tool-call items (take_note) */
+  /** Get display data for non-inner-tool-call items (do_task intent, take_note) */
   function getDisplayData(details: unknown): { text: string; plain: boolean } | undefined {
     if (!details || typeof details !== "object") return undefined;
+
+    // do_task: plain text intent description
+    if ("text" in details && typeof details.text === "string") {
+      return { text: details.text, plain: true };
+    }
 
     // take_note
     if ("input" in details) {

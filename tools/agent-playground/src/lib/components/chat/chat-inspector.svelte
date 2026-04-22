@@ -918,6 +918,24 @@
                               <dd>{memType}</dd>
                             </dl>
 
+                          {:else if name === "do_task"}
+                            {@const intent = typeof inp.intent === "string" ? inp.intent : ""}
+                            {@const sessionId = typeof out.sessionId === "string" ? out.sessionId : null}
+                            {@const taskStatus = typeof out.status === "string" ? out.status : null}
+                            <div class="call-headline">{intent.length > 80 ? `${intent.slice(0, 80)}…` : intent}</div>
+                            <dl class="call-meta">
+                              <dt>Status</dt>
+                              <dd>{@render callStatus(call.state)}</dd>
+                              {#if sessionId}
+                                <dt>Session</dt>
+                                <dd class="mono-sm">{sessionId.slice(0, 8)}</dd>
+                              {/if}
+                              {#if taskStatus}
+                                <dt>Result</dt>
+                                <dd>{taskStatus}</dd>
+                              {/if}
+                            </dl>
+
                           {:else if name === "artifacts_get"}
                             {@const artifactId = typeof inp.artifactId === "string" ? inp.artifactId : ""}
                             {@const revision = typeof inp.revision === "number" ? inp.revision : null}
