@@ -23,6 +23,7 @@
     "./mcp-registry/requirement-validator": "./src/mcp-registry/requirement-validator.ts",
     "./mcp-registry/credential-resolver": "./src/mcp-registry/credential-resolver.ts",
     "./mcp-registry/storage": "./src/mcp-registry/storage/index.ts",
+    "./streaming": "./src/streaming/stream-emitters.ts",
     "./agent-loader": "./src/agent-loader/index.ts",
     "./agent-loader/user-adapter": "./src/agent-loader/adapters/user-adapter.ts",
     "./errors/missing-environment": "./src/errors/missing-environment-error.ts",
