@@ -57,6 +57,13 @@ export interface ToolCallDisplay {
   output?: unknown;
   /** Error message when `state === "output-error"`. */
   errorText?: string;
+  /**
+   * Nested tool calls reconstructed from `data-delegate-chunk` envelopes
+   * forwarded by the `delegate` tool's proxy writer. Present only on
+   * top-level `tool-delegate` entries; child IDs are namespaced as
+   * `${delegateToolCallId}::${childToolCallId}`.
+   */
+  children?: ToolCallDisplay[];
 }
 
 export interface ImageDisplay {

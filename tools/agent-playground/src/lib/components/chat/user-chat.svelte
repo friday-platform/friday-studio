@@ -17,7 +17,8 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
+  import { extractToolCalls } from "./extract-tool-calls.ts";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal } from "./types";
   import { GetChatResponseSchema } from "./types";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
@@ -693,67 +694,6 @@
       )
       .map((p) => p.text)
       .join("");
-  }
-
-  /**
-   * Extract tool-call parts from an {@link AtlasUIMessage} in stream order.
-   *
-   * AI SDK v6 emits one part per tool invocation, typed either as
-   * `tool-<name>` (static tools — our `web_fetch`, `run_code`, etc. are
-   * registered this way via `createWebFetchTool` / `createRunCodeTool`) or
-   * as `dynamic-tool` (runtime-resolved). Both carry `toolCallId`, `state`,
-   * `input`, and — on success — `output`. We flatten both shapes into
-   * {@link ToolCallDisplay} so the message list can render them as status
-   * cards without caring about the static/dynamic distinction.
-   *
-   * Without this extraction, tool activity was invisible: the user would
-   * see a long pause between "Friday" and the final text reply while
-   * web_fetch / run_code ran in the background.
-   */
-  function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
-    if (!Array.isArray(msg.parts)) return [];
-    const calls: ToolCallDisplay[] = [];
-    for (const part of msg.parts) {
-      if (typeof part !== "object" || part === null || !("type" in part)) continue;
-      const type = (part as { type: unknown }).type;
-      if (typeof type !== "string") continue;
-
-      // Both static (`tool-<name>`) and dynamic (`dynamic-tool`) carry the
-      // same shape of state / input / output / errorText / toolCallId
-      // fields, so we cast via a common structural interface once we know
-      // the part is a tool.
-      const isStatic = type.startsWith("tool-");
-      const isDynamic = type === "dynamic-tool";
-      if (!isStatic && !isDynamic) continue;
-
-      const tp = part as {
-        type: string;
-        toolCallId?: unknown;
-        toolName?: unknown;
-        state?: unknown;
-        input?: unknown;
-        output?: unknown;
-        errorText?: unknown;
-      };
-
-      const toolCallId = typeof tp.toolCallId === "string" ? tp.toolCallId : "";
-      const toolName = isDynamic
-        ? typeof tp.toolName === "string"
-          ? tp.toolName
-          : "tool"
-        : type.slice("tool-".length);
-      const state = typeof tp.state === "string" ? tp.state : "input-streaming";
-
-      calls.push({
-        toolCallId,
-        toolName,
-        state: state as ToolCallDisplay["state"],
-        input: tp.input,
-        output: tp.output,
-        errorText: typeof tp.errorText === "string" ? tp.errorText : undefined,
-      });
-    }
-    return calls;
   }
 
   /**
