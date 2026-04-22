@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashPrimitive } from "./hasher.ts";
+import { Buffer } from "node:buffer";
 
 describe("hashPrimitive", () => {
   let dir: string;

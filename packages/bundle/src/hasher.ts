@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
+import { Buffer } from "node:buffer";
 
 export interface HashResult {
   /** sha256 of the canonical manifest. */
