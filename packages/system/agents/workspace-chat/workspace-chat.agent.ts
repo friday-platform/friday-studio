@@ -36,6 +36,7 @@ import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/link-context.ts";
 import { connectServiceSucceeded } from "../conversation/stop-conditions.ts";
 import { createConnectServiceTool } from "../conversation/tools/connect-service.ts";
+import { createDelegateTool } from "../conversation/tools/delegate/index.ts";
 import { fetchUserIdentitySection } from "../conversation/user-identity.ts";
 import {
   composeMemoryBlocks,
@@ -594,6 +595,31 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const runCodeTool = createRunCodeTool(adHocSessionId, logger);
         const fileIOTools = createFileIOTools(adHocSessionId, logger);
 
+        // delegate runs nested streamText sub-agents in-process. The child's
+        // tool set is the parent's full composed set minus `delegate` itself
+        // (plus a synthetic `finish` tool the delegate injects). We resolve
+        // the child's tool set lazily via a thunk so `composeTools()` below
+        // can run first; `allToolsRef` is assigned after composition and the
+        // thunk reads it at child-`execute()` time.
+        let allToolsRef: AtlasTools = {};
+        const delegateTool = createDelegateTool(
+          {
+            writer,
+            session: {
+              sessionId: adHocSessionId,
+              workspaceId,
+              streamId: session.streamId,
+              userId: session.userId,
+              datetime: session.datetime,
+            },
+            platformModels,
+            logger,
+            abortSignal,
+            repairToolCall,
+          },
+          () => allToolsRef,
+        );
+
         const primaryTools: AtlasTools = {
           ...connectServiceTool,
           ...jobTools,
@@ -605,6 +631,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...runCodeTool,
           ...fileIOTools,
           do_task: doTaskTool,
+          delegate: delegateTool,
           load_skill: loadSkillTool,
         };
 
@@ -619,6 +646,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ),
         }));
         const allTools = composeTools(primaryTools, foregroundToolSets);
+        allToolsRef = allTools;
 
         // Build resource section for system prompt
         const resourceSectionParts: string[] = [];
