@@ -82,14 +82,7 @@ export const TelegramProviderConfigSchema = z.strictObject({
 });
 export type TelegramProviderConfig = z.infer<typeof TelegramProviderConfigSchema>;
 
-export const DiscordProviderConfigSchema = z.strictObject({
-  application_id: z
-    .string()
-    .optional()
-    .describe(
-      "Discord application ID. Informational — credentials (bot token, public key, application ID) are all read from env vars (DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID).",
-    ),
-});
+export const DiscordProviderConfigSchema = z.strictObject({});
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
 export const WhatsAppProviderConfigSchema = z.strictObject({

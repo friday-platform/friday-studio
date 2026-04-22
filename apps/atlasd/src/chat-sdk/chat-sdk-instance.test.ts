@@ -521,7 +521,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   const discordSignal = {
-    "discord-chat": { provider: "discord", config: { application_id: "A-discord" } },
+    "discord-chat": { provider: "discord", config: {} },
   };
   const discordEnvKeys = ["DISCORD_BOT_TOKEN", "DISCORD_PUBLIC_KEY", "DISCORD_APPLICATION_ID"];
 

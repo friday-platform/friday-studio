@@ -168,8 +168,8 @@ if your laptop gets wiped.
 
 Open the workspace's `workspace.yml` (usually
 `~/.atlas/workspaces/<name>/workspace.yml`) and add a `discord-chat`
-signal. All credentials come from `~/.atlas/.env`, so the config only
-exposes an informational `application_id`:
+signal. All credentials come from `~/.atlas/.env`, so the config block
+is intentionally empty:
 
 ```yaml
 signals:
@@ -177,12 +177,10 @@ signals:
     title: "Chat via Discord"
     description: "Receives DMs and @mentions from Discord"
     provider: discord
-    config:
-      application_id: "1234567890123456789"  # informational — creds read from env
+    config: {}
 ```
 
-The `application_id` field is optional and informational only — the
-resolver reads credentials exclusively from
+The resolver reads credentials exclusively from
 `DISCORD_BOT_TOKEN` / `DISCORD_PUBLIC_KEY` / `DISCORD_APPLICATION_ID`.
 
 Save and restart the daemon so the new workspace.yml is picked up:

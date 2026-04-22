@@ -62,8 +62,7 @@ Rough path:
        title: "Chat via Discord"
        description: "Receives DMs and @mentions from Discord"
        provider: discord
-       config:
-         application_id: "1234567890123456789"
+       config: {}
    ```
 7. Restart daemon so the new workspace.yml is picked up
 8. **OAuth2 → URL Generator**: scope `bot`, permissions
@@ -239,7 +238,7 @@ deno task atlas daemon stop
 
 ## Smoke Candidates
 
-- **Case 1 (Gateway connects on workspace init)** — strong candidate.
+- **Case 1 (Gateway connects on daemon init)** — strong candidate.
   Deterministic, runs in ~10s, purely log-based (no human-in-the-loop
   Discord interaction), covers the whole BYO resolve + supervisor startup
   path in one shot. Worth adding to `docs/qa/smoke-matrix.md` as a recurring
