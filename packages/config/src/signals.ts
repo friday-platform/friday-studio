@@ -82,6 +82,16 @@ export const TelegramProviderConfigSchema = z.strictObject({
 });
 export type TelegramProviderConfig = z.infer<typeof TelegramProviderConfigSchema>;
 
+export const DiscordProviderConfigSchema = z.strictObject({
+  application_id: z
+    .string()
+    .optional()
+    .describe(
+      "Discord application ID. Informational — credentials (bot token, public key, application ID) are all read from env vars (DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID).",
+    ),
+});
+export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
+
 export const WhatsAppProviderConfigSchema = z.strictObject({
   access_token: z
     .string()
@@ -143,6 +153,11 @@ export const WhatsAppSignalConfigSchema = BaseSignalConfigSchema.extend({
   config: WhatsAppProviderConfigSchema,
 });
 
+export const DiscordSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("discord"),
+  config: DiscordProviderConfigSchema,
+});
+
 export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
@@ -151,6 +166,7 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   SlackSignalConfigSchema,
   TelegramSignalConfigSchema,
   WhatsAppSignalConfigSchema,
+  DiscordSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
@@ -164,6 +180,7 @@ export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
 export type SlackSignalConfig = z.infer<typeof SlackSignalConfigSchema>;
 export type TelegramSignalConfig = z.infer<typeof TelegramSignalConfigSchema>;
 export type WhatsAppSignalConfig = z.infer<typeof WhatsAppSignalConfigSchema>;
+export type DiscordSignalConfig = z.infer<typeof DiscordSignalConfigSchema>;
 
 export const SignalTriggerRequestSchema = z.strictObject({
   payload: z

@@ -64,6 +64,9 @@ export async function resolvePlatformCredentials(
     const whatsappCreds = resolveWhatsappCredentials(signals);
     if (whatsappCreds) resolved.push(whatsappCreds);
 
+    const discordCreds = resolveDiscordCredentials(signals);
+    if (discordCreds) resolved.push(discordCreds);
+
     const slackSignalCreds = resolveSlackFromSignals(signals);
     if (slackSignalCreds) {
       resolved.push(slackSignalCreds);
@@ -145,6 +148,33 @@ function resolveWhatsappCredentials(
     return {
       credentials: { kind: "whatsapp", accessToken, appSecret, phoneNumberId, verifyToken },
       credentialId: `whatsapp:${phoneNumberId}`,
+    };
+  }
+  return null;
+}
+
+function resolveDiscordCredentials(
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+): ResolvedCredentials | null {
+  for (const signal of Object.values(signals)) {
+    if (signal.provider !== "discord") continue;
+
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    const publicKey = process.env.DISCORD_PUBLIC_KEY;
+    const applicationId = process.env.DISCORD_APPLICATION_ID;
+
+    if (!botToken || !publicKey || !applicationId) {
+      const missing: string[] = [];
+      if (!botToken) missing.push("DISCORD_BOT_TOKEN");
+      if (!publicKey) missing.push("DISCORD_PUBLIC_KEY");
+      if (!applicationId) missing.push("DISCORD_APPLICATION_ID");
+      logger.debug("discord_missing_credentials", { missing });
+      return null;
+    }
+
+    return {
+      credentials: { kind: "discord", botToken, publicKey, applicationId },
+      credentialId: `discord:${applicationId}`,
     };
   }
   return null;

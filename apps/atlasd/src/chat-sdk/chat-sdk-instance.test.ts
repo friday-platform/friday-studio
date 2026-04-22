@@ -520,6 +520,89 @@ describe("resolvePlatformCredentials", () => {
     expect(kinds).toEqual(["slack", "telegram", "whatsapp"]);
   });
 
+  const discordSignal = {
+    "discord-chat": { provider: "discord", config: { application_id: "A-discord" } },
+  };
+  const discordEnvKeys = ["DISCORD_BOT_TOKEN", "DISCORD_PUBLIC_KEY", "DISCORD_APPLICATION_ID"];
+
+  function withDiscordEnv(
+    overrides: Partial<Record<(typeof discordEnvKeys)[number], string | undefined>>,
+  ): () => void {
+    const saved: Record<string, string | undefined> = {};
+    for (const key of discordEnvKeys) {
+      saved[key] = process.env[key];
+      const next = key in overrides ? overrides[key as keyof typeof overrides] : "default";
+      if (next === undefined) delete process.env[key];
+      else process.env[key] = next;
+    }
+    return () => {
+      for (const key of discordEnvKeys) {
+        const original = saved[key];
+        if (original === undefined) delete process.env[key];
+        else process.env[key] = original;
+      }
+    };
+  }
+
+  it("resolves discord when all three env vars are present", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: "bot-token-xyz",
+      DISCORD_PUBLIC_KEY: "public-key-xyz",
+      DISCORD_APPLICATION_ID: "app-123",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", discordSignal);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "bot-token-xyz",
+        publicKey: "public-key-xyz",
+        applicationId: "app-123",
+      });
+      expect(result[0]?.credentialId).toBe("discord:app-123");
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    ["DISCORD_BOT_TOKEN" as const],
+    ["DISCORD_PUBLIC_KEY" as const],
+    ["DISCORD_APPLICATION_ID" as const],
+  ])("returns null when %s is missing (no partial discord creds)", async (missingKey) => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: "bot-token-xyz",
+      DISCORD_PUBLIC_KEY: "public-key-xyz",
+      DISCORD_APPLICATION_ID: "app-123",
+      [missingKey]: undefined,
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", discordSignal);
+      // No Discord creds, and Link is unreachable in the test env → empty array.
+      // Guards against a partial creds object reaching createDiscordAdapter,
+      // whose constructor throws ValidationError synchronously and would crash
+      // the daemon on workspace init.
+      expect(result).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("discord signal coexists with telegram signal (no cross-provider shadow)", async () => {
+    const restore = withDiscordEnv({
+      DISCORD_BOT_TOKEN: "bot-token-xyz",
+      DISCORD_PUBLIC_KEY: "public-key-xyz",
+      DISCORD_APPLICATION_ID: "app-123",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...discordSignal });
+      const kinds = result.map((r) => r.credentials.kind).sort();
+      expect(kinds).toEqual(["discord", "telegram"]);
+    } finally {
+      restore();
+    }
+  });
+
   it("slack signal short-circuits the Link service lookup", async () => {
     // If Link were consulted, a reachable (but 404-returning) LINK_SERVICE_URL
     // would log chat_sdk_no_credential_for_workspace. We can't easily assert

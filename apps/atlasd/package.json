@@ -28,6 +28,7 @@
     "@atlas/workspace-builder": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/link": "workspace:*",
+    "@chat-adapter/discord": "4.26.0",
     "@chat-adapter/telegram": "4.26.0",
     "@chat-adapter/whatsapp": "4.26.0",
     "@hono/mcp": "^0.2.5",

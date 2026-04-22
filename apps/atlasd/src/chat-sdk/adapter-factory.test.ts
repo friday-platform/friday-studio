@@ -55,7 +55,7 @@ describe("buildChatSdkAdapters", () => {
     {
       name: "unknown platform provider",
       config: {
-        signals: { discord: { provider: "discord", config: {} } },
+        signals: { matrix: { provider: "matrix", config: {} } },
         credentials: slackCreds,
       },
       expected: ["atlas"],

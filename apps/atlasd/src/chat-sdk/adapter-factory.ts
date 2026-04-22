@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from "@atlas/logger";
+import { createDiscordAdapter } from "@chat-adapter/discord";
 import { SlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
@@ -24,10 +25,11 @@ export type PlatformCredentials =
       appSecret: string;
       phoneNumberId: string;
       verifyToken: string;
-    };
+    }
+  | { kind: "discord"; botToken: string; publicKey: string; applicationId: string };
 
 /** Supported chat-capable platform providers. */
-export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp"] as const;
+export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp", "discord"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 
 export interface ChatSdkAdapterConfig {
@@ -49,6 +51,12 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         appSecret: creds.appSecret,
         phoneNumberId: creds.phoneNumberId,
         verifyToken: creds.verifyToken,
+      });
+    case "discord":
+      return createDiscordAdapter({
+        botToken: creds.botToken,
+        publicKey: creds.publicKey,
+        applicationId: creds.applicationId,
       });
   }
 }
